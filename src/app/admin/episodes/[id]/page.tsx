@@ -43,13 +43,31 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
     orderBy: { version: "desc" },
   });
 
-  const serializedScripts = scriptRecords.map((s) => ({
-    id: s.id,
-    version: s.version,
-    status: s.status,
-    plainText: s.plainText,
-    createdAt: s.createdAt.toISOString(),
-  }));
+  const allAudioSegments = await db.audioSegment.findMany({
+    where: { episodeId: ep.id },
+  });
+
+  const serializedScripts = scriptRecords.map((s) => {
+    const segments = allAudioSegments.filter((a) => a.scriptId === s.id);
+    const readyCount = segments.filter((a) => a.status === "ready").length;
+    const failedCount = segments.filter((a) => a.status === "failed").length;
+    const totalLines = Array.isArray((s.content as any)?.segments)
+      ? (s.content as any).segments.reduce((acc: number, seg: any) => acc + (seg.lines?.length || 0), 0)
+      : 0;
+
+    return {
+      id: s.id,
+      version: s.version,
+      status: s.status,
+      plainText: s.plainText,
+      createdAt: s.createdAt.toISOString(),
+      audioSegments: {
+        totalLines,
+        readyCount,
+        failedCount,
+      },
+    };
+  });
 
   const serializedEpisode = {
     id: ep.id,

@@ -107,3 +107,18 @@ export interface FactCheckJobData {
 export async function queueFactCheckJob(data: FactCheckJobData) {
   return podcastQueue.add("fact-check:script", data);
 }
+
+export interface TtsSegmentJobData {
+  scriptId: string;
+  forceRegenerate?: boolean;
+  segmentRange?: {
+    startLineIndex: number;
+    endLineIndex: number;
+  };
+  hostId?: string;
+  providerOverride?: string;
+}
+
+export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {
+  return podcastQueue.add("tts:generate-segments", data);
+}

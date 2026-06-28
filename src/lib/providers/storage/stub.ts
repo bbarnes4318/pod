@@ -1,20 +1,18 @@
-import { StorageProvider } from "./interface";
+import { StorageProvider } from "./types";
 
 export class StubStorageProvider implements StorageProvider {
-  name = "stub-storage";
+  name = "stub";
 
-  async uploadFile(key: string, body: Buffer, contentType: string): Promise<string> {
-    console.log(`[StubStorageProvider] uploadFile: ${key} (${body.length} bytes, type: ${contentType})`);
-    return `http://localhost:3000/mock-storage/${key}`;
-  }
-
-  async getFileUrl(key: string): Promise<string> {
-    console.log(`[StubStorageProvider] getFileUrl: ${key}`);
-    return `http://localhost:3000/mock-storage/${key}`;
-  }
-
-  async deleteFile(key: string): Promise<void> {
-    console.log(`[StubStorageProvider] deleteFile: ${key}`);
+  async putObject(input: {
+    key: string;
+    body: Buffer;
+    contentType: string;
+  }): Promise<{
+    url: string;
+    key: string;
+    raw?: unknown;
+  }> {
+    throw new Error("Storage provider is stub. Real file upload is disabled. Please configure 'local' or 's3' storage provider.");
   }
 }
 

@@ -129,6 +129,16 @@ export default async function ScriptReviewDetailPage({ params }: PageProps) {
       }
     : null;
 
+  const audioSegments = await db.audioSegment.findMany({
+    where: { scriptId: id },
+  });
+
+  const serializedAudioSegments = audioSegments.map((a) => ({
+    id: a.id,
+    lineIndex: a.lineIndex,
+    status: a.status,
+  }));
+
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
       <ScriptReviewView
@@ -139,6 +149,7 @@ export default async function ScriptReviewDetailPage({ params }: PageProps) {
         hostB={{ id: hostB.id, name: hostB.name }}
         unsafeClaims={unsafeClaims}
         latestFactCheck={serializedFactCheck}
+        initialAudioSegments={serializedAudioSegments}
       />
     </div>
   );

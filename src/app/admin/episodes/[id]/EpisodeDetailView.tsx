@@ -70,6 +70,11 @@ interface ScriptInfo {
   status: string;
   plainText: string | null;
   createdAt: string;
+  audioSegments?: {
+    totalLines: number;
+    readyCount: number;
+    failedCount: number;
+  };
 }
 
 interface FactCheckInfo {
@@ -519,6 +524,27 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                     </div>
                   );
                 })()}
+
+                {/* TTS Audio segment readiness status */}
+                {activeScript.audioSegments && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", borderRadius: "4px", marginTop: "0.25rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Audio Segment Readiness:</span>
+                    <span className="badge badgePending" style={{ fontSize: "0.75rem", backgroundColor: activeScript.audioSegments.readyCount === activeScript.audioSegments.totalLines ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)", color: activeScript.audioSegments.readyCount === activeScript.audioSegments.totalLines ? "#10b981" : "#f59e0b" }}>
+                      Ready: {activeScript.audioSegments.readyCount} / {activeScript.audioSegments.totalLines} lines
+                    </span>
+                    {activeScript.audioSegments.failedCount > 0 && (
+                      <span className="badge badgeFailed" style={{ fontSize: "0.75rem" }}>
+                        Failed: {activeScript.audioSegments.failedCount} lines
+                      </span>
+                    )}
+                    <Link
+                      href={`/admin/audio-segments/${activeScript.id}`}
+                      style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600 }}
+                    >
+                      [View TTS Console]
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {activeScript.plainText ? (

@@ -5,10 +5,11 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
+import { generateTtsSegments } from "../services/ttsSegmentService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -34,6 +35,8 @@ const worker = new Worker(
       return handleScriptGeneration(job as Job<ScriptGenJobData>);
     } else if (job.name === "fact-check:script") {
       return handleFactChecking(job as Job<FactCheckJobData>);
+    } else if (job.name === "tts:generate-segments") {
+      return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1700,6 +1703,54 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
         error: err.message || "Unknown fact check error",
         output: {
           finalStatus: "failed",
+          reasons: [err.message || "Execution error"],
+        } as any,
+      },
+    });
+    throw err;
+  }
+}
+
+async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
+  const { scriptId, forceRegenerate, segmentRange, hostId, providerOverride } = job.data;
+  console.log(`[Worker] Starting tts:generate-segments job for Script ${scriptId}`);
+
+  // Create JobLog record to monitor TTS generation
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "tts:generate-segments",
+      status: "running",
+      input: { scriptId, forceRegenerate, segmentRange, hostId, providerOverride } as any,
+      output: {},
+    },
+  });
+
+  try {
+    const res = await generateTtsSegments(job.data);
+
+    const hasErrors = Array.isArray(res.failedLines) && res.failedLines.length > 0;
+    const finalJobStatus = hasErrors ? "completed_with_errors" : "completed";
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: finalJobStatus,
+        output: res as any,
+      },
+    });
+
+    console.log(`[Worker] TTS segment generation completed. Status: ${finalJobStatus}`);
+    return { success: true, ...res };
+  } catch (err: any) {
+    console.error(`[Worker] TTS segment generation failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown TTS generation error",
+        output: {
+          scriptId,
+          failedLines: [],
           reasons: [err.message || "Execution error"],
         } as any,
       },

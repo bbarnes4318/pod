@@ -10,6 +10,7 @@ import {
   markScriptNeedsRevision,
 } from "../actions";
 import { triggerFactCheck } from "../../fact-checks/actions";
+import { triggerTtsGeneration } from "../../audio-segments/actions";
 import Link from "next/link";
 
 interface EvidenceRef {
@@ -76,6 +77,7 @@ interface ReviewProps {
   hostB: { id: string; name: string };
   unsafeClaims: string[];
   latestFactCheck: any;
+  initialAudioSegments: any[];
 }
 
 export default function ScriptReviewView({
@@ -86,6 +88,7 @@ export default function ScriptReviewView({
   hostB,
   unsafeClaims,
   latestFactCheck: initialFactCheck,
+  initialAudioSegments,
 }: ReviewProps) {
   const [segments, setSegments] = useState<ScriptSegment[]>(script.content.segments || []);
   const [status, setStatus] = useState(script.status);
@@ -116,6 +119,27 @@ export default function ScriptReviewView({
       });
     }
     setFactChecking(false);
+  };
+
+  const [audioSegments, setAudioSegments] = useState<any[]>(initialAudioSegments || []);
+  const [generatingAudio, setGeneratingAudio] = useState(false);
+
+  const handleGenerateAudio = async () => {
+    setGeneratingAudio(true);
+    setMessage(null);
+    const res = await triggerTtsGeneration(script.id, false);
+    if (res.success) {
+      setMessage({
+        type: "success",
+        text: `TTS dialogue segment generation enqueued. Processing in background... Please refresh or check the TTS Console shortly.`,
+      });
+    } else {
+      setMessage({
+        type: "error",
+        text: res.error || "Failed to trigger TTS audio segment generation.",
+      });
+    }
+    setGeneratingAudio(false);
   };
 
   const isLocked = status === "approved" || status === "rejected";
@@ -748,6 +772,67 @@ export default function ScriptReviewView({
             ) : (
               <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Fact checking is only available for approved scripts. Approve this script draft first to unlock.
+              </div>
+            )}
+          </div>
+
+          {/* TTS Dialogue Audio Segments Console */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Dialogue Voice Synthesis</div>
+            
+            {status === "approved" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ backgroundColor: "#080b10", border: "1px solid #161f30", borderRadius: "4px", padding: "0.75rem", fontSize: "0.85rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                    <span>Fact Check Status:</span>
+                    <span className={`badge ${factCheck?.status === "passed" ? "badgeCompleted" : "badgeFailed"}`}>
+                      {factCheck?.status || "missing"}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "#cbd5e1", fontSize: "0.8rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Ready Segments:</span>
+                      <strong>{audioSegments.filter(s => s.status === "ready").length}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Failed Segments:</span>
+                      <strong style={{ color: audioSegments.some(s => s.status === "failed") ? "#ef4444" : "#ffffff" }}>
+                        {audioSegments.filter(s => s.status === "failed").length}
+                      </strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Processing/Pending:</span>
+                      <strong>{audioSegments.filter(s => s.status === "pending" || s.status === "processing").length}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <Link
+                      href={`/admin/audio-segments/${script.id}`}
+                      className="editButton"
+                      style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.25rem 0.5rem" }}
+                    >
+                      Open TTS Console
+                    </Link>
+                  </div>
+                </div>
+
+                {/* Generate Audio Segments Button */}
+                {factCheck?.status === "passed" && episode.status === "fact_checked" && (
+                  <button
+                    onClick={handleGenerateAudio}
+                    disabled={generatingAudio}
+                    className="buttonPrimary"
+                    style={{ width: "100%", fontSize: "0.8rem", padding: "0.4rem" }}
+                  >
+                    Generate Audio Segments
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                TTS audio synthesis is only available for approved & fact-checked scripts.
               </div>
             )}
           </div>
