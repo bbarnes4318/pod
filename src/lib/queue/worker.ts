@@ -487,6 +487,15 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
   const { leagueId, sport, minScore } = job.data;
   console.log(`[Worker] Starting sports topic generation job: league=${leagueId || "all"}, sport=${sport || "all"}`);
 
+  // Helper to normalize title for duplicate protection
+  const normalizeTitle = (t: string): string => {
+    return t
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, " ") // Collapse whitespace
+      .replace(/[^\w\s]/g, ""); // Remove punctuation
+  };
+
   // Create JobLog record to monitor topic generation
   const jobLog = await db.jobLog.create({
     data: {
@@ -545,6 +554,9 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
       include: { player: true, team: true },
     });
 
+    // Skip injury records missing a linked player or team required for a useful topic
+    const validInjuries = injuries.filter((i) => i.player?.name && i.team?.name);
+
     const oddsSnapshots = await db.oddsSnapshot.findMany({
       where: {
         game: whereLeague,
@@ -566,7 +578,7 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
     });
 
     const totalEvidenceCount =
-      games.length + filteredNews.length + injuries.length + oddsSnapshots.length + teamStats.length + playerStats.length;
+      games.length + filteredNews.length + validInjuries.length + oddsSnapshots.length + teamStats.length + playerStats.length;
 
     // Static leagues alone do not count as evidence
     if (totalEvidenceCount === 0) {
@@ -583,13 +595,18 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
             skippedCount: 0,
             rejectedCount: 0,
             duplicateCount: 0,
+            missingSportCount: 0,
+            missingLeagueCount: 0,
+            invalidLeagueCount: 0,
+            leagueMismatchCount: 0,
+            skippedWeakEvidenceCount: 0,
           },
         },
       });
       return { success: true, message: emptyMsg };
     }
 
-    // 3. Serialize evidence concisely for LLM prompt context
+    // 3. Serialize evidence concisely for LLM prompt context (no placeholder unknown text)
     const serializedEvidence = {
       games: games.map((g) => ({
         id: g.id,
@@ -607,10 +624,10 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
         summary: n.summary,
         date: n.publishedAt.toISOString(),
       })),
-      injuries: injuries.map((i) => ({
+      injuries: validInjuries.map((i) => ({
         id: i.id,
-        player: i.player?.name || "Unknown Player",
-        team: i.team?.name || "Unknown Team",
+        player: i.player!.name,
+        team: i.team!.name,
         status: i.status,
         description: i.description,
         date: i.reportedAt.toISOString(),
@@ -706,15 +723,70 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let rejectedCount = 0;
     let duplicateCount = 0;
     let invalidEvidenceCount = 0;
+
+    let missingSportCount = 0;
+    let missingLeagueCount = 0;
+    let invalidLeagueCount = 0;
+    let leagueMismatchCount = 0;
+    let skippedWeakEvidenceCount = 0;
+
     const skippedRecordsReasonSummary: string[] = [];
 
     const topicsList = llmResult?.topics || [];
+
+    // Fetch existing candidates for advanced duplicate checking
+    const existingCandidates = await db.topicCandidate.findMany({
+      select: { title: true, evidenceIds: true },
+    });
 
     for (const topic of topicsList) {
       // Basic fields validation
       if (!topic.title || !topic.summary || !Array.isArray(topic.evidenceIds) || topic.evidenceIds.length === 0) {
         skippedCount++;
         skippedRecordsReasonSummary.push(`Topic candidate '${topic.title || "untitled"}' skipped: missing title, summary, or evidenceIds.`);
+        continue;
+      }
+
+      // Metadata validation: No defaulting to NBA/Basketball. Reject if sport is missing or invalid.
+      if (!topic.sport || typeof topic.sport !== "string" || !topic.sport.trim()) {
+        missingSportCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: missing sport metadata.`);
+        continue;
+      }
+
+      const topicSport = topic.sport.trim();
+      if (sport && topicSport.toLowerCase() !== sport.toLowerCase()) {
+        leagueMismatchCount++; // Count under mismatches
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: sport mismatch (expected '${sport}', got '${topicSport}').`);
+        continue;
+      }
+
+      // Metadata validation: Reject if leagueId is missing, invalid, or mismatched
+      if (!topic.leagueId || typeof topic.leagueId !== "string" || !topic.leagueId.trim()) {
+        missingLeagueCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: missing leagueId metadata.`);
+        continue;
+      }
+
+      const topicLeague = topic.leagueId.trim().toUpperCase();
+      if (leagueId && topicLeague !== leagueId.toUpperCase()) {
+        leagueMismatchCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: leagueId mismatch (expected '${leagueId}', got '${topicLeague}').`);
+        continue;
+      }
+
+      // Verify leagueId exists in our League reference database table
+      const dbLeague = await db.league.findUnique({
+        where: { id: topicLeague },
+      });
+      if (!dbLeague) {
+        invalidLeagueCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: invalid/unsupported leagueId '${topicLeague}' (not in League table).`);
         continue;
       }
 
@@ -783,6 +855,14 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       }
       evidenceStrengthScore = Math.max(1, Math.min(100, evidenceStrengthScore));
 
+      // Reject if evidence is weak (e.g. less than 2 valid evidence items)
+      if (validEvidence.length < 2 || evidenceStrengthScore < 20) {
+        skippedWeakEvidenceCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: evidence strength (${evidenceStrengthScore}) is too weak.`);
+        continue;
+      }
+
       // Clamp subscores server-side to 1-100 range
       const controversy = Math.max(1, Math.min(100, Number(topic.controversyScore) || 50));
       const starPower = Math.max(1, Math.min(100, Number(topic.starPowerScore) || 50));
@@ -797,14 +877,28 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         recency * 0.20 +
         evidenceStrengthScore * 0.10;
 
-      // Duplicate protection check
-      const duplicate = await db.topicCandidate.findFirst({
-        where: {
-          title: { equals: topic.title, mode: "insensitive" },
-        },
-      });
+      // Advanced Duplicate protection check
+      const normalizedCandidateTitle = normalizeTitle(topic.title);
+      const candidateEvidenceIds = validEvidence.map((ev) => ev.id).sort().join(",");
+      let isDuplicate = false;
 
-      if (duplicate) {
+      for (const ec of existingCandidates) {
+        // 1. Normalized title match
+        if (normalizeTitle(ec.title) === normalizedCandidateTitle) {
+          isDuplicate = true;
+          break;
+        }
+        // 2. Evidence ID overlap match
+        const ecEvidenceIds = Array.isArray(ec.evidenceIds)
+          ? ec.evidenceIds.map((ev: any) => ev.id).sort().join(",")
+          : "";
+        if (ecEvidenceIds && ecEvidenceIds === candidateEvidenceIds) {
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      if (isDuplicate) {
         duplicateCount++;
         continue;
       }
@@ -813,8 +907,8 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       await db.topicCandidate.create({
         data: {
           title: topic.title.trim(),
-          sport: topic.sport || sport || "Basketball",
-          leagueId: topic.leagueId || leagueId || "NBA",
+          sport: topicSport,
+          leagueId: topicLeague,
           summary: topic.summary,
           controversyScore: controversy,
           starPowerScore: starPower,
@@ -839,6 +933,11 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       invalidEvidenceCount,
       parseErrorCount,
       providerError,
+      missingSportCount,
+      missingLeagueCount,
+      invalidLeagueCount,
+      leagueMismatchCount,
+      skippedWeakEvidenceCount,
       skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20),
     };
 
