@@ -64,9 +64,9 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
     const rb = et.topic.researchBrief;
     return {
       topicTitle: et.topic.title,
-      maxVoltageAngle: rb?.argumentForHostA || "Analyzes statistical indicators.",
-      drLinebreakAngle: rb?.argumentForHostB || "Highlights risks and opposing trends.",
-      whatMakesItDebatable: "Clash of distinct analytical perspectives."
+      maxVoltageAngle: rb?.argumentForHostA?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
+      drLinebreakAngle: rb?.argumentForHostB?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
+      whatMakesItDebatable: "No approved source-grounded angle available."
     };
   });
 
@@ -92,8 +92,13 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
     if (maxVoltageQuote && drLinebreakQuote) break;
   }
 
-  if (!maxVoltageQuote) maxVoltageQuote = "We look at the stats, and they don't lie.";
-  if (!drLinebreakQuote) drLinebreakQuote = "There is more to this than just raw numbers.";
+  const bestLines: { speakerName: string; quote: string }[] = [];
+  if (maxVoltageQuote) {
+    bestLines.push({ speakerName: "Max Voltage", quote: maxVoltageQuote });
+  }
+  if (drLinebreakQuote) {
+    bestLines.push({ speakerName: "Dr. Linebreak", quote: drLinebreakQuote });
+  }
 
   const sourceNotes: string[] = [];
   for (const et of episode.topics) {
@@ -115,10 +120,7 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
   return {
     episodeSummary: summary,
     keyDebates,
-    bestLines: [
-      { speakerName: "Max Voltage", quote: maxVoltageQuote },
-      { speakerName: "Dr. Linebreak", quote: drLinebreakQuote }
-    ],
+    bestLines,
     sourceGroundedNotes: sourceNotes.slice(0, 8),
   };
 }
@@ -196,7 +198,7 @@ export async function generateEpisodeContentAssets(input: {
   const isContentReady = episode.status === "content_ready";
   if (isContentReady) {
     if (!forceRegenerate) {
-      // skip generation and return existing content metadata if available
+      // skip generation and return existing content metadata
       const storageProvider = getStorageProvider();
       const metadataKey = `episodes/${episode.id}/scripts/${script.id}/content/metadata.json`;
       try {
@@ -208,7 +210,7 @@ export async function generateEpisodeContentAssets(input: {
           episodeId: episode.id,
           scriptId,
           finalStatus: "skipped",
-          transcriptMarkdownUrl: existingMetadata.assets?.transcriptMarkdownUrl,
+          transcriptMarkdownUrl: existingMetadata.assets?.transcriptMarkdownUrl || episode.transcriptUrl,
           transcriptJsonUrl: existingMetadata.assets?.transcriptJsonUrl,
           showNotesMarkdownUrl: existingMetadata.assets?.showNotesMarkdownUrl,
           metadataJsonUrl: existingMetadata.assets?.metadataJsonUrl,
@@ -218,10 +220,28 @@ export async function generateEpisodeContentAssets(input: {
           durationSeconds: existingMetadata.durationSeconds || episode.durationSeconds || 0,
           timestampsApproximate: existingMetadata.timestampsApproximate ?? true,
           generatedWithProvider: existingMetadata.generatedWithProvider || "stub",
-          reasons: ["Existing content assets returned since forceRegenerate is false."],
+          reasons: ["Episode is already content_ready and forceRegenerate is false."],
         };
       } catch (err) {
-        console.log("Could not fetch existing metadata JSON from storage, proceeding with regeneration...");
+        console.log("Could not fetch existing metadata JSON from storage, returning skipped response from Episode fields...");
+        return {
+          success: true,
+          skipped: true,
+          episodeId: episode.id,
+          scriptId,
+          finalStatus: "skipped",
+          transcriptMarkdownUrl: episode.transcriptUrl,
+          transcriptJsonUrl: null,
+          showNotesMarkdownUrl: null,
+          metadataJsonUrl: null,
+          transcriptLineCount: 0,
+          chapterCount: 0,
+          topicCount: episode.topics?.length || 0,
+          durationSeconds: episode.durationSeconds || 0,
+          timestampsApproximate: true,
+          generatedWithProvider: "stub",
+          reasons: ["Episode is already content_ready and forceRegenerate is false."],
+        };
       }
     }
   } else if (episode.status !== "audio_ready") {
@@ -263,6 +283,23 @@ export async function generateEpisodeContentAssets(input: {
     }
     for (let lIdx = 0; lIdx < seg.lines.length; lIdx++) {
       const line = seg.lines[lIdx];
+      
+      // Full line schema validation
+      if (
+        line === null ||
+        typeof line !== "object" ||
+        line.lineIndex === undefined ||
+        line.speakerName === undefined ||
+        line.speakerHostId === undefined ||
+        line.text === undefined ||
+        line.tone === undefined ||
+        line.isFactualClaim === undefined ||
+        line.needsHumanReview === undefined ||
+        !Array.isArray(line.evidenceRefs)
+      ) {
+        throw new Error(`Script line validation failed at segment ${sIdx}, index ${lIdx}. Missing required fields.`);
+      }
+
       // 14. needsHumanReview = true check
       if (line.needsHumanReview === true) {
         throw new Error(`Script contains lines marked as requiring human review.`);
@@ -289,18 +326,27 @@ export async function generateEpisodeContentAssets(input: {
 
   // Check matching AudioSegments
   const audioSegments = script.audioSegments;
-  const segmentMap = new Map<number, any>();
+  const segmentMap = new Map<number, any[]>();
   for (const as of audioSegments) {
-    segmentMap.set(as.lineIndex, as);
+    const list = segmentMap.get(as.lineIndex) || [];
+    list.push(as);
+    segmentMap.set(as.lineIndex, list);
   }
 
   for (const item of allLines) {
     const lineIndex = item.line.lineIndex;
-    const as = segmentMap.get(lineIndex);
+    const list = segmentMap.get(lineIndex) || [];
+    
     // 11. Matching AudioSegment exists
-    if (!as) {
+    if (list.length === 0) {
       throw new Error(`Line ${lineIndex} does not have a matching AudioSegment.`);
     }
+    // Detect duplicate AudioSegments
+    if (list.length > 1) {
+      throw new Error(`Line ${lineIndex} has duplicate AudioSegments (count: ${list.length}).`);
+    }
+
+    const as = list[0];
     // 12. AudioSegment.status = ready
     if (as.status !== "ready") {
       throw new Error(`AudioSegment for line ${lineIndex} is not ready (status: ${as.status}).`);
@@ -335,8 +381,8 @@ export async function generateEpisodeContentAssets(input: {
   }
 
   // 8. Timestamps walk
-  // Default to approximate: true unless derived from reliable durationMs plus exact gap config
-  let timestampsApproximate = false;
+  // Default to approximate: true. We only clear it if we are fully deterministic.
+  let timestampsApproximate = true;
 
   const lineGapMs = Number(process.env.AUDIO_LINE_GAP_MS) || 450;
   const segmentGapMs = Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850;
@@ -366,7 +412,7 @@ export async function generateEpisodeContentAssets(input: {
     console.warn("Failed to find stitch job log:", err);
   }
 
-  const ffprobePath = process.env.FFMPEG_PATH || "ffprobe";
+  const ffprobePath = process.env.FFPROBE_PATH || "ffprobe";
   const storageProvider = getStorageProvider();
 
   // Try to measure intro/outro durations if they were used
@@ -441,13 +487,13 @@ export async function generateEpisodeContentAssets(input: {
       }
     }
 
-    const as = segmentMap.get(curr.line.lineIndex);
+    const list = segmentMap.get(curr.line.lineIndex) || [];
+    const as = list[0];
     let dur = as?.durationMs || 0;
     if (dur <= 0) {
       // Fallback estimate: 150 words per minute => 2.5 words per second => 400ms per word
       const wordCount = curr.line.text.split(/\s+/).filter(Boolean).length;
       dur = Math.max(1000, wordCount * 400);
-      timestampsApproximate = true;
     }
 
     const startTimeMs = currentTimeMs;
@@ -465,6 +511,19 @@ export async function generateEpisodeContentAssets(input: {
   if (includeOutro) {
     currentTimeMs += segmentGapMs; // gap before outro
     currentTimeMs += outroDurationMs;
+  }
+
+  // Determine if we can set timestampsApproximate to false
+  const allSegmentsHaveDuration = allLines.every(item => {
+    const list = segmentMap.get(item.line.lineIndex) || [];
+    const as = list[0];
+    return as && as.durationMs && as.durationMs > 0;
+  });
+  const introOk = !includeIntro || (includeIntro && introDurationMs > 0);
+  const outroOk = !includeOutro || (includeOutro && outroDurationMs > 0);
+
+  if (allSegmentsHaveDuration && introOk && outroOk) {
+    timestampsApproximate = false;
   }
 
   const calculatedDurationSeconds = Math.round(currentTimeMs / 1000);
@@ -524,7 +583,7 @@ export async function generateEpisodeContentAssets(input: {
 
       transcriptMarkdown += `**${line.speakerName}:** ${cleanedText}\n\n`;
 
-      const matchingSeg = segmentMap.get(line.lineIndex);
+      const matchingSeg = (segmentMap.get(line.lineIndex) || [])[0];
 
       jsonLines.push({
         lineIndex: line.lineIndex,
@@ -646,34 +705,69 @@ Rules:
 
       // Validate bestLines quotes verbatim
       const cleanBestLines: any[] = [];
-      const scriptLines = allLines.map(item => ({
-        speakerName: item.line.speakerName,
-        text: item.line.text.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s+/g, " "),
-        originalText: item.line.text.trim(),
-      }));
+      const externalTexts: string[] = [];
+      for (const et of episode.topics) {
+        if (et.topic?.summary) externalTexts.push(et.topic.summary.toLowerCase());
+        const rb = et.topic?.researchBrief;
+        if (rb) {
+          if (rb.argumentForHostA) externalTexts.push(rb.argumentForHostA.toLowerCase());
+          if (rb.argumentForHostB) externalTexts.push(rb.argumentForHostB.toLowerCase());
+          if (rb.injuryContext) externalTexts.push(rb.injuryContext.toLowerCase());
+          if (rb.oddsContext) externalTexts.push(rb.oddsContext.toLowerCase());
+          const facts = Array.isArray(rb.facts) ? rb.facts : [];
+          facts.forEach((f: any) => {
+            if (f?.text) externalTexts.push(f.text.toLowerCase());
+          });
+          const stats = Array.isArray(rb.stats) ? rb.stats : [];
+          stats.forEach((s: any) => {
+            if (s?.text) externalTexts.push(s.text.toLowerCase());
+          });
+          const counterArgs = Array.isArray(rb.counterArguments) ? rb.counterArguments : [];
+          counterArgs.forEach((c: any) => {
+            if (c?.text) externalTexts.push(c.text.toLowerCase());
+          });
+        }
+      }
 
       if (res && Array.isArray(res.bestLines)) {
         for (const bl of res.bestLines) {
           if (!bl.quote || !bl.speakerName) continue;
-          const cleanQuote = bl.quote.trim().toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"").replace(/\s+/g, " ");
-          const matchedLine = scriptLines.find(sl => 
-            sl.speakerName === bl.speakerName && sl.text.includes(cleanQuote)
-          );
-          if (matchedLine) {
-            cleanBestLines.push({
-              speakerName: bl.speakerName,
-              quote: bl.quote,
-            });
-          } else {
-            console.warn(`Quote not found verbatim in script: "${bl.quote}" by ${bl.speakerName}. Removing.`);
+          
+          // Must be short (<= 25 words)
+          const wordCount = bl.quote.trim().split(/\s+/).length;
+          if (wordCount === 0 || wordCount > 25) {
+            console.warn(`Quote too long or empty (${wordCount} words): "${bl.quote}". Removing.`);
+            continue;
           }
+
+          // Must appear verbatim as a substring of a script line
+          const matchedLine = allLines.find(item => 
+            item.line.speakerName === bl.speakerName && item.line.text.includes(bl.quote)
+          );
+
+          if (!matchedLine) {
+            console.warn(`Quote not found verbatim in script: "${bl.quote}" by ${bl.speakerName}. Removing.`);
+            continue;
+          }
+
+          // Quote is not from ResearchBrief or external source text
+          const isNotFromResearchBrief = !externalTexts.some(extText => extText.includes(bl.quote.toLowerCase()));
+          if (!isNotFromResearchBrief) {
+            console.warn(`Quote is present in ResearchBrief/external text: "${bl.quote}". Removing.`);
+            continue;
+          }
+
+          cleanBestLines.push({
+            speakerName: bl.speakerName,
+            quote: bl.quote,
+          });
         }
       }
 
       showNotesJson = {
         episodeSummary: res.episodeSummary || "",
         keyDebates: res.keyDebates || [],
-        bestLines: cleanBestLines.length > 0 ? cleanBestLines : buildDeterministicShowNotes(episode, script, hostA, hostB).bestLines,
+        bestLines: cleanBestLines,
         sourceGroundedNotes: res.sourceGroundedNotes || [],
       };
     } catch (err: any) {
