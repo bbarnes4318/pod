@@ -5,11 +5,12 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
 import { generateTtsSegments } from "../services/ttsSegmentService";
+import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -37,6 +38,8 @@ const worker = new Worker(
       return handleFactChecking(job as Job<FactCheckJobData>);
     } else if (job.name === "tts:generate-segments") {
       return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
+    } else if (job.name === "audio:stitch-final") {
+      return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1755,6 +1758,19 @@ async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
         } as any,
       },
     });
+    throw err;
+  }
+}
+
+async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
+  const { scriptId } = job.data;
+  console.log(`[Worker] Starting audio:stitch-final job for Script ${scriptId}`);
+  try {
+    const res = await stitchFinalEpisodeAudio(job.data);
+    console.log(`[Worker] Final audio stitching job completed. Status: ${res.finalStatus}`);
+    return { success: true, ...res };
+  } catch (err: any) {
+    console.error(`[Worker] Final audio stitching job failed:`, err.message);
     throw err;
   }
 }

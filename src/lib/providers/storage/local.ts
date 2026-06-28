@@ -31,4 +31,39 @@ export class LocalStorageProvider implements StorageProvider {
       key: input.key,
     };
   }
+
+  async getObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    body: Buffer;
+    contentType?: string;
+    key?: string;
+    raw?: unknown;
+  }> {
+    let keyToUse = input.key;
+    if (!keyToUse && input.url) {
+      const match = input.url.match(/\/storage\/(.+)$/);
+      if (match) {
+        keyToUse = decodeURIComponent(match[1]);
+      }
+    }
+
+    if (!keyToUse) {
+      throw new Error("Could not resolve local storage key from input.");
+    }
+
+    const storageDir = path.join(process.cwd(), "public", "storage");
+    const targetPath = path.join(storageDir, keyToUse);
+
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Local file not found at path: ${targetPath}`);
+    }
+
+    const body = fs.readFileSync(targetPath);
+    return {
+      body,
+      key: keyToUse,
+    };
+  }
 }

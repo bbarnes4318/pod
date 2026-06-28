@@ -75,6 +75,8 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
     slug: ep.slug,
     status: ep.status,
     description: ep.description,
+    audioUrl: ep.audioUrl,
+    durationSeconds: ep.durationSeconds,
     createdAt: ep.createdAt.toISOString(),
     topics: ep.topics.map((et) => {
       const t = et.topic;

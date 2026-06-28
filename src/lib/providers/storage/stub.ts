@@ -14,6 +14,18 @@ export class StubStorageProvider implements StorageProvider {
   }> {
     throw new Error("Storage provider is stub. Real file upload is disabled. Please configure 'local' or 's3' storage provider.");
   }
+
+  async getObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    body: Buffer;
+    contentType?: string;
+    key?: string;
+    raw?: unknown;
+  }> {
+    throw new Error("Storage provider is stub. Real file retrieval is disabled. Please configure 'local' or 's3' storage provider.");
+  }
 }
 
 export default StubStorageProvider;

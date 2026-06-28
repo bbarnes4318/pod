@@ -9,4 +9,13 @@ export interface StorageProvider {
     key: string;
     raw?: unknown;
   }>;
+  getObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    body: Buffer;
+    contentType?: string;
+    key?: string;
+    raw?: unknown;
+  }>;
 }

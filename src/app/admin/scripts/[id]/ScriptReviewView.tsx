@@ -837,6 +837,34 @@ export default function ScriptReviewView({
             )}
           </div>
 
+          {/* Final Audio Stitching Console */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Final Audio Stitching</div>
+            {status === "approved" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Episode Status:</span>
+                  <span className="refBadge" style={{ fontSize: "0.75rem" }}>
+                    {episode.status}
+                  </span>
+                </div>
+                <div style={{ marginTop: "0.5rem" }}>
+                  <Link
+                    href={`/admin/final-audio/${script.id}`}
+                    className="buttonPrimary"
+                    style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.4rem" }}
+                  >
+                    Open Stitching Console
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                Final audio stitching is only available for approved scripts.
+              </div>
+            )}
+          </div>
+
           {/* Validation Summary */}
           <div className="controlsPanel">
             <div className="panelTitle">Validation Report</div>

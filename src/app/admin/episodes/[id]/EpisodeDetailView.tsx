@@ -60,6 +60,8 @@ interface EpisodeInfo {
   slug: string;
   status: string;
   description: string | null;
+  audioUrl: string | null;
+  durationSeconds: number | null;
   createdAt: string;
   topics: TopicInfo[];
 }
@@ -545,6 +547,32 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                     </Link>
                   </div>
                 )}
+
+                {/* Final Audio readiness badge and player */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", borderRadius: "4px", marginTop: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Final Stitch Status:</span>
+                    <span className={`badge ${episode.status === "audio_ready" ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                      {episode.status === "audio_ready" ? "Audio Ready" : episode.status}
+                    </span>
+                    {episode.status === "audio_ready" && episode.durationSeconds && (
+                      <span style={{ fontSize: "0.80rem", color: "#94a3b8", fontFamily: "var(--font-mono)" }}>
+                        Duration: {Math.floor(episode.durationSeconds / 60)}m {episode.durationSeconds % 60}s
+                      </span>
+                    )}
+                    <Link
+                      href={`/admin/final-audio/${activeScript.id}`}
+                      style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600 }}
+                    >
+                      [Open Stitch Console]
+                    </Link>
+                  </div>
+                  {episode.status === "audio_ready" && episode.audioUrl && (
+                    <div style={{ marginTop: "0.5rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                      <audio src={episode.audioUrl} controls style={{ width: "100%" }} />
+                    </div>
+                  )}
+                </div>
               </div>
 
               {activeScript.plainText ? (

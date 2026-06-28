@@ -122,3 +122,16 @@ export interface TtsSegmentJobData {
 export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {
   return podcastQueue.add("tts:generate-segments", data);
 }
+
+export interface FinalAudioStitchJobData {
+  scriptId: string;
+  forceRegenerate?: boolean;
+  includeIntro?: boolean;
+  includeOutro?: boolean;
+  normalizeAudio?: boolean;
+  targetLufs?: number;
+}
+
+export async function queueFinalAudioStitchJob(data: FinalAudioStitchJobData) {
+  return podcastQueue.add("audio:stitch-final", data);
+}

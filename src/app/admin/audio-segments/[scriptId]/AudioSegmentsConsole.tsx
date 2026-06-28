@@ -416,6 +416,24 @@ export default function AudioSegmentsConsole({
             </>
           )}
 
+          {/* Final Audio panel */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Final Audio Stitching</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Stitching Status:</span>
+                <span className={`badge ${readyCount === script.totalLines && script.totalLines > 0 ? "badgeCompleted" : "badgePending"}`}>
+                  {readyCount === script.totalLines && script.totalLines > 0 ? "Ready to Stitch" : "Awaiting segments"}
+                </span>
+              </div>
+              <div style={{ marginTop: "0.5rem" }}>
+                <Link href={`/admin/final-audio/${script.id}`} className="buttonPrimary" style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.4rem" }}>
+                  Open Final Stitch Console
+                </Link>
+              </div>
+            </div>
+          </div>
+
           {/* safety guidelines info card */}
           <div className="controlsPanel">
             <div className="panelTitle">Audio Rules</div>

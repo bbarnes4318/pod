@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { StorageProvider } from "./types";
 
 export class S3StorageProvider implements StorageProvider {
@@ -56,6 +56,61 @@ export class S3StorageProvider implements StorageProvider {
       url,
       key: input.key,
       raw: result,
+    };
+  }
+
+  async getObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    body: Buffer;
+    contentType?: string;
+    key?: string;
+    raw?: unknown;
+  }> {
+    if (!this.bucket) {
+      throw new Error("TTS_AUDIO_BUCKET is not configured.");
+    }
+
+    let keyToUse = input.key;
+    if (!keyToUse && input.url) {
+      try {
+        const parsed = new URL(input.url);
+        const pathname = decodeURIComponent(parsed.pathname);
+        if (process.env.AWS_ENDPOINT && pathname.startsWith(`/${this.bucket}/`)) {
+          keyToUse = pathname.substring(this.bucket.length + 2);
+        } else {
+          keyToUse = pathname.startsWith("/") ? pathname.substring(1) : pathname;
+        }
+      } catch {
+        // Fallback to simple matching if URL is relative or parse fails
+        const match = input.url.match(/\/storage\/(.+)$/);
+        if (match) {
+          keyToUse = decodeURIComponent(match[1]);
+        }
+      }
+    }
+
+    if (!keyToUse) {
+      throw new Error("Could not resolve S3 storage key from input.");
+    }
+
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: keyToUse,
+    });
+
+    const response = await this.client.send(command);
+    if (!response.Body) {
+      throw new Error(`S3 object not found or body is empty for key: ${keyToUse}`);
+    }
+
+    const body = Buffer.from(await response.Body.transformToByteArray());
+    return {
+      body,
+      contentType: response.ContentType,
+      key: keyToUse,
+      raw: response,
     };
   }
 }

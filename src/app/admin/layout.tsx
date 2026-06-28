@@ -75,6 +75,9 @@ export default async function AdminLayout({
               <Link href="/admin/audio-segments">Audio Segments</Link>
             </li>
             <li className="navItem">
+              <Link href="/admin/final-audio">Final Audio</Link>
+            </li>
+            <li className="navItem">
               <Link href="/admin?tab=settings">System Settings</Link>
             </li>
           </ul>
