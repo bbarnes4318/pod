@@ -5,7 +5,8 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData } from "./podcastQueue";
+import { buildEpisodeFromTopics } from "../services/episodeService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -25,6 +26,8 @@ const worker = new Worker(
       return handleTopicGeneration(job as Job<TopicGenJobData>);
     } else if (job.name === "generate:research-brief") {
       return handleResearchBriefGeneration(job as Job<ResearchBriefJobData>);
+    } else if (job.name === "build:episode") {
+      return handleEpisodeBuilding(job as Job<EpisodeBuildJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1108,6 +1111,11 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       throw new Error(errorMsg);
     }
 
+    // Filter out injuries lacking linked player or team required for useful context
+    const validInjuries = resolvedInjuries.filter((i) => i.player?.name && i.team?.name);
+    const skippedInjuriesCount = resolvedInjuries.length - validInjuries.length;
+    let skippedWeakEvidenceCount = skippedInjuriesCount;
+
     // 5. Serialize compact evidence packet (no full article texts)
     const serializedEvidence = {
       topic: {
@@ -1132,10 +1140,10 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
           summary: n.summary, // Safe short excerpt/description only
           date: n.publishedAt.toISOString(),
         })),
-        injuries: resolvedInjuries.map((i) => ({
+        injuries: validInjuries.map((i) => ({
           id: i.id,
-          player: i.player?.name || "Unknown",
-          team: i.team?.name || "Unknown",
+          player: i.player!.name,
+          team: i.team!.name,
           status: i.status,
           description: i.description,
         })),
@@ -1165,7 +1173,7 @@ Max Voltage:
 
 Dr. Linebreak:
 - Calm, arrogant, analytics-first.
-- Uses stats, odds, efficiency indices, injury context, market movement, and roster construction.
+- Uses stats, odds, injury context, market movement, and roster construction.
 - Hates lazy narratives and emotional fan overreactions.
 
 Rules:
@@ -1194,8 +1202,10 @@ Schema:
   ],
   "injuryContext": "A brief paragraph outlining injuries, or null if no injury evidence exists.",
   "oddsContext": "A brief paragraph outlining odds/betting context, or null if no oddsSnapshot evidence exists.",
-  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence.",
-  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence.",
+  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence. No rumors.",
+  "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence. No rumors.",
+  "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
   "counterArguments": [
     {
       "host": "Max Voltage" | "Dr. Linebreak",
@@ -1253,6 +1263,10 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let rejectedClaimCount = 0;
     let unsafeClaimCount = 0;
 
+    let missingArgumentCount = 0;
+    let invalidArgumentEvidenceCount = 0;
+    let emptySourceIdsCount = 0;
+
     const validFacts: any[] = [];
     const validStats: any[] = [];
     const validCounterArguments: any[] = [];
@@ -1297,12 +1311,24 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           continue;
         }
 
+        // Check if LLM outputted refs outside the approved packet
+        const hasOutsideRefs = itemRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+        if (hasOutsideRefs) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: item.text,
+            reason: "Rejected: Attempted to reference evidence IDs outside the approved TopicCandidate evidence packet.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
         // 2. Reject/clean rumors & expected claims unless directly supported by evidence
         if (rumorKeywords.test(item.text)) {
           rejectedClaimCount++;
           finalUnsafeClaims.push({
             claim: item.text,
-            reason: "Rejected: Contains rumor or unverified keyword (reported, rumored, sources say, likely, expected, could be, might be, insider, unnamed source).",
+            reason: "Rejected: Contains rumor or unverified keyword.",
           });
           unsafeClaimCount++;
           continue;
@@ -1338,6 +1364,17 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         continue;
       }
 
+      const hasOutsideRefs = caRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+      if (hasOutsideRefs) {
+        rejectedClaimCount++;
+        finalUnsafeClaims.push({
+          claim: ca.claim,
+          reason: "Rejected CounterArgument: References evidence outside approved TopicCandidate packet.",
+        });
+        unsafeClaimCount++;
+        continue;
+      }
+
       if (rumorKeywords.test(ca.claim)) {
         rejectedClaimCount++;
         finalUnsafeClaims.push({
@@ -1355,6 +1392,43 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       });
     }
 
+    // Validate Host Arguments: must be non-empty, no rumor language, grounded in topic evidence Refs
+    const argA = llmResult?.argumentForHostA;
+    const argB = llmResult?.argumentForHostB;
+    const refsA = llmResult?.argumentForHostAEvidenceRefs;
+    const refsB = llmResult?.argumentForHostBEvidenceRefs;
+
+    if (!argA || typeof argA !== "string" || !argA.trim() || !argB || typeof argB !== "string" || !argB.trim()) {
+      missingArgumentCount++;
+      throw new Error("Brief generation failed: argumentForHostA or argumentForHostB is missing or empty.");
+    }
+
+    if (rumorKeywords.test(argA) || rumorKeywords.test(argB)) {
+      invalidArgumentEvidenceCount++;
+      throw new Error("Brief generation failed: Host arguments contain unverified rumor or expected keywords.");
+    }
+
+    if (!Array.isArray(refsA) || refsA.length === 0 || !Array.isArray(refsB) || refsB.length === 0) {
+      invalidArgumentEvidenceCount++;
+      throw new Error("Brief generation failed: Host arguments lack supporting evidence reference arrays.");
+    }
+
+    const cleanRefsA = refsA.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+    const cleanRefsB = refsB.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+    if (cleanRefsA.length === 0 || cleanRefsB.length === 0) {
+      invalidArgumentEvidenceCount++;
+      throw new Error("Brief generation failed: Host arguments lack valid evidence refs matching approved topic evidence IDs.");
+    }
+
+    // If any ref points outside the approved packet, reject
+    const hasOutsideRefsA = refsA.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+    const hasOutsideRefsB = refsB.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+    if (hasOutsideRefsA || hasOutsideRefsB) {
+      invalidArgumentEvidenceCount++;
+      throw new Error("Brief generation failed: Host arguments contain evidence refs outside approved TopicCandidate packet.");
+    }
+
     // 3. Nullify injury and odds context if no injury/odds snapshots exist
     let injuryContext = llmResult.injuryContext || null;
     if (resolvedInjuries.length === 0) {
@@ -1365,14 +1439,41 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       oddsContext = null;
     }
 
-    // Confirm we have at least one valid fact
-    if (validFacts.length === 0) {
-      throw new Error("Brief generation failed: No valid facts remained after filter check.");
+    // Build list of valid source IDs server-side by collecting all validated evidence refs used
+    const allRefsMap = new Map<string, any>();
+    for (const f of validFacts) {
+      for (const ref of f.evidenceRefs) {
+        allRefsMap.set(`${ref.type}:${ref.id}`, ref);
+      }
+    }
+    for (const s of validStats) {
+      for (const ref of s.evidenceRefs) {
+        allRefsMap.set(`${ref.type}:${ref.id}`, ref);
+      }
+    }
+    for (const ca of validCounterArguments) {
+      for (const ref of ca.evidenceRefs) {
+        allRefsMap.set(`${ref.type}:${ref.id}`, ref);
+      }
+    }
+    for (const ref of cleanRefsA) {
+      allRefsMap.set(`${ref.type}:${ref.id}`, ref);
+    }
+    for (const ref of cleanRefsB) {
+      allRefsMap.set(`${ref.type}:${ref.id}`, ref);
     }
 
-    // Build list of valid source IDs
-    const rawSources = Array.isArray(llmResult?.sourceIds) ? llmResult.sourceIds : [];
-    const validSourceIds = rawSources.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+    const finalSourceIds = Array.from(allRefsMap.values());
+
+    // 8. Reject Weak Briefs
+    if (validFacts.length === 0) {
+      throw new Error("Brief generation failed: No valid facts remained after validation check.");
+    }
+
+    if (finalSourceIds.length === 0) {
+      emptySourceIdsCount = 1;
+      throw new Error("Brief generation failed: No valid sourceIds remained after validation check.");
+    }
 
     // Save ResearchBrief linked to the TopicCandidate
     if (existingBrief) {
@@ -1383,11 +1484,11 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           stats: validStats as any,
           injuryContext,
           oddsContext,
-          argumentForHostA: llmResult.argumentForHostA || "Max Voltage Stance",
-          argumentForHostB: llmResult.argumentForHostB || "Dr. Linebreak Stance",
+          argumentForHostA: argA.trim(),
+          argumentForHostB: argB.trim(),
           counterArguments: validCounterArguments as any,
           unsafeClaims: finalUnsafeClaims as any,
-          sourceIds: validSourceIds as any,
+          sourceIds: finalSourceIds as any,
         },
       });
       updatedCount = 1;
@@ -1399,11 +1500,11 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           stats: validStats as any,
           injuryContext,
           oddsContext,
-          argumentForHostA: llmResult.argumentForHostA || "Max Voltage Stance",
-          argumentForHostB: llmResult.argumentForHostB || "Dr. Linebreak Stance",
+          argumentForHostA: argA.trim(),
+          argumentForHostB: argB.trim(),
           counterArguments: validCounterArguments as any,
           unsafeClaims: finalUnsafeClaims as any,
-          sourceIds: validSourceIds as any,
+          sourceIds: finalSourceIds as any,
         },
       });
       insertedCount = 1;
@@ -1420,6 +1521,9 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       rejectedClaimCount,
       unsafeClaimCount,
       invalidEvidenceCount,
+      missingArgumentCount,
+      invalidArgumentEvidenceCount,
+      emptySourceIdsCount,
       providerError,
     };
 
@@ -1440,6 +1544,46 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       data: {
         status: "failed",
         error: err.message || "Unknown brief generation error",
+      },
+    });
+    throw err;
+  }
+}
+
+// 5. Episode Builder Handler
+async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
+  console.log(`[Worker] Starting Episode Build job: ID=${job.id}`);
+
+  // Create JobLog record to monitor Episode building
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "build:episode",
+      status: "running",
+      input: job.data as any,
+      output: {},
+    },
+  });
+
+  try {
+    const res = await buildEpisodeFromTopics(job.data);
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: res as any,
+      },
+    });
+
+    console.log(`[Worker] Episode Build completed. Episode ID: ${res.episodeId}`);
+    return res;
+  } catch (err: any) {
+    console.error(`[Worker] Episode Build failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown episode build error",
       },
     });
     throw err;

@@ -1,0 +1,173 @@
+"use server";
+
+import { db } from "@/lib/db";
+import { queueEpisodeBuildJob } from "@/lib/queue/podcastQueue";
+import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
+import { revalidatePath } from "next/cache";
+
+export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
+  try {
+    // Submit the BullMQ building job
+    const job = await queueEpisodeBuildJob({
+      title: input.title,
+      description: input.description,
+      topicIds: input.topicIds,
+      leagueId: input.leagueId,
+      sport: input.sport,
+      targetTopicCount: input.targetTopicCount,
+      minDebateScore: input.minDebateScore,
+    });
+
+    revalidatePath("/admin/episodes");
+    return { success: true, jobId: job.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to trigger episode build." };
+  }
+}
+
+export async function createEpisodeFromSelectedTopics(
+  topicIds: string[],
+  title?: string,
+  description?: string
+) {
+  try {
+    const res = await buildEpisodeFromTopics({
+      topicIds,
+      title,
+      description,
+    });
+
+    revalidatePath("/admin/episodes");
+    return { success: true, episodeId: res.episodeId };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to build episode from selected topics." };
+  }
+}
+
+export async function updateEpisodeMetadata(episodeId: string, title: string, description: string) {
+  try {
+    await db.episode.update({
+      where: { id: episodeId },
+      data: {
+        title: title.trim(),
+        description: description.trim() || null,
+      },
+    });
+
+    revalidatePath("/admin/episodes");
+    revalidatePath(`/admin/episodes/${episodeId}`);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to update episode metadata." };
+  }
+}
+
+export async function deleteDraftEpisode(episodeId: string) {
+  try {
+    const ep = await db.episode.findUnique({
+      where: { id: episodeId },
+      include: { topics: true },
+    });
+
+    if (!ep) {
+      throw new Error(`Episode with ID ${episodeId} not found.`);
+    }
+
+    if (ep.status !== "draft") {
+      throw new Error(`Only draft episodes can be deleted. Current status: ${ep.status}`);
+    }
+
+    // Atomic transaction for deleting and reverting topic candidate statuses
+    await db.$transaction(async (tx) => {
+      for (const et of ep.topics) {
+        // Revert topic candidate status from used back to approved only if it is not linked to any other episode
+        const linkCount = await tx.episodeTopic.count({
+          where: {
+            topicId: et.topicId,
+            NOT: { episodeId },
+          },
+        });
+
+        if (linkCount === 0) {
+          await tx.topicCandidate.update({
+            where: { id: et.topicId },
+            data: { status: "approved" },
+          });
+        }
+      }
+
+      // Delete EpisodeTopic relations
+      await tx.episodeTopic.deleteMany({
+        where: { episodeId },
+      });
+
+      // Delete Episode
+      await tx.episode.delete({
+        where: { id: episodeId },
+      });
+    });
+
+    revalidatePath("/admin/episodes");
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to delete draft episode." };
+  }
+}
+
+export async function fetchEligibleTopics(filters: {
+  leagueId?: string;
+  sport?: string;
+  minDebateScore?: number;
+}) {
+  try {
+    const minScore = filters.minDebateScore !== undefined ? Number(filters.minDebateScore) : 70;
+    const where: any = {
+      status: "approved",
+      debateScore: { gte: minScore },
+      researchBrief: { isNot: null },
+    };
+
+    if (filters.leagueId) {
+      where.leagueId = filters.leagueId.toUpperCase();
+    }
+    if (filters.sport) {
+      where.sport = { equals: filters.sport, mode: "insensitive" };
+    }
+
+    const topics = await db.topicCandidate.findMany({
+      where,
+      include: { researchBrief: true },
+      orderBy: { debateScore: "desc" },
+    });
+
+    // Enforce strict ResearchBrief validations on facts, sourceIds, host arguments
+    const qualified = topics.filter((t) => {
+      const brief = t.researchBrief;
+      if (!brief) return false;
+      
+      const facts = Array.isArray(brief.facts) ? brief.facts : [];
+      if (facts.length === 0) return false;
+
+      const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
+      if (sourceIds.length === 0) return false;
+
+      if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) return false;
+
+      return true;
+    });
+
+    return {
+      success: true,
+      topics: qualified.map((t) => ({
+        id: t.id,
+        title: t.title,
+        sport: t.sport,
+        leagueId: t.leagueId,
+        debateScore: t.debateScore,
+        evidenceCount: Array.isArray(t.evidenceIds) ? t.evidenceIds.length : 0,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch eligible topics." };
+  }
+}

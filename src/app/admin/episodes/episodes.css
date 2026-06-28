@@ -1,0 +1,268 @@
+/* Episodes Admin CSS Stylesheet */
+
+.episodesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.titleGroup h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.titleGroup p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+.episodesLayout {
+  display: grid;
+  grid-template-columns: 1fr 1.8fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .episodesLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.builderPanel {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  padding: 1.5rem;
+}
+
+.builderTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid #161f30;
+  padding-bottom: 0.5rem;
+}
+
+.sectionGroup {
+  margin-bottom: 1.5rem;
+}
+
+.sectionGroupLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.topicSelectionBox {
+  border: 1px solid #1a2233;
+  border-radius: 4px;
+  background-color: #080b10;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 0.5rem;
+}
+
+.topicSelectRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #111823;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.topicSelectRow:last-child {
+  border-bottom: none;
+}
+
+.topicSelectRow:hover {
+  background-color: #0f141c;
+}
+
+.topicSelectRowChecked {
+  background-color: rgba(56, 189, 248, 0.05);
+}
+
+.topicRowMeta {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.7rem;
+  color: #64748b;
+  margin-left: auto;
+}
+
+.orderIndicator {
+  background-color: #38bdf8;
+  color: #000000;
+  font-weight: 700;
+  font-size: 0.7rem;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Episodes List view */
+.episodesListCard {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+}
+
+.episodeItem {
+  padding: 1.5rem;
+  border-bottom: 1px solid #161f30;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.episodeItem:last-child {
+  border-bottom: none;
+}
+
+.episodeMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.episodeTopicList {
+  margin-top: 0.75rem;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.episodeTopicTitle {
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.btnDetails {
+  background-color: #1e293b;
+  border: 1px solid #2d3748;
+  color: #cbd5e1;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.btnDetails:hover {
+  background-color: #2d3748;
+  color: #ffffff;
+}
+
+/* Detail page styles */
+.detailHeader {
+  border-bottom: 1px solid #1a2233;
+  padding-bottom: 1.5rem;
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+}
+
+.detailTitleBlock {
+  flex-grow: 1;
+}
+
+.detailTitle {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.detailMeta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: #64748b;
+  margin-top: 0.5rem;
+}
+
+.detailDescription {
+  font-size: 1rem;
+  color: #cbd5e1;
+  line-height: 1.6;
+  margin-top: 1rem;
+}
+
+.draftWarning {
+  background-color: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  color: #38bdf8;
+  margin-bottom: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.detailTopicCard {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+}
+
+.detailTopicHeader {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #161f30;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detailTopicTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.detailTopicBody {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Edit Form Modal styles */
+.metadataEditForm {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}

@@ -72,3 +72,17 @@ export interface ResearchBriefJobData {
 export async function queueResearchBriefGenerationJob(data: ResearchBriefJobData) {
   return podcastQueue.add("generate:research-brief", data);
 }
+
+export interface EpisodeBuildJobData {
+  title?: string;
+  description?: string;
+  topicIds?: string[];
+  leagueId?: string;
+  sport?: string;
+  targetTopicCount?: number;
+  minDebateScore?: number;
+}
+
+export async function queueEpisodeBuildJob(data: EpisodeBuildJobData) {
+  return podcastQueue.add("build:episode", data);
+}

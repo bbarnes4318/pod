@@ -51,7 +51,7 @@ export default async function AdminLayout({
               <Link href="/admin">Command Center</Link>
             </li>
             <li className="navItem">
-              <Link href="/admin?tab=episodes">Episodes</Link>
+              <Link href="/admin/episodes">Episode Manager</Link>
             </li>
             <li className="navItem">
               <Link href="/admin/personalities">AI Hosts</Link>
