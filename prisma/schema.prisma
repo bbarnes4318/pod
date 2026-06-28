@@ -7,8 +7,330 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model SystemStatus {
+model User {
   id        String   @id @default(uuid())
-  status    String
+  email     String   @unique
+  name      String?
+  role      String   @default("USER")
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AiHost {
+  id               String   @id @default(uuid())
+  name             String
+  slug             String   @unique
+  role             String
+  worldview        String
+  speakingStyle    String
+  catchphrases     Json     // Array of strings
+  likes            Json     // Array of strings
+  dislikes         Json     // Array of strings
+  argumentPatterns Json     // Array of strings or objects
+  bannedPhrases    Json     // Array of strings
+  ttsProvider      String
+  ttsVoiceId       String
+  intensityLevel   Int
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model SportsDataSource {
+  id            String    @id @default(uuid())
+  name          String    @unique
+  type          String
+  baseUrl       String
+  isActive      Boolean   @default(true)
+  lastIngestedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model League {
+  id              String           @id // Custom ID e.g. "NBA", "NFL"
+  name            String
+  sport           String
+  slug            String           @unique
+  isActive        Boolean          @default(true)
+  teams           Team[]
+  players         Player[]
+  games           Game[]
+  teamStats       TeamStat[]
+  playerStats     PlayerStat[]
+  topicCandidates TopicCandidate[]
+}
+
+model Team {
+  id           String       @id // Custom ID e.g. "BOS", "KC"
+  leagueId     String
+  name         String
+  city         String
+  abbreviation String
+  slug         String       @unique
+  league       League       @relation(fields: [leagueId], references: [id])
+  players      Player[]
+  homeGames    Game[]       @relation("HomeTeam")
+  awayGames    Game[]       @relation("AwayTeam")
+  teamStats    TeamStat[]
+  playerStats  PlayerStat[]
+  injuries     Injury[]
+
+  @@index([leagueId])
+}
+
+model Player {
+  id          String       @id
+  leagueId    String
+  teamId      String?
+  name        String
+  position    String?
+  status      String?
+  league      League       @relation(fields: [leagueId], references: [id])
+  team        Team?        @relation(fields: [teamId], references: [id])
+  playerStats PlayerStat[]
+  injuries    Injury[]
+
+  @@index([leagueId])
+  @@index([teamId])
+}
+
+model Game {
+  id             String          @id
+  leagueId       String
+  homeTeamId     String
+  awayTeamId     String
+  scheduledAt    DateTime
+  status         String
+  homeScore      Int?
+  awayScore      Int?
+  sourceId       String?
+  raw            Json
+  league         League          @relation(fields: [leagueId], references: [id])
+  homeTeam       Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam       Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  oddsSnapshots  OddsSnapshot[]
+
+  @@index([leagueId])
+  @@index([homeTeamId])
+  @@index([awayTeamId])
+  @@index([scheduledAt])
+}
+
+model TeamStat {
+  id         String   @id @default(uuid())
+  teamId     String
+  leagueId   String
+  season     String
+  statType   String
+  value      Json
+  sourceId   String?
+  recordedAt DateTime
+  team       Team     @relation(fields: [teamId], references: [id])
+  league     League   @relation(fields: [leagueId], references: [id])
+
+  @@index([teamId])
+  @@index([leagueId])
+  @@index([season, statType])
+}
+
+model PlayerStat {
+  id         String   @id @default(uuid())
+  playerId   String
+  teamId     String?
+  leagueId   String
+  season     String
+  statType   String
+  value      Json
+  sourceId   String?
+  recordedAt DateTime
+  player     Player   @relation(fields: [playerId], references: [id])
+  team       Team?    @relation(fields: [teamId], references: [id])
+  league     League   @relation(fields: [leagueId], references: [id])
+
+  @@index([playerId])
+  @@index([teamId])
+  @@index([leagueId])
+  @@index([season, statType])
+}
+
+model Injury {
+  id          String   @id @default(uuid())
+  playerId    String
+  teamId      String?
+  status      String?
+  description String?
+  reportedAt  DateTime
+  sourceId    String?
+  sourceUrl   String?
+  player      Player   @relation(fields: [playerId], references: [id])
+  team        Team?    @relation(fields: [teamId], references: [id])
+
+  @@index([playerId])
+  @@index([teamId])
+}
+
+model OddsSnapshot {
+  id                 String   @id @default(uuid())
+  gameId             String
+  sportsbook         String
+  market             String
+  line               Float?
+  price              Float?
+  impliedProbability Float?
+  capturedAt         DateTime
+  sourceId           String?
+  raw                Json
+  game               Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@index([gameId])
+  @@index([sportsbook])
+  @@index([capturedAt])
+}
+
+model NewsItem {
+  id          String   @id @default(uuid())
+  title       String
+  source      String
+  url         String
+  publishedAt DateTime
+  summary     String?
+  entities    Json     // Array of extracted entities/keywords
+  raw         Json
+  
+  @@index([publishedAt])
+}
+
+model TopicCandidate {
+  id                    String         @id @default(uuid())
+  title                 String
+  sport                 String
+  leagueId              String?
+  summary               String?
+  controversyScore      Float
+  starPowerScore        Float
+  bettingRelevanceScore Float
+  recencyScore          Float
+  debateScore           Float
+  evidenceIds           Json           // Structured logs linking back to Games/Stats/News
+  status                String         // "pending" | "approved" | "rejected" | "used"
+  createdAt             DateTime       @default(now())
+  league                League?        @relation(fields: [leagueId], references: [id])
+  researchBrief         ResearchBrief?
+  episodeTopics         EpisodeTopic[]
+
+  @@index([leagueId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ResearchBrief {
+  id                String         @id @default(uuid())
+  topicId           String         @unique
+  facts             Json           // Scraped facts/bulletpoints
+  stats             Json           // Relevant statistics
+  injuryContext     String?
+  oddsContext       String?
+  argumentForHostA  String
+  argumentForHostB  String
+  counterArguments  Json           // Counter arguments structure
+  unsafeClaims      Json           // Moderated/flagged points
+  sourceIds         Json           // List of source URLs/IDs
+  createdAt         DateTime       @default(now())
+  topic             TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
+}
+
+model Episode {
+  id              String         @id @default(uuid())
+  title           String
+  slug            String         @unique
+  status          String         // "draft" | "queued" | "generating" | "completed" | "failed"
+  description     String?
+  longShowNotes   String?
+  durationSeconds Int?
+  audioUrl        String?
+  transcriptUrl   String?
+  rssGuid         String?
+  publishedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  topics          EpisodeTopic[]
+  scripts         Script[]
+  audioSegments   AudioSegment[]
+
+  @@index([status])
+  @@index([publishedAt])
+}
+
+model EpisodeTopic {
+  id         String         @id @default(uuid())
+  episodeId  String
+  topicId    String
+  orderIndex Int
+  episode    Episode        @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  topic      TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, topicId])
+  @@index([episodeId])
+  @@index([topicId])
+}
+
+model Script {
+  id               String            @id @default(uuid())
+  episodeId        String
+  version          Int
+  content          Json              // Lines format: [{hostId, text, stageDirection}]
+  plainText        String?
+  status           String            // "draft" | "generating" | "ready" | "failed"
+  createdAt        DateTime          @default(now())
+  episode          Episode           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  factCheckResult  FactCheckResult?
+  audioSegments    AudioSegment[]
+
+  @@index([episodeId])
+  @@index([status])
+}
+
+model FactCheckResult {
+  id        String   @id @default(uuid())
+  scriptId  String   @unique
+  passed    Boolean
+  warnings  Json     // Array of warning objects
+  errors    Json     // Array of error objects
+  createdAt DateTime @default(now())
+  script    Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+}
+
+model AudioSegment {
+  id         String   @id @default(uuid())
+  episodeId  String
+  scriptId   String
+  hostId     String?  // References host profile who spoke it
+  lineIndex  Int
+  text       String
+  audioUrl   String?
+  durationMs Int?
+  status     String   // "pending" | "processing" | "ready" | "failed"
+  createdAt  DateTime @default(now())
+  episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  script     Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@index([scriptId])
+  @@index([lineIndex])
+}
+
+model JobLog {
+  id        String   @id @default(uuid())
+  jobType   String
+  status    String
+  input     Json
+  output    Json
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobType])
+  @@index([status])
+  @@index([createdAt])
 }

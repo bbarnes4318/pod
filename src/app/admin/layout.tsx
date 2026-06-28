@@ -11,11 +11,11 @@ async function checkInfrastructureStatus() {
   let redisConnected = false;
 
   try {
-    // Query placeholder model to verify connection
-    await db.systemStatus.findFirst().catch(() => {});
+    // Query database with a raw query to check connection status
+    await db.$queryRaw`SELECT 1`;
     dbConnected = true;
   } catch (e) {
-    // Suppress console output for expected connection failures in placeholder phase
+    // Suppress console output
   }
 
   try {
