@@ -27,6 +27,43 @@ interface FactCheckInput {
   forceRecheck?: boolean;
 }
 
+function isRumorPhraseSupported(lineText: string, rumorWord: string, allowedTexts: string[]): boolean {
+  const cleanLine = lineText.toLowerCase().replace(rumorWord, " ").replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, " ");
+  const lineWords = cleanLine
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 3 && !["this", "that", "with", "from", "they", "were", "have", "been", "will", "would", "about", "their"].includes(w));
+
+  if (lineWords.length === 0) return false;
+
+  for (const allowedText of allowedTexts) {
+    const hasRumorContext =
+      allowedText.includes(rumorWord) ||
+      allowedText.includes("rumor") ||
+      allowedText.includes("report") ||
+      allowedText.includes("expect") ||
+      allowedText.includes("likely") ||
+      allowedText.includes("could") ||
+      allowedText.includes("might");
+
+    if (!hasRumorContext) continue;
+
+    let matchCount = 0;
+    for (const word of lineWords) {
+      if (allowedText.includes(word)) {
+        matchCount++;
+      }
+    }
+
+    const ratio = matchCount / lineWords.length;
+    if (ratio >= 0.6) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export async function factCheckScript({ scriptId, forceRecheck = false }: FactCheckInput) {
   // 1. Eligibility Checks
   const script = await db.script.findUnique({
@@ -146,6 +183,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     for (const s of stats) {
       if (s && s.text) allowedFactsAndStats.push(s.text.toLowerCase());
     }
+    if (brief.injuryContext) {
+      allowedFactsAndStats.push(brief.injuryContext.toLowerCase());
+    }
+    if (brief.oddsContext) {
+      allowedFactsAndStats.push(brief.oddsContext.toLowerCase());
+    }
 
     const unsafe = Array.isArray(brief.unsafeClaims) ? (brief.unsafeClaims as any[]) : [];
     for (const uc of unsafe) {
@@ -174,6 +217,13 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let invalidSpeakerCount = 0;
   let maxVoltageCount = 0;
   let drLinebreakCount = 0;
+
+  // Semantic issue counters
+  let semanticUnsupportedCount = 0;
+  let semanticNeedsReviewCount = 0;
+  let semanticInvalidEvidenceRefCount = 0;
+  let semanticMisleadingCount = 0;
+  let semanticUnsafeClaimCount = 0;
 
   const errorsList: any[] = [];
   const warningsList: any[] = [];
@@ -286,7 +336,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
         }
         if (containsRumor && line.isFactualClaim) {
           // Verify exact rumor keyword wording matches brief facts/stats
-          const rumorSupported = allowedFactsAndStats.some((text) => text.includes(matchedRumorWord));
+          const rumorSupported = isRumorPhraseSupported(line.text, matchedRumorWord, allowedFactsAndStats);
           if (!rumorSupported) {
             rumorLanguageCount++;
             errorsList.push({
@@ -497,33 +547,123 @@ Run the fact-checking comparison and output the JSON structure containing status
         semanticStatus = resultObj.status || "needs_review";
         semanticSummary = resultObj.summary || "";
 
+        // Process global arrays
+        const unsupportedClaims = Array.isArray(resultObj.unsupportedClaims) ? resultObj.unsupportedClaims : [];
+        if (unsupportedClaims.length > 0) {
+          semanticStatus = "failed";
+          for (const claim of unsupportedClaims) {
+            errorsList.push({
+              type: "semantic_unsupported_claim_global",
+              reason: `Semantic global: Unsupported claim: "${claim}"`,
+            });
+            semanticUnsupportedCount++;
+          }
+        }
+
+        const unsafeClaimsUsed = Array.isArray(resultObj.unsafeClaimsUsed) ? resultObj.unsafeClaimsUsed : [];
+        if (unsafeClaimsUsed.length > 0) {
+          semanticStatus = "failed";
+          for (const claim of unsafeClaimsUsed) {
+            errorsList.push({
+              type: "semantic_unsafe_claim_global",
+              reason: `Semantic global: Unsafe claim used: "${claim}"`,
+            });
+            semanticUnsafeClaimCount++;
+          }
+        }
+
+        const missingEvidence = Array.isArray(resultObj.missingEvidence) ? resultObj.missingEvidence : [];
+        if (missingEvidence.length > 0) {
+          semanticStatus = "failed";
+          for (const item of missingEvidence) {
+            errorsList.push({
+              type: "semantic_missing_evidence_global",
+              reason: `Semantic global: Missing evidence: "${item}"`,
+            });
+          }
+        }
+
+        const misleadingClaims = Array.isArray(resultObj.misleadingClaims) ? resultObj.misleadingClaims : [];
+        if (misleadingClaims.length > 0) {
+          if (semanticStatus !== "failed") {
+            semanticStatus = "needs_review";
+          }
+          for (const claim of misleadingClaims) {
+            warningsList.push({
+              type: "semantic_misleading_claim_global",
+              reason: `Semantic global: Misleading wording: "${claim}"`,
+            });
+            semanticMisleadingCount++;
+          }
+        }
+
         // Process lineResults to enforce safety rules
         const rawLineResults = Array.isArray(resultObj.lineResults) ? resultObj.lineResults : [];
         for (const lr of rawLineResults) {
           // Filter out evidence refs outside allowedSourceRefs
-          const cleanRefs = (lr.evidenceRefs || []).filter((ref: any) => {
-            if (!ref || !ref.type || !ref.id) return false;
-            const refKey = `${ref.type}:${ref.id}`;
-            return allowedSourceRefs.has(refKey);
-          });
+          const cleanRefs: any[] = [];
+          let lineHasInvalidRef = false;
+
+          const refs = Array.isArray(lr.evidenceRefs) ? lr.evidenceRefs : [];
+          for (const ref of refs) {
+            let refValid = true;
+            if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
+              refValid = false;
+            } else if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
+              refValid = false;
+            } else {
+              const refKey = `${ref.type}:${ref.id}`;
+              if (!allowedSourceRefs.has(refKey)) {
+                refValid = false;
+              }
+            }
+
+            if (!refValid) {
+              lineHasInvalidRef = true;
+              semanticInvalidEvidenceRefCount++;
+              errorsList.push({
+                type: "semantic_invalid_evidence_ref",
+                lineIndex: lr.lineIndex,
+                reason: `Semantic review: Line #${(lr.lineIndex || 0) + 1} has invalid evidence reference ${JSON.stringify(ref)}.`,
+              });
+            } else {
+              cleanRefs.push(ref);
+            }
+          }
+
+          if (lineHasInvalidRef) {
+            if (lr.status === "unsupported") {
+              semanticStatus = "failed";
+            } else {
+              if (semanticStatus !== "failed") {
+                semanticStatus = "needs_review";
+              }
+            }
+          }
 
           semanticLineResults.push({
             ...lr,
             evidenceRefs: cleanRefs,
           });
 
-          // If LLM identifies unsupported/misleading claim, add it to issues/warnings
+          // Line-level semantic results override top-level LLM status
           if (lr.status === "unsupported") {
+            semanticUnsupportedCount++;
+            semanticStatus = "failed";
             errorsList.push({
               type: "semantic_unsupported_claim",
               lineIndex: lr.lineIndex,
-              reason: `Semantic review: Line is unsupported. ${lr.reason}`,
+              reason: `Semantic review: Line #${(lr.lineIndex || 0) + 1} is unsupported. ${lr.reason}`,
             });
           } else if (lr.status === "needs_review") {
+            semanticNeedsReviewCount++;
+            if (semanticStatus !== "failed") {
+              semanticStatus = "needs_review";
+            }
             warningsList.push({
               type: "semantic_needs_review_claim",
               lineIndex: lr.lineIndex,
-              reason: `Semantic review suspect: ${lr.reason}`,
+              reason: `Semantic review suspect: Line #${(lr.lineIndex || 0) + 1} needs review. ${lr.reason}`,
             });
           }
         }
@@ -540,12 +680,23 @@ Run the fact-checking comparison and output the JSON structure containing status
   // 7. Resolve Final status mapping
   let finalStatus: "passed" | "failed" | "needs_review" = "passed";
 
-  if (!deterministicPassed) {
+  const hasSemanticFailure =
+    semanticStatus === "failed" ||
+    semanticUnsupportedCount > 0 ||
+    semanticUnsafeClaimCount > 0 ||
+    semanticInvalidEvidenceRefCount > 0;
+
+  const hasSemanticReviewNeeded =
+    semanticStatus === "needs_review" ||
+    semanticNeedsReviewCount > 0 ||
+    semanticMisleadingCount > 0;
+
+  if (!deterministicPassed || hasSemanticFailure) {
     finalStatus = "failed";
-  } else if (semanticStatus === "failed") {
-    finalStatus = "failed";
-  } else if (semanticStatus === "needs_review") {
+  } else if (hasSemanticReviewNeeded) {
     finalStatus = "needs_review";
+  } else {
+    finalStatus = "passed";
   }
 
   const passedBool = finalStatus === "passed";
@@ -566,6 +717,11 @@ Run the fact-checking comparison and output the JSON structure containing status
       "Max Voltage": maxVoltageShare,
       "Dr. Linebreak": drLinebreakShare,
     },
+    semanticUnsupportedCount,
+    semanticNeedsReviewCount,
+    semanticInvalidEvidenceRefCount,
+    semanticMisleadingCount,
+    semanticUnsafeClaimCount,
   };
 
   const summaryData = {
@@ -575,12 +731,22 @@ Run the fact-checking comparison and output the JSON structure containing status
     semanticStatus,
     semanticSummary,
     checkedAt: new Date().toISOString(),
+    semanticUnsupportedCount,
+    semanticNeedsReviewCount,
+    semanticInvalidEvidenceRefCount,
+    semanticMisleadingCount,
+    semanticUnsafeClaimCount,
   };
 
   const issuesData = {
     errors: errorsList,
     warnings: warningsList,
     semanticLineResults,
+    semanticUnsupportedCount,
+    semanticNeedsReviewCount,
+    semanticInvalidEvidenceRefCount,
+    semanticMisleadingCount,
+    semanticUnsafeClaimCount,
   };
 
   // 8. Atomic database transaction updating statuses
