@@ -245,8 +245,8 @@ export default function EpisodeDetailView({ episode, initialScripts }: DetailPro
 
       {/* 1. Draft warning banner */}
       <div className="draftWarning">
-        <strong>ℹ️ Draft Episode Shell</strong>
-        <span>Script generation is built, but script review and approval are not built yet. This is a generated draft only. Prompt 9 will add review, editing, approval, and fact-check preparation.</span>
+        <strong>ℹ️ Script Review & Approval Workflow</strong>
+        <span>Script review and approval console is fully built. You can review, edit, validate, and approve the generated draft script before proceeding to production.</span>
       </div>
 
       {/* 2. List of topics */}
@@ -431,12 +431,14 @@ export default function EpisodeDetailView({ episode, initialScripts }: DetailPro
           const activeScript = scripts.find((s) => s.id === selectedScriptId) || (scripts.length > 0 ? scripts[0] : null);
           if (!activeScript) return null;
 
+          const isApproved = activeScript.status === "approved";
+
           return (
             <div style={{ border: "1px solid #161f30", borderRadius: "6px", backgroundColor: "#080b10", padding: "1.25rem", marginBottom: "1.5rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #161f30", paddingBottom: "0.75rem", marginBottom: "0.75rem" }}>
                 <div>
                   <span style={{ fontWeight: 700, color: "#ffffff", marginRight: "0.75rem" }}>Version {activeScript.version}</span>
-                  <span className={`badge ${activeScript.status === "draft" ? "badgePending" : activeScript.status === "ready" ? "badgeCompleted" : "badgeFailed"}`}>
+                  <span className={`badge ${activeScript.status === "approved" ? "badgeCompleted" : activeScript.status === "rejected" ? "badgeFailed" : "badgePending"}`}>
                     {activeScript.status}
                   </span>
                 </div>
@@ -445,15 +447,28 @@ export default function EpisodeDetailView({ episode, initialScripts }: DetailPro
                 </span>
               </div>
 
+              <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", justifyContent: "center" }}>
+                {isApproved ? (
+                  <div style={{ color: "#10b981", fontWeight: 700, fontSize: "0.90rem" }}>
+                    ✓ Script Approved (Episode Status: script_approved)
+                  </div>
+                ) : (
+                  <Link
+                    href={`/admin/scripts/${activeScript.id}`}
+                    className="buttonPrimary"
+                    style={{ fontSize: "0.85rem", padding: "0.35rem 0.85rem", textDecoration: "none" }}
+                  >
+                    Review & Edit Script
+                  </Link>
+                )}
+              </div>
+
               {activeScript.plainText ? (
                 <details open style={{ textAlign: "left" }}>
                   <summary style={{ cursor: "pointer", fontWeight: 600, color: "#38bdf8", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
                     View Script Transcript Preview
                   </summary>
                   <div style={{ marginTop: "0.5rem", borderTop: "1px solid #161f30", paddingTop: "0.75rem" }}>
-                    <div style={{ color: "#38bdf8", backgroundColor: "rgba(56, 189, 248, 0.05)", border: "1px solid rgba(56, 189, 248, 0.15)", padding: "0.5rem 0.75rem", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.75rem" }}>
-                      ⚠️ NOTICE: Script review and approval workflow is not built yet. This is a generated draft only.
-                    </div>
                     <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono), monospace", fontSize: "0.8rem", color: "#cbd5e1", lineHeight: 1.5, maxHeight: "300px", overflowY: "auto", padding: "0.5rem" }}>
                       {activeScript.plainText}
                     </pre>

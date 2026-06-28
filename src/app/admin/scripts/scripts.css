@@ -1,0 +1,231 @@
+/* Script Review and Approval CSS Stylesheet */
+
+.scriptsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #1a2233;
+  padding-bottom: 1rem;
+}
+
+.scriptReviewLayout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .scriptReviewLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Left side editor styles */
+.editorPanel {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  padding: 1.5rem;
+}
+
+.segmentBlock {
+  margin-bottom: 2.5rem;
+  border-bottom: 1px solid #161f30;
+  padding-bottom: 1.5rem;
+}
+
+.segmentBlock:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.segmentHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #080b10;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  border: 1px solid #161f30;
+  margin-bottom: 1.25rem;
+}
+
+.segmentTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #38bdf8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.segmentMeta {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.lineItem {
+  background-color: #080b10;
+  border: 1px solid #161f30;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  transition: border-color 0.2s;
+}
+
+.lineItem:hover {
+  border-color: #212e45;
+}
+
+.lineHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.speakerSelector {
+  background-color: #1e293b;
+  border: 1px solid #2d3748;
+  color: #ffffff;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.toneSelector {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  color: #cbd5e1;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.checkboxLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.evidenceInputGroup {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background-color: #0c0f16;
+  border: 1px dashed #1a2233;
+  border-radius: 4px;
+}
+
+.evidenceTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: #1e293b;
+  border: 1px solid #2d3748;
+  color: #cbd5e1;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  margin-right: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.removeRefBtn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 0;
+  font-weight: 700;
+}
+
+/* Right side panel styles */
+.sideControls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.controlsPanel {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  padding: 1.25rem;
+}
+
+.panelTitle {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #161f30;
+  padding-bottom: 0.5rem;
+}
+
+.validationItem {
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+  line-height: 1.4;
+}
+
+.validationSuccess {
+  background-color: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.validationFailed {
+  background-color: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+/* Evidence panel helper list */
+.evidenceList {
+  max-height: 350px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.evidenceItemCard {
+  background-color: #080b10;
+  border: 1px solid #161f30;
+  border-radius: 4px;
+  padding: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.evidenceCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.75rem;
+}
+
+.copyCodeBlock {
+  font-family: var(--font-mono), monospace;
+  background-color: #0f141c;
+  padding: 0.15rem 0.35rem;
+  border-radius: 3px;
+  border: 1px solid #1e293b;
+  cursor: pointer;
+  user-select: all;
+  color: #38bdf8;
+}
+
+.copyCodeBlock:hover {
+  background-color: #1a2233;
+}

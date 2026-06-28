@@ -66,6 +66,9 @@ export default async function AdminLayout({
               <Link href="/admin/research-briefs">Research Briefs</Link>
             </li>
             <li className="navItem">
+              <Link href="/admin/scripts">Script Review</Link>
+            </li>
+            <li className="navItem">
               <Link href="/admin?tab=settings">System Settings</Link>
             </li>
           </ul>
