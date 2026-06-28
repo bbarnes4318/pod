@@ -1,0 +1,247 @@
+/* AI Hosts Personality Manager Stylesheet */
+
+.personalitiesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.titleGroup h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.titleGroup p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+/* Grid Layout */
+.hostGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  gap: 1.5rem;
+}
+
+@media (max-width: 600px) {
+  .hostGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hostCard {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.2s;
+}
+
+.hostCard:hover {
+  border-color: #232d3d;
+}
+
+.hostCardHeader {
+  padding: 1.5rem;
+  border-bottom: 1px solid #161f30;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.hostName {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.hostRole {
+  font-size: 0.85rem;
+  color: #38bdf8;
+  margin-top: 0.25rem;
+  font-family: var(--font-mono), monospace;
+}
+
+.hostBody {
+  padding: 1.5rem;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.hostSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sectionLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+}
+
+.sectionText {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+/* Tag style list for lists */
+.tagContainer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.tag {
+  background-color: #161f30;
+  border: 1px solid #232d3d;
+  color: #e2e8f0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.tagBanned {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+}
+
+.hostCardFooter {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #161f30;
+  background-color: #0c0f16;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.editButton {
+  background-color: #1e293b;
+  color: #ffffff;
+  border: 1px solid #2d3748;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.editButton:hover {
+  background-color: #2d3748;
+  border-color: #4a5568;
+}
+
+/* Form Styles */
+.formContainer {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 600px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formSpanTwo {
+  grid-column: span 2;
+}
+
+@media (max-width: 600px) {
+  .formSpanTwo {
+    grid-column: span 1;
+  }
+}
+
+.textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.helperText {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+  border-top: 1px solid #1a2233;
+  padding-top: 1.5rem;
+}
+
+.buttonSecondary {
+  background-color: transparent;
+  color: #94a3b8;
+  border: 1px solid #1a2233;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.95rem;
+}
+
+.buttonSecondary:hover {
+  color: #ffffff;
+  background-color: #161f30;
+  border-color: #232d3d;
+}
+
+.switchContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.switchLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.intensityContainer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.rangeInput {
+  flex-grow: 1;
+  accent-color: #38bdf8;
+}
+
+.intensityValue {
+  font-family: var(--font-mono), monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #38bdf8;
+  width: 24px;
+  text-align: right;
+}
