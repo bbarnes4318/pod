@@ -98,6 +98,10 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must be active.");
   }
 
+  if (hostId && hostId !== hostA.id && hostId !== hostB.id) {
+    throw new Error(`The provided hostId '${hostId}' does not match either active host profile.`);
+  }
+
   if (!hostA.ttsVoiceId) {
     throw new Error("Max Voltage host profile has no configured voice ID.");
   }
@@ -127,6 +131,10 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         !Array.isArray(line.evidenceRefs)
       ) {
         throw new Error(`Script line at segment ${sIdx}, index ${lIdx} is missing required fields.`);
+      }
+
+      if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only Max Voltage and Dr. Linebreak are allowed.`);
       }
 
       if (line.needsHumanReview === true) {
@@ -216,7 +224,15 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     });
     processingCount++;
 
-    const host = line.speakerName === "Max Voltage" ? hostA : hostB;
+    let host;
+    if (line.speakerName === "Max Voltage") {
+      host = hostA;
+    } else if (line.speakerName === "Dr. Linebreak") {
+      host = hostB;
+    } else {
+      throw new Error(`Invalid speakerName '${line.speakerName}' on line ${line.lineIndex}.`);
+    }
+
     if (!host) {
       throw new Error(`Host profile not found for speaker: ${line.speakerName}`);
     }
