@@ -5,8 +5,9 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
+import { generateScriptForEpisode } from "../services/scriptService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -28,6 +29,8 @@ const worker = new Worker(
       return handleResearchBriefGeneration(job as Job<ResearchBriefJobData>);
     } else if (job.name === "build:episode") {
       return handleEpisodeBuilding(job as Job<EpisodeBuildJobData>);
+    } else if (job.name === "generate:script") {
+      return handleScriptGeneration(job as Job<ScriptGenJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1584,6 +1587,46 @@ async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
       data: {
         status: "failed",
         error: err.message || "Unknown episode build error",
+      },
+    });
+    throw err;
+  }
+}
+
+// 6. Script Generator Handler
+async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
+  console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
+
+  // Create JobLog record to monitor Script generation
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "generate:script",
+      status: "running",
+      input: job.data as any,
+      output: {},
+    },
+  });
+
+  try {
+    const res = await generateScriptForEpisode(job.data);
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: res as any,
+      },
+    });
+
+    console.log(`[Worker] Script Generation completed. Version: ${res.version}`);
+    return res;
+  } catch (err: any) {
+    console.error(`[Worker] Script Generation failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown script generation error",
       },
     });
     throw err;

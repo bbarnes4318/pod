@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { updateEpisodeMetadata } from "../actions";
+import { updateEpisodeMetadata, triggerScriptGeneration, fetchEpisodeScripts } from "../actions";
 import Link from "next/link";
 
 interface TopicEvidenceRef {
@@ -64,17 +64,77 @@ interface EpisodeInfo {
   topics: TopicInfo[];
 }
 
-interface DetailProps {
-  episode: EpisodeInfo;
+interface ScriptInfo {
+  id: string;
+  version: number;
+  status: string;
+  plainText: string | null;
+  createdAt: string;
 }
 
-export default function EpisodeDetailView({ episode }: DetailProps) {
+interface DetailProps {
+  episode: EpisodeInfo;
+  initialScripts: ScriptInfo[];
+}
+
+export default function EpisodeDetailView({ episode, initialScripts }: DetailProps) {
+  const [scripts, setScripts] = useState<ScriptInfo[]>(initialScripts);
+  const [selectedScriptId, setSelectedScriptId] = useState<string | null>(
+    initialScripts.length > 0 ? initialScripts[0].id : null
+  );
+
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState(episode.title);
   const [description, setDescription] = useState(episode.description || "");
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [generating, setGenerating] = useState(false);
+  const [scriptMsg, setScriptMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Polls script records for 30s to update status
+  const startPolling = () => {
+    let count = 0;
+    const interval = setInterval(async () => {
+      count++;
+      const res = await fetchEpisodeScripts(episode.id);
+      if (res.success && res.scripts) {
+        setScripts(res.scripts);
+        // Find if a draft or completed script is ready
+        const anyActive = res.scripts.length > 0;
+        if (anyActive) {
+          // If we had a running script, select it
+          const first = res.scripts[0];
+          setSelectedScriptId(first.id);
+        }
+      }
+      if (count >= 15) {
+        clearInterval(interval);
+        setGenerating(false);
+      }
+    }, 2000);
+  };
+
+  const handleGenerateScriptClick = async (forceRegenerate?: boolean) => {
+    setGenerating(true);
+    setScriptMsg(null);
+    
+    const res = await triggerScriptGeneration(episode.id, forceRegenerate);
+    if (res.success) {
+      setScriptMsg({
+        type: "success",
+        text: "Script generation job triggered! Assembly is processing in the background...",
+      });
+      startPolling();
+    } else {
+      setScriptMsg({
+        type: "error",
+        text: res.error || "Failed to trigger script generation.",
+      });
+      setGenerating(false);
+    }
+  };
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,15 +400,114 @@ export default function EpisodeDetailView({ episode }: DetailProps) {
         })}
       </div>
 
-      {/* Script placeholder at the bottom */}
-      <div className="panel" style={{ padding: "2rem", textAlign: "center" }}>
-        <h4 style={{ color: "#ffffff", fontSize: "1.1rem", marginBottom: "0.5rem", marginTop: 0 }}>Dialogue script generation</h4>
-        <p style={{ color: "#64748b", fontSize: "0.9rem", maxWidth: "600px", margin: "0 auto 1.5rem" }}>
-          Script generation is not built yet. This episode is a draft structure only. Once dialogue modeling is enabled, producers can trigger transcript generation here.
+      {/* Script Console */}
+      <div className="panel" style={{ padding: "2rem", marginTop: "2rem" }}>
+        <h3 style={{ color: "#ffffff", fontSize: "1.25rem", marginBottom: "0.5rem", marginTop: 0 }}>Dialogue Script Console</h3>
+        <p style={{ color: "#64748b", fontSize: "0.9rem", maxWidth: "700px", margin: "0 auto 1.5rem" }}>
+          Generate the spoken dialogue script for the hosts. The debate is composed entirely from grounded research briefs, matching the host personalities.
         </p>
-        <button className="buttonPrimary" disabled style={{ opacity: 0.5, cursor: "not-allowed" }}>
-          Generate Script (Not Built)
-        </button>
+
+        {/* Script Selection Dropdown */}
+        {scripts.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "1rem", marginBottom: "1.5rem" }}>
+            <span style={{ fontSize: "0.85rem", color: "#94a3b8" }}>Script Versions:</span>
+            <select
+              value={selectedScriptId || ""}
+              onChange={(e) => setSelectedScriptId(e.target.value)}
+              className="select"
+              style={{ width: "auto", minWidth: "150px", padding: "0.35rem 0.5rem" }}
+            >
+              {scripts.map((s) => (
+                <option key={s.id} value={s.id}>
+                  Version {s.version} ({s.status})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Selected Script Detail Preview */}
+        {(() => {
+          const activeScript = scripts.find((s) => s.id === selectedScriptId) || (scripts.length > 0 ? scripts[0] : null);
+          if (!activeScript) return null;
+
+          return (
+            <div style={{ border: "1px solid #161f30", borderRadius: "6px", backgroundColor: "#080b10", padding: "1.25rem", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #161f30", paddingBottom: "0.75rem", marginBottom: "0.75rem" }}>
+                <div>
+                  <span style={{ fontWeight: 700, color: "#ffffff", marginRight: "0.75rem" }}>Version {activeScript.version}</span>
+                  <span className={`badge ${activeScript.status === "draft" ? "badgePending" : activeScript.status === "ready" ? "badgeCompleted" : "badgeFailed"}`}>
+                    {activeScript.status}
+                  </span>
+                </div>
+                <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                  Created {new Date(activeScript.createdAt).toLocaleString()}
+                </span>
+              </div>
+
+              {activeScript.plainText ? (
+                <details open style={{ textAlign: "left" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 600, color: "#38bdf8", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
+                    View Script Transcript Preview
+                  </summary>
+                  <div style={{ marginTop: "0.5rem", borderTop: "1px solid #161f30", paddingTop: "0.75rem" }}>
+                    <div style={{ color: "#38bdf8", backgroundColor: "rgba(56, 189, 248, 0.05)", border: "1px solid rgba(56, 189, 248, 0.15)", padding: "0.5rem 0.75rem", borderRadius: "4px", fontSize: "0.75rem", fontWeight: 500, marginBottom: "0.75rem" }}>
+                      ⚠️ NOTICE: Script review and approval workflow is not built yet. This is a generated draft only.
+                    </div>
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "var(--font-mono), monospace", fontSize: "0.8rem", color: "#cbd5e1", lineHeight: 1.5, maxHeight: "300px", overflowY: "auto", padding: "0.5rem" }}>
+                      {activeScript.plainText}
+                    </pre>
+                  </div>
+                </details>
+              ) : (
+                <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                  Transcript content is currently empty or generating.
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Generate / Force Regenerate Action buttons */}
+        <div style={{ display: "flex", justifyContent: "center", gap: "1rem" }}>
+          {generating ? (
+            <button className="buttonPrimary" disabled style={{ opacity: 0.7, cursor: "not-allowed" }}>
+              ⏳ Generating script...
+            </button>
+          ) : scripts.length === 0 ? (
+            <button
+              onClick={() => handleGenerateScriptClick(false)}
+              className="buttonPrimary"
+            >
+              Generate Script
+            </button>
+          ) : (
+            <button
+              onClick={() => handleGenerateScriptClick(true)}
+              className="editButton"
+            >
+              Force Regenerate Script (v{scripts.length + 1})
+            </button>
+          )}
+        </div>
+
+        {scriptMsg && (
+          <div
+            style={{
+              marginTop: "1.25rem",
+              padding: "0.75rem",
+              borderRadius: "4px",
+              fontSize: "0.85rem",
+              fontWeight: 500,
+              backgroundColor: scriptMsg.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
+              border: `1px solid ${scriptMsg.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
+              color: scriptMsg.type === "success" ? "#10b981" : "#ef4444",
+              display: "inline-block",
+            }}
+          >
+            {scriptMsg.text}
+          </div>
+        )}
       </div>
     </div>
   );

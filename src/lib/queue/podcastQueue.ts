@@ -86,3 +86,15 @@ export interface EpisodeBuildJobData {
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData) {
   return podcastQueue.add("build:episode", data);
 }
+
+export interface ScriptGenJobData {
+  episodeId: string;
+  forceRegenerate?: boolean;
+  scriptStyle?: "heated-debate" | "balanced-analysis" | "sports-radio";
+  targetDurationMinutes?: number;
+  maxWords?: number;
+}
+
+export async function queueScriptGenerationJob(data: ScriptGenJobData) {
+  return podcastQueue.add("generate:script", data);
+}

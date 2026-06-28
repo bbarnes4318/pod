@@ -37,6 +37,20 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  // Load previous scripts versions
+  const scriptRecords = await db.script.findMany({
+    where: { episodeId: ep.id },
+    orderBy: { version: "desc" },
+  });
+
+  const serializedScripts = scriptRecords.map((s) => ({
+    id: s.id,
+    version: s.version,
+    status: s.status,
+    plainText: s.plainText,
+    createdAt: s.createdAt.toISOString(),
+  }));
+
   const serializedEpisode = {
     id: ep.id,
     title: ep.title,
@@ -75,7 +89,7 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
 
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
-      <EpisodeDetailView episode={serializedEpisode} />
+      <EpisodeDetailView episode={serializedEpisode} initialScripts={serializedScripts} />
     </div>
   );
 }

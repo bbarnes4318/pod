@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { queueEpisodeBuildJob } from "@/lib/queue/podcastQueue";
+import { queueEpisodeBuildJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { revalidatePath } from "next/cache";
 
@@ -169,5 +169,41 @@ export async function fetchEligibleTopics(filters: {
     };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to fetch eligible topics." };
+  }
+}
+
+export async function triggerScriptGeneration(episodeId: string, forceRegenerate?: boolean) {
+  try {
+    const job = await queueScriptGenerationJob({
+      episodeId,
+      forceRegenerate: !!forceRegenerate,
+    });
+
+    revalidatePath(`/admin/episodes/${episodeId}`);
+    return { success: true, jobId: job.id };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to queue script generation." };
+  }
+}
+
+export async function fetchEpisodeScripts(episodeId: string) {
+  try {
+    const scripts = await db.script.findMany({
+      where: { episodeId },
+      orderBy: { version: "desc" },
+    });
+
+    return {
+      success: true,
+      scripts: scripts.map((s) => ({
+        id: s.id,
+        version: s.version,
+        status: s.status,
+        plainText: s.plainText,
+        createdAt: s.createdAt.toISOString(),
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch scripts." };
   }
 }
