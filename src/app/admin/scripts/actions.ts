@@ -415,6 +415,21 @@ export async function approveScript(scriptId: string) {
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
+    if (script.status !== "draft" && script.status !== "needs_revision") {
+      await db.jobLog.create({
+        data: {
+          jobType: "script:review",
+          status: "failed",
+          input: { scriptId, action: "approve" } as any,
+          output: {
+            reason: `Only draft or needs_revision scripts can be approved. Current status: ${script.status}`,
+            currentScriptStatus: script.status,
+          } as any,
+        },
+      });
+      throw new Error(`Only draft or needs_revision scripts can be approved. Current status: ${script.status}`);
+    }
+
     const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
     // Sanitize script content prior to approval validations
