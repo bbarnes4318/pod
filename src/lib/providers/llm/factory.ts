@@ -1,16 +1,16 @@
 import { LLMProvider } from "./interface";
 import { StubLLMProvider } from "./stub";
+import { OpenAILLMProvider } from "./openai";
+import { AnthropicLLMProvider } from "./anthropic";
 
 export function getLLMProvider(): LLMProvider {
   const providerType = process.env.LLM_PROVIDER?.toLowerCase() || "stub";
 
   switch (providerType) {
     case "openai":
-      console.log("[LLMFactory] OpenAI requested (not fully implemented in architectural stub phase). Falling back to Stub.");
-      return new StubLLMProvider();
+      return new OpenAILLMProvider();
     case "anthropic":
-      console.log("[LLMFactory] Anthropic requested (not fully implemented in architectural stub phase). Falling back to Stub.");
-      return new StubLLMProvider();
+      return new AnthropicLLMProvider();
     case "stub":
     default:
       return new StubLLMProvider();

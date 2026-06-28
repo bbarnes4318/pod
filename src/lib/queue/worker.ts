@@ -4,7 +4,8 @@ import { Worker, Job } from "bullmq";
 import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
-import { JobData, IngestJobData } from "./podcastQueue";
+import { getLLMProvider } from "../providers/llm/factory";
+import { JobData, IngestJobData, TopicGenJobData } from "./podcastQueue";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -20,6 +21,8 @@ const worker = new Worker(
   async (job: Job) => {
     if (job.name === "ingest:sports-data") {
       return handleSportsIngestion(job as Job<IngestJobData>);
+    } else if (job.name === "generate:topics") {
+      return handleTopicGeneration(job as Job<TopicGenJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -473,6 +476,389 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       data: {
         status: "failed",
         error: err.message || "Unknown ingestion error",
+      },
+    });
+    throw err;
+  }
+}
+
+// 3. Real Sports Topic Generation Handler
+async function handleTopicGeneration(job: Job<TopicGenJobData>) {
+  const { leagueId, sport, minScore } = job.data;
+  console.log(`[Worker] Starting sports topic generation job: league=${leagueId || "all"}, sport=${sport || "all"}`);
+
+  // Create JobLog record to monitor topic generation
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "generate:topics",
+      status: "running",
+      input: job.data as any,
+      output: {},
+    },
+  });
+
+  try {
+    // 1. Stub LLM Guard: Must throw error and abort
+    if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+      const errorMsg = "LLM provider is stub. Real topic generation disabled.";
+      console.warn(`[Worker] ${errorMsg}`);
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "failed",
+          error: errorMsg,
+        },
+      });
+      throw new Error(errorMsg);
+    }
+
+    // 2. Fetch recent real sports evidence from Postgres
+    const whereLeague = leagueId ? { leagueId: leagueId.toUpperCase() } : {};
+
+    const games = await db.game.findMany({
+      where: whereLeague,
+      take: 30,
+      orderBy: { scheduledAt: "desc" },
+      include: { homeTeam: true, awayTeam: true },
+    });
+
+    const newsItems = await db.newsItem.findMany({
+      take: 30,
+      orderBy: { publishedAt: "desc" },
+    });
+
+    // Filter news items by league keyword if provided
+    const filteredNews = leagueId
+      ? newsItems.filter(
+          (n) =>
+            n.title.toLowerCase().includes(leagueId.toLowerCase()) ||
+            (n.summary && n.summary.toLowerCase().includes(leagueId.toLowerCase()))
+        )
+      : newsItems;
+
+    const injuries = await db.injury.findMany({
+      where: {
+        team: whereLeague,
+      },
+      take: 20,
+      orderBy: { reportedAt: "desc" },
+      include: { player: true, team: true },
+    });
+
+    const oddsSnapshots = await db.oddsSnapshot.findMany({
+      where: {
+        game: whereLeague,
+      },
+      take: 30,
+      orderBy: { capturedAt: "desc" },
+    });
+
+    const teamStats = await db.teamStat.findMany({
+      where: whereLeague,
+      take: 20,
+      orderBy: { recordedAt: "desc" },
+    });
+
+    const playerStats = await db.playerStat.findMany({
+      where: whereLeague,
+      take: 20,
+      orderBy: { recordedAt: "desc" },
+    });
+
+    const totalEvidenceCount =
+      games.length + filteredNews.length + injuries.length + oddsSnapshots.length + teamStats.length + playerStats.length;
+
+    // Static leagues alone do not count as evidence
+    if (totalEvidenceCount === 0) {
+      const emptyMsg = "No real sports evidence available. Ingest real sports data before generating topics.";
+      console.warn(`[Worker] ${emptyMsg}`);
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "completed",
+          output: {
+            message: emptyMsg,
+            noEvidenceCount: 1,
+            insertedCount: 0,
+            skippedCount: 0,
+            rejectedCount: 0,
+            duplicateCount: 0,
+          },
+        },
+      });
+      return { success: true, message: emptyMsg };
+    }
+
+    // 3. Serialize evidence concisely for LLM prompt context
+    const serializedEvidence = {
+      games: games.map((g) => ({
+        id: g.id,
+        leagueId: g.leagueId,
+        homeTeam: g.homeTeam.name,
+        awayTeam: g.awayTeam.name,
+        score: g.homeScore !== null ? `${g.homeScore}-${g.awayScore}` : "N/A",
+        status: g.status,
+        date: g.scheduledAt.toISOString(),
+      })),
+      news: filteredNews.map((n) => ({
+        id: n.id,
+        title: n.title,
+        source: n.source,
+        summary: n.summary,
+        date: n.publishedAt.toISOString(),
+      })),
+      injuries: injuries.map((i) => ({
+        id: i.id,
+        player: i.player?.name || "Unknown Player",
+        team: i.team?.name || "Unknown Team",
+        status: i.status,
+        description: i.description,
+        date: i.reportedAt.toISOString(),
+      })),
+      odds: oddsSnapshots.map((o) => ({
+        id: o.id,
+        gameId: o.gameId,
+        sportsbook: o.sportsbook,
+        market: o.market,
+        line: o.line,
+        price: o.price,
+      })),
+      stats: [
+        ...teamStats.map((ts) => ({ id: ts.id, teamId: ts.teamId, type: ts.statType, value: ts.value })),
+        ...playerStats.map((ps) => ({ id: ps.id, playerId: ps.playerId, type: ps.statType, value: ps.value })),
+      ],
+    };
+
+    // 4. Formulate LLM prompts matching debate profiles
+    const systemPrompt = `You are the Topic Engine for Take Machine, an AI sports debate podcast.
+Your job is to find sports topics that will create strong disagreement between two AI hosts:
+
+Max Voltage:
+- Loud, emotional, sarcastic, fan-first.
+- Legacy/pressure/results-driven, hates excuses, hot seat enthusiast.
+- Loves clutch moments, playoff drama, collapses, and fraud-watch teams.
+
+Dr. Linebreak:
+- Calm, arrogant, analytics-first.
+- Uses stats, odds, efficiency indices, injury context, market movement, and roster construction.
+- Hates lazy narratives, small-sample overreactions, box-score scouting, and fan emotions.
+
+Rules:
+- Do not invent facts, injuries, odds, stats, quotes, or rumors.
+- Every topic must directly link to the supplied evidence records.
+- Do not copy full copyrighted article summaries or texts.
+- If evidence is weak, lower scores. Prefer argument potential over boring facts.
+
+You must return a JSON object containing a 'topics' array of 10-20 candidates.
+Schema for each topic candidate in the array:
+{
+  "title": "A short punchy sports-radio style question",
+  "sport": "Football | Basketball | Baseball | Combat Sports | etc.",
+  "leagueId": "NFL | NBA | MLB | NCAAF | NCAAB | MMA",
+  "summary": "One-paragraph summary explaining the debate angle",
+  "whyFansCare": "A brief sentence why fans will click",
+  "whyMaxVoltageWillAgree": "Why Max Voltage will have a strong legacy/emotional stance",
+  "whyDrLinebreakWillDisagree": "Why Dr. Linebreak will contradict him using data/context",
+  "controversyScore": 1-100,
+  "starPowerScore": 1-100,
+  "bettingRelevanceScore": 1-100,
+  "recencyScore": 1-100,
+  "evidenceIds": [
+    { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-evidence-uuid-or-id" }
+  ]
+}`;
+
+    const prompt = `Here is the current real-world sports evidence in the database. Analyze it and generate 10-20 debate topics:
+${JSON.stringify(serializedEvidence, null, 2)}`;
+
+    // Resolve LLM Provider
+    const llm = getLLMProvider();
+    
+    let llmResult: any;
+    let parseErrorCount = 0;
+    let providerError = null;
+
+    try {
+      llmResult = await llm.generateStructuredOutput<{ topics: any[] }>({
+        prompt,
+        systemPrompt,
+        temperature: 0.25,
+      });
+    } catch (err: any) {
+      providerError = err.message;
+      parseErrorCount = 1;
+      console.error(`[Worker] LLM execution or JSON parsing failed: ${err.message}`);
+      
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "failed",
+          error: `LLM Ingestion Parse/Provider Error: ${err.message}`,
+          output: { parseErrorCount: 1, providerError: err.message },
+        },
+      });
+      throw err;
+    }
+
+    // 5. Validation loop
+    let insertedCount = 0;
+    let skippedCount = 0;
+    let rejectedCount = 0;
+    let duplicateCount = 0;
+    let invalidEvidenceCount = 0;
+    const skippedRecordsReasonSummary: string[] = [];
+
+    const topicsList = llmResult?.topics || [];
+
+    for (const topic of topicsList) {
+      // Basic fields validation
+      if (!topic.title || !topic.summary || !Array.isArray(topic.evidenceIds) || topic.evidenceIds.length === 0) {
+        skippedCount++;
+        skippedRecordsReasonSummary.push(`Topic candidate '${topic.title || "untitled"}' skipped: missing title, summary, or evidenceIds.`);
+        continue;
+      }
+
+      // Verify every evidenceId actually exists in its corresponding database table
+      const validEvidence: any[] = [];
+      let hasInvalidEvidence = false;
+
+      for (const ref of topic.evidenceIds) {
+        if (!ref.type || !ref.id) {
+          hasInvalidEvidence = true;
+          break;
+        }
+
+        let exists = false;
+        try {
+          if (ref.type === "game") {
+            const r = await db.game.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          } else if (ref.type === "newsItem") {
+            const r = await db.newsItem.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          } else if (ref.type === "injury") {
+            const r = await db.injury.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          } else if (ref.type === "oddsSnapshot") {
+            const r = await db.oddsSnapshot.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          } else if (ref.type === "teamStat") {
+            const r = await db.teamStat.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          } else if (ref.type === "playerStat") {
+            const r = await db.playerStat.findUnique({ where: { id: ref.id } });
+            exists = !!r;
+          }
+        } catch {
+          exists = false;
+        }
+
+        if (!exists) {
+          hasInvalidEvidence = true;
+          skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: evidence reference [${ref.type}] ${ref.id} not found in DB.`);
+          break;
+        }
+        validEvidence.push(ref);
+      }
+
+      if (hasInvalidEvidence) {
+        invalidEvidenceCount++;
+        rejectedCount++;
+        continue;
+      }
+
+      // Calculate evidenceStrengthScore: base is quantity, fresh, odds/injuries
+      let evidenceStrengthScore = Math.min(validEvidence.length * 15, 50);
+      const hasOddsOrInjury = validEvidence.some(
+        (ev) => ev.type === "oddsSnapshot" || ev.type === "injury"
+      );
+      if (hasOddsOrInjury) {
+        evidenceStrengthScore += 25;
+      }
+      const hasNewsOrFresh = validEvidence.some(
+        (ev) => ev.type === "newsItem" || ev.type === "game"
+      );
+      if (hasNewsOrFresh) {
+        evidenceStrengthScore += 25;
+      }
+      evidenceStrengthScore = Math.max(1, Math.min(100, evidenceStrengthScore));
+
+      // Clamp subscores server-side to 1-100 range
+      const controversy = Math.max(1, Math.min(100, Number(topic.controversyScore) || 50));
+      const starPower = Math.max(1, Math.min(100, Number(topic.starPowerScore) || 50));
+      const bettingRelevance = Math.max(1, Math.min(100, Number(topic.bettingRelevanceScore) || 50));
+      const recency = Math.max(1, Math.min(100, Number(topic.recencyScore) || 50));
+
+      // Server-side debateScore formula:
+      const debateScore =
+        controversy * 0.30 +
+        starPower * 0.20 +
+        bettingRelevance * 0.20 +
+        recency * 0.20 +
+        evidenceStrengthScore * 0.10;
+
+      // Duplicate protection check
+      const duplicate = await db.topicCandidate.findFirst({
+        where: {
+          title: { equals: topic.title, mode: "insensitive" },
+        },
+      });
+
+      if (duplicate) {
+        duplicateCount++;
+        continue;
+      }
+
+      // Save valid TopicCandidate
+      await db.topicCandidate.create({
+        data: {
+          title: topic.title.trim(),
+          sport: topic.sport || sport || "Basketball",
+          leagueId: topic.leagueId || leagueId || "NBA",
+          summary: topic.summary,
+          controversyScore: controversy,
+          starPowerScore: starPower,
+          bettingRelevanceScore: bettingRelevance,
+          recencyScore: recency,
+          debateScore,
+          evidenceIds: validEvidence as any,
+          status: "pending",
+        },
+      });
+      insertedCount++;
+    }
+
+    // 6. Complete JobLog
+    const outputObj = {
+      message: "Topic generation completed successfully.",
+      insertedCount,
+      skippedCount,
+      rejectedCount,
+      duplicateCount,
+      noEvidenceCount: 0,
+      invalidEvidenceCount,
+      parseErrorCount,
+      providerError,
+      skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20),
+    };
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: outputObj,
+      },
+    });
+
+    console.log(`[Worker] Topic generation complete. Inserted: ${insertedCount}, Skipped: ${skippedCount}, Rejected: ${rejectedCount}, Duplicates: ${duplicateCount}`);
+    return { success: true, insertedCount };
+  } catch (err: any) {
+    console.error(`[Worker] Topic generation failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown topic generation error",
       },
     });
     throw err;

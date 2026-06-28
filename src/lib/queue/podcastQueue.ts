@@ -53,3 +53,13 @@ export async function queueIngestionJob(data: IngestJobData) {
   // Use a deterministic jobId if appropriate, or let BullMQ generate one
   return podcastQueue.add("ingest:sports-data", data);
 }
+
+export interface TopicGenJobData {
+  leagueId: string;
+  sport: string;
+  minScore: number;
+}
+
+export async function queueTopicGenerationJob(data: TopicGenJobData) {
+  return podcastQueue.add("generate:topics", data);
+}

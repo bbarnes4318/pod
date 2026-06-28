@@ -60,6 +60,9 @@ export default async function AdminLayout({
               <Link href="/admin/data-sources">Data Ingestion</Link>
             </li>
             <li className="navItem">
+              <Link href="/admin/topics">Topic Engine</Link>
+            </li>
+            <li className="navItem">
               <Link href="/admin?tab=settings">System Settings</Link>
             </li>
           </ul>
