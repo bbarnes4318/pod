@@ -1,44 +1,46 @@
-import { SportsDataProvider, SportsGame, TalkingPointSuggestion } from "./interface";
+import { SportsDataProvider } from "./interface";
 
 export class StubSportsDataProvider implements SportsDataProvider {
   name = "stub-sports-data";
 
-  async getLiveGames(): Promise<SportsGame[]> {
-    console.log("[StubSportsDataProvider] getLiveGames called");
-    return [
-      {
-        id: "nba-1",
-        homeTeam: "Boston Celtics",
-        awayTeam: "Miami Heat",
-        homeScore: 104,
-        awayScore: 99,
-        status: "final",
-        startTime: new Date().toISOString(),
-      },
-      {
-        id: "nfl-1",
-        homeTeam: "Kansas City Chiefs",
-        awayTeam: "San Francisco 49ers",
-        status: "scheduled",
-        startTime: new Date().toISOString(),
-      }
-    ];
+  async getSchedules(league: string, season: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getSchedules called for league: ${league}, season: ${season}`);
+    return [{ id: "nba-game-1", status: "scheduled", homeTeam: "Boston Celtics", awayTeam: "Miami Heat" }];
   }
 
-  async getTalkingPoints(): Promise<TalkingPointSuggestion[]> {
-    console.log("[StubSportsDataProvider] getTalkingPoints called");
-    return [
-      {
-        title: "Celtics clinch Game 7 vs Heat",
-        description: "Boston wins a tense defensive battle. Narratives are focused on Tatum's clutch shots under pressure, while efficiency models point to Boston's shot quality variance.",
-        category: "NBA",
-      },
-      {
-        title: "Chiefs vs 49ers Odds Volatility",
-        description: "Odds fluctuate. Dr. Linebreak argues the 49ers are mathematically undervalued by 2.3%, whereas Max Voltage points to Patrick Mahomes' record in legacy-defining moments.",
-        category: "NFL",
-      }
-    ];
+  async getScores(league: string, date: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getScores called for league: ${league}, date: ${date}`);
+    return [{ id: "nba-game-1", status: "final", homeScore: 104, awayScore: 99 }];
+  }
+
+  async getStandings(league: string, season: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getStandings called for league: ${league}, season: ${season}`);
+    return [{ team: "Boston Celtics", rank: 1, wins: 64, losses: 18 }];
+  }
+
+  async getTeamStats(league: string, season: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getTeamStats called for league: ${league}, season: ${season}`);
+    return [{ team: "Boston Celtics", offensiveRating: 122.2, defensiveRating: 110.6 }];
+  }
+
+  async getPlayerStats(league: string, season: string, playerId?: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getPlayerStats called for league: ${league}, season: ${season}, playerId: ${playerId || "all"}`);
+    return [{ playerId: "tatum-01", name: "Jayson Tatum", ppg: 26.9, rpg: 8.1, apg: 4.9 }];
+  }
+
+  async getInjuries(league: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getInjuries called for league: ${league}`);
+    return [{ team: "Miami Heat", player: "Jimmy Butler", status: "Out", injury: "Knee" }];
+  }
+
+  async getOdds(league: string, sport: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getOdds called for league: ${league}, sport: ${sport}`);
+    return [{ gameId: "nfl-game-1", homeOdds: 1.8, awayOdds: 2.1, spread: "-2.5" }];
+  }
+
+  async getNews(league: string): Promise<any[]> {
+    console.log(`[StubSportsDataProvider] getNews called for league: ${league}`);
+    return [{ title: "Celtics clinch championship", content: "Boston Celtics secure the title after an outstanding performance." }];
   }
 }
 
