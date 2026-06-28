@@ -128,24 +128,46 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
 
     // Initialize the real provider instance (fails if API credentials are missing)
     const provider = getSportsDataProvider(providerType);
+    
+    // Ingestion Counts
     let gamesCount = 0;
     let newsCount = 0;
     let oddsCount = 0;
     let injuriesCount = 0;
     let statsCount = 0;
 
+    // Skipped Records & Logs
+    let skippedGamesMissingTeams = 0;
+    let skippedOddsMissingGame = 0;
+    let skippedNewsMissingUrl = 0;
+    const skippedRecordsReasonSummary: string[] = [];
+
     if (providerType.toLowerCase() === "rss-news") {
       // Ingest News items from RSS feeds
       const newsItems = await provider.getNews(leagueId);
       for (const item of newsItems) {
+        if (!item.url) {
+          skippedNewsMissingUrl++;
+          skippedRecordsReasonSummary.push("News item from RSS feed missing URL.");
+          continue;
+        }
+
         // Unique deterministic ID based on RSS feed link to avoid duplicates
         const idKey = `rss:${item.url}`;
+
+        // Ensure we strip HTML and store a safe summary snippet <= 250 characters
+        let summary = null;
+        if (item.summary) {
+          const cleanSummary = item.summary.replace(/<[^>]*>/g, "").trim();
+          summary = cleanSummary.length > 250 ? cleanSummary.substring(0, 247) + "..." : cleanSummary;
+        }
+
         await db.newsItem.upsert({
           where: { id: idKey },
           update: {
             title: item.title,
             publishedAt: item.publishedAt,
-            summary: item.summary,
+            summary,
             entities: item.entities,
             raw: item.raw,
           },
@@ -155,7 +177,7 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
             source: item.source,
             url: item.url,
             publishedAt: item.publishedAt,
-            summary: item.summary,
+            summary,
             entities: item.entities,
             raw: item.raw,
           },
@@ -169,19 +191,24 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       try {
         const standings = await provider.getStandings(leagueId, dateOrRange || "2026");
         for (const item of standings) {
+          if (!item.TeamID || !item.Name || !item.Key) {
+            skippedRecordsReasonSummary.push(`Standings team skipped: missing stable TeamID, Key or Name.`);
+            continue;
+          }
+
           const teamIdStr = `sio:${leagueId.toLowerCase()}:${item.TeamID}`;
           await db.team.upsert({
             where: { id: teamIdStr },
             update: {
               name: item.Name,
-              city: item.City,
+              city: item.City || "",
               abbreviation: item.Key,
             },
             create: {
               id: teamIdStr,
               leagueId: leagueId.toUpperCase(),
               name: item.Name,
-              city: item.City,
+              city: item.City || "",
               abbreviation: item.Key,
               slug: `${leagueId.toLowerCase()}-${item.Key.toLowerCase()}`,
             },
@@ -195,21 +222,37 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       try {
         const schedules = await provider.getSchedules(leagueId, dateOrRange || "2026");
         for (const game of schedules) {
+          // Strict Validation: No fake placeholder teams or empty values
+          if (
+            !game.HomeTeamID ||
+            !game.AwayTeamID ||
+            !game.HomeTeam ||
+            !game.AwayTeam ||
+            game.HomeTeam === "HOME" ||
+            game.AwayTeam === "AWAY" ||
+            game.HomeTeam === "Home Team" ||
+            game.AwayTeam === "Away Team"
+          ) {
+            skippedGamesMissingTeams++;
+            skippedRecordsReasonSummary.push(`Game ${game.GameID || "unknown"} skipped: missing or placeholder home/away team identifiers.`);
+            continue;
+          }
+
           const gameIdStr = `sio:${leagueId.toLowerCase()}:${game.GameID}`;
           const homeTeamIdStr = `sio:${leagueId.toLowerCase()}:${game.HomeTeamID}`;
           const awayTeamIdStr = `sio:${leagueId.toLowerCase()}:${game.AwayTeamID}`;
 
-          // Ensure teams exist in DB
+          // Ensure teams exist in DB using real names only (no fake cities or placeholding names)
           await db.team.upsert({
             where: { id: homeTeamIdStr },
             update: {},
             create: {
               id: homeTeamIdStr,
               leagueId: leagueId.toUpperCase(),
-              name: game.HomeTeam || "Home Team",
+              name: game.HomeTeam,
               city: "",
-              abbreviation: game.HomeTeam || "HOME",
-              slug: `${leagueId.toLowerCase()}-${(game.HomeTeam || "HOME").toLowerCase()}-${game.HomeTeamID}`,
+              abbreviation: game.HomeTeam,
+              slug: `${leagueId.toLowerCase()}-${game.HomeTeam.toLowerCase()}-${game.HomeTeamID}`,
             },
           });
           await db.team.upsert({
@@ -218,10 +261,10 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
             create: {
               id: awayTeamIdStr,
               leagueId: leagueId.toUpperCase(),
-              name: game.AwayTeam || "Away Team",
+              name: game.AwayTeam,
               city: "",
-              abbreviation: game.AwayTeam || "AWAY",
-              slug: `${leagueId.toLowerCase()}-${(game.AwayTeam || "AWAY").toLowerCase()}-${game.AwayTeamID}`,
+              abbreviation: game.AwayTeam,
+              slug: `${leagueId.toLowerCase()}-${game.AwayTeam.toLowerCase()}-${game.AwayTeamID}`,
             },
           });
 
@@ -257,22 +300,36 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       try {
         const news = await provider.getNews(leagueId);
         for (const item of news) {
+          if (!item.Url) {
+            skippedNewsMissingUrl++;
+            skippedRecordsReasonSummary.push(`News item ${item.NewsID || "unknown"} skipped: missing URL.`);
+            continue;
+          }
+
           const newsIdStr = `sio:${leagueId.toLowerCase()}:${item.NewsID}`;
+
+          // Keep summary strictly as a safe excerpt <= 250 characters (stripping HTML)
+          let summary = null;
+          if (item.Content) {
+            const cleanSummary = item.Content.replace(/<[^>]*>/g, "").trim();
+            summary = cleanSummary.length > 250 ? cleanSummary.substring(0, 247) + "..." : cleanSummary;
+          }
+
           await db.newsItem.upsert({
             where: { id: newsIdStr },
             update: {
               title: item.Title,
               publishedAt: item.Updated ? new Date(item.Updated) : new Date(),
-              summary: item.Content,
+              summary,
               raw: item,
             },
             create: {
               id: newsIdStr,
               title: item.Title,
               source: item.Source || "SportsDataIO",
-              url: item.Url || "",
+              url: item.Url,
               publishedAt: item.Updated ? new Date(item.Updated) : new Date(),
-              summary: item.Content,
+              summary,
               entities: [],
               raw: item,
             },
@@ -280,13 +337,18 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
           newsCount++;
         }
       } catch (err: any) {
-        console.warn(`[Worker] News ingestion skipped or failed: ${err.message}`);
+        console.warn(`[Worker] News Ingestion skipped or failed: ${err.message}`);
       }
 
       // 4. Injuries Ingestion
       try {
         const injuries = await provider.getInjuries(leagueId);
         for (const injury of injuries) {
+          if (!injury.PlayerID || !injury.Name || !injury.TeamID) {
+            skippedRecordsReasonSummary.push("Injury entry skipped: missing stable player or team IDs.");
+            continue;
+          }
+
           const playerIdStr = `sio:${leagueId.toLowerCase()}:${injury.PlayerID}`;
           const teamIdStr = `sio:${leagueId.toLowerCase()}:${injury.TeamID}`;
 
@@ -322,7 +384,7 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
           injuriesCount++;
         }
       } catch (err: any) {
-        console.warn(`[Worker] Injuries ingestion skipped or failed: ${err.message}`);
+        console.warn(`[Worker] Injuries Ingestion skipped or failed: ${err.message}`);
       }
     } else if (providerType.toLowerCase() === "oddsapi") {
       // 1. Fetch live odds
@@ -346,6 +408,8 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
         });
 
         if (!matchingGame) {
+          skippedOddsMissingGame++;
+          skippedRecordsReasonSummary.push(`Odds snapshot for Odds API game ${gameOdds.id} skipped: matching Game not found in database.`);
           console.warn(`[Worker] Skipped OddsSnapshot: no matching Game found in database for teams ${gameOdds.home_team} vs ${gameOdds.away_team} at ${gameOdds.commence_time}`);
           continue;
         }
@@ -385,6 +449,10 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
         injuries: injuriesCount,
         stats: statsCount,
       },
+      skippedGamesMissingTeams,
+      skippedOddsMissingGame,
+      skippedNewsMissingUrl,
+      skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20), // Cap reasons to prevent payload bloat
     };
 
     // Update JobLog on completion
@@ -396,7 +464,7 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       },
     });
 
-    console.log(`[Worker] Ingestion completed. Stats: games=${gamesCount}, news=${newsCount}, odds=${oddsCount}`);
+    console.log(`[Worker] Ingestion completed. Stats: games=${gamesCount}, news=${newsCount}, odds=${oddsCount}, skippedGames=${skippedGamesMissingTeams}, skippedOdds=${skippedOddsMissingGame}`);
     return { success: true, counts: { games: gamesCount, news: newsCount, odds: oddsCount } };
   } catch (err: any) {
     console.error(`[Worker] Ingestion job ${job.id} failed:`, err.message);
