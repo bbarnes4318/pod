@@ -1,0 +1,280 @@
+/* Ingestion Module Stylesheet */
+
+.dataSourcesHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.titleGroup h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.titleGroup p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+.warningBanner {
+  background-color: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  padding: 1rem 1.5rem;
+  color: #f59e0b;
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  line-height: 1.5;
+}
+
+.warningBanner strong {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+/* Provider Status Cards */
+.providerCard {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.providerCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #161f30;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+}
+
+.providerName {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.providerTypeBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #94a3b8;
+  font-family: var(--font-mono), monospace;
+  background-color: #161f30;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #232d3d;
+}
+
+.providerDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.providerDetailRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.detailLabel {
+  color: #64748b;
+}
+
+.detailValue {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.detailValueActive {
+  color: #10b981;
+  font-weight: 700;
+}
+
+.detailValueInactive {
+  color: #ef4444;
+  font-weight: 700;
+}
+
+/* Layout section grid */
+.sectionLayout {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .sectionLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+}
+
+.panelHeader {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #1a2233;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panelTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.panelContent {
+  padding: 1.5rem;
+}
+
+/* Ingestion Controls Form */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.input, .select {
+  background-color: #080b10;
+  border: 1px solid #1a2233;
+  border-radius: 4px;
+  color: #ffffff;
+  padding: 0.75rem;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input:focus, .select:focus {
+  border-color: #38bdf8;
+}
+
+.buttonPrimary {
+  background-color: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  font-size: 0.95rem;
+}
+
+.buttonPrimary:hover {
+  background-color: #0369a1;
+}
+
+.buttonPrimary:disabled {
+  background-color: #1e293b;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+/* Table layout */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.table th {
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+  border-bottom: 1px solid #1a2233;
+}
+
+.table td {
+  padding: 1rem;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #161f30;
+  color: #cbd5e1;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badgePending {
+  background-color: #1e293b;
+  color: #94a3b8;
+}
+
+.badgeRunning {
+  background-color: rgba(2, 132, 199, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(2, 132, 199, 0.3);
+}
+
+.badgeCompleted {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badgeFailed {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.logCode {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.8rem;
+  background-color: #080b10;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid #161f30;
+}

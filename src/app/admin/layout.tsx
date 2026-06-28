@@ -57,6 +57,9 @@ export default async function AdminLayout({
               <Link href="/admin/personalities">AI Hosts</Link>
             </li>
             <li className="navItem">
+              <Link href="/admin/data-sources">Data Ingestion</Link>
+            </li>
+            <li className="navItem">
               <Link href="/admin?tab=settings">System Settings</Link>
             </li>
           </ul>

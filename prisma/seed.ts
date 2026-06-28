@@ -124,6 +124,25 @@ async function main() {
     console.log(`Upserted AI Host: ${upserted.name} (${upserted.slug})`);
   }
 
+  console.log("Seeding static Leagues...");
+  const leagues = [
+    { id: "NFL", name: "National Football League", sport: "Football", slug: "nfl", isActive: true },
+    { id: "NBA", name: "National Basketball Association", sport: "Basketball", slug: "nba", isActive: true },
+    { id: "MLB", name: "Major League Baseball", sport: "Baseball", slug: "mlb", isActive: true },
+    { id: "NCAAF", name: "NCAA Football", sport: "Football", slug: "ncaaf", isActive: true },
+    { id: "NCAAB", name: "NCAA Basketball", sport: "Basketball", slug: "ncaab", isActive: true },
+    { id: "MMA", name: "Mixed Martial Arts", sport: "Combat Sports", slug: "mma", isActive: true },
+  ];
+
+  for (const league of leagues) {
+    const upserted = await prisma.league.upsert({
+      where: { id: league.id },
+      update: league,
+      create: league,
+    });
+    console.log(`Upserted League: ${upserted.name} (${upserted.id})`);
+  }
+
   console.log("Seeding completed successfully.");
 }
 

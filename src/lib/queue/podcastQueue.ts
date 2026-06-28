@@ -41,3 +41,15 @@ export async function queuePodcastJob(episodeId: string, stage: JobData["stage"]
     }
   );
 }
+
+export interface IngestJobData {
+  providerType: string;
+  leagueId: string;
+  sport: string;
+  dateOrRange: string;
+}
+
+export async function queueIngestionJob(data: IngestJobData) {
+  // Use a deterministic jobId if appropriate, or let BullMQ generate one
+  return podcastQueue.add("ingest:sports-data", data);
+}
