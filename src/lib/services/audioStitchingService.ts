@@ -120,8 +120,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     previousStatus = episode.status;
 
+    if (episode.status === "audio_stitching") {
+      throw new Error("Episode is already audio_stitching. Wait for the current stitch job to finish or manually reset the status.");
+    }
+
     // Skip check if already complete and forceRegenerate is false
-    if (episode.status === "audio_ready" && episode.audioUrl && !forceRegenerate) {
+    if (episode.status === "audio_ready" && !forceRegenerate) {
       const output = {
         episodeId: episode.id,
         scriptId,
@@ -164,8 +168,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       throw new Error("Script plainText transcript is empty.");
     }
 
-    if (episode.status !== "audio_segments_ready" && episode.status !== "audio_ready" && episode.status !== "audio_stitching") {
-      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready'.`);
+    if (episode.status !== "audio_segments_ready" && !(episode.status === "audio_ready" && forceRegenerate)) {
+      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' or forceRegenerate from 'audio_ready'.`);
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({
@@ -218,6 +222,10 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
         if (line.needsHumanReview === true) {
           throw new Error(`Script contains lines marked as requiring human review.`);
+        }
+
+        if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+          throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only Max Voltage and Dr. Linebreak are allowed.`);
         }
 
         if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA.id) {
