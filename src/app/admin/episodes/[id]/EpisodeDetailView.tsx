@@ -246,7 +246,7 @@ export default function EpisodeDetailView({ episode, initialScripts }: DetailPro
       {/* 1. Draft warning banner */}
       <div className="draftWarning">
         <strong>ℹ️ Draft Episode Shell</strong>
-        <span>Script generation is not built yet. This episode is a draft structure only. Future phases will assemble scripts and convert them into audio dialogue.</span>
+        <span>Script generation is built, but script review and approval are not built yet. This is a generated draft only. Prompt 9 will add review, editing, approval, and fact-check preparation.</span>
       </div>
 
       {/* 2. List of topics */}

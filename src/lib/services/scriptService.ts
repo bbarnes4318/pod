@@ -166,19 +166,19 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     throw new Error(msg);
   }
 
-  // 6. Gather allowed evidence source IDs & warnings
-  const allowedSourceIds = new Set<string>();
+  // 6. Gather allowed evidence source refs & warnings
+  const allowedSourceRefs = new Set<string>();
   const unsafeClaimsList: string[] = [];
 
   const topicsPrompts = ep.topics.map((et, idx) => {
     const t = et.topic;
     const b = t.researchBrief!;
 
-    // Collect allowed sourceIds
+    // Collect allowed sourceRefs
     const sourceIds = Array.isArray(b.sourceIds) ? (b.sourceIds as any[]) : [];
     for (const src of sourceIds) {
-      if (src && typeof src === "object" && src.id) {
-        allowedSourceIds.add(src.id);
+      if (src && typeof src === "object" && src.type && src.id) {
+        allowedSourceRefs.add(`${src.type}:${src.id}`);
       }
     }
 
@@ -233,7 +233,8 @@ Host 2: Dr. Linebreak (ID: ${hostB.id})
 
 Write a spoken, natural back-and-forth debate script where they clearly disagree. Use short, punchy spoken lines. Avoid long monologues. Avoid generic filler. Avoid "As an AI" or referencing "the research brief" or reading evidence like a report.
 
-Allowed source IDs for evidence references: ${Array.from(allowedSourceIds).join(", ")}
+Allowed typed evidence refs: ${Array.from(allowedSourceRefs).join(", ")}
+Expected evidenceRefs JSON structure for lines: { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "abc123" }
 
 Unsafe claims (DO NOT USE AS FACTS OR TRUTHS):
 ${unsafeClaimsList.map((c) => `- "${c}"`).join("\n")}
@@ -371,41 +372,30 @@ You MUST return valid JSON matching this schema:
         continue; // Reject line
       }
 
+      // Clean evidenceRefs for every single line
+      const cleanEvidenceRefs = (line.evidenceRefs || [])
+        .filter((ref: any) => {
+          if (!ref || typeof ref !== "object" || !ref.type || !ref.id) return false;
+          if (!VALID_EVIDENCE_TYPES.includes(ref.type)) return false;
+          return allowedSourceRefs.has(`${ref.type}:${ref.id}`);
+        })
+        .map((ref: any) => ({
+          type: ref.type,
+          id: ref.id,
+        }));
+
       // Check factual claim strict rules
       if (line.isFactualClaim) {
         result.factualLineCount++;
 
-        if (line.evidenceRefs.length === 0) {
+        if (cleanEvidenceRefs.length === 0) {
           result.unsupportedClaimCount++;
           result.rejectedLineCount++;
           unsupportedClaimsRemoved.push(line.text);
           continue; // Reject line
         }
 
-        let hasInvalidRef = false;
-        for (const ref of line.evidenceRefs) {
-          if (!ref || !ref.id || !ref.type) {
-            hasInvalidRef = true;
-            break;
-          }
-          if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
-            hasInvalidRef = true;
-            break;
-          }
-          if (!allowedSourceIds.has(ref.id)) {
-            hasInvalidRef = true;
-            break;
-          }
-        }
-
-        if (hasInvalidRef) {
-          result.unsupportedClaimCount++;
-          result.rejectedLineCount++;
-          unsupportedClaimsRemoved.push(line.text);
-          continue; // Reject line
-        }
-
-        // Prohibited keywords check
+        // Prohibited keywords check - strictly reject factual lines containing these
         let hasProhibitedLanguage = false;
         for (const word of PROHIBITED_KEYWORDS) {
           if (textLower.includes(word)) {
@@ -415,14 +405,15 @@ You MUST return valid JSON matching this schema:
         }
 
         if (hasProhibitedLanguage) {
-          // It's allowed only if it has a valid evidenceRef (which it does, since we checked above)
-          // Otherwise it would have been rejected. But since we check if it is directly supported,
-          // having a valid reference counts as supported. So it passes.
+          result.unsupportedClaimCount++;
+          result.rejectedLineCount++;
+          unsupportedClaimsRemoved.push(line.text);
+          continue; // Reject line
         }
 
         result.factualLineWithEvidenceCount++;
       } else {
-        // Even if not marked as factual, let's reject prohibited language if it has no refs
+        // Even if not marked as factual, let's reject prohibited language if it has no clean refs
         let hasProhibitedLanguage = false;
         for (const word of PROHIBITED_KEYWORDS) {
           if (textLower.includes(word)) {
@@ -431,7 +422,7 @@ You MUST return valid JSON matching this schema:
           }
         }
 
-        if (hasProhibitedLanguage && line.evidenceRefs.length === 0) {
+        if (hasProhibitedLanguage && cleanEvidenceRefs.length === 0) {
           result.unsupportedClaimCount++;
           result.rejectedLineCount++;
           unsupportedClaimsRemoved.push(line.text);
@@ -442,14 +433,14 @@ You MUST return valid JSON matching this schema:
       // Attach speakerHostId
       const speakerHostId = line.speakerName === "Max Voltage" ? hostA.id : hostB.id;
 
-      // Add to clean lines
+      // Add to clean lines (saving only cleanEvidenceRefs)
       cleanLines.push({
         lineIndex: line.lineIndex,
         speakerHostId,
         speakerName: line.speakerName,
         text: line.text,
         tone: line.tone,
-        evidenceRefs: line.evidenceRefs,
+        evidenceRefs: cleanEvidenceRefs,
         isFactualClaim: line.isFactualClaim,
         needsHumanReview: line.needsHumanReview || false,
       });
