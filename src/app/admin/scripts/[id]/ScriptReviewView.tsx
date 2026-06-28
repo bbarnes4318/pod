@@ -93,7 +93,7 @@ export default function ScriptReviewView({
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  const isLocked = status === "approved";
+  const isLocked = status === "approved" || status === "rejected";
 
   // Re-generate lineIndices within segment lines
   const rebuildLineIndices = (segs: ScriptSegment[]): ScriptSegment[] => {
@@ -384,7 +384,7 @@ export default function ScriptReviewView({
 
           {isLocked && (
             <div style={{ padding: "0.75rem", backgroundColor: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", color: "#f59e0b", fontSize: "0.85rem", borderRadius: "4px", marginBottom: "1.5rem" }}>
-              🔒 Approved scripts are locked. Direct edits are disabled. To make adjustments, click "Save as New Version" on the right.
+              🔒 This script is {status} and locked. Direct edits are disabled. To make adjustments, click "Save as New Version" on the right.
             </div>
           )}
 

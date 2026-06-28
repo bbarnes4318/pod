@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
-import { validateScriptContent, ValidationSummary } from "@/lib/services/scriptValidation";
+import { validateScriptContent, sanitizeScriptContent, ValidationSummary } from "@/lib/services/scriptValidation";
 
 // Helper to compile episode context
 async function getEpisodeContextForScript(script: any) {
@@ -54,6 +54,18 @@ async function getEpisodeContextForScript(script: any) {
   }
 
   return { allowedSourceRefs, hostA, hostB, unsafeClaims, episode: ep };
+}
+
+// Helper to determine Episode status (checks for another approved script version)
+async function getEpisodeStatusForRevision(episodeId: string, excludeScriptId?: string): Promise<string> {
+  const approvedCount = await db.script.count({
+    where: {
+      episodeId,
+      status: "approved",
+      NOT: excludeScriptId ? { id: excludeScriptId } : undefined,
+    },
+  });
+  return approvedCount > 0 ? "script_approved" : "script_draft";
 }
 
 // Helper to generate plainText from segments structure
@@ -147,7 +159,6 @@ export async function fetchScriptForReview(scriptId: string) {
 
         for (const src of sourceIds) {
           if (src && src.id && src.type) {
-            // Retrieve description/text from facts or stats if possible
             let detailText = "";
             const matchedFact = facts.find((f) => f.evidenceRefs?.some((ref: any) => ref.id === src.id));
             if (matchedFact) {
@@ -170,7 +181,6 @@ export async function fetchScriptForReview(scriptId: string) {
       }
     }
 
-    // Format content objects
     const contentObj = typeof script.content === "object" && script.content !== null ? (script.content as any) : {};
 
     return {
@@ -206,47 +216,64 @@ export async function saveScriptEdits(scriptId: string, updatedContent: any) {
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
-    if (script.status === "approved") {
-      throw new Error("Approved scripts are locked and cannot be directly edited. Use Save as New Version instead.");
+    if (script.status === "approved" || script.status === "rejected") {
+      throw new Error("Edits cannot be saved directly to approved or rejected scripts. Use Save as New Version instead.");
     }
 
     const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
-    // Validate the updated content
-    const summary = validateScriptContent(updatedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    // Sanitize script content (remove invalid refs, normalize indices, speakerHostId alignment)
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, {
+      allowedSourceRefs,
+      hostA,
+      hostB,
+    });
 
-    // Update safety metadata
-    updatedContent.safety = summary;
+    // Validate sanitized content
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
 
-    const plainText = generatePlainTextFromSegments(updatedContent.segments);
+    // Store cleaned counts
+    summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
+    sanitizedContent.safety = summary;
+
+    const plainText = generatePlainTextFromSegments(sanitizedContent.segments);
     const updatedStatus = summary.validationPassed ? script.status : "needs_revision";
+
+    // Determine target episode status based on other approved scripts
+    const nextEpisodeStatus = summary.validationPassed
+      ? episode.status
+      : await getEpisodeStatusForRevision(episode.id, scriptId);
 
     await db.$transaction(async (tx) => {
       // Save Script edits
       await tx.script.update({
         where: { id: scriptId },
         data: {
-          content: updatedContent as any,
+          content: sanitizedContent as any,
           plainText,
           status: updatedStatus,
         },
       });
 
-      // If validation fails, set Episode status to script_draft
-      if (!summary.validationPassed) {
-        await tx.episode.update({
-          where: { id: episode.id },
-          data: { status: "script_draft" },
-        });
-      }
+      // Update Episode status
+      await tx.episode.update({
+        where: { id: episode.id },
+        data: { status: nextEpisodeStatus },
+      });
 
       // Write JobLog
       await tx.jobLog.create({
         data: {
           jobType: "script:review",
           status: summary.validationPassed ? "completed" : "failed",
-          input: { scriptId, action: "save" } as any,
-          output: summary as any,
+          input: { scriptId, action: "save", cleanedEvidenceRefCount } as any,
+          output: {
+            validationSummary: summary,
+            resultingScriptStatus: updatedStatus,
+            resultingEpisodeStatus: nextEpisodeStatus,
+            cleanedEvidenceRefCount,
+            reasons: summary.reasons,
+          } as any,
         },
       });
     });
@@ -275,12 +302,26 @@ export async function saveScriptAsNewVersion(scriptId: string, updatedContent: a
     });
     const nextVersion = maxScript ? maxScript.version + 1 : 1;
 
-    // Validate the content
-    const summary = validateScriptContent(updatedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    // Sanitize script content
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, {
+      allowedSourceRefs,
+      hostA,
+      hostB,
+    });
 
-    updatedContent.safety = summary;
-    const plainText = generatePlainTextFromSegments(updatedContent.segments);
+    // Validate sanitized content
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+
+    summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
+    sanitizedContent.safety = summary;
+
+    const plainText = generatePlainTextFromSegments(sanitizedContent.segments);
     const nextStatus = summary.validationPassed ? "draft" : "needs_revision";
+
+    // Determine target episode status
+    const nextEpisodeStatus = summary.validationPassed
+      ? episode.status
+      : await getEpisodeStatusForRevision(episode.id);
 
     const newScript = await db.$transaction(async (tx) => {
       // Save new Script record
@@ -288,27 +329,31 @@ export async function saveScriptAsNewVersion(scriptId: string, updatedContent: a
         data: {
           episodeId: script.episodeId,
           version: nextVersion,
-          content: updatedContent as any,
+          content: sanitizedContent as any,
           plainText,
           status: nextStatus,
         },
       });
 
-      // If validation fails, revert Episode status to script_draft
-      if (!summary.validationPassed) {
-        await tx.episode.update({
-          where: { id: episode.id },
-          data: { status: "script_draft" },
-        });
-      }
+      // Update Episode status
+      await tx.episode.update({
+        where: { id: episode.id },
+        data: { status: nextEpisodeStatus },
+      });
 
       // Write JobLog
       await tx.jobLog.create({
         data: {
           jobType: "script:review",
           status: summary.validationPassed ? "completed" : "failed",
-          input: { scriptId, action: "save_as_new_version", version: nextVersion } as any,
-          output: summary as any,
+          input: { scriptId, action: "save_as_new_version", version: nextVersion, cleanedEvidenceRefCount } as any,
+          output: {
+            validationSummary: summary,
+            resultingScriptStatus: nextStatus,
+            resultingEpisodeStatus: nextEpisodeStatus,
+            cleanedEvidenceRefCount,
+            reasons: summary.reasons,
+          } as any,
         },
       });
 
@@ -331,17 +376,29 @@ export async function validateScript(scriptId: string, optionalContent?: any) {
     }
 
     const { allowedSourceRefs, hostA, hostB, unsafeClaims } = await getEpisodeContextForScript(script);
-    const contentToValidate = optionalContent || script.content;
+    const rawContent = optionalContent || script.content;
 
-    const summary = validateScriptContent(contentToValidate, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    // Sanitize first
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(rawContent, {
+      allowedSourceRefs,
+      hostA,
+      hostB,
+    });
+
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
 
     // Write JobLog
     await db.jobLog.create({
       data: {
         jobType: "script:review",
         status: summary.validationPassed ? "completed" : "failed",
-        input: { scriptId, action: "validate" } as any,
-        output: summary as any,
+        input: { scriptId, action: "validate", cleanedEvidenceRefCount } as any,
+        output: {
+          validationSummary: summary,
+          cleanedEvidenceRefCount,
+          reasons: summary.reasons,
+        } as any,
       },
     });
 
@@ -360,8 +417,20 @@ export async function approveScript(scriptId: string) {
 
     const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
-    // Validate the current script content
-    const summary = validateScriptContent(script.content, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    // Sanitize script content prior to approval validations
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(script.content, {
+      allowedSourceRefs,
+      hostA,
+      hostB,
+    });
+
+    // Validate sanitized content
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
+    sanitizedContent.safety = summary;
+
+    // Regenerate plainText from sanitized content
+    const plainText = generatePlainTextFromSegments(sanitizedContent.segments);
 
     // Run strict approval validations
     if (!summary.validationPassed) {
@@ -396,16 +465,20 @@ export async function approveScript(scriptId: string) {
       throw new Error("Cannot approve script: dialogue host split is unbalanced. Each must have >= 25% line share.");
     }
 
-    if (!script.plainText || !script.plainText.trim()) {
+    if (!plainText || !plainText.trim()) {
       throw new Error("Cannot approve script: plainText transcript is empty.");
     }
 
     // Atomic transaction for Script approval
     await db.$transaction(async (tx) => {
-      // Set Script.status = approved
+      // Set Script.status = approved and save sanitized content + safety + plainText
       await tx.script.update({
         where: { id: scriptId },
-        data: { status: "approved" },
+        data: {
+          status: "approved",
+          content: sanitizedContent as any,
+          plainText,
+        },
       });
 
       // Set Episode.status = script_approved
@@ -419,8 +492,14 @@ export async function approveScript(scriptId: string) {
         data: {
           jobType: "script:review",
           status: "completed",
-          input: { scriptId, action: "approve" } as any,
-          output: summary as any,
+          input: { scriptId, action: "approve", cleanedEvidenceRefCount } as any,
+          output: {
+            validationSummary: summary,
+            resultingScriptStatus: "approved",
+            resultingEpisodeStatus: "script_approved",
+            cleanedEvidenceRefCount,
+            reasons: [],
+          } as any,
         },
       });
     });
@@ -444,15 +523,7 @@ export async function rejectScript(scriptId: string, reason: string) {
     const { episode } = await getEpisodeContextForScript(script);
 
     // Find if another script version is already approved for this episode
-    const approvedCount = await db.script.count({
-      where: {
-        episodeId: script.episodeId,
-        status: "approved",
-        NOT: { id: scriptId },
-      },
-    });
-
-    const nextEpisodeStatus = approvedCount > 0 ? "script_approved" : "script_draft";
+    const nextEpisodeStatus = await getEpisodeStatusForRevision(episode.id, scriptId);
 
     await db.$transaction(async (tx) => {
       await tx.script.update({
@@ -471,7 +542,12 @@ export async function rejectScript(scriptId: string, reason: string) {
           jobType: "script:review",
           status: "completed",
           input: { scriptId, action: "reject", reason } as any,
-          output: { message: "Script rejected successfully", reason } as any,
+          output: {
+            validationSummary: (script.content as any)?.safety || null,
+            resultingScriptStatus: "rejected",
+            resultingEpisodeStatus: nextEpisodeStatus,
+            reasons: [reason],
+          } as any,
         },
       });
     });
@@ -493,6 +569,9 @@ export async function markScriptNeedsRevision(scriptId: string, reason?: string)
 
     const { episode } = await getEpisodeContextForScript(script);
 
+    // Determine target episode status
+    const nextEpisodeStatus = await getEpisodeStatusForRevision(episode.id, scriptId);
+
     await db.$transaction(async (tx) => {
       await tx.script.update({
         where: { id: scriptId },
@@ -501,7 +580,7 @@ export async function markScriptNeedsRevision(scriptId: string, reason?: string)
 
       await tx.episode.update({
         where: { id: episode.id },
-        data: { status: "script_draft" },
+        data: { status: nextEpisodeStatus },
       });
 
       // Write JobLog
@@ -510,7 +589,12 @@ export async function markScriptNeedsRevision(scriptId: string, reason?: string)
           jobType: "script:review",
           status: "completed",
           input: { scriptId, action: "needs_revision", reason } as any,
-          output: { message: "Script marked as needs_revision", reason } as any,
+          output: {
+            validationSummary: (script.content as any)?.safety || null,
+            resultingScriptStatus: "needs_revision",
+            resultingEpisodeStatus: nextEpisodeStatus,
+            reasons: reason ? [reason] : [],
+          } as any,
         },
       });
     });

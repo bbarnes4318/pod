@@ -6,6 +6,9 @@ export interface ValidationSummary {
   unsafeClaimCount: number;
   needsHumanReviewCount: number;
   invalidEvidenceRefCount: number;
+  invalidFactualEvidenceRefCount: number;
+  invalidNonFactualEvidenceRefCount: number;
+  cleanedEvidenceRefCount: number;
   invalidSpeakerCount: number;
   totalLineCount: number;
   hostLineShare: Record<string, number>;
@@ -52,6 +55,9 @@ export function validateScriptContent(
     unsafeClaimCount: 0,
     needsHumanReviewCount: 0,
     invalidEvidenceRefCount: 0,
+    invalidFactualEvidenceRefCount: 0,
+    invalidNonFactualEvidenceRefCount: 0,
+    cleanedEvidenceRefCount: content?.safety?.cleanedEvidenceRefCount || 0,
     invalidSpeakerCount: 0,
     totalLineCount: 0,
     hostLineShare: { "Max Voltage": 0, "Dr. Linebreak": 0 },
@@ -154,41 +160,43 @@ export function validateScriptContent(
           summary.reasons.push(`Line ${summary.totalLineCount} is marked as requiring human review.`);
         }
 
-        // Validate evidenceRefs
+        // Validate evidenceRefs on every single line (factual and non-factual)
+        let hasLineError = false;
+        for (const ref of line.evidenceRefs) {
+          let isRefValid = true;
+          if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
+            isRefValid = false;
+          } else if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
+            isRefValid = false;
+          } else {
+            const refKey = `${ref.type}:${ref.id}`;
+            if (!episodeContext.allowedSourceRefs.has(refKey)) {
+              isRefValid = false;
+            }
+          }
+
+          if (!isRefValid) {
+            summary.invalidEvidenceRefCount++;
+            hasLineError = true;
+            if (line.isFactualClaim) {
+              summary.invalidFactualEvidenceRefCount++;
+              summary.reasons.push(`Line ${summary.totalLineCount}: Invalid evidence reference on factual claim: ${JSON.stringify(ref)}.`);
+            } else {
+              summary.invalidNonFactualEvidenceRefCount++;
+              summary.reasons.push(`Line ${summary.totalLineCount}: Invalid evidence reference on non-factual/opinion claim: ${JSON.stringify(ref)}.`);
+            }
+          }
+        }
+
+        // Validate factual lines rules
         if (line.isFactualClaim) {
           summary.factualLineCount++;
 
           if (line.evidenceRefs.length === 0) {
             summary.unsupportedClaimCount++;
             summary.reasons.push(`Line ${summary.totalLineCount}: Factual claim has no evidence references.`);
-          } else {
-            let hasLineError = false;
-            for (const ref of line.evidenceRefs) {
-              if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
-                summary.invalidEvidenceRefCount++;
-                summary.reasons.push(`Line ${summary.totalLineCount}: Invalid evidenceRef structure: ${JSON.stringify(ref)}`);
-                hasLineError = true;
-                continue;
-              }
-
-              if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
-                summary.invalidEvidenceRefCount++;
-                summary.reasons.push(`Line ${summary.totalLineCount}: Invalid evidence type '${ref.type}'.`);
-                hasLineError = true;
-                continue;
-              }
-
-              const refKey = `${ref.type}:${ref.id}`;
-              if (!episodeContext.allowedSourceRefs.has(refKey)) {
-                summary.invalidEvidenceRefCount++;
-                summary.reasons.push(`Line ${summary.totalLineCount}: Evidence ref '${refKey}' is not in the episode's allowed ResearchBrief sources.`);
-                hasLineError = true;
-              }
-            }
-
-            if (!hasLineError) {
-              summary.factualLineWithEvidenceCount++;
-            }
+          } else if (!hasLineError) {
+            summary.factualLineWithEvidenceCount++;
           }
 
           // Prohibited keywords in factual lines
@@ -255,4 +263,72 @@ export function validateScriptContent(
 
   summary.validationPassed = summary.reasons.length === 0;
   return summary;
+}
+
+export function sanitizeScriptContent(
+  content: any,
+  episodeContext: {
+    allowedSourceRefs: Set<string>;
+    hostA: { id: string };
+    hostB: { id: string };
+  }
+): { sanitizedContent: any; cleanedEvidenceRefCount: number } {
+  let cleanedCount = 0;
+
+  if (!content || typeof content !== "object") {
+    return { sanitizedContent: content, cleanedEvidenceRefCount: 0 };
+  }
+
+  // Deep clone input content
+  const sanitized = JSON.parse(JSON.stringify(content));
+
+  if (!Array.isArray(sanitized.segments)) {
+    return { sanitizedContent: sanitized, cleanedEvidenceRefCount: 0 };
+  }
+
+  let globalIndex = 0;
+
+  for (const seg of sanitized.segments) {
+    if (!seg || typeof seg !== "object" || !Array.isArray(seg.lines)) {
+      continue;
+    }
+
+    for (const line of seg.lines) {
+      if (!line || typeof line !== "object") continue;
+
+      // Normalize lineIndex values globally within segments
+      line.lineIndex = globalIndex++;
+
+      // Ensure speakerHostId matches the active speaker ID
+      if (line.speakerName === "Max Voltage") {
+        line.speakerHostId = episodeContext.hostA.id;
+      } else if (line.speakerName === "Dr. Linebreak") {
+        line.speakerHostId = episodeContext.hostB.id;
+      }
+
+      // Sanitize evidenceRefs on every single line (factual & non-factual)
+      if (Array.isArray(line.evidenceRefs)) {
+        const originalLength = line.evidenceRefs.length;
+        line.evidenceRefs = line.evidenceRefs.filter((ref: any) => {
+          if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
+            return false;
+          }
+          if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
+            return false;
+          }
+          const refKey = `${ref.type}:${ref.id}`;
+          return episodeContext.allowedSourceRefs.has(refKey);
+        });
+
+        cleanedCount += (originalLength - line.evidenceRefs.length);
+      } else {
+        line.evidenceRefs = [];
+      }
+    }
+  }
+
+  return {
+    sanitizedContent: sanitized,
+    cleanedEvidenceRefCount: cleanedCount,
+  };
 }
