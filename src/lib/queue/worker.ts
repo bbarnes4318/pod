@@ -5,9 +5,10 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
+import { factCheckScript } from "../services/factCheckService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -31,6 +32,8 @@ const worker = new Worker(
       return handleEpisodeBuilding(job as Job<EpisodeBuildJobData>);
     } else if (job.name === "generate:script") {
       return handleScriptGeneration(job as Job<ScriptGenJobData>);
+    } else if (job.name === "fact-check:script") {
+      return handleFactChecking(job as Job<FactCheckJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1627,6 +1630,73 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       data: {
         status: "failed",
         error: err.message || "Unknown script generation error",
+      },
+    });
+    throw err;
+  }
+}
+
+async function handleFactChecking(job: Job<FactCheckJobData>) {
+  const { scriptId, forceRecheck } = job.data;
+  console.log(`[Worker] Starting fact-check:script job for Script ${scriptId}`);
+
+  // Create JobLog record to monitor Fact checking
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "fact-check:script",
+      status: "running",
+      input: { scriptId, forceRecheck } as any,
+      output: {},
+    },
+  });
+
+  try {
+    const res = await factCheckScript({ scriptId, forceRecheck });
+
+    const summary = (res.summary as any) || {};
+    const coverage = (res.evidenceCoverage as any) || {};
+    const issues = (res.issues as any) || {};
+    const errors = Array.isArray(issues.errors) ? issues.errors : [];
+    const warnings = Array.isArray(issues.warnings) ? issues.warnings : [];
+    const reasons = [...errors, ...warnings].map((i: any) => i.reason || JSON.stringify(i));
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: {
+          finalStatus: res.status,
+          deterministicPassed: summary.deterministicPassed,
+          semanticStatus: summary.semanticStatus,
+          factualLineCount: coverage.factualLineCount || 0,
+          factualLineWithValidEvidenceCount: coverage.factualLineWithValidEvidenceCount || 0,
+          evidenceCoveragePercent: coverage.evidenceCoveragePercent || 0,
+          unsupportedClaimCount: coverage.unsupportedClaimCount || 0,
+          unsafeClaimCount: coverage.unsafeClaimCount || 0,
+          invalidEvidenceRefCount: coverage.invalidEvidenceRefCount || 0,
+          rumorLanguageCount: coverage.rumorLanguageCount || 0,
+          needsHumanReviewCount: coverage.needsHumanReviewCount || 0,
+          invalidSpeakerCount: coverage.invalidSpeakerCount || 0,
+          issueCount: (summary.totalErrors || 0) + (summary.totalWarnings || 0),
+          factCheckResultId: res.id,
+          reasons,
+        } as any,
+      },
+    });
+
+    console.log(`[Worker] Fact Check completed. Status: ${res.status}`);
+    return { success: true, factCheckResultId: res.id, status: res.status };
+  } catch (err: any) {
+    console.error(`[Worker] Fact Check failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown fact check error",
+        output: {
+          finalStatus: "failed",
+          reasons: [err.message || "Execution error"],
+        } as any,
       },
     });
     throw err;

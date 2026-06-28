@@ -114,6 +114,21 @@ export default async function ScriptReviewDetailPage({ params }: PageProps) {
     status: script.episode.status,
   };
 
+  const latestFactCheckObj = await db.factCheckResult.findFirst({
+    where: { scriptId: id },
+    orderBy: { checkedAt: "desc" },
+  });
+
+  const serializedFactCheck = latestFactCheckObj
+    ? {
+        id: latestFactCheckObj.id,
+        status: latestFactCheckObj.status,
+        checkedAt: latestFactCheckObj.checkedAt.toISOString(),
+        summary: typeof latestFactCheckObj.summary === "object" && latestFactCheckObj.summary !== null ? (latestFactCheckObj.summary as any) : {},
+        evidenceCoverage: typeof latestFactCheckObj.evidenceCoverage === "object" && latestFactCheckObj.evidenceCoverage !== null ? (latestFactCheckObj.evidenceCoverage as any) : {},
+      }
+    : null;
+
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
       <ScriptReviewView
@@ -123,6 +138,7 @@ export default async function ScriptReviewDetailPage({ params }: PageProps) {
         hostA={{ id: hostA.id, name: hostA.name }}
         hostB={{ id: hostB.id, name: hostB.name }}
         unsafeClaims={unsafeClaims}
+        latestFactCheck={serializedFactCheck}
       />
     </div>
   );

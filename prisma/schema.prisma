@@ -284,7 +284,7 @@ model Script {
   status           String            // "draft" | "generating" | "ready" | "failed"
   createdAt        DateTime          @default(now())
   episode          Episode           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  factCheckResult  FactCheckResult?
+  factCheckResults FactCheckResult[]
   audioSegments    AudioSegment[]
 
   @@index([episodeId])
@@ -292,13 +292,23 @@ model Script {
 }
 
 model FactCheckResult {
-  id        String   @id @default(uuid())
-  scriptId  String   @unique
-  passed    Boolean
-  warnings  Json     // Array of warning objects
-  errors    Json     // Array of error objects
-  createdAt DateTime @default(now())
-  script    Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  id               String   @id @default(uuid())
+  scriptId         String
+  passed           Boolean
+  warnings         Json     // Array of warning objects
+  errors           Json     // Array of error objects
+  createdAt        DateTime @default(now())
+  script           Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  episodeId        String?
+  status           String   @default("needs_review") // "passed" | "failed" | "needs_review"
+  checkedAt        DateTime @default(now())
+  provider         String   @default("deterministic")
+  summary          Json?
+  issues           Json?
+  evidenceCoverage Json?
+  rawResult        Json?
+
+  @@index([scriptId])
 }
 
 model AudioSegment {

@@ -72,13 +72,22 @@ interface ScriptInfo {
   createdAt: string;
 }
 
+interface FactCheckInfo {
+  id: string;
+  scriptId: string;
+  status: string;
+  checkedAt: string;
+}
+
 interface DetailProps {
   episode: EpisodeInfo;
   initialScripts: ScriptInfo[];
+  initialFactChecks: FactCheckInfo[];
 }
 
-export default function EpisodeDetailView({ episode, initialScripts }: DetailProps) {
+export default function EpisodeDetailView({ episode, initialScripts, initialFactChecks }: DetailProps) {
   const [scripts, setScripts] = useState<ScriptInfo[]>(initialScripts);
+  const [factChecks, setFactChecks] = useState<FactCheckInfo[]>(initialFactChecks);
   const [selectedScriptId, setSelectedScriptId] = useState<string | null>(
     initialScripts.length > 0 ? initialScripts[0].id : null
   );
@@ -447,20 +456,69 @@ export default function EpisodeDetailView({ episode, initialScripts }: DetailPro
                 </span>
               </div>
 
-              <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem", justifyContent: "center" }}>
-                {isApproved ? (
-                  <div style={{ color: "#10b981", fontWeight: 700, fontSize: "0.90rem" }}>
-                    ✓ Script Approved (Episode Status: script_approved)
-                  </div>
-                ) : (
-                  <Link
-                    href={`/admin/scripts/${activeScript.id}`}
-                    className="buttonPrimary"
-                    style={{ fontSize: "0.85rem", padding: "0.35rem 0.85rem", textDecoration: "none" }}
-                  >
-                    Review & Edit Script
-                  </Link>
-                )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", alignItems: "center", marginBottom: "1rem" }}>
+                <div style={{ display: "flex", gap: "1rem", justifyContent: "center" }}>
+                  {isApproved ? (
+                    <div style={{ color: "#10b981", fontWeight: 700, fontSize: "0.90rem" }}>
+                      ✓ Script Approved (Episode Status: script_approved)
+                    </div>
+                  ) : (
+                    <Link
+                      href={`/admin/scripts/${activeScript.id}`}
+                      className="buttonPrimary"
+                      style={{ fontSize: "0.85rem", padding: "0.35rem 0.85rem", textDecoration: "none" }}
+                    >
+                      Review & Edit Script
+                    </Link>
+                  )}
+
+                  {/* Direct link for approved script inspect reviews */}
+                  {isApproved && (
+                    <Link
+                      href={`/admin/scripts/${activeScript.id}`}
+                      className="editButton"
+                      style={{ fontSize: "0.85rem", padding: "0.35rem 0.85rem", textDecoration: "none" }}
+                    >
+                      Inspect Approved Script Console
+                    </Link>
+                  )}
+                </div>
+
+                {/* Fact Check status badge and details link */}
+                {(() => {
+                  const latestFactCheck = factChecks.find((f) => f.scriptId === activeScript.id);
+                  if (!latestFactCheck) return null;
+
+                  const fcStatus = latestFactCheck.status;
+                  const label =
+                    fcStatus === "passed"
+                      ? "Fact Check Passed"
+                      : fcStatus === "failed"
+                      ? "Fact Check Failed — script needs revision"
+                      : "Fact Check Needs Review";
+
+                  const badgeClass =
+                    fcStatus === "passed"
+                      ? "badgeCompleted"
+                      : fcStatus === "failed"
+                      ? "badgeFailed"
+                      : "badgePending";
+
+                  return (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", borderRadius: "4px", marginTop: "0.25rem" }}>
+                      <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Fact Check Audit:</span>
+                      <span className={`badge ${badgeClass}`} style={{ fontSize: "0.75rem" }}>
+                        {label}
+                      </span>
+                      <Link
+                        href={`/admin/fact-checks/${latestFactCheck.id}`}
+                        style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600 }}
+                      >
+                        [View Audit Report]
+                      </Link>
+                    </div>
+                  );
+                })()}
               </div>
 
               {activeScript.plainText ? (

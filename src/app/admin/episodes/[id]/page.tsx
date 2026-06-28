@@ -87,9 +87,25 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
     }),
   };
 
+  const factCheckRecords = await db.factCheckResult.findMany({
+    where: { episodeId: ep.id },
+    orderBy: { checkedAt: "desc" },
+  });
+
+  const serializedFactChecks = factCheckRecords.map((f) => ({
+    id: f.id,
+    scriptId: f.scriptId,
+    status: f.status,
+    checkedAt: f.checkedAt.toISOString(),
+  }));
+
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
-      <EpisodeDetailView episode={serializedEpisode} initialScripts={serializedScripts} />
+      <EpisodeDetailView
+        episode={serializedEpisode}
+        initialScripts={serializedScripts}
+        initialFactChecks={serializedFactChecks}
+      />
     </div>
   );
 }

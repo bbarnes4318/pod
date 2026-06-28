@@ -98,3 +98,12 @@ export interface ScriptGenJobData {
 export async function queueScriptGenerationJob(data: ScriptGenJobData) {
   return podcastQueue.add("generate:script", data);
 }
+
+export interface FactCheckJobData {
+  scriptId: string;
+  forceRecheck?: boolean;
+}
+
+export async function queueFactCheckJob(data: FactCheckJobData) {
+  return podcastQueue.add("fact-check:script", data);
+}

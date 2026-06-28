@@ -9,6 +9,7 @@ import {
   rejectScript,
   markScriptNeedsRevision,
 } from "../actions";
+import { triggerFactCheck } from "../../fact-checks/actions";
 import Link from "next/link";
 
 interface EvidenceRef {
@@ -74,6 +75,7 @@ interface ReviewProps {
   hostA: { id: string; name: string };
   hostB: { id: string; name: string };
   unsafeClaims: string[];
+  latestFactCheck: any;
 }
 
 export default function ScriptReviewView({
@@ -83,6 +85,7 @@ export default function ScriptReviewView({
   hostA,
   hostB,
   unsafeClaims,
+  latestFactCheck: initialFactCheck,
 }: ReviewProps) {
   const [segments, setSegments] = useState<ScriptSegment[]>(script.content.segments || []);
   const [status, setStatus] = useState(script.status);
@@ -92,6 +95,28 @@ export default function ScriptReviewView({
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const [factCheck, setFactCheck] = useState(initialFactCheck);
+  const [factChecking, setFactChecking] = useState(false);
+
+  const handleRunFactCheck = async (force: boolean) => {
+    setFactChecking(true);
+    setMessage(null);
+    const res = await triggerFactCheck(script.id, force);
+    if (res.success) {
+      setMessage({
+        type: "success",
+        text: `Fact check job has been enqueued. Processing in background... Please refresh or check the Fact Checks tab shortly.`,
+      });
+      // Optionally poll or just alert
+    } else {
+      setMessage({
+        type: "error",
+        text: res.error || "Failed to trigger fact check.",
+      });
+    }
+    setFactChecking(false);
+  };
 
   const isLocked = status === "approved" || status === "rejected";
 
@@ -654,6 +679,77 @@ export default function ScriptReviewView({
                 Save as New Version (v{script.version + 1})
               </button>
             </div>
+          </div>
+
+          {/* Fact Check Safety Gate Console */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Fact Check Safety Gate</div>
+            
+            {status === "approved" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {factCheck ? (
+                  <div style={{ backgroundColor: "#080b10", border: "1px solid #161f30", borderRadius: "4px", padding: "0.75rem", fontSize: "0.85rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                      <span>Latest Check Result:</span>
+                      <span className={`badge ${factCheck.status === "passed" ? "badgeCompleted" : factCheck.status === "failed" ? "badgeFailed" : "badgePending"}`}>
+                        {factCheck.status}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "0.5rem" }}>
+                      Checked: {new Date(factCheck.checkedAt).toLocaleString()}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "#cbd5e1", fontSize: "0.8rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Coverage:</span>
+                        <strong>{factCheck.evidenceCoverage?.evidenceCoveragePercent || 0}%</strong>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Issues Found:</span>
+                        <strong style={{ color: (factCheck.summary?.totalErrors || 0) > 0 ? "#ef4444" : "#10b981" }}>
+                          {(factCheck.summary?.totalErrors || 0) + (factCheck.summary?.totalWarnings || 0)}
+                        </strong>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: "0.75rem" }}>
+                      <Link
+                        href={`/admin/fact-checks/${factCheck.id}`}
+                        className="editButton"
+                        style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.25rem 0.5rem" }}
+                      >
+                        View Fact Check Audit Details
+                      </Link>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                    No fact check audits have been run for this approved script version yet.
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  <button
+                    onClick={() => handleRunFactCheck(false)}
+                    disabled={factChecking}
+                    className="buttonPrimary"
+                    style={{ fontSize: "0.8rem", padding: "0.4rem" }}
+                  >
+                    Run Fact Check
+                  </button>
+                  <button
+                    onClick={() => handleRunFactCheck(true)}
+                    disabled={factChecking}
+                    className="editButton"
+                    style={{ fontSize: "0.8rem", padding: "0.4rem" }}
+                  >
+                    Force Recheck
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                Fact checking is only available for approved scripts. Approve this script draft first to unlock.
+              </div>
+            )}
           </div>
 
           {/* Validation Summary */}
