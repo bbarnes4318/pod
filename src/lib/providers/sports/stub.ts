@@ -1,46 +1,50 @@
 import { SportsDataProvider } from "./interface";
 
+/**
+ * The stub provider is for architecture validation only. 
+ * It must never be used to generate real topics, research briefs, scripts, or published episodes.
+ */
 export class StubSportsDataProvider implements SportsDataProvider {
   name = "stub-sports-data";
 
   async getSchedules(league: string, season: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getSchedules called for league: ${league}, season: ${season}`);
-    return [{ id: "nba-game-1", status: "scheduled", homeTeam: "Boston Celtics", awayTeam: "Miami Heat" }];
+    console.log(`[StubSportsDataProvider] getSchedules called for league: ${league}, season: ${season} - Returning stub empty array`);
+    return [];
   }
 
   async getScores(league: string, date: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getScores called for league: ${league}, date: ${date}`);
-    return [{ id: "nba-game-1", status: "final", homeScore: 104, awayScore: 99 }];
+    console.log(`[StubSportsDataProvider] getScores called for league: ${league}, date: ${date} - Returning stub empty array`);
+    return [];
   }
 
   async getStandings(league: string, season: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getStandings called for league: ${league}, season: ${season}`);
-    return [{ team: "Boston Celtics", rank: 1, wins: 64, losses: 18 }];
+    console.log(`[StubSportsDataProvider] getStandings called for league: ${league}, season: ${season} - Returning stub empty array`);
+    return [];
   }
 
   async getTeamStats(league: string, season: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getTeamStats called for league: ${league}, season: ${season}`);
-    return [{ team: "Boston Celtics", offensiveRating: 122.2, defensiveRating: 110.6 }];
+    console.log(`[StubSportsDataProvider] getTeamStats called for league: ${league}, season: ${season} - Returning stub empty array`);
+    return [];
   }
 
   async getPlayerStats(league: string, season: string, playerId?: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getPlayerStats called for league: ${league}, season: ${season}, playerId: ${playerId || "all"}`);
-    return [{ playerId: "tatum-01", name: "Jayson Tatum", ppg: 26.9, rpg: 8.1, apg: 4.9 }];
+    console.log(`[StubSportsDataProvider] getPlayerStats called for league: ${league}, season: ${season}, playerId: ${playerId || "all"} - Returning stub empty array`);
+    return [];
   }
 
   async getInjuries(league: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getInjuries called for league: ${league}`);
-    return [{ team: "Miami Heat", player: "Jimmy Butler", status: "Out", injury: "Knee" }];
+    console.log(`[StubSportsDataProvider] getInjuries called for league: ${league} - Returning stub empty array`);
+    return [];
   }
 
   async getOdds(league: string, sport: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getOdds called for league: ${league}, sport: ${sport}`);
-    return [{ gameId: "nfl-game-1", homeOdds: 1.8, awayOdds: 2.1, spread: "-2.5" }];
+    console.log(`[StubSportsDataProvider] getOdds called for league: ${league}, sport: ${sport} - Returning stub empty array`);
+    return [];
   }
 
   async getNews(league: string): Promise<any[]> {
-    console.log(`[StubSportsDataProvider] getNews called for league: ${league}`);
-    return [{ title: "Celtics clinch championship", content: "Boston Celtics secure the title after an outstanding performance." }];
+    console.log(`[StubSportsDataProvider] getNews called for league: ${league} - Returning stub empty array`);
+    return [];
   }
 }
 

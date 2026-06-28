@@ -26,6 +26,27 @@ export default async function AdminDashboard() {
 
   return (
     <div>
+      {/* Stub Provider Warning Guard */}
+      {config.sports === "stub" && (
+        <div
+          style={{
+            marginBottom: "1.5rem",
+            padding: "1rem 1.5rem",
+            backgroundColor: "rgba(245, 158, 11, 0.1)",
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+            borderRadius: "6px",
+            color: "#f59e0b",
+            fontSize: "0.95rem",
+            lineHeight: "1.5",
+          }}
+        >
+          <strong>⚠️ Demo Mode (Stub Sports Provider Active)</strong>
+          <p style={{ marginTop: "0.25rem", color: "#94a3b8" }}>
+            The stub sports provider is for architecture validation only. It must never be used to generate real topics, research briefs, scripts, or published episodes. Claiming that any simulated sports fact is real is strictly prohibited in stub/architecture validation mode.
+          </p>
+        </div>
+      )}
+
       {/* Metrics Row */}
       <div className="grid">
         {mockMetrics.map((m, idx) => (

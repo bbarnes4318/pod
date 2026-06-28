@@ -23,6 +23,9 @@ const worker = new Worker(
     switch (stage) {
       case "fetch-sports":
         console.log("[Worker] Stage: Fetching sports Talking Points & scoring them...");
+        if (process.env.SPORTS_PROVIDER === "stub" || !process.env.SPORTS_PROVIDER) {
+          console.warn("[Worker] GUARD: SPORTS_PROVIDER is set to 'stub'. The stub provider is for architecture validation only. It must never be used to generate real topics, research briefs, scripts, or published episodes. Skipping real content generation.");
+        }
         await simulateProgress(1000);
         break;
       case "generate-script":
