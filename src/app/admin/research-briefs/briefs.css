@@ -1,0 +1,333 @@
+/* Research Briefs Dashboard CSS */
+
+.briefsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.titleGroup h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.titleGroup p {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-top: 0.25rem;
+}
+
+.briefsLayout {
+  display: grid;
+  grid-template-columns: 1.2fr 1.8fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .briefsLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.topicListCard {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.topicListItem {
+  padding: 1.25rem;
+  border-bottom: 1px solid #161f30;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.topicListItem:last-child {
+  border-bottom: none;
+}
+
+.topicListItem:hover {
+  background-color: #131a26;
+}
+
+.topicListItemActive {
+  background-color: #172237;
+  border-left: 3px solid #38bdf8;
+}
+
+.topicItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.topicItemTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.topicItemMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  font-family: var(--font-mono), monospace;
+}
+
+.topicItemActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.statusIndicatorDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.statusGreen {
+  color: #10b981;
+}
+.statusGreen .statusIndicatorDot {
+  background-color: #10b981;
+}
+
+.statusOrange {
+  color: #f59e0b;
+}
+.statusOrange .statusIndicatorDot {
+  background-color: #f59e0b;
+}
+
+/* Detail view panel */
+.detailPanel {
+  background-color: #0f141c;
+  border: 1px solid #1a2233;
+  border-radius: 6px;
+  min-height: 50vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.detailPanelHeader {
+  padding: 1.5rem;
+  border-bottom: 1px solid #161f30;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detailPanelTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.detailPanelContent {
+  padding: 1.5rem;
+  overflow-y: auto;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.detailSectionTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #161f30;
+  padding-bottom: 0.25rem;
+}
+
+.bulletList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bulletItem {
+  font-size: 0.95rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bulletRefs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.refBadge {
+  font-family: var(--font-mono), monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.35rem;
+  background-color: #161f30;
+  border: 1px solid #232d3d;
+  color: #94a3b8;
+  border-radius: 3px;
+}
+
+.confidenceBadge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.05rem 0.3rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.confidenceHigh {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.confidenceMedium {
+  background-color: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+
+.confidenceLow {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* Host Debate Section */
+.debateGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .debateGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hostBox {
+  background-color: #080b10;
+  border: 1px solid #161f30;
+  border-radius: 4px;
+  padding: 1.25rem;
+}
+
+.hostHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.hostAvatar {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.hostName {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.hostStance {
+  font-size: 0.9rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+}
+
+.backAndForth {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dialogueRow {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem;
+  background-color: #080b10;
+  border: 1px solid #161f30;
+  border-radius: 4px;
+}
+
+.dialogueSpeaker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #38bdf8;
+  min-width: 100px;
+}
+
+.dialogueText {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+  line-height: 1.5;
+  flex-grow: 1;
+}
+
+/* Context containers */
+.contextText {
+  font-size: 0.95rem;
+  color: #e2e8f0;
+  line-height: 1.6;
+  background-color: #080b10;
+  border: 1px solid #161f30;
+  padding: 1rem;
+  border-radius: 4px;
+}
+
+/* Unsafe claims */
+.unsafeClaimItem {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background-color: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  padding: 0.75rem;
+  border-radius: 4px;
+}
+
+.unsafeClaimText {
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+
+.unsafeClaimReason {
+  font-size: 0.75rem;
+  color: #ef4444;
+  font-weight: 600;
+}

@@ -63,3 +63,12 @@ export interface TopicGenJobData {
 export async function queueTopicGenerationJob(data: TopicGenJobData) {
   return podcastQueue.add("generate:topics", data);
 }
+
+export interface ResearchBriefJobData {
+  topicId: string;
+  forceRegenerate?: boolean;
+}
+
+export async function queueResearchBriefGenerationJob(data: ResearchBriefJobData) {
+  return podcastQueue.add("generate:research-brief", data);
+}

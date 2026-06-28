@@ -5,7 +5,7 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData } from "./podcastQueue";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -23,6 +23,8 @@ const worker = new Worker(
       return handleSportsIngestion(job as Job<IngestJobData>);
     } else if (job.name === "generate:topics") {
       return handleTopicGeneration(job as Job<TopicGenJobData>);
+    } else if (job.name === "generate:research-brief") {
+      return handleResearchBriefGeneration(job as Job<ResearchBriefJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -958,6 +960,486 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       data: {
         status: "failed",
         error: err.message || "Unknown topic generation error",
+      },
+    });
+    throw err;
+  }
+}
+
+// 4. Research Brief Generation Handler
+async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
+  const { topicId, forceRegenerate = false } = job.data;
+  console.log(`[Worker] Starting Research Brief generation job: topicId=${topicId}, forceRegenerate=${forceRegenerate}`);
+
+  // Create JobLog record to monitor Research Brief generation
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "generate:research-brief",
+      status: "running",
+      input: job.data as any,
+      output: {},
+    },
+  });
+
+  try {
+    // 1. Fetch and Guard TopicCandidate
+    const topic = await db.topicCandidate.findUnique({
+      where: { id: topicId },
+    });
+
+    if (!topic) {
+      throw new Error(`TopicCandidate with ID ${topicId} not found.`);
+    }
+
+    if (topic.status !== "approved") {
+      throw new Error(`TopicCandidate with ID ${topicId} is not approved (current status: ${topic.status}).`);
+    }
+
+    const topicEvidenceIds = Array.isArray(topic.evidenceIds)
+      ? (topic.evidenceIds as any[])
+      : [];
+
+    if (topicEvidenceIds.length === 0) {
+      throw new Error(`TopicCandidate with ID ${topicId} has empty evidenceIds packet.`);
+    }
+
+    // 2. Overwrite check
+    const existingBrief = await db.researchBrief.findUnique({
+      where: { topicId },
+    });
+
+    if (existingBrief && !forceRegenerate) {
+      const skipMsg = `ResearchBrief for topic ${topicId} already exists. Skipping run.`;
+      console.log(`[Worker] ${skipMsg}`);
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "completed",
+          output: {
+            message: skipMsg,
+            topicId,
+            forceRegenerate,
+            skippedCount: 1,
+            insertedCount: 0,
+            updatedCount: 0,
+          },
+        },
+      });
+      return { success: true, message: skipMsg, skipped: true };
+    }
+
+    // 3. Resolve all approved evidence refs
+    const topicEvidenceMap = new Map<string, string>();
+    for (const ref of topicEvidenceIds) {
+      if (ref.id && ref.type) {
+        topicEvidenceMap.set(ref.id, ref.type);
+      }
+    }
+
+    const resolvedGames: any[] = [];
+    const resolvedNews: any[] = [];
+    const resolvedInjuries: any[] = [];
+    const resolvedOdds: any[] = [];
+    const resolvedTeamStats: any[] = [];
+    const resolvedPlayerStats: any[] = [];
+
+    let invalidEvidenceCount = 0;
+
+    for (const ref of topicEvidenceIds) {
+      let exists = false;
+      let record: any = null;
+
+      if (ref.type === "game") {
+        record = await db.game.findUnique({ where: { id: ref.id }, include: { homeTeam: true, awayTeam: true } });
+        if (record) {
+          resolvedGames.push(record);
+          exists = true;
+        }
+      } else if (ref.type === "newsItem") {
+        record = await db.newsItem.findUnique({ where: { id: ref.id } });
+        if (record) {
+          resolvedNews.push(record);
+          exists = true;
+        }
+      } else if (ref.type === "injury") {
+        record = await db.injury.findUnique({ where: { id: ref.id }, include: { player: true, team: true } });
+        if (record) {
+          resolvedInjuries.push(record);
+          exists = true;
+        }
+      } else if (ref.type === "oddsSnapshot") {
+        record = await db.oddsSnapshot.findUnique({ where: { id: ref.id } });
+        if (record) {
+          resolvedOdds.push(record);
+          exists = true;
+        }
+      } else if (ref.type === "teamStat") {
+        record = await db.teamStat.findUnique({ where: { id: ref.id } });
+        if (record) {
+          resolvedTeamStats.push(record);
+          exists = true;
+        }
+      } else if (ref.type === "playerStat") {
+        record = await db.playerStat.findUnique({ where: { id: ref.id } });
+        if (record) {
+          resolvedPlayerStats.push(record);
+          exists = true;
+        }
+      }
+
+      if (!exists) {
+        invalidEvidenceCount++;
+        const msg = `Approved evidence reference [${ref.type}] ${ref.id} not found in database. Generation aborted.`;
+        throw new Error(msg);
+      }
+    }
+
+    // 4. Guard against stub LLM provider
+    if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+      const errorMsg = "LLM provider is stub. Real research brief generation disabled.";
+      console.warn(`[Worker] ${errorMsg}`);
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "failed",
+          error: errorMsg,
+        },
+      });
+      throw new Error(errorMsg);
+    }
+
+    // 5. Serialize compact evidence packet (no full article texts)
+    const serializedEvidence = {
+      topic: {
+        title: topic.title,
+        summary: topic.summary,
+        sport: topic.sport,
+        leagueId: topic.leagueId,
+      },
+      evidence: {
+        games: resolvedGames.map((g) => ({
+          id: g.id,
+          homeTeam: g.homeTeam.name,
+          awayTeam: g.awayTeam.name,
+          score: g.homeScore !== null ? `${g.homeScore}-${g.awayScore}` : "N/A",
+          status: g.status,
+          date: g.scheduledAt.toISOString(),
+        })),
+        news: resolvedNews.map((n) => ({
+          id: n.id,
+          title: n.title,
+          source: n.source,
+          summary: n.summary, // Safe short excerpt/description only
+          date: n.publishedAt.toISOString(),
+        })),
+        injuries: resolvedInjuries.map((i) => ({
+          id: i.id,
+          player: i.player?.name || "Unknown",
+          team: i.team?.name || "Unknown",
+          status: i.status,
+          description: i.description,
+        })),
+        odds: resolvedOdds.map((o) => ({
+          id: o.id,
+          gameId: o.gameId,
+          sportsbook: o.sportsbook,
+          market: o.market,
+          line: o.line,
+          price: o.price,
+        })),
+        stats: [
+          ...resolvedTeamStats.map((ts) => ({ id: ts.id, teamId: ts.teamId, type: ts.statType, value: ts.value })),
+          ...resolvedPlayerStats.map((ps) => ({ id: ps.id, playerId: ps.playerId, type: ps.statType, value: ps.value })),
+        ],
+      },
+    };
+
+    // 6. Formulate structured LLM prompts matching host profiles
+    const systemPrompt = `You are the Research Brief Generator for Take Machine, an AI sports debate podcast.
+Your job is to prepare a fact-grounded debate prep sheet for two hosts based ONLY on the supplied evidence.
+
+Max Voltage:
+- Loud, emotional, sarcastic, fan-first.
+- Legacy/pressure/results-driven, hates excuses, hot seat enthusiast.
+- Loves clutch moments, playoff drama, collapses, and fraud-watch teams.
+
+Dr. Linebreak:
+- Calm, arrogant, analytics-first.
+- Uses stats, odds, efficiency indices, injury context, market movement, and roster construction.
+- Hates lazy narratives and emotional fan overreactions.
+
+Rules:
+- Do not invent facts, stats, injuries, odds, quotes, or rumors.
+- Do not cite anything outside the supplied evidence.
+- Every factual bullet must include evidenceRefs (pointing to the exact records from input).
+- Every argument must be grounded in evidenceRefs.
+- If a claim is tempting but unsupported, place it in unsafeClaims instead of using it.
+- Return valid JSON only with the schema below.
+
+Schema:
+{
+  "facts": [
+    {
+      "text": "Factual statement (e.g. team has lost 5 straight games)",
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+      "confidence": "high" | "medium" | "low"
+    }
+  ],
+  "stats": [
+    {
+      "text": "Statistical note (e.g. quarterback has a 55% completion rate)",
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+      "confidence": "high" | "medium" | "low"
+    }
+  ],
+  "injuryContext": "A brief paragraph outlining injuries, or null if no injury evidence exists.",
+  "oddsContext": "A brief paragraph outlining odds/betting context, or null if no oddsSnapshot evidence exists.",
+  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence.",
+  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence.",
+  "counterArguments": [
+    {
+      "host": "Max Voltage" | "Dr. Linebreak",
+      "claim": "Host claim or counterpoint",
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ]
+    }
+  ],
+  "unsafeClaims": [
+    {
+      "claim": "A claim that you wanted to make but could not verify with absolute certainty in the evidence.",
+      "reason": "Explanation of why it is unsafe"
+    }
+  ],
+  "sourceIds": [
+    { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" }
+  ]
+}`;
+
+    const prompt = `Here is the current real-world sports topic and the supporting evidence records. Prepare the structured research brief:
+${JSON.stringify(serializedEvidence, null, 2)}`;
+
+    // Resolve LLM Provider
+    const llm = getLLMProvider();
+    
+    let llmResult: any;
+    let parseErrorCount = 0;
+    let providerError = null;
+
+    try {
+      llmResult = await llm.generateStructuredOutput<any>({
+        prompt,
+        systemPrompt,
+        temperature: 0.2,
+      });
+    } catch (err: any) {
+      providerError = err.message;
+      parseErrorCount = 1;
+      console.error(`[Worker] LLM execution or JSON parsing failed for brief: ${err.message}`);
+      
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: {
+          status: "failed",
+          error: `LLM Brief Parse/Provider Error: ${err.message}`,
+          output: { parseErrorCount: 1, providerError: err.message },
+        },
+      });
+      throw err;
+    }
+
+    // 7. Validation loop
+    let insertedCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let rejectedClaimCount = 0;
+    let unsafeClaimCount = 0;
+
+    const validFacts: any[] = [];
+    const validStats: any[] = [];
+    const validCounterArguments: any[] = [];
+    const finalUnsafeClaims: any[] = [];
+
+    const rawFacts = Array.isArray(llmResult?.facts) ? llmResult.facts : [];
+    const rawStats = Array.isArray(llmResult?.stats) ? llmResult.stats : [];
+    const rawCounterArguments = Array.isArray(llmResult?.counterArguments) ? llmResult.counterArguments : [];
+    const rawUnsafeClaims = Array.isArray(llmResult?.unsafeClaims) ? llmResult.unsafeClaims : [];
+
+    // Parse existing unsafe claims returned by LLM
+    for (const uc of rawUnsafeClaims) {
+      if (uc && typeof uc === "object") {
+        finalUnsafeClaims.push({
+          claim: uc.claim || uc.text || "Unverified claim",
+          reason: uc.reason || "Hallucination risk",
+        });
+        unsafeClaimCount++;
+      }
+    }
+
+    const rumorKeywords = /\b(reported|rumored|sources say|likely|expected|could be|might be|insider|unnamed source)\b/i;
+
+    const filterClaims = (list: any[], target: any[]) => {
+      for (const item of list) {
+        if (!item || !item.text) {
+          rejectedClaimCount++;
+          continue;
+        }
+
+        // 1. Validate all evidence refs point to the topic's approved evidence packet
+        const itemRefs = Array.isArray(item.evidenceRefs) ? item.evidenceRefs : [];
+        const cleanRefs = itemRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+        if (cleanRefs.length === 0) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: item.text,
+            reason: "Rejected: No valid evidence references found matching approved topic evidence IDs.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
+        // 2. Reject/clean rumors & expected claims unless directly supported by evidence
+        if (rumorKeywords.test(item.text)) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: item.text,
+            reason: "Rejected: Contains rumor or unverified keyword (reported, rumored, sources say, likely, expected, could be, might be, insider, unnamed source).",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
+        target.push({
+          text: item.text,
+          confidence: item.confidence || "high",
+          evidenceRefs: cleanRefs,
+        });
+      }
+    };
+
+    filterClaims(rawFacts, validFacts);
+    filterClaims(rawStats, validStats);
+
+    // Validate counterArguments
+    for (const ca of rawCounterArguments) {
+      if (!ca || !ca.claim) {
+        rejectedClaimCount++;
+        continue;
+      }
+      const caRefs = Array.isArray(ca.evidenceRefs) ? ca.evidenceRefs : [];
+      const cleanRefs = caRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+      if (cleanRefs.length === 0) {
+        rejectedClaimCount++;
+        finalUnsafeClaims.push({
+          claim: ca.claim,
+          reason: "Rejected CounterArgument: No valid evidence references matching approved topic evidence IDs.",
+        });
+        unsafeClaimCount++;
+        continue;
+      }
+
+      if (rumorKeywords.test(ca.claim)) {
+        rejectedClaimCount++;
+        finalUnsafeClaims.push({
+          claim: ca.claim,
+          reason: "Rejected CounterArgument: Contains rumor or unverified keyword.",
+        });
+        unsafeClaimCount++;
+        continue;
+      }
+
+      validCounterArguments.push({
+        host: ca.host || "Max Voltage",
+        claim: ca.claim,
+        evidenceRefs: cleanRefs,
+      });
+    }
+
+    // 3. Nullify injury and odds context if no injury/odds snapshots exist
+    let injuryContext = llmResult.injuryContext || null;
+    if (resolvedInjuries.length === 0) {
+      injuryContext = null;
+    }
+    let oddsContext = llmResult.oddsContext || null;
+    if (resolvedOdds.length === 0) {
+      oddsContext = null;
+    }
+
+    // Confirm we have at least one valid fact
+    if (validFacts.length === 0) {
+      throw new Error("Brief generation failed: No valid facts remained after filter check.");
+    }
+
+    // Build list of valid source IDs
+    const rawSources = Array.isArray(llmResult?.sourceIds) ? llmResult.sourceIds : [];
+    const validSourceIds = rawSources.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+    // Save ResearchBrief linked to the TopicCandidate
+    if (existingBrief) {
+      await db.researchBrief.update({
+        where: { topicId },
+        data: {
+          facts: validFacts as any,
+          stats: validStats as any,
+          injuryContext,
+          oddsContext,
+          argumentForHostA: llmResult.argumentForHostA || "Max Voltage Stance",
+          argumentForHostB: llmResult.argumentForHostB || "Dr. Linebreak Stance",
+          counterArguments: validCounterArguments as any,
+          unsafeClaims: finalUnsafeClaims as any,
+          sourceIds: validSourceIds as any,
+        },
+      });
+      updatedCount = 1;
+    } else {
+      await db.researchBrief.create({
+        data: {
+          topicId,
+          facts: validFacts as any,
+          stats: validStats as any,
+          injuryContext,
+          oddsContext,
+          argumentForHostA: llmResult.argumentForHostA || "Max Voltage Stance",
+          argumentForHostB: llmResult.argumentForHostB || "Dr. Linebreak Stance",
+          counterArguments: validCounterArguments as any,
+          unsafeClaims: finalUnsafeClaims as any,
+          sourceIds: validSourceIds as any,
+        },
+      });
+      insertedCount = 1;
+    }
+
+    // 8. Complete JobLog
+    const outputObj = {
+      message: "Research brief generation completed successfully.",
+      topicId,
+      forceRegenerate,
+      insertedCount,
+      updatedCount,
+      skippedCount,
+      rejectedClaimCount,
+      unsafeClaimCount,
+      invalidEvidenceCount,
+      providerError,
+    };
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: outputObj,
+      },
+    });
+
+    console.log(`[Worker] Research Brief complete. Inserted: ${insertedCount}, Updated: ${updatedCount}, Skipped: ${skippedCount}, Rejected Claims: ${rejectedClaimCount}, Unsafe Claims: ${unsafeClaimCount}`);
+    return { success: true, insertedCount, updatedCount };
+  } catch (err: any) {
+    console.error(`[Worker] Research Brief generation failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown brief generation error",
       },
     });
     throw err;
