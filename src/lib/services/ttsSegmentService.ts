@@ -99,7 +99,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   }
 
   if (hostId && hostId !== hostA.id && hostId !== hostB.id) {
-    throw new Error(`The provided hostId '${hostId}' does not match either active host profile.`);
+    throw new Error(`Invalid hostId '${hostId}'. Host filter must match the active Max Voltage or Dr. Linebreak host ID.`);
   }
 
   if (!hostA.ttsVoiceId) {
@@ -165,6 +165,10 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   }
   if (hostId) {
     selectedLines = selectedLines.filter((line) => line.speakerHostId === hostId);
+  }
+
+  if (selectedLines.length === 0) {
+    throw new Error("No script lines matched the requested TTS generation filters.");
   }
 
   const selectedLineCount = selectedLines.length;
