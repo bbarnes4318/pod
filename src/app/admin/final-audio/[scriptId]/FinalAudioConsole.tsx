@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { triggerFinalAudioStitch, fetchLatestAudioStitchJob, fetchFinalAudioDetail } from "../actions";
+import { triggerContentAssetGeneration } from "../../content-assets/actions";
 import "../../scripts/scripts.css";
 
 interface DetailInfo {
@@ -28,6 +29,8 @@ interface DetailInfo {
     };
   };
   latestJob: any | null;
+  transcriptUrl?: string | null;
+  longShowNotes?: string | null;
 }
 
 interface ConsoleProps {
@@ -337,6 +340,62 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
               </div>
             </div>
           )}
+
+          {/* Content Assets Panel */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Content Assets</div>
+            <div style={{ fontSize: "0.85rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Transcript:</span>
+                <span className={`badge ${detail.transcriptUrl ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                  {detail.transcriptUrl ? "Ready" : "Pending"}
+                </span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Show Notes:</span>
+                <span className={`badge ${detail.longShowNotes ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                  {detail.longShowNotes ? "Ready" : "Pending"}
+                </span>
+              </div>
+              {hasAudio ? (
+                <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <button
+                    onClick={async () => {
+                      setLoading(true);
+                      setMessage(null);
+                      const res = await triggerContentAssetGeneration(detail.scriptId, { forceRegenerate: true });
+                      if (res.success) {
+                        setMessage({ type: "success", text: "Content asset generation enqueued successfully." });
+                        const fresh = await fetchFinalAudioDetail(detail.scriptId);
+                        if (fresh.success && fresh.detail) {
+                          setDetail(fresh.detail as any);
+                        }
+                      } else {
+                        setMessage({ type: "error", text: res.error || "Failed to trigger content asset generation." });
+                      }
+                      setLoading(false);
+                    }}
+                    disabled={loading}
+                    className="buttonPrimary"
+                    style={{ width: "100%" }}
+                  >
+                    Generate Content Assets
+                  </button>
+                  <Link
+                    href={`/admin/content-assets/${detail.scriptId}`}
+                    className="editButton"
+                    style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.4rem" }}
+                  >
+                    View Content Assets Detail
+                  </Link>
+                </div>
+              ) : (
+                <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
+                  Content generation is available once final audio is ready.
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* Segment Details counts */}
           <div className="controlsPanel">

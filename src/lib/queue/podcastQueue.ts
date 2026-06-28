@@ -135,3 +135,17 @@ export interface FinalAudioStitchJobData {
 export async function queueFinalAudioStitchJob(data: FinalAudioStitchJobData) {
   return podcastQueue.add("audio:stitch-final", data);
 }
+
+export interface ContentAssetJobData {
+  scriptId: string;
+  forceRegenerate?: boolean;
+  includeChapters?: boolean;
+  includeMarkdown?: boolean;
+  includeJson?: boolean;
+  providerOverride?: string;
+}
+
+export async function queueContentAssetGenerationJob(data: ContentAssetJobData) {
+  return podcastQueue.add("content:generate-assets", data);
+}
+

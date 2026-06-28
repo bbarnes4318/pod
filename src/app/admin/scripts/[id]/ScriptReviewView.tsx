@@ -865,6 +865,40 @@ export default function ScriptReviewView({
             )}
           </div>
 
+          {/* Content Assets Console */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Content Assets</div>
+            {status === "approved" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Status:</span>
+                  <span className={`badge ${episode.status === "content_ready" ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                    {episode.status === "content_ready" ? "Ready" : "Pending"}
+                  </span>
+                </div>
+                {episode.status === "audio_ready" || episode.status === "content_ready" ? (
+                  <div style={{ marginTop: "0.5rem" }}>
+                    <Link
+                      href={`/admin/content-assets/${script.id}`}
+                      className="buttonPrimary"
+                      style={{ display: "block", textAlign: "center", textDecoration: "none", fontSize: "0.8rem", padding: "0.4rem" }}
+                    >
+                      Open Content Assets Console
+                    </Link>
+                  </div>
+                ) : (
+                  <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
+                    Content generation requires final audio to be ready.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                Content assets are only available for approved scripts.
+              </div>
+            )}
+          </div>
+
           {/* Validation Summary */}
           <div className="controlsPanel">
             <div className="panelTitle">Validation Report</div>

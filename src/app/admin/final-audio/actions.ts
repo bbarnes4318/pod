@@ -205,6 +205,8 @@ export async function fetchFinalAudioDetail(scriptId: string) {
         latestFactCheckStatus: latestFactCheck ? latestFactCheck.status : "missing",
         finalAudioUrl: script.episode.audioUrl,
         durationSeconds: script.episode.durationSeconds,
+        transcriptUrl: script.episode.transcriptUrl,
+        longShowNotes: script.episode.longShowNotes,
         totalLines: allLines.length,
         eligibility: el,
         latestJob: latestStitch.success ? latestStitch.job : null,

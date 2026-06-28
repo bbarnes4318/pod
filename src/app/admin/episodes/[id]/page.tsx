@@ -76,6 +76,8 @@ export default async function EpisodeDetailPage({ params }: PageProps) {
     status: ep.status,
     description: ep.description,
     audioUrl: ep.audioUrl,
+    transcriptUrl: ep.transcriptUrl,
+    longShowNotes: ep.longShowNotes,
     durationSeconds: ep.durationSeconds,
     createdAt: ep.createdAt.toISOString(),
     topics: ep.topics.map((et) => {

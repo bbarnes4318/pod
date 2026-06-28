@@ -5,12 +5,13 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
 import { generateTtsSegments } from "../services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
+import { generateEpisodeContentAssets } from "../services/contentAssetService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -40,6 +41,8 @@ const worker = new Worker(
       return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
     } else if (job.name === "audio:stitch-final") {
       return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
+    } else if (job.name === "content:generate-assets") {
+      return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -1771,6 +1774,53 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
     return { success: true, ...res };
   } catch (err: any) {
     console.error(`[Worker] Final audio stitching job failed:`, err.message);
+    throw err;
+  }
+}
+
+async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
+  const { scriptId, forceRegenerate, includeChapters, includeMarkdown, includeJson, providerOverride } = job.data;
+  console.log(`[Worker] Starting content:generate-assets job for Script ${scriptId}`);
+
+  // Create JobLog in running state
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "content:generate-assets",
+      status: "running",
+      input: { scriptId, forceRegenerate, includeChapters, includeMarkdown, includeJson, providerOverride } as any,
+      output: {},
+    },
+  });
+
+  try {
+    const res = await generateEpisodeContentAssets(job.data);
+    const isSkipped = res.finalStatus === "skipped";
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: isSkipped ? "skipped" : "completed",
+        output: res as any,
+      },
+    });
+
+    console.log(`[Worker] Content asset generation completed. Status: ${isSkipped ? "skipped" : "completed"}`);
+    return { success: true, ...res };
+  } catch (err: any) {
+    console.error(`[Worker] Content asset generation failed:`, err.message);
+
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "failed",
+        error: err.message || "Unknown content asset generation error",
+        output: {
+          scriptId,
+          finalStatus: "failed",
+          reasons: [err.message || "Execution error"],
+        } as any,
+      },
+    });
     throw err;
   }
 }

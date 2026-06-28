@@ -61,6 +61,8 @@ interface EpisodeInfo {
   status: string;
   description: string | null;
   audioUrl: string | null;
+  transcriptUrl: string | null;
+  longShowNotes: string | null;
   durationSeconds: number | null;
   createdAt: string;
   topics: TopicInfo[];
@@ -570,6 +572,50 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                   {episode.status === "audio_ready" && episode.audioUrl && (
                     <div style={{ marginTop: "0.5rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
                       <audio src={episode.audioUrl} controls style={{ width: "100%" }} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Content Assets status and links */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.5rem 0.75rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", borderRadius: "4px", marginTop: "0.25rem" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>Transcript:</span>
+                    <span className={`badge ${episode.transcriptUrl ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                      {episode.transcriptUrl ? "Ready" : "Pending"}
+                    </span>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1", marginLeft: "1rem" }}>Show Notes:</span>
+                    <span className={`badge ${episode.longShowNotes ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
+                      {episode.longShowNotes ? "Ready" : "Pending"}
+                    </span>
+                    {episode.transcriptUrl && (
+                      <a
+                        href={episode.transcriptUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600, marginLeft: "1rem" }}
+                      >
+                        [Open Transcript]
+                      </a>
+                    )}
+                    {(episode.status === "audio_ready" || episode.status === "content_ready") && (
+                      <Link
+                        href={`/admin/content-assets/${activeScript.id}`}
+                        style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600, marginLeft: "auto" }}
+                      >
+                        [View Content Assets Detail]
+                      </Link>
+                    )}
+                  </div>
+                  {episode.longShowNotes && (
+                    <div style={{ marginTop: "0.5rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                      <details>
+                        <summary style={{ cursor: "pointer", fontWeight: 600, color: "#38bdf8", fontSize: "0.85rem" }}>
+                          View Show Notes Preview
+                        </summary>
+                        <pre style={{ margin: "0.5rem 0 0 0", whiteSpace: "pre-wrap", fontFamily: "var(--font-mono), monospace", fontSize: "0.8rem", color: "#cbd5e1", lineHeight: 1.5, maxHeight: "200px", overflowY: "auto", padding: "0.5rem" }}>
+                          {episode.longShowNotes}
+                        </pre>
+                      </details>
                     </div>
                   )}
                 </div>
