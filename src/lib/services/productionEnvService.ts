@@ -10,9 +10,22 @@ export interface ReadinessResult {
   checks: EnvCheck[];
 }
 
+export function isPlaceholderValue(val: string | undefined): boolean {
+  if (!val) return false;
+  const normalized = val.trim().toUpperCase();
+  return (
+    normalized === "CHANGE_ME" ||
+    normalized === "CHANGE_ME_IN_COOLIFY_ONLY" ||
+    normalized === "SET_IN_COOLIFY_ONLY" ||
+    normalized === "SET_YOUR_REAL_KEY_IN_COOLIFY" ||
+    normalized === "SET_YOUR_REAL_SECRET_IN_COOLIFY" ||
+    normalized === "FQUi1ZLy8wtENMHBXC3RSGnzflTap4cVAhPkxqsg"
+  );
+}
+
 export function maskSecretValue(val: string | undefined): string {
   if (!val) return "MISSING";
-  if (val === "CHANGE_ME_IN_COOLIFY_ONLY") return "PLACEHOLDER (INVALID)";
+  if (isPlaceholderValue(val)) return "PLACEHOLDER (INVALID)";
   if (val.length <= 8) return "[MASKED]";
   return `${val.slice(0, 4)}...${val.slice(-4)}`;
 }
@@ -22,7 +35,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
 
   const checkRequired = (key: string, sensitive = false) => {
     const val = process.env[key];
-    const isPlaceholder = val === "CHANGE_ME_IN_COOLIFY_ONLY" || val === "CHANGE_ME";
+    const isPlaceholder = isPlaceholderValue(val);
     if (!val || val.trim() === "") {
       checks.push({ key, status: "fail", value: "MISSING", message: `Required variable ${key} is missing.` });
     } else if (isPlaceholder) {
@@ -34,7 +47,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
 
   const checkOptional = (key: string, sensitive = false) => {
     const val = process.env[key];
-    const isPlaceholder = val === "CHANGE_ME_IN_COOLIFY_ONLY" || val === "CHANGE_ME";
+    const isPlaceholder = isPlaceholderValue(val);
     if (!val || val.trim() === "") {
       checks.push({ key, status: "warning", value: "MISSING", message: `Optional variable ${key} is missing.` });
     } else if (isPlaceholder) {
@@ -50,7 +63,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   
   // ADMIN_PASSWORD checklist
   const adminPass = process.env.ADMIN_PASSWORD;
-  if (!adminPass || adminPass.trim() === "" || adminPass === "CHANGE_ME_IN_COOLIFY_ONLY") {
+  if (!adminPass || adminPass.trim() === "" || isPlaceholderValue(adminPass)) {
     checks.push({ key: "ADMIN_PASSWORD", status: "fail", value: adminPass || "MISSING", message: "ADMIN_PASSWORD must be configured in production." });
   } else {
     checks.push({ key: "ADMIN_PASSWORD", status: "pass", value: "[MASKED]" });
@@ -101,7 +114,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
 
   // 6. Preview Token
   const previewToken = process.env.RSS_PREVIEW_TOKEN;
-  if (!previewToken || previewToken.trim() === "" || previewToken === "CHANGE_ME_IN_COOLIFY_ONLY") {
+  if (!previewToken || previewToken.trim() === "" || isPlaceholderValue(previewToken)) {
     checks.push({ key: "RSS_PREVIEW_TOKEN", status: "fail", value: previewToken || "MISSING", message: "RSS_PREVIEW_TOKEN must be configured for draft access." });
   } else {
     checks.push({ key: "RSS_PREVIEW_TOKEN", status: "pass", value: "[MASKED]" });

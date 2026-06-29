@@ -12,7 +12,21 @@ console.log("-----------------------------------------");
 
 for (const check of result.checks) {
   const icon = check.status === "pass" ? "✓" : check.status === "fail" ? "✗" : "⚠";
-  console.log(`[${icon}] ${check.key}: ${check.value}`);
+  
+  let displayStatus = "CONFIGURED";
+  if (check.value === "MISSING") {
+    displayStatus = "MISSING";
+  } else if (check.value === "PLACEHOLDER" || check.value === "PLACEHOLDER (INVALID)") {
+    displayStatus = "PLACEHOLDER";
+  } else if (check.value === "[MASKED]" || check.value.includes("...")) {
+    displayStatus = "[MASKED]";
+  } else if (check.status === "warning" && check.value !== "MISSING") {
+    displayStatus = "CONFIGURED";
+  } else if (check.status === "fail") {
+    displayStatus = "FAIL";
+  }
+
+  console.log(`[${icon}] ${check.key}: ${displayStatus}`);
   if (check.message) {
     console.log(`    Detail: ${check.message}`);
   }

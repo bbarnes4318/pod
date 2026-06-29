@@ -46,7 +46,7 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `RSS_PREVIEW_TOKEN` | Auth token for private feed previews | A strong, random alphanumeric string used for `/rss/preview?token=<token>` |
 | `LLM_PROVIDER` | AI script/brief generation provider | `openai` |
 | `OPENAI_API_KEY` | OpenAI authentication key | `sk-proj-...` |
-| `OPENAI_MODEL` | OpenAI Model target | `gpt-4o` |
+| `OPENAI_MODEL` | OpenAI Model target | `gpt-5.5` |
 | `TTS_PROVIDER` | Speech synthesis provider | `elevenlabs` |
 | `ELEVENLABS_API_KEY` | ElevenLabs API credential key | `sk_...` |
 | `ELEVENLABS_MODEL` | ElevenLabs model target | `eleven_v3` |
