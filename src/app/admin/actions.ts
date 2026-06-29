@@ -1,16 +1,5 @@
 "use server";
 
-import { queuePodcastJob } from "@/lib/queue/podcastQueue";
+// QUARANTINED / DEPRECATED: triggerPodcastJob has been deprecated and disabled to enforce phase-specific validation gates.
+// All pipeline operations must be triggered via their dedicated admin pages.
 
-export async function triggerPodcastJob(episodeId: string) {
-  try {
-    const job = await queuePodcastJob(episodeId, "fetch-sports");
-    return { success: true, jobId: job.id };
-  } catch (err: any) {
-    console.error("[Actions] Failed to queue job in Redis:", err);
-    return { 
-      success: false, 
-      error: err.message || "Redis connection failed. Ensure Redis is running." 
-    };
-  }
-}

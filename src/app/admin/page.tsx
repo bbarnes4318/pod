@@ -2,9 +2,34 @@ import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
-import JobTrigger from "./JobTrigger";
 
 export const dynamic = "force-dynamic";
+
+function maskSecrets(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === "string") {
+    let masked = obj;
+    if (masked.includes("Signature=") || masked.includes("AWSAccessKeyId=")) {
+      masked = masked.replace(/Signature=[^&]*/g, "Signature=[MASKED]")
+                     .replace(/AWSAccessKeyId=[^&]*/g, "AWSAccessKeyId=[MASKED]");
+    }
+    if (masked.includes("token=") || masked.includes("Token=")) {
+      masked = masked.replace(/token=[^&]*/gi, "token=[MASKED]");
+    }
+    if (masked.includes("postgres://") || masked.includes("postgresql://")) {
+      masked = masked.replace(/(postgres|postgresql):\/\/[^@\s]+/g, "$1://[MASKED]");
+    }
+    if (masked.includes("redis://")) {
+      masked = masked.replace(/redis:\/\/[^@\s]+/g, "redis://[MASKED]");
+    }
+    if (masked.includes("Bearer ")) {
+      masked = masked.replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, "Bearer [MASKED]");
+    }
+    masked = masked.replace(/(password|passwd|pwd|secret|api_key|apikey|token)=[^&;\s"']+/gi, "$1=[MASKED]");
+    return masked;
+  }
+  return obj;
+}
 
 export default async function AdminDashboard() {
   const audit = await runProductionReadinessAudit();
@@ -243,7 +268,7 @@ export default async function AdminDashboard() {
                       <td>{new Date(log.createdAt).toLocaleTimeString()}</td>
                       <td>
                         {log.error ? (
-                          <span style={{ color: "#fda4af", fontSize: "0.8rem" }}>{log.error.slice(0, 45)}...</span>
+                          <span style={{ color: "#fda4af", fontSize: "0.8rem" }}>{maskSecrets(log.error).slice(0, 45)}...</span>
                         ) : (
                           <span style={{ color: "#64748b", fontSize: "0.8rem" }}>Clean run.</span>
                         )}
@@ -286,8 +311,43 @@ export default async function AdminDashboard() {
             </div>
           </div>
 
-          {/* Trigger Job Client Action Panel */}
-          <JobTrigger />
+          {/* Pipeline Control Points Panel */}
+          <div className="panel">
+            <div className="panelHeader">
+              <h3 className="panelTitle">Pipeline Control Points</h3>
+            </div>
+            <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <p style={{ color: "#64748b", fontSize: "0.8rem", margin: "0 0 0.5rem 0", lineHeight: 1.4 }}>
+                Navigate to dedicated phase-specific admin consoles to trigger tasks and operations:
+              </p>
+              {[
+                { label: "Data Ingest Management", href: "/admin/data-sources" },
+                { label: "Sports Debate Topic Engine", href: "/admin/topics" },
+                { label: "Debate Research Dossiers", href: "/admin/research-briefs" },
+                { label: "LLM Script Review Console", href: "/admin/scripts" },
+                { label: "Fact Checking Panel", href: "/admin/fact-checks" },
+                { label: "Dialogue Voice Synthesis", href: "/admin/audio-segments" },
+                { label: "Final Audio Stitching", href: "/admin/final-audio" },
+                { label: "Content Assets Generator", href: "/admin/content-assets" },
+                { label: "Podcast RSS Publishing", href: "/admin/rss" },
+              ].map((item, idx) => (
+                <Link
+                  key={idx}
+                  href={item.href}
+                  className="editButton"
+                  style={{
+                    display: "block",
+                    textAlign: "center",
+                    textDecoration: "none",
+                    fontSize: "0.85rem",
+                    padding: "0.5rem",
+                  }}
+                >
+                  {item.label} &rarr;
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

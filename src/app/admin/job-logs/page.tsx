@@ -17,6 +17,18 @@ function maskSecrets(obj: any): any {
     if (masked.includes("token=") || masked.includes("Token=")) {
       masked = masked.replace(/token=[^&]*/gi, "token=[MASKED]");
     }
+    // Mask DB URL, Redis URL, bearer keys, and cookies
+    if (masked.includes("postgres://") || masked.includes("postgresql://")) {
+      masked = masked.replace(/(postgres|postgresql):\/\/[^@\s]+/g, "$1://[MASKED]");
+    }
+    if (masked.includes("redis://")) {
+      masked = masked.replace(/redis:\/\/[^@\s]+/g, "redis://[MASKED]");
+    }
+    if (masked.includes("Bearer ")) {
+      masked = masked.replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, "Bearer [MASKED]");
+    }
+    // Mask database/redis connection strings or passwords in errors
+    masked = masked.replace(/(password|passwd|pwd|secret|api_key|apikey|token)=[^&;\s"']+/gi, "$1=[MASKED]");
     return masked;
   }
 
@@ -97,26 +109,41 @@ export default async function JobLogsPage(props: {
     by: ["jobType"],
   });
 
-  // Construct where filters
-  const where: any = {};
+  // Construct database filters
+  const dbWhere: any = {};
   if (filterJobType) {
-    where.jobType = filterJobType;
+    dbWhere.jobType = filterJobType;
   }
   if (filterStatus) {
-    where.status = filterStatus;
-  }
-  if (search.trim()) {
-    where.OR = [
-      { jobType: { contains: search, mode: "insensitive" } },
-      { error: { contains: search, mode: "insensitive" } },
-    ];
+    dbWhere.status = filterStatus;
   }
 
-  // Fetch recent job logs (bounded to 100 rows)
+  // Fetch recent job logs (bounded to 250 rows)
   const logs = await db.jobLog.findMany({
-    where,
+    where: dbWhere,
     orderBy: { createdAt: "desc" },
-    take: 100,
+    take: 250,
+  });
+
+  // Filter in memory for full payload search (jobType, error, input, output)
+  const filteredLogs = logs.filter((log) => {
+    if (!search.trim()) return true;
+    const lowerSearch = search.toLowerCase();
+
+    const matchesJobType = log.jobType?.toLowerCase().includes(lowerSearch);
+    const matchesError = log.error?.toLowerCase().includes(lowerSearch);
+
+    let matchesInput = false;
+    try {
+      matchesInput = JSON.stringify(log.input).toLowerCase().includes(lowerSearch);
+    } catch (e) {}
+
+    let matchesOutput = false;
+    try {
+      matchesOutput = JSON.stringify(log.output).toLowerCase().includes(lowerSearch);
+    } catch (e) {}
+
+    return matchesJobType || matchesError || matchesInput || matchesOutput;
   });
 
   return (
@@ -228,7 +255,7 @@ export default async function JobLogsPage(props: {
 
       {/* Logs Table */}
       <div className="panel" style={{ padding: 0 }}>
-        {logs.length === 0 ? (
+        {filteredLogs.length === 0 ? (
           <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
             <p style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "0.5rem" }}>No Operations Logs Found</p>
             <p style={{ fontSize: "0.85rem" }}>Try clearing search inputs or adjusting filters.</p>
@@ -245,7 +272,7 @@ export default async function JobLogsPage(props: {
               </tr>
             </thead>
             <tbody>
-              {logs.map((log) => {
+              {filteredLogs.map((log) => {
                 const { scriptId, episodeId } = extractRelatedLinks(log);
                 const durationSeconds = Math.max(
                   0,
@@ -254,6 +281,7 @@ export default async function JobLogsPage(props: {
 
                 const maskedInput = maskSecrets(log.input);
                 const maskedOutput = maskSecrets(log.output);
+                const maskedError = log.error ? maskSecrets(log.error) : null;
 
                 return (
                   <tr key={log.id} style={{ borderBottom: "1px solid #1a2233", verticalAlign: "top" }}>
@@ -304,7 +332,7 @@ export default async function JobLogsPage(props: {
                         ) : null}
                         {episodeId ? (
                           <Link href={`/admin/episodes/${episodeId}`} style={{ color: "#e2e8f0", textDecoration: "underline" }}>
-                            Episode Details
+                             Episode Details
                           </Link>
                         ) : null}
                         {!scriptId && !episodeId ? (
@@ -313,7 +341,7 @@ export default async function JobLogsPage(props: {
                       </div>
                     </td>
                     <td style={{ maxWidth: "300px" }}>
-                      {log.error ? (
+                      {maskedError ? (
                         <div
                           style={{
                             fontSize: "0.8rem",
@@ -326,7 +354,7 @@ export default async function JobLogsPage(props: {
                             wordBreak: "break-all",
                           }}
                         >
-                          {log.error}
+                          {maskedError}
                         </div>
                       ) : null}
 
