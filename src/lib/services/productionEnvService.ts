@@ -1,0 +1,179 @@
+export interface EnvCheck {
+  key: string;
+  status: "pass" | "fail" | "warning";
+  value: string;
+  message?: string;
+}
+
+export interface ReadinessResult {
+  passed: boolean;
+  checks: EnvCheck[];
+}
+
+export function maskSecretValue(val: string | undefined): string {
+  if (!val) return "MISSING";
+  if (val === "CHANGE_ME_IN_COOLIFY_ONLY") return "PLACEHOLDER (INVALID)";
+  if (val.length <= 8) return "[MASKED]";
+  return `${val.slice(0, 4)}...${val.slice(-4)}`;
+}
+
+export function getRequiredProductionEnvChecklist(): EnvCheck[] {
+  const checks: EnvCheck[] = [];
+
+  const checkRequired = (key: string, sensitive = false) => {
+    const val = process.env[key];
+    const isPlaceholder = val === "CHANGE_ME_IN_COOLIFY_ONLY" || val === "CHANGE_ME";
+    if (!val || val.trim() === "") {
+      checks.push({ key, status: "fail", value: "MISSING", message: `Required variable ${key} is missing.` });
+    } else if (isPlaceholder) {
+      checks.push({ key, status: "fail", value: "PLACEHOLDER", message: `Required variable ${key} still has a placeholder value.` });
+    } else {
+      checks.push({ key, status: "pass", value: sensitive ? maskSecretValue(val) : val });
+    }
+  };
+
+  const checkOptional = (key: string, sensitive = false) => {
+    const val = process.env[key];
+    const isPlaceholder = val === "CHANGE_ME_IN_COOLIFY_ONLY" || val === "CHANGE_ME";
+    if (!val || val.trim() === "") {
+      checks.push({ key, status: "warning", value: "MISSING", message: `Optional variable ${key} is missing.` });
+    } else if (isPlaceholder) {
+      checks.push({ key, status: "warning", value: "PLACEHOLDER", message: `Optional variable ${key} still has a placeholder value.` });
+    } else {
+      checks.push({ key, status: "pass", value: sensitive ? maskSecretValue(val) : val });
+    }
+  };
+
+  // 1. Basic App Config
+  checkRequired("NODE_ENV");
+  checkRequired("ADMIN_USERNAME");
+  
+  // ADMIN_PASSWORD checklist
+  const adminPass = process.env.ADMIN_PASSWORD;
+  if (!adminPass || adminPass.trim() === "" || adminPass === "CHANGE_ME_IN_COOLIFY_ONLY") {
+    checks.push({ key: "ADMIN_PASSWORD", status: "fail", value: adminPass || "MISSING", message: "ADMIN_PASSWORD must be configured in production." });
+  } else {
+    checks.push({ key: "ADMIN_PASSWORD", status: "pass", value: "[MASKED]" });
+  }
+
+  // 2. Postgres & Redis
+  checkRequired("DATABASE_URL", true);
+  checkRequired("REDIS_URL", true);
+
+  // Concurrencies
+  checkOptional("WORKER_CONCURRENCY");
+  checkOptional("TTS_WORKER_CONCURRENCY");
+  checkOptional("AUDIO_STITCH_WORKER_CONCURRENCY");
+  checkOptional("CONTENT_WORKER_CONCURRENCY");
+  checkOptional("RSS_WORKER_CONCURRENCY");
+
+  // 3. S3 Configuration
+  checkRequired("STORAGE_PROVIDER");
+  checkRequired("S3_ENDPOINT");
+  checkRequired("S3_REGION");
+  checkRequired("S3_BUCKET");
+  checkRequired("S3_ACCESS_KEY_ID", true);
+  checkRequired("S3_SECRET_ACCESS_KEY", true);
+  checkRequired("S3_PUBLIC_BASE_URL");
+
+  // 4. LLM
+  checkRequired("LLM_PROVIDER");
+  checkRequired("OPENAI_API_KEY", true);
+  checkRequired("OPENAI_MODEL");
+
+  // 5. Providers Specifics
+  const ttsProvider = process.env.TTS_PROVIDER || "elevenlabs";
+  checkRequired("TTS_PROVIDER");
+  if (ttsProvider === "elevenlabs") {
+    checkRequired("ELEVENLABS_API_KEY", true);
+    checkRequired("ELEVENLABS_MODEL");
+    checkRequired("ELEVENLABS_MAX_VOLTAGE_VOICE_ID");
+    checkRequired("ELEVENLABS_DR_LINEBREAK_VOICE_ID");
+  } else {
+    checkOptional("ELEVENLABS_API_KEY", true);
+  }
+
+  const sportsProvider = process.env.SPORTS_PROVIDER || "api-sports";
+  checkRequired("SPORTS_PROVIDER");
+  if (sportsProvider === "api-sports") {
+    checkRequired("API_SPORTS_KEY", true);
+  }
+
+  // 6. Preview Token
+  const previewToken = process.env.RSS_PREVIEW_TOKEN;
+  if (!previewToken || previewToken.trim() === "" || previewToken === "CHANGE_ME_IN_COOLIFY_ONLY") {
+    checks.push({ key: "RSS_PREVIEW_TOKEN", status: "fail", value: previewToken || "MISSING", message: "RSS_PREVIEW_TOKEN must be configured for draft access." });
+  } else {
+    checks.push({ key: "RSS_PREVIEW_TOKEN", status: "pass", value: "[MASKED]" });
+  }
+
+  // 7. HTTPS Production URL Checks
+  const isProduction = process.env.NODE_ENV === "production";
+  
+  const checkHttpsUrl = (key: string) => {
+    const val = process.env[key];
+    if (!val) {
+      checks.push({ key, status: "fail", value: "MISSING", message: `${key} is missing.` });
+    } else {
+      const startsWithHttps = val.startsWith("https://");
+      if (isProduction && !startsWithHttps) {
+        checks.push({ key, status: "fail", value: val, message: `${key} must start with https:// in production.` });
+      } else {
+        checks.push({ key, status: "pass", value: val });
+      }
+    }
+  };
+
+  checkHttpsUrl("APP_BASE_URL");
+  checkHttpsUrl("NEXT_PUBLIC_APP_BASE_URL");
+  checkHttpsUrl("PODCAST_SITE_URL");
+  checkHttpsUrl("PODCAST_RSS_URL");
+
+  // Cookie Secure
+  const cookieSecure = process.env.COOKIE_SECURE;
+  if (isProduction && cookieSecure !== "true") {
+    checks.push({ key: "COOKIE_SECURE", status: "fail", value: cookieSecure || "false", message: "COOKIE_SECURE must be set to 'true' in production." });
+  } else {
+    checks.push({ key: "COOKIE_SECURE", status: "pass", value: cookieSecure || "false" });
+  }
+
+  // 8. Optional API keys (Warnings only)
+  checkOptional("THE_ODDS_API_KEY", true);
+  checkOptional("BALLDONTLIE_API_KEY", true);
+  checkOptional("DEEPGRAM_API_KEY", true);
+  checkOptional("CARTESIA_API_KEY", true);
+  checkOptional("PODCAST_IMAGE_URL");
+
+  return checks;
+}
+
+export function validateProviderSelection(): { valid: boolean; messages: string[] } {
+  const messages: string[] = [];
+  const llm = process.env.LLM_PROVIDER || "stub";
+  const tts = process.env.TTS_PROVIDER || "stub";
+  const sports = process.env.SPORTS_PROVIDER || "stub";
+
+  if (llm === "stub") {
+    messages.push("LLM_PROVIDER is set to 'stub'. Make sure this is updated to a real provider in production.");
+  }
+  if (tts === "stub") {
+    messages.push("TTS_PROVIDER is set to 'stub'. Make sure this is updated to a real provider in production.");
+  }
+  if (sports === "stub") {
+    messages.push("SPORTS_PROVIDER is set to 'stub'. Make sure this is updated to a real provider in production.");
+  }
+
+  return {
+    valid: messages.length === 0,
+    messages,
+  };
+}
+
+export function validateProductionReadiness(): ReadinessResult {
+  const checks = getRequiredProductionEnvChecklist();
+  const passed = !checks.some((c) => c.status === "fail");
+  return {
+    passed,
+    checks,
+  };
+}
