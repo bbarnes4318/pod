@@ -162,9 +162,15 @@ export function generateRssXml(episodes: any[], config: PodcastConfig, isPreview
 `;
 
   for (const ep of episodes) {
-    // Date Guardrails: Public uses publishedAt. Preview falls back to updatedAt/createdAt.
     const pubDate = isPreview ? (ep.publishedAt || ep.updatedAt || ep.createdAt) : ep.publishedAt;
     if (!pubDate) continue;
+
+    if (!ep.title || !ep.title.trim()) continue;
+    if (!ep.rssGuid || !ep.rssGuid.trim()) continue;
+    if (!ep.audioUrl || !ep.audioUrl.trim()) continue;
+    if (!ep.audioFileSizeBytes || ep.audioFileSizeBytes <= 0) continue;
+    if (!ep.audioMimeType || !ep.audioMimeType.trim()) continue;
+    if (!ep.durationSeconds || ep.durationSeconds <= 0) continue;
 
     // Grounded description resolution
     let descriptionText = "";
@@ -182,7 +188,7 @@ export function generateRssXml(episodes: any[], config: PodcastConfig, isPreview
       }
     }
 
-    if (!descriptionText) {
+    if (!descriptionText || !descriptionText.trim()) {
       continue;
     }
 

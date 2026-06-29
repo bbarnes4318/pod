@@ -77,12 +77,11 @@ export async function validateEpisodeForRss(
   if (action === "prepare") {
     if (
       episode.status === "content_ready" ||
-      episode.status === "publish_ready" ||
-      episode.status === "published"
+      episode.status === "publish_ready"
     ) {
       checks.episodeStatusValid = true;
     } else {
-      errorReasons.push(`Episode status is '${episode.status}', must be 'content_ready' or 'publish_ready' to prepare.`);
+      errorReasons.push("Episode status must be 'content_ready' or 'publish_ready' to prepare.");
     }
   } else if (action === "publish") {
     if (episode.status === "publish_ready" || episode.status === "published") {
@@ -152,16 +151,69 @@ export async function validateEpisodeForRss(
     );
   }
 
-  // 7. AudioSegments
-  if (script.audioSegments.length > 0 && script.audioSegments.every((as) => as.status === "ready")) {
-    checks.allAudioSegmentsReady = true;
-  } else {
-    const notReady = script.audioSegments.filter((as) => as.status !== "ready");
-    errorReasons.push(
-      script.audioSegments.length === 0
-        ? "No AudioSegments found."
-        : `Some AudioSegments are not ready: ${notReady.map((as) => `${as.lineIndex}(${as.status})`).join(", ")}`
-    );
+  // 7. AudioSegments validation against Script.content lines
+  try {
+    const content = script.content as any;
+    const scriptSegments = content?.segments;
+    if (!Array.isArray(scriptSegments) || scriptSegments.length === 0) {
+      errorReasons.push("Script segments are missing or empty in Script.content.");
+    } else {
+      let allDialogueLinesValid = true;
+      const scriptLines: any[] = [];
+      
+      for (let sIdx = 0; sIdx < scriptSegments.length; sIdx++) {
+        const seg = scriptSegments[sIdx];
+        if (seg && Array.isArray(seg.lines)) {
+          for (let lIdx = 0; lIdx < seg.lines.length; lIdx++) {
+            const line = seg.lines[lIdx];
+            if (!line || typeof line.lineIndex !== "number") {
+              allDialogueLinesValid = false;
+              errorReasons.push(`Script line at segment ${sIdx}, index ${lIdx} is missing a valid lineIndex.`);
+            } else {
+              scriptLines.push(line);
+            }
+          }
+        }
+      }
+
+      if (allDialogueLinesValid) {
+        if (scriptLines.length === 0) {
+          errorReasons.push("Script contains no dialogue lines.");
+        } else {
+          let segmentsValidationPassed = true;
+          
+          for (const line of scriptLines) {
+            const matches = script.audioSegments.filter(
+              (as) => as.lineIndex === line.lineIndex
+            );
+            
+            if (matches.length === 0) {
+              segmentsValidationPassed = false;
+              errorReasons.push(`Dialogue line ${line.lineIndex} is missing an AudioSegment.`);
+            } else if (matches.length > 1) {
+              segmentsValidationPassed = false;
+              errorReasons.push(`Dialogue line ${line.lineIndex} has multiple (${matches.length}) AudioSegments.`);
+            } else {
+              const match = matches[0];
+              if (match.status !== "ready") {
+                segmentsValidationPassed = false;
+                errorReasons.push(`AudioSegment for line ${line.lineIndex} is not ready (status: '${match.status}').`);
+              }
+              if (!match.audioUrl || !match.audioUrl.trim()) {
+                segmentsValidationPassed = false;
+                errorReasons.push(`AudioSegment for line ${line.lineIndex} has a missing or empty audioUrl.`);
+              }
+            }
+          }
+          
+          if (segmentsValidationPassed) {
+            checks.allAudioSegmentsReady = true;
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    errorReasons.push(`Failed to parse and validate Script.content lines: ${err.message}`);
   }
 
   // 8. Audio file size

@@ -27,17 +27,33 @@ export async function GET() {
       orderBy: { publishedAt: "desc" },
     });
 
+    const getUsableParagraph = (notes: string | null) => {
+      if (!notes) return null;
+      const paragraphs = notes
+        .split(/\n+/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0 && !p.startsWith("#") && !p.startsWith("*"));
+      return paragraphs.length > 0 ? paragraphs[0] : null;
+    };
+
     const validEpisodes = episodes.filter((ep) => {
+      const hasDescriptionSource = 
+        (ep.rssSummary && ep.rssSummary.trim()) ||
+        (ep.description && ep.description.trim()) ||
+        getUsableParagraph(ep.longShowNotes);
+
       return (
-        ep.title &&
-        ep.audioUrl &&
-        ep.durationSeconds &&
-        ep.durationSeconds > 0 &&
-        ep.rssGuid &&
+        ep.status === "published" &&
         ep.publishedAt &&
-        ep.audioFileSizeBytes &&
-        ep.audioFileSizeBytes > 0 &&
-        (ep.rssSummary || ep.description || ep.longShowNotes)
+        ep.title && ep.title.trim() &&
+        ep.audioUrl && ep.audioUrl.trim() &&
+        ep.durationSeconds && ep.durationSeconds > 0 &&
+        ep.rssGuid && ep.rssGuid.trim() &&
+        ep.audioFileSizeBytes && ep.audioFileSizeBytes > 0 &&
+        ep.audioMimeType && ep.audioMimeType.trim() &&
+        ep.transcriptUrl && ep.transcriptUrl.trim() &&
+        ep.longShowNotes && ep.longShowNotes.trim() &&
+        hasDescriptionSource
       );
     });
 
