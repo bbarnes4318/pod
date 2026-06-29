@@ -14,7 +14,8 @@ export async function GET() {
     await db.$queryRaw`SELECT 1`;
     checks.push({ name: "database", status: "pass", message: "Database connection successful." });
   } catch (e: any) {
-    checks.push({ name: "database", status: "fail", message: `Database connection failed: ${e.message}` });
+    // Return a generic client-safe error message. Raw exception is not exposed.
+    checks.push({ name: "database", status: "fail", message: "Database connection failed." });
   }
 
   // 2. Redis connection check
@@ -22,15 +23,16 @@ export async function GET() {
     const redis = getRedisClient();
     const ping = await redis.ping();
     if (ping === "PONG") {
-      checks.push({ name: "redis", status: "pass", message: "Redis queue connectivity online." });
+      checks.push({ name: "redis", status: "pass", message: "Redis connection successful." });
     } else {
-      checks.push({ name: "redis", status: "fail", message: `Redis ping returned unexpected response: ${ping}` });
+      checks.push({ name: "redis", status: "fail", message: "Redis connection failed." });
     }
   } catch (e: any) {
-    checks.push({ name: "redis", status: "fail", message: `Redis queue connection failed: ${e.message}` });
+    // Return a generic client-safe error message. Raw exception is not exposed.
+    checks.push({ name: "redis", status: "fail", message: "Redis connection failed." });
   }
 
-  // 3. Environment checklist
+  // 3. Environment checklist (Only key names are listed in messages)
   const envChecklist = getRequiredProductionEnvChecklist();
   const envFailures = envChecklist.filter((c) => c.status === "fail");
   const envWarnings = envChecklist.filter((c) => c.status === "warning");
@@ -57,7 +59,7 @@ export async function GET() {
     checks.push({
       name: "provider_selection",
       status: "warning",
-      message: providerVal.messages.join(" "),
+      message: "One or more providers are set to 'stub' mode.",
     });
   } else {
     checks.push({ name: "provider_selection", status: "pass", message: "Production-ready provider settings selected." });
@@ -94,23 +96,32 @@ export async function GET() {
     const s3Endpoint = process.env.S3_ENDPOINT;
     const s3Bucket = process.env.S3_BUCKET;
     if (!s3Endpoint || !s3Bucket) {
-      checks.push({ name: "storage_config", status: "fail", message: "S3 storage provider selected but bucket/endpoint config is missing." });
+      checks.push({ name: "storage_config", status: "fail", message: "S3 storage provider config is missing." });
     } else {
-      checks.push({ name: "storage_config", status: "pass", message: `S3 storage config complete: bucket='${s3Bucket}'` });
+      checks.push({ name: "storage_config", status: "pass", message: "S3 storage config present." });
     }
   } else {
-    checks.push({ name: "storage_config", status: "warning", message: `Local storage configured. S3 recommended for production.` });
+    checks.push({ name: "storage_config", status: "warning", message: "Local storage configured." });
   }
 
   // 7. HTTPS/domain config check
   const isProduction = process.env.NODE_ENV === "production";
   const appBaseUrl = process.env.APP_BASE_URL || "";
   if (isProduction && !appBaseUrl.startsWith("https://")) {
-    checks.push({ name: "https_domain", status: "fail", message: `APP_BASE_URL is not using HTTPS: '${appBaseUrl}'` });
+    checks.push({ name: "https_domain", status: "fail", message: "APP_BASE_URL must use HTTPS in production." });
   } else if (!appBaseUrl) {
     checks.push({ name: "https_domain", status: "fail", message: "APP_BASE_URL is missing." });
   } else {
-    checks.push({ name: "https_domain", status: "pass", message: `HTTPS domain configured: '${appBaseUrl}'` });
+    checks.push({ name: "https_domain", status: "pass", message: "HTTPS app URL configured." });
+  }
+
+  // 8. Podcast RSS Config Check
+  const hasTitle = !!process.env.PODCAST_TITLE;
+  const hasRssUrl = !!process.env.PODCAST_RSS_URL;
+  if (!hasTitle || !hasRssUrl) {
+    checks.push({ name: "rss_config", status: "fail", message: "RSS podcast metadata config is incomplete." });
+  } else {
+    checks.push({ name: "rss_config", status: "pass", message: "RSS config present." });
   }
 
   const passed = !checks.some((c) => c.status === "fail");

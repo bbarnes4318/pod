@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+// Web API-safe base64 decoder
+function atobSafe(str: string): string | null {
+  try {
+    return atob(str);
+  } catch (e) {
+    return null;
+  }
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -12,7 +21,8 @@ export function proxy(request: NextRequest) {
     }
 
     const authHeader = request.headers.get("authorization");
-    if (!authHeader) {
+    // Reject missing or non-Basic Authorization headers
+    if (!authHeader || !authHeader.startsWith("Basic ")) {
       return new Response("Unauthorized", {
         status: 401,
         headers: {
@@ -22,9 +32,29 @@ export function proxy(request: NextRequest) {
     }
 
     try {
-      const authValue = authHeader.split(" ")[1];
-      const decoded = Buffer.from(authValue, "base64").toString("utf-8");
-      const [username, password] = decoded.split(":");
+      const base64Credentials = authHeader.substring(6).trim();
+      const decoded = atobSafe(base64Credentials);
+      if (!decoded) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: {
+            "WWW-Authenticate": 'Basic realm="Secure Area"',
+          },
+        });
+      }
+
+      const colonIndex = decoded.indexOf(":");
+      if (colonIndex === -1) {
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: {
+            "WWW-Authenticate": 'Basic realm="Secure Area"',
+          },
+        });
+      }
+
+      const username = decoded.substring(0, colonIndex);
+      const password = decoded.substring(colonIndex + 1);
 
       const expectedUsername = process.env.ADMIN_USERNAME || "admin";
       const expectedPassword = process.env.ADMIN_PASSWORD;
