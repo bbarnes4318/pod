@@ -111,6 +111,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           <Link href={`/admin/scripts/${scriptId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
             Goto Script review
           </Link>
+          <Link href={`/admin/rss/${scriptId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+            Goto RSS publishing
+          </Link>
         </div>
         <button onClick={refreshStatus} disabled={loading} className="btnReset" style={{ fontSize: "0.85rem" }}>
           {loading ? "Refreshing..." : "🔄 Refresh Status"}

@@ -66,4 +66,49 @@ export class LocalStorageProvider implements StorageProvider {
       key: keyToUse,
     };
   }
+
+  async headObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    sizeBytes: number;
+    contentType?: string;
+    lastModified?: Date;
+    key?: string;
+    raw?: unknown;
+  }> {
+    let keyToUse = input.key;
+    if (!keyToUse && input.url) {
+      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      if (!input.url.startsWith(baseUrl) && !input.url.startsWith("/storage/")) {
+        throw new Error(`Security Exception: Local storage provider rejected unknown local URL: ${input.url}`);
+      }
+      const match = input.url.match(/\/storage\/(.+)$/);
+      if (match) {
+        keyToUse = decodeURIComponent(match[1]);
+      }
+    }
+
+    if (!keyToUse) {
+      throw new Error("Could not resolve local storage key from input.");
+    }
+
+    const storageDir = path.resolve(process.cwd(), "public", "storage");
+    const targetPath = path.resolve(storageDir, keyToUse);
+
+    if (!targetPath.startsWith(storageDir)) {
+      throw new Error(`Security Exception: Path traversal attempt detected: ${keyToUse}`);
+    }
+
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Local file not found at path: ${targetPath}`);
+    }
+
+    const stats = fs.statSync(targetPath);
+    return {
+      sizeBytes: stats.size,
+      lastModified: stats.mtime,
+      key: keyToUse,
+    };
+  }
 }

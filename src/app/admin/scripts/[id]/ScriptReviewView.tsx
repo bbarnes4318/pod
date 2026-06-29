@@ -382,9 +382,16 @@ export default function ScriptReviewView({
     <div>
       {/* Top bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-        <Link href={`/admin/episodes/${script.episodeId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
-          ← Back to Episode Details
-        </Link>
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <Link href={`/admin/episodes/${script.episodeId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
+            ← Back to Episode Details
+          </Link>
+          {(episode.status === "content_ready" || episode.status === "publish_ready" || episode.status === "published") && (
+            <Link href={`/admin/rss/${script.id}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+              Goto RSS Publishing
+            </Link>
+          )}
+        </div>
         <div style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
           Episode: <strong style={{ color: "#ffffff" }}>{episode.title}</strong> (Status: {episode.status})
         </div>

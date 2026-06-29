@@ -18,4 +18,14 @@ export interface StorageProvider {
     key?: string;
     raw?: unknown;
   }>;
+  headObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    sizeBytes: number;
+    contentType?: string;
+    lastModified?: Date;
+    key?: string;
+    raw?: unknown;
+  }>;
 }

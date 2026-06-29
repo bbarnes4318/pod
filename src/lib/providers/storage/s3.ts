@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { StorageProvider } from "./types";
 
 export class S3StorageProvider implements StorageProvider {
@@ -109,6 +109,73 @@ export class S3StorageProvider implements StorageProvider {
     return {
       body,
       contentType: response.ContentType,
+      key: keyToUse,
+      raw: response,
+    };
+  }
+
+  async headObject(input: {
+    key?: string;
+    url?: string;
+  }): Promise<{
+    sizeBytes: number;
+    contentType?: string;
+    lastModified?: Date;
+    key?: string;
+    raw?: unknown;
+  }> {
+    if (!this.bucket) {
+      throw new Error("TTS_AUDIO_BUCKET is not configured.");
+    }
+
+    let keyToUse = input.key;
+    if (!keyToUse && input.url) {
+      try {
+        const parsed = new URL(input.url);
+        const endpoint = process.env.AWS_ENDPOINT;
+        const endpointHost = endpoint ? new URL(endpoint).host : null;
+
+        const isS3Host = parsed.host === `${this.bucket}.s3.amazonaws.com` || 
+                         parsed.host === `s3.amazonaws.com` || 
+                         (endpointHost && parsed.host === endpointHost);
+
+        if (!isS3Host) {
+          throw new Error(`Security Exception: S3 storage provider rejected external or arbitrary URL: ${input.url}`);
+        }
+
+        const pathname = decodeURIComponent(parsed.pathname);
+        if (endpoint && pathname.startsWith(`/${this.bucket}/`)) {
+          keyToUse = pathname.substring(this.bucket.length + 2);
+        } else {
+          keyToUse = pathname.startsWith("/") ? pathname.substring(1) : pathname;
+        }
+      } catch (e: any) {
+        if (e.message.startsWith("Security Exception")) {
+          throw e;
+        }
+        const match = input.url.match(/\/storage\/(.+)$/);
+        if (match) {
+          keyToUse = decodeURIComponent(match[1]);
+        } else {
+          throw new Error(`Security Exception: Invalid URL pattern: ${input.url}`);
+        }
+      }
+    }
+
+    if (!keyToUse) {
+      throw new Error("Could not resolve S3 storage key from input.");
+    }
+
+    const command = new HeadObjectCommand({
+      Bucket: this.bucket,
+      Key: keyToUse,
+    });
+
+    const response = await this.client.send(command);
+    return {
+      sizeBytes: response.ContentLength || 0,
+      contentType: response.ContentType,
+      lastModified: response.LastModified,
       key: keyToUse,
       raw: response,
     };

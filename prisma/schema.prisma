@@ -241,22 +241,30 @@ model ResearchBrief {
 }
 
 model Episode {
-  id              String         @id @default(uuid())
-  title           String
-  slug            String         @unique
-  status          String         // "draft" | "queued" | "generating" | "completed" | "failed"
-  description     String?
-  longShowNotes   String?
-  durationSeconds Int?
-  audioUrl        String?
-  transcriptUrl   String?
-  rssGuid         String?
-  publishedAt     DateTime?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  topics          EpisodeTopic[]
-  scripts         Script[]
-  audioSegments   AudioSegment[]
+  id                 String         @id @default(uuid())
+  title              String
+  slug               String         @unique
+  status             String         // "draft" | "queued" | "generating" | "completed" | "failed"
+  description        String?
+  longShowNotes      String?
+  durationSeconds    Int?
+  audioUrl           String?
+  transcriptUrl      String?
+  rssGuid            String?        @unique
+  publishedAt        DateTime?
+  episodeNumber      Int?
+  seasonNumber       Int?
+  explicit           Boolean        @default(false)
+  rssSummary         String?
+  rssSubtitle        String?
+  rssImageUrl        String?
+  audioFileSizeBytes Int?
+  audioMimeType      String         @default("audio/mpeg")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  topics             EpisodeTopic[]
+  scripts            Script[]
+  audioSegments      AudioSegment[]
 
   @@index([status])
   @@index([publishedAt])

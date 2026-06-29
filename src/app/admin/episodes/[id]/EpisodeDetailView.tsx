@@ -619,6 +619,30 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                     </div>
                   )}
                 </div>
+
+                {/* RSS Feed & Publishing Prep status */}
+                {(episode.status === "content_ready" || episode.status === "publish_ready" || episode.status === "published") && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", borderRadius: "4px", marginTop: "0.25rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>RSS Feed Status:</span>
+                    <span className="badge" style={{
+                      fontSize: "0.75rem",
+                      backgroundColor:
+                        episode.status === "published" ? "rgba(16, 185, 129, 0.15)" :
+                        episode.status === "publish_ready" ? "rgba(56, 189, 248, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                      color:
+                        episode.status === "published" ? "#10b981" :
+                        episode.status === "publish_ready" ? "#38bdf8" : "#f59e0b",
+                    }}>
+                      {episode.status.toUpperCase()}
+                    </span>
+                    <Link
+                      href={`/admin/rss/${activeScript.id}`}
+                      style={{ fontSize: "0.75rem", color: "#38bdf8", textDecoration: "underline", fontWeight: 600, marginLeft: "auto" }}
+                    >
+                      [Open RSS Console]
+                    </Link>
+                  </div>
+                )}
               </div>
 
               {activeScript.plainText ? (
