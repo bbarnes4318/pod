@@ -19,7 +19,10 @@ export function isPlaceholderValue(val: string | undefined): boolean {
     normalized === "SET_IN_COOLIFY_ONLY" ||
     normalized === "SET_YOUR_REAL_KEY_IN_COOLIFY" ||
     normalized === "SET_YOUR_REAL_SECRET_IN_COOLIFY" ||
-    normalized === "FQUi1ZLy8wtENMHBXC3RSGnzflTap4cVAhPkxqsg"
+    normalized === "YOUR_KEY_HERE" ||
+    normalized === "YOUR_SECRET_HERE" ||
+    normalized === "PASTE_KEY_HERE" ||
+    normalized === "PASTE_SECRET_HERE"
   );
 }
 
