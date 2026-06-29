@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./layout.css";
 import { db } from "@/lib/db";
 import { getRedisClient } from "@/lib/redis";
+import SidebarNav from "./SidebarNav";
 
 export const dynamic = "force-dynamic";
 
@@ -45,48 +46,8 @@ export default async function AdminLayout({
         <div className="brand">
           TAKE <span className="brandAccent">MACHINE</span>
         </div>
-        <nav>
-          <ul className="navLinks">
-            <li className="navItem navActive">
-              <Link href="/admin">Command Center</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/episodes">Episode Manager</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/personalities">AI Hosts</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/data-sources">Data Ingestion</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/topics">Topic Engine</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/research-briefs">Research Briefs</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/scripts">Script Review</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/fact-checks">Fact Checks</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/audio-segments">Audio Segments</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/final-audio">Final Audio</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/content-assets">Content Assets</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin/rss">RSS Feeds</Link>
-            </li>
-            <li className="navItem">
-              <Link href="/admin?tab=settings">System Settings</Link>
-            </li>
-          </ul>
+        <nav style={{ overflowY: "auto", flexGrow: 1, paddingRight: "0.25rem", margin: "1rem 0" }}>
+          <SidebarNav />
         </nav>
       </aside>
 

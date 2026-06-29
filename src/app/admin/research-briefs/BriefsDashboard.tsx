@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { triggerResearchBriefGeneration, deleteResearchBrief } from "./actions";
 
 interface EvidenceRef {
@@ -145,7 +146,10 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
           
           {topics.length === 0 ? (
             <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-              No approved topics found. Approve topics in the Topic Engine first.
+              <p style={{ color: "#94a3b8", fontSize: "1rem", fontWeight: "600", margin: 0 }}>No approved topics found.</p>
+              <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "0.5rem", margin: 0 }}>
+                Approve topic candidates before generating research briefs. Go to the <Link href="/admin/topics" style={{ color: "#38bdf8", textDecoration: "underline" }}>Topic Engine</Link> to approve topics first.
+              </p>
             </div>
           ) : (
             <div className="topicListCard">
@@ -217,8 +221,8 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
               Select a topic on the left to view brief details.
             </div>
           ) : !selectedTopic.brief ? (
-            <div style={{ display: "flex", flexGrow: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748b", padding: "4rem", gap: "1rem" }}>
-              <span>No Research Brief has been generated for this topic yet.</span>
+            <div style={{ display: "flex", flexGrow: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748b", padding: "4rem", gap: "1rem", textAlign: "center" }}>
+              <span style={{ color: "#94a3b8", fontWeight: "600" }}>No Research Brief has been generated for this topic yet.</span>
               <button
                 onClick={() => handleGenerate(selectedTopic.id, false)}
                 disabled={loadingTopicId !== null || isLlmStub}

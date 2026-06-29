@@ -217,34 +217,67 @@ export default function RssDetailConsole({
           {/* Validation Checklist */}
           <div className="panel" style={{ padding: "1.5rem" }}>
             <h3 className="panelTitle" style={{ marginTop: 0 }}>Publication Gate Checklist</h3>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-              {Object.entries(eligibility.checks).map(([key, val]) => (
-                <div
-                  key={key}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.6rem 0.75rem",
-                    backgroundColor: val ? "rgba(16, 185, 129, 0.04)" : "rgba(239, 68, 68, 0.04)",
-                    border: val ? "1px solid rgba(16, 185, 129, 0.15)" : "1px solid rgba(239, 68, 68, 0.15)",
-                    borderRadius: "4px",
-                    fontSize: "0.8rem",
-                    color: val ? "#10b981" : "#ef4444",
-                  }}
-                >
-                  {val ? (
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  ) : (
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                    </svg>
-                  )}
-                  <span>{checkLabels[key] || key}</span>
-                </div>
-              ))}
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {Object.entries(eligibility.checks).map(([key, val]) => {
+                const checkDetails: Record<string, { blocker: string; link?: string; actionText?: string }> = {
+                  scriptExists: { blocker: "Script record missing.", link: "/admin/scripts" },
+                  scriptApproved: { blocker: "Script must be approved.", link: `/admin/scripts/${script.id}` },
+                  episodeExists: { blocker: "Episode is not linked.", link: "/admin/episodes" },
+                  episodeStatusValid: { blocker: "Episode status is not content_ready or publish_ready.", link: `/admin/content-assets/${script.id}` },
+                  episodeTitleExists: { blocker: "Title is missing in episode details.", link: `/admin/episodes/${ep.id}` },
+                  episodeAudioUrlExists: { blocker: "Stitched final audio URL is missing.", link: `/admin/final-audio/${script.id}` },
+                  episodeDurationValid: { blocker: "Audio duration seconds is missing or 0.", link: `/admin/final-audio/${script.id}` },
+                  episodeTranscriptUrlExists: { blocker: "Transcript asset is not generated.", link: `/admin/content-assets/${script.id}` },
+                  episodeLongShowNotesExists: { blocker: "Show notes asset is not generated.", link: `/admin/content-assets/${script.id}` },
+                  factCheckPassed: { blocker: "Latest fact check result status is not 'passed'.", link: `/admin/fact-checks` },
+                  allAudioSegmentsReady: { blocker: "Some speech segments are pending or failed.", link: `/admin/audio-segments/${script.id}` },
+                  audioFileSizeResolved: { blocker: "Audio file size cannot be verified from storage.", link: `/admin/final-audio/${script.id}` },
+                  audioMimeTypeValid: { blocker: "Audio MIME type is invalid or missing.", link: `/admin/episodes/${ep.id}` },
+                  podcastConfigValid: { blocker: "Public RSS feed env config incomplete.", link: "/admin/configuration" },
+                  rssGuidValid: { blocker: "RSS GUID not generated.", actionText: "Click 'Prepare Episode' below to resolve." },
+                  noPlaceholderMetadata: { blocker: "Placeholder brackets detected in title/show notes.", link: `/admin/episodes/${ep.id}` },
+                };
+
+                const info = checkDetails[key];
+
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      padding: "0.75rem 1rem",
+                      backgroundColor: val ? "rgba(16, 185, 129, 0.03)" : "rgba(239, 68, 68, 0.03)",
+                      border: val ? "1px solid rgba(16, 185, 129, 0.12)" : "1px solid rgba(239, 68, 68, 0.12)",
+                      borderRadius: "6px",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "600", color: val ? "#10b981" : "#ef4444" }}>
+                      {val ? (
+                        <span style={{ color: "#10b981" }}>✓</span>
+                      ) : (
+                        <span style={{ color: "#ef4444" }}>✗</span>
+                      )}
+                      <span>{checkLabels[key] || key}</span>
+                    </div>
+                    {!val && info && (
+                      <div style={{ marginTop: "0.25rem", color: "#94a3b8", fontSize: "0.8rem", paddingLeft: "1.25rem" }}>
+                        <span style={{ color: "#fda4af" }}>Blocker:</span> {info.blocker}{" "}
+                        {info.link && (
+                          <Link href={info.link} style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: "600" }}>
+                            Fix on target page →
+                          </Link>
+                        )}
+                        {info.actionText && (
+                          <span style={{ color: "#a5b4fc", fontWeight: "600" }}>{info.actionText}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

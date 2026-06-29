@@ -157,7 +157,10 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
       {/* Table */}
       {scripts.length === 0 ? (
         <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No matching episodes or scripts found.</p>
+          <p style={{ color: "#94a3b8", fontSize: "1.1rem", fontWeight: "600", margin: 0 }}>No RSS episodes found.</p>
+          <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "0.5rem", margin: 0 }}>
+            Only published episodes appear in the public RSS feed. Prepare content assets for an episode, then configure and publish it here.
+          </p>
         </div>
       ) : (
         <div className="tableContainer">

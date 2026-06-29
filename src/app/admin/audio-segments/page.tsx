@@ -144,7 +144,10 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
       {/* Table */}
       {list.length === 0 ? (
         <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No approved script versions found eligible for TTS audio synthesis.</p>
+          <p style={{ color: "#94a3b8", fontSize: "1.1rem", fontWeight: "600", margin: 0 }}>No audio segments found.</p>
+          <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "0.5rem", margin: 0 }}>
+            Generate TTS only after script approval and passed fact check. Go to the <Link href="/admin/scripts" style={{ color: "#38bdf8", textDecoration: "underline" }}>Script Review</Link> console to approve a script.
+          </p>
         </div>
       ) : (
         <div className="tableContainer">

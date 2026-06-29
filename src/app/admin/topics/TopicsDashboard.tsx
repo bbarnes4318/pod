@@ -178,12 +178,11 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
               Refresh List
             </button>
           </div>
-
           {topics.length === 0 ? (
             <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-              <p style={{ color: "#64748b", fontSize: "1.1rem" }}>No topic candidates found in the database.</p>
+              <p style={{ color: "#64748b", fontSize: "1.1rem", fontWeight: "600" }}>No topic candidates exist yet.</p>
               <p style={{ color: "#475569", fontSize: "0.9rem", marginTop: "0.5rem" }}>
-                Select a target sport/league on the left and click "Generate Topics" to run the LLM debate pipeline.
+                Run sports data ingestion first, then generate topics from real stored data.
               </p>
             </div>
           ) : (
