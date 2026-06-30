@@ -35,6 +35,7 @@ yarn-error.log*
 !.env.example
 !.env.production.example
 !.env.coolify.example
+.env.coolify.local
 
 # vercel
 .vercel

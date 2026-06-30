@@ -1,195 +1,187 @@
 import fs from 'fs';
 import path from 'path';
 
-// Get configuration from process.env
-const token = process.env.COOLIFY_API_TOKEN;
-const resourceUuid = process.env.COOLIFY_RESOURCE_UUID;
-const baseUrl = process.env.COOLIFY_URL || 'http://localhost:8000';
-
-if (!token) {
-  console.error("ERROR: COOLIFY_API_TOKEN environment variable is not set.");
-  process.exit(1);
-}
-if (!resourceUuid) {
-  console.error("ERROR: COOLIFY_RESOURCE_UUID environment variable is not set.");
-  process.exit(1);
-}
-
-// Path to local envs
-const envPath = path.resolve('.env.coolify.local');
-if (!fs.existsSync(envPath)) {
-  console.error(`ERROR: Local configuration file not found at: ${envPath}`);
-  process.exit(1);
-}
-
-// Parse env variables
-const fileContent = fs.readFileSync(envPath, 'utf8');
-const envVars = [];
-const lines = fileContent.split(/\r?\n/);
-
-for (let line of lines) {
-  line = line.trim();
-  if (!line || line.startsWith('#')) continue;
-  
-  const equalsIndex = line.indexOf('=');
-  if (equalsIndex === -1) continue;
-  
-  const key = line.substring(0, equalsIndex).trim();
-  let value = line.substring(equalsIndex + 1).trim();
-  
-  // Strip quotes if present
-  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-    value = value.substring(1, value.length - 1);
-  }
-  
-  // NEXT_PUBLIC_* variables are needed at build time in Next.js
-  const isBuildTime = key.startsWith('NEXT_PUBLIC_');
-  
-  envVars.push({ key, value, isBuildTime });
-}
-
-console.log(`Parsed ${envVars.length} environment variables from .env.coolify.local`);
-
-// Helper to mask values in logs
+// Helper to mask secrets in console logs
 function maskValue(key, val) {
   if (!val) return 'MISSING';
-  const sensitiveKeys = [
-    'PASSWORD', 'KEY', 'SECRET', 'TOKEN', 'DATABASE', 'REDIS', 'URL'
-  ];
-  const isSensitive = sensitiveKeys.some(s => key.toUpperCase().includes(s));
+  const sensitiveKeys = ['API_KEY', 'PASSWORD', 'SECRET', 'TOKEN', 'DATABASE_URL'];
+  const isSensitive = sensitiveKeys.some(k => key.toUpperCase().includes(k));
   if (isSensitive) {
     if (val.length <= 8) return '[MASKED]';
-    return `${val.substring(0, 4)}...${val.substring(val.length - 4)}`;
+    return `${val.slice(0, 4)}...${val.slice(-4)}`;
   }
   return val;
 }
 
-// Execute sync
-async function syncEnvs() {
-  const apiBase = `${baseUrl.replace(/\/$/, '')}/api/v1`;
-  
-  console.log(`Connecting to Coolify API at: ${apiBase}`);
-  console.log(`Target Application/Resource UUID: ${resourceUuid}`);
-  console.log("--------------------------------------------------");
-  
-  // 1. Fetch existing env variables to check for keys
-  let existingEnvs = [];
-  try {
-    const res = await fetch(`${apiBase}/applications/${resourceUuid}/envs`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      }
-    });
-    
-    if (res.status === 200) {
-      existingEnvs = await res.json();
-      console.log(`Fetched ${existingEnvs.length} existing variables from Coolify.`);
-    } else if (res.status === 404) {
-      console.warn("WARNING: GET /envs returned 404. Proceeding to create all variables.");
-    } else {
-      const errText = await res.text();
-      console.error(`ERROR: Failed to fetch existing env variables. Status: ${res.status}. Response: ${errText}`);
-      process.exit(1);
-    }
-  } catch (err) {
-    console.error(`ERROR: Network error during GET env variables: ${err.message}`);
-    process.exit(1);
-  }
-  
-  const existingMap = new Map(existingEnvs.map(e => [e.key || e.name, e]));
-  
-  // 2. Upsert each env variable
-  for (const item of envVars) {
-    const existing = existingMap.get(item.key);
-    const maskedVal = maskValue(item.key, item.value);
-    
-    if (existing) {
-      // Key exists. Let's update it using PATCH.
-      // We check if value differs
-      if (existing.value === item.value) {
-        console.log(`[SKIPPED] ${item.key} is already up to date.`);
-        continue;
-      }
-      
-      console.log(`[UPDATING] ${item.key} -> ${maskedVal}...`);
-      
-      try {
-        // Try PATCH to /applications/{uuid}/envs
-        let patchRes = await fetch(`${apiBase}/applications/${resourceUuid}/envs`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({
-            key: item.key,
-            value: item.value,
-            is_build_time: item.isBuildTime
-          })
-        });
-        
-        // If first attempt is not successful, attempt specific resource PATCH using env uuid
-        if (patchRes.status !== 200 && patchRes.status !== 201 && patchRes.status !== 204 && existing.uuid) {
-          patchRes = await fetch(`${apiBase}/applications/${resourceUuid}/envs/${existing.uuid}`, {
-            method: 'PATCH',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            },
-            body: JSON.stringify({
-              value: item.value,
-              is_build_time: item.isBuildTime
-            })
-          });
-        }
-        
-        if (patchRes.status === 200 || patchRes.status === 201 || patchRes.status === 204) {
-          console.log(`[SUCCESS] Updated ${item.key}`);
-        } else {
-          const errText = await patchRes.text();
-          console.error(`[FAILED] Failed to update ${item.key}. Status: ${patchRes.status}. Error: ${errText}`);
-        }
-      } catch (err) {
-        console.error(`[ERROR] Network error updating ${item.key}: ${err.message}`);
-      }
-      
-    } else {
-      // Key does not exist. Let's create it using POST.
-      console.log(`[CREATING] ${item.key} -> ${maskedVal}...`);
-      
-      try {
-        const postRes = await fetch(`${apiBase}/applications/${resourceUuid}/envs`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({
-            key: item.key,
-            value: item.value,
-            is_build_time: item.isBuildTime,
-            is_preview: false
-          })
-        });
-        
-        if (postRes.status === 200 || postRes.status === 201 || postRes.status === 204) {
-          console.log(`[SUCCESS] Created ${item.key}`);
-        } else {
-          const errText = await postRes.text();
-          console.error(`[FAILED] Failed to create ${item.key}. Status: ${postRes.status}. Error: ${errText}`);
-        }
-      } catch (err) {
-        console.error(`[ERROR] Network error creating ${item.key}: ${err.message}`);
-      }
-    }
-  }
-  
-  console.log("--------------------------------------------------");
-  console.log("Sync process completed!");
+// Helper to check if a value is a placeholder
+function isPlaceholderValue(val) {
+  if (!val) return true;
+  const normalized = val.trim().toUpperCase();
+  return [
+    'SET_IN_COOLIFY_ONLY',
+    'CHANGE_ME',
+    'CHANGE_ME_IN_COOLIFY_ONLY',
+    'SET_YOUR_REAL_KEY_IN_COOLIFY',
+    'SET_YOUR_REAL_SECRET_IN_COOLIFY',
+    'YOUR_KEY_HERE',
+    'YOUR_SECRET_HERE',
+    'PASTE_KEY_HERE',
+    'PASTE_SECRET_HERE'
+  ].includes(normalized);
 }
 
-syncEnvs();
+async function run() {
+  const token = process.env.COOLIFY_API_TOKEN;
+  const uuid = process.env.COOLIFY_RESOURCE_UUID;
+  const baseUrl = process.env.COOLIFY_URL || 'http://localhost:8000';
+
+  if (!token) {
+    console.error('ERROR: COOLIFY_API_TOKEN environment variable is required.');
+    process.exit(1);
+  }
+  if (!uuid) {
+    console.error('ERROR: COOLIFY_RESOURCE_UUID environment variable is required.');
+    process.exit(1);
+  }
+
+  // Normalize URL
+  const normalizedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+
+  // Read .env.coolify.local
+  const filePath = path.join(process.cwd(), '.env.coolify.local');
+  if (!fs.existsSync(filePath)) {
+    console.error(`ERROR: Config file not found at ${filePath}. Please copy .env.coolify.example to .env.coolify.local first.`);
+    process.exit(1);
+  }
+
+  const fileContent = fs.readFileSync(filePath, 'utf-8');
+  const envVars = {};
+
+  const lines = fileContent.split('\n');
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const equalIndex = trimmed.indexOf('=');
+    if (equalIndex === -1) continue;
+    const key = trimmed.slice(0, equalIndex).trim();
+    let value = trimmed.slice(equalIndex + 1).trim();
+    
+    // Remove wrapping quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    
+    envVars[key] = value;
+  }
+
+  console.log(`Parsed ${Object.keys(envVars).length} environment variables from .env.coolify.local.`);
+  console.log(`Connecting to Coolify API at: ${normalizedUrl}/api/v1 (Resource UUID: ${uuid})`);
+
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  };
+
+  // 1. Fetch current environment variables configured in Coolify
+  let existingEnvs = [];
+  try {
+    const getRes = await fetch(`${normalizedUrl}/api/v1/applications/${uuid}/envs`, {
+      method: 'GET',
+      headers
+    });
+    if (!getRes.ok) {
+      const errText = await getRes.text();
+      throw new Error(`GET envs failed. HTTP ${getRes.status}: ${errText}`);
+    }
+    existingEnvs = await getRes.json();
+    console.log(`Fetched ${existingEnvs.length} existing environment variables from the Coolify resource.`);
+  } catch (err) {
+    console.error('ERROR connecting to Coolify REST API:', err.message);
+    process.exit(1);
+  }
+
+  const existingMap = {};
+  for (const env of existingEnvs) {
+    existingMap[env.key] = env;
+  }
+
+  let successCount = 0;
+  let skipCount = 0;
+  let failCount = 0;
+
+  for (const [key, value] of Object.entries(envVars)) {
+    // Skip if placeholder
+    if (isPlaceholderValue(value)) {
+      console.log(`[SKIP] ${key} uses a placeholder value "${value}".`);
+      skipCount++;
+      continue;
+    }
+
+    const isBuildTime = key.startsWith('NEXT_PUBLIC_');
+    const existing = existingMap[key];
+
+    try {
+      if (existing) {
+        // If key exists and values + type match, skip
+        if (existing.value === value && existing.is_build_time === isBuildTime) {
+          console.log(`[UP-TO-DATE] ${key} is already configured correctly.`);
+          skipCount++;
+          continue;
+        }
+
+        // Delete existing env to update it cleanly (bypasses payload differences in PATCH across versions)
+        console.log(`[UPDATE] Re-syncing changed variable: ${key}...`);
+        const delRes = await fetch(`${normalizedUrl}/api/v1/applications/${uuid}/envs/${existing.uuid}`, {
+          method: 'DELETE',
+          headers
+        });
+        if (!delRes.ok) {
+          throw new Error(`Delete failed: HTTP ${delRes.status}`);
+        }
+      } else {
+        console.log(`[CREATE] Adding new variable: ${key}...`);
+      }
+
+      // POST to create
+      const postRes = await fetch(`${normalizedUrl}/api/v1/applications/${uuid}/envs`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          key,
+          value,
+          is_build_time: isBuildTime,
+          is_preview: false,
+          is_shown_in_ui: true
+        })
+      });
+
+      if (!postRes.ok) {
+        const errText = await postRes.text();
+        throw new Error(`Create failed: HTTP ${postRes.status} - ${errText}`);
+      }
+
+      console.log(`[SUCCESS] Set ${key} = ${maskValue(key, value)} (Build Time: ${isBuildTime})`);
+      successCount++;
+    } catch (err) {
+      console.error(`[FAIL] ${key}:`, err.message);
+      failCount++;
+    }
+  }
+
+  console.log('\n=========================================');
+  console.log('SYNC OPERATION SUMMARY:');
+  console.log(`- Created/Updated: ${successCount}`);
+  console.log(`- Skipped:         ${skipCount}`);
+  console.log(`- Failed:          ${failCount}`);
+  console.log('=========================================');
+
+  if (failCount > 0) {
+    process.exit(1);
+  } else {
+    console.log('Sync completed successfully!');
+    process.exit(0);
+  }
+}
+
+run();
