@@ -1,6 +1,6 @@
 import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
-import { getOddsApiKeyStatus, getRssFeedStatus } from "@/lib/env";
+import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export default async function ConfigurationPage() {
   };
 
   const dbUrlStatus = maskSecret(process.env.DATABASE_URL);
-  const redisUrlStatus = maskSecret(process.env.REDIS_URL);
+  const redisUrlStatus = await getRedisStatus();
   const previewTokenStatus = maskSecret(process.env.RSS_PREVIEW_TOKEN);
 
   const providerApis = [

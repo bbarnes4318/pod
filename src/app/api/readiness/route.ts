@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getRedisClient } from "@/lib/redis";
+import { getRedisStatus } from "@/lib/env";
 import { execSync } from "child_process";
 import { getRequiredProductionEnvChecklist, validateProviderSelection } from "@/lib/services/productionEnvService";
 
@@ -19,17 +19,13 @@ export async function GET() {
   }
 
   // 2. Redis connection check
-  try {
-    const redis = getRedisClient();
-    const ping = await redis.ping();
-    if (ping === "PONG") {
-      checks.push({ name: "redis", status: "pass", message: "Redis connection successful." });
-    } else {
-      checks.push({ name: "redis", status: "fail", message: "Redis connection failed." });
-    }
-  } catch (e: any) {
-    // Return a generic client-safe error message. Raw exception is not exposed.
-    checks.push({ name: "redis", status: "fail", message: "Redis connection failed." });
+  const redisStatus = await getRedisStatus();
+  if (redisStatus === "CONFIGURED") {
+    checks.push({ name: "redis", status: "pass", message: "Redis connection successful." });
+  } else if (redisStatus === "AUTH_FAILED") {
+    checks.push({ name: "redis", status: "fail", message: "Redis connection failed: Authentication failed." });
+  } else {
+    checks.push({ name: "redis", status: "fail", message: "Redis connection failed: Connection refused or timed out." });
   }
 
   // 3. Environment checklist (Only key names are listed in messages)

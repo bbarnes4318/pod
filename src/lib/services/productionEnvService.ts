@@ -1,3 +1,5 @@
+import { getRedisUrl } from "@/lib/env";
+
 export interface EnvCheck {
   key: string;
   status: "pass" | "fail" | "warning";
@@ -74,7 +76,26 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
 
   // 2. Postgres & Redis
   checkRequired("DATABASE_URL", true);
-  checkRequired("REDIS_URL", true);
+  
+  const resolvedRedisUrl = getRedisUrl();
+  if (!resolvedRedisUrl || isPlaceholderValue(resolvedRedisUrl)) {
+    checks.push({ key: "REDIS_URL", status: "fail", value: "MISSING", message: "Required variable REDIS_URL is missing." });
+  } else {
+    let masked = resolvedRedisUrl;
+    try {
+      const urlObj = new URL(resolvedRedisUrl);
+      if (urlObj.password) {
+        urlObj.password = "[MASKED]";
+      }
+      if (urlObj.username) {
+        urlObj.username = "[MASKED]";
+      }
+      masked = urlObj.toString();
+    } catch (_) {
+      masked = "[INVALID_URL]";
+    }
+    checks.push({ key: "REDIS_URL", status: "pass", value: masked });
+  }
 
   // Concurrencies
   checkOptional("WORKER_CONCURRENCY");

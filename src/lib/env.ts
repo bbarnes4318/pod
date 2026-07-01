@@ -1,4 +1,5 @@
 import "server-only";
+import Redis from "ioredis";
 
 /**
  * Checks if a value is a generic placeholder.
@@ -91,6 +92,127 @@ export function getSportsProvider(): string {
 }
 
 /**
+ * Returns the resolved Redis URL by checking process.env.REDIS_URL or building it dynamically.
+ */
+export function getRedisUrl(): string {
+  const envUrl = process.env.REDIS_URL || "";
+  if (envUrl.trim() && !isPlaceholder(envUrl)) {
+    return envUrl.trim();
+  }
+
+  // Fallback to separate variables
+  const host = process.env.REDIS_HOST || "";
+  const port = process.env.REDIS_PORT || "6379";
+  const password = process.env.REDIS_PASSWORD || "";
+  const username = process.env.REDIS_USERNAME || "";
+
+  if (host) {
+    if (password) {
+      const encodedUser = encodeURIComponent(username || "default");
+      const encodedPass = encodeURIComponent(password);
+      return `redis://${encodedUser}:${encodedPass}@${host}:${port}`;
+    }
+    return `redis://${host}:${port}`;
+  }
+
+  return "";
+}
+
+/**
+ * Performs a Redis connection and PING check to evaluate authentication status.
+ * Never exposes the raw Redis URL or credentials in the returned string.
+ */
+export async function getRedisStatus(): Promise<"CONFIGURED" | "MISSING" | "AUTH_FAILED" | "CONNECTION_FAILED"> {
+  const redisUrl = getRedisUrl();
+  if (!redisUrl || isPlaceholder(redisUrl)) {
+    return "MISSING";
+  }
+
+  try {
+    const urlObj = new URL(redisUrl);
+    if (!urlObj.password) {
+      return "AUTH_FAILED"; // Missing password counts as auth failure in production
+    }
+  } catch (_) {
+    return "CONNECTION_FAILED";
+  }
+
+  return new Promise((resolve) => {
+    let client: Redis | null = null;
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        resolve("CONNECTION_FAILED");
+        if (client) {
+          try {
+            client.disconnect();
+          } catch (_) {}
+        }
+      }
+    }, 2000);
+
+    try {
+      client = new Redis(redisUrl, {
+        maxRetriesPerRequest: null,
+        enableReadyCheck: false,
+        connectTimeout: 1500,
+      });
+
+      client.on("error", (err: any) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          if (err.message && err.message.includes("NOAUTH")) {
+            resolve("AUTH_FAILED");
+          } else {
+            resolve("CONNECTION_FAILED");
+          }
+          try {
+            client?.disconnect();
+          } catch (_) {}
+        }
+      });
+
+      client.ping().then((res) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          if (res === "PONG") {
+            resolve("CONFIGURED");
+          } else {
+            resolve("CONNECTION_FAILED");
+          }
+          try {
+            client?.disconnect();
+          } catch (_) {}
+        }
+      }).catch((err) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          if (err.message && err.message.includes("NOAUTH")) {
+            resolve("AUTH_FAILED");
+          } else {
+            resolve("CONNECTION_FAILED");
+          }
+          try {
+            client?.disconnect();
+          } catch (_) {}
+        }
+      });
+    } catch (_) {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        resolve("CONNECTION_FAILED");
+      }
+    }
+  });
+}
+
+/**
  * Asserts that all required production environment configurations are present.
  * Should be executed at application runtime in production.
  */
@@ -99,6 +221,28 @@ export function assertProductionEnv(): void {
   // Bypass checks during Next.js static build phase
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
+  // 1. Redis Configuration Checks
+  const redisUrl = getRedisUrl();
+  if (!redisUrl) {
+    throw new Error("Missing required production env var: REDIS_URL");
+  }
+  if (isPlaceholder(redisUrl)) {
+    throw new Error("Placeholder detected in production env var: REDIS_URL");
+  }
+
+  try {
+    const urlObj = new URL(redisUrl);
+    if (!urlObj.password) {
+      throw new Error("Redis connection requires authentication in production. The REDIS_URL is missing a password.");
+    }
+  } catch (err: any) {
+    if (err.message && err.message.includes("requires authentication")) {
+      throw err;
+    }
+    throw new Error(`Invalid REDIS_URL configured in production: ${err.message}`);
+  }
+
+  // 2. Integration Provider Checks
   const sports = getSportsProvider();
   if (sports === "oddsapi") {
     if (getOddsApiKeyStatus() !== "CONFIGURED") {

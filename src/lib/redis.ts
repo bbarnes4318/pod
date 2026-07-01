@@ -1,8 +1,8 @@
 import Redis, { RedisOptions } from "ioredis";
-
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+import { getRedisUrl } from "./env";
 
 export const getRedisConnectionOptions = (): RedisOptions => {
+  const redisUrl = getRedisUrl();
   try {
     const urlObj = new URL(redisUrl);
     return {
@@ -29,12 +29,17 @@ const globalForRedis = globalThis as unknown as {
 };
 
 export const getRedisClient = (): Redis => {
+  const redisUrl = getRedisUrl();
   if (process.env.NODE_ENV === "production") {
     const client = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
     });
-    client.on("error", () => {}); // Silence connection errors
+    client.on("error", (err: any) => {
+      if (err.message && err.message.includes("NOAUTH")) {
+        console.error("[Redis] Authentication failed! The Redis password or URL configured in REDIS_URL is invalid or missing credentials.");
+      }
+    });
     return client;
   }
 
@@ -43,7 +48,11 @@ export const getRedisClient = (): Redis => {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
     });
-    client.on("error", () => {}); // Silence connection errors
+    client.on("error", (err: any) => {
+      if (err.message && err.message.includes("NOAUTH")) {
+        console.error("[Redis] Authentication failed! The Redis password or URL configured in REDIS_URL is invalid or missing credentials.");
+      }
+    });
     globalForRedis.redisConnection = client;
   }
 
