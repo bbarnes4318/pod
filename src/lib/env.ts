@@ -256,4 +256,48 @@ export function assertProductionEnv(): void {
       throw new Error("Missing required production env var: NEWS_RSS_FEEDS");
     }
   }
+
+  // 3. Research Provider Checks
+  const research = getResearchProvider();
+  if (research === "exa") {
+    if (getResearchProviderStatus() !== "CONFIGURED") {
+      throw new Error("Missing required production env var: EXA_API_KEY when RESEARCH_PROVIDER=exa");
+    }
+  } else if (research === "stub") {
+    throw new Error("Production environments must use a real Research Provider (e.g. exa), 'stub' is not allowed in production.");
+  } else {
+    throw new Error(`Unsupported RESEARCH_PROVIDER: ${research}`);
+  }
+}
+
+/**
+ * Returns the configured research provider (default is "stub").
+ */
+export function getResearchProvider(): string {
+  return (process.env.RESEARCH_PROVIDER || "stub").trim().toLowerCase();
+}
+
+/**
+ * Returns the resolved Exa API key.
+ */
+export function getExaApiKey(): string {
+  return (process.env.EXA_API_KEY || "").trim();
+}
+
+/**
+ * Returns the research provider configuration status.
+ */
+export function getResearchProviderStatus(): "CONFIGURED" | "MISSING" | "ERROR" {
+  const provider = getResearchProvider();
+  if (provider === "exa") {
+    const key = getExaApiKey();
+    if (!key || isPlaceholder(key)) {
+      return "MISSING";
+    }
+    return "CONFIGURED";
+  }
+  if (provider === "stub") {
+    return "CONFIGURED";
+  }
+  return "ERROR";
 }

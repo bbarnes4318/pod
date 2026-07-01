@@ -292,7 +292,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                           let dotClass = "sourceDotActive";
                           if (cleanLine.includes("skipped")) {
                             dotClass = "sourceDotSkipped";
-                          } else if (cleanLine.includes("unavailable")) {
+                          } else if (cleanLine.includes("unavailable") || cleanLine.includes("error") || cleanLine.includes("missing")) {
                             dotClass = "sourceDotUnavailable";
                           }
                           return (

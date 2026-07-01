@@ -21,6 +21,8 @@ interface DashboardProps {
     hasSportsdataioKey: boolean;
     hasOddsapiKey: boolean;
     hasRssConfig: boolean;
+    researchProvider: string;
+    hasResearchKey: boolean;
   };
 }
 
@@ -116,6 +118,26 @@ export default function IngestionDashboard({ initialStats, initialLogs, provider
             <div className="providerDetailRow">
               <span className="detailLabel">Storage Limit:</span>
               <span className="detailValue">Headlines only (no copyrighted text)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Research Provider */}
+        <div className="providerCard">
+          <div className="providerCardHeader">
+            <span className="providerName">Research Provider ({providersConfig.researchProvider?.toUpperCase() || "STUB"})</span>
+            <span className="providerTypeBadge">Deep Research</span>
+          </div>
+          <div className="providerDetails">
+            <div className="providerDetailRow">
+              <span className="detailLabel">API Key Status:</span>
+              <span className={providersConfig.hasResearchKey ? "detailValueActive" : "detailValueInactive"}>
+                {providersConfig.hasResearchKey ? "CONFIGURED" : "MISSING"}
+              </span>
+            </div>
+            <div className="providerDetailRow">
+              <span className="detailLabel">Target SDK:</span>
+              <span className="detailValue">{providersConfig.researchProvider === "exa" ? "Exa AI SDK v2.14.0" : "Mock / Local Stub"}</span>
             </div>
           </div>
         </div>

@@ -1,7 +1,7 @@
 import React from "react";
 import IngestionDashboard from "./IngestionDashboard";
 import { fetchIngestionStats, fetchRecentJobLogs } from "./actions";
-import { getSportsProvider, getOddsApiKeyStatus, getRssFeedStatus, assertProductionEnv } from "@/lib/env";
+import { getSportsProvider, getOddsApiKeyStatus, getRssFeedStatus, assertProductionEnv, getResearchProvider, getResearchProviderStatus } from "@/lib/env";
 import "./data-sources.css";
 
 // Force Next.js to server-render on demand
@@ -33,12 +33,16 @@ export default async function DataSourcesPage() {
   const hasSportsdataioKey = !!process.env.SPORTSDATAIO_API_KEY && process.env.SPORTSDATAIO_API_KEY !== "your-sportsdataio-api-key";
   const hasOddsapiKey = getOddsApiKeyStatus() === "CONFIGURED";
   const hasRssConfig = getRssFeedStatus() === "CONFIGURED";
+  const researchProvider = getResearchProvider();
+  const hasResearchKey = getResearchProviderStatus() === "CONFIGURED";
 
   const providersConfig = {
     sportsProvider,
     hasSportsdataioKey,
     hasOddsapiKey,
     hasRssConfig,
+    researchProvider,
+    hasResearchKey,
   };
 
   return (

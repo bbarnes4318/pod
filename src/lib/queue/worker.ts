@@ -1,6 +1,7 @@
 // Standalone Queue Worker for Take Machine
 import "dotenv/config";
 import { assertProductionEnv, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
+import { runResearchRouting } from "../research/source-router";
 
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
@@ -1211,71 +1212,61 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
     // Filter out injuries lacking linked player or team
     const validInjuries = resolvedInjuries.filter((i) => i.player?.name && i.team?.name);
 
-    // 5. Source Priority Guidelines & Audit Log Compile
+    // 5. Source Priority Guidelines & Invoke Research Source Router (Exa AI)
     let sourcePriorityGuideline = "";
     if (classification === "betting_market") {
       sourcePriorityGuideline = `Source Priority order:
 1. User topic / title / prompt
 2. Tied-back game data
 3. Odds / markets (focus heavily on spread, total, moneyline, implied score, and market movement)
-4. RSS news headlines
-5. Team context`;
+4. Exa Web Research (context, injury reporting, news, matchup narratives, background)
+5. RSS news headlines
+6. Team context`;
     } else if (classification === "game_preview") {
       sourcePriorityGuideline = `Source Priority order:
 1. User topic / title / prompt
-2. Stored topic metadata
-3. Schedule / game data (focus on matchup, date, time)
-4. Related team context
-5. RSS news headlines
-6. Odds only as supporting context (do not make odds the entire focus)`;
+2. Exa Web Research (matchup context, recent forms, general sentiment)
+3. RSS news headlines (freshness signals)
+4. Schedule / game data (matchup, date, time)
+5. Related team context
+6. Odds API (optional supporting market context)`;
     } else if (classification === "news_reaction") {
       sourcePriorityGuideline = `Source Priority order:
 1. User topic / title / prompt
-2. RSS news headlines (focus on the breaking news event first)
-3. Stored topic metadata
+2. Exa Web Research (deep context on the news event)
+3. RSS news headlines
 4. Related team/player context
 (Do not use or require Odds API data unless explicitly relevant)`;
     } else {
       sourcePriorityGuideline = `Source Priority order:
 1. User topic / title / prompt
-2. Stored topic metadata
+2. Exa Web Research (general context, stats, sentiment, historical records)
 3. RSS news headlines
 4. Related team/player/coach/conference context
 5. Schedule / game data
 (Do not use or require Odds API data unless an upcoming game or betting angle is explicitly detected)`;
     }
 
-    // Build the audit log of sources used
-    const sourcesUsedList: string[] = ["Topic metadata"];
+    const { researchResults, sourceNotes } = await runResearchRouting({
+      title: topic.title,
+      summary: topic.summary || "",
+      classification,
+      hasOddsApi: getOddsApiKeyStatus() === "CONFIGURED",
+      hasRssFeeds: getRssFeedStatus() === "CONFIGURED",
+      resolvedOddsCount: resolvedOdds.length,
+      resolvedNewsCount: resolvedNews.length,
+      resolvedGamesCount: resolvedGames.length,
+    });
 
-    if (resolvedNews.length > 0) {
-      sourcesUsedList.push(`RSS headlines (${resolvedNews.length} articles matched)`);
-    } else if (getRssFeedStatus() === "CONFIGURED") {
-      sourcesUsedList.push("RSS headlines: skipped (no matching news found)");
-    } else {
-      sourcesUsedList.push("RSS headlines: unavailable");
-    }
-
-    if (resolvedGames.length > 0) {
-      sourcesUsedList.push(`Team context / Schedule (${resolvedGames.length} games matched)`);
+    // Dynamically insert Exa research results into topicEvidenceMap as valid "research" refs
+    for (let idx = 0; idx < researchResults.length; idx++) {
+      topicEvidenceMap.set(`research-${idx + 1}`, "research");
     }
 
     const isBettingTopic = classification === "betting_market" || 
       `${topic.title} ${topic.summary}`.toLowerCase().match(/\b(odds|spread|total|moneyline|betting|wager)\b/i);
 
-    if (resolvedOdds.length > 0) {
-      sourcesUsedList.push(`Odds API: ${resolvedGames[0]?.homeTeam?.name || "Game"} market found`);
-    } else if (isBettingTopic) {
-      if (getOddsApiKeyStatus() === "CONFIGURED") {
-        sourcesUsedList.push("Odds API: no matching markets found");
-      } else {
-        sourcesUsedList.push("Odds API: unavailable (missing API key)");
-      }
-    } else {
-      sourcesUsedList.push("Odds API: skipped (not relevant to topic)");
-    }
-
-    const sourceNotesUsed = sourcesUsedList.map(s => `- ${s}`).join("\n");
+    const sourceNotesUsed = sourceNotes;
 
     // Decouple Odds: betting brief should show "Odds unavailable" if Odds API key/data is missing
     let oddsContextFallback: string | null = null;
@@ -1293,6 +1284,13 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
         classification,
       },
       evidence: {
+        research: researchResults.map((r, idx) => ({
+          id: `research-${idx + 1}`,
+          title: r.title,
+          url: r.url,
+          highlights: r.highlights,
+          snippet: r.snippet,
+        })),
         games: resolvedGames.map((g) => ({
           id: g.id,
           homeTeam: g.homeTeam.name,
@@ -1360,28 +1358,28 @@ Schema:
   "keyFactsContext": [
     {
       "text": "Fact/context statement (e.g. team has won 4 games in a row)",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
       "confidence": "high" | "medium" | "low"
     }
   ],
   "onAirTalkingPoints": [
     {
       "text": "Talking point / stat comparison for the hosts to highlight on air",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ]
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ]
     }
   ],
   "contrarianAngle": "A contrarian view or hot take that goes against the consensus.",
   "strongestDebateQuestion": "The ultimate debate question that drives the show segment.",
   "suggestedHostTake": "A recommended landing point or take for the main host.",
   "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence.",
-  "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+  "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
   "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence.",
-  "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
+  "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
   "counterArguments": [
     {
       "host": "Max Voltage" | "Dr. Linebreak",
       "claim": "Counterpoint or argument",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ]
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ]
     }
   ],
   "unsafeClaims": [
@@ -1391,7 +1389,7 @@ Schema:
     }
   ],
   "sourceIds": [
-    { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" }
+    { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" }
   ]
 }`;
 
