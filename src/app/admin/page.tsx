@@ -204,8 +204,6 @@ export default async function AdminDashboard() {
                 textDecoration: "none",
                 transition: "border-color 0.2s",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#38bdf8")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#1a2233")}
             >
               <span style={{ fontSize: "0.8rem", color: "#64748b", textTransform: "uppercase", fontWeight: "600" }}>
                 {stage.label}
