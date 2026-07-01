@@ -25,10 +25,10 @@ export default async function ConfigurationPage() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
       <div>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#ffffff", marginBottom: "0.25rem" }}>
+        <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "0.25rem" }}>
           System Configuration
         </h2>
-        <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", margin: 0 }}>
           Read-only environment status, service provider diagnostics, and production safety audits.
         </p>
       </div>
@@ -45,8 +45,8 @@ export default async function ConfigurationPage() {
           </span>
         </div>
         <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <p style={{ fontSize: "0.85rem", color: "#94a3b8" }}>
-            Last Run: <code style={{ color: "#38bdf8" }}>{audit.timestamp}</code>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>
+            Last Run: <code style={{ color: "var(--accent-color)" }}>{audit.timestamp}</code>
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {audit.checks.map((check, idx) => (
@@ -56,13 +56,13 @@ export default async function ConfigurationPage() {
                   display: "flex",
                   flexDirection: "column",
                   padding: "1rem",
-                  backgroundColor: "#080b10",
-                  border: "1px solid #1a2233",
+                  backgroundColor: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
                   borderRadius: "6px",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
-                  <strong style={{ color: "#ffffff", fontSize: "0.95rem" }}>{check.name}</strong>
+                  <strong style={{ color: "var(--text-primary)", fontSize: "0.95rem" }}>{check.name}</strong>
                   <span
                     className={`badge ${
                       check.status === "pass"
@@ -76,15 +76,15 @@ export default async function ConfigurationPage() {
                     {check.value || check.status.toUpperCase()}
                   </span>
                 </div>
-                <div style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{check.description}</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>{check.description}</div>
                 {check.details && (
                   <div
                     style={{
                       marginTop: "0.5rem",
                       fontSize: "0.8rem",
                       fontFamily: "var(--font-mono)",
-                      color: check.status === "fail" ? "#fecdd3" : "#fef08a",
-                      backgroundColor: "rgba(15, 23, 42, 0.6)",
+                      color: check.status === "fail" ? "var(--error-color)" : "var(--warning-color)",
+                      backgroundColor: "var(--bg-primary)",
                       padding: "0.5rem",
                       borderRadius: "4px",
                       wordBreak: "break-all",
@@ -160,33 +160,33 @@ export default async function ConfigurationPage() {
           </div>
           <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div style={{ borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Title</div>
-                <div style={{ color: "#ffffff", fontWeight: "600" }}>{process.env.PODCAST_TITLE || "Not Configured"}</div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Title</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.PODCAST_TITLE || "Not Configured"}</div>
               </div>
-              <div style={{ borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Author</div>
-                <div style={{ color: "#ffffff", fontWeight: "600" }}>{process.env.PODCAST_AUTHOR || "Not Configured"}</div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Author</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.PODCAST_AUTHOR || "Not Configured"}</div>
               </div>
-              <div style={{ borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Owner Email</div>
-                <div style={{ color: "#ffffff", fontWeight: "600" }}>{process.env.PODCAST_OWNER_EMAIL || "Not Configured"}</div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Owner Email</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.PODCAST_OWNER_EMAIL || "Not Configured"}</div>
               </div>
-              <div style={{ borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Site URL</div>
-                <div style={{ color: "#38bdf8", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Site URL</div>
+                <div style={{ color: "var(--accent-color)", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
                   {process.env.PODCAST_SITE_URL || "Not Configured"}
                 </div>
               </div>
-              <div style={{ borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>RSS Feed URL</div>
-                <div style={{ color: "#38bdf8", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>RSS Feed URL</div>
+                <div style={{ color: "var(--accent-color)", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
                   {process.env.PODCAST_RSS_URL || "Not Configured"}
                 </div>
               </div>
               <div>
-                <div style={{ color: "#64748b", fontSize: "0.75rem", textTransform: "uppercase" }}>Image Cover URL</div>
-                <div style={{ color: "#38bdf8", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Image Cover URL</div>
+                <div style={{ color: "var(--accent-color)", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
                   {process.env.PODCAST_IMAGE_URL || "Not Configured"}
                 </div>
               </div>

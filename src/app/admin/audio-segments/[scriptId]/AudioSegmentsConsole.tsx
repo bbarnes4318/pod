@@ -139,7 +139,7 @@ export default function AudioSegmentsConsole({
             ← Back to TTS Dashboard
           </Link>
           <Link href={`/admin/episodes/${script.episodeId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
-            Goto Episode details
+            Goto Episode Details
           </Link>
           <Link href={`/admin/scripts/${script.id}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
             Goto Script Console
@@ -150,17 +150,17 @@ export default function AudioSegmentsConsole({
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", color: "#ffffff", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)", margin: 0 }}>
             Audio Segment Console: Version {script.version}
           </h2>
-          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
-            Episode: <strong style={{ color: "#ffffff" }}>{script.episodeTitle}</strong>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            Episode: <strong style={{ color: "var(--text-primary)" }}>{script.episodeTitle}</strong>
           </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
           <div style={{ textAlign: "right" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", display: "block" }}>Eligibility</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>Eligibility</span>
             <span
               className={`badge ${eligible ? "badgeCompleted" : "badgeFailed"}`}
               style={{ display: "inline-block", marginTop: "0.25rem" }}
@@ -173,13 +173,13 @@ export default function AudioSegmentsConsole({
 
       {/* Warnings & Messages */}
       {message && (
-        <div className={`messageBox ${message.type === "success" ? "successBox" : "errorBox"}`} style={{ marginTop: "1rem" }}>
+        <div className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`} style={{ marginTop: "1rem" }}>
           {message.text}
         </div>
       )}
 
       {!eligible && eligibilityReason && (
-        <div className="messageBox errorBox" style={{ marginTop: "1rem" }}>
+        <div className="alertCard alertDanger" style={{ marginTop: "1rem" }}>
           <strong>TTS Generation Blocked:</strong> {eligibilityReason}
         </div>
       )}
@@ -205,12 +205,12 @@ export default function AudioSegmentsConsole({
               <table className="table">
                 <thead>
                   <tr>
-                    <th style={{ width: "60px" }}>Line</th>
+                    <th style={{ width: "60px", textAlign: "center" }}>Line</th>
                     <th style={{ width: "120px" }}>Speaker</th>
                     <th>Dialogue Text Preview</th>
                     <th style={{ width: "80px" }}>Tone</th>
                     <th style={{ width: "100px" }}>Status</th>
-                    <th style={{ width: "80px" }}>Duration</th>
+                    <th style={{ width: "80px", textAlign: "center" }}>Duration</th>
                     <th style={{ width: "150px" }}>Audio</th>
                     <th style={{ width: "100px" }}>Actions</th>
                   </tr>
@@ -231,14 +231,14 @@ export default function AudioSegmentsConsole({
                           #{line.lineIndex + 1}
                         </td>
                         <td>
-                          <span style={{ fontWeight: 600, color: line.speakerName === "Max Voltage" ? "#f43f5e" : "#38bdf8" }}>
+                          <span style={{ fontWeight: 700, color: line.speakerName === "Max Voltage" ? "var(--error-color)" : "var(--accent-color)" }}>
                             {line.speakerName}
                           </span>
                         </td>
-                        <td style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+                        <td style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>
                           {line.text}
                         </td>
-                        <td style={{ fontSize: "0.75rem", color: "#94a3b8", fontStyle: "italic" }}>
+                        <td style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
                           {line.tone}
                         </td>
                         <td>
@@ -250,11 +250,11 @@ export default function AudioSegmentsConsole({
                               : isProcessing || isPending
                               ? "badgePending"
                               : "refBadge"
-                          }`} style={{ fontSize: "0.7rem", padding: "0.1rem 0.4rem" }}>
+                          }`} style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
                             {statusVal}
                           </span>
                         </td>
-                        <td style={{ fontSize: "0.8rem", color: "#cbd5e1", textAlign: "center" }}>
+                        <td style={{ fontSize: "0.8rem", color: "var(--text-primary)", textAlign: "center" }}>
                           {seg?.durationMs ? `${(seg.durationMs / 1000).toFixed(1)}s` : "--"}
                         </td>
                         <td>
@@ -264,13 +264,13 @@ export default function AudioSegmentsConsole({
                               <a
                                 href={seg.audioUrl}
                                 download={`segment-${line.lineIndex}.mp3`}
-                                style={{ fontSize: "0.7rem", color: "#38bdf8", textDecoration: "underline" }}
+                                style={{ fontSize: "0.7rem", color: "var(--accent-color)", textDecoration: "underline" }}
                               >
                                 Download MP3
                               </a>
                             </div>
                           ) : (
-                            <span style={{ fontSize: "0.75rem", color: "#64748b", fontStyle: "italic" }}>No audio</span>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>No audio</span>
                           )}
                         </td>
                         <td>
@@ -299,26 +299,26 @@ export default function AudioSegmentsConsole({
           {/* Status Overview Card */}
           <div className="controlsPanel">
             <div className="panelTitle">Progress Summary</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-primary)" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Total Dialogue Lines:</span>
                 <strong>{script.totalLines}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Ready Segments:</span>
-                <strong style={{ color: readyCount === script.totalLines ? "#10b981" : "#ffffff" }}>
+                <strong style={{ color: readyCount === script.totalLines ? "var(--success-color)" : "var(--text-primary)" }}>
                   {readyCount}
                 </strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Failed Segments:</span>
-                <strong style={{ color: failedCount > 0 ? "#ef4444" : "#ffffff" }}>
+                <strong style={{ color: failedCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                   {failedCount}
                 </strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Processing/Pending:</span>
-                <strong style={{ color: processingCount + pendingCount > 0 ? "#f59e0b" : "#ffffff" }}>
+                <strong style={{ color: processingCount + pendingCount > 0 ? "var(--warning-color)" : "var(--text-primary)" }}>
                   {processingCount + pendingCount}
                 </strong>
               </div>
@@ -419,7 +419,7 @@ export default function AudioSegmentsConsole({
           {/* Final Audio panel */}
           <div className="controlsPanel">
             <div className="panelTitle">Final Audio Stitching</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-primary)" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Stitching Status:</span>
                 <span className={`badge ${readyCount === script.totalLines && script.totalLines > 0 ? "badgeCompleted" : "badgePending"}`}>
@@ -437,7 +437,7 @@ export default function AudioSegmentsConsole({
           {/* safety guidelines info card */}
           <div className="controlsPanel">
             <div className="panelTitle">Audio Rules</div>
-            <p style={{ margin: 0, fontSize: "0.75rem", color: "#64748b", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
               TTS voice segments are built line-by-line using high-fidelity host parameters. Audio segments must only generate for approved and verified dialogue, ensuring zero hallucinations.
             </p>
           </div>

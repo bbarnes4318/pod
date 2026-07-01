@@ -97,7 +97,7 @@ export default function TopicGenerationForm({ onTriggerSuccess, isLlmStub, hasNo
               min="1"
               max="100"
               className="rangeInput"
-              style={{ accentColor: "#38bdf8" }}
+              style={{ accentColor: "var(--accent-color)", width: "100%" }}
               value={minScore}
               onChange={(e) => setMinScore(Number(e.target.value))}
               disabled={loading || isDisabled}
@@ -115,16 +115,8 @@ export default function TopicGenerationForm({ onTriggerSuccess, isLlmStub, hasNo
 
         {message && (
           <div
-            style={{
-              marginTop: "1rem",
-              padding: "0.75rem",
-              borderRadius: "4px",
-              fontSize: "0.9rem",
-              fontWeight: 500,
-              backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-              border: `1px solid ${message.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-              color: message.type === "success" ? "#10b981" : "#ef4444",
-            }}
+            className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`}
+            style={{ marginTop: "1rem", marginBottom: 0 }}
           >
             {message.text}
           </div>

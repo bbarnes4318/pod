@@ -149,10 +149,10 @@ export default async function JobLogsPage(props: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
       <div>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: "700", color: "#ffffff", marginBottom: "0.25rem" }}>
+        <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "0.25rem" }}>
           Pipeline Job Operations Logs
         </h2>
-        <p style={{ color: "#64748b", fontSize: "0.9rem" }}>
+        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", margin: 0 }}>
           View background execution logs, outputs, and details. API keys and RSS preview tokens are automatically masked.
         </p>
       </div>
@@ -161,34 +161,22 @@ export default async function JobLogsPage(props: {
       <div className="panel" style={{ padding: "1.25rem" }}>
         <form method="GET" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", alignItems: "flex-end" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", flex: "1 1 200px" }}>
-            <label style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Search Error/Job</label>
+            <label className="label">Search Error/Job</label>
             <input
               type="text"
               name="search"
               defaultValue={search}
               placeholder="e.g. timeout, database"
-              style={{
-                padding: "0.5rem",
-                borderRadius: "4px",
-                border: "1px solid #1a2233",
-                backgroundColor: "#080b10",
-                color: "#ffffff",
-              }}
+              className="input"
             />
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "180px" }}>
-            <label style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Job Type</label>
+            <label className="label">Job Type</label>
             <select
               name="jobType"
               defaultValue={filterJobType}
-              style={{
-                padding: "0.5rem",
-                borderRadius: "4px",
-                border: "1px solid #1a2233",
-                backgroundColor: "#080b10",
-                color: "#ffffff",
-              }}
+              className="select"
             >
               <option value="">All Job Types</option>
               {distinctTypes.map((t) => (
@@ -200,17 +188,11 @@ export default async function JobLogsPage(props: {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", width: "150px" }}>
-            <label style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Status</label>
+            <label className="label">Status</label>
             <select
               name="status"
               defaultValue={filterStatus}
-              style={{
-                padding: "0.5rem",
-                borderRadius: "4px",
-                border: "1px solid #1a2233",
-                backgroundColor: "#080b10",
-                color: "#ffffff",
-              }}
+              className="select"
             >
               <option value="">All Statuses</option>
               <option value="completed">completed</option>
@@ -222,29 +204,18 @@ export default async function JobLogsPage(props: {
           <div style={{ display: "flex", gap: "0.5rem" }}>
             <button
               type="submit"
-              style={{
-                padding: "0.5rem 1.25rem",
-                borderRadius: "4px",
-                backgroundColor: "#1e3a8a",
-                color: "#ffffff",
-                border: "none",
-                fontWeight: "600",
-                cursor: "pointer",
-              }}
+              className="buttonPrimary"
+              style={{ padding: "0.5rem 1.25rem" }}
             >
               Apply Filters
             </button>
             <Link
               href="/admin/job-logs"
+              className="btnReset"
               style={{
                 padding: "0.5rem 1.25rem",
-                borderRadius: "4px",
-                backgroundColor: "#1e293b",
-                color: "#94a3b8",
-                border: "1px solid #334155",
-                fontWeight: "600",
                 textDecoration: "none",
-                fontSize: "0.9rem",
+                fontSize: "0.85rem",
               }}
             >
               Clear
@@ -256,14 +227,14 @@ export default async function JobLogsPage(props: {
       {/* Logs Table */}
       <div className="panel" style={{ padding: 0 }}>
         {filteredLogs.length === 0 ? (
-          <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-            <p style={{ fontSize: "1rem", fontWeight: "600", marginBottom: "0.5rem" }}>No Operations Logs Found</p>
-            <p style={{ fontSize: "0.85rem" }}>Try clearing search inputs or adjusting filters.</p>
+          <div className="emptyState" style={{ padding: "3rem" }}>
+            <div className="emptyStateTitle">No Operations Logs Found</div>
+            <div className="emptyStateDesc">Try clearing search inputs or adjusting filters.</div>
           </div>
         ) : (
           <table className="table" style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
-              <tr style={{ borderBottom: "1px solid #1a2233" }}>
+              <tr style={{ borderBottom: "1px solid var(--border-color)" }}>
                 <th style={{ padding: "1rem" }}>Job Type</th>
                 <th>Status</th>
                 <th>Time / Duration</th>
@@ -284,11 +255,11 @@ export default async function JobLogsPage(props: {
                 const maskedError = log.error ? maskSecrets(log.error) : null;
 
                 return (
-                  <tr key={log.id} style={{ borderBottom: "1px solid #1a2233", verticalAlign: "top" }}>
+                  <tr key={log.id} style={{ borderBottom: "1px solid var(--border-color)", verticalAlign: "top" }}>
                     <td style={{ padding: "1rem" }}>
-                      <strong style={{ color: "#ffffff", fontSize: "0.9rem" }}>{log.jobType}</strong>
+                      <strong style={{ color: "var(--text-primary)", fontSize: "0.9rem" }}>{log.jobType}</strong>
                       <br />
-                      <code style={{ fontSize: "0.75rem", color: "#64748b" }}>{log.id}</code>
+                      <code style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{log.id}</code>
                     </td>
                     <td>
                       <span
@@ -304,11 +275,11 @@ export default async function JobLogsPage(props: {
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: "0.85rem", color: "#ffffff" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>
                         {new Date(log.createdAt).toLocaleString()}
                       </span>
                       <br />
-                      <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                         Duration: {durationSeconds}s
                       </span>
                     </td>
@@ -316,65 +287,54 @@ export default async function JobLogsPage(props: {
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.85rem" }}>
                         {scriptId ? (
                           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                            <Link href={`/admin/scripts/${scriptId}`} style={{ color: "#38bdf8", textDecoration: "underline" }}>
+                            <Link href={`/admin/scripts/${scriptId}`} style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                               Script
                             </Link>
-                            <Link href={`/admin/audio-segments/${scriptId}`} style={{ color: "#a5b4fc", textDecoration: "underline" }}>
+                            <Link href={`/admin/audio-segments/${scriptId}`} style={{ color: "var(--text-secondary)", textDecoration: "underline" }}>
                               Speech Segments
                             </Link>
-                            <Link href={`/admin/final-audio/${scriptId}`} style={{ color: "#86efac", textDecoration: "underline" }}>
+                            <Link href={`/admin/final-audio/${scriptId}`} style={{ color: "var(--success-color)", textDecoration: "underline" }}>
                               Final Audio
                             </Link>
-                            <Link href={`/admin/content-assets/${scriptId}`} style={{ color: "#cbd5e1", textDecoration: "underline" }}>
+                            <Link href={`/admin/content-assets/${scriptId}`} style={{ color: "var(--text-primary)", textDecoration: "underline" }}>
                               Content Assets
                             </Link>
                           </div>
                         ) : null}
                         {episodeId ? (
-                          <Link href={`/admin/episodes/${episodeId}`} style={{ color: "#e2e8f0", textDecoration: "underline" }}>
+                          <Link href={`/admin/episodes/${episodeId}`} style={{ color: "var(--text-primary)", textDecoration: "underline" }}>
                              Episode Details
                           </Link>
                         ) : null}
                         {!scriptId && !episodeId ? (
-                          <span style={{ color: "#64748b" }}>No related record found.</span>
+                          <span style={{ color: "var(--text-secondary)" }}>No related record found.</span>
                         ) : null}
                       </div>
                     </td>
                     <td style={{ maxWidth: "300px" }}>
                       {maskedError ? (
-                        <div
-                          style={{
-                            fontSize: "0.8rem",
-                            color: "#fda4af",
-                            backgroundColor: "rgba(244, 63, 94, 0.1)",
-                            padding: "0.5rem",
-                            borderRadius: "4px",
-                            border: "1px solid rgba(244, 63, 94, 0.2)",
-                            marginBottom: "0.5rem",
-                            wordBreak: "break-all",
-                          }}
-                        >
+                        <div className="alertCard alertDanger" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
                           {maskedError}
                         </div>
                       ) : null}
 
                       {/* Expandable JSON payload details */}
                       <details style={{ marginTop: "0.25rem" }}>
-                        <summary style={{ cursor: "pointer", color: "#38bdf8", fontSize: "0.8rem", fontWeight: "600" }}>
+                        <summary style={{ cursor: "pointer", color: "var(--accent-color)", fontSize: "0.8rem", fontWeight: "600" }}>
                           Toggle Details
                         </summary>
                         <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                           <div>
-                            <span style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Masked Input Payload</span>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Masked Input Payload</span>
                             <pre
                               style={{
-                                backgroundColor: "#080b10",
+                                backgroundColor: "var(--bg-secondary)",
                                 padding: "0.5rem",
                                 borderRadius: "4px",
                                 overflowX: "auto",
                                 fontSize: "0.75rem",
-                                color: "#94a3b8",
-                                border: "1px solid #1a2233",
+                                color: "var(--text-primary)",
+                                border: "1px solid var(--border-color)",
                                 margin: "0.25rem 0 0 0",
                               }}
                             >
@@ -382,16 +342,16 @@ export default async function JobLogsPage(props: {
                             </pre>
                           </div>
                           <div>
-                            <span style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Masked Output Result</span>
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Masked Output Result</span>
                             <pre
                               style={{
-                                backgroundColor: "#080b10",
+                                backgroundColor: "var(--bg-secondary)",
                                 padding: "0.5rem",
                                 borderRadius: "4px",
                                 overflowX: "auto",
                                 fontSize: "0.75rem",
-                                color: "#94a3b8",
-                                border: "1px solid #1a2233",
+                                color: "var(--text-primary)",
+                                border: "1px solid var(--border-color)",
                                 margin: "0.25rem 0 0 0",
                               }}
                             >

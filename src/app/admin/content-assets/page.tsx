@@ -34,8 +34,8 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
       {/* Header */}
       <div className="scriptsHeader" style={{ marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>Content Assets Console</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Content Assets Console</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Generate and manage listener-facing transcripts, show notes, chapters, and metadata files.
           </p>
         </div>
@@ -86,8 +86,8 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
 
       {/* Dashboard Table */}
       {items.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No eligible episodes or scripts found.</p>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No eligible episodes or scripts found.</div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -95,7 +95,7 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
             <thead>
               <tr>
                 <th>Episode Title</th>
-                <th style={{ width: "90px" }}>Script</th>
+                <th style={{ width: "90px", textAlign: "center" }}>Script</th>
                 <th>Episode Status</th>
                 <th>Final Audio</th>
                 <th>Transcript</th>
@@ -114,9 +114,9 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
                 return (
                   <tr key={item.scriptId}>
                     <td>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{item.episodeTitle}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{item.episodeTitle}</span>
                     </td>
-                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{item.scriptVersion}
                     </td>
                     <td>
@@ -149,10 +149,10 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
                         <span className="badge badgePending" style={{ fontSize: "0.75rem" }}>Pending</span>
                       )}
                     </td>
-                    <td style={{ fontSize: "0.85rem", color: "#cbd5e1", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ fontSize: "0.85rem", color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
                       {item.duration ? `${Math.floor(item.duration / 60)}m ${item.duration % 60}s` : "N/A"}
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                       {item.generatedAt ? new Date(item.generatedAt).toLocaleString() : "—"}
                     </td>
                     <td>

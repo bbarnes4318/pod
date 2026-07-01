@@ -8,36 +8,36 @@
 }
 
 .titleGroup h2 {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .titleGroup p {
-  font-size: 0.9rem;
-  color: #94a3b8;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
   margin-top: 0.25rem;
 }
 
 .warningBanner {
-  background-color: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  background-color: var(--warning-muted);
+  border: 1px solid var(--warning-border);
   border-radius: 6px;
-  padding: 1rem 1.5rem;
-  color: #f59e0b;
+  padding: 1rem 1.25rem;
+  color: var(--warning-color);
   margin-bottom: 2rem;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1.5;
 }
 
 .dangerBanner {
-  background-color: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background-color: var(--error-muted);
+  border: 1px solid var(--error-border);
   border-radius: 6px;
-  padding: 1rem 1.5rem;
-  color: #ef4444;
+  padding: 1rem 1.25rem;
+  color: var(--error-color);
   margin-bottom: 2rem;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   line-height: 1.5;
 }
 
@@ -50,21 +50,23 @@
 
 /* Topic Card Style */
 .topicCard {
-  background-color: #0f141c;
-  border: 1px solid #1a2233;
-  border-radius: 6px;
-  transition: border-color 0.2s;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: all 0.15s ease;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .topicCard:hover {
-  border-color: #232d3d;
+  border-color: var(--border-hover);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
 .topicCardHeader {
-  padding: 1.5rem;
-  border-bottom: 1px solid #161f30;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -76,74 +78,78 @@
 }
 
 .topicTitle {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+  line-height: 1.4;
 }
 
 .topicMeta {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  font-size: 0.8rem;
-  font-family: var(--font-mono), monospace;
+  gap: 0.5rem;
+  font-size: 0.75rem;
 }
 
 .metaBadge {
-  background-color: #161f30;
-  border: 1px solid #232d3d;
-  color: #38bdf8;
-  padding: 0.15rem 0.5rem;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.1rem 0.4rem;
   border-radius: 4px;
+  font-weight: 600;
 }
 
 .scorePill {
-  background-color: #0284c7;
-  color: #ffffff;
+  background-color: var(--accent-muted);
+  color: var(--accent-color);
+  border: 1px solid rgba(37, 99, 235, 0.2);
   font-family: var(--font-mono), monospace;
   font-weight: 700;
-  font-size: 1.1rem;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+  font-size: 1.15rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 60px;
+  min-width: 54px;
+  line-height: 1.1;
 }
 
 .scoreLabel {
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   text-transform: uppercase;
-  color: #cbd5e1;
+  color: var(--text-secondary);
   font-weight: 600;
-  margin-top: 0.15rem;
+  margin-top: 0.1rem;
+  letter-spacing: 0.02em;
 }
 
 .topicBody {
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  border-bottom: 1px solid #161f30;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .topicSummary {
-  font-size: 0.95rem;
-  color: #cbd5e1;
-  line-height: 1.6;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  line-height: 1.5;
 }
 
 /* Scores Grid Breakdowns */
 .scoresGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  background-color: #080b10;
-  padding: 1rem;
-  border-radius: 4px;
-  border: 1px solid #161f30;
+  gap: 0.75rem;
+  background-color: var(--bg-primary);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
 }
 
 @media (max-width: 600px) {
@@ -155,20 +161,19 @@
 .scoreItem {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.15rem;
 }
 
 .scoreItemLabel {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-secondary);
 }
 
 .scoreItemValue {
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   font-weight: 700;
-  color: #ffffff;
   font-family: var(--font-mono), monospace;
 }
 
@@ -176,125 +181,125 @@
 .evidenceList {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
 }
 
 .evidenceItem {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
-  color: #94a3b8;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
 .evidenceBadge {
   font-family: var(--font-mono), monospace;
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
-  padding: 0.15rem 0.4rem;
+  padding: 0.1rem 0.35rem;
   border-radius: 4px;
   border: 1px solid transparent;
 }
 
 .badgeGame {
-  background-color: rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.25);
-  color: #38bdf8;
+  background-color: var(--accent-muted);
+  border-color: rgba(37, 99, 235, 0.2);
+  color: var(--accent-color);
 }
 
 .badgeNews {
-  background-color: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.25);
-  color: #10b981;
+  background-color: var(--success-muted);
+  border-color: var(--success-border);
+  color: var(--success-color);
 }
 
 .badgeInjury {
-  background-color: rgba(239, 68, 68, 0.1);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #ef4444;
+  background-color: var(--error-muted);
+  border-color: var(--error-border);
+  color: var(--error-color);
 }
 
 .badgeOdds {
-  background-color: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.25);
-  color: #f59e0b;
+  background-color: var(--warning-muted);
+  border-color: var(--warning-border);
+  color: var(--warning-color);
 }
 
 .badgeStats {
-  background-color: rgba(168, 85, 247, 0.1);
-  border-color: rgba(168, 85, 247, 0.25);
-  color: #a855f7;
+  background-color: #faf5ff;
+  border-color: #e9d5ff;
+  color: #7c3aed;
 }
 
 .topicCardFooter {
-  padding: 1rem 1.5rem;
-  background-color: #0c0f16;
-  border-bottom-left-radius: 6px;
-  border-bottom-right-radius: 6px;
+  padding: 0.85rem 1.5rem;
+  background-color: var(--bg-primary);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .statusIndicator {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .actionsGroup {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .btnApprove {
-  background-color: #10b981;
+  background-color: var(--success-color);
   color: #ffffff;
-  border: none;
-  padding: 0.4rem 1rem;
-  font-size: 0.85rem;
+  border: 1px solid var(--success-color);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.15s ease;
 }
 
 .btnApprove:hover {
-  background-color: #059669;
+  background-color: #15803d;
+  border-color: #15803d;
 }
 
 .btnReject {
-  background-color: #ef4444;
+  background-color: var(--error-color);
   color: #ffffff;
-  border: none;
-  padding: 0.4rem 1rem;
-  font-size: 0.85rem;
+  border: 1px solid var(--error-color);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.15s ease;
 }
 
 .btnReject:hover {
-  background-color: #dc2626;
+  background-color: #b91c1c;
+  border-color: #b91c1c;
 }
 
 .btnReset {
-  background-color: #1e293b;
-  border: 1px solid #2d3748;
-  color: #cbd5e1;
-  padding: 0.4rem 1rem;
-  font-size: 0.85rem;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.15s ease;
 }
 
 .btnReset:hover {
-  background-color: #2d3748;
-  color: #ffffff;
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-hover);
 }
 
 /* Ingestion section split */

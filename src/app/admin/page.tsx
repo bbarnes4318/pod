@@ -115,33 +115,23 @@ export default async function AdminDashboard() {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       
       {/* Configuration & Diagnostic Warnings */}
       {warnings.length > 0 && (
-        <div
-          style={{
-            padding: "1rem 1.5rem",
-            backgroundColor: "rgba(239, 68, 68, 0.08)",
-            border: "1px solid rgba(239, 68, 68, 0.25)",
-            borderRadius: "6px",
-            color: "#fda4af",
-            fontSize: "0.9rem",
-            lineHeight: "1.5",
-          }}
-        >
-          <strong style={{ color: "#ffffff", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+        <div className="alertCard alertWarning" style={{ marginBottom: 0 }}>
+          <strong style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "700" }}>
             ⚠️ System Diagnostic Advisories ({warnings.length})
           </strong>
-          <ul style={{ marginTop: "0.5rem", paddingLeft: "1.25rem", margin: "0.5rem 0 0 0" }}>
+          <ul style={{ marginTop: "0.25rem", paddingLeft: "1.2rem", margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
             {warnings.slice(0, 3).map((w, idx) => (
-              <li key={idx} style={{ color: "#f87171" }}>
+              <li key={idx} style={{ color: "var(--warning-color)" }}>
                 <strong>{w.name}</strong>: {w.details || w.description}
               </li>
             ))}
           </ul>
-          <div style={{ marginTop: "0.75rem" }}>
-            <Link href="/admin/configuration" style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: "600" }}>
+          <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+            <Link href="/admin/configuration" style={{ color: "var(--accent-color)", textDecoration: "underline", fontWeight: "600" }}>
               View full system diagnostic configuration
             </Link>
           </div>
@@ -181,40 +171,19 @@ export default async function AdminDashboard() {
       </div>
 
       {/* Dynamic Pipeline Board */}
-      <div className="panel" style={{ padding: "1.5rem" }}>
-        <h3 className="panelTitle" style={{ marginBottom: "1rem" }}>Pipeline Flow Board</h3>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "1rem",
-          }}
-        >
-          {stages.map((stage, idx) => (
-            <Link
-              key={idx}
-              href={stage.link}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                padding: "1rem",
-                backgroundColor: "#080b10",
-                border: "1px solid #1a2233",
-                borderRadius: "6px",
-                textDecoration: "none",
-                transition: "border-color 0.2s",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#38bdf8")}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#1a2233")}
-            >
-              <span style={{ fontSize: "0.8rem", color: "#64748b", textTransform: "uppercase", fontWeight: "600" }}>
-                {stage.label}
-              </span>
-              <span style={{ fontSize: "1.75rem", fontWeight: "800", color: "#ffffff", marginTop: "0.5rem", fontFamily: "var(--font-mono)" }}>
-                {stage.count}
-              </span>
-            </Link>
-          ))}
+      <div className="panel">
+        <div className="panelHeader">
+          <h3 className="panelTitle">Pipeline Flow Board</h3>
+        </div>
+        <div className="panelContent" style={{ padding: "1.25rem" }}>
+          <div className="pipelineFlowGrid">
+            {stages.map((stage, idx) => (
+              <Link key={idx} href={stage.link} className="pipelineFlowCard">
+                <span className="pipelineFlowLabel">{stage.label}</span>
+                <span className="pipelineFlowCount">{stage.count}</span>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -222,61 +191,64 @@ export default async function AdminDashboard() {
       <div className="dashboardSection">
         
         {/* Left Side: Recent Active Operations */}
-        <div className="panel">
-          <div className="panelHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="panel" style={{ marginBottom: 0 }}>
+          <div className="panelHeader">
             <h3 className="panelTitle">Active Pipeline Operations</h3>
-            <Link href="/admin/job-logs" style={{ fontSize: "0.85rem", color: "#38bdf8", textDecoration: "underline" }}>
+            <Link href="/admin/job-logs" style={{ fontSize: "0.8rem", color: "var(--accent-color)", textDecoration: "underline" }}>
               View all logs
             </Link>
           </div>
           <div className="panelContent" style={{ padding: 0 }}>
             {recentLogs.length === 0 ? (
-              <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-                No recent operations found. Ingest sports data to begin.
+              <div className="emptyState" style={{ border: "none", borderRadius: 0 }}>
+                <div className="emptyStateTitle">No recent operations found</div>
+                <div className="emptyStateDesc">Ingest sports data to begin the pipeline process.</div>
               </div>
             ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Job Type</th>
-                    <th>Status</th>
-                    <th>Executed At</th>
-                    <th>Logs</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recentLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td>
-                        <strong style={{ color: "#ffffff" }}>{log.jobType}</strong>
-                        <br />
-                        <code style={{ fontSize: "0.75rem", color: "#64748b" }}>{log.id.slice(0, 8)}...</code>
-                      </td>
-                      <td>
-                        <span
-                          className={`badge ${
-                            log.status === "completed"
-                              ? "badgeCompleted"
-                              : log.status === "failed"
-                              ? "badgeFailed"
-                              : "badgeRunning"
-                          }`}
-                        >
-                          {log.status}
-                        </span>
-                      </td>
-                      <td>{new Date(log.createdAt).toLocaleTimeString()}</td>
-                      <td>
-                        {log.error ? (
-                          <span style={{ color: "#fda4af", fontSize: "0.8rem" }}>{maskSecrets(log.error).slice(0, 45)}...</span>
-                        ) : (
-                          <span style={{ color: "#64748b", fontSize: "0.8rem" }}>Clean run.</span>
-                        )}
-                      </td>
+              <div className="tableContainer" style={{ border: "none", borderRadius: 0 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Job Type</th>
+                      <th>Status</th>
+                      <th>Executed At</th>
+                      <th>Logs</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {recentLogs.map((log) => (
+                      <tr key={log.id}>
+                        <td>
+                          <strong style={{ color: "var(--text-primary)" }}>{log.jobType}</strong>
+                          <br />
+                          <code style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{log.id.slice(0, 8)}...</code>
+                        </td>
+                        <td>
+                          <span
+                            className={`badge ${
+                              log.status === "completed"
+                                ? "badgeCompleted"
+                                : log.status === "failed"
+                                ? "badgeFailed"
+                                : "badgeRunning"
+                            }`}
+                          >
+                            {log.status}
+                          </span>
+                        </td>
+                        <td>{new Date(log.createdAt).toLocaleTimeString()}</td>
+                        <td>
+                          {log.error ? (
+                            <span style={{ color: "var(--error-color)", fontSize: "0.8rem" }}>{maskSecrets(log.error).slice(0, 45)}...</span>
+                          ) : (
+                            <span style={{ color: "var(--text-secondary)", fontSize: "0.8rem" }}>Clean run.</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
@@ -285,39 +257,39 @@ export default async function AdminDashboard() {
         <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           
           {/* Active Configuration Panel */}
-          <div className="panel">
+          <div className="panel" style={{ marginBottom: 0 }}>
             <div className="panelHeader">
               <h3 className="panelTitle">Active Abstractions Configuration</h3>
             </div>
             <div className="panelContent">
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                  <span style={{ color: "#64748b", fontSize: "0.9rem" }}>LLM Engine:</span>
-                  <strong style={{ fontFamily: "var(--font-mono)", color: "#38bdf8" }}>{config.llm}</strong>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>LLM Engine:</span>
+                  <strong style={{ fontFamily: "var(--font-mono)", color: "var(--accent-color)", fontSize: "0.85rem" }}>{config.llm}</strong>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                  <span style={{ color: "#64748b", fontSize: "0.9rem" }}>TTS Engine:</span>
-                  <strong style={{ fontFamily: "var(--font-mono)", color: "#38bdf8" }}>{config.tts}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>TTS Engine:</span>
+                  <strong style={{ fontFamily: "var(--font-mono)", color: "var(--accent-color)", fontSize: "0.85rem" }}>{config.tts}</strong>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #1a2233", paddingBottom: "0.5rem" }}>
-                  <span style={{ color: "#64748b", fontSize: "0.9rem" }}>Sports Data Source:</span>
-                  <strong style={{ fontFamily: "var(--font-mono)", color: "#38bdf8" }}>{config.sports}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Sports Data Source:</span>
+                  <strong style={{ fontFamily: "var(--font-mono)", color: "var(--accent-color)", fontSize: "0.85rem" }}>{config.sports}</strong>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: "0.25rem" }}>
-                  <span style={{ color: "#64748b", fontSize: "0.9rem" }}>Storage Target:</span>
-                  <strong style={{ fontFamily: "var(--font-mono)", color: "#38bdf8" }}>{config.storage}</strong>
+                <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: "0.15rem" }}>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Storage Target:</span>
+                  <strong style={{ fontFamily: "var(--font-mono)", color: "var(--accent-color)", fontSize: "0.85rem" }}>{config.storage}</strong>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Pipeline Control Points Panel */}
-          <div className="panel">
+          <div className="panel" style={{ marginBottom: 0 }}>
             <div className="panelHeader">
               <h3 className="panelTitle">Pipeline Control Points</h3>
             </div>
-            <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <p style={{ color: "#64748b", fontSize: "0.8rem", margin: "0 0 0.5rem 0", lineHeight: 1.4 }}>
+            <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.8rem", margin: "0 0 0.5rem 0", lineHeight: 1.4 }}>
                 Navigate to dedicated phase-specific admin consoles to trigger tasks and operations:
               </p>
               {[
@@ -339,8 +311,8 @@ export default async function AdminDashboard() {
                     display: "block",
                     textAlign: "center",
                     textDecoration: "none",
-                    fontSize: "0.85rem",
-                    padding: "0.5rem",
+                    fontSize: "0.8rem",
+                    padding: "0.4rem",
                   }}
                 >
                   {item.label} &rarr;

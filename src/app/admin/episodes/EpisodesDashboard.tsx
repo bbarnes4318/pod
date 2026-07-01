@@ -58,35 +58,35 @@ export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: Dashbo
       {/* Right side: Existing Episodes List */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-          <h3 style={{ color: "#ffffff", fontSize: "1.1rem", margin: 0 }}>Episodes Directory</h3>
+          <h3 style={{ color: "var(--text-primary)", fontSize: "1rem", fontWeight: 700, margin: 0 }}>Episodes Directory</h3>
           <button onClick={refreshDashboard} className="editButton" style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}>
             Refresh List
           </button>
         </div>
 
         {episodes.length === 0 ? (
-          <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-            <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No episodes found.</p>
-            <p style={{ color: "#475569", fontSize: "0.9rem", marginTop: "0.5rem" }}>
+          <div className="emptyState">
+            <div className="emptyStateTitle">No episodes found.</div>
+            <div className="emptyStateDesc">
               Configure auto-build parameters on the left or select topics manually to assemble your first draft episode.
-            </p>
+            </div>
           </div>
         ) : (
           <div className="episodesListCard">
             {episodes.map((ep) => {
-              const isDraft = ep.status === "draft";
+              const isDraft = ep.status === "draft" || ep.status === "script_draft";
               const dateStr = new Date(ep.createdAt).toLocaleDateString();
 
               return (
                 <div key={ep.id} className="episodeItem">
                   <div style={{ flexGrow: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.35rem" }}>
-                      <span style={{ fontWeight: 700, fontSize: "1.1rem", color: "#ffffff" }}>{ep.title}</span>
+                      <span style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text-primary)" }}>{ep.title}</span>
                       <span
                         className={`badge ${
                           isDraft
                             ? "badgePending"
-                            : ep.status === "completed"
+                            : ep.status === "completed" || ep.status === "published"
                             ? "badgeCompleted"
                             : "badgeFailed"
                         }`}
@@ -102,7 +102,7 @@ export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: Dashbo
                     </div>
 
                     {ep.description && (
-                      <p style={{ fontSize: "0.85rem", color: "#94a3b8", marginTop: "0.5rem", marginBottom: 0 }}>
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.5rem", marginBottom: 0 }}>
                         {ep.description}
                       </p>
                     )}
@@ -111,9 +111,9 @@ export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: Dashbo
                       <div className="episodeTopicList">
                         {ep.topics.map((t, idx) => (
                           <div key={t.id} className="episodeTopicTitle">
-                            <span style={{ color: "#64748b", marginRight: "0.5rem" }}>#{idx + 1}</span>
+                            <span style={{ color: "var(--text-secondary)", marginRight: "0.5rem" }}>#{idx + 1}</span>
                             <span>{t.title}</span>
-                            <span style={{ color: "#38bdf8", fontFamily: "var(--font-mono)", fontSize: "0.75rem", marginLeft: "0.5rem" }}>
+                            <span style={{ color: "var(--accent-color)", fontFamily: "var(--font-mono)", fontSize: "0.75rem", marginLeft: "0.5rem" }}>
                               (Score: {Math.round(t.debateScore)})
                             </span>
                           </div>

@@ -29,8 +29,8 @@ export default async function FinalAudioDashboardPage({ searchParams }: PageProp
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>Final Audio Stitching Panel</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Final Audio Stitching Panel</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Assemble individual ready voice segments into complete dynamic MP3 episodes using standardized loudness parameters.
           </p>
         </div>
@@ -80,8 +80,8 @@ export default async function FinalAudioDashboardPage({ searchParams }: PageProp
 
       {/* Table */}
       {list.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No approved script versions eligible for final audio compilation.</p>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No approved script versions eligible for final audio compilation.</div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -89,7 +89,7 @@ export default async function FinalAudioDashboardPage({ searchParams }: PageProp
             <thead>
               <tr>
                 <th>Episode Title</th>
-                <th style={{ width: "80px" }}>Version</th>
+                <th style={{ width: "80px", textAlign: "center" }}>Version</th>
                 <th>Episode Status</th>
                 <th>Fact Check</th>
                 <th>Segments Readiness</th>
@@ -107,9 +107,9 @@ export default async function FinalAudioDashboardPage({ searchParams }: PageProp
                 return (
                   <tr key={item.scriptId}>
                     <td>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{item.episodeTitle}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{item.episodeTitle}</span>
                     </td>
-                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{item.version}
                     </td>
                     <td>

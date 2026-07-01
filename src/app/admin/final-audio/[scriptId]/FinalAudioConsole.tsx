@@ -120,17 +120,17 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", color: "#ffffff", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)", margin: 0 }}>
             Final Audio Stitching Console: Version {detail.version}
           </h2>
-          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
-            Episode: <strong style={{ color: "#ffffff" }}>{detail.episodeTitle}</strong>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
+            Episode: <strong style={{ color: "var(--text-primary)" }}>{detail.episodeTitle}</strong>
           </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
           <div style={{ textAlign: "right" }}>
-            <span style={{ fontSize: "0.75rem", color: "#64748b", display: "block" }}>Stitching Gate</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>Stitching Gate</span>
             <span
               className={`badge ${isEligible ? "badgeCompleted" : "badgeFailed"}`}
               style={{ display: "inline-block", marginTop: "0.25rem" }}
@@ -143,13 +143,13 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
 
       {/* Warnings & Messages */}
       {message && (
-        <div className={`messageBox ${message.type === "success" ? "successBox" : "errorBox"}`} style={{ marginTop: "1rem" }}>
+        <div className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`} style={{ marginTop: "1rem" }}>
           {message.text}
         </div>
       )}
 
       {!isEligible && detail.eligibility.reason && (
-        <div className="messageBox errorBox" style={{ marginTop: "1rem" }}>
+        <div className="alertCard alertDanger" style={{ marginTop: "1rem" }}>
           <strong>Stitching Blocked:</strong> {detail.eligibility.reason}
         </div>
       )}
@@ -162,25 +162,25 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
           <div className="editorPanel" style={{ padding: "1.25rem" }}>
             <div className="panelTitle">Eligibility Checklist</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "0.5rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "var(--text-primary)" }}>
                 <span>1. Approved Script Version:</span>
-                <span className={`badge ${detail.status === "approved" ? "badgeCompleted" : "badgeFailed"}`}>
+                <span className={`badge ${detail.status === "approved" || detail.status === "script_approved" || detail.status === "ready" ? "badgeCompleted" : "badgeFailed"}`}>
                   {detail.status}
                 </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "var(--text-primary)" }}>
                 <span>2. Episode Status:</span>
-                <span className={`badge ${detail.episodeStatus === "audio_segments_ready" || detail.episodeStatus === "audio_ready" || detail.episodeStatus === "audio_stitching" ? "badgeCompleted" : "badgeFailed"}`}>
+                <span className={`badge ${detail.episodeStatus === "audio_segments_ready" || detail.episodeStatus === "audio_ready" || detail.episodeStatus === "audio_stitching" || detail.episodeStatus === "completed" || detail.episodeStatus === "published" ? "badgeCompleted" : "badgeFailed"}`}>
                   {detail.episodeStatus}
                 </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "var(--text-primary)" }}>
                 <span>3. Fact Check:</span>
                 <span className={`badge ${detail.latestFactCheckStatus === "passed" ? "badgeCompleted" : "badgeFailed"}`}>
                   {detail.latestFactCheckStatus}
                 </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#cbd5e1" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "var(--text-primary)" }}>
                 <span>4. Audio Segments Count:</span>
                 <span className={`badge ${readyCount === detail.totalLines && detail.totalLines > 0 ? "badgeCompleted" : "badgeFailed"}`}>
                   {readyCount} / {detail.totalLines} Ready
@@ -195,13 +195,13 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
               <div className="panelTitle">Final Episode Audio</div>
               <div style={{ marginTop: "0.75rem" }}>
                 <audio src={detail.finalAudioUrl!} controls style={{ width: "100%", marginBottom: "0.75rem" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#cbd5e1" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "var(--text-primary)" }}>
                   <span>Duration:</span>
                   <strong>{detail.durationSeconds ? `${Math.floor(detail.durationSeconds / 60)}m ${detail.durationSeconds % 60}s` : "--"}</strong>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#cbd5e1", marginTop: "0.5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "var(--text-primary)", marginTop: "0.5rem" }}>
                   <span>Storage URL:</span>
-                  <a href={detail.finalAudioUrl!} target="_blank" style={{ color: "#38bdf8", textDecoration: "underline", wordBreak: "break-all" }}>
+                  <a href={detail.finalAudioUrl!} target="_blank" style={{ color: "var(--accent-color)", textDecoration: "underline", wordBreak: "break-all" }}>
                     Download MP3
                   </a>
                 </div>
@@ -224,7 +224,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                   {detail.latestJob.status}
                 </span>
               </div>
-              <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+              <div style={{ marginTop: "0.75rem", fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Job ID:</span>
                   <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem" }}>{detail.latestJob.id}</span>
@@ -234,12 +234,12 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                   <span>{new Date(detail.latestJob.createdAt).toLocaleString()}</span>
                 </div>
                 {detail.latestJob.error && (
-                  <div style={{ color: "#ef4444", border: "1px solid #ef4444", backgroundColor: "rgba(239, 68, 68, 0.1)", padding: "0.5rem", borderRadius: "4px", marginTop: "0.5rem" }}>
+                  <div className="alertCard alertDanger" style={{ marginTop: "0.5rem" }}>
                     <strong>Error:</strong> {detail.latestJob.error}
                   </div>
                 )}
                 {detail.latestJob.output && (
-                  <div style={{ borderTop: "1px solid #161f30", paddingTop: "0.5rem", marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem", marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Input Duration:</span>
                       <span>{(detail.latestJob.output.totalInputDurationMs / 1000).toFixed(1)}s</span>
@@ -250,10 +250,10 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>FFmpeg Command:</span>
-                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "#94a3b8" }}>{detail.latestJob.output.ffmpegCommandSummary}</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-secondary)" }}>{detail.latestJob.output.ffmpegCommandSummary}</span>
                     </div>
                     {detail.latestJob.output.reasons && (
-                      <div style={{ marginTop: "0.5rem", color: "#94a3b8", fontSize: "0.8rem" }}>
+                      <div style={{ marginTop: "0.5rem", color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                         <strong>Outcome:</strong>
                         <ul style={{ margin: 0, paddingLeft: "1.25rem", marginTop: "0.25rem" }}>
                           {detail.latestJob.output.reasons.map((r: string, idx: number) => (
@@ -274,7 +274,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
           <div className="controlsPanel">
             <div className="panelTitle">Stitching Options</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "0.5rem" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-primary)", fontSize: "0.9rem", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={includeIntro}
@@ -282,7 +282,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                 />
                 Include Intro Clip
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-primary)", fontSize: "0.9rem", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={includeOutro}
@@ -290,7 +290,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                 />
                 Include Outro Clip
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#cbd5e1", fontSize: "0.9rem", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-primary)", fontSize: "0.9rem", cursor: "pointer" }}>
                 <input
                   type="checkbox"
                   checked={normalizeAudio}
@@ -344,7 +344,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
           {/* Content Assets Panel */}
           <div className="controlsPanel">
             <div className="panelTitle">Content Assets</div>
-            <div style={{ fontSize: "0.85rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Transcript:</span>
                 <span className={`badge ${detail.transcriptUrl ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
@@ -390,7 +390,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                   </Link>
                 </div>
               ) : (
-                <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
                   Content generation is available once final audio is ready.
                 </div>
               )}
@@ -400,22 +400,22 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
           {/* Segment Details counts */}
           <div className="controlsPanel">
             <div className="panelTitle">Segment Checklist details</div>
-            <div style={{ fontSize: "0.85rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+            <div style={{ fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Ready Segments:</span>
-                <strong style={{ color: "#10b981" }}>{readyCount}</strong>
+                <strong style={{ color: "var(--success-color)" }}>{readyCount}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Missing:</span>
-                <strong style={{ color: missingCount > 0 ? "#ef4444" : "#cbd5e1" }}>{missingCount}</strong>
+                <strong style={{ color: missingCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>{missingCount}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Failed:</span>
-                <strong style={{ color: failedCount > 0 ? "#ef4444" : "#cbd5e1" }}>{failedCount}</strong>
+                <strong style={{ color: failedCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>{failedCount}</strong>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span>Duplicates:</span>
-                <strong style={{ color: duplicateCount > 0 ? "#ef4444" : "#cbd5e1" }}>{duplicateCount}</strong>
+                <strong style={{ color: duplicateCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>{duplicateCount}</strong>
               </div>
             </div>
           </div>

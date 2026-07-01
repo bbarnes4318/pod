@@ -80,6 +80,218 @@ interface ReviewProps {
   initialAudioSegments: any[];
 }
 
+interface ScriptLineItemProps {
+  line: ScriptLine;
+  sIdx: number;
+  lIdx: number;
+  isLocked: boolean;
+  submitting: boolean;
+  hostA: { id: string; name: string };
+  hostB: { id: string; name: string };
+  handleLineTextChange: (sIdx: number, lIdx: number, val: string) => void;
+  handleSpeakerChange: (sIdx: number, lIdx: number, speaker: string) => void;
+  handleToneChange: (sIdx: number, lIdx: number, tone: string) => void;
+  handleCheckboxChange: (sIdx: number, lIdx: number, field: "isFactualClaim" | "needsHumanReview") => void;
+  handleMoveLine: (sIdx: number, lIdx: number, direction: "up" | "down") => void;
+  handleDeleteLine: (sIdx: number, lIdx: number) => void;
+  handleRemoveRef: (sIdx: number, lIdx: number, rIdx: number) => void;
+  handleAddRef: (sIdx: number, lIdx: number, refType: string, refId: string) => void;
+  segmentLinesLength: number;
+}
+
+function ScriptLineItem({
+  line,
+  sIdx,
+  lIdx,
+  isLocked,
+  submitting,
+  hostA,
+  hostB,
+  handleLineTextChange,
+  handleSpeakerChange,
+  handleToneChange,
+  handleCheckboxChange,
+  handleMoveLine,
+  handleDeleteLine,
+  handleRemoveRef,
+  handleAddRef,
+  segmentLinesLength,
+}: ScriptLineItemProps) {
+  const [refType, setRefType] = useState("game");
+  const [refId, setRefId] = useState("");
+
+  return (
+    <div className="lineItem">
+      <div className="lineHeader">
+        <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+          #{line.lineIndex + 1}
+        </span>
+
+        {/* Speaker selector */}
+        <select
+          value={line.speakerName}
+          onChange={(e) => handleSpeakerChange(sIdx, lIdx, e.target.value)}
+          disabled={isLocked || submitting}
+          className="speakerSelector"
+        >
+          <option value="Max Voltage">Max Voltage</option>
+          <option value="Dr. Linebreak">Dr. Linebreak</option>
+        </select>
+
+        {/* Tone selector */}
+        <select
+          value={line.tone}
+          onChange={(e) => handleToneChange(sIdx, lIdx, e.target.value)}
+          disabled={isLocked || submitting}
+          className="toneSelector"
+        >
+          <option value="heated">heated</option>
+          <option value="sarcastic">sarcastic</option>
+          <option value="analytical">analytical</option>
+          <option value="dismissive">dismissive</option>
+          <option value="setup">setup</option>
+          <option value="transition">transition</option>
+        </select>
+
+        {/* Checkboxes */}
+        <label className="checkboxLabel">
+          <input
+            type="checkbox"
+            checked={line.isFactualClaim}
+            onChange={() => handleCheckboxChange(sIdx, lIdx, "isFactualClaim")}
+            disabled={isLocked || submitting}
+          />
+          Factual?
+        </label>
+
+        <label className="checkboxLabel" style={{ color: line.needsHumanReview ? "var(--error-color)" : "var(--text-secondary)" }}>
+          <input
+            type="checkbox"
+            checked={line.needsHumanReview}
+            onChange={() => handleCheckboxChange(sIdx, lIdx, "needsHumanReview")}
+            disabled={isLocked || submitting}
+          />
+          Review Flag
+        </label>
+
+        {/* Reorder/Delete Buttons */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: "0.35rem" }}>
+          <button
+            type="button"
+            onClick={() => handleMoveLine(sIdx, lIdx, "up")}
+            disabled={isLocked || lIdx === 0}
+            className="btnReset"
+            style={{ padding: "0.1rem 0.35rem", fontSize: "0.75rem" }}
+            title="Move Line Up"
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            onClick={() => handleMoveLine(sIdx, lIdx, "down")}
+            disabled={isLocked || lIdx === segmentLinesLength - 1}
+            className="btnReset"
+            style={{ padding: "0.1rem 0.35rem", fontSize: "0.75rem" }}
+            title="Move Line Down"
+          >
+            ▼
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDeleteLine(sIdx, lIdx)}
+            disabled={isLocked}
+            className="removeRefBtn"
+            style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}
+            title="Delete Line"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      {/* Dialogue Line Text */}
+      <textarea
+        value={line.text}
+        onChange={(e) => handleLineTextChange(sIdx, lIdx, e.target.value)}
+        disabled={isLocked || submitting}
+        className="textarea"
+        rows={2}
+        style={{ fontSize: "0.9rem", width: "100%" }}
+        placeholder="Spoken host dialogue..."
+      />
+
+      {/* Factual claim evidenceRefs list */}
+      <div className="evidenceInputGroup">
+        <span className="sectionGroupLabel" style={{ fontSize: "0.7rem", marginBottom: "0.35rem" }}>
+          Evidence References
+        </span>
+
+        <div style={{ marginBottom: "0.5rem" }}>
+          {line.evidenceRefs.map((ref, rIdx) => (
+            <span key={rIdx} className="evidenceTag">
+              {ref.type}:{ref.id}
+              {!isLocked && (
+                <button
+                  type="button"
+                  onClick={() => handleRemoveRef(sIdx, lIdx, rIdx)}
+                  className="removeRefBtn"
+                  style={{ marginLeft: "0.25rem" }}
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))}
+
+          {line.evidenceRefs.length === 0 && (
+            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
+              No evidence references.
+            </span>
+          )}
+        </div>
+
+        {/* Add evidenceRef helper form */}
+        {!isLocked && (
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <select
+              value={refType}
+              onChange={(e) => setRefType(e.target.value)}
+              className="select"
+              style={{ width: "auto", fontSize: "0.75rem", padding: "0.15rem 0.35rem" }}
+            >
+              <option value="game">game</option>
+              <option value="newsItem">newsItem</option>
+              <option value="injury">injury</option>
+              <option value="oddsSnapshot">oddsSnapshot</option>
+              <option value="teamStat">teamStat</option>
+              <option value="playerStat">playerStat</option>
+            </select>
+            <input
+              type="text"
+              value={refId}
+              onChange={(e) => setRefId(e.target.value)}
+              placeholder="Evidence ID"
+              className="input"
+              style={{ flexGrow: 1, fontSize: "0.75rem", padding: "0.15rem 0.35rem" }}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                handleAddRef(sIdx, lIdx, refType, refId);
+                setRefId("");
+              }}
+              className="editButton"
+              style={{ fontSize: "0.75rem", padding: "0.15rem 0.5rem" }}
+            >
+              + Ref
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ScriptReviewView({
   script,
   episode,
@@ -387,46 +599,35 @@ export default function ScriptReviewView({
             ← Back to Episode Details
           </Link>
           {(episode.status === "content_ready" || episode.status === "publish_ready" || episode.status === "published") && (
-            <Link href={`/admin/rss/${script.id}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+            <Link href={`/admin/rss/${script.id}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "var(--success-color)", border: "1px solid var(--success-border)" }}>
               Goto RSS Publishing
             </Link>
           )}
         </div>
-        <div style={{ color: "#94a3b8", fontSize: "0.85rem" }}>
-          Episode: <strong style={{ color: "#ffffff" }}>{episode.title}</strong> (Status: {episode.status})
+        <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+          Episode: <strong style={{ color: "var(--text-primary)" }}>{episode.title}</strong> (Status: {episode.status})
         </div>
       </div>
 
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.50rem", color: "#ffffff", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)", margin: 0 }}>
             Script Review: Version {script.version}
           </h2>
-          <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
             ID: <span style={{ fontFamily: "var(--font-mono)" }}>{script.id}</span>
           </span>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <span className={`badge ${status === "approved" ? "badgeCompleted" : status === "rejected" ? "badgeFailed" : "badgePending"}`}>
+          <span className={`badge ${status === "approved" || status === "script_approved" || status === "ready" ? "badgeCompleted" : status === "rejected" ? "badgeFailed" : "badgePending"}`}>
             {status}
           </span>
         </div>
       </div>
 
       {message && (
-        <div
-          style={{
-            marginBottom: "1.5rem",
-            padding: "0.75rem 1rem",
-            borderRadius: "4px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
-            backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            border: `1px solid ${message.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-            color: message.type === "success" ? "#10b981" : "#ef4444",
-          }}
-        >
+        <div className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`} style={{ marginBottom: "1.5rem" }}>
           {message.text}
         </div>
       )}
@@ -439,7 +640,7 @@ export default function ScriptReviewView({
           <div className="panelTitle">Dialogue Lines Editor</div>
 
           {isLocked && (
-            <div style={{ padding: "0.75rem", backgroundColor: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.25)", color: "#f59e0b", fontSize: "0.85rem", borderRadius: "4px", marginBottom: "1.5rem" }}>
+            <div className="alertCard alertWarning" style={{ marginBottom: "1.5rem" }}>
               🔒 This script is {status} and locked. Direct edits are disabled. To make adjustments, click "Save as New Version" on the right.
             </div>
           )}
@@ -453,181 +654,27 @@ export default function ScriptReviewView({
                 </span>
               </div>
 
-              {segment.lines.map((line, lIdx) => {
-                const [refType, setRefType] = useState("game");
-                const [refId, setRefId] = useState("");
-
-                return (
-                  <div key={lIdx} className="lineItem">
-                    <div className="lineHeader">
-                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748b", fontFamily: "var(--font-mono)" }}>
-                        #{line.lineIndex + 1}
-                      </span>
-
-                      {/* Speaker selector */}
-                      <select
-                        value={line.speakerName}
-                        onChange={(e) => handleSpeakerChange(sIdx, lIdx, e.target.value)}
-                        disabled={isLocked || submitting}
-                        className="speakerSelector"
-                      >
-                        <option value="Max Voltage">Max Voltage</option>
-                        <option value="Dr. Linebreak">Dr. Linebreak</option>
-                      </select>
-
-                      {/* Tone selector */}
-                      <select
-                        value={line.tone}
-                        onChange={(e) => handleToneChange(sIdx, lIdx, e.target.value)}
-                        disabled={isLocked || submitting}
-                        className="toneSelector"
-                      >
-                        <option value="heated">heated</option>
-                        <option value="sarcastic">sarcastic</option>
-                        <option value="analytical">analytical</option>
-                        <option value="dismissive">dismissive</option>
-                        <option value="setup">setup</option>
-                        <option value="transition">transition</option>
-                      </select>
-
-                      {/* Checkboxes */}
-                      <label className="checkboxLabel">
-                        <input
-                          type="checkbox"
-                          checked={line.isFactualClaim}
-                          onChange={() => handleCheckboxChange(sIdx, lIdx, "isFactualClaim")}
-                          disabled={isLocked || submitting}
-                        />
-                        Factual?
-                      </label>
-
-                      <label className="checkboxLabel" style={{ color: line.needsHumanReview ? "#ef4444" : "#94a3b8" }}>
-                        <input
-                          type="checkbox"
-                          checked={line.needsHumanReview}
-                          onChange={() => handleCheckboxChange(sIdx, lIdx, "needsHumanReview")}
-                          disabled={isLocked || submitting}
-                        />
-                        Review Flag
-                      </label>
-
-                      {/* Reorder/Delete Buttons */}
-                      <div style={{ marginLeft: "auto", display: "flex", gap: "0.35rem" }}>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveLine(sIdx, lIdx, "up")}
-                          disabled={isLocked || lIdx === 0}
-                          className="btnReset"
-                          style={{ padding: "0.1rem 0.35rem", fontSize: "0.75rem" }}
-                          title="Move Line Up"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveLine(sIdx, lIdx, "down")}
-                          disabled={isLocked || lIdx === segment.lines.length - 1}
-                          className="btnReset"
-                          style={{ padding: "0.1rem 0.35rem", fontSize: "0.75rem" }}
-                          title="Move Line Down"
-                        >
-                          ▼
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteLine(sIdx, lIdx)}
-                          disabled={isLocked}
-                          className="removeRefBtn"
-                          style={{ fontSize: "0.8rem", marginLeft: "0.5rem" }}
-                          title="Delete Line"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Dialogue Line Text */}
-                    <textarea
-                      value={line.text}
-                      onChange={(e) => handleLineTextChange(sIdx, lIdx, e.target.value)}
-                      disabled={isLocked || submitting}
-                      className="textarea"
-                      rows={2}
-                      style={{ fontSize: "0.9rem", width: "100%" }}
-                      placeholder="Spoken host dialogue..."
-                    />
-
-                    {/* Factual claim evidenceRefs list */}
-                    <div className="evidenceInputGroup">
-                      <span className="sectionGroupLabel" style={{ fontSize: "0.7rem", marginBottom: "0.35rem" }}>
-                        Evidence References
-                      </span>
-
-                      <div style={{ marginBottom: "0.5rem" }}>
-                        {line.evidenceRefs.map((ref, rIdx) => (
-                          <span key={rIdx} className="evidenceTag">
-                            {ref.type}:{ref.id}
-                            {!isLocked && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveRef(sIdx, lIdx, rIdx)}
-                                className="removeRefBtn"
-                                style={{ marginLeft: "0.25rem" }}
-                              >
-                                ✕
-                              </button>
-                            )}
-                          </span>
-                        ))}
-
-                        {line.evidenceRefs.length === 0 && (
-                          <span style={{ fontSize: "0.75rem", color: "#64748b", fontStyle: "italic" }}>
-                            No evidence references.
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Add evidenceRef helper form */}
-                      {!isLocked && (
-                        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                          <select
-                            value={refType}
-                            onChange={(e) => setRefType(e.target.value)}
-                            className="select"
-                            style={{ width: "auto", fontSize: "0.75rem", padding: "0.15rem 0.35rem" }}
-                          >
-                            <option value="game">game</option>
-                            <option value="newsItem">newsItem</option>
-                            <option value="injury">injury</option>
-                            <option value="oddsSnapshot">oddsSnapshot</option>
-                            <option value="teamStat">teamStat</option>
-                            <option value="playerStat">playerStat</option>
-                          </select>
-                          <input
-                            type="text"
-                            value={refId}
-                            onChange={(e) => setRefId(e.target.value)}
-                            placeholder="Evidence ID"
-                            className="input"
-                            style={{ flexGrow: 1, fontSize: "0.75rem", padding: "0.15rem 0.35rem" }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleAddRef(sIdx, lIdx, refType, refId);
-                              setRefId("");
-                            }}
-                            className="editButton"
-                            style={{ fontSize: "0.75rem", padding: "0.15rem 0.5rem" }}
-                          >
-                            + Ref
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+              {segment.lines.map((line, lIdx) => (
+                <ScriptLineItem
+                  key={lIdx}
+                  line={line}
+                  sIdx={sIdx}
+                  lIdx={lIdx}
+                  isLocked={isLocked}
+                  submitting={submitting}
+                  hostA={hostA}
+                  hostB={hostB}
+                  handleLineTextChange={handleLineTextChange}
+                  handleSpeakerChange={handleSpeakerChange}
+                  handleToneChange={handleToneChange}
+                  handleCheckboxChange={handleCheckboxChange}
+                  handleMoveLine={handleMoveLine}
+                  handleDeleteLine={handleDeleteLine}
+                  handleRemoveRef={handleRemoveRef}
+                  handleAddRef={handleAddRef}
+                  segmentLinesLength={segment.lines.length}
+                />
+              ))}
 
               {!isLocked && (
                 <button
@@ -675,7 +722,7 @@ export default function ScriptReviewView({
                     onClick={handleApprove}
                     disabled={submitting}
                     className="buttonPrimary"
-                    style={{ width: "100%", backgroundColor: "#10b981", borderColor: "#059669" }}
+                    style={{ width: "100%", backgroundColor: "var(--success-color)", borderColor: "var(--success-border)" }}
                   >
                     Approve Script
                   </button>
@@ -716,27 +763,27 @@ export default function ScriptReviewView({
           <div className="controlsPanel">
             <div className="panelTitle">Fact Check Safety Gate</div>
             
-            {status === "approved" ? (
+            {status === "approved" || status === "script_approved" || status === "ready" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {factCheck ? (
-                  <div style={{ backgroundColor: "#080b10", border: "1px solid #161f30", borderRadius: "4px", padding: "0.75rem", fontSize: "0.85rem" }}>
+                  <div style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "0.75rem", fontSize: "0.85rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
                       <span>Latest Check Result:</span>
                       <span className={`badge ${factCheck.status === "passed" ? "badgeCompleted" : factCheck.status === "failed" ? "badgeFailed" : "badgePending"}`}>
                         {factCheck.status}
                       </span>
                     </div>
-                    <div style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "0.5rem" }}>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.5rem" }}>
                       Checked: {new Date(factCheck.checkedAt).toLocaleString()}
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "#cbd5e1", fontSize: "0.8rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "var(--text-primary)", fontSize: "0.8rem", borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem" }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>Coverage:</span>
                         <strong>{factCheck.evidenceCoverage?.evidenceCoveragePercent || 0}%</strong>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>Issues Found:</span>
-                        <strong style={{ color: (factCheck.summary?.totalErrors || 0) > 0 ? "#ef4444" : "#10b981" }}>
+                        <strong style={{ color: (factCheck.summary?.totalErrors || 0) > 0 ? "var(--error-color)" : "var(--success-color)" }}>
                           {(factCheck.summary?.totalErrors || 0) + (factCheck.summary?.totalWarnings || 0)}
                         </strong>
                       </div>
@@ -752,7 +799,7 @@ export default function ScriptReviewView({
                     </div>
                   </div>
                 ) : (
-                  <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                  <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
                     No fact check audits have been run for this approved script version yet.
                   </div>
                 )}
@@ -777,7 +824,7 @@ export default function ScriptReviewView({
                 </div>
               </div>
             ) : (
-              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Fact checking is only available for approved scripts. Approve this script draft first to unlock.
               </div>
             )}
@@ -787,9 +834,9 @@ export default function ScriptReviewView({
           <div className="controlsPanel">
             <div className="panelTitle">Dialogue Voice Synthesis</div>
             
-            {status === "approved" ? (
+            {status === "approved" || status === "script_approved" || status === "ready" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <div style={{ backgroundColor: "#080b10", border: "1px solid #161f30", borderRadius: "4px", padding: "0.75rem", fontSize: "0.85rem" }}>
+                <div style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "0.75rem", fontSize: "0.85rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.5rem" }}>
                     <span>Fact Check Status:</span>
                     <span className={`badge ${factCheck?.status === "passed" ? "badgeCompleted" : "badgeFailed"}`}>
@@ -797,14 +844,14 @@ export default function ScriptReviewView({
                     </span>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "#cbd5e1", fontSize: "0.8rem", borderTop: "1px solid #161f30", paddingTop: "0.5rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", color: "var(--text-primary)", fontSize: "0.8rem", borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Ready Segments:</span>
                       <strong>{audioSegments.filter(s => s.status === "ready").length}</strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Failed Segments:</span>
-                      <strong style={{ color: audioSegments.some(s => s.status === "failed") ? "#ef4444" : "#ffffff" }}>
+                      <strong style={{ color: audioSegments.some(s => s.status === "failed") ? "var(--error-color)" : "var(--text-primary)" }}>
                         {audioSegments.filter(s => s.status === "failed").length}
                       </strong>
                     </div>
@@ -838,7 +885,7 @@ export default function ScriptReviewView({
                 )}
               </div>
             ) : (
-              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 TTS audio synthesis is only available for approved & fact-checked scripts.
               </div>
             )}
@@ -847,8 +894,8 @@ export default function ScriptReviewView({
           {/* Final Audio Stitching Console */}
           <div className="controlsPanel">
             <div className="panelTitle">Final Audio Stitching</div>
-            {status === "approved" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+            {status === "approved" || status === "script_approved" || status === "ready" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-primary)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Episode Status:</span>
                   <span className="refBadge" style={{ fontSize: "0.75rem" }}>
@@ -866,7 +913,7 @@ export default function ScriptReviewView({
                 </div>
               </div>
             ) : (
-              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Final audio stitching is only available for approved scripts.
               </div>
             )}
@@ -875,8 +922,8 @@ export default function ScriptReviewView({
           {/* Content Assets Console */}
           <div className="controlsPanel">
             <div className="panelTitle">Content Assets</div>
-            {status === "approved" ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
+            {status === "approved" || status === "script_approved" || status === "ready" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem", color: "var(--text-primary)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Status:</span>
                   <span className={`badge ${episode.status === "content_ready" ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>
@@ -894,13 +941,13 @@ export default function ScriptReviewView({
                     </Link>
                   </div>
                 ) : (
-                  <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
+                  <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic", marginTop: "0.5rem" }}>
                     Content generation requires final audio to be ready.
                   </div>
                 )}
               </div>
             ) : (
-              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Content assets are only available for approved scripts.
               </div>
             )}
@@ -922,82 +969,82 @@ export default function ScriptReviewView({
                   <span>{validationSummary.validationPassed ? "PASSED" : "FAILED"}</span>
                 </div>
 
-                <div style={{ fontSize: "0.85rem", color: "#cbd5e1", display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "1rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--text-primary)", display: "flex", flexDirection: "column", gap: "0.4rem", marginTop: "1rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Total lines count:</span>
-                    <strong style={{ color: "#ffffff" }}>{validationSummary.totalLineCount}</strong>
+                    <strong>{validationSummary.totalLineCount}</strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Factual claims:</span>
-                    <strong style={{ color: "#ffffff" }}>{validationSummary.factualLineCount}</strong>
+                    <strong>{validationSummary.factualLineCount}</strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Evidence coverage:</span>
-                    <strong style={{ color: validationSummary.evidenceCoveragePercent >= 90 ? "#10b981" : "#ef4444" }}>
+                    <strong style={{ color: validationSummary.evidenceCoveragePercent >= 90 ? "var(--success-color)" : "var(--error-color)" }}>
                       {validationSummary.evidenceCoveragePercent}%
                     </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Review flags count:</span>
-                    <strong style={{ color: validationSummary.needsHumanReviewCount > 0 ? "#ef4444" : "#ffffff" }}>
+                    <strong style={{ color: validationSummary.needsHumanReviewCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                       {validationSummary.needsHumanReviewCount}
                     </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Prohibited claims:</span>
-                    <strong style={{ color: validationSummary.unsupportedClaimCount > 0 ? "#ef4444" : "#ffffff" }}>
+                    <strong style={{ color: validationSummary.unsupportedClaimCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                       {validationSummary.unsupportedClaimCount}
                     </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Unsafe claims:</span>
-                    <strong style={{ color: validationSummary.unsafeClaimCount > 0 ? "#ef4444" : "#ffffff" }}>
+                    <strong style={{ color: validationSummary.unsafeClaimCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                       {validationSummary.unsafeClaimCount}
                     </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Invalid evidence refs:</span>
-                    <strong style={{ color: validationSummary.invalidEvidenceRefCount > 0 ? "#ef4444" : "#ffffff" }}>
+                    <strong style={{ color: validationSummary.invalidEvidenceRefCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                       {validationSummary.invalidEvidenceRefCount}
                     </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Invalid speaker names:</span>
-                    <strong style={{ color: validationSummary.invalidSpeakerCount > 0 ? "#ef4444" : "#ffffff" }}>
+                    <strong style={{ color: validationSummary.invalidSpeakerCount > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
                       {validationSummary.invalidSpeakerCount}
                     </strong>
                   </div>
                   
-                  <div style={{ borderTop: "1px solid #161f30", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
+                  <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
                     <span className="sectionGroupLabel" style={{ fontSize: "0.7rem" }}>Host Line Share</span>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginTop: "0.25rem" }}>
                       <span>Max Voltage:</span>
-                      <strong style={{ color: (validationSummary.hostLineShare?.["Max Voltage"] || 0) >= 25 ? "#10b981" : "#ef4444" }}>
+                      <strong style={{ color: (validationSummary.hostLineShare?.["Max Voltage"] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
                         {validationSummary.hostLineShare?.["Max Voltage"] || 0}%
                       </strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
                       <span>Dr. Linebreak:</span>
-                      <strong style={{ color: (validationSummary.hostLineShare?.["Dr. Linebreak"] || 0) >= 25 ? "#10b981" : "#ef4444" }}>
+                      <strong style={{ color: (validationSummary.hostLineShare?.["Dr. Linebreak"] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
                         {validationSummary.hostLineShare?.["Dr. Linebreak"] || 0}%
                       </strong>
                     </div>
                   </div>
 
-                  <span style={{ fontSize: "0.7rem", color: "#64748b", marginTop: "0.5rem" }}>
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
                     Last Checked: {new Date(validationSummary.lastValidatedAt).toLocaleTimeString()}
                   </span>
                 </div>
 
                 {/* Validation Warnings List */}
                 {validationSummary.reasons && validationSummary.reasons.length > 0 && (
-                  <div style={{ marginTop: "1rem", borderTop: "1px solid #161f30", paddingTop: "0.75rem" }}>
-                    <span className="sectionGroupLabel" style={{ color: "#f59e0b", fontSize: "0.7rem", marginBottom: "0.5rem", display: "block" }}>
+                  <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border-color)", paddingTop: "0.75rem" }}>
+                    <span className="sectionGroupLabel" style={{ color: "var(--warning-color)", fontSize: "0.7rem", marginBottom: "0.5rem", display: "block" }}>
                       Warnings & Failures ({validationSummary.reasons.length})
                     </span>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "150px", overflowY: "auto", fontSize: "0.75rem", color: "#94a3b8" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", maxHeight: "150px", overflowY: "auto", fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                       {validationSummary.reasons.map((r, rIdx) => (
-                        <div key={rIdx} style={{ backgroundColor: "#0c0f16", borderLeft: "2px solid #ef4444", padding: "0.25rem 0.5rem" }}>
+                        <div key={rIdx} style={{ backgroundColor: "var(--bg-primary)", borderLeft: "2px solid var(--error-color)", padding: "0.25rem 0.5rem" }}>
                           {r}
                         </div>
                       ))}
@@ -1006,7 +1053,7 @@ export default function ScriptReviewView({
                 )}
               </div>
             ) : (
-              <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Script has not been validated yet. Click "Validate Script" to scan.
               </div>
             )}
@@ -1020,7 +1067,7 @@ export default function ScriptReviewView({
               {evidencePanelItems.map((item, idx) => (
                 <div key={idx} className="evidenceItemCard">
                   <div className="evidenceCardHeader">
-                    <span style={{ color: "#38bdf8", fontWeight: 700 }}>{item.type}</span>
+                    <span style={{ color: "var(--accent-color)", fontWeight: 700 }}>{item.type}</span>
                     <span
                       className="copyCodeBlock"
                       title="Click to copy formatted reference object"
@@ -1032,11 +1079,11 @@ export default function ScriptReviewView({
                       {item.id.substring(0, 8)}...
                     </span>
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "#64748b", marginBottom: "0.25rem", fontStyle: "italic" }}>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "0.25rem", fontStyle: "italic" }}>
                     Topic: {item.topicTitle}
                   </div>
                   {item.detailText && (
-                    <p style={{ margin: 0, fontSize: "0.75rem", color: "#cbd5e1", lineHeight: 1.4 }}>
+                    <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--text-primary)", lineHeight: 1.4 }}>
                       {item.detailText}
                     </p>
                   )}
@@ -1044,7 +1091,7 @@ export default function ScriptReviewView({
               ))}
 
               {evidencePanelItems.length === 0 && (
-                <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                   No allowed evidence source refs available for this episode.
                 </div>
               )}
@@ -1053,11 +1100,11 @@ export default function ScriptReviewView({
 
           {/* Unsafe Claims warning box */}
           {unsafeClaims.length > 0 && (
-            <div className="controlsPanel" style={{ border: "1px solid rgba(239, 68, 68, 0.25)" }}>
-              <div className="panelTitle" style={{ color: "#ef4444" }}>Unsafe Claims Warnings</div>
+            <div className="controlsPanel" style={{ border: "1px solid var(--error-border)" }}>
+              <div className="panelTitle" style={{ color: "var(--error-color)" }}>Unsafe Claims Warnings</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 {unsafeClaims.map((claim, idx) => (
-                  <div key={idx} style={{ padding: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.04)", border: "1px solid rgba(239, 68, 68, 0.15)", borderRadius: "4px", fontSize: "0.75rem", color: "#cbd5e1" }}>
+                  <div key={idx} style={{ padding: "0.5rem", backgroundColor: "var(--error-muted)", border: "1px solid var(--error-border)", borderRadius: "6px", fontSize: "0.75rem", color: "var(--text-primary)" }}>
                     "{claim}"
                   </div>
                 ))}

@@ -31,11 +31,11 @@ export default async function PersonalitiesPage() {
       </div>
 
       {hosts.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "3rem" }}>
-          <p style={{ color: "#94a3b8", fontSize: "1.1rem" }}>No AI Hosts registered in the database.</p>
-          <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "0.5rem" }}>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No AI Hosts registered in the database.</div>
+          <div className="emptyStateDesc">
             Run the prisma seed script or click "+ Add New Host" to configure one.
-          </p>
+          </div>
         </div>
       ) : (
         <div className="hostGrid">
@@ -54,8 +54,8 @@ export default async function PersonalitiesPage() {
                     <h3 className="hostName">{host.name}</h3>
                     <div className="hostRole">{host.role}</div>
                   </div>
-                  <div style={{ fontSize: "0.85rem", color: "#64748b", fontFamily: "var(--font-mono)" }}>
-                    slug: <span style={{ color: "#e2e8f0" }}>{host.slug}</span>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
+                    slug: <span style={{ color: "var(--text-primary)", fontWeight: "600" }}>{host.slug}</span>
                   </div>
                 </div>
 
@@ -92,7 +92,7 @@ export default async function PersonalitiesPage() {
                         <span className="sectionLabel">Likes</span>
                         <div className="tagContainer">
                           {likes.map((item, idx) => (
-                            <span className="tag" key={idx} style={{ color: "#10b981" }}>{item}</span>
+                            <span className="tag" key={idx} style={{ color: "var(--success-color)", fontWeight: "600", borderColor: "rgba(22, 163, 74, 0.2)" }}>{item}</span>
                           ))}
                         </div>
                       </div>
@@ -102,7 +102,7 @@ export default async function PersonalitiesPage() {
                         <span className="sectionLabel">Dislikes</span>
                         <div className="tagContainer">
                           {dislikes.map((item, idx) => (
-                            <span className="tag" key={idx} style={{ color: "#ef4444" }}>{item}</span>
+                            <span className="tag" key={idx} style={{ color: "var(--error-color)", fontWeight: "600", borderColor: "rgba(220, 38, 38, 0.2)" }}>{item}</span>
                           ))}
                         </div>
                       </div>
@@ -113,7 +113,7 @@ export default async function PersonalitiesPage() {
                   {argumentPatterns.length > 0 && (
                     <div className="hostSection">
                       <span className="sectionLabel">Argument Patterns</span>
-                      <ul style={{ listStyleType: "square", paddingLeft: "1.2rem", fontSize: "0.9rem", color: "#cbd5e1" }}>
+                      <ul style={{ listStyleType: "square", paddingLeft: "1.2rem", fontSize: "0.85rem", color: "var(--text-primary)", lineHeight: "1.4" }}>
                         {argumentPatterns.map((item, idx) => (
                           <li key={idx} style={{ marginBottom: "0.25rem" }}>{item}</li>
                         ))}
@@ -134,16 +134,16 @@ export default async function PersonalitiesPage() {
                   )}
 
                   {/* TTS & Level Specs */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "1rem", borderTop: "1px solid #161f30", paddingTop: "1rem", marginTop: "auto" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: "1rem", borderTop: "1px solid var(--border-color)", paddingTop: "1rem", marginTop: "auto" }}>
                     <div className="hostSection">
                       <span className="sectionLabel">TTS Engine</span>
-                      <span style={{ fontSize: "0.85rem", color: "#94a3b8", fontFamily: "var(--font-mono)" }}>
+                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
                         {host.ttsProvider} / {host.ttsVoiceId}
                       </span>
                     </div>
                     <div className="hostSection">
                       <span className="sectionLabel">Intensity Level</span>
-                      <span style={{ fontSize: "0.85rem", fontWeight: "700", color: "#38bdf8", fontFamily: "var(--font-mono)" }}>
+                      <span style={{ fontSize: "0.8rem", fontWeight: "700", color: "var(--accent-color)", fontFamily: "var(--font-mono)" }}>
                         {host.intensityLevel} / 10
                       </span>
                     </div>

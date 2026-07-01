@@ -113,18 +113,18 @@ export default function RssDetailConsole({
   };
 
   return (
-    <div style={{ padding: "2rem" }}>
+    <div className="formContainer" style={{ maxWidth: "100%" }}>
       {/* Navigation & Header */}
       <div style={{ marginBottom: "1.5rem" }}>
-        <Link href="/admin/rss" style={{ color: "#38bdf8", textDecoration: "none", fontSize: "0.9rem", display: "inline-flex", alignItems: "center", gap: "0.25rem", marginBottom: "1rem" }}>
+        <Link href="/admin/rss" style={{ color: "var(--accent-color)", textDecoration: "none", fontSize: "0.9rem", display: "inline-flex", alignItems: "center", gap: "0.25rem", marginBottom: "1rem" }}>
           &larr; Back to RSS Dashboard
         </Link>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h2 style={{ fontSize: "1.75rem", fontWeight: 800, color: "#ffffff", margin: 0 }}>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
               Manage Episode RSS
             </h2>
-            <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
               {ep.title}
             </p>
           </div>
@@ -133,7 +133,7 @@ export default function RssDetailConsole({
               onClick={refreshStatus}
               disabled={isPending}
               className="btnReset"
-              style={{ padding: "0.5rem 1rem", fontSize: "0.85rem", border: "1px solid #1a2233" }}
+              style={{ padding: "0.5rem 1rem", fontSize: "0.85rem", border: "1px solid var(--border-color)" }}
             >
               Refresh Status
             </button>
@@ -143,12 +143,12 @@ export default function RssDetailConsole({
 
       {/* Notifications */}
       {errorMsg && (
-        <div style={{ padding: "1rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "6px", color: "#ef4444", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+        <div className="alertCard alertDanger" style={{ marginBottom: "1.5rem" }}>
           <strong>Error:</strong> {errorMsg}
         </div>
       )}
       {successMsg && (
-        <div style={{ padding: "1rem", backgroundColor: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "6px", color: "#10b981", marginBottom: "1.5rem", fontSize: "0.9rem" }}>
+        <div className="alertCard alertSuccess" style={{ marginBottom: "1.5rem" }}>
           <strong>Success:</strong> {successMsg}
         </div>
       )}
@@ -162,52 +162,52 @@ export default function RssDetailConsole({
             <h3 className="panelTitle" style={{ marginTop: 0 }}>Episode Assets &amp; Fields</h3>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Episode Status</div>
-                <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#38bdf8", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Episode Status</div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "var(--accent-color)", marginTop: "0.25rem" }}>
                   {ep.status.toUpperCase()}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>GUID</div>
-                <div style={{ fontFamily: "monospace", fontSize: "0.9rem", color: ep.rssGuid ? "#ffffff" : "#64748b", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>GUID</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem", color: ep.rssGuid ? "var(--text-primary)" : "var(--text-secondary)", marginTop: "0.25rem", fontWeight: ep.rssGuid ? 600 : 400 }}>
                   {ep.rssGuid || "Not prepared yet"}
                 </div>
               </div>
               <div style={{ gridColumn: "span 2" }}>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Audio URL</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem", wordBreak: "break-all" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Audio URL</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem", wordBreak: "break-all" }}>
                   {ep.audioUrl || "—"}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>File Size</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>File Size</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem" }}>
                   {ep.audioFileSizeBytes 
                     ? `${(ep.audioFileSizeBytes / (1024 * 1024)).toFixed(2)} MB (${ep.audioFileSizeBytes} bytes)`
                     : "Not resolved yet"}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>MIME Type</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>MIME Type</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem" }}>
                   {ep.audioMimeType || "—"}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Season / Episode</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Season / Episode</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem" }}>
                   Season {ep.seasonNumber ?? "—"}, Episode {ep.episodeNumber ?? "—"}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>Explicit Content</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>Explicit Content</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem" }}>
                   {ep.explicit ? "YES (explicit)" : "NO (clean)"}
                 </div>
               </div>
               <div style={{ gridColumn: "span 2" }}>
-                <div style={{ fontSize: "0.75rem", color: "#64748b", textTransform: "uppercase" }}>RSS Summary</div>
-                <div style={{ fontSize: "0.9rem", color: "#cbd5e1", marginTop: "0.25rem", fontStyle: "italic", whiteSpace: "pre-wrap" }}>
+                <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>RSS Summary</div>
+                <div style={{ fontSize: "0.9rem", color: "var(--text-primary)", marginTop: "0.25rem", fontStyle: "italic", whiteSpace: "pre-wrap" }}>
                   {ep.rssSummary || ep.description || "No custom summary configured. Fallback description will be resolved from show notes."}
                 </div>
               </div>
@@ -248,30 +248,26 @@ export default function RssDetailConsole({
                       display: "flex",
                       flexDirection: "column",
                       padding: "0.75rem 1rem",
-                      backgroundColor: val ? "rgba(16, 185, 129, 0.03)" : "rgba(239, 68, 68, 0.03)",
-                      border: val ? "1px solid rgba(16, 185, 129, 0.12)" : "1px solid rgba(239, 68, 68, 0.12)",
+                      backgroundColor: val ? "rgba(16, 185, 129, 0.04)" : "rgba(239, 68, 68, 0.04)",
+                      border: val ? "1px solid var(--success-border)" : "1px solid var(--error-border)",
                       borderRadius: "6px",
                       fontSize: "0.85rem",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "600", color: val ? "#10b981" : "#ef4444" }}>
-                      {val ? (
-                        <span style={{ color: "#10b981" }}>✓</span>
-                      ) : (
-                        <span style={{ color: "#ef4444" }}>✗</span>
-                      )}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "600", color: val ? "var(--success-color)" : "var(--error-color)" }}>
+                      <span>{val ? "✓" : "✗"}</span>
                       <span>{checkLabels[key] || key}</span>
                     </div>
                     {!val && info && (
-                      <div style={{ marginTop: "0.25rem", color: "#94a3b8", fontSize: "0.8rem", paddingLeft: "1.25rem" }}>
-                        <span style={{ color: "#fda4af" }}>Blocker:</span> {info.blocker}{" "}
+                      <div style={{ marginTop: "0.25rem", color: "var(--text-secondary)", fontSize: "0.8rem", paddingLeft: "1.25rem" }}>
+                        <span style={{ color: "var(--error-color)" }}>Blocker:</span> {info.blocker}{" "}
                         {info.link && (
-                          <Link href={info.link} style={{ color: "#38bdf8", textDecoration: "underline", fontWeight: "600" }}>
+                          <Link href={info.link} style={{ color: "var(--accent-color)", textDecoration: "underline", fontWeight: "600" }}>
                             Fix on target page →
                           </Link>
                         )}
                         {info.actionText && (
-                          <span style={{ color: "#a5b4fc", fontWeight: "600" }}>{info.actionText}</span>
+                          <span style={{ color: "var(--text-secondary)", fontWeight: "600" }}>{info.actionText}</span>
                         )}
                       </div>
                     )}
@@ -289,9 +285,9 @@ export default function RssDetailConsole({
             <h3 className="panelTitle" style={{ marginTop: 0 }}>Publishing Controls</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
               {/* Prepare Section */}
-              <div style={{ borderBottom: "1px solid #161f30", paddingBottom: "1.25rem" }}>
-                <h4 style={{ margin: "0 0 0.5rem 0", color: "#ffffff", fontSize: "0.95rem" }}>1. Prepare Feed Metadata</h4>
-                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.4 }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "1.25rem" }}>
+                <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--text-primary)", fontSize: "0.95rem" }}>1. Prepare Feed Metadata</h4>
+                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                   Resolves target file size, locks stable RSS GUID, and sets status to publish ready.
                 </p>
                 <button
@@ -305,12 +301,12 @@ export default function RssDetailConsole({
               </div>
 
               {/* Publish Section */}
-              <div style={{ borderBottom: "1px solid #161f30", paddingBottom: "1.25rem" }}>
-                <h4 style={{ margin: "0 0 0.5rem 0", color: "#ffffff", fontSize: "0.95rem" }}>2. Go Live / Publish</h4>
-                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.4 }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "1.25rem" }}>
+                <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--text-primary)", fontSize: "0.95rem" }}>2. Go Live / Publish</h4>
+                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                   Makes episode visible in the public RSS feed. Sets publication date.
                 </p>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "#cbd5e1", marginBottom: "0.75rem", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.8rem", color: "var(--text-primary)", marginBottom: "0.75rem", cursor: "pointer" }}>
                   <input
                     type="checkbox"
                     checked={forceRepublish}
@@ -323,12 +319,12 @@ export default function RssDetailConsole({
                   onClick={handlePublish}
                   disabled={isPending || !eligibility.eligible || (ep.status !== "publish_ready" && ep.status !== "published")}
                   className="buttonPrimary"
-                  style={{ width: "100%", padding: "0.6rem", backgroundColor: eligibility.eligible ? "#10b981" : "#1e293b", borderColor: eligibility.eligible ? "#10b981" : "#2d3748" }}
+                  style={{ width: "100%", padding: "0.6rem" }}
                 >
                   {isPending ? "Processing..." : "Publish Episode"}
                 </button>
                 {!eligibility.eligible && (
-                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.75rem", color: "#ef4444" }}>
+                  <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.75rem", color: "var(--error-color)" }}>
                     * Gates are not fully passed. Check checklist on left.
                   </p>
                 )}
@@ -336,15 +332,15 @@ export default function RssDetailConsole({
 
               {/* Unpublish Section */}
               <div>
-                <h4 style={{ margin: "0 0 0.5rem 0", color: "#ffffff", fontSize: "0.95rem" }}>3. Take Down / Unpublish</h4>
-                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "#94a3b8", lineHeight: 1.4 }}>
+                <h4 style={{ margin: "0 0 0.5rem 0", color: "var(--text-primary)", fontSize: "0.95rem" }}>3. Take Down / Unpublish</h4>
+                <p style={{ margin: "0 0 1rem 0", fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                   Removes episode from the public RSS feed. Reverts status to publish ready.
                 </p>
                 <button
                   onClick={handleUnpublish}
                   disabled={isPending || ep.status !== "published"}
                   className="btnReset"
-                  style={{ width: "100%", padding: "0.6rem", border: "1px solid rgba(239, 68, 68, 0.4)", color: "#ef4444", backgroundColor: "rgba(239, 68, 68, 0.05)" }}
+                  style={{ width: "100%", padding: "0.6rem", border: "1px solid var(--error-border)", color: "var(--error-color)", backgroundColor: "transparent" }}
                 >
                   {isPending ? "Processing..." : "Unpublish Episode"}
                 </button>
@@ -358,42 +354,42 @@ export default function RssDetailConsole({
             {latestJob ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.8rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Job Type:</span>
-                  <span style={{ fontWeight: 600, color: "#ffffff" }}>{latestJob.jobType}</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Job Type:</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{latestJob.jobType}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Status:</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Status:</span>
                   <span
                     style={{
-                      fontWeight: 600,
+                      fontWeight: 700,
                       color:
-                        latestJob.status === "completed" ? "#10b981" :
-                        latestJob.status === "running" ? "#38bdf8" : "#ef4444",
+                        latestJob.status === "completed" ? "var(--success-color)" :
+                        latestJob.status === "running" ? "var(--accent-color)" : "var(--error-color)",
                     }}
                   >
                     {latestJob.status.toUpperCase()}
                   </span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#64748b" }}>Timestamp:</span>
-                  <span>{new Date(latestJob.createdAt).toLocaleString()}</span>
+                  <span style={{ color: "var(--text-secondary)" }}>Timestamp:</span>
+                  <span style={{ color: "var(--text-primary)" }}>{new Date(latestJob.createdAt).toLocaleString()}</span>
                 </div>
                 {latestJob.error && (
-                  <div style={{ marginTop: "0.5rem", padding: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "4px", color: "#ef4444" }}>
+                  <div className="alertCard alertDanger" style={{ marginTop: "0.5rem" }}>
                     <strong>Error details:</strong> {latestJob.error}
                   </div>
                 )}
                 {latestJob.output && (
                   <div style={{ marginTop: "0.5rem" }}>
-                    <div style={{ color: "#64748b", marginBottom: "0.25rem" }}>Logs:</div>
-                    <pre style={{ margin: 0, padding: "0.5rem", backgroundColor: "#0c0f16", border: "1px solid #1a2233", borderRadius: "4px", fontSize: "0.75rem", overflowX: "auto", color: "#cbd5e1" }}>
+                    <div style={{ color: "var(--text-secondary)", marginBottom: "0.25rem" }}>Logs:</div>
+                    <pre style={{ margin: 0, padding: "0.5rem", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "4px", fontSize: "0.75rem", overflowX: "auto", color: "var(--text-primary)" }}>
                       {JSON.stringify(latestJob.output, null, 2)}
                     </pre>
                   </div>
                 )}
               </div>
             ) : (
-              <p style={{ margin: 0, fontSize: "0.8rem", color: "#64748b", fontStyle: "italic" }}>
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
                 No publishing jobs recorded yet.
               </p>
             )}

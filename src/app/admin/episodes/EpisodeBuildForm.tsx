@@ -210,7 +210,7 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
             type="range"
             min="1"
             max="100"
-            style={{ accentColor: "#38bdf8" }}
+            style={{ accentColor: "var(--accent-color)" }}
             className="rangeInput"
             value={minDebateScore}
             onChange={(e) => setMinDebateScore(Number(e.target.value))}
@@ -284,9 +284,9 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
           <div className="sectionGroup">
             <span className="sectionGroupLabel">Select Topics In Order ({selectedTopicIds.length})</span>
             {loadingTopics ? (
-              <div style={{ color: "#64748b", padding: "1rem", fontSize: "0.85rem" }}>Loading eligible topics...</div>
+              <div style={{ color: "var(--text-secondary)", padding: "1rem", fontSize: "0.8rem" }}>Loading eligible topics...</div>
             ) : eligibleTopics.length === 0 ? (
-              <div style={{ color: "#64748b", padding: "1rem", fontSize: "0.85rem", fontStyle: "italic" }}>
+              <div style={{ color: "var(--text-secondary)", padding: "1rem", fontSize: "0.8rem", fontStyle: "italic" }}>
                 No eligible brief-ready topics match current filters.
               </div>
             ) : (
@@ -336,16 +336,8 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
 
       {message && (
         <div
-          style={{
-            marginTop: "1.25rem",
-            padding: "0.75rem",
-            borderRadius: "4px",
-            fontSize: "0.85rem",
-            fontWeight: 500,
-            backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            border: `1px solid ${message.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-            color: message.type === "success" ? "#10b981" : "#ef4444",
-          }}
+          className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`}
+          style={{ marginTop: "1.25rem", marginBottom: 0 }}
         >
           {message.text}
         </div>

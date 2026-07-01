@@ -111,7 +111,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           <Link href={`/admin/scripts/${scriptId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none" }}>
             Goto Script review
           </Link>
-          <Link href={`/admin/rss/${scriptId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "#10b981", border: "1px solid rgba(16, 185, 129, 0.3)" }}>
+          <Link href={`/admin/rss/${scriptId}`} className="btnReset" style={{ fontSize: "0.85rem", textDecoration: "none", color: "var(--success-color)", border: "1px solid var(--success-border)" }}>
             Goto RSS publishing
           </Link>
         </div>
@@ -123,9 +123,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
       {/* Title block */}
       <div className="scriptsHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>{detail.episodeTitle}</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
-            Episode status: <strong style={{ color: "#ffffff" }}>{detail.episodeStatus}</strong> | Script Version: v{detail.scriptVersion} (Status: {detail.scriptStatus})
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{detail.episodeTitle}</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+            Episode status: <strong style={{ color: "var(--text-primary)" }}>{detail.episodeStatus}</strong> | Script Version: v{detail.scriptVersion} (Status: {detail.scriptStatus})
           </p>
         </div>
         <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -153,16 +153,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
 
       {/* Messages */}
       {message && (
-        <div
-          className="panel"
-          style={{
-            padding: "0.75rem",
-            marginBottom: "1.5rem",
-            backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            border: `1px solid ${message.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-            color: message.type === "success" ? "#10b981" : "#ef4444",
-          }}
-        >
+        <div className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`} style={{ marginBottom: "1.5rem" }}>
           {message.text}
         </div>
       )}
@@ -175,10 +166,10 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           {/* Audio Player */}
           {hasAudio && (
             <div className="panel" style={{ padding: "1.25rem" }}>
-              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Final Episode Audio</h3>
+              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Final Episode Audio</h3>
               <audio src={detail.audioUrl} controls style={{ width: "100%" }} />
               {detail.durationSeconds && (
-                <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "#cbd5e1" }}>
+                <p style={{ margin: "0.5rem 0 0 0", fontSize: "0.85rem", color: "var(--text-secondary)" }}>
                   Calculated Duration: {Math.floor(detail.durationSeconds / 60)}m {detail.durationSeconds % 60}s ({detail.durationSeconds} seconds)
                 </p>
               )}
@@ -188,31 +179,31 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           {/* Generated URLs */}
           {isContentReady && (
             <div className="panel" style={{ padding: "1.25rem" }}>
-              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Generated Storage Assets</h3>
+              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Generated Storage Assets</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ color: "#cbd5e1" }}>Transcript Markdown:</span>
-                  <a href={detail.transcriptUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+                  <span style={{ color: "var(--text-primary)" }}>Transcript Markdown:</span>
+                  <a href={detail.transcriptUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                     {detail.transcriptUrl ? "View file" : "Not Set"}
                   </a>
                 </div>
                 {detail.metadataJson?.assets && (
                   <>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "#cbd5e1" }}>Transcript JSON:</span>
-                      <a href={detail.metadataJson.assets.transcriptJsonUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+                      <span style={{ color: "var(--text-primary)" }}>Transcript JSON:</span>
+                      <a href={detail.metadataJson.assets.transcriptJsonUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                         View file
                       </a>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "#cbd5e1" }}>Show Notes Markdown:</span>
-                      <a href={detail.metadataJson.assets.showNotesMarkdownUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+                      <span style={{ color: "var(--text-primary)" }}>Show Notes Markdown:</span>
+                      <a href={detail.metadataJson.assets.showNotesMarkdownUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                         View file
                       </a>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ color: "#cbd5e1" }}>Metadata JSON:</span>
-                      <a href={detail.metadataJson.assets.metadataJsonUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+                      <span style={{ color: "var(--text-primary)" }}>Metadata JSON:</span>
+                      <a href={detail.metadataJson.assets.metadataJsonUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                         View file
                       </a>
                     </div>
@@ -224,7 +215,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
 
           {/* Transcript Preview */}
           <div className="panel" style={{ padding: "1.25rem" }}>
-            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Transcript Preview</h3>
+            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Transcript Preview</h3>
             {detail.transcriptMarkdown ? (
               <pre
                 style={{
@@ -232,9 +223,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                   whiteSpace: "pre-wrap",
                   fontFamily: "var(--font-mono), monospace",
                   fontSize: "0.8rem",
-                  color: "#cbd5e1",
-                  backgroundColor: "#0c0f16",
-                  border: "1px solid #161f30",
+                  color: "var(--text-primary)",
+                  backgroundColor: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
                   padding: "0.75rem",
                   maxHeight: "350px",
                   overflowY: "auto",
@@ -244,7 +235,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                 {detail.transcriptMarkdown}
               </pre>
             ) : (
-              <p style={{ color: "#64748b", margin: 0, fontStyle: "italic" }}>
+              <p style={{ color: "var(--text-secondary)", margin: 0, fontStyle: "italic" }}>
                 No transcript generated yet. Complete the eligibility checklist and trigger asset generation.
               </p>
             )}
@@ -252,7 +243,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
 
           {/* Show Notes Preview */}
           <div className="panel" style={{ padding: "1.25rem" }}>
-            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Show Notes Preview</h3>
+            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Show Notes Preview</h3>
             {detail.showNotesMarkdown ? (
               <pre
                 style={{
@@ -260,9 +251,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                   whiteSpace: "pre-wrap",
                   fontFamily: "var(--font-mono), monospace",
                   fontSize: "0.8rem",
-                  color: "#cbd5e1",
-                  backgroundColor: "#0c0f16",
-                  border: "1px solid #161f30",
+                  color: "var(--text-primary)",
+                  backgroundColor: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
                   padding: "0.75rem",
                   maxHeight: "350px",
                   overflowY: "auto",
@@ -272,7 +263,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                 {detail.showNotesMarkdown}
               </pre>
             ) : (
-              <p style={{ color: "#64748b", margin: 0, fontStyle: "italic" }}>
+              <p style={{ color: "var(--text-secondary)", margin: 0, fontStyle: "italic" }}>
                 No show notes generated yet.
               </p>
             )}
@@ -281,7 +272,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           {/* Chapters List */}
           {detail.metadataJson?.chapters && (
             <div className="panel" style={{ padding: "1.25rem" }}>
-              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Chapter Timeline</h3>
+              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Chapter Timeline</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                 {detail.metadataJson.chapters.map((ch: any, idx: number) => {
                   const formatTime = (sec: number) => {
@@ -290,9 +281,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                     return `${m}:${s.toString().padStart(2, '0')}`;
                   };
                   return (
-                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", borderBottom: "1px solid #161f30", paddingBottom: "0.25rem" }}>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{ch.title}</span>
-                      <span style={{ color: "#94a3b8", fontFamily: "var(--font-mono)" }}>
+                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", borderBottom: "1px solid var(--border-color)", paddingBottom: "0.25rem" }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{ch.title}</span>
+                      <span style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)" }}>
                         {formatTime(ch.startTimeSeconds)} — {formatTime(ch.endTimeSeconds)}
                       </span>
                     </div>
@@ -305,16 +296,16 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           {/* Metadata JSON Preview */}
           {detail.metadataJson && (
             <div className="panel" style={{ padding: "1.25rem" }}>
-              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Metadata JSON</h3>
+              <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Metadata JSON</h3>
               <pre
                 style={{
                   margin: 0,
                   whiteSpace: "pre-wrap",
                   fontFamily: "var(--font-mono), monospace",
                   fontSize: "0.75rem",
-                  color: "#38bdf8",
-                  backgroundColor: "#0c0f16",
-                  border: "1px solid #161f30",
+                  color: "var(--accent-color)",
+                  backgroundColor: "var(--bg-secondary)",
+                  border: "1px solid var(--border-color)",
                   padding: "0.75rem",
                   maxHeight: "300px",
                   overflowY: "auto",
@@ -331,7 +322,7 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
           
           {/* Eligibility Checklist */}
           <div className="panel" style={{ padding: "1.25rem" }}>
-            <h3 style={{ fontSize: "1.1rem", margin: "0 0 1rem 0", color: "#ffffff", display: "flex", justifyContent: "space-between" }}>
+            <h3 style={{ fontSize: "1.1rem", margin: "0 0 1rem 0", color: "var(--text-primary)", display: "flex", justifyContent: "space-between" }}>
               <span>Eligibility Checklist</span>
               <span className={`badge ${eligibility?.eligible ? "badgeCompleted" : "badgeFailed"}`} style={{ fontSize: "0.75rem" }}>
                 {eligibility?.eligible ? "Eligible" : "Ineligible"}
@@ -350,10 +341,10 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                         alignItems: "flex-start",
                         gap: "0.5rem",
                         fontSize: "0.8rem",
-                        color: passes ? "#cbd5e1" : "#94a3b8",
+                        color: passes ? "var(--text-primary)" : "var(--text-secondary)",
                       }}
                     >
-                      <span style={{ color: passes ? "#10b981" : "#ef4444", fontSize: "1rem", lineHeight: 1 }}>
+                      <span style={{ color: passes ? "var(--success-color)" : "var(--error-color)", fontSize: "1rem", lineHeight: 1 }}>
                         {passes ? "✓" : "✗"}
                       </span>
                       <span>{checklistLabels[key] || key}</span>
@@ -363,9 +354,9 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
             </div>
 
             {eligibility?.errorReasons && eligibility.errorReasons.length > 0 && (
-              <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid #161f30" }}>
-                <h4 style={{ fontSize: "0.85rem", color: "#ef4444", margin: "0 0 0.5rem 0" }}>Blockers:</h4>
-                <ul style={{ margin: 0, paddingLeft: "1rem", fontSize: "0.75rem", color: "#f87171" }}>
+              <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--border-color)" }}>
+                <h4 style={{ fontSize: "0.85rem", color: "var(--error-color)", margin: "0 0 0.5rem 0" }}>Blockers:</h4>
+                <ul style={{ margin: 0, paddingLeft: "1rem", fontSize: "0.75rem", color: "var(--error-color)" }}>
                   {eligibility.errorReasons.map((r: string, idx: number) => (
                     <li key={idx} style={{ marginBottom: "0.25rem" }}>{r}</li>
                   ))}
@@ -376,12 +367,12 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
 
           {/* Job Log Info */}
           <div className="panel" style={{ padding: "1.25rem" }}>
-            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "#ffffff" }}>Latest Job Log</h3>
+            <h3 style={{ fontSize: "1.1rem", margin: "0 0 0.75rem 0", color: "var(--text-primary)" }}>Latest Job Log</h3>
             {detail.latestJob ? (
-              <div style={{ fontSize: "0.8rem", display: "flex", flexDirection: "column", gap: "0.5rem", color: "#cbd5e1" }}>
+              <div style={{ fontSize: "0.8rem", display: "flex", flexDirection: "column", gap: "0.5rem", color: "var(--text-primary)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Job ID:</span>
-                  <span style={{ fontFamily: "var(--font-mono)", color: "#ffffff" }}>{detail.latestJob.id}</span>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>{detail.latestJob.id}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>Status:</span>
@@ -402,21 +393,21 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
                   <span>{new Date(detail.latestJob.createdAt).toLocaleString()}</span>
                 </div>
                 {detail.latestJob.error && (
-                  <div style={{ marginTop: "0.5rem", padding: "0.5rem", backgroundColor: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "4px", color: "#f87171" }}>
+                  <div className="alertCard alertDanger" style={{ marginTop: "0.5rem" }}>
                     <strong>Error:</strong> {detail.latestJob.error}
                   </div>
                 )}
                 {detail.latestJob.output && (
                   <div style={{ marginTop: "0.5rem" }}>
                     <span style={{ display: "block", marginBottom: "0.25rem", fontWeight: 600 }}>Job Output Details:</span>
-                    <pre style={{ margin: 0, padding: "0.5rem", backgroundColor: "#0c0f16", border: "1px solid #161f30", color: "#94a3b8", fontSize: "0.75rem", overflowX: "auto" }}>
+                    <pre style={{ margin: 0, padding: "0.5rem", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", color: "var(--text-secondary)", fontSize: "0.75rem", overflowX: "auto" }}>
                       {JSON.stringify(detail.latestJob.output, null, 2)}
                     </pre>
                   </div>
                 )}
               </div>
             ) : (
-              <p style={{ color: "#64748b", margin: 0, fontStyle: "italic" }}>
+              <p style={{ color: "var(--text-secondary)", margin: 0, fontStyle: "italic" }}>
                 No generation jobs executed yet.
               </p>
             )}

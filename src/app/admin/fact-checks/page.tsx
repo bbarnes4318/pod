@@ -65,8 +65,8 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>Fact Checking Safety Gate</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Fact Checking Safety Gate</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Audit trace reports comparing host statements against stored evidence records.
           </p>
         </div>
@@ -138,8 +138,8 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
 
       {/* Table */}
       {factChecks.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No fact check runs found matching the filters.</p>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No fact check runs found matching the filters.</div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -147,7 +147,7 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
             <thead>
               <tr>
                 <th>Episode Title</th>
-                <th style={{ width: "80px" }}>Version</th>
+                <th style={{ width: "80px", textAlign: "center" }}>Version</th>
                 <th style={{ width: "120px" }}>Fact Check</th>
                 <th style={{ width: "120px" }}>Script Status</th>
                 <th style={{ width: "120px" }}>Episode Status</th>
@@ -171,9 +171,9 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
                 return (
                   <tr key={f.id}>
                     <td>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{f.script.episode.title}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{f.script.episode.title}</span>
                     </td>
-                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{f.script.version}
                     </td>
                     <td>
@@ -193,27 +193,27 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
                     <td>
                       <span className="refBadge" style={{ fontSize: "0.75rem" }}>{f.script.episode.status}</span>
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#cbd5e1" }}>
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-primary)" }}>
                       {f.provider}
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                      {f.checkedAt.toLocaleString()}
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      {new Date(f.checkedAt).toLocaleString()}
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
                         <span className="refBadge">Coverage: {coverage.evidenceCoveragePercent !== undefined ? `${coverage.evidenceCoveragePercent}%` : "0%"}</span>
                         {issueCount > 0 && (
-                          <span style={{ color: isFailed ? "#ef4444" : "#f59e0b", fontSize: "0.7rem", fontWeight: 700 }}>
+                          <span style={{ color: isFailed ? "var(--error-color)" : "var(--warning-color)", fontSize: "0.7rem", fontWeight: 700 }}>
                             ⚠️ {issueCount} Issue(s)
                           </span>
                         )}
                         {coverage.unsupportedClaimCount > 0 && (
-                          <span style={{ color: "#ef4444", fontSize: "0.7rem" }}>
+                          <span style={{ color: "var(--error-color)", fontSize: "0.7rem" }}>
                             {coverage.unsupportedClaimCount} Unsupported
                           </span>
                         )}
                         {coverage.unsafeClaimCount > 0 && (
-                          <span style={{ color: "#f43f5e", fontSize: "0.7rem" }}>
+                          <span style={{ color: "var(--error-color)", fontSize: "0.7rem" }}>
                             {coverage.unsafeClaimCount} Unsafe
                           </span>
                         )}

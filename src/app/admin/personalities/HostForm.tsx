@@ -110,18 +110,7 @@ export default function HostForm({ initialData }: HostFormProps) {
       </div>
       <div className="panelContent">
         {error && (
-          <div
-            style={{
-              marginBottom: "1.5rem",
-              padding: "0.75rem 1rem",
-              backgroundColor: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              borderRadius: "4px",
-              color: "#ef4444",
-              fontSize: "0.9rem",
-              fontWeight: 500,
-            }}
-          >
+          <div className="alertCard alertDanger" style={{ marginBottom: "1.5rem" }}>
             {error}
           </div>
         )}
@@ -179,7 +168,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="worldview">Worldview / Core Philosophy</label>
               <textarea
                 id="worldview"
-                className="input textarea"
+                className="textarea"
                 placeholder="Describe what values this host fights for, what metrics they support or hate..."
                 value={worldview}
                 onChange={(e) => setWorldview(e.target.value)}
@@ -193,7 +182,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="speakingStyle">Speaking & Debate Style</label>
               <textarea
                 id="speakingStyle"
-                className="input textarea"
+                className="textarea"
                 style={{ minHeight: "80px" }}
                 placeholder="Loud and emotional? Condescending and methodical? How do they construct arguments?"
                 value={speakingStyle}
@@ -208,7 +197,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="catchphrases">Catchphrases</label>
               <textarea
                 id="catchphrases"
-                className="input textarea"
+                className="textarea"
                 placeholder="Rings talk!&#10;spreadsheet managers!&#10;Check the legacy!"
                 value={catchphrasesRaw}
                 onChange={(e) => setCatchphrasesRaw(e.target.value)}
@@ -222,7 +211,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="bannedPhrases">Banned Phrases</label>
               <textarea
                 id="bannedPhrases"
-                className="input textarea"
+                className="textarea"
                 placeholder="according to my regression model&#10;Championship DNA"
                 value={bannedPhrasesRaw}
                 onChange={(e) => setBannedPhrasesRaw(e.target.value)}
@@ -236,7 +225,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="likes">Loves/Likes Topics</label>
               <textarea
                 id="likes"
-                className="input textarea"
+                className="textarea"
                 placeholder="High stakes&#10;Playoff pressure&#10;Fighter grit"
                 value={likesRaw}
                 onChange={(e) => setLikesRaw(e.target.value)}
@@ -250,7 +239,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="dislikes">Hates/Dislikes Topics</label>
               <textarea
                 id="dislikes"
-                className="input textarea"
+                className="textarea"
                 placeholder="Spreadsheets&#10;Expected efficiency&#10;Box-score scouting"
                 value={dislikesRaw}
                 onChange={(e) => setDislikesRaw(e.target.value)}
@@ -264,7 +253,7 @@ export default function HostForm({ initialData }: HostFormProps) {
               <label className="label" htmlFor="argumentPatterns">Argument Patterns</label>
               <textarea
                 id="argumentPatterns"
-                className="input textarea"
+                className="textarea"
                 placeholder="Compare ring counts between players&#10;Patronize emotional arguments as mathematically illiterate&#10;Highlight shot-quality or net efficiency data"
                 value={argumentPatternsRaw}
                 onChange={(e) => setArgumentPatternsRaw(e.target.value)}
@@ -312,6 +301,7 @@ export default function HostForm({ initialData }: HostFormProps) {
                   min="1"
                   max="10"
                   className="rangeInput"
+                  style={{ accentColor: "var(--accent-color)" }}
                   value={intensityLevel}
                   onChange={(e) => setIntensityLevel(Number(e.target.value))}
                   disabled={loading}
@@ -332,7 +322,7 @@ export default function HostForm({ initialData }: HostFormProps) {
                   style={{
                     width: "36px",
                     height: "18px",
-                    accentColor: "#38bdf8",
+                    accentColor: "var(--accent-color)",
                     cursor: "pointer",
                   }}
                 />

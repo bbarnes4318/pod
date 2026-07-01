@@ -90,8 +90,8 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>TTS Dialogue Audio Segments</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>TTS Dialogue Audio Segments</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Generate and manage separate high-fidelity voice lines for hosts Max Voltage and Dr. Linebreak.
           </p>
         </div>
@@ -143,11 +143,11 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
 
       {/* Table */}
       {list.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#94a3b8", fontSize: "1.1rem", fontWeight: "600", margin: 0 }}>No audio segments found.</p>
-          <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "0.5rem", margin: 0 }}>
-            Generate TTS only after script approval and passed fact check. Go to the <Link href="/admin/scripts" style={{ color: "#38bdf8", textDecoration: "underline" }}>Script Review</Link> console to approve a script.
-          </p>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No audio segments found.</div>
+          <div className="emptyStateDesc">
+            Generate TTS only after script approval and passed fact check. Go to the <Link href="/admin/scripts" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>Script Review</Link> console to approve a script.
+          </div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -155,29 +155,25 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
             <thead>
               <tr>
                 <th>Episode Title</th>
-                <th style={{ width: "80px" }}>Version</th>
+                <th style={{ width: "80px", textAlign: "center" }}>Version</th>
                 <th>Episode Status</th>
                 <th>Fact Check</th>
                 <th>Default Provider</th>
-                <th>Dialogue Lines</th>
-                <th>Ready</th>
-                <th>Failed</th>
-                <th>Pending</th>
+                <th style={{ textAlign: "center" }}>Dialogue Lines</th>
+                <th style={{ textAlign: "center" }}>Ready</th>
+                <th style={{ textAlign: "center" }}>Failed</th>
+                <th style={{ textAlign: "center" }}>Pending</th>
                 <th style={{ width: "120px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {list.map((item) => {
-                const fcPassed = item.latestFactCheckStatus === "passed";
-                const epFactChecked = item.episodeStatus === "fact_checked" || item.episodeStatus === "audio_segments_ready" || item.episodeStatus === "completed";
-                const eligible = fcPassed && epFactChecked;
-
                 return (
                   <tr key={item.id}>
                     <td>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{item.episodeTitle}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{item.episodeTitle}</span>
                     </td>
-                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{item.version}
                     </td>
                     <td>
@@ -194,19 +190,19 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
                         {item.latestFactCheckStatus}
                       </span>
                     </td>
-                    <td style={{ fontSize: "0.85rem", color: "#cbd5e1", textTransform: "capitalize" }}>
+                    <td style={{ fontSize: "0.85rem", color: "var(--text-primary)", textTransform: "capitalize" }}>
                       {item.provider}
                     </td>
                     <td style={{ textAlign: "center", fontWeight: 700 }}>
                       {item.totalLines}
                     </td>
-                    <td style={{ textAlign: "center", color: item.readyCount === item.totalLines ? "#10b981" : "#ffffff", fontWeight: 700 }}>
+                    <td style={{ textAlign: "center", color: item.readyCount === item.totalLines ? "var(--success-color)" : "var(--text-primary)", fontWeight: 700 }}>
                       {item.readyCount}
                     </td>
-                    <td style={{ textAlign: "center", color: item.failedCount > 0 ? "#ef4444" : "#cbd5e1" }}>
+                    <td style={{ textAlign: "center", color: item.failedCount > 0 ? "var(--error-color)" : "var(--text-primary)", fontWeight: 600 }}>
                       {item.failedCount}
                     </td>
-                    <td style={{ textAlign: "center", color: item.pendingCount > 0 ? "#f59e0b" : "#64748b" }}>
+                    <td style={{ textAlign: "center", color: item.pendingCount > 0 ? "var(--warning-color)" : "var(--text-secondary)", fontWeight: 600 }}>
                       {item.pendingCount}
                     </td>
                     <td>

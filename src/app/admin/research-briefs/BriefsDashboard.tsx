@@ -113,9 +113,9 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
     <div>
       {/* Stub Warning */}
       {isLlmStub && (
-        <div className="dangerBanner">
+        <div className="alertCard alertDanger">
           <strong>⚠️ LLM provider is stub. Real research brief generation disabled.</strong>
-          <p style={{ marginTop: "0.25rem", color: "rgba(239, 68, 68, 0.85)" }}>
+          <p style={{ marginTop: "0.25rem", opacity: 0.9 }}>
             Configure a real LLM provider (OpenAI or Anthropic) in your environment variables to enable structured debate brief generation.
           </p>
         </div>
@@ -123,15 +123,8 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
 
       {statusMessage && (
         <div
-          style={{
-            padding: "1rem",
-            borderRadius: "6px",
-            marginBottom: "1.5rem",
-            fontSize: "0.9rem",
-            backgroundColor: statusMessage.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-            border: `1px solid ${statusMessage.type === "success" ? "rgba(16, 185, 129, 0.25)" : "rgba(239, 68, 68, 0.25)"}`,
-            color: statusMessage.type === "success" ? "#10b981" : "#ef4444",
-          }}
+          className={`alertCard ${statusMessage.type === "success" ? "alertSuccess" : "alertDanger"}`}
+          style={{ marginBottom: "1.5rem" }}
         >
           {statusMessage.text}
         </div>
@@ -140,19 +133,19 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
       <div className="briefsLayout">
         {/* Left Side: Approved Topics List */}
         <div className="panel" style={{ padding: 0 }}>
-          <div className="panelHeader" style={{ borderBottom: "1px solid #161f30", padding: "1.25rem" }}>
+          <div className="panelHeader">
             <h3 className="panelTitle">Approved Topics ({topics.length})</h3>
           </div>
           
           {topics.length === 0 ? (
-            <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-              <p style={{ color: "#94a3b8", fontSize: "1rem", fontWeight: "600", margin: 0 }}>No approved topics found.</p>
-              <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "0.5rem", margin: 0 }}>
-                Approve topic candidates before generating research briefs. Go to the <Link href="/admin/topics" style={{ color: "#38bdf8", textDecoration: "underline" }}>Topic Engine</Link> to approve topics first.
-              </p>
+            <div className="emptyState" style={{ border: "none", borderRadius: 0 }}>
+              <div className="emptyStateTitle">No approved topics found.</div>
+              <div className="emptyStateDesc">
+                Approve topic candidates before generating research briefs. Go to the <Link href="/admin/topics" style={{ color: "var(--accent-color)", textDecoration: "underline", fontWeight: 600 }}>Topic Engine</Link> to approve topics first.
+              </div>
             </div>
           ) : (
-            <div className="topicListCard">
+            <div className="topicListCard" style={{ border: "none", borderRadius: 0 }}>
               {topics.map((t) => {
                 const isActive = t.id === selectedTopicId;
                 const hasBrief = !!t.brief;
@@ -217,12 +210,12 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
         {/* Right Side: Detailed View Panel */}
         <div className="detailPanel">
           {!selectedTopic ? (
-            <div style={{ display: "flex", flexGrow: 1, alignItems: "center", justifyContent: "center", color: "#64748b", padding: "4rem" }}>
-              Select a topic on the left to view brief details.
+            <div className="emptyState" style={{ border: "none", flexGrow: 1, height: "100%" }}>
+              <div className="emptyStateDesc">Select a topic on the left to view brief details.</div>
             </div>
           ) : !selectedTopic.brief ? (
-            <div style={{ display: "flex", flexGrow: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#64748b", padding: "4rem", gap: "1rem", textAlign: "center" }}>
-              <span style={{ color: "#94a3b8", fontWeight: "600" }}>No Research Brief has been generated for this topic yet.</span>
+            <div className="emptyState" style={{ border: "none", flexGrow: 1, height: "100%", gap: "1rem" }}>
+              <div className="emptyStateTitle">No Research Brief has been generated for this topic yet.</div>
               <button
                 onClick={() => handleGenerate(selectedTopic.id, false)}
                 disabled={loadingTopicId !== null || isLlmStub}
@@ -238,7 +231,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
               <div className="detailPanelHeader">
                 <div>
                   <h4 className="detailPanelTitle">{selectedTopic.title}</h4>
-                  <p style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.25rem" }}>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
                     Sport: {selectedTopic.sport} | League: {selectedTopic.leagueId || "GLOBAL"}
                   </p>
                 </div>
@@ -327,18 +320,18 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                 <div>
                   <h5 className="detailSectionTitle">Debate Arguments</h5>
                   <div className="debateGrid">
-                    <div className="hostBox" style={{ borderLeft: "3px solid #ef4444" }}>
+                    <div className="hostBox" style={{ borderLeft: "3px solid var(--error-color)" }}>
                       <div className="hostHeader">
-                        <span className="hostAvatar" style={{ backgroundColor: "#ef4444" }} />
-                        <span className="hostName" style={{ color: "#ef4444" }}>Max Voltage Stance</span>
+                        <span className="hostAvatar" style={{ backgroundColor: "var(--error-color)" }} />
+                        <span className="hostName" style={{ color: "var(--error-color)" }}>Max Voltage Stance</span>
                       </div>
                       <p className="hostStance">{selectedTopic.brief.argumentForHostA}</p>
                     </div>
 
-                    <div className="hostBox" style={{ borderLeft: "3px solid #38bdf8" }}>
+                    <div className="hostBox" style={{ borderLeft: "3px solid var(--accent-color)" }}>
                       <div className="hostHeader">
-                        <span className="hostAvatar" style={{ backgroundColor: "#38bdf8" }} />
-                        <span className="hostName" style={{ color: "#38bdf8" }}>Dr. Linebreak Stance</span>
+                        <span className="hostAvatar" style={{ backgroundColor: "var(--accent-color)" }} />
+                        <span className="hostName" style={{ color: "var(--accent-color)" }}>Dr. Linebreak Stance</span>
                       </div>
                       <p className="hostStance">{selectedTopic.brief.argumentForHostB}</p>
                     </div>
@@ -353,7 +346,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                       <div key={idx} className="dialogueRow">
                         <span
                           className="dialogueSpeaker"
-                          style={{ color: item.host === "Dr. Linebreak" ? "#38bdf8" : "#ef4444" }}
+                          style={{ color: item.host === "Dr. Linebreak" ? "var(--accent-color)" : "var(--error-color)" }}
                         >
                           {item.host}:
                         </span>
@@ -376,7 +369,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                 <div>
                   <h5 className="detailSectionTitle">Unsafe / Unverified Claims</h5>
                   {getArray(selectedTopic.brief.unsafeClaims).length === 0 ? (
-                    <p style={{ fontSize: "0.9rem", color: "#64748b", fontStyle: "italic" }}>
+                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
                       No unsafe claims detected. Brief is fully grounded.
                     </p>
                   ) : (

@@ -32,12 +32,12 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
   const previewRssUrl = `${configData.config.rssUrl || "/rss"}/preview?token=${previewToken}`;
 
   return (
-    <div className="formContainer" style={{ maxWidth: "100%", padding: "2rem" }}>
+    <div className="formContainer" style={{ maxWidth: "100%" }}>
       {/* Header */}
       <div className="scriptsHeader" style={{ marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>RSS Feed &amp; Publishing Console</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>RSS Feed &amp; Publishing Console</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Configure podcast feeds, run publication readiness gates, and manage RSS feed metadata.
           </p>
         </div>
@@ -48,27 +48,27 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
         <div className="panel" style={{ padding: "1.5rem" }}>
           <h3 className="panelTitle" style={{ marginTop: 0 }}>Feed Endpoints</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ padding: "1rem", backgroundColor: "#0c0f16", border: "1px solid #1a2233", borderRadius: "4px" }}>
-              <div style={{ fontWeight: 600, color: "#10b981", fontSize: "0.9rem", marginBottom: "0.25rem" }}>PUBLIC RSS FEED</div>
-              <div style={{ fontFamily: "monospace", fontSize: "0.85rem", wordBreak: "break-all", color: "#cbd5e1" }}>
-                <a href={publicRssUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+            <div style={{ padding: "1rem", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "4px" }}>
+              <div style={{ fontWeight: 700, color: "var(--success-color)", fontSize: "0.85rem", marginBottom: "0.25rem" }}>PUBLIC RSS FEED</div>
+              <div style={{ fontFamily: "monospace", fontSize: "0.85rem", wordBreak: "break-all", color: "var(--text-primary)" }}>
+                <a href={publicRssUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                   {publicRssUrl}
                 </a>
               </div>
-              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.5rem" }}>
-                Only includes episodes with status <span style={{ color: "#e2e8f0" }}>"published"</span> and a valid publication date.
+              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
+                Only includes episodes with status <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>"published"</span> and a valid publication date.
               </div>
             </div>
 
-            <div style={{ padding: "1rem", backgroundColor: "#0c0f16", border: "1px solid #1a2233", borderRadius: "4px" }}>
-              <div style={{ fontWeight: 600, color: "#f59e0b", fontSize: "0.9rem", marginBottom: "0.25rem" }}>PREVIEW RSS FEED</div>
-              <div style={{ fontFamily: "monospace", fontSize: "0.85rem", wordBreak: "break-all", color: "#cbd5e1" }}>
-                <a href={previewRssUrl} target="_blank" rel="noreferrer" style={{ color: "#38bdf8", textDecoration: "underline" }}>
+            <div style={{ padding: "1rem", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", borderRadius: "4px" }}>
+              <div style={{ fontWeight: 700, color: "var(--warning-color)", fontSize: "0.85rem", marginBottom: "0.25rem" }}>PREVIEW RSS FEED</div>
+              <div style={{ fontFamily: "monospace", fontSize: "0.85rem", wordBreak: "break-all", color: "var(--text-primary)" }}>
+                <a href={previewRssUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>
                   {previewRssUrl}
                 </a>
               </div>
-              <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "0.5rem" }}>
-                Includes both <span style={{ color: "#e2e8f0" }}>"published"</span> and <span style={{ color: "#e2e8f0" }}>"publish_ready"</span> episodes. Requires token authentication.
+              <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
+                Includes both <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>"published"</span> and <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>"publish_ready"</span> episodes. Requires token authentication.
               </div>
             </div>
           </div>
@@ -78,15 +78,17 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
         <div className="panel" style={{ padding: "1.5rem" }}>
           <h3 className="panelTitle" style={{ marginTop: 0 }}>Podcast Metadata Configuration</h3>
           {configData.isValid ? (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "#10b981", fontSize: "0.9rem", padding: "0.75rem", backgroundColor: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)", borderRadius: "4px", marginBottom: "1rem" }}>
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-              <span>All 9 required RSS metadata keys configured!</span>
+            <div className="alertCard alertSuccess" style={{ marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <span>All 9 required RSS metadata keys configured!</span>
+              </div>
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", color: "#ef4444", fontSize: "0.9rem", padding: "0.75rem", backgroundColor: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "4px", marginBottom: "1rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 600 }}>
+            <div className="alertCard alertDanger" style={{ marginBottom: "1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: 700 }}>
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                 </svg>
@@ -102,20 +104,20 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
 
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", fontSize: "0.85rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Title:</span>
-              <span style={{ fontWeight: 500, color: "#ffffff" }}>{configData.config.title || "—"}</span>
+              <span style={{ color: "var(--text-secondary)" }}>Title:</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{configData.config.title || "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Language:</span>
-              <span style={{ fontWeight: 500, color: "#ffffff" }}>{configData.config.language || "—"}</span>
+              <span style={{ color: "var(--text-secondary)" }}>Language:</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{configData.config.language || "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Category:</span>
-              <span style={{ fontWeight: 500, color: "#ffffff" }}>{configData.config.category || "—"}</span>
+              <span style={{ color: "var(--text-secondary)" }}>Category:</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{configData.config.category || "—"}</span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#64748b" }}>Explicit:</span>
-              <span style={{ fontWeight: 500, color: "#ffffff" }}>{configData.config.explicit ? "YES" : "NO"}</span>
+              <span style={{ color: "var(--text-secondary)" }}>Explicit:</span>
+              <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{configData.config.explicit ? "YES" : "NO"}</span>
             </div>
           </div>
         </div>
@@ -156,11 +158,11 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
 
       {/* Table */}
       {scripts.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#94a3b8", fontSize: "1.1rem", fontWeight: "600", margin: 0 }}>No RSS episodes found.</p>
-          <p style={{ color: "#64748b", fontSize: "0.9rem", marginTop: "0.5rem", margin: 0 }}>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No RSS episodes found.</div>
+          <div className="emptyStateDesc">
             Only published episodes appear in the public RSS feed. Prepare content assets for an episode, then configure and publish it here.
-          </p>
+          </div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -182,45 +184,33 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
                 return (
                   <tr key={script.id}>
                     <td>
-                      <div style={{ fontWeight: 600, color: "#ffffff" }}>{ep.title}</div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.15rem" }}>
+                      <div style={{ fontWeight: 600, color: "var(--text-primary)" }}>{ep.title}</div>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.15rem" }}>
                         Script ID: {script.id}
                       </div>
                     </td>
                     <td>
-                      <span className={`statusTag`} style={{
-                        display: "inline-block",
-                        padding: "0.25rem 0.5rem",
-                        borderRadius: "4px",
-                        fontSize: "0.75rem",
-                        fontWeight: 600,
-                        backgroundColor:
-                          ep.status === "published" ? "rgba(16, 185, 129, 0.15)" :
-                          ep.status === "publish_ready" ? "rgba(56, 189, 248, 0.15)" : "rgba(148, 163, 184, 0.15)",
-                        color:
-                          ep.status === "published" ? "#10b981" :
-                          ep.status === "publish_ready" ? "#38bdf8" : "#94a3b8",
-                        border:
-                          ep.status === "published" ? "1px solid rgba(16, 185, 129, 0.3)" :
-                          ep.status === "publish_ready" ? "1px solid rgba(56, 189, 248, 0.3)" : "1px solid rgba(148, 163, 184, 0.3)",
-                      }}>
+                      <span className={`badge ${
+                        ep.status === "published" ? "badgeCompleted" :
+                        ep.status === "publish_ready" ? "badgePending" : "refBadge"
+                      }`}>
                         {ep.status.replace("_", " ").toUpperCase()}
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontFamily: "monospace", fontSize: "0.8rem", color: ep.rssGuid ? "#cbd5e1" : "#64748b" }}>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: ep.rssGuid ? "var(--text-primary)" : "var(--text-secondary)", fontWeight: ep.rssGuid ? 600 : 400 }}>
                         {ep.rssGuid || "Not prepared"}
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-primary)", fontFamily: "var(--font-mono)" }}>
                         {ep.audioFileSizeBytes 
                           ? `${(ep.audioFileSizeBytes / (1024 * 1024)).toFixed(2)} MB`
                           : "—"}
                       </span>
                     </td>
                     <td>
-                      <span style={{ fontSize: "0.85rem", color: "#cbd5e1" }}>
+                      <span style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>
                         {ep.publishedAt ? new Date(ep.publishedAt).toLocaleString() : "—"}
                       </span>
                     </td>

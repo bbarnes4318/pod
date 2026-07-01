@@ -117,7 +117,7 @@ export default function IngestionTriggerForm({ onTriggerSuccess }: FormProps) {
                 onChange={(e) => setSport(e.target.value)}
                 disabled={loading}
               />
-              <span className="helperText" style={{ color: "#64748b", fontSize: "0.75rem" }}>
+              <span className="helperText" style={{ color: "var(--text-secondary)", fontSize: "0.75rem", marginTop: "0.15rem" }}>
                 Leave blank to automatically map from selection above.
               </span>
             </div>
@@ -138,7 +138,7 @@ export default function IngestionTriggerForm({ onTriggerSuccess }: FormProps) {
                 onChange={(e) => setDateOrRange(e.target.value)}
                 disabled={loading}
               />
-              <span className="helperText" style={{ color: "#64748b", fontSize: "0.75rem" }}>
+              <span className="helperText" style={{ color: "var(--text-secondary)", fontSize: "0.75rem", marginTop: "0.15rem" }}>
                 Default: Season 2026 or current date.
               </span>
             </div>
@@ -155,16 +155,8 @@ export default function IngestionTriggerForm({ onTriggerSuccess }: FormProps) {
 
         {message && (
           <div
-            style={{
-              marginTop: "1rem",
-              padding: "0.75rem",
-              borderRadius: "4px",
-              fontSize: "0.9rem",
-              fontWeight: 500,
-              backgroundColor: message.type === "success" ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
-              border: `1px solid ${message.type === "success" ? "rgba(16, 185, 129, 0.3)" : "rgba(239, 68, 68, 0.3)"}`,
-              color: message.type === "success" ? "#10b981" : "#ef4444",
-            }}
+            className={`alertCard ${message.type === "success" ? "alertSuccess" : "alertDanger"}`}
+            style={{ marginTop: "1rem", marginBottom: 0 }}
           >
             {message.text}
           </div>

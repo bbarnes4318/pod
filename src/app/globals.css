@@ -1,21 +1,25 @@
 :root {
-  --bg-primary: #0b0e14;
-  --bg-secondary: #121721;
-  --bg-tertiary: #1a202c;
-  --border-color: #232d3d;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent-color: #0284c7;
-  --accent-hover: #0369a1;
-  --accent-muted: rgba(2, 132, 199, 0.15);
-  --success-color: #10b981;
-  --success-muted: rgba(16, 185, 129, 0.1);
-  --warning-color: #f59e0b;
-  --warning-muted: rgba(245, 158, 11, 0.1);
-  --error-color: #ef4444;
-  --error-muted: rgba(239, 68, 68, 0.1);
-  --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --bg-primary: #f8fafc;        /* Soft off-white background */
+  --bg-secondary: #ffffff;      /* White card/panel surfaces */
+  --bg-tertiary: #f1f5f9;       /* Light neutral gray for inputs/hover */
+  --border-color: #e2e8f0;      /* Crisp, subtle border */
+  --border-hover: #cbd5e1;      /* Slightly darker border for active states */
+  --text-primary: #0f172a;      /* Near-black / charcoal */
+  --text-secondary: #64748b;    /* Cool medium gray */
+  --accent-color: #2563eb;      /* Refined blue */
+  --accent-hover: #1d4ed8;
+  --accent-muted: #eff6ff;
+  --success-color: #16a34a;     /* Muted green */
+  --success-muted: #f0fdf4;
+  --success-border: #bbf7d0;
+  --warning-color: #d97706;     /* Muted amber */
+  --warning-muted: #fef3c7;
+  --warning-border: #fde68a;
+  --error-color: #dc2626;       /* Muted red */
+  --error-muted: #fef2f2;
+  --error-border: #fecaca;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
 }
 
 * {

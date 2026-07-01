@@ -52,7 +52,7 @@ export default function IngestionDashboard({ initialStats, initialLogs, provider
       {isStubActive && (
         <div className="warningBanner">
           <strong>⚠️ Stub provider active — real sports ingestion disabled.</strong>
-          <p style={{ marginTop: "0.25rem", color: "rgba(245, 158, 11, 0.85)" }}>
+          <p style={{ marginTop: "0.25rem", color: "var(--warning-color)", opacity: 0.9 }}>
             The application is configured to run in architecture validation mode. Ingestion requests will complete as empty no-ops and no real sports records will be added to the database. To enable ingestion, change <code>SPORTS_PROVIDER</code> to a real provider in your environment variables.
           </p>
         </div>
@@ -122,7 +122,7 @@ export default function IngestionDashboard({ initialStats, initialLogs, provider
       </div>
 
       {/* 3. DATABASE INGEST STATISTICS GRID */}
-      <h3 style={{ marginBottom: "1rem", color: "#ffffff", fontSize: "1.1rem" }}>Current Stored Evidence Statistics</h3>
+      <h3 style={{ marginBottom: "1rem", color: "var(--text-primary)", fontSize: "1rem", fontWeight: 700 }}>Current Stored Evidence Statistics</h3>
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", marginBottom: "2rem" }}>
         <div className="card" style={{ padding: "1.25rem" }}>
           <div className="cardTitle" style={{ fontSize: "0.75rem" }}>Registered Leagues</div>
@@ -177,62 +177,64 @@ export default function IngestionDashboard({ initialStats, initialLogs, provider
           </div>
           <div className="panelContent" style={{ padding: 0 }}>
             {logs.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "3rem", color: "#64748b" }}>
+              <div style={{ textAlign: "center", padding: "3rem", color: "var(--text-secondary)" }}>
                 No ingestion job logs found in database.
               </div>
             ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Job ID</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Output Details / Count</th>
-                    <th>Captured Time</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => {
-                    const output = log.output || {};
-                    const counts = output.counts || {};
-                    const details = log.error
-                      ? `Error: ${log.error}`
-                      : output.message
-                      ? output.message
-                      : `Ingested: games=${counts.games || 0}, news=${counts.news || 0}, odds=${counts.odds || 0}, injuries=${counts.injuries || 0}`;
+              <div className="tableContainer" style={{ border: "none", borderRadius: 0 }}>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Job ID</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Output Details / Count</th>
+                      <th>Captured Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => {
+                      const output = log.output || {};
+                      const counts = output.counts || {};
+                      const details = log.error
+                        ? `Error: ${log.error}`
+                        : output.message
+                        ? output.message
+                        : `Ingested: games=${counts.games || 0}, news=${counts.news || 0}, odds=${counts.odds || 0}, injuries=${counts.injuries || 0}`;
 
-                    return (
-                      <tr key={log.id}>
-                        <td>
-                          <code className="logCode" style={{ color: "#38bdf8" }}>{log.id.substring(0, 8)}...</code>
-                        </td>
-                        <td>
-                          <code className="logCode">{log.jobType}</code>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge ${
-                              log.status === "running"
-                                ? "badgeRunning"
-                                : log.status === "completed"
-                                ? "badgeCompleted"
-                                : "badgeFailed"
-                            }`}
-                          >
-                            {log.status}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: "0.85rem", color: log.status === "failed" ? "#ef4444" : "#cbd5e1" }}>
-                          {details}
-                        </td>
-                        <td style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                          {new Date(log.createdAt).toLocaleString()}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      return (
+                        <tr key={log.id}>
+                          <td>
+                            <code className="logCode" style={{ color: "var(--accent-color)" }}>{log.id.substring(0, 8)}...</code>
+                          </td>
+                          <td>
+                            <code className="logCode">{log.jobType}</code>
+                          </td>
+                          <td>
+                            <span
+                              className={`badge ${
+                                log.status === "running"
+                                  ? "badgeRunning"
+                                  : log.status === "completed"
+                                  ? "badgeCompleted"
+                                  : "badgeFailed"
+                              }`}
+                            >
+                              {log.status}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: "0.85rem", color: log.status === "failed" ? "var(--error-color)" : "var(--text-primary)" }}>
+                            {details}
+                          </td>
+                          <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                            {new Date(log.createdAt).toLocaleString()}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

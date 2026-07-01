@@ -52,8 +52,8 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.5rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>Script Review Console</h2>
-          <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginTop: "0.25rem", margin: 0 }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Script Review Console</h2>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
             Inspect, edit, validate, and approve generated AI podcast host debate scripts.
           </p>
         </div>
@@ -117,8 +117,8 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
 
       {/* Directory Table */}
       {scripts.length === 0 ? (
-        <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-          <p style={{ color: "#64748b", fontSize: "1.1rem", margin: 0 }}>No scripts found matching the filters.</p>
+        <div className="emptyState">
+          <div className="emptyStateTitle">No scripts found matching the filters.</div>
         </div>
       ) : (
         <div className="tableContainer">
@@ -126,7 +126,7 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
             <thead>
               <tr>
                 <th>Episode Title</th>
-                <th style={{ width: "100px" }}>Version</th>
+                <th style={{ width: "100px", textAlign: "center" }}>Version</th>
                 <th style={{ width: "130px" }}>Script Status</th>
                 <th style={{ width: "150px" }}>Episode Status</th>
                 <th>Created At</th>
@@ -138,16 +138,16 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
               {scripts.map((s) => {
                 const contentObj = typeof s.content === "object" && s.content !== null ? (s.content as any) : {};
                 const safety = contentObj.safety || {};
-                const isApproved = s.status === "approved";
+                const isApproved = s.status === "approved" || s.status === "ready" || s.status === "script_approved";
                 const isRejected = s.status === "rejected";
                 const isNeedsRevision = s.status === "needs_revision";
 
                 return (
                   <tr key={s.id}>
                     <td>
-                      <span style={{ fontWeight: 600, color: "#ffffff" }}>{s.episode.title}</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{s.episode.title}</span>
                     </td>
-                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{s.version}
                     </td>
                     <td>
@@ -168,20 +168,20 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
                         {s.episode.status}
                       </span>
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
-                      {s.createdAt.toLocaleString()}
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                      {new Date(s.createdAt).toLocaleString()}
                     </td>
-                    <td style={{ fontSize: "0.8rem", color: "#94a3b8" }}>
+                    <td style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
                         <span className="refBadge">Lines: {safety.totalLineCount || 0}</span>
                         <span className="refBadge">Coverage: {safety.evidenceCoveragePercent !== undefined ? `${safety.evidenceCoveragePercent}%` : "0%"}</span>
                         {safety.needsHumanReviewCount > 0 && (
-                          <span style={{ color: "#ef4444", fontSize: "0.7rem", fontWeight: 700 }}>
-                            ⚠️ {safety.needsHumanReviewCount} Review Flags
+                          <span style={{ color: "var(--error-color)", fontSize: "0.7rem", fontWeight: 700 }}>
+                            ⚠️ {safety.needsHumanReviewCount} Flags
                           </span>
                         )}
                         {safety.reasons && safety.reasons.length > 0 && (
-                          <span style={{ color: "#f59e0b", fontSize: "0.7rem" }}>
+                          <span style={{ color: "var(--warning-color)", fontSize: "0.7rem" }}>
                             • {safety.reasons.length} Warnings
                           </span>
                         )}

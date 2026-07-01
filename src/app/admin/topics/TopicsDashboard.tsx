@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import TopicGenerationForm from "./TopicGenerationForm";
 import { approveTopic, rejectTopic, resetTopicToPending, fetchTopicStats } from "./actions";
 
@@ -49,9 +49,6 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
     if (statsRes.success && statsRes.stats) {
       setStats(statsRes.stats);
     }
-    // Perform browser-side fetch or let router.refresh trigger it. We'll refresh stats.
-    // To refresh the list, we can fetch via an API or Server Action, but for simplicity, we let the user re-trigger or wait.
-    // Let's add a browser-side fetch for topics or just reload the page.
     window.location.reload();
   };
 
@@ -60,7 +57,7 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
     const res = await approveTopic(id);
     if (res.success) {
       setTopics(prev =>
-        prev.map(t => (t.id === id ? { ...t, status: "approved" } : t))
+         prev.map(t => (t.id === id ? { ...t, status: "approved" } : t))
       );
       setStats(prev => ({
         ...prev,
@@ -98,7 +95,6 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
       setTopics(prev =>
         prev.map(t => (t.id === id ? { ...t, status: "pending" } : t))
       );
-      // Recalculate stats
       refreshData();
     } else {
       alert(res.error || "Failed to reset topic status");
@@ -115,27 +111,27 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
     <div>
       {/* 1. WARNING BANNERS */}
       {isLlmStub && (
-        <div className="dangerBanner">
+        <div className="alertCard alertDanger">
           <strong>⚠️ LLM provider is stub. Real topic generation disabled.</strong>
-          <p style={{ marginTop: "0.25rem", color: "rgba(239, 68, 68, 0.85)" }}>
+          <p style={{ marginTop: "0.25rem", opacity: 0.9 }}>
             The application is configured with <code>LLM_PROVIDER=stub</code>. The stub LLM does not generate fake debate topics to comply with our safety specification. To generate real debate topics, configure a real LLM provider (OpenAI or Anthropic) in your environment variables.
           </p>
         </div>
       )}
 
       {hasNoEvidence && (
-        <div className="warningBanner">
+        <div className="alertCard alertWarning">
           <strong>⚠️ No real sports evidence available. Ingest real sports data before generating topics.</strong>
-          <p style={{ marginTop: "0.25rem", color: "rgba(245, 158, 11, 0.85)" }}>
+          <p style={{ marginTop: "0.25rem", opacity: 0.9 }}>
             There are no sports records (games, news, injuries, stats) in the database. Static leagues do not count as evidence. You must run data ingestion first to capture real sports data before the Topic Engine can run.
           </p>
         </div>
       )}
 
       {isSportsStub && !hasNoEvidence && (
-        <div className="warningBanner" style={{ backgroundColor: "rgba(245, 158, 11, 0.04)" }}>
+        <div className="alertCard alertWarning" style={{ opacity: 0.85 }}>
           <strong>ℹ️ Stub Sports Provider Active</strong>
-          <p style={{ marginTop: "0.25rem", color: "rgba(245, 158, 11, 0.8)" }}>
+          <p style={{ marginTop: "0.25rem", opacity: 0.9 }}>
             The sports data provider is currently set to stub. New ingestion is disabled, but you can generate topics using any existing real database evidence records.
           </p>
         </div>
@@ -148,16 +144,16 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
           <div className="cardValue" style={{ fontSize: "1.6rem" }}>{stats.evidenceCount}</div>
         </div>
         <div className="card" style={{ padding: "1.25rem" }}>
-          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "#f59e0b" }}>Pending Candidates</div>
-          <div className="cardValue" style={{ fontSize: "1.6rem", color: "#f59e0b" }}>{stats.pendingCount}</div>
+          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "var(--warning-color)" }}>Pending Candidates</div>
+          <div className="cardValue" style={{ fontSize: "1.6rem", color: "var(--warning-color)" }}>{stats.pendingCount}</div>
         </div>
         <div className="card" style={{ padding: "1.25rem" }}>
-          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "#10b981" }}>Approved Topics</div>
-          <div className="cardValue" style={{ fontSize: "1.6rem", color: "#10b981" }}>{stats.approvedCount}</div>
+          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "var(--success-color)" }}>Approved Topics</div>
+          <div className="cardValue" style={{ fontSize: "1.6rem", color: "var(--success-color)" }}>{stats.approvedCount}</div>
         </div>
         <div className="card" style={{ padding: "1.25rem" }}>
-          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "#ef4444" }}>Rejected Candidates</div>
-          <div className="cardValue" style={{ fontSize: "1.6rem", color: "#ef4444" }}>{stats.rejectedCount}</div>
+          <div className="cardTitle" style={{ fontSize: "0.75rem", color: "var(--error-color)" }}>Rejected Candidates</div>
+          <div className="cardValue" style={{ fontSize: "1.6rem", color: "var(--error-color)" }}>{stats.rejectedCount}</div>
         </div>
       </div>
 
@@ -173,17 +169,17 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
         {/* Right Panel: Ranked Topic Candidates List */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-            <h3 style={{ color: "#ffffff", fontSize: "1.1rem" }}>Ranked Debate Topic Candidates</h3>
+            <h3 style={{ color: "var(--text-primary)", fontSize: "1rem", fontWeight: 700 }}>Ranked Debate Topic Candidates</h3>
             <button onClick={refreshData} className="editButton" style={{ fontSize: "0.8rem", padding: "0.25rem 0.75rem" }}>
               Refresh List
             </button>
           </div>
           {topics.length === 0 ? (
-            <div className="panel" style={{ textAlign: "center", padding: "4rem" }}>
-              <p style={{ color: "#64748b", fontSize: "1.1rem", fontWeight: "600" }}>No topic candidates exist yet.</p>
-              <p style={{ color: "#475569", fontSize: "0.9rem", marginTop: "0.5rem" }}>
+            <div className="emptyState">
+              <div className="emptyStateTitle">No topic candidates exist yet.</div>
+              <div className="emptyStateDesc">
                 Run sports data ingestion first, then generate topics from real stored data.
-              </p>
+              </div>
             </div>
           ) : (
             <div className="grid">
@@ -201,8 +197,8 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
                         <h4 className="topicTitle">{topic.title}</h4>
                         <div className="topicMeta">
                           <span className="metaBadge">{topic.sport}</span>
-                          <span className="metaBadge" style={{ color: "#e2e8f0" }}>{topic.leagueId || "GLOBAL"}</span>
-                          <span style={{ color: "#64748b" }}>
+                          <span className="metaBadge">{topic.leagueId || "GLOBAL"}</span>
+                          <span style={{ color: "var(--text-secondary)" }}>
                             Created {new Date(topic.createdAt).toLocaleDateString()}
                           </span>
                         </div>
@@ -223,34 +219,34 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
                       <div className="scoresGrid">
                         <div className="scoreItem">
                           <span className="scoreItemLabel">Controversy</span>
-                          <span className="scoreItemValue" style={{ color: "#f59e0b" }}>{topic.controversyScore}</span>
+                          <span className="scoreItemValue" style={{ color: "var(--warning-color)" }}>{topic.controversyScore}</span>
                         </div>
                         <div className="scoreItem">
                           <span className="scoreItemLabel">Star Power</span>
-                          <span className="scoreItemValue" style={{ color: "#a855f7" }}>{topic.starPowerScore}</span>
+                          <span className="scoreItemValue" style={{ color: "#7c3aed" }}>{topic.starPowerScore}</span>
                         </div>
                         <div className="scoreItem">
                           <span className="scoreItemLabel">Betting Relevance</span>
-                          <span className="scoreItemValue" style={{ color: "#38bdf8" }}>{topic.bettingRelevanceScore}</span>
+                          <span className="scoreItemValue" style={{ color: "var(--accent-color)" }}>{topic.bettingRelevanceScore}</span>
                         </div>
                         <div className="scoreItem">
                           <span className="scoreItemLabel">Recency</span>
-                          <span className="scoreItemValue" style={{ color: "#cbd5e1" }}>{topic.recencyScore}</span>
+                          <span className="scoreItemValue" style={{ color: "var(--text-secondary)" }}>{topic.recencyScore}</span>
                         </div>
                       </div>
 
                       {/* Evidence linking lists */}
                       <div className="evidenceList">
-                        <span className="sectionLabel" style={{ fontSize: "0.7rem", marginBottom: "0.25rem" }}>Supporting Evidence Records</span>
+                        <span className="sectionLabel" style={{ fontSize: "0.7rem", marginBottom: "0.25rem", fontWeight: 600, textTransform: "uppercase", color: "var(--text-secondary)", letterSpacing: "0.02em" }}>Supporting Evidence Records</span>
                         {evidenceList.length === 0 ? (
-                          <span style={{ fontSize: "0.85rem", color: "#64748b", fontStyle: "italic" }}>No evidence links found.</span>
+                          <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", fontStyle: "italic" }}>No evidence links found.</span>
                         ) : (
                           evidenceList.map((ref: any, idx: number) => (
                             <div className="evidenceItem" key={idx}>
                               <span className={`evidenceBadge badge${ref.type.charAt(0).toUpperCase() + ref.type.slice(1)}`}>
                                 {ref.type}
                               </span>
-                              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem", color: "#e2e8f0" }}>
+                              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-primary)" }}>
                                 {ref.id}
                               </span>
                             </div>
