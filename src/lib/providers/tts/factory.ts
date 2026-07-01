@@ -3,6 +3,7 @@ import { StubTTSProvider } from "./stub";
 import { ElevenLabsTTSProvider } from "./elevenlabs";
 import { CartesiaTTSProvider } from "./cartesia";
 import { OpenAITTSProvider } from "./openai";
+import { BosonTTSProvider } from "./boson";
 
 export function getTTSProvider(): TTSProvider {
   const providerType = process.env.TTS_PROVIDER?.toLowerCase() || "stub";
@@ -14,6 +15,8 @@ export function getTTSProvider(): TTSProvider {
       return new CartesiaTTSProvider();
     case "openai":
       return new OpenAITTSProvider();
+    case "boson":
+      return new BosonTTSProvider();
     case "stub":
     default:
       return new StubTTSProvider();

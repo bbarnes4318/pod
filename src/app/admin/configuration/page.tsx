@@ -1,6 +1,6 @@
 import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
-import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus, getResearchProviderStatus } from "@/lib/env";
+import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus, getResearchProviderStatus, getBosonTtsStatus } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +21,7 @@ export default async function ConfigurationPage() {
     { name: "Anthropic API Key (if used)", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
     { name: "Gemini API Key (if used)", value: maskSecret(process.env.GEMINI_API_KEY) },
     { name: "ElevenLabs API Key (if used)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
+    { name: "Boson API Key (if used)", value: getBosonTtsStatus() },
     { name: "Research Provider (RESEARCH_PROVIDER)", value: getResearchProviderStatus() },
     { name: "Odds API Key (ODDS_API_KEY)", value: getOddsApiKeyStatus() },
     { name: "RSS Feed Ingest (NEWS_RSS_FEEDS)", value: getRssFeedStatus() },
@@ -193,6 +194,35 @@ export default async function ConfigurationPage() {
                 <div style={{ color: "var(--accent-color)", fontFamily: "var(--font-mono)", fontSize: "0.85rem" }}>
                   {process.env.PODCAST_IMAGE_URL || "Not Configured"}
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Active TTS Configuration */}
+      <div className="panel">
+        <div className="panelHeader">
+          <h3 className="panelTitle">Active TTS Settings (BOSON)</h3>
+        </div>
+        <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
+            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Boson TTS Status</div>
+              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{getBosonTtsStatus()}</div>
+            </div>
+            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Model</div>
+              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_MODEL || "higgs-tts-3"}</div>
+            </div>
+            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Voice</div>
+              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_VOICE || "default"}</div>
+            </div>
+            <div>
+              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Inline Tags</div>
+              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
+                {process.env.BOSON_TTS_ENABLE_TAGS === "true" ? "ENABLED" : "DISABLED"}
               </div>
             </div>
           </div>

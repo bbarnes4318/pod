@@ -4,6 +4,8 @@ import { StubTTSProvider } from "@/lib/providers/tts/stub";
 import { ElevenLabsTTSProvider } from "@/lib/providers/tts/elevenlabs";
 import { CartesiaTTSProvider } from "@/lib/providers/tts/cartesia";
 import { OpenAITTSProvider } from "@/lib/providers/tts/openai";
+import { BosonTTSProvider } from "@/lib/providers/tts/boson";
+import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
 
 interface TtsSegmentInput {
   scriptId: string;
@@ -24,6 +26,8 @@ function resolveTTSProvider(name: string) {
       return new CartesiaTTSProvider();
     case "openai":
       return new OpenAITTSProvider();
+    case "boson":
+      return new BosonTTSProvider();
     case "stub":
     default:
       return new StubTTSProvider();
@@ -209,25 +213,6 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
       createdSegmentCount++;
     }
 
-    if (!segment) {
-      segment = await db.audioSegment.create({
-        data: {
-          episodeId,
-          scriptId,
-          hostId: line.speakerHostId,
-          lineIndex: line.lineIndex,
-          text: line.text,
-          status: "pending",
-        },
-      });
-    }
-
-    await db.audioSegment.update({
-      where: { id: segment.id },
-      data: { status: "processing" },
-    });
-    processingCount++;
-
     let host;
     if (line.speakerName === "Max Voltage") {
       host = hostA;
@@ -242,14 +227,38 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     }
     const hostProviderName = providerOverride || host.ttsProvider || process.env.TTS_PROVIDER || "stub";
 
+    if (!segment) {
+      segment = await db.audioSegment.create({
+        data: {
+          episodeId,
+          scriptId,
+          hostId: line.speakerHostId,
+          lineIndex: line.lineIndex,
+          text: line.text,
+          status: "pending",
+          provider: hostProviderName,
+        },
+      });
+    }
+
+    await db.audioSegment.update({
+      where: { id: segment.id },
+      data: { status: "processing" },
+    });
+    processingCount++;
+
     let delay = 1000;
     for (let attempt = 1; attempt <= attemptsLeft; attempt++) {
       try {
         const format = process.env.TTS_AUDIO_FORMAT === "wav" ? "wav" : "mp3";
         const ttsProvider = resolveTTSProvider(hostProviderName);
 
+        const sanitizedText = ttsProvider.name === "boson" && process.env.BOSON_TTS_ENABLE_TAGS === "true"
+          ? sanitizeForBosonTts(line.text)
+          : sanitizeForGenericTts(line.text);
+
         const ttsResult = await ttsProvider.synthesizeSpeech({
-          text: cleanTextForSpeech(line.text),
+          text: sanitizedText,
           voiceId: host.ttsVoiceId,
           speakerName: line.speakerName,
           tone: line.tone,
@@ -276,6 +285,8 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
             status: "ready",
             audioUrl: uploadResult.url,
             durationMs: ttsResult.durationMs || null,
+            provider: hostProviderName,
+            providerMetadata: ttsResult.providerAudioId ? { providerAudioId: ttsResult.providerAudioId } : undefined,
           },
         });
 

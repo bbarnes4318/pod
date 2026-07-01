@@ -46,14 +46,14 @@ export async function fetchTtsEligibility(scriptId: string) {
   }
 }
 
-export async function triggerTtsGeneration(scriptId: string, forceRegenerate = false) {
+export async function triggerTtsGeneration(scriptId: string, forceRegenerate = false, providerOverride?: string) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
       throw new Error(check.reason || "Script is not eligible for TTS generation.");
     }
 
-    await queueTtsSegmentGenerationJob({ scriptId, forceRegenerate });
+    await queueTtsSegmentGenerationJob({ scriptId, forceRegenerate, providerOverride });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
   } catch (err: any) {
@@ -61,7 +61,7 @@ export async function triggerTtsGeneration(scriptId: string, forceRegenerate = f
   }
 }
 
-export async function triggerTtsRange(scriptId: string, startLineIndex: number, endLineIndex: number) {
+export async function triggerTtsRange(scriptId: string, startLineIndex: number, endLineIndex: number, providerOverride?: string) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -72,6 +72,7 @@ export async function triggerTtsRange(scriptId: string, startLineIndex: number, 
       scriptId,
       segmentRange: { startLineIndex, endLineIndex },
       forceRegenerate: true, // Range triggers usually want to overwrite
+      providerOverride,
     });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
@@ -80,7 +81,7 @@ export async function triggerTtsRange(scriptId: string, startLineIndex: number, 
   }
 }
 
-export async function triggerTtsForHost(scriptId: string, hostId: string) {
+export async function triggerTtsForHost(scriptId: string, hostId: string, providerOverride?: string) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -91,6 +92,7 @@ export async function triggerTtsForHost(scriptId: string, hostId: string) {
       scriptId,
       hostId,
       forceRegenerate: true,
+      providerOverride,
     });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };

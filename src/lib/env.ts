@@ -268,6 +268,13 @@ export function assertProductionEnv(): void {
   } else {
     throw new Error(`Unsupported RESEARCH_PROVIDER: ${research}`);
   }
+  // 4. TTS Provider Checks
+  const tts = (process.env.TTS_PROVIDER || "elevenlabs").trim().toLowerCase();
+  if (tts === "boson") {
+    if (getBosonTtsStatus() !== "CONFIGURED") {
+      throw new Error("Missing required production env var: BOSON_API_KEY");
+    }
+  }
 }
 
 /**
@@ -300,4 +307,22 @@ export function getResearchProviderStatus(): "CONFIGURED" | "MISSING" | "ERROR" 
     return "CONFIGURED";
   }
   return "ERROR";
+}
+
+/**
+ * Returns the resolved Boson API key.
+ */
+export function getBosonApiKey(): string {
+  return (process.env.BOSON_API_KEY || "").trim();
+}
+
+/**
+ * Returns the Boson TTS status.
+ */
+export function getBosonTtsStatus(): "CONFIGURED" | "MISSING" {
+  const key = getBosonApiKey();
+  if (!key || isPlaceholder(key)) {
+    return "MISSING";
+  }
+  return "CONFIGURED";
 }

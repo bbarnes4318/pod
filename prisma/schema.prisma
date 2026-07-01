@@ -339,10 +339,12 @@ model AudioSegment {
   text       String
   audioUrl   String?
   durationMs Int?
-  status     String   // "pending" | "processing" | "ready" | "failed"
-  createdAt  DateTime @default(now())
-  episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
-  script     Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  status           String   // "pending" | "processing" | "ready" | "failed"
+  provider         String?
+  providerMetadata Json?
+  createdAt        DateTime @default(now())
+  episode          Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  script           Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
 
   @@index([episodeId])
   @@index([scriptId])

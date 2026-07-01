@@ -127,6 +127,7 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
             <option value="elevenlabs">ElevenLabs</option>
             <option value="cartesia">Cartesia</option>
             <option value="openai">OpenAI TTS</option>
+            <option value="boson">Boson</option>
             <option value="stub">Stub</option>
           </select>
         </div>

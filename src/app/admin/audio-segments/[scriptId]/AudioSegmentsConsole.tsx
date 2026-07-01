@@ -46,6 +46,7 @@ export default function AudioSegmentsConsole({
   const [rangeStart, setRangeStart] = useState<number>(0);
   const [rangeEnd, setRangeEnd] = useState<number>(Math.max(0, script.totalLines - 1));
   const [selectedHostId, setSelectedHostId] = useState<string>("");
+  const [providerOverride, setProviderOverride] = useState<string>("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Poll segments status while there are pending or processing items
@@ -75,7 +76,7 @@ export default function AudioSegmentsConsole({
   const handleFullTts = async (force: boolean) => {
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsGeneration(script.id, force);
+    const res = await triggerTtsGeneration(script.id, force, providerOverride || undefined);
     if (res.success) {
       setMessage({ type: "success", text: "TTS generation enqueued successfully." });
       await refreshSegments();
@@ -88,7 +89,7 @@ export default function AudioSegmentsConsole({
   const handleRangeTts = async () => {
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsRange(script.id, rangeStart, rangeEnd);
+    const res = await triggerTtsRange(script.id, rangeStart, rangeEnd, providerOverride || undefined);
     if (res.success) {
       setMessage({ type: "success", text: `TTS range (${rangeStart} to ${rangeEnd}) generation enqueued.` });
       await refreshSegments();
@@ -102,7 +103,7 @@ export default function AudioSegmentsConsole({
     if (!selectedHostId) return;
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsForHost(script.id, selectedHostId);
+    const res = await triggerTtsForHost(script.id, selectedHostId, providerOverride || undefined);
     if (res.success) {
       setMessage({ type: "success", text: "TTS host-specific generation enqueued." });
       await refreshSegments();
@@ -328,6 +329,25 @@ export default function AudioSegmentsConsole({
           {/* Action Triggers Console */}
           {eligible && (
             <>
+              {/* Provider Override Selection */}
+              <div className="controlsPanel">
+                <div className="panelTitle">TTS Provider Override</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  <select
+                    value={providerOverride}
+                    onChange={(e) => setProviderOverride(e.target.value)}
+                    className="select"
+                  >
+                    <option value="">Default (From Host Profile / Env)</option>
+                    <option value="elevenlabs">ElevenLabs</option>
+                    <option value="cartesia">Cartesia</option>
+                    <option value="openai">OpenAI TTS</option>
+                    <option value="boson">Boson</option>
+                    <option value="stub">Stub</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Full Generation */}
               <div className="controlsPanel">
                 <div className="panelTitle">Full TTS Assembly</div>
