@@ -238,6 +238,17 @@ model ResearchBrief {
   sourceIds         Json           // List of source URLs/IDs
   createdAt         DateTime       @default(now())
   topic             TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  // Decoupled editorial fields
+  classification    String?
+  mainAngle         String?
+  whyMattersNow     String?
+  keyFactsContext   Json?
+  onAirTalkingPoints Json?
+  contrarianAngle   String?
+  strongestDebateQuestion String?
+  suggestedHostTake String?
+  sourceNotesUsed   String?
 }
 
 model Episode {

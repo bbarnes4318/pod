@@ -1,6 +1,6 @@
 // Standalone Queue Worker for Take Machine
 import "dotenv/config";
-import { assertProductionEnv } from "../env";
+import { assertProductionEnv, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
 
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
@@ -989,6 +989,83 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
   }
 }
 
+// Helper to classify sports topics using LLM (with heuristic fallback)
+async function classifyTopic(title: string, summary: string): Promise<string> {
+  if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+    return runHeuristicClassification(title, summary);
+  }
+
+  const llm = getLLMProvider();
+  const systemPrompt = `You are an expert sports media classifier. Classify the given sports topic into exactly one of these types:
+- game_preview
+- betting_market
+- news_reaction
+- team_topic
+- player_topic
+- coach_topic
+- conference_topic
+- generic_sports_take
+
+Return valid JSON matching this schema:
+{
+  "classification": "one_of_the_above_types"
+}`;
+
+  const prompt = `Topic Title: ${title}\nTopic Summary: ${summary}`;
+
+  try {
+    const res = await llm.generateStructuredOutput<{ classification: string }>({
+      prompt,
+      systemPrompt,
+      temperature: 0.1,
+    });
+    const type = res.classification?.trim().toLowerCase();
+    const validTypes = [
+      "game_preview",
+      "betting_market",
+      "news_reaction",
+      "team_topic",
+      "player_topic",
+      "coach_topic",
+      "conference_topic",
+      "generic_sports_take"
+    ];
+    if (validTypes.includes(type)) {
+      return type;
+    }
+  } catch (err: any) {
+    console.warn(`[Worker] LLM classification failed, falling back to heuristics: ${err.message}`);
+  }
+
+  return runHeuristicClassification(title, summary);
+}
+
+function runHeuristicClassification(title: string, summary: string): string {
+  const combined = `${title} ${summary || ""}`.toLowerCase();
+  if (combined.match(/\b(odds|spread|total|moneyline|betting|wager|sportsbook)\b/i)) {
+    return "betting_market";
+  }
+  if (combined.match(/\b(preview|matchup|versus|vs\b|play against|upcoming game)\b/i)) {
+    return "game_preview";
+  }
+  if (combined.match(/\b(injury|injuries|trades|signing|signed|breaking|fired|hired|announced)\b/i)) {
+    return "news_reaction";
+  }
+  if (combined.match(/\b(coach|coaching|manager|head coach)\b/i)) {
+    return "coach_topic";
+  }
+  if (combined.match(/\b(player|quarterback|qb|mvp|rookie|athlete)\b/i)) {
+    return "player_topic";
+  }
+  if (combined.match(/\b(team|franchise|club|squad)\b/i)) {
+    return "team_topic";
+  }
+  if (combined.match(/\b(conference|division|sec|big ten|acc|pac-12|playoff bracket)\b/i)) {
+    return "conference_topic";
+  }
+  return "generic_sports_take";
+}
+
 // 4. Research Brief Generation Handler
 async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
   const { topicId, forceRegenerate = false } = job.data;
@@ -1018,14 +1095,6 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       throw new Error(`TopicCandidate with ID ${topicId} is not approved (current status: ${topic.status}).`);
     }
 
-    const topicEvidenceIds = Array.isArray(topic.evidenceIds)
-      ? (topic.evidenceIds as any[])
-      : [];
-
-    if (topicEvidenceIds.length === 0) {
-      throw new Error(`TopicCandidate with ID ${topicId} has empty evidenceIds packet.`);
-    }
-
     // 2. Overwrite check
     const existingBrief = await db.researchBrief.findUnique({
       where: { topicId },
@@ -1051,7 +1120,15 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       return { success: true, message: skipMsg, skipped: true };
     }
 
-    // 3. Resolve all approved evidence refs
+    // 3. Topic Classification
+    const classification = await classifyTopic(topic.title, topic.summary || "");
+    console.log(`[Worker] Classified topic ${topicId} as: ${classification}`);
+
+    // 4. Resolve evidence references if present
+    const topicEvidenceIds = Array.isArray(topic.evidenceIds)
+      ? (topic.evidenceIds as any[])
+      : [];
+
     const topicEvidenceMap = new Map<string, string>();
     for (const ref of topicEvidenceIds) {
       if (ref.id && ref.type) {
@@ -1117,7 +1194,7 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       }
     }
 
-    // 4. Guard against stub LLM provider
+    // Guard against stub LLM provider
     if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
       const errorMsg = "LLM provider is stub. Real research brief generation disabled.";
       console.warn(`[Worker] ${errorMsg}`);
@@ -1131,18 +1208,89 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       throw new Error(errorMsg);
     }
 
-    // Filter out injuries lacking linked player or team required for useful context
+    // Filter out injuries lacking linked player or team
     const validInjuries = resolvedInjuries.filter((i) => i.player?.name && i.team?.name);
-    const skippedInjuriesCount = resolvedInjuries.length - validInjuries.length;
-    let skippedWeakEvidenceCount = skippedInjuriesCount;
 
-    // 5. Serialize compact evidence packet (no full article texts)
+    // 5. Source Priority Guidelines & Audit Log Compile
+    let sourcePriorityGuideline = "";
+    if (classification === "betting_market") {
+      sourcePriorityGuideline = `Source Priority order:
+1. User topic / title / prompt
+2. Tied-back game data
+3. Odds / markets (focus heavily on spread, total, moneyline, implied score, and market movement)
+4. RSS news headlines
+5. Team context`;
+    } else if (classification === "game_preview") {
+      sourcePriorityGuideline = `Source Priority order:
+1. User topic / title / prompt
+2. Stored topic metadata
+3. Schedule / game data (focus on matchup, date, time)
+4. Related team context
+5. RSS news headlines
+6. Odds only as supporting context (do not make odds the entire focus)`;
+    } else if (classification === "news_reaction") {
+      sourcePriorityGuideline = `Source Priority order:
+1. User topic / title / prompt
+2. RSS news headlines (focus on the breaking news event first)
+3. Stored topic metadata
+4. Related team/player context
+(Do not use or require Odds API data unless explicitly relevant)`;
+    } else {
+      sourcePriorityGuideline = `Source Priority order:
+1. User topic / title / prompt
+2. Stored topic metadata
+3. RSS news headlines
+4. Related team/player/coach/conference context
+5. Schedule / game data
+(Do not use or require Odds API data unless an upcoming game or betting angle is explicitly detected)`;
+    }
+
+    // Build the audit log of sources used
+    const sourcesUsedList: string[] = ["Topic metadata"];
+
+    if (resolvedNews.length > 0) {
+      sourcesUsedList.push(`RSS headlines (${resolvedNews.length} articles matched)`);
+    } else if (getRssFeedStatus() === "CONFIGURED") {
+      sourcesUsedList.push("RSS headlines: skipped (no matching news found)");
+    } else {
+      sourcesUsedList.push("RSS headlines: unavailable");
+    }
+
+    if (resolvedGames.length > 0) {
+      sourcesUsedList.push(`Team context / Schedule (${resolvedGames.length} games matched)`);
+    }
+
+    const isBettingTopic = classification === "betting_market" || 
+      `${topic.title} ${topic.summary}`.toLowerCase().match(/\b(odds|spread|total|moneyline|betting|wager)\b/i);
+
+    if (resolvedOdds.length > 0) {
+      sourcesUsedList.push(`Odds API: ${resolvedGames[0]?.homeTeam?.name || "Game"} market found`);
+    } else if (isBettingTopic) {
+      if (getOddsApiKeyStatus() === "CONFIGURED") {
+        sourcesUsedList.push("Odds API: no matching markets found");
+      } else {
+        sourcesUsedList.push("Odds API: unavailable (missing API key)");
+      }
+    } else {
+      sourcesUsedList.push("Odds API: skipped (not relevant to topic)");
+    }
+
+    const sourceNotesUsed = sourcesUsedList.map(s => `- ${s}`).join("\n");
+
+    // Decouple Odds: betting brief should show "Odds unavailable" if Odds API key/data is missing
+    let oddsContextFallback: string | null = null;
+    if (isBettingTopic && resolvedOdds.length === 0) {
+      oddsContextFallback = "Odds unavailable";
+    }
+
+    // 6. Serialize compact evidence packet
     const serializedEvidence = {
       topic: {
         title: topic.title,
         summary: topic.summary,
         sport: topic.sport,
         leagueId: topic.leagueId,
+        classification,
       },
       evidence: {
         games: resolvedGames.map((g) => ({
@@ -1157,7 +1305,7 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
           id: n.id,
           title: n.title,
           source: n.source,
-          summary: n.summary, // Safe short excerpt/description only
+          summary: n.summary,
           date: n.publishedAt.toISOString(),
         })),
         injuries: validInjuries.map((i) => ({
@@ -1182,19 +1330,19 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       },
     };
 
-    // 6. Formulate structured LLM prompts matching host profiles
+    // 7. Formulate structured LLM prompts matching host profiles & editorial details
     const systemPrompt = `You are the Research Brief Generator for Take Machine, an AI sports debate podcast.
 Your job is to prepare a fact-grounded debate prep sheet for two hosts based ONLY on the supplied evidence.
 
-Max Voltage:
+${sourcePriorityGuideline}
+
+Max Voltage Stance guidelines:
 - Loud, emotional, sarcastic, fan-first.
 - Legacy/pressure/results-driven, hates excuses, hot seat enthusiast.
-- Loves clutch moments, playoff drama, collapses, and fraud-watch teams.
 
-Dr. Linebreak:
+Dr. Linebreak Stance guidelines:
 - Calm, arrogant, analytics-first.
 - Uses stats, odds, injury context, market movement, and roster construction.
-- Hates lazy narratives and emotional fan overreactions.
 
 Rules:
 - Do not invent facts, stats, injuries, odds, quotes, or rumors.
@@ -1206,30 +1354,33 @@ Rules:
 
 Schema:
 {
-  "facts": [
+  "classification": "${classification}",
+  "mainAngle": "The overarching theme or angle of the debate.",
+  "whyMattersNow": "Why this topic is timely and relevant to sports fans today.",
+  "keyFactsContext": [
     {
-      "text": "Factual statement (e.g. team has lost 5 straight games)",
+      "text": "Fact/context statement (e.g. team has won 4 games in a row)",
       "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
       "confidence": "high" | "medium" | "low"
     }
   ],
-  "stats": [
+  "onAirTalkingPoints": [
     {
-      "text": "Statistical note (e.g. quarterback has a 55% completion rate)",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
-      "confidence": "high" | "medium" | "low"
+      "text": "Talking point / stat comparison for the hosts to highlight on air",
+      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ]
     }
   ],
-  "injuryContext": "A brief paragraph outlining injuries, or null if no injury evidence exists.",
-  "oddsContext": "A brief paragraph outlining odds/betting context, or null if no oddsSnapshot evidence exists.",
-  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence. No rumors.",
+  "contrarianAngle": "A contrarian view or hot take that goes against the consensus.",
+  "strongestDebateQuestion": "The ultimate debate question that drives the show segment.",
+  "suggestedHostTake": "A recommended landing point or take for the main host.",
+  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence.",
   "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
-  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence. No rumors.",
+  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence.",
   "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ],
   "counterArguments": [
     {
       "host": "Max Voltage" | "Dr. Linebreak",
-      "claim": "Host claim or counterpoint",
+      "claim": "Counterpoint or argument",
       "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-uuid-or-id" } ]
     }
   ],
@@ -1276,7 +1427,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       throw err;
     }
 
-    // 7. Validation loop
+    // 8. Validation loop
     let insertedCount = 0;
     let updatedCount = 0;
     let skippedCount = 0;
@@ -1292,8 +1443,12 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     const validCounterArguments: any[] = [];
     const finalUnsafeClaims: any[] = [];
 
-    const rawFacts = Array.isArray(llmResult?.facts) ? llmResult.facts : [];
-    const rawStats = Array.isArray(llmResult?.stats) ? llmResult.stats : [];
+    const rawFacts = Array.isArray(llmResult?.keyFactsContext) 
+      ? llmResult.keyFactsContext 
+      : Array.isArray(llmResult?.facts) ? llmResult.facts : [];
+    const rawStats = Array.isArray(llmResult?.onAirTalkingPoints) 
+      ? llmResult.onAirTalkingPoints 
+      : Array.isArray(llmResult?.stats) ? llmResult.stats : [];
     const rawCounterArguments = Array.isArray(llmResult?.counterArguments) ? llmResult.counterArguments : [];
     const rawUnsafeClaims = Array.isArray(llmResult?.unsafeClaims) ? llmResult.unsafeClaims : [];
 
@@ -1309,6 +1464,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     }
 
     const rumorKeywords = /\b(reported|rumored|sources say|likely|expected|could be|might be|insider|unnamed source)\b/i;
+    const hasEvidence = topicEvidenceMap.size > 0;
 
     const filterClaims = (list: any[], target: any[]) => {
       for (const item of list) {
@@ -1317,48 +1473,67 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           continue;
         }
 
-        // 1. Validate all evidence refs point to the topic's approved evidence packet
         const itemRefs = Array.isArray(item.evidenceRefs) ? item.evidenceRefs : [];
-        const cleanRefs = itemRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
 
-        if (cleanRefs.length === 0) {
-          rejectedClaimCount++;
-          finalUnsafeClaims.push({
-            claim: item.text,
-            reason: "Rejected: No valid evidence references found matching approved topic evidence IDs.",
+        if (hasEvidence) {
+          // 1. Validate all evidence refs point to the topic's approved evidence packet
+          const cleanRefs = itemRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+          if (cleanRefs.length === 0) {
+            rejectedClaimCount++;
+            finalUnsafeClaims.push({
+              claim: item.text,
+              reason: "Rejected: No valid evidence references found matching approved topic evidence IDs.",
+            });
+            unsafeClaimCount++;
+            continue;
+          }
+
+          // Check if LLM outputted refs outside the approved packet
+          const hasOutsideRefs = itemRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+          if (hasOutsideRefs) {
+            rejectedClaimCount++;
+            finalUnsafeClaims.push({
+              claim: item.text,
+              reason: "Rejected: Attempted to reference evidence IDs outside the approved TopicCandidate evidence packet.",
+            });
+            unsafeClaimCount++;
+            continue;
+          }
+
+          if (rumorKeywords.test(item.text)) {
+            rejectedClaimCount++;
+            finalUnsafeClaims.push({
+              claim: item.text,
+              reason: "Rejected: Contains rumor or unverified keyword.",
+            });
+            unsafeClaimCount++;
+            continue;
+          }
+
+          target.push({
+            text: item.text,
+            confidence: item.confidence || "high",
+            evidenceRefs: cleanRefs,
           });
-          unsafeClaimCount++;
-          continue;
-        }
+        } else {
+          // If no evidence is stored in database, allow facts normally without ref checks
+          if (rumorKeywords.test(item.text)) {
+            rejectedClaimCount++;
+            finalUnsafeClaims.push({
+              claim: item.text,
+              reason: "Rejected: Contains rumor or unverified keyword.",
+            });
+            unsafeClaimCount++;
+            continue;
+          }
 
-        // Check if LLM outputted refs outside the approved packet
-        const hasOutsideRefs = itemRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
-        if (hasOutsideRefs) {
-          rejectedClaimCount++;
-          finalUnsafeClaims.push({
-            claim: item.text,
-            reason: "Rejected: Attempted to reference evidence IDs outside the approved TopicCandidate evidence packet.",
+          target.push({
+            text: item.text,
+            confidence: item.confidence || "high",
+            evidenceRefs: [],
           });
-          unsafeClaimCount++;
-          continue;
         }
-
-        // 2. Reject/clean rumors & expected claims unless directly supported by evidence
-        if (rumorKeywords.test(item.text)) {
-          rejectedClaimCount++;
-          finalUnsafeClaims.push({
-            claim: item.text,
-            reason: "Rejected: Contains rumor or unverified keyword.",
-          });
-          unsafeClaimCount++;
-          continue;
-        }
-
-        target.push({
-          text: item.text,
-          confidence: item.confidence || "high",
-          evidenceRefs: cleanRefs,
-        });
       }
     };
 
@@ -1372,47 +1547,66 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         continue;
       }
       const caRefs = Array.isArray(ca.evidenceRefs) ? ca.evidenceRefs : [];
-      const cleanRefs = caRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
 
-      if (cleanRefs.length === 0) {
-        rejectedClaimCount++;
-        finalUnsafeClaims.push({
+      if (hasEvidence) {
+        const cleanRefs = caRefs.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+
+        if (cleanRefs.length === 0) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: ca.claim,
+            reason: "Rejected CounterArgument: No valid evidence references matching approved topic evidence IDs.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
+        const hasOutsideRefs = caRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+        if (hasOutsideRefs) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: ca.claim,
+            reason: "Rejected CounterArgument: References evidence outside approved TopicCandidate packet.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
+        if (rumorKeywords.test(ca.claim)) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: ca.claim,
+            reason: "Rejected CounterArgument: Contains rumor or unverified keyword.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
+
+        validCounterArguments.push({
+          host: ca.host || "Max Voltage",
           claim: ca.claim,
-          reason: "Rejected CounterArgument: No valid evidence references matching approved topic evidence IDs.",
+          evidenceRefs: cleanRefs,
         });
-        unsafeClaimCount++;
-        continue;
-      }
+      } else {
+        if (rumorKeywords.test(ca.claim)) {
+          rejectedClaimCount++;
+          finalUnsafeClaims.push({
+            claim: ca.claim,
+            reason: "Rejected CounterArgument: Contains rumor or unverified keyword.",
+          });
+          unsafeClaimCount++;
+          continue;
+        }
 
-      const hasOutsideRefs = caRefs.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
-      if (hasOutsideRefs) {
-        rejectedClaimCount++;
-        finalUnsafeClaims.push({
+        validCounterArguments.push({
+          host: ca.host || "Max Voltage",
           claim: ca.claim,
-          reason: "Rejected CounterArgument: References evidence outside approved TopicCandidate packet.",
+          evidenceRefs: [],
         });
-        unsafeClaimCount++;
-        continue;
       }
-
-      if (rumorKeywords.test(ca.claim)) {
-        rejectedClaimCount++;
-        finalUnsafeClaims.push({
-          claim: ca.claim,
-          reason: "Rejected CounterArgument: Contains rumor or unverified keyword.",
-        });
-        unsafeClaimCount++;
-        continue;
-      }
-
-      validCounterArguments.push({
-        host: ca.host || "Max Voltage",
-        claim: ca.claim,
-        evidenceRefs: cleanRefs,
-      });
     }
 
-    // Validate Host Arguments: must be non-empty, no rumor language, grounded in topic evidence Refs
+    // Validate Host Arguments
     const argA = llmResult?.argumentForHostA;
     const argB = llmResult?.argumentForHostB;
     const refsA = llmResult?.argumentForHostAEvidenceRefs;
@@ -1428,35 +1622,30 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       throw new Error("Brief generation failed: Host arguments contain unverified rumor or expected keywords.");
     }
 
-    if (!Array.isArray(refsA) || refsA.length === 0 || !Array.isArray(refsB) || refsB.length === 0) {
-      invalidArgumentEvidenceCount++;
-      throw new Error("Brief generation failed: Host arguments lack supporting evidence reference arrays.");
-    }
+    let cleanRefsA: any[] = [];
+    let cleanRefsB: any[] = [];
 
-    const cleanRefsA = refsA.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
-    const cleanRefsB = refsB.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+    if (hasEvidence) {
+      if (!Array.isArray(refsA) || refsA.length === 0 || !Array.isArray(refsB) || refsB.length === 0) {
+        invalidArgumentEvidenceCount++;
+        throw new Error("Brief generation failed: Host arguments lack supporting evidence reference arrays.");
+      }
 
-    if (cleanRefsA.length === 0 || cleanRefsB.length === 0) {
-      invalidArgumentEvidenceCount++;
-      throw new Error("Brief generation failed: Host arguments lack valid evidence refs matching approved topic evidence IDs.");
-    }
+      cleanRefsA = refsA.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
+      cleanRefsB = refsB.filter((ref: any) => ref && ref.id && topicEvidenceMap.get(ref.id) === ref.type);
 
-    // If any ref points outside the approved packet, reject
-    const hasOutsideRefsA = refsA.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
-    const hasOutsideRefsB = refsB.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
-    if (hasOutsideRefsA || hasOutsideRefsB) {
-      invalidArgumentEvidenceCount++;
-      throw new Error("Brief generation failed: Host arguments contain evidence refs outside approved TopicCandidate packet.");
-    }
+      if (cleanRefsA.length === 0 || cleanRefsB.length === 0) {
+        invalidArgumentEvidenceCount++;
+        throw new Error("Brief generation failed: Host arguments lack valid evidence refs matching approved topic evidence IDs.");
+      }
 
-    // 3. Nullify injury and odds context if no injury/odds snapshots exist
-    let injuryContext = llmResult.injuryContext || null;
-    if (resolvedInjuries.length === 0) {
-      injuryContext = null;
-    }
-    let oddsContext = llmResult.oddsContext || null;
-    if (resolvedOdds.length === 0) {
-      oddsContext = null;
+      // If any ref points outside the approved packet, reject
+      const hasOutsideRefsA = refsA.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+      const hasOutsideRefsB = refsB.some((ref: any) => !ref || !ref.id || topicEvidenceMap.get(ref.id) !== ref.type);
+      if (hasOutsideRefsA || hasOutsideRefsB) {
+        invalidArgumentEvidenceCount++;
+        throw new Error("Brief generation failed: Host arguments contain evidence refs outside approved TopicCandidate packet.");
+      }
     }
 
     // Build list of valid source IDs server-side by collecting all validated evidence refs used
@@ -1483,48 +1672,60 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       allRefsMap.set(`${ref.type}:${ref.id}`, ref);
     }
 
-    const finalSourceIds = Array.from(allRefsMap.values());
+    let finalSourceIds = Array.from(allRefsMap.values());
+    if (finalSourceIds.length === 0) {
+      // Fallback for unmatched topics
+      finalSourceIds = [{ type: "topic", id: topicId }];
+    }
 
     // 8. Reject Weak Briefs
     if (validFacts.length === 0) {
       throw new Error("Brief generation failed: No valid facts remained after validation check.");
     }
 
-    if (finalSourceIds.length === 0) {
-      emptySourceIdsCount = 1;
-      throw new Error("Brief generation failed: No valid sourceIds remained after validation check.");
+    // Nullify injury and odds context if no injury/odds snapshots exist
+    let injuryContext = llmResult.injuryContext || null;
+    if (resolvedInjuries.length === 0) {
+      injuryContext = null;
     }
+    let oddsContext = llmResult.oddsContext || oddsContextFallback;
+    if (resolvedOdds.length === 0 && !isBettingTopic) {
+      oddsContext = null;
+    }
+
+    const briefData = {
+      facts: validFacts as any,
+      stats: validStats as any,
+      injuryContext,
+      oddsContext,
+      argumentForHostA: argA.trim(),
+      argumentForHostB: argB.trim(),
+      counterArguments: validCounterArguments as any,
+      unsafeClaims: finalUnsafeClaims as any,
+      sourceIds: finalSourceIds as any,
+      classification,
+      mainAngle: (llmResult.mainAngle || "").trim(),
+      whyMattersNow: (llmResult.whyMattersNow || "").trim(),
+      keyFactsContext: validFacts as any,
+      onAirTalkingPoints: validStats as any,
+      contrarianAngle: (llmResult.contrarianAngle || "").trim(),
+      strongestDebateQuestion: (llmResult.strongestDebateQuestion || "").trim(),
+      suggestedHostTake: (llmResult.suggestedHostTake || "").trim(),
+      sourceNotesUsed,
+    };
 
     // Save ResearchBrief linked to the TopicCandidate
     if (existingBrief) {
       await db.researchBrief.update({
         where: { topicId },
-        data: {
-          facts: validFacts as any,
-          stats: validStats as any,
-          injuryContext,
-          oddsContext,
-          argumentForHostA: argA.trim(),
-          argumentForHostB: argB.trim(),
-          counterArguments: validCounterArguments as any,
-          unsafeClaims: finalUnsafeClaims as any,
-          sourceIds: finalSourceIds as any,
-        },
+        data: briefData,
       });
       updatedCount = 1;
     } else {
       await db.researchBrief.create({
         data: {
           topicId,
-          facts: validFacts as any,
-          stats: validStats as any,
-          injuryContext,
-          oddsContext,
-          argumentForHostA: argA.trim(),
-          argumentForHostB: argB.trim(),
-          counterArguments: validCounterArguments as any,
-          unsafeClaims: finalUnsafeClaims as any,
-          sourceIds: finalSourceIds as any,
+          ...briefData,
         },
       });
       insertedCount = 1;

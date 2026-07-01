@@ -38,6 +38,15 @@ export default async function ResearchBriefsPage() {
           counterArguments: t.researchBrief.counterArguments,
           unsafeClaims: t.researchBrief.unsafeClaims,
           sourceIds: t.researchBrief.sourceIds,
+          classification: t.researchBrief.classification,
+          mainAngle: t.researchBrief.mainAngle,
+          whyMattersNow: t.researchBrief.whyMattersNow,
+          keyFactsContext: t.researchBrief.keyFactsContext,
+          onAirTalkingPoints: t.researchBrief.onAirTalkingPoints,
+          contrarianAngle: t.researchBrief.contrarianAngle,
+          strongestDebateQuestion: t.researchBrief.strongestDebateQuestion,
+          suggestedHostTake: t.researchBrief.suggestedHostTake,
+          sourceNotesUsed: t.researchBrief.sourceNotesUsed,
         }
       : null,
   }));

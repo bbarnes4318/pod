@@ -44,6 +44,17 @@ interface ResearchBrief {
   counterArguments: any; // DialogueItem[]
   unsafeClaims: any; // UnsafeClaimItem[]
   sourceIds: any; // EvidenceRef[]
+
+  // New Editorial Fields
+  classification?: string | null;
+  mainAngle?: string | null;
+  whyMattersNow?: string | null;
+  keyFactsContext?: any;
+  onAirTalkingPoints?: any;
+  contrarianAngle?: string | null;
+  strongestDebateQuestion?: string | null;
+  suggestedHostTake?: string | null;
+  sourceNotesUsed?: string | null;
 }
 
 interface TopicWithBrief {
@@ -68,6 +79,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
   );
   const [loadingTopicId, setLoadingTopicId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showSpokenPrep, setShowSpokenPrep] = useState(false);
 
   const selectedTopic = topics.find((t) => t.id === selectedTopicId);
 
@@ -230,7 +242,14 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
               {/* Panel Header */}
               <div className="detailPanelHeader">
                 <div>
-                  <h4 className="detailPanelTitle">{selectedTopic.title}</h4>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                    <h4 className="detailPanelTitle" style={{ margin: 0 }}>{selectedTopic.title}</h4>
+                    {selectedTopic.brief.classification && (
+                      <span className={`classificationBadge badge-${selectedTopic.brief.classification}`}>
+                        {selectedTopic.brief.classification.replace("_", " ")}
+                      </span>
+                    )}
+                  </div>
                   <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
                     Sport: {selectedTopic.sport} | League: {selectedTopic.leagueId || "GLOBAL"}
                   </p>
@@ -257,50 +276,106 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
 
               {/* Panel Content */}
               <div className="detailPanelContent">
+                
+                {/* Source Transparency & Audit Trail */}
+                <div>
+                  <h5 className="detailSectionTitle">Sources Used Transparency</h5>
+                  <div className="sourcesUsedCard">
+                    <div className="sourcesUsedHeader">
+                      <span style={{ fontSize: "1.1rem" }}>🔍</span> Audit Trail log
+                    </div>
+                    {selectedTopic.brief.sourceNotesUsed ? (
+                      <ul className="sourcesUsedList">
+                        {selectedTopic.brief.sourceNotesUsed.split("\n").map((line, idx) => {
+                          const cleanLine = line.replace(/^[-\s*•]+/, "").trim();
+                          if (!cleanLine) return null;
+                          let dotClass = "sourceDotActive";
+                          if (cleanLine.includes("skipped")) {
+                            dotClass = "sourceDotSkipped";
+                          } else if (cleanLine.includes("unavailable")) {
+                            dotClass = "sourceDotUnavailable";
+                          }
+                          return (
+                            <li key={idx} className="sourcesUsedListItem">
+                              <span className={`sourceDot ${dotClass}`} />
+                              <span>{cleanLine}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0, fontStyle: "italic" }}>
+                        No audit trail logged for this brief.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Editorial Angles */}
+                {selectedTopic.brief.mainAngle && (
+                  <div className="editorialCallout">
+                    <div className="editorialCalloutTitle">Editorial Angle</div>
+                    <div className="editorialCalloutText">{selectedTopic.brief.mainAngle}</div>
+                  </div>
+                )}
+
+                {selectedTopic.brief.whyMattersNow && (
+                  <div>
+                    <h5 className="detailSectionTitle">Why This Matters Now</h5>
+                    <p className="contextText" style={{ fontStyle: "italic" }}>{selectedTopic.brief.whyMattersNow}</p>
+                  </div>
+                )}
+
                 {/* 1. Facts Section */}
                 <div>
-                  <h5 className="detailSectionTitle">Facts & Bulletpoints</h5>
+                  <h5 className="detailSectionTitle">Key Facts & Context</h5>
                   <ul className="bulletList">
-                    {getArray(selectedTopic.brief.facts).map((fact: FactItem, idx) => (
+                    {getArray(selectedTopic.brief.keyFactsContext || selectedTopic.brief.facts).map((fact: FactItem, idx) => (
                       <li key={idx} className="bulletItem">
                         <div>
                           <span>• {fact.text}</span>
-                          <span className={`confidenceBadge confidence${fact.confidence.charAt(0).toUpperCase() + fact.confidence.slice(1)}`}>
-                            {fact.confidence}
-                          </span>
-                        </div>
-                        <div className="bulletRefs">
-                          {getArray(fact.evidenceRefs).map((ref, rIdx) => (
-                            <span key={rIdx} className="refBadge">
-                              {ref.type}: {ref.id}
+                          {fact.confidence && (
+                            <span className={`confidenceBadge confidence${fact.confidence.charAt(0).toUpperCase() + fact.confidence.slice(1)}`}>
+                              {fact.confidence}
                             </span>
-                          ))}
+                          )}
                         </div>
+                        {getArray(fact.evidenceRefs).length > 0 && (
+                          <div className="bulletRefs">
+                            {getArray(fact.evidenceRefs).map((ref, rIdx) => (
+                              <span key={rIdx} className="refBadge">
+                                {ref.type}: {ref.id}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                {/* 2. Stats Section */}
+                {/* 2. Stats Section / Best On-Air Talking Points */}
                 <div>
-                  <h5 className="detailSectionTitle">Statistical Notes</h5>
+                  <h5 className="detailSectionTitle">Best On-Air Talking Points</h5>
                   <ul className="bulletList">
-                    {getArray(selectedTopic.brief.stats).map((stat: StatItem, idx) => (
+                    {getArray(selectedTopic.brief.onAirTalkingPoints || selectedTopic.brief.stats).map((stat: StatItem, idx) => (
                       <li key={idx} className="bulletItem">
                         <div>• {stat.text}</div>
-                        <div className="bulletRefs">
-                          {getArray(stat.evidenceRefs).map((ref, rIdx) => (
-                            <span key={rIdx} className="refBadge">
-                              {ref.type}: {ref.id}
-                            </span>
-                          ))}
-                        </div>
+                        {getArray(stat.evidenceRefs).length > 0 && (
+                          <div className="bulletRefs">
+                            {getArray(stat.evidenceRefs).map((ref, rIdx) => (
+                              <span key={rIdx} className="refBadge">
+                                {ref.type}: {ref.id}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                {/* 3. Injury Context */}
+                {/* Injury Context */}
                 {selectedTopic.brief.injuryContext && (
                   <div>
                     <h5 className="detailSectionTitle">Injury Report Context</h5>
@@ -308,7 +383,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                   </div>
                 )}
 
-                {/* 4. Odds Context */}
+                {/* Odds Context */}
                 {selectedTopic.brief.oddsContext && (
                   <div>
                     <h5 className="detailSectionTitle">Odds & Betting Context</h5>
@@ -316,75 +391,126 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                   </div>
                 )}
 
-                {/* 5. Host Debate Arguments */}
-                <div>
-                  <h5 className="detailSectionTitle">Debate Arguments</h5>
-                  <div className="debateGrid">
-                    <div className="hostBox" style={{ borderLeft: "3px solid var(--error-color)" }}>
-                      <div className="hostHeader">
-                        <span className="hostAvatar" style={{ backgroundColor: "var(--error-color)" }} />
-                        <span className="hostName" style={{ color: "var(--error-color)" }}>Max Voltage Stance</span>
-                      </div>
-                      <p className="hostStance">{selectedTopic.brief.argumentForHostA}</p>
+                {/* Debate Stance Highlights */}
+                {selectedTopic.brief.strongestDebateQuestion && (
+                  <div className="debateQuestionCallout">
+                    <div style={{ fontSize: "0.7rem", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em", color: "#6366f1", marginBottom: "0.25rem" }}>
+                      Strongest Segment Debate Question
                     </div>
-
-                    <div className="hostBox" style={{ borderLeft: "3px solid var(--accent-color)" }}>
-                      <div className="hostHeader">
-                        <span className="hostAvatar" style={{ backgroundColor: "var(--accent-color)" }} />
-                        <span className="hostName" style={{ color: "var(--accent-color)" }}>Dr. Linebreak Stance</span>
-                      </div>
-                      <p className="hostStance">{selectedTopic.brief.argumentForHostB}</p>
-                    </div>
+                    <div className="debateQuestionText">"{selectedTopic.brief.strongestDebateQuestion}"</div>
                   </div>
-                </div>
+                )}
 
-                {/* 6. Dialogue CounterArguments */}
-                <div>
-                  <h5 className="detailSectionTitle">Dialogue Back-And-Forth</h5>
-                  <div className="backAndForth">
-                    {getArray(selectedTopic.brief.counterArguments).map((item: DialogueItem, idx) => (
-                      <div key={idx} className="dialogueRow">
-                        <span
-                          className="dialogueSpeaker"
-                          style={{ color: item.host === "Dr. Linebreak" ? "var(--accent-color)" : "var(--error-color)" }}
-                        >
-                          {item.host}:
-                        </span>
-                        <div style={{ flexGrow: 1 }}>
-                          <span className="dialogueText">{item.claim}</span>
-                          <div className="bulletRefs" style={{ marginTop: "0.35rem" }}>
-                            {getArray(item.evidenceRefs).map((ref, rIdx) => (
-                              <span key={rIdx} className="refBadge" style={{ fontSize: "0.6rem" }}>
-                                {ref.type}: {ref.id}
-                              </span>
-                            ))}
+                {selectedTopic.brief.contrarianAngle && (
+                  <div>
+                    <h5 className="detailSectionTitle">Contrarian View</h5>
+                    <p className="contextText" style={{ borderLeft: "3px solid #ec4899", paddingLeft: "1rem" }}>
+                      {selectedTopic.brief.contrarianAngle}
+                    </p>
+                  </div>
+                )}
+
+                {selectedTopic.brief.suggestedHostTake && (
+                  <div>
+                    <h5 className="detailSectionTitle">Suggested Host Take</h5>
+                    <p className="contextText" style={{ borderLeft: "3px solid #10b981", paddingLeft: "1rem" }}>
+                      {selectedTopic.brief.suggestedHostTake}
+                    </p>
+                  </div>
+                )}
+
+                {/* Collapsible Spoken Prep Section */}
+                <div style={{ marginTop: "1rem", borderTop: "1px dashed var(--border-color)", paddingTop: "1.5rem" }}>
+                  <button
+                    onClick={() => setShowSpokenPrep(!showSpokenPrep)}
+                    className="btnApprove"
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.4rem 1rem",
+                      background: "transparent",
+                      border: "1px solid var(--border-color)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {showSpokenPrep ? "Hide Host Stances & Dialogue" : "Show Spoken Host Stances & Dialogue"}
+                  </button>
+
+                  {showSpokenPrep && (
+                    <div style={{ marginTop: "1.5rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+                      {/* Host Debate Arguments */}
+                      <div>
+                        <h5 className="detailSectionTitle">Debate Stance Arguments</h5>
+                        <div className="debateGrid">
+                          <div className="hostBox" style={{ borderLeft: "3px solid var(--error-color)" }}>
+                            <div className="hostHeader">
+                              <span className="hostAvatar" style={{ backgroundColor: "var(--error-color)" }} />
+                              <span className="hostName" style={{ color: "var(--error-color)" }}>Max Voltage Stance</span>
+                            </div>
+                            <p className="hostStance">{selectedTopic.brief.argumentForHostA}</p>
+                          </div>
+
+                          <div className="hostBox" style={{ borderLeft: "3px solid var(--accent-color)" }}>
+                            <div className="hostHeader">
+                              <span className="hostAvatar" style={{ backgroundColor: "var(--accent-color)" }} />
+                              <span className="hostName" style={{ color: "var(--accent-color)" }}>Dr. Linebreak Stance</span>
+                            </div>
+                            <p className="hostStance">{selectedTopic.brief.argumentForHostB}</p>
                           </div>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
 
-                {/* 7. Unsafe Claims Section */}
-                <div>
-                  <h5 className="detailSectionTitle">Unsafe / Unverified Claims</h5>
-                  {getArray(selectedTopic.brief.unsafeClaims).length === 0 ? (
-                    <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
-                      No unsafe claims detected. Brief is fully grounded.
-                    </p>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                      {getArray(selectedTopic.brief.unsafeClaims).map((claim: UnsafeClaimItem, idx) => (
-                        <div key={idx} className="unsafeClaimItem">
-                          <span className="unsafeClaimText">"{claim.claim}"</span>
-                          <span className="unsafeClaimReason">Reason: {claim.reason}</span>
+                      {/* Dialogue CounterArguments */}
+                      <div>
+                        <h5 className="detailSectionTitle">Dialogue Back-And-Forth</h5>
+                        <div className="backAndForth">
+                          {getArray(selectedTopic.brief.counterArguments).map((item: DialogueItem, idx) => (
+                            <div key={idx} className="dialogueRow">
+                              <span
+                                className="dialogueSpeaker"
+                                style={{ color: item.host === "Dr. Linebreak" ? "var(--accent-color)" : "var(--error-color)" }}
+                              >
+                                {item.host}:
+                              </span>
+                              <div style={{ flexGrow: 1 }}>
+                                <span className="dialogueText">{item.claim}</span>
+                                {getArray(item.evidenceRefs).length > 0 && (
+                                  <div className="bulletRefs" style={{ marginTop: "0.35rem" }}>
+                                    {getArray(item.evidenceRefs).map((ref, rIdx) => (
+                                      <span key={rIdx} className="refBadge" style={{ fontSize: "0.6rem" }}>
+                                        {ref.type}: {ref.id}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      </div>
+
+                      {/* Unsafe Claims Section */}
+                      <div>
+                        <h5 className="detailSectionTitle">Unsafe / Unverified Claims</h5>
+                        {getArray(selectedTopic.brief.unsafeClaims).length === 0 ? (
+                          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
+                            No unsafe claims detected. Brief is fully grounded.
+                          </p>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                            {getArray(selectedTopic.brief.unsafeClaims).map((claim: UnsafeClaimItem, idx) => (
+                              <div key={idx} className="unsafeClaimItem">
+                                <span className="unsafeClaimText">"{claim.claim}"</span>
+                                <span className="unsafeClaimReason">Reason: {claim.reason}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* 8. Source IDs */}
+                {/* Evidence Source IDs */}
                 <div>
                   <h5 className="detailSectionTitle">Brief Source Evidences</h5>
                   <div className="bulletRefs">
@@ -395,6 +521,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                     ))}
                   </div>
                 </div>
+
               </div>
             </>
           )}

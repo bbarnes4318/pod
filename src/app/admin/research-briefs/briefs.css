@@ -338,3 +338,156 @@
   color: var(--error-color);
   font-weight: 600;
 }
+
+/* Premium New Styles */
+.classificationBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  margin-top: 0.25rem;
+}
+
+.badge-betting_market {
+  background-color: var(--error-muted);
+  border-color: var(--error-border);
+  color: var(--error-color);
+}
+
+.badge-game_preview {
+  background-color: var(--accent-muted);
+  border-color: var(--accent-border);
+  color: var(--accent-color);
+}
+
+.badge-news_reaction {
+  background-color: var(--success-muted);
+  border-color: var(--success-border);
+  color: var(--success-color);
+}
+
+.badge-team_topic {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+}
+
+.badge-player_topic {
+  background-color: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.2);
+  color: #8b5cf6;
+}
+
+.badge-coach_topic {
+  background-color: rgba(236, 72, 153, 0.1);
+  border-color: rgba(236, 72, 153, 0.2);
+  color: #ec4899;
+}
+
+.badge-conference_topic {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.badge-generic_sports_take {
+  background-color: rgba(107, 114, 128, 0.1);
+  border-color: rgba(107, 114, 128, 0.2);
+  color: #6b7280;
+}
+
+.editorialCallout {
+  background-color: var(--bg-tertiary);
+  border-left: 4px solid var(--accent-color);
+  padding: 1.25rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.editorialCalloutTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.editorialCalloutText {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.debateQuestionCallout {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, rgba(99, 102, 241, 0.05) 100%);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid #6366f1;
+  padding: 1.25rem;
+  border-radius: 8px;
+  text-align: center;
+  margin: 1.5rem 0;
+}
+
+.debateQuestionText {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.sourcesUsedCard {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.sourcesUsedHeader {
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sourcesUsedList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.sourcesUsedListItem {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sourceDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.sourceDotActive { background-color: var(--success-color); }
+.sourceDotSkipped { background-color: var(--warning-color); }
+.sourceDotUnavailable { background-color: var(--error-color); }
+
