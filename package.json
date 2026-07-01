@@ -7,12 +7,12 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "worker": "tsx src/lib/queue/worker.ts",
+    "worker": "tsx --conditions=react-server src/lib/queue/worker.ts",
     "start:web": "next start",
-    "start:worker": "tsx src/lib/queue/worker.ts",
+    "start:worker": "tsx --conditions=react-server src/lib/queue/worker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "verify:prod-env": "tsx src/scripts/verifyProdEnv.ts"
+    "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.714.0",
