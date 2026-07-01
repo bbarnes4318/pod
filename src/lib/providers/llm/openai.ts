@@ -14,6 +14,11 @@ export class OpenAILLMProvider implements LLMProvider {
     this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
   }
 
+  private isReasoningModel(): boolean {
+    const m = this.model.toLowerCase();
+    return m.startsWith("o1") || m.startsWith("o3") || m === "gpt-5.5";
+  }
+
   async generateText(options: GenerateTextOptions): Promise<string> {
     console.log(`[OpenAI] Requesting completions via model: ${this.model}`);
 
@@ -23,12 +28,15 @@ export class OpenAILLMProvider implements LLMProvider {
     }
     messages.push({ role: "user", content: options.prompt });
 
-    const body = {
+    const body: any = {
       model: this.model,
       messages,
-      temperature: options.temperature ?? 0.7,
       max_tokens: options.maxTokens,
     };
+
+    if (!this.isReasoningModel()) {
+      body.temperature = options.temperature ?? 0.7;
+    }
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -62,13 +70,16 @@ export class OpenAILLMProvider implements LLMProvider {
     }
     messages.push({ role: "user", content: options.prompt });
 
-    const body = {
+    const body: any = {
       model: this.model,
       messages,
-      temperature: options.temperature ?? 0.2, // Low temperature for high structure fidelity
       max_tokens: options.maxTokens,
       response_format: { type: "json_object" },
     };
+
+    if (!this.isReasoningModel()) {
+      body.temperature = options.temperature ?? 0.2; // Low temperature for high structure fidelity
+    }
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
