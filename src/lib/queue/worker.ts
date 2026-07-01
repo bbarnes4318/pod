@@ -1,5 +1,10 @@
 // Standalone Queue Worker for Take Machine
 import "dotenv/config";
+import { assertProductionEnv } from "../env";
+
+// Fail loudly on startup if production configuration is invalid
+assertProductionEnv();
+
 import { Worker, Job } from "bullmq";
 import { getRedisClient } from "../redis";
 import { db } from "../db";

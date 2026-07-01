@@ -1,19 +1,12 @@
 import { SportsDataProvider } from "./interface";
 import { XMLParser } from "fast-xml-parser";
+import { getRssNewsFeeds } from "@/lib/env";
 
 export class RssNewsProvider implements SportsDataProvider {
   name = "rss-news";
 
   private getFeedUrls(): string[] {
-    const feeds = process.env.RSS_NEWS_FEEDS;
-    if (!feeds) {
-      console.warn("[RSSNewsProvider] No RSS_NEWS_FEEDS configured in environment variables.");
-      return [];
-    }
-    return feeds
-      .split(",")
-      .map((url) => url.trim())
-      .filter((url) => url.length > 0);
+    return getRssNewsFeeds();
   }
 
   async getNews(league: string): Promise<any[]> {

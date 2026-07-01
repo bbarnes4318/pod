@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { queueIngestionJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
+import { getOddsApiKey, getRssNewsFeeds } from "@/lib/env";
 
 export async function fetchIngestionStats() {
   try {
@@ -65,14 +66,14 @@ export async function triggerDataIngestion(params: IngestParams) {
         throw new Error("Credentials missing: SPORTSDATAIO_API_KEY is not configured in .env");
       }
     } else if (provider === "oddsapi") {
-      const key = process.env.THEODDSAPI_API_KEY;
-      if (!key || key === "your-theoddsapi-api-key") {
-        throw new Error("Credentials missing: THEODDSAPI_API_KEY is not configured in .env");
+      const key = getOddsApiKey();
+      if (!key) {
+        throw new Error("Credentials missing: ODDS_API_KEY is not configured in .env");
       }
     } else if (provider === "rss-news") {
-      const feeds = process.env.RSS_NEWS_FEEDS;
-      if (!feeds) {
-        throw new Error("Configuration missing: RSS_NEWS_FEEDS is not configured in .env");
+      const feeds = getRssNewsFeeds();
+      if (feeds.length === 0) {
+        throw new Error("Configuration missing: NEWS_RSS_FEEDS is not configured in .env");
       }
     } else if (provider !== "stub") {
       throw new Error(`Unsupported provider type: ${params.providerType}`);

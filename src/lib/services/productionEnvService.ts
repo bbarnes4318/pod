@@ -153,8 +153,35 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checks.push({ key: "COOKIE_SECURE", status: "pass", value: cookieSecure || "false" });
   }
 
-  // 8. Optional API keys (Warnings only)
-  checkOptional("THE_ODDS_API_KEY", true);
+  // 8. Integration API keys & RSS news configurations
+  checkRequired("NEWS_PROVIDER");
+
+  // ODDS_API_KEY check
+  const oddsKey = process.env.ODDS_API_KEY;
+  const legacyOddsKey1 = process.env.THE_ODDS_API_KEY;
+  const legacyOddsKey2 = process.env.THEODDSAPI_API_KEY;
+
+  if (oddsKey && oddsKey.trim() !== "" && !isPlaceholderValue(oddsKey)) {
+    checks.push({ key: "ODDS_API_KEY", status: "pass", value: "CONFIGURED" });
+  } else if ((legacyOddsKey1 && legacyOddsKey1.trim() !== "" && !isPlaceholderValue(legacyOddsKey1)) ||
+             (legacyOddsKey2 && legacyOddsKey2.trim() !== "" && !isPlaceholderValue(legacyOddsKey2))) {
+    checks.push({ key: "ODDS_API_KEY", status: "pass", value: "LEGACY DETECTED", message: "Using legacy environment variable fallback." });
+  } else {
+    checks.push({ key: "ODDS_API_KEY", status: "warning", value: "MISSING", message: "ODDS_API_KEY is missing." });
+  }
+
+  // NEWS_RSS_FEEDS check
+  const rssFeeds = process.env.NEWS_RSS_FEEDS;
+  const legacyRssFeeds = process.env.RSS_NEWS_FEEDS;
+
+  if (rssFeeds && rssFeeds.trim() !== "") {
+    checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "CONFIGURED" });
+  } else if (legacyRssFeeds && legacyRssFeeds.trim() !== "") {
+    checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "LEGACY DETECTED", message: "Using legacy RSS_NEWS_FEEDS environment variable fallback." });
+  } else {
+    checks.push({ key: "NEWS_RSS_FEEDS", status: "fail", value: "MISSING", message: "NEWS_RSS_FEEDS is required when NEWS_PROVIDER is 'rss'." });
+  }
+
   checkOptional("BALLDONTLIE_API_KEY", true);
   checkOptional("DEEPGRAM_API_KEY", true);
   checkOptional("CARTESIA_API_KEY", true);

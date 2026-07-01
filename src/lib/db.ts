@@ -1,4 +1,8 @@
 import { PrismaClient } from "@prisma/client";
+import { assertProductionEnv } from "./env";
+
+// Validate production environment variables on database client initialization
+assertProductionEnv();
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;

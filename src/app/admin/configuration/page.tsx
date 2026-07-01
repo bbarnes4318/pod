@@ -1,5 +1,6 @@
 import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
+import { getOddsApiKeyStatus, getRssFeedStatus } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,8 @@ export default async function ConfigurationPage() {
     { name: "Anthropic API Key (if used)", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
     { name: "Gemini API Key (if used)", value: maskSecret(process.env.GEMINI_API_KEY) },
     { name: "ElevenLabs API Key (if used)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
+    { name: "Odds API Key (ODDS_API_KEY)", value: getOddsApiKeyStatus() },
+    { name: "RSS Feed Ingest (NEWS_RSS_FEEDS)", value: getRssFeedStatus() },
   ];
 
   return (

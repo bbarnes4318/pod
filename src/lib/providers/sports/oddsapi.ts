@@ -1,4 +1,5 @@
 import { SportsDataProvider } from "./interface";
+import { getOddsApiKey } from "@/lib/env";
 
 // Map league strings to The Odds API sport keys
 const SPORT_KEY_MAP: Record<string, string> = {
@@ -15,9 +16,9 @@ export class OddsApiProvider implements SportsDataProvider {
   private baseUrl = "https://api.the-odds-api.com/v4";
 
   constructor() {
-    const key = process.env.THEODDSAPI_API_KEY;
-    if (!key || key === "your-theoddsapi-api-key") {
-      throw new Error("[OddsAPI] Missing or default THEODDSAPI_API_KEY environment variable.");
+    const key = getOddsApiKey();
+    if (!key) {
+      throw new Error("[OddsAPI] Missing or default ODDS_API_KEY environment variable.");
     }
     this.apiKey = key;
   }

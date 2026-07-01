@@ -1,12 +1,16 @@
 import React from "react";
 import IngestionDashboard from "./IngestionDashboard";
 import { fetchIngestionStats, fetchRecentJobLogs } from "./actions";
+import { getSportsProvider, getOddsApiKeyStatus, getRssFeedStatus, assertProductionEnv } from "@/lib/env";
 import "./data-sources.css";
 
 // Force Next.js to server-render on demand
 export const dynamic = "force-dynamic";
 
 export default async function DataSourcesPage() {
+  // Validate production configuration at runtime
+  assertProductionEnv();
+
   // Fetch initial stats and logs server-side
   const statsRes = await fetchIngestionStats();
   const logsRes = await fetchRecentJobLogs();
@@ -25,10 +29,10 @@ export default async function DataSourcesPage() {
   const initialLogs = logsRes.success && logsRes.logs ? logsRes.logs : [];
 
   // API Configurations Check
-  const sportsProvider = process.env.SPORTS_PROVIDER || "stub";
+  const sportsProvider = getSportsProvider();
   const hasSportsdataioKey = !!process.env.SPORTSDATAIO_API_KEY && process.env.SPORTSDATAIO_API_KEY !== "your-sportsdataio-api-key";
-  const hasOddsapiKey = !!process.env.THEODDSAPI_API_KEY && process.env.THEODDSAPI_API_KEY !== "your-theoddsapi-api-key";
-  const hasRssConfig = !!process.env.RSS_NEWS_FEEDS;
+  const hasOddsapiKey = getOddsApiKeyStatus() === "CONFIGURED";
+  const hasRssConfig = getRssFeedStatus() === "CONFIGURED";
 
   const providersConfig = {
     sportsProvider,
