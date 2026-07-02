@@ -102,7 +102,9 @@ export default async function FactCheckDetailPage({ params }: PageProps) {
           <div className="editorPanel" style={{ marginBottom: "1.5rem" }}>
             <div className="panelTitle">Semantic Summary</div>
             <p style={{ margin: 0, fontSize: "0.9rem", color: "var(--text-primary)", lineHeight: 1.5 }}>
-              {summary.semanticSummary || "No semantic summary generated."}
+              {typeof summary.semanticSummary === "object" && summary.semanticSummary !== null
+                ? (summary.semanticSummary.overallAssessment || "No overall assessment summary.")
+                : (summary.semanticSummary || "No semantic summary generated.")}
             </p>
           </div>
 
