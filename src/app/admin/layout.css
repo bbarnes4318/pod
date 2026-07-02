@@ -85,11 +85,16 @@
   padding: 0 2rem;
 }
 
-.headerTitle {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
+.headerLogoContainer {
+  display: flex;
+  align-items: center;
+}
+
+.headerLogo {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .headerStatus {

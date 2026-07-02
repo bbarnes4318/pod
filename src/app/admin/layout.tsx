@@ -55,7 +55,9 @@ export default async function AdminLayout({
       <div className="mainContainer">
         {/* Top Header Bar */}
         <header className="header">
-          <h1 className="headerTitle">Sports-Media Command Center</h1>
+          <div className="headerLogoContainer">
+            <img src="/take-machine-logo.png" alt="Take Machine Logo" className="headerLogo" />
+          </div>
           <div className="headerStatus">
             {/* DB Connection Status */}
             <div className="statusIndicator" title={dbConnected ? "Database Connected" : "Database Offline"}>
