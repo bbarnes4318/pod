@@ -108,9 +108,12 @@ export class OpenAILLMProvider implements LLMProvider {
     }
 
     const data = await response.json();
+    console.log("[OpenAI] Response data:", JSON.stringify(data));
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
-      throw new Error("[OpenAI] Received empty response content for JSON parsing.");
+      const refusal = data.choices?.[0]?.message?.refusal;
+      const errorMsg = refusal ? `Refusal: ${refusal}` : "Empty content";
+      throw new Error(`[OpenAI] Received empty response content for JSON parsing (${errorMsg}).`);
     }
 
     try {
