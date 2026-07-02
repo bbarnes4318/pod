@@ -37,7 +37,16 @@ export class BosonTTSProvider implements TTSProvider {
     const responseFormat = format === "wav" ? "wav" : "mp3";
     const stream = process.env.BOSON_TTS_STREAM === "true";
 
-    const voice = input.voiceId || process.env.BOSON_TTS_VOICE || "default";
+    let voice = input.voiceId;
+    const isStubVoice = !voice || voice.includes("stub");
+
+    if (input.speakerName === "Max Voltage") {
+      voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? (process.env.BOSON_TTS_VOICE || "default") : voice);
+    } else if (input.speakerName === "Dr. Linebreak") {
+      voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID || (isStubVoice ? (process.env.BOSON_TTS_VOICE || "default") : voice);
+    } else if (isStubVoice) {
+      voice = process.env.BOSON_TTS_VOICE || "default";
+    }
 
     // Setup request body
     const body: any = {
