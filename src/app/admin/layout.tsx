@@ -43,8 +43,8 @@ export default async function AdminLayout({
     <div className="adminLayout">
       {/* Sidebar Navigation */}
       <aside className="sidebar">
-        <div className="brand">
-          TAKE <span className="brandAccent">MACHINE</span>
+        <div className="brand" style={{ justifyContent: "center" }}>
+          <img src="/take-machine-logo.png" alt="Take Machine Logo" style={{ height: "45px", width: "auto", objectFit: "contain" }} />
         </div>
         <nav style={{ overflowY: "auto", flexGrow: 1, paddingRight: "0.25rem", margin: "1rem 0" }}>
           <SidebarNav />
@@ -55,9 +55,7 @@ export default async function AdminLayout({
       <div className="mainContainer">
         {/* Top Header Bar */}
         <header className="header">
-          <div className="headerLogoContainer">
-            <img src="/take-machine-logo.png" alt="Take Machine Logo" className="headerLogo" />
-          </div>
+          <div />
           <div className="headerStatus">
             {/* DB Connection Status */}
             <div className="statusIndicator" title={dbConnected ? "Database Connected" : "Database Offline"}>
