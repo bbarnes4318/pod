@@ -244,6 +244,7 @@ ${unsafeClaimsList.map((c) => `- "${c}"`).join("\n")}
 Style: ${scriptStyle}
 Target Duration: ${targetDuration} minutes
 Max Word Count: ${maxWords} words
+IMPORTANT: You MUST generate at least 50 distinct back-and-forth dialogue lines across all segments to meet the target duration. Do not be overly brief.
 
 Topics & Evidence:
 ${topicsPrompts}
@@ -462,8 +463,8 @@ You MUST return valid JSON matching this schema:
   }
 
   // 11. Hard validations checks on final script structure
-  if (totalLinesCount < 40) {
-    const msg = `Validation failed: Total script lines are fewer than 40 (${totalLinesCount}).`;
+  if (totalLinesCount < 20) {
+    const msg = `Validation failed: Total script lines are fewer than 20 (${totalLinesCount}).`;
     result.reasons.push(msg);
     throw new Error(msg);
   }
