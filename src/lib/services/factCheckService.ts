@@ -221,6 +221,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let semanticMisleadingCount = 0;
   let semanticUnsafeClaimCount = 0;
 
+  const originalFlatLines: any[] = [];
   const errorsList: any[] = [];
   const warningsList: any[] = [];
 
@@ -243,6 +244,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
         }
 
         totalLineCount++;
+
+        originalFlatLines.push({
+          lineIndex: line.lineIndex !== undefined ? line.lineIndex : (totalLineCount - 1),
+          speakerName: line.speakerName || "",
+          text: line.text || "",
+        });
 
         // Required fields verification
         if (
@@ -596,6 +603,17 @@ Run the fact-checking comparison and output the JSON structure containing status
         // Process lineResults to enforce safety rules
         const rawLineResults = Array.isArray(resultObj.lineResults) ? resultObj.lineResults : [];
         for (const lr of rawLineResults) {
+          // Enrich with original script speaker and text if the LLM returned empty strings
+          const origLine = originalFlatLines.find((ol) => ol.lineIndex === lr.lineIndex);
+          if (origLine) {
+            if (!lr.speakerName || !lr.speakerName.trim()) {
+              lr.speakerName = origLine.speakerName;
+            }
+            if (!lr.claimText || !lr.claimText.trim()) {
+              lr.claimText = origLine.text;
+            }
+          }
+
           // Filter out evidence refs outside allowedSourceRefs
           const cleanRefs: any[] = [];
           let lineHasInvalidRef = false;

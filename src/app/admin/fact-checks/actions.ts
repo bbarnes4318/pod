@@ -159,3 +159,64 @@ export async function fetchFactCheckDetail(factCheckId: string) {
     return { success: false, error: err.message || "Failed to fetch fact check details." };
   }
 }
+
+export async function overrideFactCheck(scriptId: string) {
+  try {
+    const script = await db.script.findUnique({
+      where: { id: scriptId },
+      include: { episode: true },
+    });
+
+    if (!script) {
+      throw new Error(`Script with ID ${scriptId} not found.`);
+    }
+
+    // Atomic transaction to override fact check and mark as passed
+    await db.$transaction(async (tx) => {
+      // 1. Create a dummy successful FactCheckResult
+      await tx.factCheckResult.create({
+        data: {
+          scriptId,
+          passed: true,
+          status: "passed",
+          checkedAt: new Date(),
+          provider: "override",
+          summary: {
+            checkedAt: new Date().toISOString(),
+            overallAssessment: "Fact check bypassed by human override.",
+            totalErrors: 0,
+            totalWarnings: 0,
+            semanticStatus: "passed",
+          } as any,
+          issues: {
+            errors: [],
+            warnings: [],
+            semanticLineResults: [],
+          } as any,
+          evidenceCoverage: {
+            evidenceCoveragePercent: 100,
+          } as any,
+          warnings: [] as any,
+          errors: [] as any,
+        },
+      });
+
+      // 2. Set Script.status = approved
+      await tx.script.update({
+        where: { id: scriptId },
+        data: { status: "approved" },
+      });
+
+      // 3. Set Episode.status = fact_checked
+      await tx.episode.update({
+        where: { id: script.episodeId },
+        data: { status: "fact_checked" },
+      });
+    });
+
+    revalidatePath(`/admin/scripts/${scriptId}`);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to override fact check." };
+  }
+}

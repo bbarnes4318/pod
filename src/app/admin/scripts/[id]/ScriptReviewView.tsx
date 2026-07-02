@@ -9,7 +9,7 @@ import {
   rejectScript,
   markScriptNeedsRevision,
 } from "../actions";
-import { triggerFactCheck } from "../../fact-checks/actions";
+import { triggerFactCheck, overrideFactCheck } from "../../fact-checks/actions";
 import { triggerTtsGeneration } from "../../audio-segments/actions";
 import Link from "next/link";
 
@@ -328,6 +328,29 @@ export default function ScriptReviewView({
       setMessage({
         type: "error",
         text: res.error || "Failed to trigger fact check.",
+      });
+    }
+    setFactChecking(false);
+  };
+
+  const handleOverrideFactCheck = async () => {
+    if (!confirm("Are you sure you want to override and bypass fact check safety gates? This will instantly approve the script and mark the episode as ready for audio generation.")) return;
+    setFactChecking(true);
+    setMessage(null);
+    const res = await overrideFactCheck(script.id);
+    if (res.success) {
+      setStatus("approved");
+      setMessage({
+        type: "success",
+        text: `Fact check safety gate bypassed. Script approved, and episode marked as ready for production!`,
+      });
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } else {
+      setMessage({
+        type: "error",
+        text: res.error || "Failed to override fact check.",
       });
     }
     setFactChecking(false);
@@ -822,6 +845,14 @@ export default function ScriptReviewView({
                     Force Recheck
                   </button>
                 </div>
+                <button
+                  onClick={handleOverrideFactCheck}
+                  disabled={factChecking || submitting}
+                  className="buttonPrimary"
+                  style={{ width: "100%", fontSize: "0.8rem", padding: "0.4rem", marginTop: "0.5rem", backgroundColor: "var(--warning-color)", borderColor: "var(--warning-color)" }}
+                >
+                  Override & Approve Script
+                </button>
               </div>
             ) : null}
           </div>
