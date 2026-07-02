@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createHost, updateHost } from "./actions";
+import { createHost, updateHost, getCartesiaVoices } from "./actions";
 
 interface HostFormProps {
   initialData?: {
@@ -53,6 +53,45 @@ export default function HostForm({ initialData }: HostFormProps) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [cartesiaVoices, setCartesiaVoices] = useState<any[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [audioPreview, setAudioPreview] = useState<HTMLAudioElement | null>(null);
+
+  React.useEffect(() => {
+    if (ttsProvider.toLowerCase() === "cartesia" && cartesiaVoices.length === 0) {
+      setLoadingVoices(true);
+      getCartesiaVoices().then((res) => {
+        if (res.success && res.voices) {
+          setCartesiaVoices(res.voices);
+        }
+        setLoadingVoices(false);
+      });
+    }
+  }, [ttsProvider, cartesiaVoices.length]);
+
+  const handlePlayPreview = (previewUrl: string, voiceId: string) => {
+    if (audioPreview) {
+      audioPreview.pause();
+    }
+
+    if (playingVoiceId === voiceId) {
+      setPlayingVoiceId(null);
+      setAudioPreview(null);
+      return;
+    }
+
+    const audio = new Audio(previewUrl);
+    audio.play();
+    setPlayingVoiceId(voiceId);
+    setAudioPreview(audio);
+
+    audio.onended = () => {
+      setPlayingVoiceId(null);
+      setAudioPreview(null);
+    };
+  };
 
   // Auto-generate slug from name if not editing
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -265,31 +304,80 @@ export default function HostForm({ initialData }: HostFormProps) {
             {/* TTS Provider */}
             <div className="formGroup">
               <label className="label" htmlFor="ttsProvider">TTS Provider</label>
-              <input
-                type="text"
+              <select
                 id="ttsProvider"
-                className="input"
-                placeholder="e.g. elevenlabs, cartesia, stub"
+                className="select"
                 value={ttsProvider}
                 onChange={(e) => setTtsProvider(e.target.value)}
                 disabled={loading}
                 required
-              />
+                style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+              >
+                <option value="stub">stub</option>
+                <option value="boson">boson</option>
+                <option value="cartesia">cartesia</option>
+                <option value="elevenlabs">elevenlabs</option>
+                <option value="openai">openai</option>
+              </select>
             </div>
 
             {/* TTS Voice ID */}
-            <div className="formGroup">
+            <div className="formGroup" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
               <label className="label" htmlFor="ttsVoiceId">TTS Voice ID</label>
-              <input
-                type="text"
-                id="ttsVoiceId"
-                className="input"
-                placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
-                value={ttsVoiceId}
-                onChange={(e) => setTtsVoiceId(e.target.value)}
-                disabled={loading}
-                required
-              />
+              {ttsProvider.toLowerCase() === "cartesia" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {loadingVoices ? (
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Loading Cartesia voices...</div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem", alignItems: "center" }}>
+                      <select
+                        id="ttsVoiceId"
+                        className="select"
+                        value={ttsVoiceId}
+                        onChange={(e) => setTtsVoiceId(e.target.value)}
+                        disabled={loading}
+                        required
+                        style={{ width: "100%", padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                      >
+                        <option value="">-- Select Cartesia Voice --</option>
+                        {cartesiaVoices.map((voice) => (
+                          <option key={voice.id} value={voice.id}>
+                            {voice.name} ({voice.gender || "neutral"}, {voice.language || "en"})
+                          </option>
+                        ))}
+                      </select>
+                      
+                      {(() => {
+                        const selectedVoice = cartesiaVoices.find((v) => v.id === ttsVoiceId);
+                        if (selectedVoice?.preview_url) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handlePlayPreview(selectedVoice.preview_url, selectedVoice.id)}
+                              className="editButton"
+                              style={{ whiteSpace: "nowrap", padding: "0.5rem 1rem", backgroundColor: playingVoiceId === selectedVoice.id ? "var(--warning-color)" : "var(--accent-color)", color: "#fff", borderColor: "transparent", borderRadius: "6px", cursor: "pointer" }}
+                            >
+                              {playingVoiceId === selectedVoice.id ? "⏸ Pause" : "🔊 Preview"}
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  id="ttsVoiceId"
+                  className="input"
+                  placeholder="e.g. 21m00Tcm4TlvDq8ikWAM"
+                  value={ttsVoiceId}
+                  onChange={(e) => setTtsVoiceId(e.target.value)}
+                  disabled={loading}
+                  required
+                />
+              )}
             </div>
 
             {/* Intensity Level Slider */}

@@ -167,3 +167,43 @@ export async function toggleHostStatus(id: string, isActive: boolean) {
     return { success: false, error: err.message || "Failed to toggle host status" };
   }
 }
+
+export async function getCartesiaVoices() {
+  try {
+    const apiKey = process.env.CARTESIA_API_KEY;
+    if (!apiKey) {
+      throw new Error("CARTESIA_API_KEY is not configured.");
+    }
+
+    const response = await fetch("https://api.cartesia.ai/voices", {
+      method: "GET",
+      headers: {
+        "X-API-Key": apiKey,
+        "Cartesia-Version": "2024-06-10",
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Cartesia API error: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json();
+    
+    // Sort and map the voice list
+    const voices = Array.isArray(data) ? data : [];
+    return {
+      success: true,
+      voices: voices.map((v: any) => ({
+        id: v.id,
+        name: v.name,
+        description: v.description || "",
+        gender: v.gender || "",
+        language: v.language || "",
+        preview_url: v.preview_url || null,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch Cartesia voices" };
+  }
+}
