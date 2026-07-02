@@ -225,7 +225,10 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     if (!host) {
       throw new Error(`Host profile not found for speaker: ${line.speakerName}`);
     }
-    const hostProviderName = providerOverride || host.ttsProvider || process.env.TTS_PROVIDER || "stub";
+    let hostProviderName = providerOverride || host.ttsProvider;
+    if (!hostProviderName || hostProviderName === "stub") {
+      hostProviderName = process.env.TTS_PROVIDER || "stub";
+    }
 
     if (!segment) {
       segment = await db.audioSegment.create({
