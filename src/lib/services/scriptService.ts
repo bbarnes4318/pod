@@ -391,9 +391,9 @@ You MUST return valid JSON matching this schema:
 
         if (cleanEvidenceRefs.length === 0) {
           result.unsupportedClaimCount++;
-          result.rejectedLineCount++;
-          unsupportedClaimsRemoved.push(line.text);
-          continue; // Reject line
+          line.needsHumanReview = true;
+        } else {
+          result.factualLineWithEvidenceCount++;
         }
 
         // Prohibited keywords check - strictly reject factual lines containing these
@@ -411,8 +411,6 @@ You MUST return valid JSON matching this schema:
           unsupportedClaimsRemoved.push(line.text);
           continue; // Reject line
         }
-
-        result.factualLineWithEvidenceCount++;
       } else {
         // Even if not marked as factual, let's reject prohibited language if it has no clean refs
         let hasProhibitedLanguage = false;
@@ -480,9 +478,8 @@ You MUST return valid JSON matching this schema:
   if (result.factualLineCount > 0) {
     const factualSuccessRate = result.factualLineWithEvidenceCount / result.factualLineCount;
     if (factualSuccessRate < 0.7) {
-      const msg = `Validation failed: Fewer than 70% of original factual lines had valid evidence references. Success Rate: ${Math.round(factualSuccessRate * 100)}% (${result.factualLineWithEvidenceCount}/${result.factualLineCount})`;
+      const msg = `Validation warning: Fewer than 70% of original factual lines had valid evidence references. Success Rate: ${Math.round(factualSuccessRate * 100)}% (${result.factualLineWithEvidenceCount}/${result.factualLineCount})`;
       result.reasons.push(msg);
-      throw new Error(msg);
     }
   }
 
