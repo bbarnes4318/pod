@@ -14,8 +14,8 @@ export async function triggerFactCheck(scriptId: string, forceRecheck = false) {
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
-    if (script.status !== "approved") {
-      throw new Error(`Only approved scripts can be fact checked. Current status: ${script.status}`);
+    if (script.status !== "approved" && script.status !== "draft" && script.status !== "needs_revision") {
+      throw new Error(`Only draft, needs_revision, or approved scripts can be fact checked. Current status: ${script.status}`);
     }
 
     await queueFactCheckJob({ scriptId, forceRecheck });

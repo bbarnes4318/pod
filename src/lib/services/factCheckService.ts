@@ -90,12 +90,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     throw new Error(`Script with ID ${scriptId} not found.`);
   }
 
-  if (script.status !== "approved") {
-    throw new Error(`Script status is '${script.status}'. Only approved scripts can be fact checked.`);
-  }
-
-  if (script.episode.status !== "script_approved") {
-    throw new Error(`Episode status is '${script.episode.status}'. Episode must be 'script_approved' to run fact check.`);
+  if (script.status !== "approved" && script.status !== "draft" && script.status !== "needs_revision") {
+    throw new Error(`Script status is '${script.status}'. Only draft, needs_revision, or approved scripts can be fact checked.`);
   }
 
   if (!script.content || typeof script.content !== "object") {
@@ -770,11 +766,13 @@ Run the fact-checking comparison and output the JSON structure containing status
     });
 
     if (finalStatus === "passed") {
-      // Keep Script.status = approved, update Episode.status = fact_checked
-      await tx.episode.update({
-        where: { id: script.episodeId },
-        data: { status: "fact_checked" },
-      });
+      // Only change episode status if the script was already approved
+      if (script.status === "approved") {
+        await tx.episode.update({
+          where: { id: script.episodeId },
+          data: { status: "fact_checked" },
+        });
+      }
     } else if (finalStatus === "failed") {
       // Set Script.status = needs_revision
       await tx.script.update({
@@ -803,11 +801,13 @@ Run the fact-checking comparison and output the JSON structure containing status
         data: { status: nextEpStatus },
       });
     } else if (finalStatus === "needs_review") {
-      // Keep Script.status = approved, Episode.status = script_approved
-      await tx.episode.update({
-        where: { id: script.episodeId },
-        data: { status: "script_approved" },
-      });
+      // Only change episode status if the script was already approved
+      if (script.status === "approved") {
+        await tx.episode.update({
+          where: { id: script.episodeId },
+          data: { status: "script_approved" },
+        });
+      }
     }
 
     return r;

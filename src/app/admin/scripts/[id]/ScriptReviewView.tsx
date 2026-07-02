@@ -763,7 +763,7 @@ export default function ScriptReviewView({
           <div className="controlsPanel">
             <div className="panelTitle">Fact Check Safety Gate</div>
             
-            {status === "approved" || status === "script_approved" || status === "ready" ? (
+            {status !== "rejected" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {factCheck ? (
                   <div style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: "6px", padding: "0.75rem", fontSize: "0.85rem" }}>
@@ -800,7 +800,7 @@ export default function ScriptReviewView({
                   </div>
                 ) : (
                   <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic", marginBottom: "0.5rem" }}>
-                    No fact check audits have been run for this approved script version yet.
+                    No fact check audits have been run for this script version yet.
                   </div>
                 )}
 
@@ -823,11 +823,7 @@ export default function ScriptReviewView({
                   </button>
                 </div>
               </div>
-            ) : (
-              <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
-                Fact checking is only available for approved scripts. Approve this script draft first to unlock.
-              </div>
-            )}
+            ) : null}
           </div>
 
           {/* TTS Dialogue Audio Segments Console */}
