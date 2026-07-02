@@ -35,7 +35,8 @@ export class OpenAILLMProvider implements LLMProvider {
 
     if (this.isReasoningModel()) {
       if (options.maxTokens) {
-        body.max_completion_tokens = options.maxTokens;
+        // Reasoning models need a much larger budget because reasoning tokens count against the limit
+        body.max_completion_tokens = Math.max(options.maxTokens, 25000);
       }
     } else {
       if (options.maxTokens) {
@@ -84,7 +85,8 @@ export class OpenAILLMProvider implements LLMProvider {
 
     if (this.isReasoningModel()) {
       if (options.maxTokens) {
-        body.max_completion_tokens = options.maxTokens;
+        // Reasoning models need a much larger budget because reasoning tokens count against the limit
+        body.max_completion_tokens = Math.max(options.maxTokens, 25000);
       }
     } else {
       if (options.maxTokens) {
