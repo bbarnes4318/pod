@@ -127,14 +127,21 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checkRequired("ELEVENLABS_MAX_VOLTAGE_VOICE_ID");
     checkRequired("ELEVENLABS_DR_LINEBREAK_VOICE_ID");
     checkOptional("BOSON_API_KEY", true);
+    checkOptional("CARTESIA_API_KEY", true);
   } else if (ttsProvider === "boson") {
     checkRequired("BOSON_API_KEY", true);
     checkRequired("BOSON_TTS_MODEL");
     checkRequired("BOSON_TTS_VOICE");
     checkOptional("ELEVENLABS_API_KEY", true);
+    checkOptional("CARTESIA_API_KEY", true);
+  } else if (ttsProvider === "cartesia") {
+    checkRequired("CARTESIA_API_KEY", true);
+    checkOptional("ELEVENLABS_API_KEY", true);
+    checkOptional("BOSON_API_KEY", true);
   } else {
     checkOptional("ELEVENLABS_API_KEY", true);
     checkOptional("BOSON_API_KEY", true);
+    checkOptional("CARTESIA_API_KEY", true);
   }
 
   const sportsProvider = process.env.SPORTS_PROVIDER || "api-sports";

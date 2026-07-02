@@ -37,6 +37,18 @@ export class CartesiaTTSProvider implements TTSProvider {
             sample_rate: 44100,
           };
 
+    let voiceId = input.voiceId;
+    const isStubVoice = !voiceId || voiceId.includes("stub");
+
+    if (input.speakerName === "Max Voltage") {
+      voiceId = process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? "e2d48e7b-cd73-4c4c-bc1e-f232580e8709" : voiceId);
+    } else if (input.speakerName === "Dr. Linebreak") {
+      voiceId = process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || (isStubVoice ? "3ccc4544-84f7-45e3-ae57-5c52b5a1fac6" : voiceId);
+    } else if (isStubVoice) {
+      // General fallback if speaker name is different
+      voiceId = "a5136bf9-224c-4d76-b823-52bd5efcffcc"; // Jameson
+    }
+
     const response = await fetch("https://api.cartesia.ai/tts/bytes", {
       method: "POST",
       headers: {
@@ -49,7 +61,7 @@ export class CartesiaTTSProvider implements TTSProvider {
         model_id: modelId,
         voice: {
           mode: "id",
-          id: input.voiceId,
+          id: voiceId,
         },
         output_format: outputFormat,
       }),

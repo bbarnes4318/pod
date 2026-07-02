@@ -203,29 +203,67 @@ export default async function ConfigurationPage() {
       {/* Active TTS Configuration */}
       <div className="panel">
         <div className="panelHeader">
-          <h3 className="panelTitle">Active TTS Settings (BOSON)</h3>
+          <h3 className="panelTitle">Active TTS Settings ({(process.env.TTS_PROVIDER || "stub").toUpperCase()})</h3>
         </div>
         <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
-            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Boson TTS Status</div>
-              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{getBosonTtsStatus()}</div>
-            </div>
-            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Model</div>
-              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_MODEL || "higgs-tts-3"}</div>
-            </div>
-            <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Voice</div>
-              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_VOICE || "default"}</div>
-            </div>
-            <div>
-              <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Inline Tags</div>
-              <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
-                {process.env.BOSON_TTS_ENABLE_TAGS === "true" ? "ENABLED" : "DISABLED"}
+          {process.env.TTS_PROVIDER?.toLowerCase() === "boson" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Boson TTS Status</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{getBosonTtsStatus()}</div>
+              </div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Model</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_MODEL || "higgs-tts-3"}</div>
+              </div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Voice</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.BOSON_TTS_VOICE || "default"}</div>
+              </div>
+              <div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Inline Tags</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
+                  {process.env.BOSON_TTS_ENABLE_TAGS === "true" ? "ENABLED" : "DISABLED"}
+                </div>
               </div>
             </div>
-          </div>
+          ) : process.env.TTS_PROVIDER?.toLowerCase() === "cartesia" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Cartesia Status</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
+                  {process.env.CARTESIA_API_KEY ? "CONFIGURED" : "MISSING"}
+                </div>
+              </div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Model ID</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.CARTESIA_MODEL_ID || "sonic-2"}</div>
+              </div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Max Voltage Voice</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
+                  {process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || "Adrian (default fallback)"}
+                </div>
+              </div>
+              <div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Dr. Linebreak Voice</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
+                  {process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || "Aiden (default fallback)"}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1.5rem" }}>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>TTS Status</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>CONFIGURED</div>
+              </div>
+              <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Global Provider</div>
+                <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.TTS_PROVIDER || "stub"}</div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
