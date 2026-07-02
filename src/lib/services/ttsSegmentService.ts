@@ -317,8 +317,12 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
           return;
         }
 
-        await new Promise((r) => setTimeout(r, delay));
-        delay *= 2;
+        let waitTime = delay;
+        if (err.message.includes("429") || err.message.includes("rate_limit")) {
+          waitTime = Math.max(waitTime, 3000);
+        }
+        await new Promise((r) => setTimeout(r, waitTime));
+        delay *= 2.5;
       }
     }
   }

@@ -66,6 +66,7 @@ export class BosonTTSProvider implements TTSProvider {
     console.log(`[TTS_PROVIDER_LOG] boson voice configured: true`);
 
     try {
+      await new Promise((r) => setTimeout(r, 500));
       const response = await fetch(url, {
         method: "POST",
         headers: {
