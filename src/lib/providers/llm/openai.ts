@@ -31,10 +31,16 @@ export class OpenAILLMProvider implements LLMProvider {
     const body: any = {
       model: this.model,
       messages,
-      max_tokens: options.maxTokens,
     };
 
-    if (!this.isReasoningModel()) {
+    if (this.isReasoningModel()) {
+      if (options.maxTokens) {
+        body.max_completion_tokens = options.maxTokens;
+      }
+    } else {
+      if (options.maxTokens) {
+        body.max_tokens = options.maxTokens;
+      }
       body.temperature = options.temperature ?? 0.7;
     }
 
@@ -73,11 +79,17 @@ export class OpenAILLMProvider implements LLMProvider {
     const body: any = {
       model: this.model,
       messages,
-      max_tokens: options.maxTokens,
       response_format: { type: "json_object" },
     };
 
-    if (!this.isReasoningModel()) {
+    if (this.isReasoningModel()) {
+      if (options.maxTokens) {
+        body.max_completion_tokens = options.maxTokens;
+      }
+    } else {
+      if (options.maxTokens) {
+        body.max_tokens = options.maxTokens;
+      }
       body.temperature = options.temperature ?? 0.2; // Low temperature for high structure fidelity
     }
 
