@@ -1,5 +1,11 @@
 import { db } from "../db";
 import { getLLMProvider } from "../providers/llm/factory";
+import {
+  ALLOWED_AUDIO_TAGS,
+  normalizeDelivery,
+  sanitizeAudioTags,
+  stripAudioTags,
+} from "../audio/speechText";
 
 export interface ScriptBuildInput {
   episodeId: string;
@@ -25,14 +31,22 @@ export interface ScriptBuildResult {
   scriptId?: string;
 }
 
-const PROHIBITED_KEYWORDS = [
+// Rumor-sourcing language: banned on every line, factual or not.
+const RUMOR_KEYWORDS = [
   "sources say",
   "rumored",
   "reportedly",
-  "expected to",
-  "likely to",
   "insider",
   "unnamed source",
+];
+
+// Hedging language: banned only on factual-claim lines. On opinion lines,
+// "could be" / "might be" is normal spoken speculation and rejecting it
+// forces unnatural declarative-only dialogue.
+const PROHIBITED_KEYWORDS = [
+  ...RUMOR_KEYWORDS,
+  "expected to",
+  "likely to",
   "could be",
   "might be",
 ];
@@ -206,32 +220,56 @@ Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): ${JSON.stringify(unsafe)}
   }).join("\n---\n");
 
   // 7. Formulate system and user prompts
-  const systemPrompt = `You are the Script Generator for Take Machine, a premium AI sports debate podcast.
-You are writing spoken dialogue for two AI hosts.
+  const systemPrompt = `You are the head writer for Take Machine, a two-host sports debate podcast. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
 
 Host 1: Max Voltage (ID: ${hostA.id})
 - Role: ${hostA.role}
 - Worldview: ${hostA.worldview}
 - Speaking Style: ${hostA.speakingStyle}
-- Catchphrases: ${JSON.stringify(hostA.catchphrases)}
+- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(hostA.catchphrases)}
 - Likes: ${JSON.stringify(hostA.likes)}
 - Dislikes: ${JSON.stringify(hostA.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostA.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostA.bannedPhrases)}
 - Intensity Level: ${hostA.intensityLevel}/10
+- Verbal fingerprint: talks in bursts. Short sentences. Repeats words for emphasis ("He's done. DONE."). Starts sentences with "Listen," "No no no," "Are you kidding me?" Trails off when disgusted. Interrupts when he smells weakness.
 
 Host 2: Dr. Linebreak (ID: ${hostB.id})
 - Role: ${hostB.role}
 - Worldview: ${hostB.worldview}
 - Speaking Style: ${hostB.speakingStyle}
-- Catchphrases: ${JSON.stringify(hostB.catchphrases)}
+- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(hostB.catchphrases)}
 - Likes: ${JSON.stringify(hostB.likes)}
 - Dislikes: ${JSON.stringify(hostB.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostB.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostB.bannedPhrases)}
 - Intensity Level: ${hostB.intensityLevel}/10
+- Verbal fingerprint: longer, measured sentences with dry pauses. Weaponized politeness ("With respect, Max — no."). Lets Max burn out, then dissects. Occasionally amused despite himself. Never raises his voice; lowers it for the kill shot.
 
-Write a spoken, natural back-and-forth debate script where they clearly disagree. Use short, punchy spoken lines. Avoid long monologues. Avoid generic filler. Avoid "As an AI" or referencing "the research brief" or reading evidence like a report.
+HOW REAL PODCAST SPEECH WORKS — follow all of these:
+1. Contractions always: "he's", "don't", "that's", "would've". Nobody says "he is not clutch" out loud.
+2. Backchannels and reactions: short lines like "Oh, come on.", "Wow.", "Sure, sure.", "That's— okay, fine." are GOOD lines. Use plenty of 2-6 word reaction lines between longer turns.
+3. Interruptions: hosts cut each other off mid-thought. When a line is an interruption, set "isInterruption": true and have the PREVIOUS line end mid-sentence with "—" (em dash). 3-6 real interruptions per episode.
+4. False starts and self-repair: "He was— look, the man played hurt." "I'm not saying— what I'm saying is..."
+5. Filler where a human would breathe: "I mean", "look", "honestly", "right?", "you know what?" — sprinkled, not machine-gunned.
+6. Callbacks: reference things said earlier in the episode ("There it is. The spreadsheet came out.", "You're still on the banner thing from earlier?").
+7. Speaking numbers: say stats like a human — "he's shooting damn near fifty percent" not "his field goal percentage is 49.8%". Round numbers in speech; the exact figure lives in the evidence ref.
+8. Vary rhythm: a heated exchange = rapid short lines. An analytical breakdown = one longer turn plus reactions. Never more than two long turns in a row.
+9. Agreement happens: even rivals concede small points ("Fine. That one's real.") before pivoting. Constant disagreement sounds fake.
+10. Tangents: one brief, natural 2-4 line tangent per episode (a memory, a joke, a jab) that gets pulled back with "Anyway—" or "Back to the point."
+
+AUDIO DELIVERY TAGS: you may place these inline in "text", in square brackets, where a performance cue belongs: ${JSON.stringify([...ALLOWED_AUDIO_TAGS])}.
+Example: "text": "[laughs] Okay, okay. [sighs] Walk me through the math, professor."
+Use 0-2 tags per line, only where a real person would actually laugh/sigh/whisper. Most lines need none. NEVER use sound-effect tags.
+
+EPISODE SHAPE:
+- cold_open: start mid-argument, in medias res, on the hottest take of the episode. No greetings, no "welcome to the show". Hook in the first five seconds.
+- intro: THEN back off, quick show welcome with energy, banter beat, tease the topics in one breath each.
+- topic segments: the meat. Real debate arcs: stake out positions -> clash -> concede/escalate -> land a button (a punchline or a hard disagreement to break on).
+- transition: one or two lines, conversational ("Alright, next thing. And this one's gonna make you mad.").
+- closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
+
+NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure ("Now let's discuss topic two"), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
 
 Allowed typed evidence refs: ${Array.from(allowedSourceRefs).join(", ")}
 Expected evidenceRefs JSON structure for lines: { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "abc123" }
@@ -269,8 +307,11 @@ You MUST return valid JSON matching this schema:
         {
           "lineIndex": 0,
           "speakerName": "Max Voltage" | "Dr. Linebreak",
-          "text": "spoken text here",
-          "tone": "heated | sarcastic | analytical | dismissive | setup | transition",
+          "text": "spoken text here, optionally with inline audio tags like [laughs]",
+          "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",
+          "energy": "low" | "medium" | "high",
+          "pauseBefore": "none" | "beat" | "breath" | "long",
+          "isInterruption": true | false,
           "evidenceRefs": [
             { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-source-id" }
           ],
@@ -286,6 +327,11 @@ You MUST return valid JSON matching this schema:
     "requiresHumanReview": true
   }
 }
+
+Delivery field meanings:
+- "energy": how much vocal intensity this line is performed with. Vary it across the episode — an all-"high" episode is exhausting and fake.
+- "pauseBefore": the gap the editor should leave before this line. "none" = jump in immediately (reactions, interruptions), "beat" = normal turn-taking (~0.3s), "breath" = thought pivot (~0.7s), "long" = dramatic beat (~1.2s, use rarely).
+- "isInterruption": true only when this line cuts the previous speaker off (previous line should end with "—").
 `;
 
   // 8. Call LLM provider
@@ -293,11 +339,14 @@ You MUST return valid JSON matching this schema:
   let llmResult: any;
 
   try {
+    // Higher temperature is intentional: dialogue written at low temperature
+    // comes out flat and repetitive, which is audible in the final audio.
+    // The validation loop below still enforces structure and evidence rules.
     llmResult = await llm.generateStructuredOutput<any>({
       prompt,
       systemPrompt,
-      temperature: 0.2,
-      maxTokens: 4000,
+      temperature: Number(process.env.SCRIPT_GEN_TEMPERATURE) || 0.85,
+      maxTokens: Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000,
     });
   } catch (err: any) {
     result.providerError = err.message;
@@ -354,7 +403,17 @@ You MUST return valid JSON matching this schema:
         continue; // Reject line
       }
 
-      const textLower = line.text.toLowerCase();
+      // Keep only whitelisted delivery tags, then run all content checks on
+      // the tag-free text so a bracket tag can't split a banned phrase.
+      const sanitizedText = sanitizeAudioTags(String(line.text));
+      const spokenContent = stripAudioTags(sanitizedText);
+
+      if (!spokenContent) {
+        result.rejectedLineCount++;
+        continue; // Tag-only or empty line
+      }
+
+      const textLower = spokenContent.toLowerCase();
 
       // Check unsafe claims check
       let isUnsafe = false;
@@ -413,9 +472,10 @@ You MUST return valid JSON matching this schema:
 
         result.factualLineWithEvidenceCount++;
       } else {
-        // Even if not marked as factual, let's reject prohibited language if it has no clean refs
+        // Non-factual lines: only reject rumor-sourcing language without refs.
+        // Hedged opinions ("they could be in trouble") are legitimate speech.
         let hasProhibitedLanguage = false;
-        for (const word of PROHIBITED_KEYWORDS) {
+        for (const word of RUMOR_KEYWORDS) {
           if (textLower.includes(word)) {
             hasProhibitedLanguage = true;
             break;
@@ -433,13 +493,18 @@ You MUST return valid JSON matching this schema:
       // Attach speakerHostId
       const speakerHostId = line.speakerName === "Max Voltage" ? hostA.id : hostB.id;
 
+      const delivery = normalizeDelivery(line);
+
       // Add to clean lines (saving only cleanEvidenceRefs)
       cleanLines.push({
         lineIndex: line.lineIndex,
         speakerHostId,
         speakerName: line.speakerName,
-        text: line.text,
+        text: sanitizedText,
         tone: line.tone,
+        energy: delivery.energy,
+        pauseBefore: delivery.pauseBefore,
+        isInterruption: delivery.isInterruption,
         evidenceRefs: cleanEvidenceRefs,
         isFactualClaim: line.isFactualClaim,
         needsHumanReview: line.needsHumanReview || false,
@@ -503,7 +568,7 @@ You MUST return valid JSON matching this schema:
     .map((seg) => {
       const label = `[${seg.type.toUpperCase()}${seg.title ? ` — ${seg.title}` : ""}]`;
       const dialogue = seg.lines
-        .map((line: any) => `${line.speakerName}:\n${line.text}`)
+        .map((line: any) => `${line.speakerName}:\n${stripAudioTags(line.text)}`)
         .join("\n\n");
       return `${label}\n\n${dialogue}`;
     })

@@ -31,10 +31,16 @@ function resolveTTSProvider(name: string) {
 }
 
 function cleanTextForSpeech(txt: string): string {
+  // Strip markdown noise but keep [audio tags] and em dashes — both carry
+  // delivery information for the TTS engines.
   return txt
     .replace(/[*_`#~]/g, "") // remove markdown characters
     .replace(/\s+/g, " ")     // normalize spaces
     .trim();
+}
+
+function buildVoiceDirection(host: { name: string; role: string; speakingStyle: string; intensityLevel: number }): string {
+  return `You are "${host.name}", a sports debate podcast host mid-episode, talking to your co-host. ${host.role}. Delivery style: ${host.speakingStyle} Overall intensity ${host.intensityLevel}/10.`;
 }
 
 export async function generateTtsSegments(input: TtsSegmentInput) {
@@ -155,6 +161,27 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
 
   const totalLineCount = allLines.length;
 
+  // Same-speaker neighbor lines, used as previous_text/next_text conditioning
+  // so an engine keeps the speaker's intonation flowing across the episode
+  // instead of resetting on every isolated request.
+  const speakerContext = new Map<number, { previousText?: string; nextText?: string }>();
+  for (let i = 0; i < allLines.length; i++) {
+    const ctx: { previousText?: string; nextText?: string } = {};
+    for (let p = i - 1; p >= 0; p--) {
+      if (allLines[p].speakerHostId === allLines[i].speakerHostId) {
+        ctx.previousText = allLines[p].text;
+        break;
+      }
+    }
+    for (let n = i + 1; n < allLines.length; n++) {
+      if (allLines[n].speakerHostId === allLines[i].speakerHostId) {
+        ctx.nextText = allLines[n].text;
+        break;
+      }
+    }
+    speakerContext.set(allLines[i].lineIndex, ctx);
+  }
+
   // 3. Filter lines based on range and host
   let selectedLines = [...allLines];
   if (segmentRange) {
@@ -248,11 +275,17 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         const format = process.env.TTS_AUDIO_FORMAT === "wav" ? "wav" : "mp3";
         const ttsProvider = resolveTTSProvider(hostProviderName);
 
+        const context = speakerContext.get(line.lineIndex) || {};
         const ttsResult = await ttsProvider.synthesizeSpeech({
           text: cleanTextForSpeech(line.text),
           voiceId: host.ttsVoiceId,
           speakerName: line.speakerName,
           tone: line.tone,
+          energy: line.energy,
+          isInterruption: line.isInterruption === true,
+          previousText: context.previousText ? cleanTextForSpeech(context.previousText) : undefined,
+          nextText: context.nextText ? cleanTextForSpeech(context.nextText) : undefined,
+          voiceDirection: buildVoiceDirection(host),
           format,
         });
 

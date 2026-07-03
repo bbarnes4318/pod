@@ -17,14 +17,22 @@ export interface ValidationSummary {
   reasons: string[];
 }
 
-const PROHIBITED_KEYWORDS = [
+import { stripAudioTags } from "../audio/speechText";
+
+// Rumor-sourcing language: banned on every line, factual or not.
+const RUMOR_KEYWORDS = [
   "sources say",
   "rumored",
   "reportedly",
-  "expected to",
-  "likely to",
   "insider",
   "unnamed source",
+];
+
+// Hedging language: banned only on factual-claim lines (see scriptService).
+const PROHIBITED_KEYWORDS = [
+  ...RUMOR_KEYWORDS,
+  "expected to",
+  "likely to",
   "could be",
   "might be",
 ];
@@ -139,8 +147,8 @@ export function validateScriptContent(
           drLinebreakCount++;
         }
 
-        // Validate unsafe claims
-        const textLower = line.text.toLowerCase();
+        // Validate unsafe claims (on tag-free spoken content)
+        const textLower = stripAudioTags(String(line.text)).toLowerCase();
         let usesUnsafeClaim = false;
         for (const claim of episodeContext.unsafeClaims) {
           if (textLower.includes(claim.toLowerCase())) {
@@ -213,9 +221,9 @@ export function validateScriptContent(
             summary.reasons.push(`Line ${summary.totalLineCount}: Factual claim contains prohibited rumor keyword.`);
           }
         } else {
-          // Non-factual prohibited language check
+          // Non-factual lines: only rumor-sourcing language is prohibited
           let containsProhibited = false;
-          for (const word of PROHIBITED_KEYWORDS) {
+          for (const word of RUMOR_KEYWORDS) {
             if (textLower.includes(word)) {
               containsProhibited = true;
               break;
