@@ -149,8 +149,33 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
       )}
 
       {!isEligible && detail.eligibility.reason && (
-        <div className="alertCard alertDanger" style={{ marginTop: "1rem" }}>
-          <strong>Stitching Blocked:</strong> {detail.eligibility.reason}
+        <div className="alertCard alertDanger" style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div>
+            <strong>Stitching Blocked:</strong> {detail.eligibility.reason}
+          </div>
+          {readyCount < detail.totalLines && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "0.75rem" }}>
+              <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", opacity: 0.9 }}>
+                You have generated {readyCount} out of {detail.totalLines} audio segments. You must generate all segments before stitching the final podcast audio.
+              </p>
+              <Link 
+                href={`/admin/audio-segments/${detail.scriptId}`} 
+                className="btnReset"
+                style={{ 
+                  display: "inline-block", 
+                  textDecoration: "none", 
+                  backgroundColor: "var(--accent-color)", 
+                  color: "#fff", 
+                  padding: "0.35rem 0.75rem", 
+                  borderRadius: "4px", 
+                  fontSize: "0.85rem",
+                  fontWeight: "600"
+                }}
+              >
+                🔊 Go to Audio Segments Console &rarr;
+              </Link>
+            </div>
+          )}
         </div>
       )}
 
