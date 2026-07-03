@@ -303,26 +303,28 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     let introFile: string | null = null;
     if (includeIntro) {
       const introUrl = process.env.AUDIO_INTRO_URL;
-      if (!introUrl) {
-        throw new Error("includeIntro is true but AUDIO_INTRO_URL is not configured.");
+      if (introUrl) {
+        introFile = path.join(tempDir, "intro-raw.mp3");
+        console.log(`[Stitcher] Downloading intro from: ${introUrl}`);
+        const res = await storageProvider.getObject({ url: introUrl });
+        fs.writeFileSync(introFile, res.body);
+      } else {
+        console.warn("[Stitcher] includeIntro is true but AUDIO_INTRO_URL is not configured. Skipping intro.");
       }
-      introFile = path.join(tempDir, "intro-raw.mp3");
-      console.log(`[Stitcher] Downloading intro from: ${introUrl}`);
-      const res = await storageProvider.getObject({ url: introUrl });
-      fs.writeFileSync(introFile, res.body);
     }
 
     // 5. Download Outro (if requested)
     let outroFile: string | null = null;
     if (includeOutro) {
       const outroUrl = process.env.AUDIO_OUTRO_URL;
-      if (!outroUrl) {
-        throw new Error("includeOutro is true but AUDIO_OUTRO_URL is not configured.");
+      if (outroUrl) {
+        outroFile = path.join(tempDir, "outro-raw.mp3");
+        console.log(`[Stitcher] Downloading outro from: ${outroUrl}`);
+        const res = await storageProvider.getObject({ url: outroUrl });
+        fs.writeFileSync(outroFile, res.body);
+      } else {
+        console.warn("[Stitcher] includeOutro is true but AUDIO_OUTRO_URL is not configured. Skipping outro.");
       }
-      outroFile = path.join(tempDir, "outro-raw.mp3");
-      console.log(`[Stitcher] Downloading outro from: ${outroUrl}`);
-      const res = await storageProvider.getObject({ url: outroUrl });
-      fs.writeFileSync(outroFile, res.body);
     }
 
     // 6. Download Dialogue Segments
