@@ -1,0 +1,113 @@
+{
+  "title": "A/B sample — is the two-seed a fraud?",
+  "lines": [
+    {
+      "lineIndex": 0,
+      "speaker": "Max Voltage",
+      "text": "No no no, you do not get to hang a two-seed banner for beating three teams with losing records. You don't!",
+      "tone": "heated",
+      "energy": "high",
+      "pauseBefore": "none",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 1,
+      "speaker": "Dr. Linebreak",
+      "text": "[sighs] Here we go. Max, they have the second-best point differential in the conference. That is not a schedule artifact.",
+      "tone": "analytical",
+      "energy": "low",
+      "pauseBefore": "beat",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 2,
+      "speaker": "Max Voltage",
+      "text": "Point differential? POINT differential? Who hangs a point differential banner? Where does it go, the analytics department?",
+      "tone": "incredulous",
+      "energy": "high",
+      "pauseBefore": "none",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 3,
+      "speaker": "Dr. Linebreak",
+      "text": "[chuckles] The teams that understand it tend to hang the real ones later. But sure, let's do feelings instead.",
+      "tone": "sarcastic",
+      "energy": "medium",
+      "pauseBefore": "beat",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 4,
+      "speaker": "Max Voltage",
+      "text": "Okay, feelings? Feelings?! I watched that game Saturday. Fourth quarter, down six, and their star is standing in the corner like a mailbox—",
+      "tone": "heated",
+      "energy": "high",
+      "pauseBefore": "breath",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 5,
+      "speaker": "Dr. Linebreak",
+      "text": "A mailbox that scored thirty-one points, Max.",
+      "tone": "dismissive",
+      "energy": "medium",
+      "pauseBefore": "none",
+      "isInterruption": true
+    },
+    {
+      "lineIndex": 6,
+      "speaker": "Max Voltage",
+      "text": "In garbage time! Half of that came when the game was already gone. You know this. You KNOW this.",
+      "tone": "heated",
+      "energy": "high",
+      "pauseBefore": "none",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 7,
+      "speaker": "Dr. Linebreak",
+      "text": "I know that thirty-one is thirty-one. [pause] Look — I'll give you this much. The rotation gets thin late in games. That part is real.",
+      "tone": "conceding",
+      "energy": "low",
+      "pauseBefore": "breath",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 8,
+      "speaker": "Max Voltage",
+      "text": "Thank you! Was that so hard?",
+      "tone": "amused",
+      "energy": "medium",
+      "pauseBefore": "none",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 9,
+      "speaker": "Dr. Linebreak",
+      "text": "It was, actually. [laughs softly] Physically painful.",
+      "tone": "amused",
+      "energy": "low",
+      "pauseBefore": "beat",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 10,
+      "speaker": "Max Voltage",
+      "text": "There it is, folks. Growth. Alright — playoffs start Friday, and if they lose in round one, I don't want to hear a word about point differential.",
+      "tone": "setup",
+      "energy": "medium",
+      "pauseBefore": "breath",
+      "isInterruption": false
+    },
+    {
+      "lineIndex": 11,
+      "speaker": "Dr. Linebreak",
+      "text": "And if they win it all, I expect that apology in writing. Notarized.",
+      "tone": "deadpan",
+      "energy": "low",
+      "pauseBefore": "beat",
+      "isInterruption": false
+    }
+  ]
+}

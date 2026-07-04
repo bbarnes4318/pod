@@ -13,7 +13,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts",
-    "test": "tsx --conditions=react-server src/scripts/testSourceRouting.ts"
+    "test": "tsx --conditions=react-server src/scripts/testSourceRouting.ts",
+    "sample:ab": "tsx --conditions=react-server src/scripts/abSample.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.714.0",

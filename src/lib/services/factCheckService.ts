@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getLLMProvider } from "@/lib/providers/llm/factory";
+import { stripAudioTags } from "@/lib/audio/speechText";
 
 const PROHIBITED_KEYWORDS = [
   "sources say",
@@ -309,8 +310,9 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           });
         }
 
-        // Validate unsafe claims
-        const textLower = line.text.toLowerCase();
+        // Validate unsafe claims (strip inline audio tags like [laughs] so a
+        // tag can never split or mask a banned phrase)
+        const textLower = stripAudioTags(String(line.text)).toLowerCase();
         let usesUnsafe = false;
         for (const claim of unsafeClaims) {
           if (textLower.includes(claim.toLowerCase())) {
