@@ -118,8 +118,15 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       throw new Error("Script plainText transcript is empty.");
     }
 
-    if (episode.status !== "audio_segments_ready" && !(episode.status === "audio_ready" && forceRegenerate)) {
-      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' or forceRegenerate from 'audio_ready'.`);
+    // Accept fact_checked too: the audio-segments_ready flag only flips inside
+    // the TTS job, so it can lag even when every line's audio is ready. The
+    // per-line readiness check below is the real gate.
+    if (
+      episode.status !== "audio_segments_ready" &&
+      episode.status !== "fact_checked" &&
+      !(episode.status === "audio_ready" && forceRegenerate)
+    ) {
+      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' (or fact_checked with ready segments).`);
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({
@@ -214,27 +221,29 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     for (const line of allLines) {
       const segmentsForLine = segmentMap.get(line.lineIndex) || [];
-      if (segmentsForLine.length === 0) {
-        missingSegmentCount++;
-      } else if (segmentsForLine.length > 1) {
+      if (segmentsForLine.length > 1) {
+        // Duplicate rows are tolerated — we just pick the usable one below.
         duplicateSegmentCount++;
       }
 
-      const activeSeg = segmentsForLine[0];
-      if (activeSeg) {
-        if (activeSeg.status !== "ready") {
-          failedSegmentCount++;
-        }
-        if (!activeSeg.audioUrl) {
-          failedSegmentCount++;
-        }
+      // Prefer a ready segment with audio among any duplicates for this line.
+      const activeSeg =
+        segmentsForLine.find((s) => s.status === "ready" && s.audioUrl) || segmentsForLine[0];
+
+      if (!activeSeg) {
+        missingSegmentCount++;
+      } else if (activeSeg.status !== "ready" || !activeSeg.audioUrl) {
+        failedSegmentCount++;
+      } else {
         validatedSegments.push(activeSeg);
       }
     }
 
-    if (missingSegmentCount > 0 || failedSegmentCount > 0 || duplicateSegmentCount > 0) {
+    // Duplicates are NOT a hard failure; only genuinely missing or unusable
+    // (not-ready / no-audio) lines block stitching.
+    if (missingSegmentCount > 0 || failedSegmentCount > 0) {
       throw new Error(
-        `AudioSegment validation failed. Missing: ${missingSegmentCount}, Failed/Not Ready: ${failedSegmentCount}, Duplicates: ${duplicateSegmentCount}.`
+        `AudioSegment validation failed. Missing: ${missingSegmentCount}, Failed/Not Ready: ${failedSegmentCount} (duplicates tolerated: ${duplicateSegmentCount}).`
       );
     }
 

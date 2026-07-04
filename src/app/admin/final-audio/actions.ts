@@ -32,10 +32,6 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
 
     const episode = script.episode;
 
-    if (episode.status !== "audio_segments_ready" && episode.status !== "audio_ready" && episode.status !== "audio_stitching") {
-      return { eligible: false, reason: `Episode status is '${episode.status}'. Episode must be 'audio_segments_ready'.` };
-    }
-
     const latestFactCheck = script.factCheckResults[0];
     if (!latestFactCheck || latestFactCheck.status !== "passed") {
       return { eligible: false, reason: "Latest fact check result did not pass." };
@@ -53,7 +49,8 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
       return { eligible: false, reason: "Script contains no dialogue lines." };
     }
 
-    // AudioSegment checks
+    // Per-line audio readiness — tolerant of duplicate segment rows: a line is
+    // "ready" if ANY of its segment rows is ready with an audioUrl.
     const segmentMap = new Map<number, any[]>();
     for (const seg of script.audioSegments) {
       const list = segmentMap.get(seg.lineIndex) || [];
@@ -62,36 +59,42 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
     }
 
     let missing = 0;
-    let failed = 0;
-    let duplicate = 0;
-
+    let notReady = 0;
     for (const line of allLines) {
       const list = segmentMap.get(line.lineIndex) || [];
       if (list.length === 0) {
         missing++;
-      } else if (list.length > 1) {
-        duplicate++;
-      }
-
-      const activeSeg = list[0];
-      if (activeSeg) {
-        if (activeSeg.status !== "ready" || !activeSeg.audioUrl) {
-          failed++;
-        }
+      } else if (!list.some((s) => s.status === "ready" && s.audioUrl)) {
+        notReady++;
       }
     }
+    const readyCount = allLines.length - missing - notReady;
+    const allReady = missing === 0 && notReady === 0;
 
-    if (missing > 0 || failed > 0 || duplicate > 0) {
+    // Self-heal a stuck flag: the episode's transition to audio_segments_ready
+    // only happens inside the TTS job, so partial runs / duplicate rows can
+    // leave it at fact_checked even when every line's audio is ready. If the
+    // audio is genuinely all ready, advance the status here.
+    if (allReady && episode.status === "fact_checked") {
+      await db.episode.update({ where: { id: episode.id }, data: { status: "audio_segments_ready" } });
+      episode.status = "audio_segments_ready";
+    }
+
+    if (!allReady) {
       return {
         eligible: false,
-        reason: `Audio segments check failed. Missing: ${missing}, Failed/Not Ready: ${failed}, Duplicates: ${duplicate}.`,
-        details: { missing, failed, duplicate, totalLines: allLines.length, ready: allLines.length - missing - failed },
+        reason: `Audio not ready: ${readyCount} of ${allLines.length} lines have audio (${missing} missing, ${notReady} failed/not-ready). Generate the remaining segments in the Audio Segments console.`,
+        details: { missing, failed: notReady, duplicate: 0, totalLines: allLines.length, ready: readyCount },
       };
+    }
+
+    if (episode.status !== "audio_segments_ready" && episode.status !== "audio_ready" && episode.status !== "audio_stitching") {
+      return { eligible: false, reason: `Episode status is '${episode.status}'. Episode must be 'audio_segments_ready'.` };
     }
 
     return {
       eligible: true,
-      details: { missing, failed, duplicate, totalLines: allLines.length, ready: allLines.length },
+      details: { missing: 0, failed: 0, duplicate: 0, totalLines: allLines.length, ready: allLines.length },
     };
   } catch (err: any) {
     return { eligible: false, reason: err.message || "Failed to fetch eligibility." };

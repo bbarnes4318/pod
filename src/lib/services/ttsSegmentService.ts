@@ -380,17 +380,23 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   const workers = Array.from({ length: Math.min(maxConcurrency, queue.length) }, () => worker());
   await Promise.all(workers);
 
-  // 6. Check if all dialogue lines for the script are ready
+  // 6. Check if EVERY dialogue line has a ready segment with audio. Use
+  // per-line readiness (tolerant of duplicate rows) rather than an exact
+  // record-count match, which would silently never fire if any duplicate
+  // segment rows existed — leaving the episode stuck at fact_checked.
   const allSegments = await db.audioSegment.findMany({
     where: { scriptId },
   });
 
-  const readySegmentsCount = allSegments.filter((s) => s.status === "ready").length;
-  const isEveryLineReady = allSegments.length === totalLineCount && readySegmentsCount === totalLineCount;
+  const readyLineIndexes = new Set(
+    allSegments.filter((s) => s.status === "ready" && s.audioUrl).map((s) => s.lineIndex)
+  );
+  const isEveryLineReady = allLines.every((l) => readyLineIndexes.has(l.lineIndex));
 
   if (isEveryLineReady) {
-    await db.episode.update({
-      where: { id: script.episodeId },
+    // Only advance from fact_checked; never clobber a later audio_* status.
+    await db.episode.updateMany({
+      where: { id: script.episodeId, status: "fact_checked" },
       data: { status: "audio_segments_ready" },
     });
   }
