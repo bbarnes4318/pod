@@ -1,25 +1,65 @@
+/* ============================================================
+   TAKE MACHINE — "ON AIR" design system
+   ------------------------------------------------------------
+   One identity: a dark broadcast studio with a single signature
+   accent — Signal Orange (#FF5A1F), the ON-AIR lamp / VU-meter
+   color. Waveform ambers are reserved for audio elements.
+
+   RULES (keep it consistent):
+   - Never introduce new hardcoded colors in pages; use tokens.
+   - Display type (--font-display) for page titles, numbers,
+     and "broadcast" moments only. Body stays --font-family.
+   - Motion: 150–250ms ease; anything looping must respect
+     prefers-reduced-motion.
+   - The legacy variable NAMES below are load-bearing: every
+     existing page consumes them. Change values, not names.
+   ============================================================ */
+
 :root {
-  --bg-primary: #f8fafc;        /* Soft off-white background */
-  --bg-secondary: #ffffff;      /* White card/panel surfaces */
-  --bg-tertiary: #f1f5f9;       /* Light neutral gray for inputs/hover */
-  --border-color: #e2e8f0;      /* Crisp, subtle border */
-  --border-hover: #cbd5e1;      /* Slightly darker border for active states */
-  --text-primary: #0f172a;      /* Near-black / charcoal */
-  --text-secondary: #64748b;    /* Cool medium gray */
-  --accent-color: #2563eb;      /* Refined blue */
-  --accent-hover: #1d4ed8;
-  --accent-muted: #eff6ff;
-  --success-color: #16a34a;     /* Muted green */
-  --success-muted: #f0fdf4;
-  --success-border: #bbf7d0;
-  --warning-color: #d97706;     /* Muted amber */
-  --warning-muted: #fef3c7;
-  --warning-border: #fde68a;
-  --error-color: #dc2626;       /* Muted red */
-  --error-muted: #fef2f2;
-  --error-border: #fecaca;
-  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Base surfaces — deep studio black-blue */
+  --bg-primary: #0b0d12;        /* app background */
+  --bg-secondary: #12151d;      /* cards / panels */
+  --bg-tertiary: #1a1e29;       /* inputs, hovers, wells */
+  --border-color: #232837;
+  --border-hover: #36405a;
+
+  /* Text — warm studio white */
+  --text-primary: #f2f0eb;
+  --text-secondary: #97a0b5;
+
+  /* Signature accent — Signal Orange (the ON AIR lamp) */
+  --accent-color: #ff5a1f;
+  --accent-hover: #ff7038;
+  --accent-muted: rgba(255, 90, 31, 0.12);
+  --accent-glow: rgba(255, 90, 31, 0.35);
+
+  /* Waveform / audio gradient stops (audio elements only) */
+  --wave-hot: #ff5a1f;
+  --wave-warm: #ffb224;
+
+  /* Semantic (kept muted so the accent stays the loudest voice) */
+  --success-color: #3dd68c;
+  --success-muted: rgba(61, 214, 140, 0.12);
+  --success-border: rgba(61, 214, 140, 0.35);
+  --warning-color: #ffb224;
+  --warning-muted: rgba(255, 178, 36, 0.12);
+  --warning-border: rgba(255, 178, 36, 0.35);
+  --error-color: #ff5c5c;
+  --error-muted: rgba(255, 92, 92, 0.12);
+  --error-border: rgba(255, 92, 92, 0.35);
+
+  /* Type */
+  --font-family: var(--font-body-next), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-display-next), "Arial Narrow", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+  /* Shape & depth */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow-1: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 14px 40px -12px rgba(0, 0, 0, 0.6);
+  --shadow-accent: 0 8px 30px -8px var(--accent-glow);
 }
 
 * {
@@ -49,6 +89,182 @@ a {
   text-decoration: none;
 }
 
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
+}
+
+::selection {
+  background: var(--accent-color);
+  color: #0b0d12;
+}
+
+/* Scrollbars that belong to the room */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 6px;
+  border: 2px solid var(--bg-primary);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Accessible focus — accent ring everywhere */
+:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ============================================================
+   Shared studio components (used across /studio and re-skinned
+   /admin pages). Prefer these over new per-page CSS.
+   ============================================================ */
+
+.displayTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  line-height: 0.95;
+}
+
+.studioCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1.4rem;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.studioCard:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-1);
+}
+.studioCard.clickable:hover {
+  transform: translateY(-2px);
+}
+
+.onAirDot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: onAirPulse 2s ease-in-out infinite;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+.chipAccent {
+  background: var(--accent-muted);
+  color: var(--accent-color);
+  border-color: rgba(255, 90, 31, 0.35);
+}
+.chipSuccess {
+  background: var(--success-muted);
+  color: var(--success-color);
+  border-color: var(--success-border);
+}
+
+/* Score bar — the talkability / quality visual language */
+.scoreBarTrack {
+  height: 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+.scoreBarFill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--wave-hot), var(--wave-warm));
+  transform-origin: left;
+  animation: scoreGrow 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Big score badge (0-100) */
+.scoreBadge {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--accent-color);
+}
+.scoreBadge small {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-family: var(--font-family);
+  font-weight: 600;
+}
+
+/* Equalizer bars — audio-reactive motif (decorative) */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+}
+.eq span {
+  width: 3px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, var(--wave-warm), var(--wave-hot));
+  animation: eqBar 1.1s ease-in-out infinite;
+}
+.eq span:nth-child(2) { animation-delay: 0.15s; }
+.eq span:nth-child(3) { animation-delay: 0.3s; }
+.eq span:nth-child(4) { animation-delay: 0.45s; }
+.eq span:nth-child(5) { animation-delay: 0.08s; }
+.eq.paused span { animation-play-state: paused; height: 4px; }
+
+@keyframes eqBar {
+  0%, 100% { height: 4px; }
+  50% { height: 18px; }
+}
+@keyframes onAirPulse {
+  0%, 100% { box-shadow: 0 0 6px var(--accent-glow); }
+  50% { box-shadow: 0 0 14px var(--accent-glow); }
+}
+@keyframes scoreGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fadeUp {
+  animation: fadeUp 0.35s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

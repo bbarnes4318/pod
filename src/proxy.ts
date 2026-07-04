@@ -13,8 +13,13 @@ function atobSafe(str: string): string | null {
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Protect /admin and /admin/*
-  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+  // Protect the operator console (/admin) and the studio (/studio)
+  if (
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/") ||
+    pathname === "/studio" ||
+    pathname.startsWith("/studio/")
+  ) {
     const authEnabled = process.env.ADMIN_BASIC_AUTH_ENABLED === "true";
     if (!authEnabled) {
       return NextResponse.next();

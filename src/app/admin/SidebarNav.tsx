@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 const getIcon = (label: string) => {
   switch (label) {
     case "Dashboard":
+    case "System Overview":
       return (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="7" height="9" />
@@ -133,36 +134,38 @@ const getIcon = (label: string) => {
 export default function SidebarNav() {
   const pathname = usePathname();
 
+  // Operator console navigation. The user-facing product lives at /studio —
+  // everything here is pipeline plumbing, review tooling, and diagnostics.
   const sections = [
+    {
+      title: "Studio",
+      items: [
+        { label: "← Back to Studio", href: "/studio" },
+      ],
+    },
     {
       title: "Overview",
       items: [
-        { label: "Dashboard", href: "/admin" },
+        { label: "System Overview", href: "/admin" },
       ],
     },
     {
-      title: "Data",
-      items: [
-        { label: "Data Sources", href: "/admin/data-sources" },
-        { label: "Topics", href: "/admin/topics" },
-        { label: "Research Briefs", href: "/admin/research-briefs" },
-        { label: "AI Hosts", href: "/admin/personalities" },
-        { label: "Voices", href: "/admin/voices" },
-      ],
-    },
-    {
-      title: "Production Pipeline",
+      title: "Pipeline Consoles",
       items: [
         { label: "Episodes", href: "/admin/episodes" },
         { label: "Scripts", href: "/admin/scripts" },
         { label: "Fact Checks", href: "/admin/fact-checks" },
+        { label: "Audio Segments", href: "/admin/audio-segments" },
+        { label: "Final Audio", href: "/admin/final-audio" },
       ],
     },
     {
-      title: "Audio",
+      title: "Content & Voices",
       items: [
-        { label: "Audio Segments", href: "/admin/audio-segments" },
-        { label: "Final Audio", href: "/admin/final-audio" },
+        { label: "Topics", href: "/admin/topics" },
+        { label: "Research Briefs", href: "/admin/research-briefs" },
+        { label: "AI Hosts", href: "/admin/personalities" },
+        { label: "Voices", href: "/admin/voices" },
       ],
     },
     {
@@ -175,6 +178,7 @@ export default function SidebarNav() {
     {
       title: "System",
       items: [
+        { label: "Data Sources", href: "/admin/data-sources" },
         { label: "Configuration", href: "/admin/configuration" },
         { label: "Job Logs", href: "/admin/job-logs" },
       ],

@@ -262,7 +262,7 @@
 /* Buttons */
 .buttonPrimary {
   background-color: var(--accent-color);
-  color: #ffffff;
+  color: #0b0d12;
   border: 1px solid var(--accent-color);
   border-radius: 6px;
   padding: 0.6rem 1.25rem;
