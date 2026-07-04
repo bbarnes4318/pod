@@ -20,9 +20,20 @@ interface PlayerCtx {
   playing: boolean;
   play: (t: Track) => void;
   toggle: () => void;
+  /** Seek within the CURRENT track (0..1). No-op if nothing is loaded. */
+  seekFrac: (frac: number) => void;
+  /** Load a track (if needed) and jump to a fraction of it. */
+  playAt: (t: Track, frac: number) => void;
 }
 
-const Ctx = createContext<PlayerCtx>({ track: null, playing: false, play: () => {}, toggle: () => {} });
+const Ctx = createContext<PlayerCtx>({
+  track: null,
+  playing: false,
+  play: () => {},
+  toggle: () => {},
+  seekFrac: () => {},
+  playAt: () => {},
+});
 
 export function usePlayer() {
   return useContext(Ctx);
@@ -77,6 +88,30 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     else a.pause();
   }, [track]);
 
+  const seekFracFn = useCallback((frac: number) => {
+    const a = audioRef.current;
+    if (!a || !a.duration) return;
+    a.currentTime = Math.max(0, Math.min(0.999, frac)) * a.duration;
+  }, []);
+
+  const playAt = useCallback((t: Track, frac: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (track?.id === t.id && a.duration) {
+      a.currentTime = Math.max(0, Math.min(0.999, frac)) * a.duration;
+      if (a.paused) void a.play();
+      return;
+    }
+    setTrack(t);
+    a.src = t.audioUrl;
+    const onMeta = () => {
+      if (a.duration) a.currentTime = Math.max(0, Math.min(0.999, frac)) * a.duration;
+      a.removeEventListener("loadedmetadata", onMeta);
+    };
+    a.addEventListener("loadedmetadata", onMeta);
+    void a.play();
+  }, [track]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
@@ -101,7 +136,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     a.currentTime = Math.max(0, Math.min(0.999, (e.clientX - rect.left) / rect.width)) * a.duration;
   };
 
-  const value = useMemo(() => ({ track, playing, play, toggle }), [track, playing, play, toggle]);
+  const value = useMemo(
+    () => ({ track, playing, play, toggle, seekFrac: seekFracFn, playAt }),
+    [track, playing, play, toggle, seekFracFn, playAt]
+  );
 
   return (
     <Ctx.Provider value={value}>
