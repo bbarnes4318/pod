@@ -2,6 +2,7 @@
 import "dotenv/config";
 import { assertProductionEnv, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
 import { runResearchRouting } from "../research/source-router";
+import { fetchArticleExcerpts } from "../research/articleText";
 
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
@@ -1252,6 +1253,22 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
 (Do not use or require Odds API data unless an upcoming game or betting angle is explicitly detected)`;
     }
 
+    // Zero-cost enrichment: pull the full text behind the topic's matched
+    // news items so the brief works from real reporting, not 250-char blurbs.
+    const newsExcerptByUrl = new Map<string, string>();
+    try {
+      const excerpts = await fetchArticleExcerpts(
+        resolvedNews.map((n: any) => n.url).filter(Boolean),
+        { maxArticles: 4, maxCharsPerArticle: 2200 }
+      );
+      for (const ex of excerpts) {
+        if (ex.ok) newsExcerptByUrl.set(ex.url, ex.excerpt);
+      }
+      console.log(`[Worker] Article enrichment: ${newsExcerptByUrl.size}/${Math.min(4, resolvedNews.length)} full-text excerpt(s) fetched.`);
+    } catch (err: any) {
+      console.warn(`[Worker] Article enrichment skipped: ${err.message}`);
+    }
+
     const { researchResults, sourceNotes } = await runResearchRouting({
       title: topic.title,
       summary: topic.summary || "",
@@ -1309,6 +1326,10 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
           title: n.title,
           source: n.source,
           summary: n.summary,
+          // Full-article depth (fetched below) — RSS summaries are capped at
+          // 250 chars, which is headline-level; the excerpt carries the real
+          // numbers, quotes, and specifics the brief needs.
+          articleExcerpt: newsExcerptByUrl.get(n.url) || undefined,
           date: n.publishedAt.toISOString(),
         })),
         injuries: validInjuries.map((i) => ({
@@ -1354,6 +1375,12 @@ Rules:
 - Every argument must be grounded in evidenceRefs.
 - If a claim is tempting but unsupported, place it in unsafeClaims instead of using it.
 - Return valid JSON only with the schema below.
+
+SPECIFICITY REQUIREMENTS (this brief is ammunition for a debate show — generic summaries are useless):
+- Mine the articleExcerpt and research highlights for EXACT numbers, dates, records, scores, contract figures, and named people. Every keyFactsContext item should carry at least one concrete number or named person.
+- Capture who-said-what: if the evidence contains a striking statement, include it as a SHORT paraphrase or a quote of at most 20 words with attribution ("per <source>"). NEVER copy longer passages verbatim.
+- Surface the CONFLICT: what changed, who is angry, what is at stake, what happens next. "Team is playing well" is not a fact worth writing down; "Team has won 7 of 9 since benching X, per <source>" is.
+- Aim for 8-12 keyFactsContext items and 4-6 onAirTalkingPoints when the evidence supports it.
 
 Schema:
 {

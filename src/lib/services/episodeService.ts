@@ -1,5 +1,6 @@
 import { db } from "../db";
 import crypto from "crypto";
+import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -120,12 +121,41 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
       chosenTopics.push(topic);
     }
   } else {
-    // Auto-select best topics
-    const candidates = await db.topicCandidate.findMany({
+    // Auto-select best topics — ranked by TALKABILITY (computed from the
+    // actual research richness), blended with the LLM's debate score. "Most
+    // recent" or "self-reported score" alone lets boring topics through.
+    const rawCandidates = await db.topicCandidate.findMany({
       where: { status: "approved" },
       include: { researchBrief: true },
       orderBy: { debateScore: "desc" },
     });
+
+    const minTalkability = Number(process.env.TOPIC_MIN_TALKABILITY) || 35;
+    const ranked = rawCandidates
+      .map((t) => {
+        const talkability = scoreTopicTalkability({
+          title: t.title,
+          summary: t.summary,
+          createdAt: t.createdAt,
+          brief: t.researchBrief as any,
+        });
+        // Blend: measured richness dominates, LLM's self-score tiebreaks.
+        const rank = talkability.total * 0.6 + Math.min(100, t.debateScore) * 0.4;
+        return { t, talkability, rank };
+      })
+      .sort((a, b) => b.rank - a.rank);
+
+    const candidates: typeof rawCandidates = [];
+    for (const r of ranked) {
+      if (r.talkability.total < minTalkability) {
+        result.skippedTopicCount++;
+        result.reasons.push(
+          `Skipped '${r.t.title}': talkability ${r.talkability.total}/100 below minimum ${minTalkability}.`
+        );
+        continue;
+      }
+      candidates.push(r.t);
+    }
 
     for (const t of candidates) {
       // Filter by minDebateScore

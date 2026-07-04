@@ -9,6 +9,7 @@ import {
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript } from "./scriptOutlineEngine";
+import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface ScriptBuildInput {
   episodeId: string;
@@ -61,6 +62,7 @@ const VALID_EVIDENCE_TYPES = [
   "oddsSnapshot",
   "teamStat",
   "playerStat",
+  "research",
 ];
 
 export async function generateScriptForEpisode(input: ScriptBuildInput): Promise<ScriptBuildResult> {
@@ -150,6 +152,39 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     }
   }
 
+  // 2b. PRE-GENERATION CONTENT GATE — don't write a mediocre episode on weak
+  // material. Score each topic's source richness; block (default) or warn
+  // below threshold. A perfect pipeline on boring topics is still boring.
+  const gateMode = (process.env.CONTENT_GATE_MODE || "block").toLowerCase();
+  const gateMin = Number(process.env.CONTENT_GATE_MIN) || 50;
+  const talkabilityReports = ep.topics.map((et) => {
+    const report = scoreTopicTalkability({
+      title: et.topic.title,
+      summary: et.topic.summary,
+      createdAt: et.topic.createdAt,
+      brief: et.topic.researchBrief as any,
+    });
+    return { title: et.topic.title, report };
+  });
+  const avgTalkability =
+    talkabilityReports.reduce((a, r) => a + r.report.total, 0) / Math.max(1, talkabilityReports.length);
+  for (const tr of talkabilityReports) {
+    result.reasons.push(
+      `Talkability '${tr.title}': ${tr.report.total}/100 (${Object.entries(tr.report.axes)
+        .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)
+        .join(", ")})`
+    );
+  }
+  if (avgTalkability < gateMin) {
+    const weakest = [...talkabilityReports].sort((a, b) => a.report.total - b.report.total)[0];
+    const msg = `Content gate: source material scores ${Math.round(avgTalkability)}/100 talkability (minimum ${gateMin}). Weakest topic: '${weakest?.title}' at ${weakest?.report.total}. Enrich the research brief (regenerate it with the research provider configured) or pick stronger topics instead of generating a mediocre episode.`;
+    result.reasons.push(msg);
+    if (gateMode !== "warn") {
+      throw new Error(msg);
+    }
+    console.warn(`[ScriptService] ${msg} (CONTENT_GATE_MODE=warn — proceeding)`);
+  }
+
   // 3. Load Active Hosts Max Voltage & Dr. Linebreak
   const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
   const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
@@ -207,19 +242,42 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
       }
     }
 
-    return `
-Topic #${idx + 1}: ${t.title}
-Sport/League: ${t.sport} / ${t.leagueId || "N/A"}
-Debate Score: ${t.debateScore}
-Max Voltage Debate Stance: ${b.argumentForHostA}
-Dr. Linebreak Debate Stance: ${b.argumentForHostB}
-Key Grounded Facts: ${JSON.stringify(b.facts)}
-Stats Evidence: ${JSON.stringify(b.stats)}
-Injury Context: ${b.injuryContext || "None"}
-Odds Context: ${b.oddsContext || "None"}
-Suggested Counter-arguments: ${JSON.stringify(b.counterArguments)}
-Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): ${JSON.stringify(unsafe)}
-`;
+    // Forward EVERYTHING the research pass produced. The rich editorial
+    // fields (angle, talking points, contrarian take, debate question) are
+    // the showrunner's ammunition — dropping them here was why real episodes
+    // read thinner than the research warranted.
+    const richBrief = b as any;
+    const richLines: string[] = [
+      ``,
+      `Topic #${idx + 1}: ${t.title}`,
+      `Sport/League: ${t.sport} / ${t.leagueId || "N/A"}`,
+      `Debate Score: ${t.debateScore}`,
+    ];
+    if (richBrief.mainAngle) richLines.push(`Main Angle: ${richBrief.mainAngle}`);
+    if (richBrief.whyMattersNow) richLines.push(`Why It Matters RIGHT NOW: ${richBrief.whyMattersNow}`);
+    if (richBrief.strongestDebateQuestion) richLines.push(`Strongest Debate Question: ${richBrief.strongestDebateQuestion}`);
+    if (richBrief.contrarianAngle) richLines.push(`Contrarian Angle (use it): ${richBrief.contrarianAngle}`);
+    if (richBrief.suggestedHostTake) richLines.push(`Suggested Host Take: ${richBrief.suggestedHostTake}`);
+    richLines.push(
+      `Max Voltage Debate Stance: ${b.argumentForHostA}`,
+      `Dr. Linebreak Debate Stance: ${b.argumentForHostB}`,
+      `Key Grounded Facts: ${JSON.stringify(
+        Array.isArray(richBrief.keyFactsContext) && richBrief.keyFactsContext.length > 0
+          ? richBrief.keyFactsContext
+          : b.facts
+      )}`,
+      `On-Air Talking Points: ${JSON.stringify(
+        Array.isArray(richBrief.onAirTalkingPoints) && richBrief.onAirTalkingPoints.length > 0
+          ? richBrief.onAirTalkingPoints
+          : b.stats
+      )}`,
+      `Injury Context: ${b.injuryContext || "None"}`,
+      `Odds Context: ${b.oddsContext || "None"}`,
+      `Suggested Counter-arguments: ${JSON.stringify(b.counterArguments)}`,
+      `Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): ${JSON.stringify(unsafe)}`,
+      ``
+    );
+    return richLines.join("\n");
   }).join("\n---\n");
 
   // 7. Formulate system and user prompts
@@ -638,8 +696,13 @@ Delivery field meanings:
     },
   };
 
-  // Attach the 0-100 quality score so every script carries its own rubric.
+  // Attach the 0-100 quality score so every script carries its own rubric,
+  // plus the source-material talkability that fed it (for regression tracking).
   cleanContent.quality = scoreScriptQuality(cleanContent);
+  cleanContent.sourceTalkability = {
+    average: Math.round(avgTalkability),
+    topics: talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
+  };
   result.reasons.push(
     `Quality score: ${cleanContent.quality.total}/100 (${Object.entries(cleanContent.quality.axes)
       .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)

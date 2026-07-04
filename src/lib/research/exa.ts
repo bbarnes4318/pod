@@ -34,6 +34,9 @@ export class ExaResearchProvider implements ResearchProvider {
       numResults,
       contents: {
         highlights: true,
+        // Pull real page text, not just highlight fragments — the brief
+        // generator mines this for exact numbers, quotes, and specifics.
+        text: { maxCharacters: 1500 },
       },
     };
 
@@ -56,7 +59,12 @@ export class ExaResearchProvider implements ResearchProvider {
         publishedAt: r.publishedDate || undefined,
         highlights: r.highlights || [],
         relevanceScore: r.score || undefined,
-        snippet: (r.highlights && r.highlights.length > 0) ? r.highlights.join(" | ") : undefined,
+        snippet:
+          r.highlights && r.highlights.length > 0
+            ? r.highlights.join(" | ")
+            : typeof r.text === "string" && r.text.length > 0
+              ? r.text.slice(0, 800)
+              : undefined,
       }));
     } catch (err: any) {
       console.error(`[ExaResearchProvider] Search failed:`, err.message);

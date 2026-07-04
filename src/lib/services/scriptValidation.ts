@@ -44,6 +44,7 @@ const VALID_EVIDENCE_TYPES = [
   "oddsSnapshot",
   "teamStat",
   "playerStat",
+  "research",
 ];
 
 export function validateScriptContent(
