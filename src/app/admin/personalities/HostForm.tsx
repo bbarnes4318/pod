@@ -2,7 +2,19 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createHost, updateHost, getCartesiaVoices } from "./actions";
+import { createHost, updateHost, getCartesiaVoices, getElevenLabsVoices } from "./actions";
+
+interface VoiceOption {
+  id: string;
+  name: string;
+  category?: string;
+  gender?: string;
+  accent?: string;
+  age?: string;
+  useCase?: string;
+  description?: string;
+  preview_url?: string | null;
+}
 
 interface HostFormProps {
   initialData?: {
@@ -59,6 +71,14 @@ export default function HostForm({ initialData }: HostFormProps) {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [audioPreview, setAudioPreview] = useState<HTMLAudioElement | null>(null);
 
+  // ElevenLabs voice browser state
+  const [elevenVoices, setElevenVoices] = useState<VoiceOption[]>([]);
+  const [loadingEleven, setLoadingEleven] = useState(false);
+  const [elevenError, setElevenError] = useState<string | null>(null);
+  const [voiceSearch, setVoiceSearch] = useState("");
+  const [genderFilter, setGenderFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+
   React.useEffect(() => {
     if (ttsProvider.toLowerCase() === "cartesia" && cartesiaVoices.length === 0) {
       setLoadingVoices(true);
@@ -70,6 +90,22 @@ export default function HostForm({ initialData }: HostFormProps) {
       });
     }
   }, [ttsProvider, cartesiaVoices.length]);
+
+  React.useEffect(() => {
+    if (ttsProvider.toLowerCase() === "elevenlabs" && elevenVoices.length === 0 && !loadingEleven) {
+      setLoadingEleven(true);
+      setElevenError(null);
+      getElevenLabsVoices().then((res) => {
+        if (res.success && res.voices) {
+          setElevenVoices(res.voices as VoiceOption[]);
+        } else {
+          setElevenError(res.error || "Failed to load ElevenLabs voices.");
+        }
+        setLoadingEleven(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsProvider]);
 
   const handlePlayPreview = (previewUrl: string, voiceId: string) => {
     if (audioPreview) {
@@ -141,6 +177,26 @@ export default function HostForm({ initialData }: HostFormProps) {
       setLoading(false);
     }
   };
+
+  const filteredEleven = elevenVoices.filter((v) => {
+    const q = voiceSearch.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      v.name.toLowerCase().includes(q) ||
+      (v.description || "").toLowerCase().includes(q) ||
+      (v.accent || "").toLowerCase().includes(q) ||
+      (v.useCase || "").toLowerCase().includes(q);
+    const matchesGender = !genderFilter || (v.gender || "").toLowerCase() === genderFilter;
+    const matchesCategory = !categoryFilter || (v.category || "").toLowerCase() === categoryFilter;
+    return matchesSearch && matchesGender && matchesCategory;
+  });
+  const elevenGenders = Array.from(
+    new Set(elevenVoices.map((v) => (v.gender || "").toLowerCase()).filter(Boolean))
+  ).sort();
+  const elevenCategories = Array.from(
+    new Set(elevenVoices.map((v) => (v.category || "").toLowerCase()).filter(Boolean))
+  ).sort();
+  const selectedEleven = elevenVoices.find((v) => v.id === ttsVoiceId);
 
   return (
     <div className="panel" style={{ maxWidth: "800px", margin: "0 auto" }}>
@@ -364,6 +420,139 @@ export default function HostForm({ initialData }: HostFormProps) {
                         return null;
                       })()}
                     </div>
+                  )}
+                </div>
+              ) : ttsProvider.toLowerCase() === "elevenlabs" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {loadingEleven ? (
+                    <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>Loading ElevenLabs voices…</div>
+                  ) : elevenError ? (
+                    <>
+                      <div className="alertCard alertDanger" style={{ fontSize: "0.8rem" }}>
+                        {elevenError}
+                      </div>
+                      {/* Fallback: still allow pasting a voice ID manually */}
+                      <input
+                        type="text"
+                        id="ttsVoiceId"
+                        className="input"
+                        placeholder="Paste an ElevenLabs voice ID"
+                        value={ttsVoiceId}
+                        onChange={(e) => setTtsVoiceId(e.target.value)}
+                        disabled={loading}
+                        required
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {/* Filter bar */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "0.5rem" }}>
+                        <input
+                          type="text"
+                          className="input"
+                          placeholder="🔍 Search by name, accent, use case…"
+                          value={voiceSearch}
+                          onChange={(e) => setVoiceSearch(e.target.value)}
+                          disabled={loading}
+                        />
+                        <select
+                          className="select"
+                          value={genderFilter}
+                          onChange={(e) => setGenderFilter(e.target.value)}
+                          disabled={loading}
+                          style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                        >
+                          <option value="">All genders</option>
+                          {elevenGenders.map((g) => (
+                            <option key={g} value={g}>{g}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="select"
+                          value={categoryFilter}
+                          onChange={(e) => setCategoryFilter(e.target.value)}
+                          disabled={loading}
+                          style={{ padding: "0.5rem", borderRadius: "6px", border: "1px solid var(--border-color)", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                        >
+                          <option value="">All types</option>
+                          {elevenCategories.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                        {filteredEleven.length} of {elevenVoices.length} voices
+                        {selectedEleven ? ` · selected: ${selectedEleven.name}` : " · none selected"}
+                      </div>
+
+                      {/* Scrollable voice list */}
+                      <div style={{ maxHeight: "320px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "8px" }}>
+                        {filteredEleven.length === 0 ? (
+                          <div style={{ padding: "1rem", color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+                            No voices match these filters.
+                          </div>
+                        ) : (
+                          filteredEleven.map((voice) => {
+                            const isSelected = voice.id === ttsVoiceId;
+                            const meta = [voice.gender, voice.accent, voice.age, voice.category, voice.useCase]
+                              .filter(Boolean)
+                              .join(" · ");
+                            return (
+                              <div
+                                key={voice.id}
+                                onClick={() => !loading && setTtsVoiceId(voice.id)}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: "0.75rem",
+                                  padding: "0.6rem 0.75rem",
+                                  cursor: loading ? "default" : "pointer",
+                                  borderBottom: "1px solid var(--border-color)",
+                                  backgroundColor: isSelected ? "var(--accent-color)" : "transparent",
+                                  color: isSelected ? "#fff" : "var(--text-primary)",
+                                }}
+                              >
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                                    {isSelected ? "✓ " : ""}{voice.name}
+                                  </div>
+                                  {meta && (
+                                    <div style={{ fontSize: "0.72rem", opacity: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                      {meta}
+                                    </div>
+                                  )}
+                                </div>
+                                {voice.preview_url && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handlePlayPreview(voice.preview_url!, voice.id); }}
+                                    style={{
+                                      whiteSpace: "nowrap",
+                                      padding: "0.35rem 0.7rem",
+                                      borderRadius: "6px",
+                                      border: "1px solid transparent",
+                                      cursor: "pointer",
+                                      fontSize: "0.8rem",
+                                      backgroundColor: playingVoiceId === voice.id ? "var(--warning-color)" : (isSelected ? "rgba(255,255,255,0.25)" : "var(--bg-primary)"),
+                                      color: isSelected ? "#fff" : "var(--text-primary)",
+                                    }}
+                                  >
+                                    {playingVoiceId === voice.id ? "⏸ Stop" : "🔊 Preview"}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      {!ttsVoiceId && (
+                        <span className="helperText" style={{ color: "var(--warning-color)" }}>
+                          Select a voice above to assign it to this host.
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               ) : (

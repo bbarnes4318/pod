@@ -168,6 +168,53 @@ export async function toggleHostStatus(id: string, isActive: boolean) {
   }
 }
 
+export async function getElevenLabsVoices() {
+  try {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      throw new Error("ELEVENLABS_API_KEY is not configured. Add it in your environment to browse voices.");
+    }
+
+    // /v1/voices returns every voice available to the account (premade,
+    // professional, cloned, and any added from the voice library), each with
+    // a preview_url and descriptive labels we use for filtering.
+    const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+      method: "GET",
+      headers: {
+        "xi-api-key": apiKey,
+        "Accept": "application/json",
+      },
+      // Voice list changes rarely; let Next cache it briefly to keep the UI snappy.
+      next: { revalidate: 300 },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`ElevenLabs API error: ${response.status} - ${errText}`);
+    }
+
+    const data = await response.json();
+    const voices = Array.isArray(data?.voices) ? data.voices : [];
+
+    return {
+      success: true,
+      voices: voices.map((v: any) => ({
+        id: v.voice_id,
+        name: v.name || "Unnamed",
+        category: v.category || "",
+        gender: v.labels?.gender || "",
+        accent: v.labels?.accent || "",
+        age: v.labels?.age || "",
+        useCase: v.labels?.use_case || v.labels?.["use case"] || "",
+        description: v.description || v.labels?.description || "",
+        preview_url: v.preview_url || null,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch ElevenLabs voices", voices: [] };
+  }
+}
+
 export async function getCartesiaVoices() {
   try {
     const apiKey = process.env.CARTESIA_API_KEY;
