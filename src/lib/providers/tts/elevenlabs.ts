@@ -56,9 +56,13 @@ export class ElevenLabsTTSProvider implements TTSProvider {
       voice_settings: buildVoiceSettings(isV3, input),
     };
 
-    // Prosody continuity across the same speaker's lines.
-    if (input.previousText) body.previous_text = stripAudioTags(input.previousText);
-    if (input.nextText) body.next_text = stripAudioTags(input.nextText);
+    // Prosody continuity across the same speaker's lines. NOTE: eleven_v3 does
+    // not (yet) support previous_text/next_text — sending them returns a 400
+    // unsupported_model error — so only pass them to v2-style models.
+    if (!isV3) {
+      if (input.previousText) body.previous_text = stripAudioTags(input.previousText);
+      if (input.nextText) body.next_text = stripAudioTags(input.nextText);
+    }
 
     const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
     const response = await fetch(url, {
