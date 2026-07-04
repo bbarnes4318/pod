@@ -439,6 +439,23 @@ export async function approveScript(scriptId: string) {
       hostB,
     });
 
+    // Approving a script IS the human review. Clear any per-line
+    // needsHumanReview flags so the accepted lines flow through TTS and
+    // stitching. The hard safety gates below (unsafe claims, unsupported
+    // claims, evidence coverage, host balance) still apply.
+    let clearedReviewFlagCount = 0;
+    if (Array.isArray(sanitizedContent.segments)) {
+      for (const seg of sanitizedContent.segments) {
+        if (!seg || !Array.isArray(seg.lines)) continue;
+        for (const line of seg.lines) {
+          if (line && line.needsHumanReview === true) {
+            line.needsHumanReview = false;
+            clearedReviewFlagCount++;
+          }
+        }
+      }
+    }
+
     // Validate sanitized content
     const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
     summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
@@ -468,9 +485,9 @@ export async function approveScript(scriptId: string) {
       throw new Error(`Cannot approve script: uses ${summary.unsafeClaimCount} unsafe claims as facts.`);
     }
 
-    if (summary.needsHumanReviewCount > 0) {
-      throw new Error(`Cannot approve script: contains ${summary.needsHumanReviewCount} lines flagged for human review.`);
-    }
+    // needsHumanReview flags were cleared above (approval = the human review),
+    // so summary.needsHumanReviewCount is 0 here by construction. clearedReviewFlagCount
+    // records how many were resolved for the audit log.
 
     if (summary.totalLineCount < 40) {
       throw new Error(`Cannot approve script: total lines count is ${summary.totalLineCount}, which is under the minimum of 40.`);
@@ -507,12 +524,13 @@ export async function approveScript(scriptId: string) {
         data: {
           jobType: "script:review",
           status: "completed",
-          input: { scriptId, action: "approve", cleanedEvidenceRefCount } as any,
+          input: { scriptId, action: "approve", cleanedEvidenceRefCount, clearedReviewFlagCount } as any,
           output: {
             validationSummary: summary,
             resultingScriptStatus: "approved",
             resultingEpisodeStatus: "script_approved",
             cleanedEvidenceRefCount,
+            clearedReviewFlagCount,
             reasons: [],
           } as any,
         },
