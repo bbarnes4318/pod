@@ -1,11 +1,14 @@
 import { db } from "../db";
-import { getLLMProvider } from "../providers/llm/factory";
+import { getScriptLLMProvider } from "../providers/llm/factory";
 import {
   ALLOWED_AUDIO_TAGS,
   normalizeDelivery,
   sanitizeAudioTags,
   stripAudioTags,
 } from "../audio/speechText";
+import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
+import { scoreScriptQuality } from "./episodeQualityService";
+import { generateOutlineDrivenScript } from "./scriptOutlineEngine";
 
 export interface ScriptBuildInput {
   episodeId: string;
@@ -269,6 +272,23 @@ EPISODE SHAPE:
 - transition: one or two lines, conversational ("Alright, next thing. And this one's gonna make you mad.").
 - closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
 
+CHEMISTRY CONTRACT (the engine of the show):
+- Max swings; Doc counters. Max escalates emotionally; Doc deflates surgically. Doc wins on facts, Max wins on moments — neither wins outright.
+- Each host concedes exactly ONE point per episode, grudgingly, and the other pounces on it.
+- Max interrupts when he smells blood. Doc interrupts exactly once per episode, for a kill shot delivered quietly.
+- Introduce ONE running gag in the cold open and call it back at least twice later — shorter each time.
+- They know each other. Reference shared history ("You did this exact thing during the playoffs", "Here comes the folder").
+
+SPECIFICITY OR DEATH:
+- Every take must be anchored to a concrete number, name, or game from the assigned evidence. Vague takes are cut.
+- Say numbers like a human: "damn near fifty percent", "thirty-one points", "lost five straight" — never read decimals aloud.
+- BANNED FILLER (never say these): "at the end of the day", "it is what it is", "only time will tell", "one thing is for sure", "the numbers speak for themselves", "when it's all said and done", "love to see it", "at this point in time".
+
+FORWARD MOTION ONLY:
+- Every line must do at least one of: introduce NEW information, take a NEW angle, or genuinely react to the previous line.
+- NEVER restate a stat, claim, take, or joke that has already been said — not even reworded. A callback is a jab of six words or fewer that references without repeating.
+- The episode moves like an argument, not a list: stake → clash → concession or escalation → button, then ON to the next thing.
+
 NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure ("Now let's discuss topic two"), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
 
 Allowed typed evidence refs: ${Array.from(allowedSourceRefs).join(", ")}
@@ -335,25 +355,43 @@ Delivery field meanings:
 - "isInterruption": true only when this line cuts the previous speaker off (previous line should end with "—").
 `;
 
-  // 8. Call LLM provider
-  const llm = getLLMProvider();
+  // 8. Generate the script: outline-first, then act-by-act with running
+  // memory. A single mega-call has no protection against the model circling
+  // back over the same points; the outline assigns every beat and fact ONCE,
+  // and each act call receives what has already been said so it can only
+  // move forward. Falls back to single-shot generation if outlining fails.
+  const llm = getScriptLLMProvider();
+  const temperature = Number(process.env.SCRIPT_GEN_TEMPERATURE) || 0.85;
+  const maxTokens = Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000;
   let llmResult: any;
 
   try {
-    // Higher temperature is intentional: dialogue written at low temperature
-    // comes out flat and repetitive, which is audible in the final audio.
-    // The validation loop below still enforces structure and evidence rules.
-    llmResult = await llm.generateStructuredOutput<any>({
-      prompt,
+    llmResult = await generateOutlineDrivenScript(llm, {
       systemPrompt,
-      temperature: Number(process.env.SCRIPT_GEN_TEMPERATURE) || 0.85,
-      maxTokens: Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000,
+      episodeTitle: ep.title,
+      topicsPrompts,
+      targetDuration,
+      version: nextVersion,
+      temperature,
+      maxTokens,
+      log: (msg) => result.reasons.push(msg),
     });
-  } catch (err: any) {
-    result.providerError = err.message;
-    const msg = `LLM call failed: ${err.message}`;
-    result.reasons.push(msg);
-    throw new Error(msg);
+  } catch (outlineErr: any) {
+    console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
+    result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);
+    try {
+      llmResult = await llm.generateStructuredOutput<any>({
+        prompt,
+        systemPrompt,
+        temperature,
+        maxTokens,
+      });
+    } catch (err: any) {
+      result.providerError = err.message;
+      const msg = `LLM call failed: ${err.message}`;
+      result.reasons.push(msg);
+      throw new Error(msg);
+    }
   }
 
   // 9. Validation Loop
@@ -525,6 +563,43 @@ Delivery field meanings:
     }
   }
 
+  // 10b. HARD ANTI-REPETITION GATE — drop any line that substantially
+  // repeats earlier content (trigram similarity), then re-count.
+  const dedup = dedupeScriptSegments(cleanSegments);
+  const finalSegments = dedup.segments;
+  result.rejectedLineCount += dedup.removedCount;
+
+  if (dedup.report.repetitionRatio > 0.35) {
+    const msg = `Validation failed: model output was degenerate — ${dedup.removedCount} of ${dedup.report.totalLines} lines (${Math.round(dedup.report.repetitionRatio * 100)}%) repeated earlier content.`;
+    result.reasons.push(msg);
+    throw new Error(msg);
+  }
+  if (dedup.removedCount > 0) {
+    result.reasons.push(`Repetition gate removed ${dedup.removedCount} near-duplicate line(s) (${Math.round(dedup.report.repetitionRatio * 100)}% of output).`);
+  }
+
+  // Recompute counts from the deduplicated script
+  totalLinesCount = 0;
+  maxVoltageLinesCount = 0;
+  drLinebreakLinesCount = 0;
+  for (const seg of finalSegments) {
+    for (const line of seg.lines) {
+      if (line.speakerName === "Max Voltage") maxVoltageLinesCount++;
+      else drLinebreakLinesCount++;
+      totalLinesCount++;
+    }
+  }
+
+  // 10c. GLOBAL LINE NUMBERING — never trust the model's lineIndex values.
+  // Models restart numbering per segment; AudioSegments are keyed by
+  // (scriptId, lineIndex), and colliding indexes cause ONE audio clip to be
+  // stitched in for every colliding line — i.e. the same sentence repeated
+  // dozens of times in the final episode. Assign a unique global index here.
+  const { hadCollisions } = normalizeLineIndexes(finalSegments);
+  if (hadCollisions) {
+    result.reasons.push("Normalized non-unique lineIndex numbering from the model (audio-repetition guard).");
+  }
+
   // 11. Hard validations checks on final script structure
   if (totalLinesCount < 20) {
     const msg = `Validation failed: Total script lines are fewer than 20 (${totalLinesCount}).`;
@@ -549,20 +624,30 @@ Delivery field meanings:
   }
 
   // Build clean JSON schema content object
-  const cleanContent = {
+  const cleanContent: any = {
     episodeTitle: ep.title,
     version: nextVersion,
     estimatedDurationMinutes: targetDuration,
-    segments: cleanSegments,
+    segments: finalSegments,
     safety: {
       unsupportedClaimsRemoved,
       unsafeClaimsAvoided,
+      repetitionRemovedCount: dedup.removedCount,
+      repetitionRatio: Number(dedup.report.repetitionRatio.toFixed(4)),
       requiresHumanReview: true,
     },
   };
 
+  // Attach the 0-100 quality score so every script carries its own rubric.
+  cleanContent.quality = scoreScriptQuality(cleanContent);
+  result.reasons.push(
+    `Quality score: ${cleanContent.quality.total}/100 (${Object.entries(cleanContent.quality.axes)
+      .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)
+      .join(", ")})`
+  );
+
   // 12. Build PlainText from validated JSON content ONLY
-  const plainText = cleanSegments
+  const plainText = finalSegments
     .map((seg) => {
       const label = `[${seg.type.toUpperCase()}${seg.title ? ` — ${seg.title}` : ""}]`;
       const dialogue = seg.lines

@@ -6,6 +6,7 @@ import { CartesiaTTSProvider } from "@/lib/providers/tts/cartesia";
 import { OpenAITTSProvider } from "@/lib/providers/tts/openai";
 import { BosonTTSProvider } from "@/lib/providers/tts/boson";
 import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
+import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 
 interface TtsSegmentInput {
   scriptId: string;
@@ -99,6 +100,23 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   const segments = (script.content as any).segments;
   if (!Array.isArray(segments) || segments.length === 0) {
     throw new Error("Script content has no valid segments.");
+  }
+
+  // SELF-HEAL: older scripts stored the model's own lineIndex numbering,
+  // which restarts per segment. AudioSegments are keyed (scriptId, lineIndex),
+  // so colliding indexes make one clip serve many lines — the same sentence
+  // repeated over and over in the stitched episode. If collisions exist,
+  // renumber globally, persist the fix, and wipe the ambiguous audio rows so
+  // every line gets its own clip.
+  if (hasLineIndexCollisions(segments)) {
+    console.warn(`[TTS Service] Script ${scriptId} has duplicate lineIndex values — renumbering globally and resetting its audio segments (repetition-bug repair).`);
+    normalizeLineIndexes(segments);
+    const updatedContent = { ...(script.content as any), segments };
+    await db.$transaction([
+      db.script.update({ where: { id: scriptId }, data: { content: updatedContent as any } }),
+      db.audioSegment.deleteMany({ where: { scriptId } }),
+    ]);
+    (script.content as any).segments = segments;
   }
 
   // Gather active host records

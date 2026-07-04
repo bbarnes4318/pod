@@ -5,13 +5,13 @@ export class OpenAILLMProvider implements LLMProvider {
   private apiKey: string;
   private model: string;
 
-  constructor() {
+  constructor(modelOverride?: string) {
     const key = process.env.OPENAI_API_KEY;
     if (!key || key === "your-openai-api-key") {
       throw new Error("[OpenAI] Missing or default OPENAI_API_KEY environment variable.");
     }
     this.apiKey = key;
-    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.model = modelOverride || process.env.OPENAI_MODEL || "gpt-4o-mini";
   }
 
   private isReasoningModel(): boolean {

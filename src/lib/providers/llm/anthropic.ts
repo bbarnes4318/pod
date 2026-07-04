@@ -5,13 +5,13 @@ export class AnthropicLLMProvider implements LLMProvider {
   private apiKey: string;
   private model: string;
 
-  constructor() {
+  constructor(modelOverride?: string) {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key || key === "your-anthropic-api-key") {
       throw new Error("[Anthropic] Missing or default ANTHROPIC_API_KEY environment variable.");
     }
     this.apiKey = key;
-    this.model = process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest";
+    this.model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
   }
 
   async generateText(options: GenerateTextOptions): Promise<string> {

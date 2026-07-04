@@ -27,10 +27,21 @@ export class ElevenLabsTTSProvider implements TTSProvider {
     const isV3 = modelId.startsWith("eleven_v3");
 
     const format = input.format || "mp3";
-    const outputFormat = format === "mp3" ? "mp3_44100_128" : "pcm_44100";
+    // 192kbps: broadcast-quality intermediates (the master re-encodes anyway,
+    // so don't let the per-line clips be the weakest link in the chain).
+    const outputFormat = format === "mp3" ? "mp3_44100_192" : "pcm_44100";
 
     // v3 interprets bracketed audio tags; older models would read them aloud.
-    const text = isV3 ? input.text : stripAudioTags(input.text);
+    // If the line carries emotional intent (tone/energy) but the writer left
+    // no tag, inject one so delivery matches content instead of defaulting
+    // to a neutral read.
+    let text = isV3 ? input.text : stripAudioTags(input.text);
+    if (isV3 && !/\[[^\[\]]+\]/.test(text)) {
+      const injected = TONE_TO_TAG[(input.tone || "").toLowerCase()];
+      if (injected && (input.energy === "high" || ["sarcastic", "amused", "incredulous"].includes((input.tone || "").toLowerCase()))) {
+        text = `[${injected}] ${text}`;
+      }
+    }
 
     // Resolve the voice ID: a per-speaker env override wins, otherwise fall
     // back to the host's configured voice. Never send a leftover "stub" ID
@@ -97,6 +108,17 @@ export class ElevenLabsTTSProvider implements TTSProvider {
 
 const HOT_TONES = new Set(["heated", "excited", "incredulous", "amused", "sarcastic"]);
 const FLAT_TONES = new Set(["analytical", "reflective", "conceding", "setup", "transition"]);
+
+// Fallback performance cues for lines whose writer supplied tone metadata but
+// no inline audio tag. Conservative on purpose — only clearly-safe v3 tags.
+const TONE_TO_TAG: Record<string, string> = {
+  heated: "excited",
+  excited: "excited",
+  incredulous: "excited",
+  sarcastic: "sarcastic",
+  amused: "chuckles",
+  dismissive: "sarcastic",
+};
 
 function buildVoiceSettings(isV3: boolean, input: SynthesizeSpeechInput) {
   const energy = input.energy || "medium";

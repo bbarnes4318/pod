@@ -14,6 +14,7 @@ import {
   standardizeClipToWav,
 } from "@/lib/audio/assembly";
 import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
+import { hasLineIndexCollisions } from "@/lib/services/scriptRepetition";
 
 interface StitchInput {
   scriptId: string;
@@ -22,6 +23,22 @@ interface StitchInput {
   includeOutro?: boolean;
   normalizeAudio?: boolean;
   targetLufs?: number;
+}
+
+/** Script rubric (70%) + audio human-ness checks (30%) → 0-100. */
+function computeEpisodeScore(scriptQuality: any, qaReport: AudioQaReport | null) {
+  const scriptScore = typeof scriptQuality?.total === "number" ? scriptQuality.total : null;
+  let audioScore: number | null = null;
+  if (qaReport && Array.isArray(qaReport.checks) && qaReport.checks.length > 0) {
+    const pts = qaReport.checks.reduce(
+      (a, c) => a + (c.status === "pass" ? 1 : c.status === "warning" ? 0.5 : 0),
+      0
+    );
+    audioScore = Math.round((pts / qaReport.checks.length) * 100);
+  }
+  if (scriptScore === null && audioScore === null) return null;
+  const total = Math.round((scriptScore ?? 60) * 0.7 + (audioScore ?? 60) * 0.3);
+  return { total, scriptScore, audioScore, scriptAxes: scriptQuality?.axes ?? null };
 }
 
 export async function stitchFinalEpisodeAudio(input: StitchInput) {
@@ -145,6 +162,16 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const segments = (script.content as any).segments;
     if (!Array.isArray(segments) || segments.length === 0) {
       throw new Error("Script segments are missing or empty.");
+    }
+
+    // HARD GUARD against the repeated-clip bug: if the script content has
+    // duplicate lineIndex values, one audio clip would be stitched in for
+    // every colliding line (same sentence over and over). Refuse and point
+    // at the fix — re-running TTS renumbers and regenerates automatically.
+    if (hasLineIndexCollisions(segments)) {
+      throw new Error(
+        "Script has duplicate lineIndex values (would stitch the same clip repeatedly). Re-run TTS generation — it renumbers the script and regenerates segments automatically."
+      );
     }
 
     // Load active host profiles
@@ -499,6 +526,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       ffmpegCommandSummary: `${ffmpegPath} timeline-mix (adelay+amix, room tone, stereo seating) + two-pass loudnorm`,
       storageKey,
       audioQa: qaReport,
+      // Combined episode score: script rubric (70%) + audio human-ness (30%).
+      episodeScore: computeEpisodeScore((script.content as any)?.quality, qaReport),
       reasons: ["Final audio stitched and uploaded successfully."],
     };
 

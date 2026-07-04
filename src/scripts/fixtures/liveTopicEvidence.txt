@@ -1,0 +1,25 @@
+Topic #1: Are the Meridian City Comets frauds at the two seed?
+Sport/League: Basketball / TBL (fictional test league)
+Debate Score: 88
+Max Voltage Debate Stance: The Comets are 2-8 against winning teams and folded by 21 in the fourth quarter Friday — they are a regular-season front-runner with no spine, and coach Dana Whitlock should be on the hot seat.
+Dr. Linebreak Debate Stance: The Comets have the second-best point differential in the league (+7.9), a top-three defense, and their two-seed is fully earned; a single fourth-quarter collapse is noise, not signal.
+Key Grounded Facts: [{"id":"fact-g1","type":"game","text":"Comets lost 118-97 to the Harbor Sharks on Friday, trailing the fourth quarter 34-13"},{"id":"fact-t1","type":"teamStat","text":"Comets point differential is +7.9, second in the league"},{"id":"fact-t2","type":"teamStat","text":"Comets are 2-8 against teams over .500 this season"},{"id":"fact-p1","type":"playerStat","text":"Comets star Jalen Marsh averages 31.2 points but shoots 38 percent in fourth quarters"},{"id":"fact-t3","type":"teamStat","text":"Comets defense ranks third in points allowed per possession"}]
+Stats Evidence: [{"id":"fact-t1"},{"id":"fact-t2"},{"id":"fact-p1"},{"id":"fact-t3"}]
+Injury Context: None
+Odds Context: Comets title odds moved from +450 to +700 after Friday's loss (id fact-o1, type oddsSnapshot)
+Suggested Counter-arguments: [{"host":"Dr. Linebreak","claim":"2-8 vs winning teams shrinks to 2-4 since the trade deadline"},{"host":"Max Voltage","claim":"Marsh's fourth-quarter 38 percent is the whole story of the Sharks game"}]
+Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): []
+
+---
+
+Topic #2: Did the Ridgeline Bison rob the draft by trading down twice?
+Sport/League: Football / CFA (fictional test league)
+Debate Score: 81
+Max Voltage Debate Stance: You don't trade out of the chance to draft a franchise quarterback twice in one night — the Bison played scared and the fans should be furious.
+Dr. Linebreak Debate Stance: The Bison turned pick 6 into picks 11, 38, and a future first — that's a 142-point surplus on any reputable draft value chart, and quarterback Cole Draper was a reach at 6 anyway.
+Key Grounded Facts: [{"id":"fact-n1","type":"newsItem","text":"Bison traded pick 6 to Cascade for picks 11 and 38, then pick 11 to Union City for pick 14 and a future first"},{"id":"fact-n2","type":"newsItem","text":"Quarterback Cole Draper was selected 6th overall by Cascade"},{"id":"fact-t4","type":"teamStat","text":"Bison quarterbacks ranked last in completion percentage over expected last season"},{"id":"fact-n3","type":"newsItem","text":"Bison GM Rosa Calderon said the board fell exactly as we hoped in her post-draft presser"}]
+Stats Evidence: [{"id":"fact-t4"}]
+Injury Context: None
+Odds Context: None
+Suggested Counter-arguments: [{"host":"Max Voltage","claim":"Their QB room was statistically the worst in the league and they still passed on Draper twice"},{"host":"Dr. Linebreak","claim":"A future first from a bad team is a premium asset"}]
+Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): []
