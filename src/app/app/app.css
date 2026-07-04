@@ -1,0 +1,469 @@
+/* ============================================================
+   TAKE MACHINE — user surface ("/app")
+   Light, spacious, typography-led. Color comes from content;
+   the brand blue (#3B5BFF) is reserved for nav + primary CTAs.
+   Scoped: all tokens live under .userSurface so the dark
+   /admin + /studio themes are untouched.
+   ============================================================ */
+
+.userSurface {
+  /* palette */
+  --u-canvas: #fcfcfd;
+  --u-surface: #ffffff;
+  --u-hairline: #eef0f3;
+  --u-hairline-2: #e3e6ea;
+  --u-ink: #16181d;
+  --u-ink-2: #6b7280;
+  --u-ink-3: #9aa0ab;
+  --u-brand: #3b5bff;
+  --u-brand-soft: #eef1ff;
+  --u-radius: 14px;
+  --u-radius-lg: 18px;
+  --u-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 8px 24px -12px rgba(22, 24, 29, 0.1);
+  --u-shadow-lift: 0 2px 4px rgba(22, 24, 29, 0.05), 0 16px 40px -16px rgba(22, 24, 29, 0.16);
+
+  min-height: 100vh;
+  display: flex;
+  background: var(--u-canvas);
+  color: var(--u-ink);
+  font-family: var(--font-body-next), -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.userSurface ::selection { background: var(--u-brand-soft); color: var(--u-brand); }
+.userSurface :focus-visible { outline: 2px solid var(--u-brand); outline-offset: 2px; border-radius: 6px; }
+.userSurface *::-webkit-scrollbar-thumb { background: var(--u-hairline-2); border: 2px solid var(--u-canvas); }
+.userSurface { scrollbar-color: var(--u-hairline-2) transparent; }
+
+/* ---------- Sidebar (~132px, light) ---------- */
+.uSidebar {
+  width: 132px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1.4rem 0.8rem;
+  border-right: 1px solid var(--u-hairline);
+  background: var(--u-surface);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.uBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1.4rem;
+  font-weight: 800;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--u-ink);
+  text-align: center;
+  line-height: 1.15;
+}
+
+.uBrandMark {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  background: var(--u-brand);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  font-weight: 800;
+  box-shadow: 0 6px 16px -6px rgba(59, 91, 255, 0.5);
+}
+
+.uNavItem {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.6rem 0.25rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--u-ink-2);
+  transition: color 0.15s ease, background-color 0.15s ease;
+  text-align: center;
+}
+.uNavItem svg { width: 20px; height: 20px; }
+.uNavItem:hover { color: var(--u-ink); background: var(--u-canvas); }
+.uNavItem.active { color: var(--u-brand); background: var(--u-brand-soft); }
+
+.uCreateBtn {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.7rem 0.25rem;
+  border-radius: 13px;
+  background: var(--u-brand);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.18s ease;
+  box-shadow: 0 8px 20px -8px rgba(59, 91, 255, 0.55);
+}
+.uCreateBtn:hover { transform: translateY(-1px); box-shadow: 0 12px 26px -10px rgba(59, 91, 255, 0.6); }
+.uCreateBtn span:first-child { font-size: 1.15rem; line-height: 1; }
+
+/* ---------- Main column ---------- */
+.uMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 96px; /* room for the player bar */
+}
+
+.uTopbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.3rem 2.4rem 1rem;
+}
+
+.uPageTitle {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.uTopRight { display: flex; align-items: center; gap: 0.9rem; }
+
+.uSearch {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--u-surface);
+  border: 1px solid var(--u-hairline);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  width: 260px;
+  color: var(--u-ink-3);
+  font-size: 0.85rem;
+}
+.uSearch input {
+  border: none;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 0.85rem;
+  color: var(--u-ink);
+}
+
+.uAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #e8ebf2, #d7dbe4);
+  border: 1px solid var(--u-hairline-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--u-ink-2);
+}
+
+.uContent { padding: 0.4rem 2.4rem 2rem; }
+
+.uSectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 2rem 0 0.9rem;
+}
+.uSectionTitle { font-size: 1.05rem; font-weight: 750; letter-spacing: -0.01em; }
+.uSectionLink { font-size: 0.82rem; font-weight: 600; color: var(--u-brand); }
+.uSectionLink:hover { text-decoration: underline; }
+
+/* ---------- Hero / featured ---------- */
+.uHero {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 2rem;
+  align-items: center;
+  border-radius: var(--u-radius-lg);
+  border: 1px solid var(--u-hairline);
+  background: var(--u-surface);
+  box-shadow: var(--u-shadow);
+  overflow: hidden;
+  padding: 1.6rem;
+}
+
+.uHeroCover {
+  aspect-ratio: 1;
+  border-radius: var(--u-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", var(--font-body-next), serif;
+}
+
+.uHeroKicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 0.7rem;
+}
+
+.uHeroTitle {
+  font-size: clamp(1.5rem, 3vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: -0.022em;
+  line-height: 1.12;
+  margin-bottom: 0.75rem;
+}
+
+.uHeroMeta { display: flex; align-items: center; gap: 0.7rem; font-size: 0.85rem; color: var(--u-ink-2); margin-bottom: 1.4rem; flex-wrap: wrap; }
+.uDot { width: 3px; height: 3px; border-radius: 50%; background: var(--u-ink-3); }
+
+.uPlayLg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: none;
+  border-radius: 999px;
+  padding: 0.78rem 1.7rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.15s ease;
+}
+.uPlayLg:hover { transform: translateY(-1px); filter: brightness(1.05); }
+
+.uGhostBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--u-hairline-2);
+  border-radius: 999px;
+  padding: 0.72rem 1.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--u-ink-2);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.uGhostBtn:hover { border-color: var(--u-ink-3); color: var(--u-ink); background: var(--u-canvas); }
+
+/* ---------- Episode cards row ---------- */
+.uRow {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 218px;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: 4px 4px 14px;
+  scroll-snap-type: x proximity;
+}
+
+.uEpCard {
+  scroll-snap-align: start;
+  background: var(--u-surface);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.uEpCard:hover { transform: translateY(-3px); box-shadow: var(--u-shadow-lift); border-color: var(--u-hairline-2); }
+
+.uEpCover {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", var(--font-body-next), serif;
+}
+.uEpCover .quoteMark, .uHeroCover .quoteMark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 700;
+  line-height: 0.6;
+  transform: translateY(18%);
+}
+
+.uEpPlay {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+  box-shadow: 0 6px 16px -6px rgba(22, 24, 29, 0.35);
+}
+.uEpCard:hover .uEpPlay, .uEpPlay:focus-visible { opacity: 1; transform: translateY(0); }
+
+.uEpTitle {
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.uEpMeta { font-size: 0.75rem; color: var(--u-ink-3); display: flex; gap: 0.45rem; align-items: center; }
+
+/* ---------- Trending takes strip ---------- */
+.uTakes { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.9rem; }
+
+.uTakeCard {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--u-surface);
+  border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius);
+  padding: 0.9rem 1.05rem;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.uTakeCard:hover { transform: translateY(-2px); box-shadow: var(--u-shadow); }
+
+.uTakeScore {
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.uTakeScore small { font-size: 0.55rem; font-weight: 700; letter-spacing: 0.08em; margin-top: 3px; opacity: 0.75; }
+
+.uTakeTitle { font-size: 0.88rem; font-weight: 650; line-height: 1.35; letter-spacing: -0.005em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.uTakeMeta { display: flex; gap: 0.5rem; align-items: center; font-size: 0.72rem; color: var(--u-ink-3); margin-top: 0.3rem; }
+
+.uHeat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+}
+
+.uRecordBtn {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid var(--u-hairline-2);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--u-ink-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.uRecordBtn:hover { border-color: var(--u-brand); color: var(--u-brand); background: var(--u-brand-soft); }
+
+/* ---------- Player bar ---------- */
+.uPlayerBar {
+  position: fixed;
+  left: 132px;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 0.7rem 1.6rem;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(14px);
+  border-top: 1px solid var(--u-hairline);
+}
+
+.uPbCover { width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+.uPbInfo { min-width: 0; width: 200px; flex-shrink: 0; }
+.uPbTitle { font-size: 0.82rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uPbHost { font-size: 0.7rem; color: var(--u-ink-3); display: flex; align-items: center; gap: 5px; margin-top: 2px; }
+
+.uPbBtn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--u-ink-2);
+  font-size: 0.95rem;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.uPbBtn:hover { background: var(--u-canvas); color: var(--u-ink); }
+
+.uPbPlay {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: none;
+  color: #fff;
+  font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.14s ease;
+  flex-shrink: 0;
+}
+.uPbPlay:hover { transform: scale(1.05); filter: brightness(1.06); }
+
+.uPbWave { flex: 1; min-width: 0; height: 40px; display: flex; align-items: center; gap: 2px; cursor: pointer; }
+.uPbWave span { flex: 1; min-width: 2px; border-radius: 2px; transition: background-color 0.2s ease; }
+
+.uPbTime { font-variant-numeric: tabular-nums; font-size: 0.75rem; color: var(--u-ink-3); flex-shrink: 0; width: 92px; text-align: right; }
+
+.uPbEmpty { color: var(--u-ink-3); font-size: 0.8rem; display: flex; align-items: center; gap: 0.6rem; }
+
+@media (max-width: 900px) {
+  .uSidebar { display: none; }
+  .uPlayerBar { left: 0; }
+  .uTopbar, .uContent { padding-left: 1.1rem; padding-right: 1.1rem; }
+  .uHero { grid-template-columns: 1fr; }
+  .uHeroCover { max-width: 260px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .userSurface *, .userSurface *::before, .userSurface *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
