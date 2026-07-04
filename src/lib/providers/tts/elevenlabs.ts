@@ -32,6 +32,24 @@ export class ElevenLabsTTSProvider implements TTSProvider {
     // v3 interprets bracketed audio tags; older models would read them aloud.
     const text = isV3 ? input.text : stripAudioTags(input.text);
 
+    // Resolve the voice ID: a per-speaker env override wins, otherwise fall
+    // back to the host's configured voice. Never send a leftover "stub" ID
+    // (that would 404 / produce a wrong voice) — fail with a clear message.
+    let voiceId = input.voiceId;
+    const isStubVoice = !voiceId || voiceId.includes("stub");
+    if (input.speakerName === "Max Voltage") {
+      voiceId = process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? "" : voiceId);
+    } else if (input.speakerName === "Dr. Linebreak") {
+      voiceId = process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID || (isStubVoice ? "" : voiceId);
+    } else if (isStubVoice) {
+      voiceId = "";
+    }
+    if (!voiceId) {
+      throw new Error(
+        "ElevenLabs voice ID is missing. Set ELEVENLABS_MAX_VOLTAGE_VOICE_ID and ELEVENLABS_DR_LINEBREAK_VOICE_ID, or configure the host's ttsVoiceId."
+      );
+    }
+
     const body: Record<string, unknown> = {
       text,
       model_id: modelId,
@@ -42,7 +60,7 @@ export class ElevenLabsTTSProvider implements TTSProvider {
     if (input.previousText) body.previous_text = stripAudioTags(input.previousText);
     if (input.nextText) body.next_text = stripAudioTags(input.nextText);
 
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${input.voiceId}?output_format=${outputFormat}`;
+    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
