@@ -1,9 +1,19 @@
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
-import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import {
+  PlannedLine,
+  TimelineClip,
+  getFileDurationMs,
+  masterToMp3,
+  planConversationTimeline,
+  renderTimelineToWav,
+  runFfmpeg,
+  standardizeClipToWav,
+} from "@/lib/audio/assembly";
+import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
 
 interface StitchInput {
   scriptId: string;
@@ -12,66 +22,6 @@ interface StitchInput {
   includeOutro?: boolean;
   normalizeAudio?: boolean;
   targetLufs?: number;
-}
-
-function runFfmpeg(ffmpegPath: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    console.log(`[FFmpeg] Running: ${ffmpegPath} ${args.join(" ")}`);
-    const proc = spawn(ffmpegPath, args);
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout.on("data", (data) => (stdout += data.toString()));
-    proc.stderr.on("data", (data) => (stderr += data.toString()));
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout);
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}. Error: ${stderr}`));
-      }
-    });
-  });
-}
-
-function runFfprobe(ffprobePath: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffprobePath, args);
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout.on("data", (data) => (stdout += data.toString()));
-    proc.stderr.on("data", (data) => (stderr += data.toString()));
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(`FFprobe exited with code ${code}. Error: ${stderr}`));
-      }
-    });
-  });
-}
-
-async function getFileDuration(ffprobePath: string, filePath: string): Promise<number> {
-  try {
-    const output = await runFfprobe(ffprobePath, [
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "default=noprint_wrappers=1:nokey=1",
-      filePath,
-    ]);
-    const sec = parseFloat(output);
-    if (!isNaN(sec)) {
-      return sec;
-    }
-  } catch (err) {
-    console.warn(`[FFprobe] Failed to get duration for ${filePath}:`, err);
-  }
-  return 0;
 }
 
 export async function stitchFinalEpisodeAudio(input: StitchInput) {
@@ -341,148 +291,148 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       downloadedLines.push({ filePath: destFile, line });
     }
 
-    // 7. Intermediate Standardization & Silence Generation
-    const stdFiles: string[] = [];
-    const targetSampleRate = process.env.AUDIO_TARGET_SAMPLE_RATE || "44100";
-    const targetChannels = process.env.AUDIO_TARGET_CHANNELS || "2";
+    // 7. Standardize every clip to WAV at matched speech loudness.
+    // WAV intermediates avoid MP3 encoder padding (the tiny clicks/gaps that
+    // plague MP3 concat), and per-clip loudnorm means neither host is louder
+    // than the other going into the mix.
+    const targetSampleRate = Number(process.env.AUDIO_TARGET_SAMPLE_RATE) || 44100;
     const targetBitrate = process.env.AUDIO_TARGET_BITRATE || "192k";
 
-    const lineGapMs = Number(process.env.AUDIO_LINE_GAP_MS) || 450;
-    const segmentGapMs = Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850;
-    const topicGapMs = Number(process.env.AUDIO_TOPIC_GAP_MS) || 1200;
-
-    let silenceCounter = 0;
-
-    async function makeSilence(durationMs: number): Promise<string> {
-      const durSec = durationMs / 1000;
-      const silPath = path.join(tempDir, `silence-${silenceCounter++}.mp3`);
-      await runFfmpeg(ffmpegPath, [
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        `anullsrc=r=${targetSampleRate}:cl=stereo`,
-        "-t",
-        durSec.toString(),
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        targetBitrate,
-        silPath,
-      ]);
-      return silPath;
-    }
-
-    async function standardizeFile(inPath: string, name: string): Promise<string> {
-      const outPath = path.join(tempDir, `std-${name}.mp3`);
-      await runFfmpeg(ffmpegPath, [
-        "-y",
-        "-i",
-        inPath,
-        "-ar",
-        targetSampleRate,
-        "-ac",
-        targetChannels,
-        "-b:a",
-        targetBitrate,
-        outPath,
-      ]);
-      return outPath;
-    }
-
-    // Add Intro standard
-    if (introFile) {
-      const stdIntro = await standardizeFile(introFile, "intro");
-      stdFiles.push(stdIntro);
-      // Gap after intro
-      const sil = await makeSilence(segmentGapMs);
-      stdFiles.push(sil);
-    }
-
-    // Add Dialogue Lines & Silences
-    let totalInputDurationMs = 0;
-
+    const plannedLines: PlannedLine[] = [];
     for (let i = 0; i < downloadedLines.length; i++) {
       const curr = downloadedLines[i];
       const prev = i > 0 ? downloadedLines[i - 1] : null;
 
-      // Determine appropriate gap before this line
+      const wavPath = path.join(tempDir, `std-line-${curr.line.lineIndex}.wav`);
+      await standardizeClipToWav(ffmpegPath, curr.filePath, wavPath, {
+        sampleRate: targetSampleRate,
+      });
+      const durationMs = await getFileDurationMs(ffprobePath, wavPath);
+
+      // Detect script-segment boundaries for longer topic-change beats
+      let segmentBreak: PlannedLine["segmentBreak"] = "none";
       if (prev) {
-        // If this line starts a new segment
         const currSegmentIndex = segments.findIndex((s) => s.lines.some((l: any) => l.lineIndex === curr.line.lineIndex));
         const prevSegmentIndex = segments.findIndex((s) => s.lines.some((l: any) => l.lineIndex === prev.line.lineIndex));
-
         if (currSegmentIndex !== prevSegmentIndex) {
-          const nextSeg = segments[currSegmentIndex];
-          const isTopic = nextSeg?.type === "topic";
-          const gap = isTopic ? topicGapMs : segmentGapMs;
-          const sil = await makeSilence(gap);
-          stdFiles.push(sil);
-          totalInputDurationMs += gap;
-        } else {
-          // Same segment line-to-line gap
-          const sil = await makeSilence(lineGapMs);
-          stdFiles.push(sil);
-          totalInputDurationMs += lineGapMs;
+          segmentBreak = segments[currSegmentIndex]?.type === "topic" ? "topic" : "segment";
         }
       }
 
-      const stdLine = await standardizeFile(curr.filePath, `line-${curr.line.lineIndex}`);
-      stdFiles.push(stdLine);
-
-      // Add to estimated duration
-      const fileSec = await getFileDuration(ffprobePath, stdLine);
-      totalInputDurationMs += fileSec * 1000;
+      plannedLines.push({
+        filePath: wavPath,
+        durationMs,
+        lineIndex: curr.line.lineIndex,
+        hostSlot: curr.line.speakerHostId === hostA.id ? 0 : 1,
+        pauseBefore: curr.line.pauseBefore,
+        isInterruption: curr.line.isInterruption === true,
+        segmentBreak,
+      });
     }
 
-    // Add Outro standard
+    // 8. Plan the conversational timeline (variable gaps, jitter, overlaps
+    // on interruptions), then splice intro/outro music in with crossfades.
+    const musicCrossfadeMs = Number(process.env.AUDIO_MUSIC_CROSSFADE_MS) || 900;
+
+    let introClip: TimelineClip | null = null;
+    let dialogueStartMs = 0;
+    if (introFile) {
+      const stdIntro = path.join(tempDir, "std-intro.wav");
+      await standardizeClipToWav(ffmpegPath, introFile, stdIntro, {
+        sampleRate: targetSampleRate,
+        targetLufs: -17,
+      });
+      const introDurMs = await getFileDurationMs(ffprobePath, stdIntro);
+      introClip = {
+        filePath: stdIntro,
+        startMs: 0,
+        durationMs: introDurMs,
+        kind: "music",
+        pan: 0,
+        fadeInMs: 20,
+        fadeOutMs: musicCrossfadeMs,
+        gainDb: -2,
+      };
+      // First line begins while the intro's tail is still fading — a
+      // crossfade, not a hard cut into silence.
+      dialogueStartMs = Math.max(0, introDurMs - musicCrossfadeMs);
+    }
+
+    const dialogueClips = planConversationTimeline(plannedLines, { startAtMs: dialogueStartMs });
+
+    const clips: TimelineClip[] = [...(introClip ? [introClip] : []), ...dialogueClips];
+
+    const dialogueEndMs = dialogueClips.length
+      ? Math.max(...dialogueClips.map((c) => c.startMs + c.durationMs))
+      : dialogueStartMs;
+
     if (outroFile) {
-      // Gap before outro
-      const sil = await makeSilence(segmentGapMs);
-      stdFiles.push(sil);
-
-      const stdOutro = await standardizeFile(outroFile, "outro");
-      stdFiles.push(stdOutro);
+      const stdOutro = path.join(tempDir, "std-outro.wav");
+      await standardizeClipToWav(ffmpegPath, outroFile, stdOutro, {
+        sampleRate: targetSampleRate,
+        targetLufs: -17,
+      });
+      const outroDurMs = await getFileDurationMs(ffprobePath, stdOutro);
+      clips.push({
+        filePath: stdOutro,
+        startMs: Math.max(0, dialogueEndMs - Math.round(musicCrossfadeMs / 2)),
+        durationMs: outroDurMs,
+        kind: "music",
+        pan: 0,
+        fadeInMs: musicCrossfadeMs,
+        fadeOutMs: 400,
+        gainDb: -2,
+      });
     }
 
-    // 8. Build FFmpeg Concat List
-    const concatTxtPath = path.join(tempDir, "concat.txt");
-    const concatContent = stdFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n");
-    fs.writeFileSync(concatTxtPath, concatContent);
+    const totalInputDurationMs = clips.length
+      ? Math.max(...clips.map((c) => c.startMs + c.durationMs))
+      : 0;
 
-    // 9. Concatenate intermediate files
-    const finalRawPath = path.join(tempDir, "final-raw.mp3");
-    await runFfmpeg(ffmpegPath, [
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      concatTxtPath,
-      "-c",
-      "copy",
-      finalRawPath,
-    ]);
+    // 9. Render the whole timeline in one ffmpeg mix (shared room tone,
+    // stereo seating, micro-fades, glue compression) — no concat hard cuts.
+    console.log(`[Stitcher] Rendering ${clips.length} clips onto conversational timeline.`);
+    const mixWavPath = path.join(tempDir, "final-mix.wav");
+    await renderTimelineToWav(ffmpegPath, clips, mixWavPath, {
+      sampleRate: targetSampleRate,
+    });
 
-    // 10. Normalization (Loudness check)
+    // 10. Master: two-pass linear loudnorm to podcast loudness.
     const finalOutputPath = path.join(tempDir, "final.mp3");
     if (normalizeAudio) {
-      console.log(`[Stitcher] Normalizing output loudness to ${targetLufs} LUFS.`);
+      console.log(`[Stitcher] Mastering to ${targetLufs} LUFS (two-pass loudnorm).`);
+      await masterToMp3(ffmpegPath, mixWavPath, finalOutputPath, {
+        targetLufs,
+        bitrate: targetBitrate,
+      });
+    } else {
       await runFfmpeg(ffmpegPath, [
         "-y",
-        "-i",
-        finalRawPath,
-        "-af",
-        `loudnorm=I=${targetLufs}:TP=-1.5:LRA=11`,
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        targetBitrate,
+        "-i", mixWavPath,
+        "-c:a", "libmp3lame",
+        "-b:a", targetBitrate,
         finalOutputPath,
       ]);
-    } else {
-      fs.copyFileSync(finalRawPath, finalOutputPath);
+    }
+
+    // 10b. Automated human-ness QA on the finished master.
+    let qaReport: AudioQaReport | null = null;
+    try {
+      qaReport = await analyzeEpisodeAudio(ffmpegPath, finalOutputPath, { targetLufs });
+      for (const c of qaReport.checks) {
+        console.log(`[Stitcher][QA] ${c.status.toUpperCase()} — ${c.name}: ${c.value}`);
+      }
+      if (!qaReport.passed && process.env.AUDIO_QA_STRICT === "true") {
+        const failed = qaReport.checks
+          .filter((c) => c.status === "fail")
+          .map((c) => `${c.name} (${c.value})`)
+          .join("; ");
+        throw new Error(`Audio QA failed (AUDIO_QA_STRICT=true): ${failed}`);
+      }
+    } catch (qaErr: unknown) {
+      if (process.env.AUDIO_QA_STRICT === "true") throw qaErr;
+      const msg = qaErr instanceof Error ? qaErr.message : String(qaErr);
+      console.warn(`[Stitcher] Audio QA analysis skipped/failed: ${msg}`);
     }
 
     if (!fs.existsSync(finalOutputPath) || fs.statSync(finalOutputPath).size === 0) {
@@ -490,7 +440,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     }
 
     const finalFileSizeBytes = fs.statSync(finalOutputPath).size;
-    const finalDurationSeconds = await getFileDuration(ffprobePath, finalOutputPath);
+    const finalDurationSeconds = (await getFileDurationMs(ffprobePath, finalOutputPath)) / 1000;
 
     // 11. Upload final MP3
     const episodeSlug = episode.slug || "";
@@ -532,8 +482,9 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       duplicateSegmentCount: 0,
       totalInputDurationMs,
       finalFileSizeBytes,
-      ffmpegCommandSummary: `${ffmpegPath} concat loudnorm`,
+      ffmpegCommandSummary: `${ffmpegPath} timeline-mix (adelay+amix, room tone, stereo seating) + two-pass loudnorm`,
       storageKey,
+      audioQa: qaReport,
       reasons: ["Final audio stitched and uploaded successfully."],
     };
 

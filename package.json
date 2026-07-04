@@ -12,7 +12,8 @@
     "start:worker": "tsx --conditions=react-server src/lib/queue/worker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
-    "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts"
+    "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts",
+    "sample:ab": "tsx --conditions=react-server src/scripts/abSample.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.714.0",
