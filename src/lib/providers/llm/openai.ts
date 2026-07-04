@@ -1,9 +1,23 @@
-import { LLMProvider, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
+import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
 
 export class OpenAILLMProvider implements LLMProvider {
   name = "openai";
   private apiKey: string;
   private model: string;
+  private usage: LLMUsage = { inputTokens: 0, outputTokens: 0, requestCount: 0 };
+
+  getAccumulatedUsage(): LLMUsage {
+    return { ...this.usage };
+  }
+
+  private recordUsage(data: any): void {
+    const u = data?.usage;
+    if (u) {
+      this.usage.inputTokens += u.prompt_tokens || 0;
+      this.usage.outputTokens += u.completion_tokens || 0;
+      this.usage.requestCount += 1;
+    }
+  }
 
   constructor(modelOverride?: string) {
     const key = process.env.OPENAI_API_KEY;
@@ -60,6 +74,7 @@ export class OpenAILLMProvider implements LLMProvider {
     }
 
     const data = await response.json();
+    this.recordUsage(data);
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error("[OpenAI] Received empty response content from model.");
@@ -110,6 +125,7 @@ export class OpenAILLMProvider implements LLMProvider {
     }
 
     const data = await response.json();
+    this.recordUsage(data);
     console.log("[OpenAI] Response data:", JSON.stringify(data));
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
