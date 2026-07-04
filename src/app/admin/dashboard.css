@@ -1,0 +1,110 @@
+/* Dashboard hero + refined metrics — captivating, but clean-lined. */
+
+.dashStack { display: flex; flex-direction: column; gap: 2rem; }
+
+/* ---- Hero banner ---- */
+.dashHero {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  padding: 2.4rem 2.6rem;
+  color: #fff;
+  background: linear-gradient(120deg, #1e3a8a 0%, #2563eb 55%, #3b82f6 100%);
+  box-shadow: 0 18px 40px -18px rgba(37, 99, 235, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2.5rem;
+  flex-wrap: wrap;
+}
+.dashHero::after {
+  content: "";
+  position: absolute;
+  top: -45%;
+  right: -8%;
+  width: 520px;
+  height: 520px;
+  background: radial-gradient(circle, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0) 68%);
+  pointer-events: none;
+}
+
+.dashHeroLeft { position: relative; z-index: 2; max-width: 560px; }
+.dashHeroOverline {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.2em;
+  text-transform: uppercase; opacity: 0.82; margin-bottom: 0.7rem;
+}
+.dashHeroTitle {
+  font-size: 2.1rem; font-weight: 800; line-height: 1.08;
+  letter-spacing: -0.02em; margin-bottom: 0.7rem;
+}
+.dashHeroTagline { font-size: 0.98rem; opacity: 0.9; line-height: 1.55; margin-bottom: 1.2rem; }
+
+.dashStatusPill {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  background: rgba(255,255,255,0.14); border: 1px solid rgba(255,255,255,0.28);
+  border-radius: 999px; padding: 0.4rem 0.9rem; font-size: 0.8rem; font-weight: 600;
+  backdrop-filter: blur(6px);
+}
+.dashStatusDot {
+  width: 8px; height: 8px; border-radius: 50%; background: #4ade80;
+  animation: dashPulse 2.2s infinite;
+}
+@keyframes dashPulse {
+  0% { box-shadow: 0 0 0 0 rgba(74,222,128,0.6); }
+  70% { box-shadow: 0 0 0 9px rgba(74,222,128,0); }
+  100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+}
+
+/* Glass stat chips on the hero */
+.dashHeroStats {
+  position: relative; z-index: 2;
+  display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr)); gap: 0.9rem;
+}
+.dashHeroStat {
+  background: rgba(255,255,255,0.13); border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 14px; padding: 1rem 1.15rem; backdrop-filter: blur(8px);
+}
+.dashHeroStatValue { font-size: 1.75rem; font-weight: 800; line-height: 1; font-family: var(--font-mono), monospace; }
+.dashHeroStatLabel { font-size: 0.7rem; opacity: 0.86; margin-top: 0.4rem; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Animated equalizer decoration */
+.dashEq {
+  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: flex-end; gap: 5px; height: 64px; opacity: 0.28; z-index: 1;
+}
+.dashEqBar { width: 6px; background: #fff; border-radius: 3px 3px 0 0; animation: dashEq 1.3s ease-in-out infinite; }
+@keyframes dashEq { 0%, 100% { height: 10px; } 50% { height: 56px; } }
+
+/* ---- Section headings ---- */
+.dashSectionTitle {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--text-secondary); margin-bottom: 0.85rem;
+}
+
+/* ---- Refined metric cards ---- */
+.metricGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem; }
+.metricCard {
+  position: relative; background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: 14px; padding: 1.3rem 1.4rem; overflow: hidden;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+.metricCard:hover { transform: translateY(-3px); box-shadow: 0 12px 26px -14px rgba(15,23,42,0.22); border-color: var(--border-hover); }
+.metricCard::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent-color); }
+.metricIcon {
+  width: 40px; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center;
+  font-size: 1.15rem; background: var(--accent-muted); margin-bottom: 0.9rem;
+}
+.metricValue { font-size: 2.05rem; font-weight: 800; color: var(--text-primary); line-height: 1; font-family: var(--font-mono), monospace; }
+.metricLabel { font-size: 0.8rem; font-weight: 700; color: var(--text-primary); margin-top: 0.6rem; }
+.metricSub { font-size: 0.73rem; color: var(--text-secondary); margin-top: 0.3rem; }
+
+.metricCard.accentGreen::before { background: var(--success-color); }
+.metricCard.accentGreen .metricIcon { background: var(--success-muted); }
+.metricCard.accentAmber::before { background: var(--warning-color); }
+.metricCard.accentAmber .metricIcon { background: var(--warning-muted); }
+.metricCard.accentViolet::before { background: #7c3aed; }
+.metricCard.accentViolet .metricIcon { background: #f5f3ff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dashEqBar, .dashStatusDot { animation: none; }
+}

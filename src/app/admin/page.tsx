@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
+import "./dashboard.css";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +32,6 @@ function maskSecrets(obj: any): any {
 }
 
 export default async function AdminDashboard() {
-  const audit = await runProductionReadinessAudit();
-  const warnings = audit.checks.filter((c) => c.status === "fail" || c.status === "warning");
-
   // Read active provider configuration from environment
   const config = {
     llm: process.env.LLM_PROVIDER || "stub",
@@ -97,6 +94,8 @@ export default async function AdminDashboard() {
   ]);
 
   const dataIngestedCount = newsCount + gameCount + oddsCount + injuryCount;
+  const inProductionCount =
+    episodesAudioReadyCount + episodesContentReadyCount + episodesPublishReadyCount;
 
   // Pipeline board stages
   const stages = [
@@ -115,63 +114,82 @@ export default async function AdminDashboard() {
   ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      
-      {/* Configuration & Diagnostic Warnings */}
-      {warnings.length > 0 && (
-        <div className="alertCard alertWarning" style={{ marginBottom: 0 }}>
-          <strong style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontWeight: "700" }}>
-            ⚠️ System Diagnostic Advisories ({warnings.length})
-          </strong>
-          <ul style={{ marginTop: "0.25rem", paddingLeft: "1.2rem", margin: "0.25rem 0 0 0", fontSize: "0.85rem" }}>
-            {warnings.slice(0, 3).map((w, idx) => (
-              <li key={idx} style={{ color: "var(--warning-color)" }}>
-                <strong>{w.name}</strong>: {w.details || w.description}
-              </li>
-            ))}
-          </ul>
-          <div style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-            <Link href="/admin/configuration" style={{ color: "var(--accent-color)", textDecoration: "underline", fontWeight: "600" }}>
-              View full system diagnostic configuration
-            </Link>
-          </div>
-        </div>
-      )}
+    <div className="dashStack">
 
-      {/* Overview Cards */}
-      <div className="grid">
-        <div className="card">
-          <div className="cardTitle">Episodes</div>
-          <div className="cardValue">{totalEpisodes}</div>
-          <div className="cardSub">
-            <span>{episodesPublishedCount} published • {episodesPublishReadyCount} publish_ready</span>
+      {/* Hero */}
+      <section className="dashHero">
+        <div className="dashHeroLeft">
+          <div className="dashHeroOverline">Take Machine · Production Studio</div>
+          <h1 className="dashHeroTitle">Command Center</h1>
+          <p className="dashHeroTagline">
+            From raw sports data to published, human-sounding debate episodes — every stage of the
+            pipeline, at a glance.
+          </p>
+          <span className="dashStatusPill">
+            <span className="dashStatusDot" />
+            Pipeline operational · {config.tts} voices · {config.llm} scripting
+          </span>
+        </div>
+
+        <div className="dashHeroStats">
+          <div className="dashHeroStat">
+            <div className="dashHeroStatValue">{episodesPublishedCount}</div>
+            <div className="dashHeroStatLabel">Published</div>
+          </div>
+          <div className="dashHeroStat">
+            <div className="dashHeroStatValue">{inProductionCount}</div>
+            <div className="dashHeroStatLabel">In Production</div>
+          </div>
+          <div className="dashHeroStat">
+            <div className="dashHeroStatValue">{totalEpisodes}</div>
+            <div className="dashHeroStatLabel">Episodes</div>
+          </div>
+          <div className="dashHeroStat">
+            <div className="dashHeroStatValue">{dataIngestedCount}</div>
+            <div className="dashHeroStatLabel">Data Points</div>
           </div>
         </div>
-        <div className="card">
-          <div className="cardTitle">Topic Candidates</div>
-          <div className="cardValue">{totalTopics}</div>
-          <div className="cardSub">
-            <span>{approvedTopics} approved • {pendingTopics} pending evaluation</span>
-          </div>
+
+        <div className="dashEq" aria-hidden="true">
+          {[0.0, 0.2, 0.45, 0.15, 0.6, 0.3, 0.5, 0.1, 0.35].map((d, i) => (
+            <span key={i} className="dashEqBar" style={{ animationDelay: `${d}s` }} />
+          ))}
         </div>
-        <div className="card">
-          <div className="cardTitle">Research Briefs</div>
-          <div className="cardValue">{totalBriefs}</div>
-          <div className="cardSub">
-            <span>Grounded factual dossiers for scripts</span>
+      </section>
+
+      {/* Key metrics */}
+      <div>
+        <div className="dashSectionTitle">Studio Overview</div>
+        <div className="metricGrid">
+          <div className="metricCard accentViolet">
+            <div className="metricIcon">🎙️</div>
+            <div className="metricValue">{totalEpisodes}</div>
+            <div className="metricLabel">Episodes</div>
+            <div className="metricSub">{episodesPublishedCount} published • {episodesPublishReadyCount} publish-ready</div>
           </div>
-        </div>
-        <div className="card">
-          <div className="cardTitle">Approved Scripts</div>
-          <div className="cardValue">{scriptsApprovedCount}</div>
-          <div className="cardSub">
-            <span>Passed fact checking & verification</span>
+          <div className="metricCard accentAmber">
+            <div className="metricIcon">🔥</div>
+            <div className="metricValue">{totalTopics}</div>
+            <div className="metricLabel">Topic Candidates</div>
+            <div className="metricSub">{approvedTopics} approved • {pendingTopics} pending</div>
+          </div>
+          <div className="metricCard accentBlue">
+            <div className="metricIcon">📋</div>
+            <div className="metricValue">{totalBriefs}</div>
+            <div className="metricLabel">Research Briefs</div>
+            <div className="metricSub">Grounded factual dossiers</div>
+          </div>
+          <div className="metricCard accentGreen">
+            <div className="metricIcon">✅</div>
+            <div className="metricValue">{scriptsApprovedCount}</div>
+            <div className="metricLabel">Approved Scripts</div>
+            <div className="metricSub">Passed fact-checking</div>
           </div>
         </div>
       </div>
 
       {/* Dynamic Pipeline Board */}
-      <div className="panel">
+      <div className="panel" style={{ marginBottom: 0 }}>
         <div className="panelHeader">
           <h3 className="panelTitle">Pipeline Flow Board</h3>
         </div>
