@@ -1092,8 +1092,13 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       throw new Error(`TopicCandidate with ID ${topicId} not found.`);
     }
 
-    if (topic.status !== "approved") {
-      throw new Error(`TopicCandidate with ID ${topicId} is not approved (current status: ${topic.status}).`);
+    // Allow both freshly-approved topics and already-"used" ones. A "used"
+    // topic already passed approval (an episode was built from it), so
+    // regenerating its research brief is safe and lets operators rebuild
+    // content without re-approving from scratch. The forceRegenerate check
+    // below still governs overwriting an existing brief.
+    if (topic.status !== "approved" && topic.status !== "used") {
+      throw new Error(`TopicCandidate with ID ${topicId} must be 'approved' or 'used' to generate a research brief (current status: ${topic.status}).`);
     }
 
     // 2. Overwrite check
