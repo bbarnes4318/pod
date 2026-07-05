@@ -36,18 +36,20 @@ export class CartesiaTTSProvider implements TTSProvider {
             sample_rate: 44100,
           };
 
-    // Resolve the voice ID: env override wins, otherwise fall back to a real
-    // default so a leftover "stub" voice ID never produces a random voice.
-    let voiceId = input.voiceId;
-    const isStubVoice = !voiceId || voiceId.includes("stub");
-
-    if (input.speakerName === "Max Voltage") {
-      voiceId = process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? "e2d48e7b-cd73-4c4c-bc1e-f232580e8709" : voiceId);
-    } else if (input.speakerName === "Dr. Linebreak") {
-      voiceId = process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || (isStubVoice ? "3ccc4544-84f7-45e3-ae57-5c52b5a1fac6" : voiceId);
-    } else if (isStubVoice) {
-      // General fallback if speaker name is different
-      voiceId = "a5136bf9-224c-4d76-b823-52bd5efcffcc"; // Jameson
+    // An explicitly resolved voice id is honored as-is; per-speaker env vars
+    // and the known-good per-host defaults are only the FALLBACK so a
+    // leftover "stub" voice ID never produces a random voice.
+    const isStubVoice = !input.voiceId || input.voiceId.includes("stub");
+    let voiceId = isStubVoice ? "" : input.voiceId;
+    if (!voiceId) {
+      if (input.speakerName === "Max Voltage") {
+        voiceId = process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || "e2d48e7b-cd73-4c4c-bc1e-f232580e8709";
+      } else if (input.speakerName === "Dr. Linebreak") {
+        voiceId = process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || "3ccc4544-84f7-45e3-ae57-5c52b5a1fac6";
+      } else {
+        // General fallback if speaker name is different
+        voiceId = process.env.CARTESIA_VOICE_ID || "a5136bf9-224c-4d76-b823-52bd5efcffcc"; // Jameson
+      }
     }
 
     // Sonic 3 renders [laughter] natively; translate our laugh tags to it and

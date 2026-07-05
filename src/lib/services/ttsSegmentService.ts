@@ -2,6 +2,12 @@ import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getTTSProvider } from "@/lib/providers/tts/factory";
 import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
+import {
+  ResolvedTtsVoice,
+  TtsVoiceOverrides,
+  getTtsModelId,
+  resolveTtsProviderAndVoice,
+} from "@/lib/providers/tts/voiceResolution";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 
 // Episode statuses in which (re)generating audio segments is allowed: from
@@ -28,6 +34,9 @@ interface TtsSegmentInput {
   };
   hostId?: string;
   providerOverride?: string;
+  /** Per-run voice picks keyed by host slug (or id); provider-tagged so they
+   *  only apply when they match the resolved engine. */
+  voiceOverrides?: TtsVoiceOverrides;
 }
 
 function cleanTextForSpeech(txt: string): string {
@@ -44,7 +53,7 @@ function buildVoiceDirection(host: { name: string; role: string; speakingStyle: 
 }
 
 export async function generateTtsSegments(input: TtsSegmentInput) {
-  const { scriptId, forceRegenerate = false, segmentRange, hostId, providerOverride } = input;
+  const { scriptId, forceRegenerate = false, segmentRange, hostId, providerOverride, voiceOverrides } = input;
 
   // 1. Load Script, Episode, latest passed FactCheckResult
   const script = await db.script.findUnique({
@@ -121,14 +130,6 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
 
   if (hostId && hostId !== hostA.id && hostId !== hostB.id) {
     throw new Error(`Invalid hostId '${hostId}'. Host filter must match the active Max Voltage or Dr. Linebreak host ID.`);
-  }
-
-  if (!hostA.ttsVoiceId) {
-    throw new Error("Max Voltage host profile has no configured voice ID.");
-  }
-
-  if (!hostB.ttsVoiceId) {
-    throw new Error("Dr. Linebreak host profile has no configured voice ID.");
   }
 
   // 2. Flatten and validate dialogue lines
@@ -253,6 +254,32 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   const chosenGlobalProvider = providerOverride || episodeProvider || process.env.TTS_PROVIDER || "stub";
   console.log(`[TTS Service] Provider resolution for script ${scriptId}: override=${providerOverride || "-"} episode=${episodeProvider || "-"} env=${process.env.TTS_PROVIDER || "-"} → default '${chosenGlobalProvider}' (per-host settings may apply when no override/episode engine is set).`);
 
+  // Provider-AWARE voice resolution, once per host (documented in
+  // docs/TTS_PROVIDERS.md): run override > episode override > host voice
+  // (only when the host's own engine matches) > per-provider env fallback >
+  // provider safe default. Guarantees a voice id never crosses engines.
+  const episodeVoiceOverrides = (script.episode.ttsVoiceOverrides as TtsVoiceOverrides | null) || null;
+  const resolvedByHostId = new Map<string, ResolvedTtsVoice>();
+  for (const host of [hostA, hostB]) {
+    if (!selectedLines.some((line) => line.speakerHostId === host.id)) continue;
+    const resolved = resolveTtsProviderAndVoice({
+      providerOverride,
+      runVoiceOverrides: voiceOverrides,
+      episodeProvider,
+      episodeVoiceOverrides,
+      host: {
+        id: host.id,
+        slug: host.slug,
+        name: host.name,
+        ttsProvider: host.ttsProvider,
+        ttsVoiceId: host.ttsVoiceId,
+      },
+      envProvider: process.env.TTS_PROVIDER,
+    });
+    resolvedByHostId.set(host.id, resolved);
+    console.log(`[TTS Service] Voice resolution for ${host.name}: provider=${resolved.provider} voiceId=${resolved.voiceId || "(engine default)"} source=${resolved.voiceSource}`);
+  }
+
   // 5. Worker queue controller
   const queue = [...selectedLines];
   const episodeId = script.episodeId;
@@ -286,16 +313,12 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     if (!host) {
       throw new Error(`Host profile not found for speaker: ${line.speakerName}`);
     }
-    // Episode-level choice beats the per-host default. On a host profile,
-    // "stub" means "not set" and falls through to the env default; an
-    // explicit override/episode choice is honored as-is.
-    let hostProviderName = providerOverride || episodeProvider;
-    if (!hostProviderName) {
-      hostProviderName =
-        host.ttsProvider && host.ttsProvider !== "stub"
-          ? host.ttsProvider
-          : process.env.TTS_PROVIDER || "stub";
+
+    const resolved = resolvedByHostId.get(host.id);
+    if (!resolved) {
+      throw new Error(`No TTS voice resolution computed for host ${host.name}.`);
     }
+    const hostProviderName = resolved.provider;
 
     if (!segment) {
       segment = await db.audioSegment.create({
@@ -334,7 +357,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         const context = speakerContext.get(line.lineIndex) || {};
         const ttsResult = await ttsProvider.synthesizeSpeech({
           text: sanitizedText,
-          voiceId: host.ttsVoiceId,
+          voiceId: resolved.voiceId,
           speakerName: line.speakerName,
           tone: line.tone,
           energy: line.energy,
@@ -359,6 +382,8 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
           contentType: ttsResult.contentType || `audio/${format}`,
         });
 
+        // Record exactly which voice produced this clip (never API keys).
+        const model = getTtsModelId(resolved.provider);
         await db.audioSegment.update({
           where: { id: segment.id },
           data: {
@@ -366,7 +391,14 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
             audioUrl: uploadResult.url,
             durationMs: ttsResult.durationMs || null,
             provider: hostProviderName,
-            providerMetadata: ttsResult.providerAudioId ? { providerAudioId: ttsResult.providerAudioId } : undefined,
+            providerMetadata: {
+              provider: resolved.provider,
+              voiceId: resolved.voiceId,
+              ...(resolved.voiceName ? { voiceName: resolved.voiceName } : {}),
+              voiceSource: resolved.voiceSource,
+              ...(model ? { model } : {}),
+              ...(ttsResult.providerAudioId ? { providerAudioId: ttsResult.providerAudioId } : {}),
+            },
           },
         });
 

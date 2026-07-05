@@ -69,12 +69,17 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
     durationMs: s.durationMs,
     status: s.status,
     provider: s.provider,
+    providerMetadata: s.providerMetadata,
   }));
 
   const eligibility = await fetchTtsEligibility(scriptId);
 
   const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
   const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
+
+  const hosts = [hostA, hostB]
+    .filter((h): h is NonNullable<typeof h> => !!h)
+    .map((h) => ({ id: h.id, slug: h.slug, name: h.name }));
 
   return (
     <AudioSegmentsConsole
@@ -85,6 +90,13 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
       eligibilityWarnings={eligibility.warnings || []}
       hostAId={hostA?.id || ""}
       hostBId={hostB?.id || ""}
+      hosts={hosts}
+      episodeVoiceOverrides={
+        (script.episode.ttsVoiceOverrides as unknown as Record<
+          string,
+          { provider: string; voiceId: string; voiceName?: string }
+        > | null) ?? null
+      }
     />
   );
 }

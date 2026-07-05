@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { triggerEpisodeBuild, createEpisodeFromSelectedTopics, fetchEligibleTopics } from "./actions";
+import { triggerEpisodeBuild, createEpisodeFromSelectedTopics, fetchEligibleTopics, fetchActiveDebateHosts } from "./actions";
+import TtsVoicePicker, { PickerHost, VoicePicks, buildVoiceOverrides } from "../components/TtsVoicePicker";
+import { TTS_PROVIDER_LABELS } from "@/lib/providers/tts/providerIds";
 
 interface EligibleTopic {
   id: string;
@@ -30,6 +32,38 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+
+  // Voice engine + per-host voice picks pinned on the episode at build time.
+  // "default" = studio default (host-profile/env chain, no episode pin).
+  const [ttsEngine, setTtsEngine] = useState("default");
+  const [voicePicks, setVoicePicks] = useState<VoicePicks>({});
+  const [voiceHosts, setVoiceHosts] = useState<PickerHost[]>([
+    { slug: "max-voltage", name: "Max Voltage" },
+    { slug: "dr-linebreak", name: "Dr. Linebreak" },
+  ]);
+
+  useEffect(() => {
+    fetchActiveDebateHosts().then((res) => {
+      if (res.success && res.hosts && res.hosts.length > 0) {
+        setVoiceHosts(res.hosts.map((h) => ({ slug: h.slug, name: h.name })));
+      }
+    });
+  }, []);
+
+  // Reset picks when the engine changes — voice ids don't cross engines.
+  const [picksEngine, setPicksEngine] = useState(ttsEngine);
+  if (picksEngine !== ttsEngine) {
+    setPicksEngine(ttsEngine);
+    setVoicePicks({});
+  }
+
+  const voiceSelection = () => {
+    if (ttsEngine === "default") return { ttsProvider: undefined, ttsVoiceOverrides: undefined };
+    return {
+      ttsProvider: ttsEngine,
+      ttsVoiceOverrides: buildVoiceOverrides(ttsEngine, voicePicks),
+    };
+  };
 
   const [eligibleTopics, setEligibleTopics] = useState<EligibleTopic[]>([]);
   const [loadingTopics, setLoadingTopics] = useState(false);
@@ -79,6 +113,7 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
       targetTopicCount,
       title: title || undefined,
       description: description || undefined,
+      ...voiceSelection(),
     });
 
     if (res.success) {
@@ -111,10 +146,13 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
     setSubmitting(true);
     setMessage(null);
 
+    const { ttsProvider, ttsVoiceOverrides } = voiceSelection();
     const res = await createEpisodeFromSelectedTopics(
       selectedTopicIds,
       title || undefined,
-      description || undefined
+      description || undefined,
+      ttsProvider,
+      ttsVoiceOverrides
     );
 
     if (res.success) {
@@ -247,6 +285,37 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
             disabled={submitting}
           />
         </div>
+      </div>
+
+      {/* Voice Engine & per-host Voice IDs (pinned on the episode) */}
+      <div className="sectionGroup">
+        <span className="sectionGroupLabel">Voice Engine &amp; Voices</span>
+        <div className="formGroup">
+          <label className="label" htmlFor="ttsEngine">Voice Engine</label>
+          <select
+            id="ttsEngine"
+            className="select"
+            value={ttsEngine}
+            onChange={(e) => setTtsEngine(e.target.value)}
+            disabled={submitting}
+          >
+            <option value="default">Studio default (host profiles / env)</option>
+            <option value="elevenlabs">{TTS_PROVIDER_LABELS.elevenlabs}</option>
+            <option value="cartesia">{TTS_PROVIDER_LABELS.cartesia}</option>
+            <option value="boson">{TTS_PROVIDER_LABELS.boson}</option>
+            <option value="fish">{TTS_PROVIDER_LABELS.fish}</option>
+            <option value="openai">{TTS_PROVIDER_LABELS.openai}</option>
+          </select>
+        </div>
+        {ttsEngine !== "default" && (
+          <TtsVoicePicker
+            provider={ttsEngine}
+            hosts={voiceHosts}
+            value={voicePicks}
+            onChange={setVoicePicks}
+            disabled={submitting}
+          />
+        )}
       </div>
 
       {/* Auto Mode Inputs */}

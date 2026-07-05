@@ -24,16 +24,20 @@ export class BosonTTSProvider implements TTSProvider {
     const timeoutMs = parseInt(process.env.BOSON_TTS_TIMEOUT_MS || "45000", 10);
     const maxAttempts = Math.max(1, parseInt(process.env.BOSON_TTS_MAX_RETRIES || "3", 10));
 
-    // Voice resolution: explicit host voice, per-speaker env override, then
-    // the shared default. Stub placeholders never reach the API.
-    let voice = input.voiceId;
-    const isStubVoice = !voice || voice.includes("stub");
-    if (input.speakerName === "Max Voltage" && process.env.BOSON_MAX_VOLTAGE_VOICE_ID) {
-      voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID;
-    } else if (input.speakerName === "Dr. Linebreak" && process.env.BOSON_DR_LINEBREAK_VOICE_ID) {
-      voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID;
-    } else if (isStubVoice) {
-      voice = process.env.BOSON_TTS_VOICE || "default";
+    // An explicitly resolved voice id (episode/run override) is honored
+    // as-is; per-speaker env overrides and the shared default are only the
+    // FALLBACK when no usable id was passed. Stub placeholders never reach
+    // the API.
+    const isStubVoice = !input.voiceId || input.voiceId.includes("stub");
+    let voice = isStubVoice ? "" : input.voiceId;
+    if (!voice) {
+      if (input.speakerName === "Max Voltage" && process.env.BOSON_MAX_VOLTAGE_VOICE_ID) {
+        voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID;
+      } else if (input.speakerName === "Dr. Linebreak" && process.env.BOSON_DR_LINEBREAK_VOICE_ID) {
+        voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID;
+      } else {
+        voice = process.env.BOSON_TTS_VOICE || "default";
+      }
     }
 
     // The Boson formatting layer: tone/energy/interruption metadata + inline

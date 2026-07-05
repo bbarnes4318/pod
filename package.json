@@ -19,6 +19,7 @@
     "test:real-episode": "tsx --conditions=react-server src/scripts/testRealEpisode.ts",
     "test:model-ab": "tsx --conditions=react-server src/scripts/testModelAB.ts",
     "test:boson-format": "tsx src/scripts/testBosonFormat.ts",
+    "test:voice-resolution": "tsx src/scripts/testVoiceResolution.ts",
     "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts"
   },
   "dependencies": {

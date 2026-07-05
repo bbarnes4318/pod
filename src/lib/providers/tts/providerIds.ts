@@ -13,6 +13,15 @@ export function ttsProviderLabel(value: string): string {
   return isTtsProviderId(value) ? TTS_PROVIDER_LABELS[value] : value;
 }
 
+/** OpenAI TTS uses a fixed set of voice names rather than opaque ids. */
+export const OPENAI_TTS_VOICE_NAMES = [
+  "alloy", "ash", "ballad", "cedar", "coral", "echo", "fable",
+  "marin", "nova", "onyx", "sage", "shimmer", "verse",
+] as const;
+
+/** Fish reference ids are 32-char hex strings; anything else must never be sent. */
+export const FISH_REFERENCE_ID_RE = /^[0-9a-f]{32}$/i;
+
 /** Listener-facing names for the pickers. */
 export const TTS_PROVIDER_LABELS: Record<TtsProviderId, string> = {
   elevenlabs: "ElevenLabs",

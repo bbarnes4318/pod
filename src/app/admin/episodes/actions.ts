@@ -16,6 +16,8 @@ export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
       sport: input.sport,
       targetTopicCount: input.targetTopicCount,
       minDebateScore: input.minDebateScore,
+      ttsProvider: input.ttsProvider,
+      ttsVoiceOverrides: input.ttsVoiceOverrides,
     });
 
     revalidatePath("/admin/episodes");
@@ -29,7 +31,8 @@ export async function createEpisodeFromSelectedTopics(
   topicIds: string[],
   title?: string,
   description?: string,
-  ttsProvider?: string
+  ttsProvider?: string,
+  ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"]
 ) {
   try {
     const res = await buildEpisodeFromTopics({
@@ -37,12 +40,35 @@ export async function createEpisodeFromSelectedTopics(
       title,
       description,
       ttsProvider,
+      ttsVoiceOverrides,
     });
 
     revalidatePath("/admin/episodes");
     return { success: true, episodeId: res.episodeId };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to build episode from selected topics." };
+  }
+}
+
+/** Active debate hosts for voice pickers (slug is the override key). */
+export async function fetchActiveDebateHosts() {
+  try {
+    const hosts = await db.aiHost.findMany({
+      where: { isActive: true, name: { in: ["Max Voltage", "Dr. Linebreak"] } },
+      orderBy: { name: "desc" }, // Max Voltage first
+    });
+    return {
+      success: true,
+      hosts: hosts.map((h) => ({
+        id: h.id,
+        name: h.name,
+        slug: h.slug,
+        ttsProvider: h.ttsProvider,
+        ttsVoiceId: h.ttsVoiceId,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to fetch hosts.", hosts: [] };
   }
 }
 

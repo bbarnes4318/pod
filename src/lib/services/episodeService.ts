@@ -2,6 +2,7 @@ import { db } from "../db";
 import crypto from "crypto";
 import { scoreTopicTalkability } from "./talkabilityService";
 import { isTtsProviderId } from "../providers/tts/providerIds";
+import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -15,6 +16,10 @@ export interface EpisodeBuildInput {
    *  TTS run (and re-run) for it uses the same provider. Omit for the
    *  host-profile/env default. */
   ttsProvider?: string;
+  /** Per-host voice picks keyed by host slug, each tagged with the provider
+   *  it belongs to: { "max-voltage": { provider, voiceId, voiceName? } }.
+   *  Persisted on the Episode so every TTS run uses the same voices. */
+  ttsVoiceOverrides?: TtsVoiceOverrides;
 }
 
 export interface EpisodeBuildResult {
@@ -61,6 +66,16 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
     const msg = `Unknown TTS provider '${chosenTtsProvider}'.`;
     result.reasons.push(msg);
     throw new Error(msg);
+  }
+
+  // Throws with a clear message on malformed picks (unknown provider,
+  // non-32-hex Fish reference id, unknown OpenAI voice name).
+  let chosenVoiceOverrides: TtsVoiceOverrides | undefined;
+  try {
+    chosenVoiceOverrides = validateTtsVoiceOverridesInput(input.ttsVoiceOverrides);
+  } catch (err: any) {
+    result.reasons.push(err.message);
+    throw err;
   }
 
   const minScore = input.minDebateScore !== undefined ? Number(input.minDebateScore) : 70;
@@ -281,6 +296,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         transcriptUrl: null,
         publishedAt: null,
         ttsProvider: chosenTtsProvider,
+        ttsVoiceOverrides: chosenVoiceOverrides ? (chosenVoiceOverrides as any) : undefined,
       },
     });
 

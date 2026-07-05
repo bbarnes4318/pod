@@ -9,6 +9,7 @@ import {
   retryTtsSegment,
   fetchTtsSegments,
 } from "../actions";
+import TtsVoicePicker, { VoicePicks, buildVoiceOverrides } from "../../components/TtsVoicePicker";
 import "../../scripts/scripts.css";
 
 interface ScriptInfo {
@@ -24,6 +25,12 @@ interface ScriptInfo {
   lines: any[];
 }
 
+interface ConsoleHost {
+  id: string;
+  slug: string;
+  name: string;
+}
+
 interface ConsoleProps {
   script: ScriptInfo;
   initialSegments: any[];
@@ -32,6 +39,9 @@ interface ConsoleProps {
   eligibilityWarnings?: string[];
   hostAId: string;
   hostBId: string;
+  hosts: ConsoleHost[];
+  /** Episode.ttsVoiceOverrides — voice picks pinned on the episode. */
+  episodeVoiceOverrides: Record<string, { provider: string; voiceId: string; voiceName?: string }> | null;
 }
 
 export default function AudioSegmentsConsole({
@@ -42,6 +52,8 @@ export default function AudioSegmentsConsole({
   eligibilityWarnings = [],
   hostAId,
   hostBId,
+  hosts,
+  episodeVoiceOverrides,
 }: ConsoleProps) {
   const [segments, setSegments] = useState<any[]>(initialSegments);
   const [loading, setLoading] = useState(false);
@@ -49,7 +61,34 @@ export default function AudioSegmentsConsole({
   const [rangeEnd, setRangeEnd] = useState<number>(Math.max(0, script.totalLines - 1));
   const [selectedHostId, setSelectedHostId] = useState<string>("");
   const [providerOverride, setProviderOverride] = useState<string>("");
+  const [saveToEpisode, setSaveToEpisode] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Engine the voice picks below apply to: explicit override first, then the
+  // episode/env default the page resolved into script.provider.
+  const effectiveProvider = providerOverride || script.provider;
+
+  // Each host's voice prefilled from the picks already pinned on the episode
+  // FOR the current engine.
+  const pinnedPicksFor = (engine: string): VoicePicks => {
+    const next: VoicePicks = {};
+    for (const host of hosts) {
+      const pinned = episodeVoiceOverrides?.[host.slug] || episodeVoiceOverrides?.[host.id];
+      if (pinned && pinned.provider === engine && pinned.voiceId) {
+        next[host.slug] = { voiceId: pinned.voiceId, voiceName: pinned.voiceName };
+      }
+    }
+    return next;
+  };
+  const [voicePicks, setVoicePicks] = useState<VoicePicks>(() => pinnedPicksFor(effectiveProvider));
+  // Reset the picks when the engine changes — voice ids don't cross engines.
+  const [picksEngine, setPicksEngine] = useState(effectiveProvider);
+  if (picksEngine !== effectiveProvider) {
+    setPicksEngine(effectiveProvider);
+    setVoicePicks(pinnedPicksFor(effectiveProvider));
+  }
+
+  const currentVoiceOverrides = () => buildVoiceOverrides(effectiveProvider, voicePicks);
 
   // Poll segments status while there are pending or processing items
   useEffect(() => {
@@ -78,7 +117,7 @@ export default function AudioSegmentsConsole({
   const handleFullTts = async (force: boolean) => {
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsGeneration(script.id, force, providerOverride || undefined);
+    const res = await triggerTtsGeneration(script.id, force, providerOverride || undefined, currentVoiceOverrides(), saveToEpisode);
     if (res.success) {
       setMessage({ type: "success", text: "TTS generation enqueued successfully." });
       await refreshSegments();
@@ -91,7 +130,7 @@ export default function AudioSegmentsConsole({
   const handleRangeTts = async () => {
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsRange(script.id, rangeStart, rangeEnd, providerOverride || undefined);
+    const res = await triggerTtsRange(script.id, rangeStart, rangeEnd, providerOverride || undefined, currentVoiceOverrides(), saveToEpisode);
     if (res.success) {
       setMessage({ type: "success", text: `TTS range (${rangeStart} to ${rangeEnd}) generation enqueued.` });
       await refreshSegments();
@@ -105,7 +144,7 @@ export default function AudioSegmentsConsole({
     if (!selectedHostId) return;
     setLoading(true);
     setMessage(null);
-    const res = await triggerTtsForHost(script.id, selectedHostId, providerOverride || undefined);
+    const res = await triggerTtsForHost(script.id, selectedHostId, providerOverride || undefined, currentVoiceOverrides(), saveToEpisode);
     if (res.success) {
       setMessage({ type: "success", text: "TTS host-specific generation enqueued." });
       await refreshSegments();
@@ -118,7 +157,7 @@ export default function AudioSegmentsConsole({
   const handleLineAction = async (lineIndex: number) => {
     setLoading(true);
     setMessage(null);
-    const res = await retryTtsSegment(script.id, lineIndex);
+    const res = await retryTtsSegment(script.id, lineIndex, providerOverride || undefined, currentVoiceOverrides(), saveToEpisode);
     if (res.success) {
       setMessage({ type: "success", text: `TTS generation enqueued for line #${lineIndex + 1}.` });
       await refreshSegments();
@@ -268,8 +307,14 @@ export default function AudioSegmentsConsole({
                             {statusVal}
                           </span>
                           {seg?.provider && (
-                            <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
+                            <div
+                              style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}
+                              title={seg.providerMetadata?.voiceId ? `Voice: ${seg.providerMetadata.voiceName || seg.providerMetadata.voiceId} (${seg.providerMetadata.voiceSource || "?"})` : undefined}
+                            >
                               {seg.provider}
+                              {seg.providerMetadata?.voiceName || seg.providerMetadata?.voiceId ? (
+                                <> · {seg.providerMetadata.voiceName || `${String(seg.providerMetadata.voiceId).slice(0, 10)}…`}</>
+                              ) : null}
                             </div>
                           )}
                         </td>
@@ -347,9 +392,9 @@ export default function AudioSegmentsConsole({
           {/* Action Triggers Console */}
           {eligible && (
             <>
-              {/* Provider Override Selection */}
+              {/* Voice Engine + per-host Voice ID Selection */}
               <div className="controlsPanel">
-                <div className="panelTitle">TTS Provider Override</div>
+                <div className="panelTitle">Voice Engine &amp; Voices</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                   <select
                     value={providerOverride}
@@ -360,10 +405,33 @@ export default function AudioSegmentsConsole({
                     <option value="elevenlabs">ElevenLabs</option>
                     <option value="cartesia">Cartesia</option>
                     <option value="openai">OpenAI TTS</option>
-                    <option value="boson">Boson</option>
+                    <option value="boson">Boson AI</option>
                     <option value="fish">Fish Audio</option>
                     <option value="stub">Stub</option>
                   </select>
+
+                  {effectiveProvider !== "stub" && hosts.length > 0 && (
+                    <>
+                      <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                        Voice IDs below apply to <strong>{effectiveProvider}</strong> runs only.
+                      </div>
+                      <TtsVoicePicker
+                        provider={effectiveProvider}
+                        hosts={hosts}
+                        value={voicePicks}
+                        onChange={setVoicePicks}
+                        disabled={loading}
+                      />
+                      <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "var(--text-primary)", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={saveToEpisode}
+                          onChange={(e) => setSaveToEpisode(e.target.checked)}
+                        />
+                        Save to episode for future reruns
+                      </label>
+                    </>
+                  )}
                 </div>
               </div>
 

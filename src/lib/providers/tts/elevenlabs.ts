@@ -43,17 +43,19 @@ export class ElevenLabsTTSProvider implements TTSProvider {
       }
     }
 
-    // Resolve the voice ID: a per-speaker env override wins, otherwise fall
-    // back to the host's configured voice. Never send a leftover "stub" ID
-    // (that would 404 / produce a wrong voice) — fail with a clear message.
-    let voiceId = input.voiceId;
-    const isStubVoice = !voiceId || voiceId.includes("stub");
-    if (input.speakerName === "Max Voltage") {
-      voiceId = process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? "" : voiceId);
-    } else if (input.speakerName === "Dr. Linebreak") {
-      voiceId = process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID || (isStubVoice ? "" : voiceId);
-    } else if (isStubVoice) {
-      voiceId = "";
+    // An explicitly resolved voice id (episode/run override, host default)
+    // is honored as-is; per-speaker env vars are only the FALLBACK when no
+    // usable id was passed. Never send a leftover "stub" ID (that would
+    // 404 / produce a wrong voice) — fail with a clear message.
+    const isStubVoice = !input.voiceId || input.voiceId.includes("stub");
+    let voiceId = isStubVoice ? "" : input.voiceId;
+    if (!voiceId) {
+      if (input.speakerName === "Max Voltage") {
+        voiceId = process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID || "";
+      } else if (input.speakerName === "Dr. Linebreak") {
+        voiceId = process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID || "";
+      }
+      if (!voiceId) voiceId = process.env.ELEVENLABS_VOICE_ID || "";
     }
     if (!voiceId) {
       throw new Error(

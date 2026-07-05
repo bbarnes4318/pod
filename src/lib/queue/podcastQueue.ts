@@ -1,5 +1,6 @@
 import { Queue } from "bullmq";
 import { getRedisClient } from "../redis";
+import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -81,6 +82,8 @@ export interface EpisodeBuildJobData {
   sport?: string;
   targetTopicCount?: number;
   minDebateScore?: number;
+  ttsProvider?: string;
+  ttsVoiceOverrides?: TtsVoiceOverrides;
 }
 
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData) {
@@ -117,6 +120,7 @@ export interface TtsSegmentJobData {
   };
   hostId?: string;
   providerOverride?: string;
+  voiceOverrides?: TtsVoiceOverrides;
 }
 
 export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {

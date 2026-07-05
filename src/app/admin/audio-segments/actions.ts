@@ -3,7 +3,41 @@
 import { db } from "@/lib/db";
 import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import { TTS_ELIGIBLE_EPISODE_STATUSES } from "@/lib/services/ttsSegmentService";
+import {
+  TtsVoiceOverrides,
+  validateTtsVoiceOverridesInput,
+} from "@/lib/providers/tts/voiceResolution";
 import { revalidatePath } from "next/cache";
+
+// Normalize + validate operator-picked voice overrides, and optionally pin
+// them (plus the provider) on the episode so future re-runs keep using them.
+async function prepareVoiceSelection(
+  scriptId: string,
+  providerOverride?: string,
+  voiceOverrides?: TtsVoiceOverrides,
+  saveToEpisode?: boolean
+): Promise<TtsVoiceOverrides | undefined> {
+  const normalized = validateTtsVoiceOverridesInput(voiceOverrides);
+
+  if (saveToEpisode && (providerOverride || normalized)) {
+    const script = await db.script.findUnique({
+      where: { id: scriptId },
+      select: { episodeId: true, episode: { select: { ttsVoiceOverrides: true } } },
+    });
+    if (script) {
+      const data: Record<string, unknown> = {};
+      if (providerOverride) data.ttsProvider = providerOverride;
+      if (normalized) {
+        // Merge per host so overriding one host's voice keeps the other's.
+        const existing = (script.episode?.ttsVoiceOverrides as TtsVoiceOverrides | null) || {};
+        data.ttsVoiceOverrides = { ...existing, ...normalized };
+      }
+      await db.episode.update({ where: { id: script.episodeId }, data: data as any });
+    }
+  }
+
+  return normalized;
+}
 
 // Only structural problems (no script, no episode) make a script ineligible.
 // Pipeline-state mismatches — unapproved script, early episode status, missing
@@ -51,14 +85,21 @@ export async function fetchTtsEligibility(scriptId: string) {
   }
 }
 
-export async function triggerTtsGeneration(scriptId: string, forceRegenerate = false, providerOverride?: string) {
+export async function triggerTtsGeneration(
+  scriptId: string,
+  forceRegenerate = false,
+  providerOverride?: string,
+  voiceOverrides?: TtsVoiceOverrides,
+  saveToEpisode?: boolean
+) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
       throw new Error(check.reason || "Script is not eligible for TTS generation.");
     }
 
-    await queueTtsSegmentGenerationJob({ scriptId, forceRegenerate, providerOverride });
+    const normalized = await prepareVoiceSelection(scriptId, providerOverride, voiceOverrides, saveToEpisode);
+    await queueTtsSegmentGenerationJob({ scriptId, forceRegenerate, providerOverride, voiceOverrides: normalized });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
   } catch (err: any) {
@@ -66,18 +107,27 @@ export async function triggerTtsGeneration(scriptId: string, forceRegenerate = f
   }
 }
 
-export async function triggerTtsRange(scriptId: string, startLineIndex: number, endLineIndex: number, providerOverride?: string) {
+export async function triggerTtsRange(
+  scriptId: string,
+  startLineIndex: number,
+  endLineIndex: number,
+  providerOverride?: string,
+  voiceOverrides?: TtsVoiceOverrides,
+  saveToEpisode?: boolean
+) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
       throw new Error(check.reason || "Script is not eligible for TTS generation.");
     }
 
+    const normalized = await prepareVoiceSelection(scriptId, providerOverride, voiceOverrides, saveToEpisode);
     await queueTtsSegmentGenerationJob({
       scriptId,
       segmentRange: { startLineIndex, endLineIndex },
       forceRegenerate: true, // Range triggers usually want to overwrite
       providerOverride,
+      voiceOverrides: normalized,
     });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
@@ -86,18 +136,26 @@ export async function triggerTtsRange(scriptId: string, startLineIndex: number, 
   }
 }
 
-export async function triggerTtsForHost(scriptId: string, hostId: string, providerOverride?: string) {
+export async function triggerTtsForHost(
+  scriptId: string,
+  hostId: string,
+  providerOverride?: string,
+  voiceOverrides?: TtsVoiceOverrides,
+  saveToEpisode?: boolean
+) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
       throw new Error(check.reason || "Script is not eligible for TTS generation.");
     }
 
+    const normalized = await prepareVoiceSelection(scriptId, providerOverride, voiceOverrides, saveToEpisode);
     await queueTtsSegmentGenerationJob({
       scriptId,
       hostId,
       forceRegenerate: true,
       providerOverride,
+      voiceOverrides: normalized,
     });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
@@ -106,17 +164,26 @@ export async function triggerTtsForHost(scriptId: string, hostId: string, provid
   }
 }
 
-export async function retryTtsSegment(scriptId: string, lineIndex: number) {
+export async function retryTtsSegment(
+  scriptId: string,
+  lineIndex: number,
+  providerOverride?: string,
+  voiceOverrides?: TtsVoiceOverrides,
+  saveToEpisode?: boolean
+) {
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
       throw new Error(check.reason || "Script is not eligible for TTS generation.");
     }
 
+    const normalized = await prepareVoiceSelection(scriptId, providerOverride, voiceOverrides, saveToEpisode);
     await queueTtsSegmentGenerationJob({
       scriptId,
       segmentRange: { startLineIndex: lineIndex, endLineIndex: lineIndex },
       forceRegenerate: true,
+      providerOverride,
+      voiceOverrides: normalized,
     });
     revalidatePath(`/admin/audio-segments/${scriptId}`);
     return { success: true };
@@ -145,6 +212,7 @@ export async function fetchTtsSegments(scriptId: string) {
         durationMs: s.durationMs,
         status: s.status,
         provider: s.provider,
+        providerMetadata: s.providerMetadata,
         createdAt: s.createdAt.toISOString(),
       })),
     };

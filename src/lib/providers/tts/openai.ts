@@ -1,4 +1,5 @@
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
+import { OPENAI_TTS_VOICE_NAMES } from "./providerIds";
 import { stripAudioTags } from "@/lib/audio/speechText";
 
 /**
@@ -23,13 +24,20 @@ export class OpenAITTSProvider implements TTSProvider {
     const supportsInstructions = model.includes("gpt-4o") || model.includes("tts-latest");
     const format = input.format || "mp3";
 
-    const allowedVoices = [
-      "alloy", "ash", "ballad", "cedar", "coral", "echo", "fable",
-      "marin", "nova", "onyx", "sage", "shimmer", "verse",
-    ];
-    const voice = allowedVoices.includes(input.voiceId.toLowerCase())
-      ? input.voiceId.toLowerCase()
-      : "alloy";
+    // OpenAI TTS voices are fixed names. An explicit valid pick wins;
+    // otherwise per-speaker env vars, the shared env default, then "alloy".
+    const allowed = OPENAI_TTS_VOICE_NAMES as readonly string[];
+    const asOpenAiVoice = (v?: string | null): string | undefined =>
+      v && allowed.includes(v.toLowerCase()) ? v.toLowerCase() : undefined;
+    let voice = asOpenAiVoice(input.voiceId);
+    if (!voice) {
+      if (input.speakerName === "Max Voltage") {
+        voice = asOpenAiVoice(process.env.OPENAI_MAX_VOLTAGE_VOICE);
+      } else if (input.speakerName === "Dr. Linebreak") {
+        voice = asOpenAiVoice(process.env.OPENAI_DR_LINEBREAK_VOICE);
+      }
+      if (!voice) voice = asOpenAiVoice(process.env.OPENAI_TTS_VOICE) || "alloy";
+    }
 
     const body: Record<string, unknown> = {
       model,
