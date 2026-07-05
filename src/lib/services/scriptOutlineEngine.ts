@@ -206,7 +206,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
         `  Escalation: ${b.escalation || "n/a"}`,
         `  Callback note: ${b.callback || "n/a"}`,
         `  TopicId: ${b.topicId || "n/a"}`,
-        `  Assigned facts (ONLY these may introduce new factual claims; each used once): ${JSON.stringify(b.factRefs)}`,
+        `  Assigned facts (ONLY these may introduce new factual claims — introduce each ONCE, but every later line that leans on one must still carry its ref): ${JSON.stringify(b.factRefs)}`,
       ].join("\n")
     )
     .join("\n\n");
@@ -241,6 +241,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     ``,
     `EVIDENCE DISCIPLINE (the fact-checker rejects violations):`,
     `- Every line that states a number, stat, record, contract detail, injury, or event as true MUST set "isFactualClaim": true AND carry that fact's ref from your beats' assigned facts in "evidenceRefs". No ref = the line gets flagged.`,
+    `- RE-USING a ref is fine and expected: when a line riffs on, restates, or derives from a fact introduced earlier ("that's barely half of..."), it still carries that fact's ref. "Used once" limits the WORDING, never the ref.`,
     `- Predictions, hot takes, and judgments are "isFactualClaim": false with empty evidenceRefs.`,
     ``,
     `Return valid JSON only:`,
