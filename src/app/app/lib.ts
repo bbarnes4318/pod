@@ -37,14 +37,20 @@ export const SPORT_EMOJI: Record<string, string> = {
   basketball: "🏀", football: "🏈", baseball: "⚾", soccer: "⚽", hockey: "🏒", "combat sports": "🥊",
 };
 
-export function emojiForTitle(title: string, sport?: string): string {
-  const s = (sport || "").toLowerCase();
-  if (SPORT_EMOJI[s]) return SPORT_EMOJI[s];
+/** Best-effort sport detection from a title — drives both emoji and accent anchoring. */
+export function sportFromTitle(title: string): string | null {
   const t = title.toLowerCase();
-  if (/nba|basket|seed|dunk|court|lakers|luka|lebron/.test(t)) return "🏀";
-  if (/nfl|draft|quarterback|football|trade/.test(t)) return "🏈";
-  if (/messi|soccer|argentina|world cup|goal|marsch/.test(t)) return "⚽";
-  if (/mlb|baseball|inning/.test(t)) return "⚾";
-  if (/fight|ufc|knockout|octagon/.test(t)) return "🥊";
+  if (/nba|basket|seed|dunk|court|lakers|luka|lebron|clutch|playoff/.test(t)) return "basketball";
+  if (/nfl|draft|quarterback|football|trade/.test(t)) return "football";
+  if (/messi|soccer|argentina|world cup|goal|marsch/.test(t)) return "soccer";
+  if (/mlb|baseball|inning/.test(t)) return "baseball";
+  if (/fight|ufc|knockout|octagon/.test(t)) return "combat sports";
+  if (/nhl|hockey|puck/.test(t)) return "hockey";
+  return null;
+}
+
+export function emojiForTitle(title: string, sport?: string): string {
+  const s = (sport || sportFromTitle(title) || "").toLowerCase();
+  if (SPORT_EMOJI[s]) return SPORT_EMOJI[s];
   return "“";
 }

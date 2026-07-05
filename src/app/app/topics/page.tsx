@@ -40,7 +40,7 @@ export default async function HotTopicsPage() {
               const hot = t.debateScore >= 75;
               return (
                 <div key={t.id} className="uTakeCard" style={{ alignItems: "flex-start", padding: "1.1rem 1.2rem" }}>
-                  <div className="uTakeScore" style={{ background: a.tint, color: a.deep }}>
+                  <div className="uTakeScore" style={{ background: a.solid, color: "#fff" }}>
                     {Math.round(t.debateScore)}
                     <small>DEBATE</small>
                   </div>
@@ -55,7 +55,7 @@ export default async function HotTopicsPage() {
                       </p>
                     )}
                     <div className="uTakeMeta" style={{ flexWrap: "wrap", rowGap: "0.35rem" }}>
-                      <span>{emojiForTitle(t.title, t.sport)} {t.sport}</span>
+                      <span style={{ color: a.deep, fontWeight: 700 }}>{emojiForTitle(t.title, t.sport)} {t.sport}</span>
                       {hot && <span className="uHeat" style={{ background: a.soft, color: a.deep }}>🔥 Hot</span>}
                       <span>{fmtDay(t.createdAt)}</span>
                       <span style={{ display: "inline-flex", gap: "0.6rem", color: "var(--u-ink-3)" }}>

@@ -8,11 +8,14 @@ All styles scoped under `.userSurface` in `src/app/app/app.css`.
 ## Principles
 1. **Content-derived color** — the defining rule. No loud brand color painted
    everywhere. Each episode/topic derives its own accent (`src/app/app/accent.ts`):
-   title hash → curated 8-hue wheel (coral, ocean, moss, amber, plum, teal,
-   rose, slate); topics anchor to their sport (basketball→coral,
-   football→ocean, soccer→teal…). Every accent ships three strengths:
-   `tint` (cover washes), `soft` (chips/tracks), `solid` (play buttons, played
-   waveform). One restrained brand blue `#3B5BFF` for nav + global CTAs only.
+   sport detected in the title anchors the hue (basketball→coral,
+   football→ocean, soccer→teal…, via `sportFromTitle` in `lib.ts`), title hash
+   over the curated 8-hue wheel (coral, ocean, moss, amber, plum, teal, rose,
+   slate) as fallback. Every accent ships three strengths: `tint` (hero score
+   chip), `soft` (chips/tracks, cover bases), `solid` (covers, play buttons,
+   score tiles, waveforms). Covers are saturated — the solid hue owns ~60% of
+   the art (`cover.tsx` `coverStyle`/`CoverArt` with score badge + waveform
+   motif). One restrained brand blue `#3B5BFF` for nav + global CTAs only.
 2. **Light and spacious** — canvas `#FCFCFD`, surfaces `#FFFFFF`, hairlines
    `#EEF0F3`, radii 14–18px, soft wide shadows only on hover/lift.
 3. **Typography does the hierarchy** — Inter (next/font): hero 34/800/-2%,

@@ -6,6 +6,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePlayer } from "./PlayerBar";
+import { CoverArt, coverStyle } from "./cover";
 
 export interface CardEpisode {
   id: string;
@@ -17,6 +18,8 @@ export interface CardEpisode {
   accentSoft: string;
   accentTint: string;
   accentDeep: string;
+  score?: number | null;
+  description?: string | null;
 }
 
 export function EpisodeCard({ ep }: { ep: CardEpisode }) {
@@ -26,14 +29,8 @@ export function EpisodeCard({ ep }: { ep: CardEpisode }) {
   return (
     <div className="uEpCard">
       <Link href={`/app/episodes/${ep.id}`} aria-label={ep.title}>
-        <div className="uEpCover" style={{ background: `linear-gradient(135deg, ${ep.accentSoft}, ${ep.accentTint} 70%)` }}>
-          <span
-            className={ep.emoji === "“" ? "quoteMark" : undefined}
-            style={{ fontSize: ep.emoji === "“" ? "4.6rem" : "2.2rem", color: ep.emoji === "“" ? ep.accentSolid : undefined }}
-            aria-hidden="true"
-          >
-            {ep.emoji}
-          </span>
+        <div className="uEpCover" style={coverStyle(ep)}>
+          <CoverArt ep={ep} />
           {ep.audioUrl && (
             <button
               className="uEpPlay"
@@ -55,6 +52,12 @@ export function EpisodeCard({ ep }: { ep: CardEpisode }) {
         <span style={{ color: ep.accentDeep, fontWeight: 700 }}>Max & Doc</span>
         <span>·</span>
         <span>{ep.meta}</span>
+        {typeof ep.score === "number" && (
+          <>
+            <span>·</span>
+            <span style={{ color: ep.accentDeep, fontWeight: 700 }}>⭑ {ep.score}</span>
+          </>
+        )}
       </div>
     </div>
   );

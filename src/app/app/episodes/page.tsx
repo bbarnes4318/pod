@@ -1,24 +1,28 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
-import { accentFor } from "../accent";
-import { emojiForTitle, fmtMin, fmtDay, friendlyStage } from "../lib";
+import { accentFor, accentForSport } from "../accent";
+import { emojiForTitle, sportFromTitle, fmtMin, fmtDay, friendlyStage } from "../lib";
 import { EpisodeCard, CardEpisode } from "../EpisodeCard";
+import { getEpisodeScores } from "../scores";
 
 export const dynamic = "force-dynamic";
 
 export default async function MyEpisodesPage() {
-  const episodes = await db.episode.findMany({
-    orderBy: { updatedAt: "desc" },
-    take: 60,
-    select: { id: true, title: true, audioUrl: true, durationSeconds: true, updatedAt: true, status: true },
-  }).catch(() => [] as any[]);
+  const [episodes, scores] = await Promise.all([
+    db.episode.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 60,
+      select: { id: true, title: true, audioUrl: true, durationSeconds: true, updatedAt: true, status: true },
+    }).catch(() => [] as any[]),
+    getEpisodeScores(),
+  ]);
 
   const ready = episodes.filter((e) => e.audioUrl);
   const cooking = episodes.filter((e) => !e.audioUrl && e.status !== "failed");
 
   const toCard = (e: (typeof episodes)[number]): CardEpisode => {
-    const a = accentFor(e.title);
+    const a = accentForSport(sportFromTitle(e.title), e.title);
     return {
       id: e.id,
       title: e.title,
@@ -29,6 +33,7 @@ export default async function MyEpisodesPage() {
       accentSoft: a.soft,
       accentTint: a.tint,
       accentDeep: a.deep,
+      score: scores.get(e.id) ?? null,
     };
   };
 

@@ -1,27 +1,12 @@
 import React from "react";
 import Link from "next/link";
 import { getDiscoverData } from "./discoverData";
-import { accentFor, accentForSport } from "./accent";
+import { accentForSport } from "./accent";
 import { EpisodeCard, HeroPlay, CardEpisode } from "./EpisodeCard";
+import { CoverArt, coverStyle } from "./cover";
+import { emojiForTitle, sportFromTitle } from "./lib";
 
 export const dynamic = "force-dynamic";
-
-const SPORT_EMOJI: Record<string, string> = {
-  basketball: "🏀", football: "🏈", baseball: "⚾", soccer: "⚽", hockey: "🏒", "combat sports": "🥊",
-};
-
-function emojiFor(title: string, sport?: string): string {
-  const s = (sport || "").toLowerCase();
-  if (SPORT_EMOJI[s]) return SPORT_EMOJI[s];
-  const t = title.toLowerCase();
-  if (/nba|basket|seed|dunk|court|lakers|luka|lebron/.test(t)) return "🏀";
-  if (/nfl|draft|quarterback|football|trade/.test(t)) return "🏈";
-  if (/messi|soccer|argentina|world cup|goal|marsch/.test(t)) return "⚽";
-  if (/mlb|baseball|inning/.test(t)) return "⚾";
-  if (/fight|ufc|knockout|octagon/.test(t)) return "🥊";
-  // Editorial fallback: a big typographic quote mark (always renders crisply)
-  return "“";
-}
 
 function fmtDur(s: number | null): string {
   if (!s) return "—";
@@ -32,17 +17,19 @@ export default async function DiscoverPage() {
   const data = await getDiscoverData();
 
   const cards: CardEpisode[] = data.episodes.map((e) => {
-    const a = accentFor(e.title);
+    const a = accentForSport(sportFromTitle(e.title), e.title);
     return {
       id: e.id,
       title: e.title,
       audioUrl: e.audioUrl,
       meta: fmtDur(e.durationSeconds),
-      emoji: emojiFor(e.title),
+      emoji: emojiForTitle(e.title),
       accentSolid: a.solid,
       accentSoft: a.soft,
       accentTint: a.tint,
       accentDeep: a.deep,
+      score: e.score,
+      description: e.description,
     };
   });
 
@@ -72,34 +59,32 @@ export default async function DiscoverPage() {
         {/* ---- HERO / FEATURED ---- */}
         {featured ? (
           <section className="uHero" aria-label="Featured episode">
-            <div className="uHeroCover" style={{ background: `linear-gradient(140deg, ${featured.accentSoft}, ${featured.accentTint} 65%, #fff)` }}>
-              <span
-                className={featured.emoji === "“" ? "quoteMark" : undefined}
-                style={{ fontSize: featured.emoji === "“" ? "10rem" : "5.5rem", color: featured.emoji === "“" ? featured.accentSolid : undefined }}
-                aria-hidden="true"
-              >
-                {featured.emoji}
-              </span>
-              <span
-                aria-hidden="true"
-                style={{ position: "absolute", bottom: 14, left: 14, right: 14, display: "flex", alignItems: "flex-end", gap: 3, height: 26, opacity: 0.5 }}
-              >
-                {[12, 22, 9, 26, 16, 24, 11, 19, 25, 8, 21, 14, 24, 10, 18, 23, 12, 20].map((h, i) => (
-                  <span key={i} style={{ flex: 1, height: h, borderRadius: 2, background: featured.accentSolid }} />
-                ))}
-              </span>
+            <div className="uHeroCover" style={coverStyle(featured)}>
+              <CoverArt ep={{ ...featured, score: null }} waveHeight={42} emojiSize="5.2rem" />
             </div>
             <div>
               <div className="uHeroKicker" style={{ color: featured.accentDeep }}>
                 {data.episodes[0].status === "published" ? "Latest episode" : "Fresh off the mix"}
               </div>
               <h2 className="uHeroTitle">{featured.title}</h2>
+              {featured.description && <p className="uHeroDesc">{featured.description}</p>}
               <div className="uHeroMeta">
+                <span className="uHostAvas" aria-hidden="true">
+                  <span className="uHostAva" style={{ background: "#E86A5E" }}>MV</span>
+                  <span className="uHostAva" style={{ background: "#3E7BD6" }}>DL</span>
+                </span>
                 <span style={{ fontWeight: 650, color: "var(--u-ink-2)" }}>Max Voltage & Dr. Linebreak</span>
                 <span className="uDot" />
                 <span>{featured.meta}</span>
-                <span className="uDot" />
-                <span>AI sports debate</span>
+                {typeof featured.score === "number" && (
+                  <span
+                    className="uScoreBadge inHero"
+                    style={{ background: featured.accentTint, color: featured.accentDeep }}
+                  >
+                    {featured.score}
+                    <small>/100 SHOW SCORE</small>
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap" }}>
                 <HeroPlay ep={featured} />
@@ -149,14 +134,14 @@ export default async function DiscoverPage() {
               const hot = t.debateScore >= 75;
               return (
                 <div key={t.id} className="uTakeCard">
-                  <div className="uTakeScore" style={{ background: a.tint, color: a.deep }}>
+                  <div className="uTakeScore" style={{ background: a.solid, color: "#fff" }}>
                     {Math.round(t.debateScore)}
                     <small>DEBATE</small>
                   </div>
                   <div style={{ minWidth: 0 }}>
                     <div className="uTakeTitle">{t.title}</div>
                     <div className="uTakeMeta">
-                      <span>{emojiFor(t.title, t.sport)} {t.sport}</span>
+                      <span style={{ color: a.deep, fontWeight: 700 }}>{emojiForTitle(t.title, t.sport)} {t.sport}</span>
                       {hot && (
                         <span className="uHeat" style={{ background: a.soft, color: a.deep }}>
                           🔥 Hot

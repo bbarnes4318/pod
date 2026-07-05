@@ -1,18 +1,22 @@
 import React from "react";
 import { db } from "@/lib/db";
-import { accentFor } from "../accent";
-import { emojiForTitle, fmtMin } from "../lib";
+import { accentForSport } from "../accent";
+import { emojiForTitle, sportFromTitle, fmtMin } from "../lib";
 import { EpisodeCard, CardEpisode } from "../EpisodeCard";
+import { getEpisodeScores } from "../scores";
 
 export const dynamic = "force-dynamic";
 
 export default async function PublishedPage() {
-  const episodes = await db.episode.findMany({
-    where: { status: "published" },
-    orderBy: { publishedAt: "desc" },
-    take: 40,
-    select: { id: true, title: true, audioUrl: true, durationSeconds: true, publishedAt: true, updatedAt: true },
-  }).catch(() => [] as any[]);
+  const [episodes, scores] = await Promise.all([
+    db.episode.findMany({
+      where: { status: "published" },
+      orderBy: { publishedAt: "desc" },
+      take: 40,
+      select: { id: true, title: true, audioUrl: true, durationSeconds: true, publishedAt: true, updatedAt: true },
+    }).catch(() => [] as any[]),
+    getEpisodeScores(),
+  ]);
 
   const feedUrl = process.env.PODCAST_RSS_URL || "/rss";
 
@@ -41,7 +45,7 @@ export default async function PublishedPage() {
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(218px, 1fr))", gap: "1rem" }}>
             {episodes.map((e) => {
-              const a = accentFor(e.title);
+              const a = accentForSport(sportFromTitle(e.title), e.title);
               const card: CardEpisode = {
                 id: e.id,
                 title: e.title,
@@ -52,6 +56,7 @@ export default async function PublishedPage() {
                 accentSoft: a.soft,
                 accentTint: a.tint,
                 accentDeep: a.deep,
+                score: scores.get(e.id) ?? null,
               };
               return <EpisodeCard key={e.id} ep={card} />;
             })}

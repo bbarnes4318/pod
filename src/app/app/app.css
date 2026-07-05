@@ -134,7 +134,7 @@ body:has(.userSurface) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: 96px; /* room for the player bar */
+  padding-bottom: 132px; /* clear the fixed player bar (72px) + breathing room */
 }
 
 .uTopbar {
@@ -203,16 +203,85 @@ body:has(.userSurface) {
 /* ---------- Hero / featured ---------- */
 .uHero {
   display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 2rem;
+  grid-template-columns: 340px 1fr;
+  gap: 1.9rem;
   align-items: center;
   border-radius: var(--u-radius-lg);
   border: 1px solid var(--u-hairline);
   background: var(--u-surface);
   box-shadow: var(--u-shadow);
   overflow: hidden;
-  padding: 1.6rem;
+  padding: 1.5rem;
 }
+
+.uHeroDesc {
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--u-ink-2);
+  margin: 0 0 1.1rem;
+  max-width: 560px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Quality score badge — the accent carries it; sits on covers and in the hero */
+.uScoreBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 800;
+  border-radius: 999px;
+  line-height: 1;
+}
+.uScoreBadge small { font-weight: 700; letter-spacing: 0.07em; opacity: 0.8; }
+.uScoreBadge.onCover {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.32rem 0.6rem;
+  font-size: 0.8rem;
+  box-shadow: 0 2px 8px -2px rgba(22, 24, 29, 0.25);
+}
+.uScoreBadge.onCover small { font-size: 0.56rem; }
+.uScoreBadge.inHero {
+  padding: 0.5rem 0.95rem;
+  font-size: 1.05rem;
+  border: 1px solid transparent;
+}
+.uScoreBadge.inHero small { font-size: 0.62rem; }
+
+/* Waveform motif along the bottom of covers — accent-colored */
+.uWaveMotif {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  pointer-events: none;
+}
+.uWaveMotif span { flex: 1; border-radius: 2px; }
+
+/* Host avatars — Max (coral) & Doc (ocean) initial chips */
+.uHostAvas { display: inline-flex; align-items: center; }
+.uHostAva {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(22, 24, 29, 0.18);
+}
+.uHostAva + .uHostAva { margin-left: -9px; }
 
 .uHeroCover {
   aspect-ratio: 1;
@@ -412,17 +481,19 @@ body:has(.userSurface) {
 /* ---------- Player bar ---------- */
 .uPlayerBar {
   position: fixed;
-  left: 132px;
+  left: 0;
   right: 0;
   bottom: 0;
-  z-index: 50;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 1.1rem;
+  min-height: 72px;
   padding: 0.7rem 1.6rem;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(14px);
-  border-top: 1px solid var(--u-hairline);
+  border-top: 1px solid var(--u-hairline-2);
+  box-shadow: 0 -8px 24px -18px rgba(22, 24, 29, 0.25);
 }
 
 .uPbCover { width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
