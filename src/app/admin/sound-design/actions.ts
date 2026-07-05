@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getFileDurationMs } from "@/lib/audio/assembly";
-import { generateStarterPack, SEED_LICENSE } from "@/lib/audio/soundPackGenerator";
+import { seedStarterSoundPackCore } from "@/lib/services/soundDesignSeedService";
 import {
   ASSET_KINDS,
   PRODUCTION_STYLES,
@@ -219,72 +219,14 @@ export async function updateSoundDesignConfig(input: {
  * Synthesize + upload the starter sports pack (12 fully original,
  * ffmpeg-generated assets — zero third-party rights involved), then fill any
  * empty slots in the show config with the seeded pieces. Idempotent: re-runs
- * update the existing seed rows instead of duplicating them.
+ * update the existing seed rows instead of duplicating them. The worker also
+ * auto-seeds on boot when the library is empty (soundDesignSeedService).
  */
 export async function seedStarterSoundPack() {
   try {
-    const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
-    const storage = getStorageProvider();
-
-    const { dir, assets } = await generateStarterPack(ffmpegPath);
-    const created: Record<string, string> = {}; // fileName -> assetId
-    try {
-      for (const asset of assets) {
-        const storageKey = `sound-design/seed/${asset.fileName}`;
-        const uploaded = await storage.putObject({
-          key: storageKey,
-          body: fs.readFileSync(asset.filePath),
-          contentType: "audio/mpeg",
-        });
-
-        const existing = await db.audioAsset.findFirst({ where: { storageKey } });
-        const data = {
-          name: asset.name,
-          kind: asset.kind,
-          category: asset.category,
-          tags: asset.tags,
-          audioUrl: uploaded.url,
-          storageKey,
-          durationMs: asset.durationMs,
-          license: SEED_LICENSE,
-          licenseNote: "Synthesized with ffmpeg oscillators/noise by this app's seed generator; no samples, no third-party material.",
-          rightsConfirmed: true,
-          isActive: true,
-          source: "seed",
-        };
-        const row = existing
-          ? await db.audioAsset.update({ where: { id: existing.id }, data })
-          : await db.audioAsset.create({ data });
-        created[asset.fileName] = row.id;
-      }
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-
-    // Fill empty config slots with the seeded pack (never overwrite a pick).
-    const config = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
-    const stingerIds = [
-      created["stinger-slam-riser.mp3"],
-      created["stinger-drum-hit.mp3"],
-      created["stinger-whoosh-cut.mp3"],
-    ].filter(Boolean);
-    const fill = {
-      themeIntroAssetId: config?.themeIntroAssetId || created["theme-intro-arena-charge.mp3"] || null,
-      themeOutroAssetId: config?.themeOutroAssetId || created["theme-outro-final-whistle.mp3"] || null,
-      bedAssetId: config?.bedAssetId || created["bed-fast-break.mp3"] || null,
-      stingerAssetIds:
-        Array.isArray(config?.stingerAssetIds) && (config!.stingerAssetIds as string[]).length > 0
-          ? (config!.stingerAssetIds as string[])
-          : stingerIds,
-    };
-    await db.soundDesignConfig.upsert({
-      where: { id: "default" },
-      create: { id: "default", ...fill },
-      update: fill,
-    });
-
+    const res = await seedStarterSoundPackCore();
     revalidatePath("/admin/sound-design");
-    return { success: true, seededCount: assets.length };
+    return { success: true, seededCount: res.seededCount };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to seed starter pack." };
   }

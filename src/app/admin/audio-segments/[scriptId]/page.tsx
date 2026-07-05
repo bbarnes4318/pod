@@ -27,7 +27,8 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
 
   const segments = (script.content as any).segments || [];
   const lines: any[] = [];
-  for (const s of segments) {
+  for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+    const s = segments[sIdx];
     if (s && Array.isArray(s.lines)) {
       for (const l of s.lines) {
         lines.push({
@@ -36,6 +37,13 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
           speakerHostId: l.speakerHostId,
           text: l.text,
           tone: l.tone,
+          // Delivery metadata drives the sound-design stage (reaction SFX,
+          // stinger breaks) — surface it so the console tells the whole story.
+          energy: l.energy,
+          pauseBefore: l.pauseBefore,
+          isInterruption: l.isInterruption === true,
+          segmentIndex: sIdx,
+          segmentType: s.type,
         });
       }
     }

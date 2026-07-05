@@ -19,6 +19,7 @@ import { factCheckScript } from "../services/factCheckService";
 import { generateTtsSegments } from "../services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
+import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -27,6 +28,13 @@ console.log("TAKE MACHINE WORKER - INITIALIZING");
 console.log(`Redis Connection: ${process.env.REDIS_URL || "redis://localhost:6379"}`);
 console.log(`Queue Name: ${QUEUE_NAME}`);
 console.log("--------------------------------------------------");
+
+// Sound-design starter pack ships with the app (like migrations): if the
+// asset library has no seed rows, synthesize + upload them on boot so the
+// produced-audio layer works out of the box. Non-fatal on failure.
+ensureStarterSoundPack().catch((err) =>
+  console.warn(`[Worker] Sound pack auto-seed skipped: ${err.message}`)
+);
 
 // Initialize BullMQ Worker
 const worker = new Worker(
