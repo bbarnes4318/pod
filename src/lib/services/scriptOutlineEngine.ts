@@ -243,6 +243,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     `- Every line that states a number, stat, record, contract detail, injury, or event as true MUST set "isFactualClaim": true AND carry that fact's ref from your beats' assigned facts in "evidenceRefs". No ref = the line gets flagged.`,
     `- RE-USING a ref is fine and expected: when a line riffs on, restates, or derives from a fact introduced earlier ("that's barely half of..."), it still carries that fact's ref. "Used once" limits the WORDING, never the ref.`,
     `- NO OUTSIDE NUMBERS: never state a stat, percentage, salary, or contract detail that is not literally in your assigned facts — not from memory, not "well-known", not derived-and-rounded into a new figure. If the evidence doesn't say it, the hosts don't say it. Attaching a ref to a number the ref doesn't contain is fabrication and fails the fact check.`,
+    `- The "Unsafe claims" list in your system prompt is RADIOACTIVE: never state any of those claims or numbers in any form — reworded, partial, or attributed to a host's memory. The fact-checker knows that list and fails the script on contact.`,
     `- Predictions, hot takes, and judgments are "isFactualClaim": false with empty evidenceRefs.`,
     ``,
     `Return valid JSON only:`,
