@@ -23,10 +23,10 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
   const providerFilter = params.provider || "";
   const searchFilter = params.search || "";
 
-  // Query all scripts that are approved
-  const where: any = {
-    status: "approved",
-  };
+  // List every script with an episode — filtering to approved-only made the
+  // dashboard render empty whenever the latest scripts hadn't cleared the
+  // approval gate, which read as "the audio segments page is gone".
+  const where: any = {};
 
   if (statusFilter) {
     where.status = statusFilter;
@@ -145,9 +145,9 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
       {/* Table */}
       {list.length === 0 ? (
         <div className="emptyState">
-          <div className="emptyStateTitle">No audio segments found.</div>
+          <div className="emptyStateTitle">No scripts found.</div>
           <div className="emptyStateDesc">
-            Generate TTS only after script approval and passed fact check. Go to the <Link href="/admin/scripts" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>Script Review</Link> console to approve a script.
+            No scripts match the current filters. Generate a script from the <Link href="/admin/scripts" style={{ color: "var(--accent-color)", textDecoration: "underline" }}>Script Review</Link> console first.
           </div>
         </div>
       ) : (
@@ -157,6 +157,7 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
               <tr>
                 <th>Episode Title</th>
                 <th style={{ width: "80px", textAlign: "center" }}>Version</th>
+                <th>Script Status</th>
                 <th>Episode Status</th>
                 <th>Fact Check</th>
                 <th>Default Provider</th>
@@ -176,6 +177,9 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
                     </td>
                     <td style={{ textAlign: "center", fontFamily: "var(--font-mono)", fontWeight: 600 }}>
                       v{item.version}
+                    </td>
+                    <td>
+                      <span className={`badge ${item.status === "approved" ? "badgeCompleted" : "badgePending"}`} style={{ fontSize: "0.75rem" }}>{item.status}</span>
                     </td>
                     <td>
                       <span className="refBadge" style={{ fontSize: "0.75rem" }}>{item.episodeStatus}</span>

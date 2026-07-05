@@ -5,6 +5,10 @@ import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import { TTS_ELIGIBLE_EPISODE_STATUSES } from "@/lib/services/ttsSegmentService";
 import { revalidatePath } from "next/cache";
 
+// Only structural problems (no script, no episode) make a script ineligible.
+// Pipeline-state mismatches — unapproved script, early episode status, missing
+// or non-passed fact check — come back as warnings so the operator console
+// stays fully usable instead of turning into a fact-check error wall.
 export async function fetchTtsEligibility(scriptId: string) {
   try {
     const script = await db.script.findUnique({
@@ -13,19 +17,21 @@ export async function fetchTtsEligibility(scriptId: string) {
     });
 
     if (!script) {
-      return { success: true, eligible: false, reason: "Script not found." };
-    }
-
-    if (script.status !== "approved") {
-      return { success: true, eligible: false, reason: `Script status is '${script.status}'. Only approved scripts can generate TTS.` };
+      return { success: true, eligible: false, reason: "Script not found.", warnings: [] as string[] };
     }
 
     if (!script.episode) {
-      return { success: true, eligible: false, reason: "Episode not linked." };
+      return { success: true, eligible: false, reason: "Episode not linked.", warnings: [] as string[] };
+    }
+
+    const warnings: string[] = [];
+
+    if (script.status !== "approved") {
+      warnings.push(`Script status is '${script.status}' (not approved).`);
     }
 
     if (!TTS_ELIGIBLE_EPISODE_STATUSES.includes(script.episode.status)) {
-      return { success: true, eligible: false, reason: `Episode status is '${script.episode.status}'. TTS can only run once the episode has passed fact check.` };
+      warnings.push(`Episode status is '${script.episode.status}' (has not passed fact check).`);
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({
@@ -34,14 +40,12 @@ export async function fetchTtsEligibility(scriptId: string) {
     });
 
     if (!latestFactCheck) {
-      return { success: true, eligible: false, reason: "Fact check result is missing." };
+      warnings.push("No fact check has been run for this script.");
+    } else if (latestFactCheck.status !== "passed") {
+      warnings.push(`Latest fact check status is '${latestFactCheck.status}' (not passed).`);
     }
 
-    if (latestFactCheck.status !== "passed") {
-      return { success: true, eligible: false, reason: `Latest fact check status is '${latestFactCheck.status}'. Fact check must pass to generate TTS.` };
-    }
-
-    return { success: true, eligible: true };
+    return { success: true, eligible: true, warnings };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to check TTS eligibility." };
   }

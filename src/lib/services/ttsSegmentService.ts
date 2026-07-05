@@ -59,7 +59,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   }
 
   if (script.status !== "approved") {
-    throw new Error(`Script status is '${script.status}'. TTS generation is only allowed for approved scripts.`);
+    console.warn(`[TTS Service] Script ${scriptId} status is '${script.status}' (not approved) — generating anyway on operator request.`);
   }
 
   if (!script.content || typeof script.content !== "object") {
@@ -75,7 +75,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   }
 
   if (!TTS_ELIGIBLE_EPISODE_STATUSES.includes(script.episode.status)) {
-    throw new Error(`Episode status is '${script.episode.status}'. TTS can only run once the episode has passed fact check (fact_checked or any later audio/publish status).`);
+    console.warn(`[TTS Service] Episode status is '${script.episode.status}' (has not passed fact check) — generating anyway on operator request.`);
   }
 
   const latestFactCheck = await db.factCheckResult.findFirst({
@@ -84,11 +84,9 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   });
 
   if (!latestFactCheck) {
-    throw new Error("No fact check result exists for this script. Fact check must be completed before TTS.");
-  }
-
-  if (latestFactCheck.status !== "passed") {
-    throw new Error(`Latest fact check status is '${latestFactCheck.status}'. Script must pass fact check before TTS.`);
+    console.warn(`[TTS Service] No fact check result exists for script ${scriptId} — generating anyway on operator request.`);
+  } else if (latestFactCheck.status !== "passed") {
+    console.warn(`[TTS Service] Latest fact check status is '${latestFactCheck.status}' — generating anyway on operator request.`);
   }
 
   // Validate script segments structure

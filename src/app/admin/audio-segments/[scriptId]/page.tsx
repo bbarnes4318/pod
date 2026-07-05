@@ -82,6 +82,7 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
       initialSegments={initialSegments}
       eligible={!!eligibility.eligible}
       eligibilityReason={eligibility.reason}
+      eligibilityWarnings={eligibility.warnings || []}
       hostAId={hostA?.id || ""}
       hostBId={hostB?.id || ""}
     />

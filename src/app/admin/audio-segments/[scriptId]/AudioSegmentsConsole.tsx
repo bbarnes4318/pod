@@ -29,6 +29,7 @@ interface ConsoleProps {
   initialSegments: any[];
   eligible: boolean;
   eligibilityReason?: string;
+  eligibilityWarnings?: string[];
   hostAId: string;
   hostBId: string;
 }
@@ -38,6 +39,7 @@ export default function AudioSegmentsConsole({
   initialSegments,
   eligible,
   eligibilityReason,
+  eligibilityWarnings = [],
   hostAId,
   hostBId,
 }: ConsoleProps) {
@@ -163,10 +165,10 @@ export default function AudioSegmentsConsole({
           <div style={{ textAlign: "right" }}>
             <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block" }}>Eligibility</span>
             <span
-              className={`badge ${eligible ? "badgeCompleted" : "badgeFailed"}`}
+              className={`badge ${!eligible ? "badgeFailed" : eligibilityWarnings.length > 0 ? "badgePending" : "badgeCompleted"}`}
               style={{ display: "inline-block", marginTop: "0.25rem" }}
             >
-              {eligible ? "Eligible" : "Blocked"}
+              {!eligible ? "Blocked" : eligibilityWarnings.length > 0 ? "Warnings" : "Eligible"}
             </span>
           </div>
         </div>
@@ -182,6 +184,17 @@ export default function AudioSegmentsConsole({
       {!eligible && eligibilityReason && (
         <div className="alertCard alertDanger" style={{ marginTop: "1rem" }}>
           <strong>TTS Generation Blocked:</strong> {eligibilityReason}
+        </div>
+      )}
+
+      {eligible && eligibilityWarnings.length > 0 && (
+        <div className="alertCard alertWarning" style={{ marginTop: "1rem" }}>
+          <strong>Pipeline warnings (generation still allowed):</strong>
+          <ul style={{ margin: "0.35rem 0 0", paddingLeft: "1.25rem" }}>
+            {eligibilityWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
         </div>
       )}
 
