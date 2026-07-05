@@ -33,9 +33,11 @@ export class FishTTSProvider implements TTSProvider {
     const maxAttempts = Math.max(1, parseInt(process.env.FISH_TTS_MAX_RETRIES || "3", 10));
 
     // Voice resolution: explicit host voice id, per-speaker env override,
-    // then Fish's default voice (no reference_id). Stub ids never go out.
+    // then Fish's default voice (no reference_id). Fish reference ids are
+    // 32-hex; anything else (stub ids, ElevenLabs/Boson voice ids on a host
+    // whose engine was overridden at the episode level) never goes out.
     let referenceId: string | undefined = input.voiceId;
-    if (!referenceId || referenceId.includes("stub")) referenceId = undefined;
+    if (!referenceId || !/^[0-9a-f]{32}$/i.test(referenceId)) referenceId = undefined;
     if (input.speakerName === "Max Voltage" && process.env.FISH_MAX_VOLTAGE_VOICE_ID) {
       referenceId = process.env.FISH_MAX_VOLTAGE_VOICE_ID;
     } else if (input.speakerName === "Dr. Linebreak" && process.env.FISH_DR_LINEBREAK_VOICE_ID) {
