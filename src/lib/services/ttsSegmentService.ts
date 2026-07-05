@@ -4,6 +4,7 @@ import { StubTTSProvider } from "@/lib/providers/tts/stub";
 import { ElevenLabsTTSProvider } from "@/lib/providers/tts/elevenlabs";
 import { CartesiaTTSProvider } from "@/lib/providers/tts/cartesia";
 import { OpenAITTSProvider } from "@/lib/providers/tts/openai";
+import { BosonTTSProvider } from "@/lib/providers/tts/boson";
 
 interface TtsSegmentInput {
   scriptId: string;
@@ -24,6 +25,8 @@ function resolveTTSProvider(name: string) {
       return new CartesiaTTSProvider();
     case "openai":
       return new OpenAITTSProvider();
+    case "boson":
+      return new BosonTTSProvider();
     case "stub":
     default:
       return new StubTTSProvider();
