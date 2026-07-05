@@ -29,4 +29,34 @@ export function getScriptLLMProvider(): LLMProvider {
   });
 }
 
+/**
+ * LLM used for semantic fact-checking. A weak checker rubber-stamps a strong
+ * writer, so this defaults to the same model that WROTE the script
+ * (SCRIPT_LLM_*), overridable via FACTCHECK_LLM_PROVIDER / FACTCHECK_LLM_MODEL,
+ * falling back to the global LLM_PROVIDER. Only "stub" when none are set.
+ */
+export function resolveFactCheckLLMConfig(): { provider: string; model?: string } {
+  if (process.env.FACTCHECK_LLM_PROVIDER) {
+    return {
+      provider: process.env.FACTCHECK_LLM_PROVIDER.toLowerCase(),
+      model: process.env.FACTCHECK_LLM_MODEL || undefined,
+    };
+  }
+  if (process.env.SCRIPT_LLM_PROVIDER) {
+    return {
+      provider: process.env.SCRIPT_LLM_PROVIDER.toLowerCase(),
+      model: process.env.SCRIPT_LLM_MODEL || undefined,
+    };
+  }
+  return {
+    provider: (process.env.LLM_PROVIDER || "stub").toLowerCase(),
+    model: undefined,
+  };
+}
+
+export function getFactCheckLLMProvider(): LLMProvider {
+  const cfg = resolveFactCheckLLMConfig();
+  return getLLMProvider({ provider: cfg.provider, model: cfg.model });
+}
+
 export default getLLMProvider;

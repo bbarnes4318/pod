@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getLLMProvider } from "@/lib/providers/llm/factory";
+import { getFactCheckLLMProvider, resolveFactCheckLLMConfig } from "@/lib/providers/llm/factory";
 import { stripAudioTags } from "@/lib/audio/speechText";
 
 const PROHIBITED_KEYWORDS = [
@@ -379,10 +379,17 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
             continue;
           }
 
-          // Resolve against actual database records
+          // Resolve against actual database records. "research" refs are the
+          // exception: they are Exa web-research entries that live only inside
+          // the episode's ResearchBrief JSON (ids like "research-1") — there is
+          // no DB table for them. The allowedSourceRefs check above already
+          // resolved them against the same id space the script was given, so
+          // they count as resolved here.
           let dbExists = false;
           try {
-            if (ref.type === "game") {
+            if (ref.type === "research") {
+              dbExists = true;
+            } else if (ref.type === "game") {
               const res = await db.game.findUnique({ where: { id: ref.id } });
               if (res) dbExists = true;
             } else if (ref.type === "newsItem") {
@@ -455,18 +462,23 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     drLinebreakShare >= 25 &&
     script.plainText.trim().length > 0;
 
-  // 6. Layer 2: LLM semantic review
-  const isStub = process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER;
+  // 6. Layer 2: LLM semantic review. Provider resolves like the script path:
+  // FACTCHECK_LLM_* > SCRIPT_LLM_* > LLM_PROVIDER — stub only when NONE are set,
+  // so the checker runs on the same strong model that wrote the script.
+  const llmConfig = resolveFactCheckLLMConfig();
+  const isStub = llmConfig.provider === "stub";
+  const llmLabel = llmConfig.model ? `${llmConfig.provider}/${llmConfig.model}` : llmConfig.provider;
   let semanticStatus: "passed" | "failed" | "needs_review" = "passed";
-  let semanticSummary = "Skipped semantic review because LLM_PROVIDER=stub.";
+  let semanticSummary = isStub
+    ? "Skipped semantic review: no LLM provider configured (FACTCHECK_LLM_PROVIDER, SCRIPT_LLM_PROVIDER, and LLM_PROVIDER are all unset or 'stub')."
+    : `Semantic review (${llmLabel}) skipped because deterministic checks failed.`;
   let semanticLineResults: any[] = [];
-  let providerName = isStub ? "deterministic" : process.env.LLM_PROVIDER || "stub";
+  let providerName = isStub ? "deterministic" : llmLabel;
   let rawLlmOutput: any = null;
 
   if (!isStub && deterministicPassed) {
     try {
-      const provider = getLLMProvider();
-      providerName = provider.name;
+      const provider = getFactCheckLLMProvider();
 
       const systemPrompt = `You are a strict fact-checking assistant for a sports debate podcast. Your job is to verify host script lines against the allowed evidence records.
 Rules:
