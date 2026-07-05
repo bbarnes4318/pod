@@ -166,6 +166,7 @@ export default function SidebarNav() {
         { label: "Research Briefs", href: "/admin/research-briefs" },
         { label: "AI Hosts", href: "/admin/personalities" },
         { label: "Voices", href: "/admin/voices" },
+        { label: "Sound Design", href: "/admin/sound-design" },
       ],
     },
     {

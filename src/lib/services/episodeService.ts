@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { scoreTopicTalkability } from "./talkabilityService";
 import { isTtsProviderId } from "../providers/tts/providerIds";
 import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
+import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -20,6 +21,10 @@ export interface EpisodeBuildInput {
    *  it belongs to: { "max-voltage": { provider, voiceId, voiceName? } }.
    *  Persisted on the Episode so every TTS run uses the same voices. */
   ttsVoiceOverrides?: TtsVoiceOverrides;
+  /** Post-production depth for this episode: "clean" | "light" | "full". */
+  productionStyle?: string;
+  /** Reaction-SFX density: "subtle" | "medium" | "hype". */
+  sfxDensity?: string;
 }
 
 export interface EpisodeBuildResult {
@@ -77,6 +82,23 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
     result.reasons.push(err.message);
     throw err;
   }
+
+  const chosenStyle = input.productionStyle?.trim().toLowerCase();
+  if (chosenStyle && !isProductionStyle(chosenStyle)) {
+    const msg = `Unknown production style '${chosenStyle}'.`;
+    result.reasons.push(msg);
+    throw new Error(msg);
+  }
+  const chosenDensity = input.sfxDensity?.trim().toLowerCase();
+  if (chosenDensity && !isSfxDensity(chosenDensity)) {
+    const msg = `Unknown SFX density '${chosenDensity}'.`;
+    result.reasons.push(msg);
+    throw new Error(msg);
+  }
+  const chosenSoundDesign =
+    chosenStyle || chosenDensity
+      ? { ...(chosenStyle ? { style: chosenStyle } : {}), ...(chosenDensity ? { sfxDensity: chosenDensity } : {}) }
+      : undefined;
 
   const minScore = input.minDebateScore !== undefined ? Number(input.minDebateScore) : 70;
   const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
@@ -297,6 +319,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         publishedAt: null,
         ttsProvider: chosenTtsProvider,
         ttsVoiceOverrides: chosenVoiceOverrides ? (chosenVoiceOverrides as any) : undefined,
+        soundDesign: chosenSoundDesign ? (chosenSoundDesign as any) : undefined,
       },
     });
 

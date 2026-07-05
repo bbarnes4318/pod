@@ -84,6 +84,8 @@ export interface EpisodeBuildJobData {
   minDebateScore?: number;
   ttsProvider?: string;
   ttsVoiceOverrides?: TtsVoiceOverrides;
+  productionStyle?: string;
+  sfxDensity?: string;
 }
 
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData) {
@@ -134,6 +136,10 @@ export interface FinalAudioStitchJobData {
   includeOutro?: boolean;
   normalizeAudio?: boolean;
   targetLufs?: number;
+  /** Post-production depth: "clean" | "light" | "full". */
+  productionStyle?: string;
+  /** Reaction-SFX density: "subtle" | "medium" | "hype". */
+  sfxDensity?: string;
 }
 
 export async function queueFinalAudioStitchJob(data: FinalAudioStitchJobData) {

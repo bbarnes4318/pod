@@ -273,6 +273,7 @@ model Episode {
   audioMimeType      String         @default("audio/mpeg")
   ttsProvider        String?        // Voice engine chosen at build time ("fish", "boson", ...); null = fall through to host/env. See docs/TTS_PROVIDERS.md
   ttsVoiceOverrides  Json?          // Per-host voice picks keyed by host slug: { "max-voltage": { provider, voiceId, voiceName? }, ... }. See docs/TTS_PROVIDERS.md
+  soundDesign        Json?          // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
   topics             EpisodeTopic[]
@@ -351,6 +352,44 @@ model AudioSegment {
   @@index([episodeId])
   @@index([scriptId])
   @@index([lineIndex])
+}
+
+// Managed post-production audio asset (theme, stinger, music bed, SFX,
+// cleared game highlight). Every asset carries its license; game highlights
+// additionally require an explicit rights affirmation before they can be
+// mixed into an episode.
+model AudioAsset {
+  id              String   @id @default(uuid())
+  name            String
+  kind            String   // "theme_intro" | "theme_outro" | "stinger" | "bed" | "sfx" | "highlight"
+  category        String?  // sfx flavor: "laugh" | "crowd" | "airhorn" | "buzzer" | "rimshot" | "whoosh" | "impact"
+  tags            Json     // string[]
+  audioUrl        String
+  storageKey      String?
+  durationMs      Int?
+  license         String   // e.g. "Original (generated in-house), CC0" | "Licensed — see note"
+  licenseNote     String?
+  rightsConfirmed Boolean  @default(false) // must be true for kind "highlight" to be usable
+  isActive        Boolean  @default(true)
+  source          String   @default("upload") // "seed" | "upload"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([kind])
+  @@index([isActive])
+}
+
+// Singleton (id = "default"): which assets voice the show's produced sound,
+// plus the default production style / SFX density for new episodes.
+model SoundDesignConfig {
+  id                String   @id @default("default")
+  themeIntroAssetId String?
+  themeOutroAssetId String?
+  bedAssetId        String?
+  stingerAssetIds   Json?    // string[] — rotated deterministically between breaks
+  defaultStyle      String   @default("full")   // "clean" | "light" | "full"
+  defaultSfxDensity String   @default("subtle") // "subtle" | "medium" | "hype"
+  updatedAt         DateTime @updatedAt
 }
 
 model JobLog {

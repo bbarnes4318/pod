@@ -4,6 +4,12 @@ import React, { useState, useEffect } from "react";
 import { triggerEpisodeBuild, createEpisodeFromSelectedTopics, fetchEligibleTopics, fetchActiveDebateHosts } from "./actions";
 import TtsVoicePicker, { PickerHost, VoicePicks, buildVoiceOverrides } from "../components/TtsVoicePicker";
 import { TTS_PROVIDER_LABELS } from "@/lib/providers/tts/providerIds";
+import {
+  PRODUCTION_STYLES,
+  PRODUCTION_STYLE_LABELS,
+  SFX_DENSITIES,
+  SFX_DENSITY_LABELS,
+} from "@/lib/audio/soundDesignShared";
 
 interface EligibleTopic {
   id: string;
@@ -65,6 +71,14 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
     };
   };
 
+  // Post-production settings pinned on the episode ("default" = show config).
+  const [productionStyle, setProductionStyle] = useState("default");
+  const [sfxDensity, setSfxDensity] = useState("default");
+  const soundSelection = () => ({
+    productionStyle: productionStyle === "default" ? undefined : productionStyle,
+    sfxDensity: sfxDensity === "default" ? undefined : sfxDensity,
+  });
+
   const [eligibleTopics, setEligibleTopics] = useState<EligibleTopic[]>([]);
   const [loadingTopics, setLoadingTopics] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -114,6 +128,7 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
       title: title || undefined,
       description: description || undefined,
       ...voiceSelection(),
+      ...soundSelection(),
     });
 
     if (res.success) {
@@ -147,12 +162,15 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
     setMessage(null);
 
     const { ttsProvider, ttsVoiceOverrides } = voiceSelection();
+    const sound = soundSelection();
     const res = await createEpisodeFromSelectedTopics(
       selectedTopicIds,
       title || undefined,
       description || undefined,
       ttsProvider,
-      ttsVoiceOverrides
+      ttsVoiceOverrides,
+      sound.productionStyle,
+      sound.sfxDensity
     );
 
     if (res.success) {
@@ -316,6 +334,43 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
             disabled={submitting}
           />
         )}
+      </div>
+
+      {/* Post-production sound design (pinned on the episode) */}
+      <div className="sectionGroup">
+        <span className="sectionGroupLabel">Sound Design</span>
+        <div className="formGrid">
+          <div className="formGroup" style={{ marginBottom: 0 }}>
+            <label className="label" htmlFor="prodStyle">Production Style</label>
+            <select
+              id="prodStyle"
+              className="select"
+              value={productionStyle}
+              onChange={(e) => setProductionStyle(e.target.value)}
+              disabled={submitting}
+            >
+              <option value="default">Show default</option>
+              {PRODUCTION_STYLES.map((s) => (
+                <option key={s} value={s}>{PRODUCTION_STYLE_LABELS[s]}</option>
+              ))}
+            </select>
+          </div>
+          <div className="formGroup" style={{ marginBottom: 0 }}>
+            <label className="label" htmlFor="sfxDensity">SFX Density</label>
+            <select
+              id="sfxDensity"
+              className="select"
+              value={sfxDensity}
+              onChange={(e) => setSfxDensity(e.target.value)}
+              disabled={submitting}
+            >
+              <option value="default">Show default</option>
+              {SFX_DENSITIES.map((d) => (
+                <option key={d} value={d}>{SFX_DENSITY_LABELS[d]}</option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Auto Mode Inputs */}

@@ -20,6 +20,8 @@
     "test:model-ab": "tsx --conditions=react-server src/scripts/testModelAB.ts",
     "test:boson-format": "tsx src/scripts/testBosonFormat.ts",
     "test:voice-resolution": "tsx src/scripts/testVoiceResolution.ts",
+    "test:sound-pack": "tsx src/scripts/testSoundPack.ts",
+    "test:sound-design": "tsx src/scripts/testSoundDesign.ts",
     "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts"
   },
   "dependencies": {

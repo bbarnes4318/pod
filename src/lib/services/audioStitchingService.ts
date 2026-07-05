@@ -14,6 +14,24 @@ import {
   standardizeClipToWav,
 } from "@/lib/audio/assembly";
 import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
+import {
+  LoadedAsset,
+  ProductionStyle,
+  SfxCategory,
+  SfxDensity,
+  SfxLineContext,
+  SoundDesignAssetSet,
+  SoundDesignSummary,
+  emptyAssetSet,
+  isProductionStyle,
+  isSfxDensity,
+  mixBedUnderForeground,
+  parseEpisodeSoundDesign,
+  pickSfxAsset,
+  planReactionSfx,
+  planStingers,
+  shiftTimelineForInsert,
+} from "@/lib/audio/soundDesign";
 import { hasLineIndexCollisions } from "@/lib/services/scriptRepetition";
 
 interface StitchInput {
@@ -23,6 +41,11 @@ interface StitchInput {
   includeOutro?: boolean;
   normalizeAudio?: boolean;
   targetLufs?: number;
+  /** "clean" | "light" | "full" — post-production depth. Falls back to the
+   *  episode's saved setting, then the show config default. */
+  productionStyle?: string;
+  /** "subtle" | "medium" | "hype" — reaction-SFX density (full style only). */
+  sfxDensity?: string;
 }
 
 /** Script rubric (70%) + audio human-ness checks (30%) → 0-100. */
@@ -39,6 +62,112 @@ function computeEpisodeScore(scriptQuality: any, qaReport: AudioQaReport | null)
   if (scriptScore === null && audioScore === null) return null;
   const total = Math.round((scriptScore ?? 60) * 0.7 + (audioScore ?? 60) * 0.3);
   return { total, scriptScore, audioScore, scriptAxes: scriptQuality?.axes ?? null };
+}
+
+/**
+ * Download + standardize every sound-design asset this stitch needs.
+ * Failures are downgraded to warnings — a missing stinger must never sink an
+ * episode render. Highlights are rights-gated: only active `highlight`
+ * assets with rightsConfirmed=true are ever loaded.
+ */
+async function loadSoundDesignAssetSet(opts: {
+  style: ProductionStyle;
+  config: {
+    themeIntroAssetId: string | null;
+    themeOutroAssetId: string | null;
+    bedAssetId: string | null;
+    stingerAssetIds: unknown;
+  } | null;
+  highlightAssetIds: string[];
+  tempDir: string;
+  storageProvider: { getObject(i: { url: string }): Promise<{ body: Buffer }> };
+  ffmpegPath: string;
+  ffprobePath: string;
+  sampleRate: number;
+  warnings: string[];
+}): Promise<SoundDesignAssetSet> {
+  const set = emptyAssetSet();
+  const cfg = opts.config;
+  const stingerIds: string[] = Array.isArray(cfg?.stingerAssetIds)
+    ? (cfg!.stingerAssetIds as unknown[]).filter((s): s is string => typeof s === "string")
+    : [];
+
+  const configuredIds = [
+    cfg?.themeIntroAssetId,
+    cfg?.themeOutroAssetId,
+    cfg?.bedAssetId,
+    ...stingerIds,
+    ...opts.highlightAssetIds,
+  ].filter((id): id is string => !!id);
+
+  const rows = await db.audioAsset.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { id: { in: configuredIds.length > 0 ? configuredIds : ["-"] } },
+        // Reaction SFX are picked by category, so load the whole active pool.
+        { kind: "sfx" },
+      ],
+    },
+  });
+
+  // Per-kind loudness targets: themes near speech, bed/SFX prepared for
+  // their mix gains, highlights at speech level (they ARE content).
+  const lufsForKind: Record<string, number> = {
+    theme_intro: -17,
+    theme_outro: -17,
+    bed: -18,
+    stinger: -16,
+    sfx: -16,
+    highlight: -18,
+  };
+
+  const prepared = new Map<string, LoadedAsset>();
+  for (const row of rows) {
+    // Rights gate: an unconfirmed highlight is never mixed in.
+    if (row.kind === "highlight" && !row.rightsConfirmed) {
+      opts.warnings.push(`Highlight asset '${row.name}' skipped: rights not confirmed.`);
+      continue;
+    }
+    try {
+      const rawPath = path.join(opts.tempDir, `asset-${row.id}-raw`);
+      const res = await opts.storageProvider.getObject({ url: row.audioUrl });
+      fs.writeFileSync(rawPath, res.body);
+      const wavPath = path.join(opts.tempDir, `asset-${row.id}.wav`);
+      await standardizeClipToWav(opts.ffmpegPath, rawPath, wavPath, {
+        sampleRate: opts.sampleRate,
+        targetLufs: lufsForKind[row.kind] ?? -17,
+      });
+      const durationMs = await getFileDurationMs(opts.ffprobePath, wavPath);
+      prepared.set(row.id, {
+        id: row.id,
+        name: row.name,
+        kind: row.kind,
+        category: row.category,
+        filePath: wavPath,
+        durationMs,
+      });
+    } catch (err: any) {
+      opts.warnings.push(`Sound asset '${row.name}' failed to load (${err.message}) — skipped.`);
+    }
+  }
+
+  if (cfg?.themeIntroAssetId) set.intro = prepared.get(cfg.themeIntroAssetId) ?? null;
+  if (cfg?.themeOutroAssetId) set.outro = prepared.get(cfg.themeOutroAssetId) ?? null;
+  if (cfg?.bedAssetId) set.bed = prepared.get(cfg.bedAssetId) ?? null;
+  set.stingers = stingerIds
+    .map((id) => prepared.get(id))
+    .filter((a): a is LoadedAsset => !!a);
+  for (const asset of prepared.values()) {
+    if (asset.kind === "sfx" && asset.category) {
+      const cat = asset.category as SfxCategory;
+      const pool = set.sfxByCategory.get(cat) || [];
+      pool.push(asset);
+      set.sfxByCategory.set(cat, pool);
+    }
+    if (asset.kind === "highlight") set.highlights.set(asset.id, asset);
+  }
+  return set;
 }
 
 export async function stitchFinalEpisodeAudio(input: StitchInput) {
@@ -59,7 +188,16 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     data: {
       jobType: "audio:stitch-final",
       status: "running",
-      input: { scriptId, forceRegenerate, includeIntro, includeOutro, normalizeAudio, targetLufs } as any,
+      input: {
+        scriptId,
+        forceRegenerate,
+        includeIntro,
+        includeOutro,
+        normalizeAudio,
+        targetLufs,
+        productionStyle: input.productionStyle,
+        sfxDensity: input.sfxDensity,
+      } as any,
       output: {},
     },
   });
@@ -288,9 +426,51 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     const storageProvider = getStorageProvider();
 
-    // 4. Download Intro (if requested)
+    // 3b. Sound design resolution: trigger option > episode setting > show
+    // config default > "clean" (legacy dialogue-only render). See
+    // docs/SOUND_DESIGN.md for the full production model.
+    const episodeSound = parseEpisodeSoundDesign(episode.soundDesign);
+    const sdConfig = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
+    const style: ProductionStyle = isProductionStyle(input.productionStyle)
+      ? input.productionStyle
+      : episodeSound.style ??
+        (sdConfig && isProductionStyle(sdConfig.defaultStyle) ? sdConfig.defaultStyle : "clean");
+    const sfxDensity: SfxDensity = isSfxDensity(input.sfxDensity)
+      ? input.sfxDensity
+      : episodeSound.sfxDensity ??
+        (sdConfig && isSfxDensity(sdConfig.defaultSfxDensity) ? sdConfig.defaultSfxDensity : "subtle");
+    const highlightPlacements = episodeSound.highlights ?? [];
+
+    const soundWarnings: string[] = [];
+    const targetSampleRateEarly = Number(process.env.AUDIO_TARGET_SAMPLE_RATE) || 44100;
+    let assetSet: SoundDesignAssetSet = emptyAssetSet();
+    if (style !== "clean") {
+      assetSet = await loadSoundDesignAssetSet({
+        style,
+        config: sdConfig,
+        highlightAssetIds: highlightPlacements.map((h) => h.assetId),
+        tempDir,
+        storageProvider,
+        ffmpegPath,
+        ffprobePath,
+        sampleRate: targetSampleRateEarly,
+        warnings: soundWarnings,
+      });
+      console.log(
+        `[Stitcher] Sound design: style=${style} density=${sfxDensity} ` +
+          `intro=${assetSet.intro?.name || "-"} outro=${assetSet.outro?.name || "-"} bed=${assetSet.bed?.name || "-"} ` +
+          `stingers=${assetSet.stingers.length} sfxCategories=${[...assetSet.sfxByCategory.keys()].join("/") || "-"} ` +
+          `highlights=${assetSet.highlights.size}/${highlightPlacements.length}`
+      );
+      for (const w of soundWarnings) console.warn(`[Stitcher] ${w}`);
+    } else {
+      console.log("[Stitcher] Sound design: style=clean (dialogue-only render).");
+    }
+
+    // 4. Intro: configured theme asset wins; AUDIO_INTRO_URL env is the
+    // legacy fallback. `includeIntro` still gates both.
     let introFile: string | null = null;
-    if (includeIntro) {
+    if (includeIntro && !assetSet.intro) {
       const introUrl = process.env.AUDIO_INTRO_URL;
       if (introUrl) {
         introFile = path.join(tempDir, "intro-raw.mp3");
@@ -298,13 +478,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         const res = await storageProvider.getObject({ url: introUrl });
         fs.writeFileSync(introFile, res.body);
       } else {
-        console.warn("[Stitcher] includeIntro is true but AUDIO_INTRO_URL is not configured. Skipping intro.");
+        console.warn("[Stitcher] includeIntro is true but no theme asset or AUDIO_INTRO_URL is configured. Skipping intro.");
       }
     }
 
-    // 5. Download Outro (if requested)
+    // 5. Outro: same precedence as the intro.
     let outroFile: string | null = null;
-    if (includeOutro) {
+    if (includeOutro && !assetSet.outro) {
       const outroUrl = process.env.AUDIO_OUTRO_URL;
       if (outroUrl) {
         outroFile = path.join(tempDir, "outro-raw.mp3");
@@ -312,7 +492,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         const res = await storageProvider.getObject({ url: outroUrl });
         fs.writeFileSync(outroFile, res.body);
       } else {
-        console.warn("[Stitcher] includeOutro is true but AUDIO_OUTRO_URL is not configured. Skipping outro.");
+        console.warn("[Stitcher] includeOutro is true but no theme asset or AUDIO_OUTRO_URL is configured. Skipping outro.");
       }
     }
 
@@ -375,19 +555,26 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // on interruptions), then splice intro/outro music in with crossfades.
     const musicCrossfadeMs = Number(process.env.AUDIO_MUSIC_CROSSFADE_MS) || 900;
 
-    let introClip: TimelineClip | null = null;
-    let dialogueStartMs = 0;
-    if (introFile) {
+    // Resolve the intro source: standardized theme asset, or env-URL clip.
+    let introStd: { filePath: string; durationMs: number } | null = null;
+    if (assetSet.intro && includeIntro) {
+      introStd = { filePath: assetSet.intro.filePath, durationMs: assetSet.intro.durationMs };
+    } else if (introFile) {
       const stdIntro = path.join(tempDir, "std-intro.wav");
       await standardizeClipToWav(ffmpegPath, introFile, stdIntro, {
         sampleRate: targetSampleRate,
         targetLufs: -17,
       });
-      const introDurMs = await getFileDurationMs(ffprobePath, stdIntro);
+      introStd = { filePath: stdIntro, durationMs: await getFileDurationMs(ffprobePath, stdIntro) };
+    }
+
+    let introClip: TimelineClip | null = null;
+    let dialogueStartMs = 0;
+    if (introStd) {
       introClip = {
-        filePath: stdIntro,
+        filePath: introStd.filePath,
         startMs: 0,
-        durationMs: introDurMs,
+        durationMs: introStd.durationMs,
         kind: "music",
         pan: 0,
         fadeInMs: 20,
@@ -396,28 +583,149 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       };
       // First line begins while the intro's tail is still fading — a
       // crossfade, not a hard cut into silence.
-      dialogueStartMs = Math.max(0, introDurMs - musicCrossfadeMs);
+      dialogueStartMs = Math.max(0, introStd.durationMs - musicCrossfadeMs);
     }
 
-    const dialogueClips = planConversationTimeline(plannedLines, { startAtMs: dialogueStartMs });
+    // Stinger-aware gaps: a 1-3s transition needs room between segments, so
+    // widen the planned break gaps to fit the longest configured stinger.
+    const stingerDurations = assetSet.stingers.map((s) => s.durationMs);
+    const maxStingerMs = stingerDurations.length > 0 ? Math.max(...stingerDurations) : 0;
+    const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
+    if (style !== "clean" && maxStingerMs > 0) {
+      planOpts.topicGapMs = Math.max(Number(process.env.AUDIO_TOPIC_GAP_MS) || 1200, maxStingerMs + 800);
+      if (style === "full") {
+        planOpts.segmentGapMs = Math.max(Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850, maxStingerMs + 700);
+      }
+    }
 
-    const clips: TimelineClip[] = [...(introClip ? [introClip] : []), ...dialogueClips];
+    const dialogueClips = planConversationTimeline(plannedLines, planOpts);
+
+    // 8b. Rights-gated game highlights: insert each cleared clip right after
+    // its script beat, pushing everything later down the timeline.
+    const lineByIndex = new Map<number, any>(allLines.map((l) => [l.lineIndex, l]));
+    const highlightClips: TimelineClip[] = [];
+    const highlightSummary: SoundDesignSummary["highlights"] = [];
+    const sortedHighlights = [...highlightPlacements].sort((a, b) => a.lineIndex - b.lineIndex);
+    for (const hl of sortedHighlights) {
+      const asset = assetSet.highlights.get(hl.assetId);
+      const lineIdx = plannedLines.findIndex((l) => l.lineIndex === hl.lineIndex);
+      if (!asset || lineIdx === -1) {
+        soundWarnings.push(
+          `Highlight at line ${hl.lineIndex} skipped: ${!asset ? "asset unavailable or rights not confirmed" : "line not found"}.`
+        );
+        continue;
+      }
+      const lineClip = dialogueClips[lineIdx];
+      const afterEndMs = lineClip.startMs + lineClip.durationMs;
+      const atMs = shiftTimelineForInsert([...dialogueClips, ...highlightClips], afterEndMs, asset.durationMs);
+      highlightClips.push({
+        filePath: asset.filePath,
+        startMs: atMs,
+        durationMs: asset.durationMs,
+        kind: "music",
+        pan: 0,
+        fadeInMs: 120,
+        fadeOutMs: 250,
+        gainDb: -2,
+      });
+      highlightSummary.push({ lineIndex: hl.lineIndex, asset: asset.name });
+    }
+
+    // 8c. Stingers punctuate segment/topic changes ("light" = topic breaks
+    // only, "full" = both), rotating through the configured set.
+    const stingerSlots = plannedLines
+      .map((l, i) => ({ line: l, clip: dialogueClips[i] }))
+      .filter(({ line }) => line.segmentBreak === "segment" || line.segmentBreak === "topic")
+      .map(({ line, clip }) => ({
+        lineIndex: line.lineIndex,
+        breakKind: line.segmentBreak as "segment" | "topic",
+        lineStartMs: clip.startMs,
+      }));
+    const stingerPlacements = planStingers(stingerSlots, style, stingerDurations);
+    const stingerClips: TimelineClip[] = stingerPlacements.map((p) => {
+      const asset = assetSet.stingers[p.stingerIndex];
+      return {
+        filePath: asset.filePath,
+        startMs: p.atMs,
+        durationMs: asset.durationMs,
+        kind: "sfx",
+        pan: 0,
+        fadeInMs: 15,
+        fadeOutMs: 90,
+        gainDb: p.gainDb,
+      };
+    });
+
+    // 8d. Reaction SFX on emotional beats (full style only) — placement is
+    // driven by the script's own tone/energy metadata, rate-limited by the
+    // configured density so reactions land on peaks, never wallpaper.
+    const reactionClips: TimelineClip[] = [];
+    const reactionSummary: SoundDesignSummary["reactions"] = [];
+    if (style === "full") {
+      const sfxContexts: SfxLineContext[] = plannedLines.map((l, i) => {
+        const scriptLine = lineByIndex.get(l.lineIndex) || {};
+        return {
+          lineIndex: l.lineIndex,
+          tone: scriptLine.tone,
+          energy: scriptLine.energy,
+          startMs: dialogueClips[i].startMs,
+          durationMs: dialogueClips[i].durationMs,
+        };
+      });
+      const availableCategories = new Set<SfxCategory>([...assetSet.sfxByCategory.keys()]);
+      const reactions = planReactionSfx(sfxContexts, sfxDensity, { availableCategories });
+      for (const placement of reactions) {
+        const asset = pickSfxAsset(assetSet, placement);
+        if (!asset) continue;
+        reactionClips.push({
+          filePath: asset.filePath,
+          startMs: placement.atMs,
+          durationMs: asset.durationMs,
+          kind: "sfx",
+          pan: 0,
+          fadeInMs: 25,
+          fadeOutMs: 150,
+          gainDb: placement.gainDb,
+        });
+        reactionSummary.push({
+          lineIndex: placement.lineIndex,
+          asset: asset.name,
+          reason: placement.reason,
+          atMs: placement.atMs,
+        });
+      }
+    }
+
+    const clips: TimelineClip[] = [
+      ...(introClip ? [introClip] : []),
+      ...dialogueClips,
+      ...highlightClips,
+      ...stingerClips,
+      ...reactionClips,
+    ];
 
     const dialogueEndMs = dialogueClips.length
-      ? Math.max(...dialogueClips.map((c) => c.startMs + c.durationMs))
+      ? Math.max(...[...dialogueClips, ...highlightClips].map((c) => c.startMs + c.durationMs))
       : dialogueStartMs;
 
-    if (outroFile) {
+    // Outro: standardized theme asset, or env-URL clip.
+    let outroStd: { filePath: string; durationMs: number } | null = null;
+    if (assetSet.outro && includeOutro) {
+      outroStd = { filePath: assetSet.outro.filePath, durationMs: assetSet.outro.durationMs };
+    } else if (outroFile) {
       const stdOutro = path.join(tempDir, "std-outro.wav");
       await standardizeClipToWav(ffmpegPath, outroFile, stdOutro, {
         sampleRate: targetSampleRate,
         targetLufs: -17,
       });
-      const outroDurMs = await getFileDurationMs(ffprobePath, stdOutro);
+      outroStd = { filePath: stdOutro, durationMs: await getFileDurationMs(ffprobePath, stdOutro) };
+    }
+
+    if (outroStd) {
       clips.push({
-        filePath: stdOutro,
+        filePath: outroStd.filePath,
         startMs: Math.max(0, dialogueEndMs - Math.round(musicCrossfadeMs / 2)),
-        durationMs: outroDurMs,
+        durationMs: outroStd.durationMs,
         kind: "music",
         pan: 0,
         fadeInMs: musicCrossfadeMs,
@@ -430,13 +738,32 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       ? Math.max(...clips.map((c) => c.startMs + c.durationMs))
       : 0;
 
-    // 9. Render the whole timeline in one ffmpeg mix (shared room tone,
+    // 9. Render the foreground timeline in one ffmpeg mix (shared room tone,
     // stereo seating, micro-fades, glue compression) — no concat hard cuts.
-    console.log(`[Stitcher] Rendering ${clips.length} clips onto conversational timeline.`);
-    const mixWavPath = path.join(tempDir, "final-mix.wav");
-    await renderTimelineToWav(ffmpegPath, clips, mixWavPath, {
+    console.log(
+      `[Stitcher] Rendering ${clips.length} clips (dialogue=${dialogueClips.length}, stingers=${stingerClips.length}, ` +
+        `reactions=${reactionClips.length}, highlights=${highlightClips.length}) onto conversational timeline.`
+    );
+    const foregroundWavPath = path.join(tempDir, "foreground-mix.wav");
+    await renderTimelineToWav(ffmpegPath, clips, foregroundWavPath, {
       sampleRate: targetSampleRate,
     });
+
+    // 9b. Music bed under the whole episode (full style): sidechain-ducked
+    // by the foreground so dialogue always dominates and the bed swells
+    // back in the gaps. Instrumental only, looped to length.
+    let mixWavPath = foregroundWavPath;
+    const bedUsed = style === "full" && !!assetSet.bed;
+    if (bedUsed) {
+      const foregroundMs = await getFileDurationMs(ffprobePath, foregroundWavPath);
+      const beddedPath = path.join(tempDir, "final-mix-bedded.wav");
+      console.log(`[Stitcher] Ducking music bed '${assetSet.bed!.name}' under ${Math.round(foregroundMs / 1000)}s foreground.`);
+      await mixBedUnderForeground(ffmpegPath, foregroundWavPath, assetSet.bed!.filePath, beddedPath, {
+        sampleRate: targetSampleRate,
+        totalMs: foregroundMs,
+      });
+      mixWavPath = beddedPath;
+    }
 
     // 10. Master: two-pass linear loudnorm to podcast loudness.
     const finalOutputPath = path.join(tempDir, "final.mp3");
@@ -497,7 +824,9 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       contentType: "audio/mp3",
     });
 
-    // 12. Update Database Records inside a transaction
+    // 12. Update Database Records inside a transaction. The style/density
+    // used for this render are pinned on the episode so re-runs (and the
+    // console) stay consistent with what actually shipped.
     await db.$transaction([
       db.episode.update({
         where: { id: episode.id },
@@ -505,6 +834,11 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           status: "audio_ready",
           audioUrl: uploadResult.url,
           durationSeconds: Math.round(finalDurationSeconds),
+          soundDesign: {
+            ...episodeSound,
+            style,
+            sfxDensity,
+          } as any,
         },
       }),
     ]);
@@ -523,12 +857,29 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       duplicateSegmentCount: 0,
       totalInputDurationMs,
       finalFileSizeBytes,
-      ffmpegCommandSummary: `${ffmpegPath} timeline-mix (adelay+amix, room tone, stereo seating) + two-pass loudnorm`,
+      ffmpegCommandSummary:
+        `${ffmpegPath} timeline-mix (adelay+amix, room tone, stereo seating)` +
+        (bedUsed ? " + sidechain-ducked bed" : "") +
+        " + two-pass loudnorm",
       storageKey,
       audioQa: qaReport,
       // Combined episode score: script rubric (70%) + audio human-ness (30%).
       episodeScore: computeEpisodeScore((script.content as any)?.quality, qaReport),
-      reasons: ["Final audio stitched and uploaded successfully."],
+      // What the sound-design stage actually mixed in — the proof layer.
+      soundDesign: {
+        style,
+        sfxDensity,
+        introAsset: introClip ? (assetSet.intro?.name ?? "env intro clip") : null,
+        outroAsset: outroStd ? (assetSet.outro?.name ?? "env outro clip") : null,
+        bedAsset: bedUsed ? assetSet.bed!.name : null,
+        bedDucking: bedUsed,
+        stingerCount: stingerClips.length,
+        reactionCount: reactionClips.length,
+        reactions: reactionSummary,
+        highlightCount: highlightClips.length,
+        highlights: highlightSummary,
+      } satisfies SoundDesignSummary,
+      reasons: ["Final audio stitched and uploaded successfully.", ...soundWarnings],
     };
 
     await db.jobLog.update({

@@ -112,7 +112,7 @@ export interface TimelineClip {
   filePath: string;
   startMs: number;
   durationMs: number;
-  kind: "speech" | "music";
+  kind: "speech" | "music" | "sfx";
   /** -1 (hard left) .. 1 (hard right); small values only. */
   pan: number;
   fadeInMs: number;

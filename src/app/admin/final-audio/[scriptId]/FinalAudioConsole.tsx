@@ -2,8 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { triggerFinalAudioStitch, fetchLatestAudioStitchJob, fetchFinalAudioDetail } from "../actions";
+import { triggerFinalAudioStitch, fetchFinalAudioDetail, fetchSoundDesignContext } from "../actions";
 import { triggerContentAssetGeneration } from "../../content-assets/actions";
+import {
+  PRODUCTION_STYLES,
+  PRODUCTION_STYLE_LABELS,
+  SFX_DENSITIES,
+  SFX_DENSITY_LABELS,
+} from "@/lib/audio/soundDesignShared";
 import "../../scripts/scripts.css";
 
 interface DetailInfo {
@@ -40,11 +46,32 @@ interface ConsoleProps {
 export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
   const [detail, setDetail] = useState<DetailInfo>(initialDetail);
   const [loading, setLoading] = useState(false);
-  const [includeIntro, setIncludeIntro] = useState(false);
-  const [includeOutro, setIncludeOutro] = useState(false);
+  const [includeIntro, setIncludeIntro] = useState(true);
+  const [includeOutro, setIncludeOutro] = useState(true);
   const [normalizeAudio, setNormalizeAudio] = useState(true);
   const [targetLufs, setTargetLufs] = useState(-16);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Sound design controls: "default" = whatever the episode/show config says.
+  const [productionStyle, setProductionStyle] = useState("default");
+  const [sfxDensity, setSfxDensity] = useState("default");
+  const [defaults, setDefaults] = useState<{ style: string; sfxDensity: string } | null>(null);
+  const [highlightAssets, setHighlightAssets] = useState<Array<{ id: string; name: string; durationMs: number | null }>>([]);
+  const [highlights, setHighlights] = useState<Array<{ lineIndex: number; assetId: string }>>([]);
+  const [hlLine, setHlLine] = useState("");
+  const [hlAsset, setHlAsset] = useState("");
+
+  useEffect(() => {
+    fetchSoundDesignContext(detail.scriptId).then((res) => {
+      if (!res.success) return;
+      if (res.episodeSoundDesign?.style) setProductionStyle(res.episodeSoundDesign.style);
+      if (res.episodeSoundDesign?.sfxDensity) setSfxDensity(res.episodeSoundDesign.sfxDensity);
+      if (res.episodeSoundDesign?.highlights) setHighlights(res.episodeSoundDesign.highlights);
+      if (res.defaults) setDefaults({ style: res.defaults.style, sfxDensity: res.defaults.sfxDensity });
+      if (res.highlightAssets) setHighlightAssets(res.highlightAssets);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.scriptId]);
 
   // Poll for job log updates while the latest job is "running"
   useEffect(() => {
@@ -79,6 +106,9 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
       includeOutro,
       normalizeAudio,
       targetLufs,
+      productionStyle: productionStyle === "default" ? undefined : productionStyle,
+      sfxDensity: sfxDensity === "default" ? undefined : sfxDensity,
+      highlights,
     });
 
     if (res.success) {
@@ -277,6 +307,25 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
                       <span>FFmpeg Command:</span>
                       <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--text-secondary)" }}>{detail.latestJob.output.ffmpegCommandSummary}</span>
                     </div>
+                    {detail.latestJob.output.soundDesign && (
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.8rem", color: "var(--text-secondary)" }}>
+                        <strong>Sound design:</strong>{" "}
+                        style {detail.latestJob.output.soundDesign.style} · density {detail.latestJob.output.soundDesign.sfxDensity} ·{" "}
+                        intro {detail.latestJob.output.soundDesign.introAsset || "—"} ·{" "}
+                        {detail.latestJob.output.soundDesign.stingerCount} stingers ·{" "}
+                        {detail.latestJob.output.soundDesign.reactionCount} reactions ·{" "}
+                        bed {detail.latestJob.output.soundDesign.bedAsset || "—"}
+                        {detail.latestJob.output.soundDesign.bedDucking ? " (ducked)" : ""} ·{" "}
+                        {detail.latestJob.output.soundDesign.highlightCount} highlights
+                        {Array.isArray(detail.latestJob.output.soundDesign.reactions) && detail.latestJob.output.soundDesign.reactions.length > 0 && (
+                          <ul style={{ margin: "0.25rem 0 0", paddingLeft: "1.25rem" }}>
+                            {detail.latestJob.output.soundDesign.reactions.map((r: any, i: number) => (
+                              <li key={i}>line #{r.lineIndex + 1}: {r.asset} ({r.reason})</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                     {detail.latestJob.output.reasons && (
                       <div style={{ marginTop: "0.5rem", color: "var(--text-secondary)", fontSize: "0.8rem" }}>
                         <strong>Outcome:</strong>
@@ -296,6 +345,77 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
 
         {/* Right Side: Options & Run Controls */}
         <div className="sideControls">
+          {/* Sound Design (post-production) */}
+          <div className="controlsPanel">
+            <div className="panelTitle">Sound Design</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.5rem" }}>
+              <div className="formGroup" style={{ marginBottom: 0 }}>
+                <label className="label" style={{ fontSize: "0.72rem" }}>Production Style</label>
+                <select className="select" value={productionStyle} onChange={(e) => setProductionStyle(e.target.value)} disabled={loading}>
+                  <option value="default">{`Default${defaults ? ` (${defaults.style})` : ""}`}</option>
+                  {PRODUCTION_STYLES.map((s) => (
+                    <option key={s} value={s}>{PRODUCTION_STYLE_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="formGroup" style={{ marginBottom: 0 }}>
+                <label className="label" style={{ fontSize: "0.72rem" }}>SFX Density</label>
+                <select className="select" value={sfxDensity} onChange={(e) => setSfxDensity(e.target.value)} disabled={loading}>
+                  <option value="default">{`Default${defaults ? ` (${defaults.sfxDensity})` : ""}`}</option>
+                  {SFX_DENSITIES.map((d) => (
+                    <option key={d} value={d}>{SFX_DENSITY_LABELS[d]}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Rights-gated game highlights */}
+              <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem" }}>
+                <label className="label" style={{ fontSize: "0.72rem" }}>Game Highlights (rights-gated)</label>
+                {highlightAssets.length === 0 ? (
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+                    No cleared highlight clips available. Upload rights-confirmed clips in Sound Design → Game highlight.
+                  </div>
+                ) : (
+                  <>
+                    {highlights.map((h, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.75rem", padding: "0.2rem 0" }}>
+                        <span>
+                          After line #{h.lineIndex + 1}: {highlightAssets.find((a) => a.id === h.assetId)?.name || h.assetId}
+                        </span>
+                        <button className="btnReset" style={{ fontSize: "0.7rem", color: "var(--error-color)" }} disabled={loading}
+                          onClick={() => setHighlights((prev) => prev.filter((_, idx) => idx !== i))}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: "flex", gap: "0.35rem", marginTop: "0.3rem" }}>
+                      <input type="number" className="input" placeholder="Line #" min={1} max={detail.totalLines}
+                        value={hlLine} onChange={(e) => setHlLine(e.target.value)} style={{ width: "70px" }} disabled={loading} />
+                      <select className="select" value={hlAsset} onChange={(e) => setHlAsset(e.target.value)} style={{ flex: 1, minWidth: 0 }} disabled={loading}>
+                        <option value="">Pick clip…</option>
+                        {highlightAssets.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                      <button className="editButton" style={{ fontSize: "0.72rem" }}
+                        disabled={loading || !hlAsset || !hlLine || Number(hlLine) < 1 || Number(hlLine) > detail.totalLines}
+                        onClick={() => {
+                          setHighlights((prev) => [...prev, { lineIndex: Number(hlLine) - 1, assetId: hlAsset }]);
+                          setHlLine("");
+                          setHlAsset("");
+                        }}>
+                        Add
+                      </button>
+                    </div>
+                    <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
+                      Only cleared, rights-confirmed clips are listed; the clip plays right after the chosen line.
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="controlsPanel">
             <div className="panelTitle">Stitching Options</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginTop: "0.5rem" }}>

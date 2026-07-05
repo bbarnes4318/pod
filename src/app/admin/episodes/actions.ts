@@ -18,6 +18,8 @@ export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
       minDebateScore: input.minDebateScore,
       ttsProvider: input.ttsProvider,
       ttsVoiceOverrides: input.ttsVoiceOverrides,
+      productionStyle: input.productionStyle,
+      sfxDensity: input.sfxDensity,
     });
 
     revalidatePath("/admin/episodes");
@@ -32,7 +34,9 @@ export async function createEpisodeFromSelectedTopics(
   title?: string,
   description?: string,
   ttsProvider?: string,
-  ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"]
+  ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"],
+  productionStyle?: string,
+  sfxDensity?: string
 ) {
   try {
     const res = await buildEpisodeFromTopics({
@@ -41,6 +45,8 @@ export async function createEpisodeFromSelectedTopics(
       description,
       ttsProvider,
       ttsVoiceOverrides,
+      productionStyle,
+      sfxDensity,
     });
 
     revalidatePath("/admin/episodes");

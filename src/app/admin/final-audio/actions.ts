@@ -2,6 +2,11 @@
 
 import { db } from "@/lib/db";
 import { queueFinalAudioStitchJob } from "@/lib/queue/podcastQueue";
+import {
+  isProductionStyle,
+  isSfxDensity,
+  parseEpisodeSoundDesign,
+} from "@/lib/audio/soundDesignShared";
 import { revalidatePath } from "next/cache";
 
 export async function fetchFinalAudioEligibility(scriptId: string) {
@@ -109,12 +114,51 @@ export async function triggerFinalAudioStitch(
     includeOutro?: boolean;
     normalizeAudio?: boolean;
     targetLufs?: number;
+    /** "clean" | "light" | "full" — post-production depth for this render. */
+    productionStyle?: string;
+    /** "subtle" | "medium" | "hype" — reaction-SFX density. */
+    sfxDensity?: string;
+    /** Rights-gated highlight placements; persisted on the episode. */
+    highlights?: Array<{ lineIndex: number; assetId: string }>;
   }
 ) {
   try {
     const el = await fetchFinalAudioEligibility(scriptId);
     if (!el.eligible) {
       throw new Error(el.reason || "Script is not eligible for stitching.");
+    }
+
+    if (options.productionStyle !== undefined && !isProductionStyle(options.productionStyle)) {
+      throw new Error(`Unknown production style '${options.productionStyle}'.`);
+    }
+    if (options.sfxDensity !== undefined && !isSfxDensity(options.sfxDensity)) {
+      throw new Error(`Unknown SFX density '${options.sfxDensity}'.`);
+    }
+
+    // Persist the sound-design selection on the episode BEFORE queueing —
+    // the worker reads highlights (and fallback style/density) from there.
+    if (options.productionStyle || options.sfxDensity || options.highlights) {
+      const script = await db.script.findUnique({
+        where: { id: scriptId },
+        select: { episodeId: true, episode: { select: { soundDesign: true } } },
+      });
+      if (script) {
+        const existing = parseEpisodeSoundDesign(script.episode?.soundDesign);
+        const highlights = (options.highlights ?? existing.highlights ?? []).filter(
+          (h) => Number.isInteger(h.lineIndex) && typeof h.assetId === "string" && h.assetId
+        );
+        await db.episode.update({
+          where: { id: script.episodeId },
+          data: {
+            soundDesign: {
+              ...existing,
+              ...(options.productionStyle ? { style: options.productionStyle } : {}),
+              ...(options.sfxDensity ? { sfxDensity: options.sfxDensity } : {}),
+              highlights,
+            } as any,
+          },
+        });
+      }
     }
 
     await queueFinalAudioStitchJob({
@@ -124,12 +168,49 @@ export async function triggerFinalAudioStitch(
       includeOutro: options.includeOutro,
       normalizeAudio: options.normalizeAudio,
       targetLufs: options.targetLufs,
+      productionStyle: options.productionStyle,
+      sfxDensity: options.sfxDensity,
     });
 
     revalidatePath(`/admin/final-audio/${scriptId}`);
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to trigger stitching job." };
+  }
+}
+
+/** Sound-design context for the stitch console: episode settings, show
+ *  defaults, and the cleared highlight assets available for placement. */
+export async function fetchSoundDesignContext(scriptId: string) {
+  try {
+    const script = await db.script.findUnique({
+      where: { id: scriptId },
+      select: { episode: { select: { soundDesign: true } } },
+    });
+    const [config, highlightAssets] = await Promise.all([
+      db.soundDesignConfig.findUnique({ where: { id: "default" } }),
+      db.audioAsset.findMany({
+        where: { kind: "highlight", isActive: true, rightsConfirmed: true },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    return {
+      success: true,
+      episodeSoundDesign: parseEpisodeSoundDesign(script?.episode?.soundDesign),
+      defaults: {
+        style: config?.defaultStyle || "clean",
+        sfxDensity: config?.defaultSfxDensity || "subtle",
+        configured: !!config,
+      },
+      highlightAssets: highlightAssets.map((a) => ({
+        id: a.id,
+        name: a.name,
+        durationMs: a.durationMs,
+        license: a.license,
+      })),
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to load sound design context." };
   }
 }
 
