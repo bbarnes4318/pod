@@ -1,135 +1,118 @@
-import { TTSProvider } from "./types";
-import { getBosonApiKey, getBosonTtsStatus } from "../../env";
+import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
+import { getBosonApiKey } from "../../env";
+import { formatLineForBoson } from "./bosonFormat";
+
+// Boson AI (Higgs) TTS provider. The distinguishing feature: delivery is
+// steered with inline control tokens, so every line is passed through
+// formatLineForBoson() before synthesis. That formatting layer lives HERE,
+// inside the provider — the shared TTS pipeline and every other provider see
+// only the untouched script text.
+
+const BOSON_TTS_URL = "https://api.boson.ai/v1/audio/speech";
 
 export class BosonTTSProvider implements TTSProvider {
   public readonly name = "boson";
-  public readonly supportsStreaming = true;
-  public readonly supportsNonStreaming = true;
-  public readonly supportsMp3 = true;
-  public readonly supportsPcm = true;
-  public readonly supportsWav = false;
-  public readonly supportsUlaw = false;
-  public readonly supportsInlineTags = true;
-  public readonly supportsVoiceCloning = true;
 
-  async synthesizeSpeech(input: {
-    text: string;
-    voiceId: string;
-    speakerName?: string;
-    tone?: string;
-    format?: "mp3" | "wav";
-  }): Promise<{
-    audioBuffer: Buffer;
-    contentType: string;
-    durationMs?: number;
-    providerAudioId?: string;
-    raw?: unknown;
-  }> {
+  async synthesizeSpeech(input: SynthesizeSpeechInput): Promise<SynthesizeSpeechResult> {
     const apiKey = getBosonApiKey();
     if (!apiKey) {
       throw new Error("BOSON_API_KEY is not configured.");
     }
 
     const modelId = process.env.BOSON_TTS_MODEL || "higgs-tts-3";
-    const format = input.format || "mp3";
-    
-    // Map response format
-    const responseFormat = format === "wav" ? "wav" : "mp3";
-    const stream = process.env.BOSON_TTS_STREAM === "true";
+    const format = input.format === "wav" ? "wav" : "mp3";
+    const timeoutMs = parseInt(process.env.BOSON_TTS_TIMEOUT_MS || "45000", 10);
+    const maxAttempts = Math.max(1, parseInt(process.env.BOSON_TTS_MAX_RETRIES || "3", 10));
 
+    // Voice resolution: explicit host voice, per-speaker env override, then
+    // the shared default. Stub placeholders never reach the API.
     let voice = input.voiceId;
     const isStubVoice = !voice || voice.includes("stub");
-
-    if (input.speakerName === "Max Voltage") {
-      voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID || (isStubVoice ? (process.env.BOSON_TTS_VOICE || "default") : voice);
-    } else if (input.speakerName === "Dr. Linebreak") {
-      voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID || (isStubVoice ? (process.env.BOSON_TTS_VOICE || "default") : voice);
+    if (input.speakerName === "Max Voltage" && process.env.BOSON_MAX_VOLTAGE_VOICE_ID) {
+      voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID;
+    } else if (input.speakerName === "Dr. Linebreak" && process.env.BOSON_DR_LINEBREAK_VOICE_ID) {
+      voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID;
     } else if (isStubVoice) {
       voice = process.env.BOSON_TTS_VOICE || "default";
     }
 
-    // Setup request body
-    const body: any = {
+    // The Boson formatting layer: tone/energy/interruption metadata + inline
+    // [tags] become lead delivery tokens, positional pauses, and sfx cues.
+    const taggedText = formatLineForBoson({
+      text: input.text,
+      tone: input.tone,
+      energy: input.energy,
+      isInterruption: input.isInterruption,
+    });
+
+    const body: Record<string, unknown> = {
       model: modelId,
-      input: input.text,
+      input: taggedText,
       voice,
-      response_format: stream ? "pcm" : responseFormat,
-      stream,
+      response_format: format,
     };
+    if (process.env.BOSON_TTS_REF_AUDIO) body.ref_audio = process.env.BOSON_TTS_REF_AUDIO;
+    if (process.env.BOSON_TTS_REF_TEXT) body.ref_text = process.env.BOSON_TTS_REF_TEXT;
 
-    if (process.env.BOSON_TTS_REF_AUDIO) {
-      body.ref_audio = process.env.BOSON_TTS_REF_AUDIO;
-    }
-    if (process.env.BOSON_TTS_REF_TEXT) {
-      body.ref_text = process.env.BOSON_TTS_REF_TEXT;
-    }
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(BOSON_TTS_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-    const url = "https://api.boson.ai/v1/audio/speech";
-    const timeoutMs = parseInt(process.env.BOSON_TTS_TIMEOUT_MS || "30000", 10);
+        if (response.status === 429 || response.status >= 500) {
+          const errText = await response.text().catch(() => "");
+          lastError = new Error(`Boson API ${response.status}: ${errText.slice(0, 300)}`);
+          if (attempt < maxAttempts) {
+            const retryAfter = parseFloat(response.headers.get("retry-after") || "0");
+            const backoffMs = retryAfter > 0 ? retryAfter * 1000 : 1500 * Math.pow(2, attempt - 1);
+            await new Promise((r) => setTimeout(r, backoffMs));
+            continue;
+          }
+          throw lastError;
+        }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        if (!response.ok) {
+          const errText = await response.text().catch(() => "");
+          throw new Error(`Boson API error: ${response.status} - ${errText.slice(0, 500)}`);
+        }
 
-    console.log(`[TTS_PROVIDER_LOG] selected tts provider: boson`);
-    console.log(`[TTS_PROVIDER_LOG] boson model: ${modelId}`);
-    console.log(`[TTS_PROVIDER_LOG] boson voice configured: true`);
-
-    try {
-      await new Promise((r) => setTimeout(r, 500));
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Boson API error: ${response.status} - ${errText}`);
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+        if (audioBuffer.length === 0) {
+          throw new Error("Boson API returned an empty audio body.");
+        }
+        return {
+          audioBuffer,
+          contentType: response.headers.get("content-type") || `audio/${format}`,
+          providerAudioId: response.headers.get("x-boson-request-id") || undefined,
+          raw: { taggedText },
+        };
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err?.name === "AbortError") {
+          lastError = new Error(`Boson TTS request timed out after ${timeoutMs}ms.`);
+        } else {
+          lastError = err instanceof Error ? err : new Error(String(err));
+        }
+        // Network-level failures are retryable; API 4xx (non-429) are not
+        // and were thrown above without setting up another loop pass.
+        if (attempt < maxAttempts && (err?.name === "AbortError" || err?.cause || err?.message?.includes("fetch"))) {
+          await new Promise((r) => setTimeout(r, 1500 * Math.pow(2, attempt - 1)));
+          continue;
+        }
+        throw lastError;
       }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const audioBuffer = Buffer.from(arrayBuffer);
-      const contentType = response.headers.get("content-type") || `audio/${format}`;
-      const providerAudioId = response.headers.get("x-boson-request-id") || undefined;
-
-      return {
-        audioBuffer,
-        contentType,
-        providerAudioId,
-      };
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      if (err.name === "AbortError") {
-        throw new Error(`Boson TTS request timed out after ${timeoutMs}ms.`);
-      }
-      throw err;
     }
-  }
-
-  public async synthesizeSegment(input: any) {
-    return this.synthesizeSpeech(input);
-  }
-
-  public async synthesizeToBuffer(input: any) {
-    const res = await this.synthesizeSpeech(input);
-    return res.audioBuffer;
-  }
-
-  public async synthesizeToFile(input: any, filePath: string) {
-    return this.synthesizeSpeech(input);
-  }
-
-  public async healthCheck(): Promise<"CONFIGURED" | "MISSING" | "ERROR"> {
-    return getBosonTtsStatus();
-  }
-
-  public async getProviderStatus(): Promise<"CONFIGURED" | "MISSING" | "ERROR"> {
-    return this.healthCheck();
+    throw lastError || new Error("Boson TTS failed after retries.");
   }
 }
