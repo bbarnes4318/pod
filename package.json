@@ -18,7 +18,8 @@
     "test:repetition": "tsx --conditions=react-server src/scripts/testRepetition.ts",
     "test:real-episode": "tsx --conditions=react-server src/scripts/testRealEpisode.ts",
     "test:model-ab": "tsx --conditions=react-server src/scripts/testModelAB.ts",
-    "test:boson-format": "tsx src/scripts/testBosonFormat.ts"
+    "test:boson-format": "tsx src/scripts/testBosonFormat.ts",
+    "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.714.0",

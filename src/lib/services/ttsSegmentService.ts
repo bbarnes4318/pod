@@ -5,6 +5,7 @@ import { ElevenLabsTTSProvider } from "@/lib/providers/tts/elevenlabs";
 import { CartesiaTTSProvider } from "@/lib/providers/tts/cartesia";
 import { OpenAITTSProvider } from "@/lib/providers/tts/openai";
 import { BosonTTSProvider } from "@/lib/providers/tts/boson";
+import { FishTTSProvider } from "@/lib/providers/tts/fish";
 import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 
@@ -29,6 +30,8 @@ function resolveTTSProvider(name: string) {
       return new OpenAITTSProvider();
     case "boson":
       return new BosonTTSProvider();
+    case "fish":
+      return new FishTTSProvider();
     case "stub":
     default:
       return new StubTTSProvider();

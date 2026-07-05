@@ -326,3 +326,21 @@ export function getBosonTtsStatus(): "CONFIGURED" | "MISSING" {
   }
   return "CONFIGURED";
 }
+
+/**
+ * Returns the resolved Fish Audio API key.
+ */
+export function getFishApiKey(): string {
+  return (process.env.FISH_API_KEY || "").trim();
+}
+
+/**
+ * Returns the Fish Audio TTS status.
+ */
+export function getFishTtsStatus(): "CONFIGURED" | "MISSING" {
+  const key = getFishApiKey();
+  if (!key || isPlaceholder(key)) {
+    return "MISSING";
+  }
+  return "CONFIGURED";
+}

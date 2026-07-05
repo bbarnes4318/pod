@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { accentForSport } from "../accent";
 import { emojiForTitle, friendlyStage } from "../lib";
 import CreateFlow, { FlowTake, FlowEpisode } from "./CreateFlow";
+import VoicePicker from "./VoicePicker";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,13 @@ function stageIndexFor(status: string): number {
 
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
   const { topic: highlight } = await searchParams;
+
+  const hosts = await db.aiHost.findMany({
+    where: { isActive: true },
+    select: { ttsProvider: true },
+  }).catch(() => [] as { ttsProvider: string | null }[]);
+  const engines = new Set(hosts.map((h) => h.ttsProvider || "default"));
+  const currentEngine = engines.size === 1 ? [...engines][0] : "default";
 
   const [topics, inFlight] = await Promise.all([
     db.topicCandidate.findMany({
@@ -65,6 +73,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         <h1 className="uPageTitle">Create an episode</h1>
       </div>
       <div className="uContent" style={{ maxWidth: 980 }}>
+        <VoicePicker current={currentEngine} />
         <CreateFlow takes={takes} episodes={episodes} highlight={highlight} />
       </div>
     </>
