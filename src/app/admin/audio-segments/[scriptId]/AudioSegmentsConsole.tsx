@@ -254,6 +254,11 @@ export default function AudioSegmentsConsole({
                           }`} style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
                             {statusVal}
                           </span>
+                          {seg?.provider && (
+                            <div style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
+                              {seg.provider}
+                            </div>
+                          )}
                         </td>
                         <td style={{ fontSize: "0.8rem", color: "var(--text-primary)", textAlign: "center" }}>
                           {seg?.durationMs ? `${(seg.durationMs / 1000).toFixed(1)}s` : "--"}
@@ -338,7 +343,7 @@ export default function AudioSegmentsConsole({
                     onChange={(e) => setProviderOverride(e.target.value)}
                     className="select"
                   >
-                    <option value="">Default (Episode / Host Profile / Env)</option>
+                    <option value="">{`Default (${script.provider} — episode/host/env)`}</option>
                     <option value="elevenlabs">ElevenLabs</option>
                     <option value="cartesia">Cartesia</option>
                     <option value="openai">OpenAI TTS</option>

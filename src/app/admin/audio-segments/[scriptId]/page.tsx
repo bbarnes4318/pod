@@ -57,7 +57,8 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
     status: script.status,
     latestFactCheckStatus: latestFactCheck ? latestFactCheck.status : "missing",
     totalLines,
-    provider: process.env.TTS_PROVIDER || "stub",
+    // Default engine if no trigger override is chosen: episode pin, else env.
+    provider: script.episode.ttsProvider || process.env.TTS_PROVIDER || "stub",
     lines,
   };
 
@@ -67,6 +68,7 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
     audioUrl: s.audioUrl,
     durationMs: s.durationMs,
     status: s.status,
+    provider: s.provider,
   }));
 
   const eligibility = await fetchTtsEligibility(scriptId);

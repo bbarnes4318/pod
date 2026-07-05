@@ -139,6 +139,7 @@ export async function fetchTtsSegments(scriptId: string) {
         audioUrl: s.audioUrl,
         durationMs: s.durationMs,
         status: s.status,
+        provider: s.provider,
         createdAt: s.createdAt.toISOString(),
       })),
     };

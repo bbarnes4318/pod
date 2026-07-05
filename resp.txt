@@ -1,0 +1,2 @@
+0:{"a":"$@1","f":"","q":"","i":false,"b":"x_0QTYMe7Yd3DXERb78uK"}
+1:{"success":false,"error":"Topic candidate 'Are the Chargers and Broncos Being Priced Like Pretenders?' is not approved (status: used)."}
