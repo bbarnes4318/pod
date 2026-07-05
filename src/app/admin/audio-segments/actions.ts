@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
+import { TTS_ELIGIBLE_EPISODE_STATUSES } from "@/lib/services/ttsSegmentService";
 import { revalidatePath } from "next/cache";
 
 export async function fetchTtsEligibility(scriptId: string) {
@@ -23,8 +24,8 @@ export async function fetchTtsEligibility(scriptId: string) {
       return { success: true, eligible: false, reason: "Episode not linked." };
     }
 
-    if (script.episode.status !== "fact_checked") {
-      return { success: true, eligible: false, reason: `Episode status is '${script.episode.status}'. TTS can only run after the episode is 'fact_checked'.` };
+    if (!TTS_ELIGIBLE_EPISODE_STATUSES.includes(script.episode.status)) {
+      return { success: true, eligible: false, reason: `Episode status is '${script.episode.status}'. TTS can only run once the episode has passed fact check.` };
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({

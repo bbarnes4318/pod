@@ -4,6 +4,21 @@ import { getTTSProvider } from "@/lib/providers/tts/factory";
 import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 
+// Episode statuses in which (re)generating audio segments is allowed: from
+// the moment the episode passes fact check all the way through published.
+// Re-voicing after a stitch or a voice-engine change is a normal operation —
+// requiring exactly "fact_checked" made the TTS console vanish forever the
+// moment a generation succeeded.
+export const TTS_ELIGIBLE_EPISODE_STATUSES = [
+  "fact_checked",
+  "audio_segments_ready",
+  "audio_stitching",
+  "audio_ready",
+  "content_ready",
+  "publish_ready",
+  "published",
+];
+
 interface TtsSegmentInput {
   scriptId: string;
   forceRegenerate?: boolean;
@@ -59,8 +74,8 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     throw new Error(`Episode with ID ${script.episodeId} not found.`);
   }
 
-  if (script.episode.status !== "fact_checked") {
-    throw new Error(`Episode status is '${script.episode.status}'. TTS can only run after the episode status is 'fact_checked'.`);
+  if (!TTS_ELIGIBLE_EPISODE_STATUSES.includes(script.episode.status)) {
+    throw new Error(`Episode status is '${script.episode.status}'. TTS can only run once the episode has passed fact check (fact_checked or any later audio/publish status).`);
   }
 
   const latestFactCheck = await db.factCheckResult.findFirst({
