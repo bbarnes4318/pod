@@ -6,8 +6,13 @@ import { OpenAITTSProvider } from "./openai";
 import { BosonTTSProvider } from "./boson";
 import { FishTTSProvider } from "./fish";
 
-export function getTTSProvider(): TTSProvider {
-  const providerType = process.env.TTS_PROVIDER?.toLowerCase() || "stub";
+/**
+ * Instantiate a TTS provider. Pass an explicit provider id to honor a
+ * per-episode or per-host choice; with no argument this falls back to the
+ * TTS_PROVIDER env default. Unknown/missing ids resolve to the stub.
+ */
+export function getTTSProvider(providerName?: string): TTSProvider {
+  const providerType = (providerName || process.env.TTS_PROVIDER || "stub").toLowerCase();
 
   switch (providerType) {
     case "elevenlabs":

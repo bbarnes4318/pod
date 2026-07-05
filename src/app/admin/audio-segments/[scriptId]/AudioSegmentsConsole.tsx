@@ -338,11 +338,12 @@ export default function AudioSegmentsConsole({
                     onChange={(e) => setProviderOverride(e.target.value)}
                     className="select"
                   >
-                    <option value="">Default (From Host Profile / Env)</option>
+                    <option value="">Default (Episode / Host Profile / Env)</option>
                     <option value="elevenlabs">ElevenLabs</option>
                     <option value="cartesia">Cartesia</option>
                     <option value="openai">OpenAI TTS</option>
                     <option value="boson">Boson</option>
+                    <option value="fish">Fish Audio</option>
                     <option value="stub">Stub</option>
                   </select>
                 </div>

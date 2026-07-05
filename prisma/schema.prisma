@@ -271,6 +271,7 @@ model Episode {
   rssImageUrl        String?
   audioFileSizeBytes Int?
   audioMimeType      String         @default("audio/mpeg")
+  ttsProvider        String?        // Voice engine chosen at build time ("fish", "boson", ...); null = fall through to host/env. See docs/TTS_PROVIDERS.md
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
   topics             EpisodeTopic[]

@@ -1,11 +1,6 @@
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
-import { StubTTSProvider } from "@/lib/providers/tts/stub";
-import { ElevenLabsTTSProvider } from "@/lib/providers/tts/elevenlabs";
-import { CartesiaTTSProvider } from "@/lib/providers/tts/cartesia";
-import { OpenAITTSProvider } from "@/lib/providers/tts/openai";
-import { BosonTTSProvider } from "@/lib/providers/tts/boson";
-import { FishTTSProvider } from "@/lib/providers/tts/fish";
+import { getTTSProvider } from "@/lib/providers/tts/factory";
 import { sanitizeForBosonTts, sanitizeForGenericTts } from "@/lib/providers/tts/sanitizer";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 
@@ -18,24 +13,6 @@ interface TtsSegmentInput {
   };
   hostId?: string;
   providerOverride?: string;
-}
-
-function resolveTTSProvider(name: string) {
-  switch (name.toLowerCase()) {
-    case "elevenlabs":
-      return new ElevenLabsTTSProvider();
-    case "cartesia":
-      return new CartesiaTTSProvider();
-    case "openai":
-      return new OpenAITTSProvider();
-    case "boson":
-      return new BosonTTSProvider();
-    case "fish":
-      return new FishTTSProvider();
-    case "stub":
-    default:
-      return new StubTTSProvider();
-  }
 }
 
 function cleanTextForSpeech(txt: string): string {
@@ -240,10 +217,28 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   let totalDurationMs = 0;
   const failedLines: any[] = [];
   const reasons: string[] = [];
+  const providerLineCounts: Record<string, number> = {};
 
   const maxConcurrency = Number(process.env.TTS_MAX_CONCURRENT_REQUESTS) || 2;
   const retryAttempts = Number(process.env.TTS_RETRY_ATTEMPTS) || 3;
-  const chosenGlobalProvider = providerOverride || process.env.TTS_PROVIDER || "stub";
+
+  // Provider resolution (documented in docs/TTS_PROVIDERS.md):
+  //   1. providerOverride — explicit choice on THIS trigger (admin console)
+  //   2. episode.ttsProvider — engine pinned at build time (create-flow picker)
+  //   3. host.ttsProvider — per-host default (resolved per line, below)
+  //   4. TTS_PROVIDER env — global default
+  // An explicit trigger override re-pins the episode so later re-runs keep
+  // using the same engine.
+  let episodeProvider = script.episode.ttsProvider || null;
+  if (providerOverride && providerOverride !== episodeProvider) {
+    await db.episode.update({
+      where: { id: script.episodeId },
+      data: { ttsProvider: providerOverride },
+    });
+    episodeProvider = providerOverride;
+  }
+  const chosenGlobalProvider = providerOverride || episodeProvider || process.env.TTS_PROVIDER || "stub";
+  console.log(`[TTS Service] Provider resolution for script ${scriptId}: override=${providerOverride || "-"} episode=${episodeProvider || "-"} env=${process.env.TTS_PROVIDER || "-"} → default '${chosenGlobalProvider}' (per-host settings may apply when no override/episode engine is set).`);
 
   // 5. Worker queue controller
   const queue = [...selectedLines];
@@ -278,9 +273,15 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     if (!host) {
       throw new Error(`Host profile not found for speaker: ${line.speakerName}`);
     }
-    let hostProviderName = providerOverride || host.ttsProvider;
-    if (!hostProviderName || hostProviderName === "stub") {
-      hostProviderName = process.env.TTS_PROVIDER || "stub";
+    // Episode-level choice beats the per-host default. On a host profile,
+    // "stub" means "not set" and falls through to the env default; an
+    // explicit override/episode choice is honored as-is.
+    let hostProviderName = providerOverride || episodeProvider;
+    if (!hostProviderName) {
+      hostProviderName =
+        host.ttsProvider && host.ttsProvider !== "stub"
+          ? host.ttsProvider
+          : process.env.TTS_PROVIDER || "stub";
     }
 
     if (!segment) {
@@ -307,7 +308,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     for (let attempt = 1; attempt <= attemptsLeft; attempt++) {
       try {
         const format = process.env.TTS_AUDIO_FORMAT === "wav" ? "wav" : "mp3";
-        const ttsProvider = resolveTTSProvider(hostProviderName);
+        const ttsProvider = getTTSProvider(hostProviderName);
 
         // Boson uses <|emotion:...|> tags; the generic sanitizer strips those
         // and markdown/URLs but leaves our [laughs]-style audio tags intact so
@@ -359,6 +360,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         readyCount++;
         processingCount--;
         totalDurationMs += ttsResult.durationMs || 0;
+        providerLineCounts[hostProviderName] = (providerLineCounts[hostProviderName] || 0) + 1;
         return; // Success!
       } catch (err: any) {
         console.error(`[TTS Service] Attempt ${attempt} failed for Line ${line.lineIndex}: ${err.message}`);
@@ -426,6 +428,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     episodeId: script.episodeId,
     scriptId,
     provider: chosenGlobalProvider,
+    providerLineCounts,
     selectedLineCount,
     skippedReadyCount,
     createdSegmentCount,

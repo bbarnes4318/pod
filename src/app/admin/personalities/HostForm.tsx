@@ -373,6 +373,7 @@ export default function HostForm({ initialData }: HostFormProps) {
                 <option value="boson">boson</option>
                 <option value="cartesia">cartesia</option>
                 <option value="elevenlabs">elevenlabs</option>
+                <option value="fish">fish</option>
                 <option value="openai">openai</option>
               </select>
             </div>

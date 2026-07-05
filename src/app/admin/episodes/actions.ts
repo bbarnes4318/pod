@@ -28,13 +28,15 @@ export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
 export async function createEpisodeFromSelectedTopics(
   topicIds: string[],
   title?: string,
-  description?: string
+  description?: string,
+  ttsProvider?: string
 ) {
   try {
     const res = await buildEpisodeFromTopics({
       topicIds,
       title,
       description,
+      ttsProvider,
     });
 
     revalidatePath("/admin/episodes");

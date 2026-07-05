@@ -1,6 +1,7 @@
 import { db } from "../db";
 import crypto from "crypto";
 import { scoreTopicTalkability } from "./talkabilityService";
+import { isTtsProviderId } from "../providers/tts/providerIds";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -10,6 +11,10 @@ export interface EpisodeBuildInput {
   sport?: string;
   targetTopicCount?: number;
   minDebateScore?: number;
+  /** Voice engine chosen at build time; persisted on the Episode so every
+   *  TTS run (and re-run) for it uses the same provider. Omit for the
+   *  host-profile/env default. */
+  ttsProvider?: string;
 }
 
 export interface EpisodeBuildResult {
@@ -50,6 +55,13 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
     episodeId: null,
     reasons: [],
   };
+
+  const chosenTtsProvider = input.ttsProvider?.trim().toLowerCase() || null;
+  if (chosenTtsProvider && !isTtsProviderId(chosenTtsProvider)) {
+    const msg = `Unknown TTS provider '${chosenTtsProvider}'.`;
+    result.reasons.push(msg);
+    throw new Error(msg);
+  }
 
   const minScore = input.minDebateScore !== undefined ? Number(input.minDebateScore) : 70;
   const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
@@ -268,6 +280,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         audioUrl: null,
         transcriptUrl: null,
         publishedAt: null,
+        ttsProvider: chosenTtsProvider,
       },
     });
 

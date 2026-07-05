@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { approveTopic } from "../../admin/topics/actions";
 import { triggerResearchBriefGeneration } from "../../admin/research-briefs/actions";
 import { createEpisodeFromSelectedTopics, triggerScriptGeneration } from "../../admin/episodes/actions";
+import VoicePicker from "./VoicePicker";
 
 export interface FlowTake {
   id: string;
@@ -30,15 +31,19 @@ export interface FlowEpisode {
   stageLabel: string;
   stageIndex: number; // 0..3 (Take → Produce → Review → Listen)
   ready: boolean;
+  voiceLabel?: string | null; // pinned voice engine, e.g. "Fish Audio"
 }
 
 const STEPS = ["Pick the take", "We produce it", "Listen & share"];
 
-export default function CreateFlow({ takes, episodes, highlight }: { takes: FlowTake[]; episodes: FlowEpisode[]; highlight?: string }) {
+export default function CreateFlow({ takes, episodes, highlight, defaultEngineHint }: { takes: FlowTake[]; episodes: FlowEpisode[]; highlight?: string; defaultEngineHint: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Voice engine for the next produced episode; persisted on the episode at
+  // creation so re-runs keep using it. "default" = don't pin one.
+  const [engine, setEngine] = useState("default");
 
   const run = (id: string, fn: () => Promise<any>, successNote: string) => {
     setBusyId(id);
@@ -66,7 +71,12 @@ export default function CreateFlow({ takes, episodes, highlight }: { takes: Flow
       label: "Produce the episode",
       note: "Episode created! The hosts start arguing below.",
       fn: async () => {
-        const res: any = await createEpisodeFromSelectedTopics([t.id]);
+        const res: any = await createEpisodeFromSelectedTopics(
+          [t.id],
+          undefined,
+          undefined,
+          engine === "default" ? undefined : engine
+        );
         return res;
       },
     };
@@ -74,6 +84,8 @@ export default function CreateFlow({ takes, episodes, highlight }: { takes: Flow
 
   return (
     <div>
+      <VoicePicker value={engine} onChange={setEngine} defaultHint={defaultEngineHint} />
+
       {/* 3-step explainer */}
       <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", marginBottom: "1.6rem", flexWrap: "wrap" }}>
         {STEPS.map((s, i) => (
@@ -114,6 +126,7 @@ export default function CreateFlow({ takes, episodes, highlight }: { takes: Flow
                       <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "var(--u-brand)", animation: "uPulse 1.6s ease-in-out infinite" }} />
                     )}
                     {ep.stageLabel}
+                    {ep.voiceLabel && <span> · Voice: {ep.voiceLabel}</span>}
                   </div>
                 </div>
                 {ep.status === "draft" ? (
