@@ -30,6 +30,16 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Paint the light canvas onto html + body for /app routes only, so the
+   global dark body (globals.css --bg-primary: #0b0d12) never bleeds behind
+   the surface, below short content, around the sticky sidebar, or through
+   the translucent player bar. Scoped with :has(.userSurface) — /admin and
+   the dark landing page never render .userSurface, so they stay dark. */
+html:has(.userSurface),
+body:has(.userSurface) {
+  background: #fcfcfd;
+}
+
 .userSurface ::selection { background: var(--u-brand-soft); color: var(--u-brand); }
 .userSurface :focus-visible { outline: 2px solid var(--u-brand); outline-offset: 2px; border-radius: 6px; }
 .userSurface *::-webkit-scrollbar-thumb { background: var(--u-hairline-2); border: 2px solid var(--u-canvas); }
