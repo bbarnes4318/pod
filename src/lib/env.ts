@@ -42,24 +42,6 @@ export function getOddsApiKeyStatus(): "CONFIGURED" | "MISSING" {
 }
 
 /**
- * Returns the Boson AI API key (used by the Boson TTS provider).
- */
-export function getBosonApiKey(): string {
-  return (process.env.BOSON_API_KEY || "").trim();
-}
-
-/**
- * Returns the Boson TTS status: CONFIGURED or MISSING.
- */
-export function getBosonTtsStatus(): "CONFIGURED" | "MISSING" {
-  const key = getBosonApiKey();
-  if (!key || isPlaceholder(key)) {
-    return "MISSING";
-  }
-  return "CONFIGURED";
-}
-
-/**
  * Returns the configured news provider (default is "rss").
  */
 export function getNewsProvider(): string {
