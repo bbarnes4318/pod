@@ -1,18 +1,12 @@
 import { db } from "@/lib/db";
 import { getFactCheckLLMProvider, resolveFactCheckLLMConfig } from "@/lib/providers/llm/factory";
 import { stripAudioTags } from "@/lib/audio/speechText";
-
-const PROHIBITED_KEYWORDS = [
-  "sources say",
-  "rumored",
-  "reportedly",
-  "expected to",
-  "likely to",
-  "insider",
-  "unnamed source",
-  "could be",
-  "might be",
-];
+import {
+  RUMOR_KEYWORDS,
+  findRumorKeyword,
+  findSpeculationKeyword,
+  isGenuineFactualAssertion,
+} from "./claimLanguage";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -330,25 +324,36 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           });
         }
 
-        // Validate prohibited rumor language
-        let containsRumor = false;
-        let matchedRumorWord = "";
-        for (const word of PROHIBITED_KEYWORDS) {
-          if (textLower.includes(word)) {
-            containsRumor = true;
-            matchedRumorWord = word;
-            break;
-          }
+        // Fact vs opinion: ref-less lines in clear opinion/prediction
+        // framing are treated as opinion even when the writer marked them
+        // isFactualClaim — speculation is the debate format, not a claim.
+        const isGenuineFactual = isGenuineFactualAssertion(line, textLower);
+
+        // Fabricated-sourcing language ("sources say", "reportedly", ...) is
+        // hard-prohibited on EVERY line unless the brief itself supports the
+        // phrasing (e.g. an injury report the research actually contains).
+        const rumorWord = findRumorKeyword(textLower);
+        if (rumorWord && !isRumorPhraseSupported(line.text, rumorWord, allowedFactsAndStats)) {
+          rumorLanguageCount++;
+          errorsList.push({
+            type: "prohibited_rumor_language",
+            lineIndex: line.lineIndex,
+            reason: `Line uses fabricated-sourcing phrase '${rumorWord}' which is unsupported by the brief.`,
+          });
         }
-        if (containsRumor && line.isFactualClaim) {
-          // Verify exact rumor keyword wording matches brief facts/stats
-          const rumorSupported = isRumorPhraseSupported(line.text, matchedRumorWord, allowedFactsAndStats);
-          if (!rumorSupported) {
+
+        // Speculative hedging ("expected to", "could be", ...) is normal
+        // debate speech. It is only suspect when a line PRESENTS it as fact
+        // (genuine factual assertion) and the brief doesn't back the
+        // phrasing — e.g. inventing an injury timeline.
+        if (!rumorWord && isGenuineFactual) {
+          const specWord = findSpeculationKeyword(textLower);
+          if (specWord && !isRumorPhraseSupported(line.text, specWord, allowedFactsAndStats)) {
             rumorLanguageCount++;
             errorsList.push({
               type: "prohibited_rumor_language",
               lineIndex: line.lineIndex,
-              reason: `Factual line uses rumor phrase '${matchedRumorWord}' which is unsupported by the brief.`,
+              reason: `Factual line uses speculative phrase '${specWord}' which is unsupported by the brief.`,
             });
           }
         }
@@ -423,8 +428,9 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           }
         }
 
-        // Factual claim validations
-        if (line.isFactualClaim) {
+        // Factual claim validations — coverage counts only genuine factual
+        // assertions, so opinion lines can't tank the percentage.
+        if (isGenuineFactual) {
           factualLineCount++;
           if (line.evidenceRefs.length === 0) {
             unsupportedClaimCount++;
@@ -480,14 +486,15 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     try {
       const provider = getFactCheckLLMProvider();
 
-      const systemPrompt = `You are a strict fact-checking assistant for a sports debate podcast. Your job is to verify host script lines against the allowed evidence records.
+      const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product, not violations. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records — not to demand citations for opinions.
 Rules:
-1. You must compare every host statement against the facts and stats provided.
-2. Identify unsupported claims, overstatements, missing context, or misleading wording.
-3. You are NOT allowed to verify using outside knowledge or make up facts.
-4. You cannot create new evidence IDs.
-5. If the script text cannot be verified by the provided evidence, it must be marked as "unsupported".
-6. Return a strict JSON response.`;
+1. First classify each line: FACTUAL ASSERTION (a specific stat, score, record, injury, transaction, quote, or event presented as true) vs OPINION/PREDICTION/BANTER (takes, forecasts like "he's likely to win MVP", hypotheticals, jokes, reactions).
+2. OPINION/PREDICTION/BANTER lines are "supported" by default — do NOT mark them unsupported for being unverifiable; opinions are not verifiable and that is fine. Only flag an opinion line if it smuggles in a specific false-or-unsupported factual detail or fabricated sourcing.
+3. FACTUAL ASSERTIONS must be backed by the provided facts and stats. Identify unsupported factual claims, overstatements, missing context, or misleading wording of real evidence.
+4. Fabricated sourcing ("sources say", "reportedly", "rumored", "insiders", "unnamed source") is prohibited on ANY line unless the provided evidence itself contains that reporting.
+5. You are NOT allowed to verify using outside knowledge or make up facts.
+6. You cannot create new evidence IDs.
+7. Return a strict JSON response.`;
 
       const prompt = `Script dialogue:
 ${JSON.stringify(script.content)}
@@ -498,8 +505,10 @@ ${JSON.stringify(evidencePanelItems)}
 Unsafe claims (strictly disallowed):
 ${JSON.stringify(unsafeClaims)}
 
-Prohibited phrases:
-${JSON.stringify(PROHIBITED_KEYWORDS)}
+Prohibited fabricated-sourcing phrases (banned unless the evidence packet itself contains that reporting):
+${JSON.stringify(RUMOR_KEYWORDS)}
+
+Reminder: predictive hedging ("expected to", "likely to", "could be", "might be") is NORMAL debate speech on opinion/prediction lines — never a violation by itself.
 
 Run the fact-checking comparison and output the JSON structure containing status, summary, and lineResults.`;
 

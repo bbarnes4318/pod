@@ -35,25 +35,7 @@ export interface ScriptBuildResult {
   scriptId?: string;
 }
 
-// Rumor-sourcing language: banned on every line, factual or not.
-const RUMOR_KEYWORDS = [
-  "sources say",
-  "rumored",
-  "reportedly",
-  "insider",
-  "unnamed source",
-];
-
-// Hedging language: banned only on factual-claim lines. On opinion lines,
-// "could be" / "might be" is normal spoken speculation and rejecting it
-// forces unnatural declarative-only dialogue.
-const PROHIBITED_KEYWORDS = [
-  ...RUMOR_KEYWORDS,
-  "expected to",
-  "likely to",
-  "could be",
-  "might be",
-];
+import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -349,6 +331,12 @@ FORWARD MOTION ONLY:
 
 NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure ("Now let's discuss topic two"), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
 
+FACT vs OPINION — the "isFactualClaim" field (get this right; the fact-checker enforces it):
+- "isFactualClaim": true ONLY when the line states a checkable fact: a specific stat, score, record, streak, injury, transaction, quote, or event presented as TRUE. Every such line MUST carry the matching evidenceRefs from the allowed list — a factual line with empty evidenceRefs is a defect.
+- Predictions, hot takes, hypotheticals, and judgments ("he's likely to win MVP", "that could be a historic defense", "worst signing of the summer") are OPINIONS: set "isFactualClaim": false. Opinions need NO evidenceRefs (attach one only when the take leans directly on an assigned fact).
+- If a line mixes a real stat with a take ("thirty-one a night, and he's still getting snubbed"), the stat makes it factual: isFactualClaim: true + the stat's evidence ref.
+- NEVER attribute claims to reporting or anonymous sources — no "sources say", "reportedly", "rumored", "insiders", "unnamed source". Argue from the assigned evidence instead.
+
 Allowed typed evidence refs: ${Array.from(allowedSourceRefs).join(", ")}
 Expected evidenceRefs JSON structure for lines: { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "abc123" }
 
@@ -540,8 +528,17 @@ Delivery field meanings:
           id: ref.id,
         }));
 
-      // Check factual claim strict rules
-      if (line.isFactualClaim) {
+      // Fact vs opinion: hold only genuine factual assertions to the
+      // evidence bar. A ref-less line in clear opinion/prediction framing is
+      // opinion even if the model marked it isFactualClaim — hot takes are
+      // the format. Speculative hedging never rejects a line; only
+      // fabricated-sourcing language does.
+      const genuineFactual = isGenuineFactualAssertion(
+        { isFactualClaim: line.isFactualClaim, evidenceRefs: cleanEvidenceRefs },
+        textLower
+      );
+
+      if (genuineFactual) {
         result.factualLineCount++;
 
         if (cleanEvidenceRefs.length === 0) {
@@ -551,33 +548,18 @@ Delivery field meanings:
           result.factualLineWithEvidenceCount++;
         }
 
-        // Prohibited keywords check - strictly reject factual lines containing these
-        let hasProhibitedLanguage = false;
-        for (const word of PROHIBITED_KEYWORDS) {
-          if (textLower.includes(word)) {
-            hasProhibitedLanguage = true;
-            break;
-          }
-        }
-
-        if (hasProhibitedLanguage) {
+        // Fabricated sourcing stated as fact: reject the line outright.
+        if (findRumorKeyword(textLower)) {
           result.unsupportedClaimCount++;
           result.rejectedLineCount++;
           unsupportedClaimsRemoved.push(line.text);
           continue; // Reject line
         }
       } else {
-        // Non-factual lines: only reject rumor-sourcing language without refs.
-        // Hedged opinions ("they could be in trouble") are legitimate speech.
-        let hasProhibitedLanguage = false;
-        for (const word of RUMOR_KEYWORDS) {
-          if (textLower.includes(word)) {
-            hasProhibitedLanguage = true;
-            break;
-          }
-        }
-
-        if (hasProhibitedLanguage && cleanEvidenceRefs.length === 0) {
+        // Opinion/non-factual lines: only reject rumor-sourcing language
+        // without refs. Hedged opinions ("they could be in trouble") are
+        // legitimate speech.
+        if (findRumorKeyword(textLower) && cleanEvidenceRefs.length === 0) {
           result.unsupportedClaimCount++;
           result.rejectedLineCount++;
           unsupportedClaimsRemoved.push(line.text);

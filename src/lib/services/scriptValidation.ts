@@ -18,24 +18,7 @@ export interface ValidationSummary {
 }
 
 import { stripAudioTags } from "../audio/speechText";
-
-// Rumor-sourcing language: banned on every line, factual or not.
-const RUMOR_KEYWORDS = [
-  "sources say",
-  "rumored",
-  "reportedly",
-  "insider",
-  "unnamed source",
-];
-
-// Hedging language: banned only on factual-claim lines (see scriptService).
-const PROHIBITED_KEYWORDS = [
-  ...RUMOR_KEYWORDS,
-  "expected to",
-  "likely to",
-  "could be",
-  "might be",
-];
+import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -197,8 +180,13 @@ export function validateScriptContent(
           }
         }
 
-        // Validate factual lines rules
-        if (line.isFactualClaim) {
+        // Fact vs opinion: a ref-less line in clear opinion/prediction
+        // framing is held to the opinion rules even if the writer marked it
+        // isFactualClaim — hot takes are the show format, not citations.
+        // Speculation phrasing ("likely to", "could be") is never flagged
+        // here; only fabricated-sourcing language is prohibited, and the
+        // fact checker separately verifies evidence-backed phrasing.
+        if (isGenuineFactualAssertion(line, textLower)) {
           summary.factualLineCount++;
 
           if (line.evidenceRefs.length === 0) {
@@ -208,32 +196,17 @@ export function validateScriptContent(
             summary.factualLineWithEvidenceCount++;
           }
 
-          // Prohibited keywords in factual lines
-          let containsProhibited = false;
-          for (const word of PROHIBITED_KEYWORDS) {
-            if (textLower.includes(word)) {
-              containsProhibited = true;
-              break;
-            }
-          }
-
-          if (containsProhibited) {
+          if (findRumorKeyword(textLower)) {
             summary.unsupportedClaimCount++;
-            summary.reasons.push(`Line ${summary.totalLineCount}: Factual claim contains prohibited rumor keyword.`);
+            summary.reasons.push(`Line ${summary.totalLineCount}: Factual claim contains prohibited rumor-sourcing keyword.`);
           }
         } else {
-          // Non-factual lines: only rumor-sourcing language is prohibited
-          let containsProhibited = false;
-          for (const word of RUMOR_KEYWORDS) {
-            if (textLower.includes(word)) {
-              containsProhibited = true;
-              break;
-            }
-          }
-
-          if (containsProhibited && line.evidenceRefs.length === 0) {
+          // Opinion/non-factual lines: only rumor-sourcing language is
+          // prohibited (without evidence to point at, "sources say" is
+          // fabricated attribution even inside an opinion).
+          if (findRumorKeyword(textLower) && line.evidenceRefs.length === 0) {
             summary.unsupportedClaimCount++;
-            summary.reasons.push(`Line ${summary.totalLineCount}: Non-factual line contains prohibited keyword without evidenceRefs.`);
+            summary.reasons.push(`Line ${summary.totalLineCount}: Line uses rumor-sourcing language without evidenceRefs.`);
           }
         }
       }
