@@ -7,7 +7,10 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
-export const VOICE_ENGINES = ["default", "elevenlabs", "boson", "fish"] as const;
+// Not exported: a "use server" module may only export async functions —
+// exporting this const breaks every server action in the page's module graph
+// at runtime ("A 'use server' file can only export async functions").
+const VOICE_ENGINES = ["default", "elevenlabs", "boson", "fish"] as const;
 export type VoiceEngine = (typeof VOICE_ENGINES)[number];
 
 export async function setVoiceEngine(engine: string): Promise<{ ok: boolean; message: string }> {
