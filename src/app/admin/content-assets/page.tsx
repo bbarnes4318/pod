@@ -34,8 +34,8 @@ export default async function ContentAssetsDashboardPage({ searchParams }: PageP
       {/* Header */}
       <div className="scriptsHeader" style={{ marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Content Assets Console</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">Content Assets Console</h2>
+          <p className="pageDesc">
             Generate and manage listener-facing transcripts, show notes, chapters, and metadata files.
           </p>
         </div>

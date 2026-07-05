@@ -120,7 +120,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)", margin: 0 }}>
+          <h2 className="pageTitle">
             Final Audio Stitching Console: Version {detail.version}
           </h2>
           <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>
@@ -154,7 +154,7 @@ export default function FinalAudioConsole({ initialDetail }: ConsoleProps) {
             <strong>Stitching Blocked:</strong> {detail.eligibility.reason}
           </div>
           {readyCount < detail.totalLines && (
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "0.75rem" }}>
+            <div style={{ borderTop: "1px solid var(--error-border)", paddingTop: "0.75rem" }}>
               <p style={{ margin: "0 0 0.5rem 0", fontSize: "0.85rem", opacity: 0.9 }}>
                 You have generated {readyCount} out of {detail.totalLines} audio segments. You must generate all segments before stitching the final podcast audio.
               </p>

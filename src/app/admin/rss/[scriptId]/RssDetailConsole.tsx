@@ -121,10 +121,10 @@ export default function RssDetailConsole({
         </Link>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+            <h2 className="pageTitle">
               Manage Episode RSS
             </h2>
-            <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+            <p className="pageDesc">
               {ep.title}
             </p>
           </div>

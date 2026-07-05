@@ -29,13 +29,13 @@ export default async function ConfigurationPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
-      <div>
-        <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "0.25rem" }}>
-          System Configuration
-        </h2>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", margin: 0 }}>
-          Read-only environment status, service provider diagnostics, and production safety audits.
-        </p>
+      <div className="pageHeader" style={{ marginBottom: 0 }}>
+        <div>
+          <h2 className="pageTitle">System Configuration</h2>
+          <p className="pageDesc">
+            Read-only environment status, service provider diagnostics, and production safety audits.
+          </p>
+        </div>
       </div>
 
       {/* Live Audit Report */}
@@ -104,7 +104,7 @@ export default async function ConfigurationPage() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "1.5rem", alignItems: "start" }}>
         {/* Environment Vars checklist */}
         <div className="panel">
           <div className="panelHeader">

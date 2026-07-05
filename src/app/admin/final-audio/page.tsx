@@ -29,8 +29,8 @@ export default async function FinalAudioDashboardPage({ searchParams }: PageProp
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Final Audio Stitching Panel</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">Final Audio Stitching Panel</h2>
+          <p className="pageDesc">
             Assemble individual ready voice segments into complete dynamic MP3 episodes using standardized loudness parameters.
           </p>
         </div>

@@ -43,8 +43,12 @@ export default async function AdminLayout({
     <div className="adminLayout">
       {/* Sidebar Navigation */}
       <aside className="sidebar">
-        <div className="brand" style={{ justifyContent: "center" }}>
-          <img src="/take-machine-logo.png" alt="Take Machine Logo" style={{ height: "45px", width: "auto", objectFit: "contain" }} />
+        <div className="brand">
+          <span className="brandMark">T</span>
+          <span className="brandText">
+            Take Machine
+            <span className="brandSub">Operator Console</span>
+          </span>
         </div>
         <nav style={{ overflowY: "auto", flexGrow: 1, paddingRight: "0.25rem", margin: "1rem 0" }}>
           <SidebarNav />

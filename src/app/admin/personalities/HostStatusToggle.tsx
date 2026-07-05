@@ -36,15 +36,15 @@ export default function HostStatusToggle({ hostId, initialStatus }: ToggleProps)
         style={{
           width: "36px",
           height: "18px",
-          accentColor: "#38bdf8",
+          accentColor: "var(--accent-color)",
           cursor: "pointer",
         }}
       />
       <span className="switchLabel">
         {isActive ? (
-          <span style={{ color: "#10b981", fontWeight: 700 }}>ACTIVE</span>
+          <span style={{ color: "var(--success-color)", fontWeight: 700 }}>ACTIVE</span>
         ) : (
-          <span style={{ color: "#f59e0b", fontWeight: 700 }}>INACTIVE</span>
+          <span style={{ color: "var(--warning-color)", fontWeight: 700 }}>INACTIVE</span>
         )}
       </span>
     </label>

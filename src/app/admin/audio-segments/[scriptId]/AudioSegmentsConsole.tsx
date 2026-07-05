@@ -151,7 +151,7 @@ export default function AudioSegmentsConsole({
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", color: "var(--text-primary)", margin: 0 }}>
+          <h2 className="pageTitle">
             Audio Segment Console: Version {script.version}
           </h2>
           <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>

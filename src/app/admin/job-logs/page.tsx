@@ -149,10 +149,10 @@ export default async function JobLogsPage(props: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
       <div>
-        <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+        <h2 className="pageTitle">
           Pipeline Job Operations Logs
         </h2>
-        <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", margin: 0 }}>
+        <p className="pageDesc">
           View background execution logs, outputs, and details. API keys and RSS preview tokens are automatically masked.
         </p>
       </div>

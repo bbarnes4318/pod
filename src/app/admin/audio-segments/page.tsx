@@ -90,8 +90,8 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>TTS Dialogue Audio Segments</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">TTS Dialogue Audio Segments</h2>
+          <p className="pageDesc">
             Generate and manage separate high-fidelity voice lines for hosts Max Voltage and Dr. Linebreak.
           </p>
         </div>

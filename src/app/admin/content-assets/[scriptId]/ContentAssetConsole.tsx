@@ -123,8 +123,8 @@ export default function ContentAssetConsole({ initialDetail, initialEligibility 
       {/* Title block */}
       <div className="scriptsHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>{detail.episodeTitle}</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">{detail.episodeTitle}</h2>
+          <p className="pageDesc">
             Episode status: <strong style={{ color: "var(--text-primary)" }}>{detail.episodeStatus}</strong> | Script Version: v{detail.scriptVersion} (Status: {detail.scriptStatus})
           </p>
         </div>

@@ -36,8 +36,8 @@ export default async function RssDashboardPage({ searchParams }: PageProps) {
       {/* Header */}
       <div className="scriptsHeader" style={{ marginBottom: "1.5rem" }}>
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>RSS Feed &amp; Publishing Console</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">RSS Feed &amp; Publishing Console</h2>
+          <p className="pageDesc">
             Configure podcast feeds, run publication readiness gates, and manage RSS feed metadata.
           </p>
         </div>

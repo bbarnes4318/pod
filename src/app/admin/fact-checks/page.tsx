@@ -65,8 +65,8 @@ export default async function FactChecksDashboardPage({ searchParams }: PageProp
       {/* Header */}
       <div className="scriptsHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Fact Checking Safety Gate</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">Fact Checking Safety Gate</h2>
+          <p className="pageDesc">
             Audit trace reports comparing host statements against stored evidence records.
           </p>
         </div>

@@ -50,10 +50,10 @@ export default async function ScriptsDashboardPage({ searchParams }: PageProps) 
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
       {/* Header */}
-      <div className="scriptsHeader">
+      <div className="pageHeader">
         <div>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Script Review Console</h2>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "0.25rem", margin: 0 }}>
+          <h2 className="pageTitle">Script Review Console</h2>
+          <p className="pageDesc">
             Inspect, edit, validate, and approve generated AI podcast host debate scripts.
           </p>
         </div>

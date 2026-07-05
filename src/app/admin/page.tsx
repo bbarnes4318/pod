@@ -66,16 +66,18 @@ export default async function SystemOverview() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+      <div className="pageHeader" style={{ marginBottom: 0 }}>
         <div>
-          <h2 style={{ fontFamily: "var(--font-display)", fontSize: "1.6rem", textTransform: "uppercase" }}>System Overview</h2>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem" }}>
+          <h2 className="pageTitle">System Overview</h2>
+          <p className="pageDesc">
             Pipeline throughput, diagnostics, and provider wiring. Making episodes? Head to the studio.
           </p>
         </div>
-        <Link href="/studio" className="buttonPrimary" style={{ textDecoration: "none" }}>
-          Open Studio →
-        </Link>
+        <div className="pageActions">
+          <Link href="/studio" className="buttonPrimary" style={{ textDecoration: "none" }}>
+            Open Studio →
+          </Link>
+        </div>
       </div>
 
       {/* Diagnostics */}
