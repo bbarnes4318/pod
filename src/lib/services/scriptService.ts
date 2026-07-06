@@ -440,6 +440,7 @@ Delivery field meanings:
       version: nextVersion,
       temperature,
       maxTokens,
+      speakerNames: [hostA.name, hostB.name],
       log: (msg) => result.reasons.push(msg),
     });
   } catch (outlineErr: any) {

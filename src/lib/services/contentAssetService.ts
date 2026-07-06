@@ -59,7 +59,7 @@ interface DeterministicShowNotes {
 }
 
 function buildDeterministicShowNotes(episode: any, script: any, hostA: any, hostB: any): DeterministicShowNotes {
-  const summary = episode.description?.trim() || `In this episode of Take Machine, hosts Max Voltage and Dr. Linebreak deep dive into sports topics. They debate key arguments and statistics.`;
+  const summary = episode.description?.trim() || `In this episode of Take Machine, hosts ${hostA.name} and ${hostB.name} deep dive into sports topics. They debate key arguments and statistics.`;
 
   const keyDebates = episode.topics.map((et: any) => {
     const rb = et.topic.researchBrief;
@@ -72,8 +72,8 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
   });
 
   const segments = (script.content as any).segments || [];
-  let maxVoltageQuote = "";
-  let drLinebreakQuote = "";
+  let quoteA = "";
+  let quoteB = "";
 
   for (const seg of segments) {
     if (!seg.lines) continue;
@@ -81,25 +81,17 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
       const text = line.text.trim();
       const words = text.split(/\s+/).length;
       if (words >= 5 && words <= 20) {
-        if (line.speakerName === "Max Voltage" && !maxVoltageQuote) {
-          maxVoltageQuote = text;
-        }
-        if (line.speakerName === "Dr. Linebreak" && !drLinebreakQuote) {
-          drLinebreakQuote = text;
-        }
+        if (line.speakerName === hostA.name && !quoteA) quoteA = text;
+        if (line.speakerName === hostB.name && !quoteB) quoteB = text;
       }
-      if (maxVoltageQuote && drLinebreakQuote) break;
+      if (quoteA && quoteB) break;
     }
-    if (maxVoltageQuote && drLinebreakQuote) break;
+    if (quoteA && quoteB) break;
   }
 
   const bestLines: { speakerName: string; quote: string }[] = [];
-  if (maxVoltageQuote) {
-    bestLines.push({ speakerName: "Max Voltage", quote: maxVoltageQuote });
-  }
-  if (drLinebreakQuote) {
-    bestLines.push({ speakerName: "Dr. Linebreak", quote: drLinebreakQuote });
-  }
+  if (quoteA) bestLines.push({ speakerName: hostA.name, quote: quoteA });
+  if (quoteB) bestLines.push({ speakerName: hostB.name, quote: quoteB });
 
   const sourceNotes: string[] = [];
   for (const et of episode.topics) {

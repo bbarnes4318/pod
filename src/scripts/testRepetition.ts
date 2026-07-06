@@ -125,6 +125,7 @@ async function liveTest() {
   const llm = getScriptLLMProvider();
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
+      speakerNames: ["Max Voltage", "Dr. Linebreak"],
     systemPrompt,
     episodeTitle: "Live repetition regression test episode",
     topicsPrompts,

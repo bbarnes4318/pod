@@ -133,6 +133,7 @@ function topicPromptBlock(idx: number, topic: any, brief: any): string {
 async function generateAndScore(label: string, llm: LLMProvider, topicsPrompts: string, systemPrompt: string) {
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
+      speakerNames: ["Max Voltage", "Dr. Linebreak"],
     systemPrompt,
     episodeTitle: `Model A/B test (${label})`,
     topicsPrompts,

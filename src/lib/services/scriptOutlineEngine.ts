@@ -30,6 +30,8 @@ export interface OutlineDrivenArgs {
   version: number;
   temperature: number;
   maxTokens: number;
+  /** The two cast host names — the only valid speakerName values. */
+  speakerNames: string[];
   log: (msg: string) => void;
 }
 
@@ -73,6 +75,7 @@ export async function generateOutlineDrivenScript(
           linesTarget,
           temperature: args.temperature,
           maxTokens: args.maxTokens,
+          speakerNames: args.speakerNames,
         });
         break;
       } catch (err: any) {
@@ -185,6 +188,7 @@ interface ActArgs {
   linesTarget: number;
   temperature: number;
   maxTokens: number;
+  speakerNames: string[];
 }
 
 async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any[]> {
@@ -256,7 +260,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     `      "lines": [`,
     `        {`,
     `          "lineIndex": 0,`,
-    `          "speakerName": "Max Voltage" | "Dr. Linebreak",`,
+    `          "speakerName": ${(args.speakerNames.length ? args.speakerNames : ["Host A", "Host B"]).map((n) => JSON.stringify(n)).join(" | ")},`,
     `          "text": "spoken text, optionally with inline audio tags like [laughs]",`,
     `          "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",`,
     `          "energy": "low" | "medium" | "high",`,

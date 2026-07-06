@@ -20,7 +20,26 @@ import { generateTtsSegments } from "../services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
+import { resolveEpisodeHosts } from "../services/hostCasting";
+import type { AiHost } from "@prisma/client";
 import { podcastQueue } from "./podcastQueue";
+
+/** Persona block for LLM prompts, built from a host's own profile record —
+ *  so topic/brief seeding reflects whoever the show's active hosts are, not
+ *  hardcoded names. */
+function hostPersonaBlock(host: AiHost): string {
+  const arr = (v: unknown) => (Array.isArray(v) ? (v as unknown[]).filter((x) => typeof x === "string") as string[] : []);
+  const dislikes = arr(host.dislikes).slice(0, 4).join(", ");
+  const likes = arr(host.likes).slice(0, 4).join(", ");
+  return [
+    `${host.name}:`,
+    `- Role: ${host.role}`,
+    `- Worldview: ${host.worldview}`,
+    `- Speaking style: ${host.speakingStyle} (intensity ${host.intensityLevel}/10).`,
+    likes ? `- Leans into: ${likes}.` : "",
+    dislikes ? `- Hates: ${dislikes}.` : "",
+  ].filter(Boolean).join("\n");
+}
 import {
   runRecurringPodcastGeneration,
   recurringCronPattern,
@@ -132,7 +151,7 @@ async function handlePodcastGeneration(job: Job<JobData>) {
       await simulateProgress(1000);
       break;
     case "generate-script":
-      console.log("[Worker] Stage: Generating debate script for Max Voltage and Dr. Linebreak...");
+      console.log("[Worker] Stage: Generating debate script for the episode's cast hosts...");
       await simulateProgress(1500);
       break;
     case "generate-audio":
@@ -742,19 +761,15 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
       ],
     };
 
-    // 4. Formulate LLM prompts matching debate profiles
+    // 4. Formulate LLM prompts matching the show's ACTIVE debate duo (resolved
+    // from the roster; no hardcoded host names).
+    const { hostA: topicHostA, hostB: topicHostB } = await resolveEpisodeHosts({ hostIds: [] });
     const systemPrompt = `You are the Topic Engine for Take Machine, an AI sports debate podcast.
-Your job is to find sports topics that will create strong disagreement between two AI hosts:
+Your job is to find sports topics that will create strong disagreement between the show's two AI hosts:
 
-Max Voltage:
-- Loud, emotional, sarcastic, fan-first.
-- Legacy/pressure/results-driven, hates excuses, hot seat enthusiast.
-- Loves clutch moments, playoff drama, collapses, and fraud-watch teams.
+${hostPersonaBlock(topicHostA)}
 
-Dr. Linebreak:
-- Calm, arrogant, analytics-first.
-- Uses stats, odds, efficiency indices, injury context, market movement, and roster construction.
-- Hates lazy narratives, small-sample overreactions, box-score scouting, and fan emotions.
+${hostPersonaBlock(topicHostB)}
 
 Rules:
 - Do not invent facts, injuries, odds, stats, quotes, or rumors.
@@ -770,8 +785,8 @@ Schema for each topic candidate in the array:
   "leagueId": "NFL | NBA | MLB | NHL | NCAAF | NCAAB | MMA | GAMBLING | FANTASY | POKER",
   "summary": "One-paragraph summary explaining the debate angle",
   "whyFansCare": "A brief sentence why fans will click",
-  "whyMaxVoltageWillAgree": "Why Max Voltage will have a strong legacy/emotional stance",
-  "whyDrLinebreakWillDisagree": "Why Dr. Linebreak will contradict him using data/context",
+  "whyMaxVoltageWillAgree": "Why ${topicHostA.name} (the higher-intensity host) will take a strong stance",
+  "whyDrLinebreakWillDisagree": "Why ${topicHostB.name} (the lower-intensity host) will contradict them from their own worldview",
   "controversyScore": 1-100,
   "starPowerScore": 1-100,
   "bettingRelevanceScore": 1-100,
@@ -1423,19 +1438,17 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       },
     };
 
-    // 7. Formulate structured LLM prompts matching host profiles & editorial details
+    // 7. Formulate structured LLM prompts from the show's ACTIVE debate duo
+    // (resolved from the roster; no hardcoded host names).
+    const { hostA: briefHostA, hostB: briefHostB } = await resolveEpisodeHosts({ hostIds: [] });
     const systemPrompt = `You are the Research Brief Generator for Take Machine, an AI sports debate podcast.
 Your job is to prepare a fact-grounded debate prep sheet for two hosts based ONLY on the supplied evidence.
 
 ${sourcePriorityGuideline}
 
-Max Voltage Stance guidelines:
-- Loud, emotional, sarcastic, fan-first.
-- Legacy/pressure/results-driven, hates excuses, hot seat enthusiast.
+${hostPersonaBlock(briefHostA)}
 
-Dr. Linebreak Stance guidelines:
-- Calm, arrogant, analytics-first.
-- Uses stats, odds, injury context, market movement, and roster construction.
+${hostPersonaBlock(briefHostB)}
 
 Rules:
 - Do not invent facts, stats, injuries, odds, quotes, or rumors.
@@ -1472,13 +1485,13 @@ Schema:
   "contrarianAngle": "A contrarian view or hot take that goes against the consensus.",
   "strongestDebateQuestion": "The ultimate debate question that drives the show segment.",
   "suggestedHostTake": "A recommended landing point or take for the main host.",
-  "argumentForHostA": "The strong, legacy/emotion argument Max Voltage will make, grounded in evidence.",
+  "argumentForHostA": "The argument ${briefHostA.name} will make from their worldview, grounded in evidence.",
   "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
-  "argumentForHostB": "The analytical/contextual argument Dr. Linebreak will make, grounded in evidence.",
+  "argumentForHostB": "The argument ${briefHostB.name} will make from their worldview, grounded in evidence.",
   "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
   "counterArguments": [
     {
-      "host": "Max Voltage" | "Dr. Linebreak",
+      "host": "${briefHostA.name}" | "${briefHostB.name}",
       "claim": "Counterpoint or argument",
       "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ]
     }
@@ -1682,7 +1695,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         }
 
         validCounterArguments.push({
-          host: ca.host || "Max Voltage",
+          host: ca.host || briefHostA.name,
           claim: ca.claim,
           evidenceRefs: cleanRefs,
         });
@@ -1698,7 +1711,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         }
 
         validCounterArguments.push({
-          host: ca.host || "Max Voltage",
+          host: ca.host || briefHostA.name,
           claim: ca.claim,
           evidenceRefs: [],
         });
