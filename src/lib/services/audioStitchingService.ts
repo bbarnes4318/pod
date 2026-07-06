@@ -33,6 +33,20 @@ import {
   shiftTimelineForInsert,
 } from "@/lib/audio/soundDesign";
 import { hasLineIndexCollisions } from "@/lib/services/scriptRepetition";
+import type { ProductionPlan } from "@/lib/audio/productionPlan";
+import {
+  PlannerAsset,
+  generateProductionPlan,
+  isSoundDesignPlannerEnabled,
+  plannerLinesFromScriptContent,
+  resolvePlannerConfig,
+} from "@/lib/audio/productionPlanner";
+import {
+  executePlanOnTimeline,
+  plannedStingerDurations,
+  resolveIntroFromPlan,
+} from "@/lib/audio/planExecution";
+import { readCooldownSnapshot, recordPlanUsage } from "@/lib/services/cueCooldownService";
 
 interface StitchInput {
   scriptId: string;
@@ -79,6 +93,9 @@ async function loadSoundDesignAssetSet(opts: {
     stingerAssetIds: unknown;
   } | null;
   highlightAssetIds: string[];
+  /** Additional asset ids to download (planner-selected stingers/beds that
+   *  may not be in the show config). */
+  extraAssetIds?: string[];
   tempDir: string;
   storageProvider: { getObject(i: { url: string }): Promise<{ body: Buffer }> };
   ffmpegPath: string;
@@ -98,6 +115,7 @@ async function loadSoundDesignAssetSet(opts: {
     cfg?.bedAssetId,
     ...stingerIds,
     ...opts.highlightAssetIds,
+    ...(opts.extraAssetIds ?? []),
   ].filter((id): id is string => !!id);
 
   const rows = await db.audioAsset.findMany({
@@ -167,6 +185,7 @@ async function loadSoundDesignAssetSet(opts: {
     }
     if (asset.kind === "highlight") set.highlights.set(asset.id, asset);
   }
+  set.byId = prepared;
   return set;
 }
 
@@ -442,6 +461,56 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const highlightPlacements = episodeSound.highlights ?? [];
 
     const soundWarnings: string[] = [];
+
+    // 3c. SOUND_DESIGN_PLANNER (flag, default off): generate the per-episode
+    // ProductionPlan BEFORE loading audio. The planner selects cues from the
+    // whole active library using the script's own signal + the cross-episode
+    // cooldown ledger; we then download exactly the assets the plan uses.
+    // Flag off → productionPlan stays null and the legacy path below runs
+    // unchanged.
+    const plannerEnabled = isSoundDesignPlannerEnabled() && style !== "clean";
+    let productionPlan: ProductionPlan | null = null;
+    if (plannerEnabled) {
+      const plannerConfig = resolvePlannerConfig();
+      const catalogRows = await db.audioAsset.findMany({
+        where: { isActive: true, kind: { in: ["theme_intro", "theme_outro", "stinger", "bed", "sfx"] } },
+      });
+      const catalog: PlannerAsset[] = catalogRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        kind: r.kind,
+        category: r.category,
+        durationMs: r.durationMs ?? undefined,
+      }));
+      const cooldown = await readCooldownSnapshot({
+        episodeCount: Math.max(plannerConfig.cooldownEpisodes, plannerConfig.sfxCooldownEpisodes),
+        excludeEpisodeId: episode.id,
+      });
+      productionPlan = generateProductionPlan({
+        episodeId: episode.id,
+        scriptId,
+        style,
+        sfxDensity,
+        lines: plannerLinesFromScriptContent(segments),
+        assets: catalog,
+        cooldown,
+        config: plannerConfig,
+        includeIntro,
+        includeOutro,
+        introAssetId: sdConfig?.themeIntroAssetId ?? null,
+        outroAssetId: sdConfig?.themeOutroAssetId ?? null,
+        envIntroFallback: !!process.env.AUDIO_INTRO_URL,
+        envOutroFallback: !!process.env.AUDIO_OUTRO_URL,
+        highlights: highlightPlacements,
+      });
+      console.log(
+        `[Stitcher] Production plan: ${productionPlan.cues.length} cues ` +
+          `(stingers=${productionPlan.stats.stingerCues}, reactions=${productionPlan.stats.reactionCues}, ` +
+          `silences=${productionPlan.stats.silenceCues}, cooldownSuppressions=${productionPlan.stats.cooldownSuppressions}, ` +
+          `seed=${productionPlan.seed})`
+      );
+    }
+
     const targetSampleRateEarly = Number(process.env.AUDIO_TARGET_SAMPLE_RATE) || 44100;
     let assetSet: SoundDesignAssetSet = emptyAssetSet();
     if (style !== "clean") {
@@ -449,6 +518,9 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         style,
         config: sdConfig,
         highlightAssetIds: highlightPlacements.map((h) => h.assetId),
+        extraAssetIds: productionPlan
+          ? productionPlan.cues.map((c) => c.assetId).filter((id): id is string => !!id)
+          : undefined,
         tempDir,
         storageProvider,
         ffmpegPath,
@@ -570,7 +642,18 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     let introClip: TimelineClip | null = null;
     let dialogueStartMs = 0;
-    if (introStd) {
+    if (plannerEnabled && productionPlan) {
+      // Planner path: the plan's intro cue (or its absence) is the call.
+      const resolved = resolveIntroFromPlan({
+        plan: productionPlan,
+        assetsById: assetSet.byId,
+        envIntro: introStd,
+        musicCrossfadeMs,
+        warnings: soundWarnings,
+      });
+      introClip = resolved.introClip;
+      dialogueStartMs = resolved.dialogueStartMs;
+    } else if (introStd) {
       introClip = {
         filePath: introStd.filePath,
         startMs: 0,
@@ -587,8 +670,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     }
 
     // Stinger-aware gaps: a 1-3s transition needs room between segments, so
-    // widen the planned break gaps to fit the longest configured stinger.
-    const stingerDurations = assetSet.stingers.map((s) => s.durationMs);
+    // widen the planned break gaps to fit the longest stinger that will
+    // actually play (plan-selected when the planner is on).
+    const stingerDurations =
+      plannerEnabled && productionPlan
+        ? plannedStingerDurations(productionPlan, assetSet.byId)
+        : assetSet.stingers.map((s) => s.durationMs);
     const maxStingerMs = stingerDurations.length > 0 ? Math.max(...stingerDurations) : 0;
     const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
     if (style !== "clean" && maxStingerMs > 0) {
@@ -600,11 +687,59 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     const dialogueClips = planConversationTimeline(plannedLines, planOpts);
 
+    // Outro source: standardized theme asset, or env-URL clip. Resolved
+    // before placement so both paths (plan execution / legacy) can use it.
+    let outroStd: { filePath: string; durationMs: number } | null = null;
+    if (assetSet.outro && includeOutro) {
+      outroStd = { filePath: assetSet.outro.filePath, durationMs: assetSet.outro.durationMs };
+    } else if (outroFile) {
+      const stdOutro = path.join(tempDir, "std-outro.wav");
+      await standardizeClipToWav(ffmpegPath, outroFile, stdOutro, {
+        sampleRate: targetSampleRate,
+        targetLufs: -17,
+      });
+      outroStd = { filePath: stdOutro, durationMs: await getFileDurationMs(ffprobePath, stdOutro) };
+    }
+
+    const lineByIndex = new Map<number, any>(allLines.map((l) => [l.lineIndex, l]));
+    let highlightClips: TimelineClip[] = [];
+    let highlightSummary: SoundDesignSummary["highlights"] = [];
+    let stingerClips: TimelineClip[] = [];
+    let reactionClips: TimelineClip[] = [];
+    let reactionSummary: SoundDesignSummary["reactions"] = [];
+    let outroClip: TimelineClip | null = null;
+    let bedAssetForMix: LoadedAsset | null = null;
+    let plannerStingerSummary: SoundDesignSummary["stingers"] = undefined;
+    let plannerSilenceSummary: SoundDesignSummary["silences"] = undefined;
+
+    if (plannerEnabled && productionPlan) {
+      // 8-planner. The renderer EXECUTES the cue sheet — every placement
+      // below traces back to a plan cue with a reason. No decisions here.
+      const planResult = executePlanOnTimeline({
+        plan: productionPlan,
+        plannedLines,
+        dialogueClips,
+        assetsById: assetSet.byId,
+        envOutro: outroStd,
+        musicCrossfadeMs,
+        dialogueStartMs,
+        warnings: soundWarnings,
+      });
+      highlightClips = planResult.highlightClips;
+      highlightSummary = planResult.highlightSummary;
+      stingerClips = planResult.stingerClips;
+      reactionClips = planResult.reactionClips;
+      reactionSummary = planResult.reactionSummary;
+      outroClip = planResult.outroClip;
+      bedAssetForMix = style === "full" ? planResult.bedAsset : null;
+      plannerStingerSummary = planResult.stingerSummary;
+      plannerSilenceSummary = planResult.silenceSummary;
+      for (const s of planResult.silenceSummary) {
+        console.log(`[Stitcher][Plan] silence @line ${s.lineIndex}: ${s.reason}`);
+      }
+    } else {
     // 8b. Rights-gated game highlights: insert each cleared clip right after
     // its script beat, pushing everything later down the timeline.
-    const lineByIndex = new Map<number, any>(allLines.map((l) => [l.lineIndex, l]));
-    const highlightClips: TimelineClip[] = [];
-    const highlightSummary: SoundDesignSummary["highlights"] = [];
     const sortedHighlights = [...highlightPlacements].sort((a, b) => a.lineIndex - b.lineIndex);
     for (const hl of sortedHighlights) {
       const asset = assetSet.highlights.get(hl.assetId);
@@ -642,7 +777,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         lineStartMs: clip.startMs,
       }));
     const stingerPlacements = planStingers(stingerSlots, style, stingerDurations);
-    const stingerClips: TimelineClip[] = stingerPlacements.map((p) => {
+    stingerClips = stingerPlacements.map((p) => {
       const asset = assetSet.stingers[p.stingerIndex];
       return {
         filePath: asset.filePath,
@@ -659,8 +794,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 8d. Reaction SFX on emotional beats (full style only) — placement is
     // driven by the script's own tone/energy metadata, rate-limited by the
     // configured density so reactions land on peaks, never wallpaper.
-    const reactionClips: TimelineClip[] = [];
-    const reactionSummary: SoundDesignSummary["reactions"] = [];
     if (style === "full") {
       const sfxContexts: SfxLineContext[] = plannedLines.map((l, i) => {
         const scriptLine = lineByIndex.get(l.lineIndex) || {};
@@ -696,33 +829,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       }
     }
 
-    const clips: TimelineClip[] = [
-      ...(introClip ? [introClip] : []),
-      ...dialogueClips,
-      ...highlightClips,
-      ...stingerClips,
-      ...reactionClips,
-    ];
-
     const dialogueEndMs = dialogueClips.length
       ? Math.max(...[...dialogueClips, ...highlightClips].map((c) => c.startMs + c.durationMs))
       : dialogueStartMs;
 
-    // Outro: standardized theme asset, or env-URL clip.
-    let outroStd: { filePath: string; durationMs: number } | null = null;
-    if (assetSet.outro && includeOutro) {
-      outroStd = { filePath: assetSet.outro.filePath, durationMs: assetSet.outro.durationMs };
-    } else if (outroFile) {
-      const stdOutro = path.join(tempDir, "std-outro.wav");
-      await standardizeClipToWav(ffmpegPath, outroFile, stdOutro, {
-        sampleRate: targetSampleRate,
-        targetLufs: -17,
-      });
-      outroStd = { filePath: stdOutro, durationMs: await getFileDurationMs(ffprobePath, stdOutro) };
-    }
-
     if (outroStd) {
-      clips.push({
+      outroClip = {
         filePath: outroStd.filePath,
         startMs: Math.max(0, dialogueEndMs - Math.round(musicCrossfadeMs / 2)),
         durationMs: outroStd.durationMs,
@@ -731,8 +843,22 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         fadeInMs: musicCrossfadeMs,
         fadeOutMs: 400,
         gainDb: -2,
-      });
+      };
     }
+
+    // Bed under the whole episode (full style only) — legacy uses the show
+    // config's single configured bed.
+    bedAssetForMix = style === "full" ? assetSet.bed : null;
+    } // end legacy placement path
+
+    const clips: TimelineClip[] = [
+      ...(introClip ? [introClip] : []),
+      ...dialogueClips,
+      ...highlightClips,
+      ...stingerClips,
+      ...reactionClips,
+      ...(outroClip ? [outroClip] : []),
+    ];
 
     const totalInputDurationMs = clips.length
       ? Math.max(...clips.map((c) => c.startMs + c.durationMs))
@@ -753,12 +879,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // by the foreground so dialogue always dominates and the bed swells
     // back in the gaps. Instrumental only, looped to length.
     let mixWavPath = foregroundWavPath;
-    const bedUsed = style === "full" && !!assetSet.bed;
+    const bedUsed = !!bedAssetForMix;
     if (bedUsed) {
       const foregroundMs = await getFileDurationMs(ffprobePath, foregroundWavPath);
       const beddedPath = path.join(tempDir, "final-mix-bedded.wav");
-      console.log(`[Stitcher] Ducking music bed '${assetSet.bed!.name}' under ${Math.round(foregroundMs / 1000)}s foreground.`);
-      await mixBedUnderForeground(ffmpegPath, foregroundWavPath, assetSet.bed!.filePath, beddedPath, {
+      console.log(`[Stitcher] Ducking music bed '${bedAssetForMix!.name}' under ${Math.round(foregroundMs / 1000)}s foreground.`);
+      await mixBedUnderForeground(ffmpegPath, foregroundWavPath, bedAssetForMix!.filePath, beddedPath, {
         sampleRate: targetSampleRate,
         totalMs: foregroundMs,
       });
@@ -870,15 +996,25 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         style,
         sfxDensity,
         introAsset: introClip ? (assetSet.intro?.name ?? "env intro clip") : null,
-        outroAsset: outroStd ? (assetSet.outro?.name ?? "env outro clip") : null,
-        bedAsset: bedUsed ? assetSet.bed!.name : null,
+        outroAsset: outroClip ? (assetSet.outro?.name ?? "env outro clip") : null,
+        bedAsset: bedUsed ? bedAssetForMix!.name : null,
         bedDucking: bedUsed,
         stingerCount: stingerClips.length,
         reactionCount: reactionClips.length,
         reactions: reactionSummary,
         highlightCount: highlightClips.length,
         highlights: highlightSummary,
+        ...(plannerEnabled && productionPlan
+          ? {
+              planner: true,
+              plannerVersion: productionPlan.plannerVersion,
+              stingers: plannerStingerSummary,
+              silences: plannerSilenceSummary,
+            }
+          : {}),
       } satisfies SoundDesignSummary,
+      // The full cue sheet this render executed — reproducible from inputs.
+      ...(plannerEnabled && productionPlan ? { productionPlan } : {}),
       reasons: ["Final audio stitched and uploaded successfully.", ...soundWarnings],
     };
 
@@ -889,6 +1025,18 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         output: successOutput as any,
       },
     });
+
+    // Feed the cooldown ledger AFTER the render shipped — a failed render
+    // must never cool assets down. Best-effort: a ledger hiccup is a warning,
+    // not a failed episode.
+    if (plannerEnabled && productionPlan) {
+      try {
+        await recordPlanUsage(productionPlan);
+      } catch (usageErr: unknown) {
+        const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
+        console.warn(`[Stitcher] Failed to record sound-cue usage: ${msg}`);
+      }
+    }
 
     // Clean up temp directory
     try {
