@@ -1,0 +1,52 @@
+{
+  "title": "Blowout: Comets buried by 34 in the fourth",
+  "arc": "cold-open fury that deflates into a post-mortem — hot early, analytical late",
+  "segments": [
+    {
+      "type": "cold_open",
+      "title": "Cold open",
+      "lines": [
+        { "lineIndex": 0, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "That was not a basketball game, that was a public dismantling. One eighteen to ninety-seven and it was not even that close.", "tone": "heated", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 1, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Thirty-four to thirteen in the fourth quarter, Max. Thirty-four to thirteen. Say it out loud and try not to wince.", "tone": "incredulous", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "intro",
+      "title": "Show open",
+      "lines": [
+        { "lineIndex": 2, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Welcome to the show, everybody. Tonight we are performing an autopsy, and the body is still warm.", "tone": "excited", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 3, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And unlike most autopsies, the cause of death is not a mystery. We watched it happen possession by possession.", "tone": "amused", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "The collapse itself",
+      "lines": [
+        { "lineIndex": 4, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "They quit, Doc. I am not supposed to say that on the air, but there is no other word. Grown professionals stopped running back on defense.", "tone": "heated", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 5, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Eight straight empty possessions to open the fourth. Eight! You could hear the building change its mind in real time.", "tone": "incredulous", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 6, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "And the bench! The bench was sitting there like they were waiting for a bus. Nobody stood up once in twelve minutes.", "tone": "heated", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 7, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "That is the loudest silence in sports, the bench that has already accepted the result with six minutes left.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "What actually went wrong",
+      "lines": [
+        { "lineIndex": 8, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Now let us cool down and look at the film, because the collapse started way before the fourth. The spacing was broken from the opening tip.", "tone": "analytical", "energy": "medium", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 9, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Fine, yes, the corner was empty all night. Every drive collapsed into three defenders because nobody held the weak side.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 10, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And the switching scheme asked the big man to live on an island against guards. That is not a character flaw, that is a coaching decision.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 11, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "So the effort died because the plan was already dead. That is the most damning version of this, honestly.", "tone": "measured", "energy": "medium", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Where they go from here",
+      "lines": [
+        { "lineIndex": 12, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "The schedule does them no favors. Three road games against top-five offenses in the next eight days.", "tone": "measured", "energy": "low", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 13, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "If they show up flat in the next one, this is not a bad night anymore. It is who they are.", "tone": "dismissive", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 14, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And that is the quiet part of a blowout. It does not just cost you a game, it asks a question about the whole roster.", "tone": "somber", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 15, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "We will be watching the answer on Thursday. That is the show. Go hug your bench players, folks.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    }
+  ]
+}

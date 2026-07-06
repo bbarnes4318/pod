@@ -1,0 +1,193 @@
+{
+  "fixture": "betting-line",
+  "title": "The betting line: why the spread moved three points on a Tuesday",
+  "arc": "measured and analytical almost throughout — one genuine spike when the sharp money story lands",
+  "plan": {
+    "version": 1,
+    "plannerVersion": "1.0.0",
+    "episodeId": "variety-betting-line",
+    "scriptId": "variety-script-betting-line",
+    "style": "full",
+    "sfxDensity": "medium",
+    "seed": 1002593311,
+    "cues": [
+      {
+        "type": "intro",
+        "lineIndex": 0,
+        "assetId": "theme-intro-arena-charge.mp3",
+        "assetName": "Arena Charge (intro theme)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -2,
+        "fadeInMs": 20,
+        "fadeOutMs": 900,
+        "reason": "show open"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 0,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "under",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "no bed this episode — every bed ran within the last 2 episodes"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 2,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 6,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "reaction",
+        "lineIndex": 8,
+        "assetId": "sfx-crowd-surge.mp3",
+        "assetName": "Crowd Surge (sfx)",
+        "category": "crowd",
+        "timing": "after",
+        "gainDb": -13,
+        "fadeInMs": 25,
+        "fadeOutMs": 150,
+        "reason": "excited peak at an arc peak"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 10,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 11,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "reaction",
+        "lineIndex": 13,
+        "assetId": "sfx-rimshot.mp3",
+        "assetName": "Rimshot (sfx)",
+        "category": "rimshot",
+        "timing": "after",
+        "gainDb": -13,
+        "fadeInMs": 25,
+        "fadeOutMs": 150,
+        "reason": "amused beat"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 14,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "outro",
+        "lineIndex": 15,
+        "assetId": "theme-outro-final-whistle.mp3",
+        "assetName": "Final Whistle (outro theme)",
+        "category": null,
+        "timing": "after",
+        "gainDb": -2,
+        "fadeInMs": 900,
+        "fadeOutMs": 400,
+        "reason": "show close"
+      }
+    ],
+    "stats": {
+      "lineCount": 16,
+      "boundaryCount": 5,
+      "stingerCues": 0,
+      "reactionCues": 2,
+      "silenceCues": 6,
+      "distinctAssetsUsed": 4,
+      "cooldownSuppressions": 32
+    }
+  },
+  "executed": {
+    "bedAsset": null,
+    "stingers": [],
+    "reactions": [
+      {
+        "lineIndex": 8,
+        "asset": "Crowd Surge (sfx)",
+        "reason": "excited peak at an arc peak",
+        "atMs": 39485
+      },
+      {
+        "lineIndex": 13,
+        "asset": "Rimshot (sfx)",
+        "reason": "amused beat",
+        "atMs": 57495
+      }
+    ],
+    "silences": [
+      {
+        "lineIndex": 0,
+        "reason": "no bed this episode — every bed ran within the last 2 episodes"
+      },
+      {
+        "lineIndex": 2,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "lineIndex": 6,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "lineIndex": 10,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "lineIndex": 11,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "lineIndex": 14,
+        "reason": "all stingers cooling down from recent episodes"
+      }
+    ]
+  },
+  "legacyForComparison": {
+    "stingerCount": 5,
+    "reactionCount": 1
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "title": "The betting line: why the spread moved three points on a Tuesday",
+  "arc": "measured and analytical almost throughout — one genuine spike when the sharp money story lands",
+  "segments": [
+    {
+      "type": "intro",
+      "title": "Show open",
+      "lines": [
+        { "lineIndex": 0, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Today we are doing numbers, folks. Specifically one number, and the three points it traveled between Monday night and Tuesday lunch.", "tone": "measured", "energy": "medium", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 1, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "A three-point line move with no injury report and no lineup news. That is the kind of quiet weirdness this show lives for.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Reading the opening number",
+      "lines": [
+        { "lineIndex": 2, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "The opener landed at home minus six and a half, which already told you the market respects the rest advantage more than the standings.", "tone": "analytical", "energy": "medium", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 3, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Right, because on paper these teams are two games apart. Six and a half is not a standings number, it is a schedule number.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 4, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Back to back on the road, third game in four nights, and a travel leg that crosses two time zones. The model bakes all of that in before anyone tips off.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 5, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "So far, so normal. A big opener with a boring explanation. The interesting part is what happened at nine the next morning.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "The Tuesday move",
+      "lines": [
+        { "lineIndex": 6, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "At nine oh five the number went from six and a half to five. By eleven it was three and a half. No news broke in that window. None.", "tone": "analytical", "energy": "medium", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 7, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "And the total barely moved, which rules out weather-style noise. Somebody hit the side, hard, and the books respected it instantly.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 8, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "That is the tell. When a line moves on volume you see it grind. When it moves on respect, it jumps. This one jumped twice.", "tone": "excited", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 9, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "A double jump on a Tuesday morning. Somewhere out there a spreadsheet knows something about this rotation that we do not.", "tone": "amused", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "transition",
+      "title": "Turn",
+      "lines": [
+        { "lineIndex": 10, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Which brings us to the only question that matters for your Thursday: is three and a half now a fair number, or an overcorrection?", "tone": "measured", "energy": "medium", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Is there value left",
+      "lines": [
+        { "lineIndex": 11, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "My read: the schedule edge was real, so the opener was fair, and the market just moved off it because someone sneezed with conviction.", "tone": "analytical", "energy": "medium", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 12, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And mine is the opposite. Sharp money on a no-news morning usually means the rest edge is priced wrong, not right. I lean the visitor side at the current number.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 13, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "A genuine disagreement conducted at conversational volume. Our producers hate this segment.", "tone": "amused", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Close",
+      "lines": [
+        { "lineIndex": 14, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Watch the number Thursday morning. If it drifts back through four and a half, the market agrees with Max. If it holds, it agrees with me.", "tone": "measured", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 15, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Either way, somebody's spreadsheet gets to gloat. That is the show, folks. Bet responsibly, hydrate irresponsibly.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    }
+  ]
+}

@@ -78,5 +78,42 @@ The stitch job log's `output.soundDesign` records exactly what was mixed:
 style, density, assets used, every reaction (line, asset, reason), and every
 highlight — the audit trail for "why is there an air horn at 12:40".
 
-Tests: `npm run test:sound-design` (planner rules + measured ducking proof)
-and `npm run test:sound-pack` (synthesizes and validates the starter pack).
+## ProductionPlan (episode-aware cue sheets, flag-gated)
+
+`SOUND_DESIGN_PLANNER=true` (default **off**) switches `light`/`full`
+renders from the legacy placement path (fixed tone→SFX mapping + `i % n`
+stinger rotation) to a per-episode **ProductionPlan** generated *before*
+rendering:
+
+- `src/lib/audio/productionPlanner.ts` reads the script's own signal —
+  smoothed energy arc + peaks, segment structure (cold opens, topic turns),
+  tones, interruptions — and picks cues by **weighted selection** over the
+  whole active asset library, not first-available. **Silence is a
+  first-class cue**: strong beats deliberately held back get an explicit
+  `silence` cue with a reason, so the cue sheet documents restraint.
+- **Anti-repetition**: the `SoundCueUsage` table records what every rendered
+  episode consumed. At plan time the planner reads the last N episodes
+  (`SOUND_DESIGN_COOLDOWN_EPISODES`, default 2) — a stinger/bed used within
+  the window is hard-excluded (falls back to silence when everything is
+  cooling), reaction SFX are soft-penalized, and per-episode max-uses are
+  enforced (`SOUND_DESIGN_MAX_STINGER_USES`=1, `SOUND_DESIGN_MAX_SFX_USES`=2).
+- The renderer **executes** the plan (`src/lib/audio/planExecution.ts`) with
+  the exact timing conventions above; it stops inventing placements. The
+  full plan is persisted in the stitch job log (`output.productionPlan`)
+  and is byte-reproducible from inputs (seed = episodeId+scriptId hash).
+- No stinger/reaction cue on the opening line unless the script opens with
+  a `cold_open` segment. Flag off: nothing changes — the legacy path runs
+  verbatim, no plan is generated, no usage is recorded.
+
+Tests: `npm run test:sound-design` (legacy planner rules + measured ducking
+proof), `npm run test:sound-pack` (synthesizes and validates the starter
+pack), and `npm run test:production-planner` (plan generation, determinism,
+cooldown, silence, opening-line rule, plan execution).
+
+`npm run demo:sound-variety` is the acceptance harness: it renders the four
+fixture episodes (`src/scripts/fixtures/varietyEpisodes/` — blowout /
+rivalry / betting-line / injury-news) before (legacy) and after (planner)
+with a cooldown ledger threaded across the run, writes cue sheets +
+`variety-report.json` + mp3 renders to `samples/planner-variety/`, and
+asserts the cue sheets measurably differ, cooldown suppressed repeats, hot
+scripts out-cue calm ones, and plans replay deterministically.

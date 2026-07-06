@@ -1,0 +1,214 @@
+{
+  "fixture": "rivalry",
+  "title": "Rivalry week: the grudge match nobody is calm about",
+  "arc": "sustained high-energy banter wall to wall — heated, amused, interruptions throughout",
+  "plan": {
+    "version": 1,
+    "plannerVersion": "1.0.0",
+    "episodeId": "variety-rivalry",
+    "scriptId": "variety-script-rivalry",
+    "style": "full",
+    "sfxDensity": "medium",
+    "seed": 1548072523,
+    "cues": [
+      {
+        "type": "intro",
+        "lineIndex": 0,
+        "assetId": "theme-intro-arena-charge.mp3",
+        "assetName": "Arena Charge (intro theme)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -2,
+        "fadeInMs": 20,
+        "fadeOutMs": 900,
+        "reason": "show open"
+      },
+      {
+        "type": "bed_change",
+        "lineIndex": 0,
+        "assetId": "bed-fast-break-ii.mp3",
+        "assetName": "Fast Break II (music bed)",
+        "category": null,
+        "timing": "under",
+        "gainDb": 0,
+        "fadeInMs": 1500,
+        "fadeOutMs": 2500,
+        "reason": "bed 'Fast Break II (music bed)' under the episode (arc mean 2.21)"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 1,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "after",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "strong amused beat held back — recent cues need air"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 2,
+        "assetId": "stinger-slam-riser.mp3",
+        "assetName": "Slam Riser (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a high-energy segment"
+      },
+      {
+        "type": "reaction",
+        "lineIndex": 5,
+        "assetId": "sfx-rimshot.mp3",
+        "assetName": "Rimshot (sfx)",
+        "category": "rimshot",
+        "timing": "after",
+        "gainDb": -13,
+        "fadeInMs": 25,
+        "fadeOutMs": 150,
+        "reason": "amused beat"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 6,
+        "assetId": "stinger-whoosh-cut.mp3",
+        "assetName": "Whoosh Cut (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a high-energy segment"
+      },
+      {
+        "type": "reaction",
+        "lineIndex": 9,
+        "assetId": "sfx-big-impact.mp3",
+        "assetName": "Big Impact (sfx)",
+        "category": "impact",
+        "timing": "after",
+        "gainDb": -13,
+        "fadeInMs": 25,
+        "fadeOutMs": 150,
+        "reason": "heated peak"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 11,
+        "assetId": "stinger-whoosh-cut-ii.mp3",
+        "assetName": "Whoosh Cut II (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a high-energy segment"
+      },
+      {
+        "type": "reaction",
+        "lineIndex": 13,
+        "assetId": "sfx-big-impact.mp3",
+        "assetName": "Big Impact (sfx)",
+        "category": "impact",
+        "timing": "after",
+        "gainDb": -13,
+        "fadeInMs": 25,
+        "fadeOutMs": 150,
+        "reason": "disbelief beat"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 15,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "all stingers cooling down from recent episodes"
+      },
+      {
+        "type": "outro",
+        "lineIndex": 16,
+        "assetId": "theme-outro-final-whistle.mp3",
+        "assetName": "Final Whistle (outro theme)",
+        "category": null,
+        "timing": "after",
+        "gainDb": -2,
+        "fadeInMs": 900,
+        "fadeOutMs": 400,
+        "reason": "show close"
+      }
+    ],
+    "stats": {
+      "lineCount": 17,
+      "boundaryCount": 4,
+      "stingerCues": 3,
+      "reactionCues": 3,
+      "silenceCues": 2,
+      "distinctAssetsUsed": 8,
+      "cooldownSuppressions": 13
+    }
+  },
+  "executed": {
+    "bedAsset": "Fast Break II (music bed)",
+    "stingers": [
+      {
+        "lineIndex": 2,
+        "asset": "Slam Riser (stinger)",
+        "reason": "topic turn into a high-energy segment",
+        "atMs": 15016
+      },
+      {
+        "lineIndex": 6,
+        "asset": "Whoosh Cut (stinger)",
+        "reason": "topic turn into a high-energy segment",
+        "atMs": 29851
+      },
+      {
+        "lineIndex": 11,
+        "asset": "Whoosh Cut II (stinger)",
+        "reason": "topic turn into a high-energy segment",
+        "atMs": 47275
+      }
+    ],
+    "reactions": [
+      {
+        "lineIndex": 5,
+        "asset": "Rimshot (sfx)",
+        "reason": "amused beat",
+        "atMs": 27173
+      },
+      {
+        "lineIndex": 9,
+        "asset": "Big Impact (sfx)",
+        "reason": "heated peak",
+        "atMs": 42533
+      },
+      {
+        "lineIndex": 13,
+        "asset": "Big Impact (sfx)",
+        "reason": "disbelief beat",
+        "atMs": 56736
+      }
+    ],
+    "silences": [
+      {
+        "lineIndex": 1,
+        "reason": "strong amused beat held back — recent cues need air"
+      },
+      {
+        "lineIndex": 15,
+        "reason": "all stingers cooling down from recent episodes"
+      }
+    ]
+  },
+  "legacyForComparison": {
+    "stingerCount": 4,
+    "reactionCount": 3
+  }
+}

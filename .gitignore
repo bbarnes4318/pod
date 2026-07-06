@@ -45,4 +45,7 @@ yarn-error.log*
 next-env.d.ts
 
 # generated A/B audio samples
-/samples/
+/samples/*
+# ...except the shipped planner variety-harness artifacts (cue sheets,
+# report, before/after renders) - regenerable via npm run demo:sound-variety
+!/samples/planner-variety/

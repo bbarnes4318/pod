@@ -1,0 +1,53 @@
+{
+  "title": "Rivalry week: the grudge match nobody is calm about",
+  "arc": "sustained high-energy banter wall to wall — heated, amused, interruptions throughout",
+  "segments": [
+    {
+      "type": "intro",
+      "title": "Show open",
+      "lines": [
+        { "lineIndex": 0, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "It is rivalry week, people, and I have been awake since five in the morning for no medical reason whatsoever.", "tone": "excited", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 1, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "He texted me a lineup diagram at five fifteen. A diagram, with arrows. This is what rivalry week does to otherwise functional adults.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "The trash talk ledger",
+      "lines": [
+        { "lineIndex": 2, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Their point guard said our building is quiet. QUIET. The man shot four for nineteen here in March and he wants to talk about acoustics.", "tone": "heated", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 3, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "To be fair, it was quiet, because he kept missing and his own fans left early.", "tone": "sarcastic", "energy": "high", "pauseBefore": "none", "isInterruption": true, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 4, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "THANK you! That is exactly the energy this week deserves. Print the shooting splits on a billboard.", "tone": "excited", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 5, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "I cannot believe I am the one saying this, but the billboard budget conversation is why we cannot have nice things.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "The matchup that decides it",
+      "lines": [
+        { "lineIndex": 6, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "The whole game lives in one matchup: their wing against our second big on the switch. Whoever wins that possession war wins the night.", "tone": "excited", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 7, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "He is going to get cooked, Doc. Cooked! We have all seen the man try to slide his feet. It is like watching furniture defend.", "tone": "heated", "energy": "high", "pauseBefore": "none", "isInterruption": true, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 8, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Furniture with a seven-foot wingspan! The contest numbers say he bothers that jumper more than anyone else on the roster.", "tone": "incredulous", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 9, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Bothering a jumper is not the same as stopping one, and you know it. This is rivalry week, we do not grade on a curve.", "tone": "heated", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 10, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Fine. If he gets cooked I will read your five a.m. diagram on air, arrows and all.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "History and bad blood",
+      "lines": [
+        { "lineIndex": 11, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Do not forget last season. The shove at the scorer's table, the waved-off buzzer beater, the coach getting tossed in the third. This fixture has receipts.", "tone": "heated", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 12, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Three technicals in the last two meetings, and somehow both fan bases think the refs are against them. That is how you know a rivalry is healthy.", "tone": "sarcastic", "energy": "high", "pauseBefore": "none", "isInterruption": true, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 13, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Healthy! Doc, someone threw a hot dog. A fully loaded hot dog. There is footage.", "tone": "incredulous", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 14, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And the man still hit both free throws with mustard on his shoulder. Say what you want, that is professionalism.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Predictions",
+      "lines": [
+        { "lineIndex": 15, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Give me the home team by eight, a technical before halftime, and at least one moment where we both scream at the monitor.", "tone": "excited", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 16, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "I will take the visitors in a rock fight, and I want it on record that I predicted the hot dog sequel.", "tone": "excited", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "fixture": "blowout",
+  "title": "Blowout: Comets buried by 34 in the fourth",
+  "arc": "cold-open fury that deflates into a post-mortem — hot early, analytical late",
+  "plan": {
+    "version": 1,
+    "plannerVersion": "1.0.0",
+    "episodeId": "variety-blowout",
+    "scriptId": "variety-script-blowout",
+    "style": "full",
+    "sfxDensity": "medium",
+    "seed": 1248448697,
+    "cues": [
+      {
+        "type": "intro",
+        "lineIndex": 0,
+        "assetId": "theme-intro-arena-charge.mp3",
+        "assetName": "Arena Charge (intro theme)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -2,
+        "fadeInMs": 20,
+        "fadeOutMs": 900,
+        "reason": "show open (after cold open script beat)"
+      },
+      {
+        "type": "bed_change",
+        "lineIndex": 0,
+        "assetId": "bed-fast-break.mp3",
+        "assetName": "Fast Break (music bed)",
+        "category": null,
+        "timing": "under",
+        "gainDb": 0,
+        "fadeInMs": 1500,
+        "fadeOutMs": 2500,
+        "reason": "bed 'Fast Break (music bed)' under the episode (arc mean 1.30)"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 0,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "after",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "strong heated peak held back — recent cues need air"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 2,
+        "assetId": "stinger-slam-riser-ii.mp3",
+        "assetName": "Slam Riser II (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "segment turn into a high-energy segment"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 4,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "boundary held silent — back-to-back stingers would wear thin"
+      },
+      {
+        "type": "silence",
+        "lineIndex": 4,
+        "assetId": null,
+        "assetName": null,
+        "category": null,
+        "timing": "after",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "strong heated peak held back — recent cues need air"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 8,
+        "assetId": "stinger-drum-hit-ii.mp3",
+        "assetName": "Drum Hit II (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a measured segment"
+      },
+      {
+        "type": "stinger",
+        "lineIndex": 12,
+        "assetId": "stinger-drum-hit.mp3",
+        "assetName": "Drum Hit (stinger)",
+        "category": null,
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a measured segment"
+      },
+      {
+        "type": "outro",
+        "lineIndex": 15,
+        "assetId": "theme-outro-final-whistle.mp3",
+        "assetName": "Final Whistle (outro theme)",
+        "category": null,
+        "timing": "after",
+        "gainDb": -2,
+        "fadeInMs": 900,
+        "fadeOutMs": 400,
+        "reason": "show close"
+      }
+    ],
+    "stats": {
+      "lineCount": 16,
+      "boundaryCount": 4,
+      "stingerCues": 3,
+      "reactionCues": 0,
+      "silenceCues": 3,
+      "distinctAssetsUsed": 6,
+      "cooldownSuppressions": 0
+    }
+  },
+  "executed": {
+    "bedAsset": "Fast Break (music bed)",
+    "stingers": [
+      {
+        "lineIndex": 2,
+        "asset": "Slam Riser II (stinger)",
+        "reason": "segment turn into a high-energy segment",
+        "atMs": 14799
+      },
+      {
+        "lineIndex": 8,
+        "asset": "Drum Hit II (stinger)",
+        "reason": "topic turn into a measured segment",
+        "atMs": 37696
+      },
+      {
+        "lineIndex": 12,
+        "asset": "Drum Hit (stinger)",
+        "reason": "topic turn into a measured segment",
+        "atMs": 53519
+      }
+    ],
+    "reactions": [],
+    "silences": [
+      {
+        "lineIndex": 0,
+        "reason": "strong heated peak held back — recent cues need air"
+      },
+      {
+        "lineIndex": 4,
+        "reason": "boundary held silent — back-to-back stingers would wear thin"
+      },
+      {
+        "lineIndex": 4,
+        "reason": "strong heated peak held back — recent cues need air"
+      }
+    ]
+  },
+  "legacyForComparison": {
+    "stingerCount": 4,
+    "reactionCount": 1
+  }
+}

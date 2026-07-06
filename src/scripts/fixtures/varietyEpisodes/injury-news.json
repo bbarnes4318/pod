@@ -1,0 +1,52 @@
+{
+  "title": "Injury news: the franchise knee and the shutdown question",
+  "arc": "somber open, one genuinely heated debate segment in the middle, measured landing",
+  "segments": [
+    {
+      "type": "intro",
+      "title": "Show open",
+      "lines": [
+        { "lineIndex": 0, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "This is not the show we planned to make today. The MRI results came back this morning, and they are not good.", "tone": "somber", "energy": "low", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 1, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Grade two sprain, structural involvement, and a timeline that officially reads week to week, which everyone in that building knows means longer.", "tone": "somber", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "What the injury actually is",
+      "lines": [
+        { "lineIndex": 2, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Let us be precise, because precision is a kindness here. This is the same knee as two seasons ago, but a different ligament, and that distinction matters.", "tone": "measured", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 3, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "It matters because the old injury healed clean. This one is new damage, not a recurrence. Small mercy, but a real one.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 4, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "The comparable cases in the last five years came back in six to nine weeks. The bad outcomes were the guys who came back in four.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 5, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "And this team, sitting ninth, has every incentive to be tempted by four. That is the conversation nobody wants to have out loud.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "The shutdown debate",
+      "lines": [
+        { "lineIndex": 6, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "So I will say it out loud: shut him down. Full stop. The play-in is not worth a twenty-six-year-old franchise knee, and it is not close.", "tone": "heated", "energy": "high", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 7, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "You cannot make that call from a studio, Max. The medical staff sees the scans, we see a press release with adjectives in it.", "tone": "heated", "energy": "high", "pauseBefore": "none", "isInterruption": true, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 8, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "The press release says week to week and the team is four games from the deadline. You do not need the scan, you need the incentive chart!", "tone": "heated", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 9, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "And the player gets a vote! These guys are not cargo. He has said twice this year he wants to play through the stretch run.", "tone": "incredulous", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 10, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Players always want to play, that is why teams employ adults to say no. The organizations that fail here are the ones that outsource the no.", "tone": "heated", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "What it means for the season",
+      "lines": [
+        { "lineIndex": 11, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "Whatever they decide, the next six weeks look different. The offense runs through that spot on the floor, and there is no like-for-like replacement on the roster.", "tone": "measured", "energy": "medium", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 12, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "The kid gets his minutes now, ready or not. Sometimes that is how careers start. It is also sometimes how rotations break.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 13, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "We will track the recovery reporting carefully and skeptically, and we will flag every anonymous-source timeline for exactly what it is.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    },
+    {
+      "type": "topic",
+      "title": "Close",
+      "lines": [
+        { "lineIndex": 14, "speakerName": "Max Voltage", "speakerHostId": "host-max", "text": "Get well soon, big fella. The league is better with you in it, and this show is calmer, which frankly we could use.", "tone": "somber", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 15, "speakerName": "Dr. Linebreak", "speakerHostId": "host-doc", "text": "That is the show. No predictions today. Some weeks the only honest take is patience.", "tone": "somber", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+      ]
+    }
+  ]
+}

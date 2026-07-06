@@ -1,0 +1,205 @@
+{
+  "generatedBy": "produceLocalSoundDesignDemo.ts --variety",
+  "style": "full",
+  "density": "medium",
+  "assetLibrary": [
+    {
+      "id": "theme-intro-arena-charge.mp3",
+      "kind": "theme_intro",
+      "category": null
+    },
+    {
+      "id": "theme-outro-final-whistle.mp3",
+      "kind": "theme_outro",
+      "category": null
+    },
+    {
+      "id": "stinger-slam-riser.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-drum-hit.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-whoosh-cut.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "bed-fast-break.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "sfx-air-horn.mp3",
+      "kind": "sfx",
+      "category": "airhorn"
+    },
+    {
+      "id": "sfx-buzzer.mp3",
+      "kind": "sfx",
+      "category": "buzzer"
+    },
+    {
+      "id": "sfx-rimshot.mp3",
+      "kind": "sfx",
+      "category": "rimshot"
+    },
+    {
+      "id": "sfx-crowd-surge.mp3",
+      "kind": "sfx",
+      "category": "crowd"
+    },
+    {
+      "id": "sfx-big-impact.mp3",
+      "kind": "sfx",
+      "category": "impact"
+    },
+    {
+      "id": "sfx-whoosh-pass.mp3",
+      "kind": "sfx",
+      "category": "whoosh"
+    },
+    {
+      "id": "stinger-slam-riser-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-drum-hit-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-whoosh-cut-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "bed-fast-break-ii.mp3",
+      "kind": "bed",
+      "category": null
+    }
+  ],
+  "episodes": [
+    {
+      "name": "blowout",
+      "cueStats": {
+        "lineCount": 16,
+        "boundaryCount": 4,
+        "stingerCues": 3,
+        "reactionCues": 0,
+        "silenceCues": 3,
+        "distinctAssetsUsed": 6,
+        "cooldownSuppressions": 0
+      },
+      "legacyForComparison": {
+        "stingerCount": 4,
+        "reactionCount": 1
+      },
+      "assetsUsed": [
+        "bed-fast-break.mp3",
+        "stinger-slam-riser-ii.mp3",
+        "stinger-drum-hit-ii.mp3",
+        "stinger-drum-hit.mp3"
+      ]
+    },
+    {
+      "name": "rivalry",
+      "cueStats": {
+        "lineCount": 17,
+        "boundaryCount": 4,
+        "stingerCues": 3,
+        "reactionCues": 3,
+        "silenceCues": 2,
+        "distinctAssetsUsed": 8,
+        "cooldownSuppressions": 13
+      },
+      "legacyForComparison": {
+        "stingerCount": 4,
+        "reactionCount": 3
+      },
+      "assetsUsed": [
+        "bed-fast-break-ii.mp3",
+        "stinger-slam-riser.mp3",
+        "sfx-rimshot.mp3",
+        "stinger-whoosh-cut.mp3",
+        "sfx-big-impact.mp3",
+        "stinger-whoosh-cut-ii.mp3"
+      ]
+    },
+    {
+      "name": "betting-line",
+      "cueStats": {
+        "lineCount": 16,
+        "boundaryCount": 5,
+        "stingerCues": 0,
+        "reactionCues": 2,
+        "silenceCues": 6,
+        "distinctAssetsUsed": 4,
+        "cooldownSuppressions": 32
+      },
+      "legacyForComparison": {
+        "stingerCount": 5,
+        "reactionCount": 1
+      },
+      "assetsUsed": [
+        "sfx-crowd-surge.mp3",
+        "sfx-rimshot.mp3"
+      ]
+    },
+    {
+      "name": "injury-news",
+      "cueStats": {
+        "lineCount": 16,
+        "boundaryCount": 4,
+        "stingerCues": 3,
+        "reactionCues": 0,
+        "silenceCues": 3,
+        "distinctAssetsUsed": 6,
+        "cooldownSuppressions": 13
+      },
+      "legacyForComparison": {
+        "stingerCount": 4,
+        "reactionCount": 1
+      },
+      "assetsUsed": [
+        "bed-fast-break.mp3",
+        "stinger-drum-hit-ii.mp3",
+        "stinger-drum-hit.mp3",
+        "stinger-slam-riser-ii.mp3"
+      ]
+    }
+  ],
+  "pairwiseSimilarity": [
+    {
+      "pair": "blowout vs rivalry",
+      "jaccard": 0.2
+    },
+    {
+      "pair": "blowout vs betting-line",
+      "jaccard": 0.273
+    },
+    {
+      "pair": "blowout vs injury-news",
+      "jaccard": 0.25
+    },
+    {
+      "pair": "rivalry vs betting-line",
+      "jaccard": 0.286
+    },
+    {
+      "pair": "rivalry vs injury-news",
+      "jaccard": 0.188
+    },
+    {
+      "pair": "betting-line vs injury-news",
+      "jaccard": 0.364
+    }
+  ],
+  "totalCooldownSuppressions": 58,
+  "assertionFailures": []
+}
