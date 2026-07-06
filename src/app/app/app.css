@@ -568,6 +568,48 @@ body:has(.userSurface) {
 .uPlayerPill:hover { color: var(--u-ink); border-color: var(--u-brand); transform: translateY(-1px); }
 .uPillLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- Hot Topics ---------- */
+.uTopicFilters { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.5rem; }
+.uTopicFilterRow { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+.uTopicSelect {
+  padding: 0.45rem 0.7rem; font-size: 0.8rem; font-weight: 650; font-family: inherit;
+  border: 1.5px solid var(--u-hairline-2); border-radius: 10px;
+  background: var(--u-surface); color: var(--u-ink-2); cursor: pointer;
+}
+.uTopicSelect:focus { outline: none; border-color: var(--u-brand); }
+.uTopicClear { border: none; background: none; color: var(--u-brand); font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+.uTopicClear:hover { text-decoration: underline; }
+
+.uTopicGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1rem; max-width: 1100px; }
+@media (max-width: 480px) { .uTopicGrid { grid-template-columns: 1fr; } }
+
+.uTopicCard {
+  display: flex; flex-direction: column; gap: 0.7rem;
+  padding: 1.1rem 1.2rem; border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius-lg); background: var(--u-surface);
+  box-shadow: var(--u-shadow);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.uTopicCard:hover { transform: translateY(-2px); box-shadow: var(--u-shadow-lift); border-color: var(--topic-accent); }
+.uTopicHot { border-top: 3px solid var(--topic-accent); }
+
+.uTopicHead { display: flex; gap: 0.9rem; align-items: flex-start; }
+.uTopicMetaTop { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; font-size: 0.72rem; margin-bottom: 0.3rem; }
+.uTopicTitle { font-size: 0.98rem; font-weight: 750; line-height: 1.35; letter-spacing: -0.01em; }
+.uTopicSummary {
+  font-size: 0.82rem; color: var(--u-ink-2); line-height: 1.5; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.uTopicMeters { display: flex; flex-direction: column; gap: 0.3rem; }
+.uTopicMeter { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; }
+.uTopicMeterLabel { width: 105px; flex-shrink: 0; color: var(--u-ink-3); font-weight: 650; }
+.uTopicMeterTrack { flex: 1; height: 5px; border-radius: 3px; background: var(--u-hairline); overflow: hidden; }
+.uTopicMeterTrack span { display: block; height: 100%; border-radius: 3px; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.uTopicMeterNum { width: 24px; text-align: right; font-weight: 750; color: var(--u-ink-2); font-variant-numeric: tabular-nums; }
+
+.uTopicActions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.2rem; }
+
 /* ---------- Podcast creation wizard ---------- */
 .uWiz { max-width: 640px; }
 
