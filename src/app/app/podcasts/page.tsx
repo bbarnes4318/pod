@@ -1,14 +1,23 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 import { WEEKDAY_LABELS } from "./config";
 import GenerateNowButton from "./GenerateNowButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function PodcastsPage() {
+  const user = await currentUser();
+  // Scope to the signed-in user's shows plus legacy (pre-auth, ownerId=null)
+  // podcasts so existing content stays visible. Logged-out visitors see only
+  // the legacy/public shows.
+  const ownerFilter = user
+    ? { OR: [{ ownerId: user.id }, { ownerId: null }] }
+    : { ownerId: null };
   const podcasts = await db.podcast
     .findMany({
+      where: ownerFilter,
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { episodes: true } } },
     })

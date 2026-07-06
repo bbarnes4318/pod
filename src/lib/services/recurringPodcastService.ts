@@ -38,6 +38,7 @@ export async function enqueueEpisodeBuildForPodcast(
     teams: string[];
     segmentCount: number;
     hostIds: string[];
+    ownerId?: string | null;
   },
   opts?: { titleSuffix?: string; jobId?: string }
 ) {
@@ -57,6 +58,8 @@ export async function enqueueEpisodeBuildForPodcast(
       verticals: podcast.verticals.length > 0 ? podcast.verticals : undefined,
       teamNames: teamNames.length > 0 ? teamNames : undefined,
       hostIds: podcast.hostIds.length > 0 ? podcast.hostIds : undefined,
+      // Episodes a podcast generates are owned by the podcast's owner.
+      ownerId: podcast.ownerId || undefined,
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined
   );

@@ -16,6 +16,9 @@ export interface EpisodeBuildInput {
   minDebateScore?: number;
   /** Podcast this episode belongs to; persisted on the Episode row. */
   podcastId?: string;
+  /** User.id of the creator; persisted as Episode.ownerId (null for
+   *  scheduler/system-generated episodes). */
+  ownerId?: string;
   /** Restrict auto-selection to these leagues (multi-vertical podcasts). */
   leagueIds?: string[];
   /** Restrict auto-selection to topics matching any of these verticals
@@ -400,6 +403,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         ttsVoiceOverrides: chosenVoiceOverrides ? (chosenVoiceOverrides as any) : undefined,
         soundDesign: chosenSoundDesign ? (chosenSoundDesign as any) : undefined,
         podcastId: input.podcastId || undefined,
+        ownerId: input.ownerId || undefined,
         hostIds: chosenHostIds,
       },
     });

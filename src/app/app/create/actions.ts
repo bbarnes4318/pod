@@ -65,8 +65,9 @@ export async function produceEpisodeFromTopics(
   ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"]
 ) {
   try {
-    const gate = await requireSignedIn(); if (gate) return gate;
-    const res = await buildEpisodeFromTopics({ topicIds, ttsProvider, ttsVoiceOverrides });
+    const owner = await currentUser();
+    if (!owner) return { success: false as const, error: "Please sign in to create or manage content." };
+    const res = await buildEpisodeFromTopics({ topicIds, ttsProvider, ttsVoiceOverrides, ownerId: owner.id });
     revalidatePath("/app/create");
     revalidatePath("/app/episodes");
     return { success: true as const, episodeId: res.episodeId };
@@ -98,7 +99,8 @@ export async function createStandaloneEpisode(input: {
   segmentCount: number;
 }) {
   try {
-    const gate = await requireSignedIn(); if (gate) return gate;
+    const owner = await currentUser();
+    if (!owner) return { success: false as const, error: "Please sign in to create or manage content." };
     const segmentCount = Math.round(Number(input.segmentCount));
     if (!Number.isFinite(segmentCount) || segmentCount < SEGMENT_MIN || segmentCount > SEGMENT_MAX) {
       return { success: false as const, error: `Segments must be between ${SEGMENT_MIN} and ${SEGMENT_MAX}.` };
@@ -118,6 +120,7 @@ export async function createStandaloneEpisode(input: {
       title,
       verticals,
       targetTopicCount: segmentCount,
+      ownerId: owner.id,
     });
 
     revalidatePath("/app/create");

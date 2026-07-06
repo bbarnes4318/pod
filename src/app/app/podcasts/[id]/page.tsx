@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ManagePodcastPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await requireUserPage(`/app/podcasts/${id}`); // managing a podcast requires an account
+  const user = await requireUserPage(`/app/podcasts/${id}`); // managing a podcast requires an account
 
   const podcast = await db.podcast
     .findUnique({
@@ -24,6 +24,8 @@ export default async function ManagePodcastPage({ params }: { params: Promise<{ 
     })
     .catch(() => null);
   if (!podcast) notFound();
+  // Owner-only management (legacy null-owner podcasts stay open for continuity).
+  if (podcast.ownerId && podcast.ownerId !== user.id) notFound();
 
   const [hostsRaw, teamsRaw] = await Promise.all([
     db.aiHost.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }).catch(() => [] as any[]),

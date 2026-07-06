@@ -82,12 +82,13 @@ async function validatePodcastInput(input: PodcastInput): Promise<{ ok: true; da
 
 export async function createPodcast(input: PodcastInput) {
   try {
-    if (!(await currentUser())) return { success: false as const, error: "Please sign in to create a podcast." };
+    const user = await currentUser();
+    if (!user) return { success: false as const, error: "Please sign in to create a podcast." };
     const v = await validatePodcastInput(input);
     if (!v.ok) return { success: false as const, error: v.error };
 
     const podcast = await db.podcast.create({
-      data: { ...v.data, owner: "listener" },
+      data: { ...v.data, owner: user.email || "listener", ownerId: user.id },
     });
 
     revalidatePath("/app/podcasts");
@@ -106,9 +107,14 @@ export async function createPodcast(input: PodcastInput) {
  */
 export async function generateEpisodesNow(podcastId: string) {
   try {
-    if (!(await currentUser())) return { success: false as const, error: "Please sign in to generate episodes." };
+    const user = await currentUser();
+    if (!user) return { success: false as const, error: "Please sign in to generate episodes." };
     const podcast = await db.podcast.findUnique({ where: { id: podcastId } });
     if (!podcast) return { success: false as const, error: "Podcast not found." };
+    // Owner-only (legacy null-owner podcasts remain manageable for continuity).
+    if (podcast.ownerId && podcast.ownerId !== user.id) {
+      return { success: false as const, error: "This podcast belongs to another account." };
+    }
 
     const stamp = new Date().toISOString();
     const job = await enqueueEpisodeBuildForPodcast(podcast, {
@@ -126,9 +132,14 @@ export async function generateEpisodesNow(podcastId: string) {
 
 export async function updatePodcast(id: string, input: PodcastInput) {
   try {
-    if (!(await currentUser())) return { success: false as const, error: "Please sign in to edit a podcast." };
-    const existing = await db.podcast.findUnique({ where: { id }, select: { id: true } });
+    const user = await currentUser();
+    if (!user) return { success: false as const, error: "Please sign in to edit a podcast." };
+    const existing = await db.podcast.findUnique({ where: { id }, select: { id: true, ownerId: true } });
     if (!existing) return { success: false as const, error: "Podcast not found." };
+    // Owner-only (legacy null-owner podcasts remain editable for continuity).
+    if (existing.ownerId && existing.ownerId !== user.id) {
+      return { success: false as const, error: "This podcast belongs to another account." };
+    }
 
     const v = await validatePodcastInput(input);
     if (!v.ok) return { success: false as const, error: v.error };

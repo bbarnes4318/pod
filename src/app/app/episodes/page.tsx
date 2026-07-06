@@ -5,12 +5,20 @@ import { accentFor, accentForSport } from "../accent";
 import { emojiForTitle, sportFromTitle, fmtMin, fmtDay, friendlyStage } from "../lib";
 import { EpisodeCard, CardEpisode } from "../EpisodeCard";
 import { getEpisodeScores } from "../scores";
+import { currentUser } from "@/lib/currentUser";
 
 export const dynamic = "force-dynamic";
 
 export default async function MyEpisodesPage() {
+  const user = await currentUser();
+  // The signed-in user's episodes plus legacy (pre-auth, ownerId=null) ones so
+  // existing content stays visible; logged-out visitors see only legacy.
+  const ownerFilter = user
+    ? { OR: [{ ownerId: user.id }, { ownerId: null }] }
+    : { ownerId: null };
   const [episodes, scores] = await Promise.all([
     db.episode.findMany({
+      where: ownerFilter,
       orderBy: { updatedAt: "desc" },
       take: 60,
       select: { id: true, title: true, audioUrl: true, durationSeconds: true, updatedAt: true, status: true },

@@ -87,6 +87,9 @@ export interface EpisodeBuildJobData {
   verticals?: string[];
   teamNames?: string[];
   hostIds?: string[];
+  /** User.id of the creator; persisted as Episode.ownerId (null for
+   *  scheduler/system builds). */
+  ownerId?: string;
   ttsProvider?: string;
   ttsVoiceOverrides?: TtsVoiceOverrides;
   productionStyle?: string;
