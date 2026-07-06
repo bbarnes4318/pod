@@ -457,11 +457,21 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
     }
   }
 
+  // Least-recently-used freshness weight: never-heard assets outrank ones
+  // heard N episodes ago, which outrank anything just past the window. This
+  // is what makes cooldown SUBSTITUTE (rotate the pool) instead of starve.
+  const lruWeight = (assetId: string): number => {
+    const ago = episodesAgo(assetId);
+    return ago === Infinity ? 1.5 : 0.4 + 0.12 * Math.min(ago, 8);
+  };
+
   // --- Music bed (full style): cooldown-aware choice, or a deliberate no ---
   if (input.style === "full" && lines.length > 0) {
     const freshBeds = beds.filter((b) => episodesAgo(b.id) > config.cooldownEpisodes);
     cooldownSuppressions += beds.length - freshBeds.length;
     if (freshBeds.length === 0) {
+      // TRUE pool exhaustion: every bed in the library genuinely ran within
+      // the window. Only then may cooldown silence the bed slot.
       if (beds.length > 0) {
         cues.push({
           type: "silence",
@@ -473,19 +483,27 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
           gainDb: 0,
           fadeInMs: 0,
           fadeOutMs: 0,
-          reason: `no bed this episode — every bed ran within the last ${config.cooldownEpisodes} episodes`,
+          reason: `bed pool exhausted — all ${beds.length} bed(s) ran within the last ${config.cooldownEpisodes} episodes`,
         });
       }
     } else {
-      const bedCandidates: Array<Weighted<PlannerAsset | typeof SILENCE>> = freshBeds.map((b) => ({
-        item: b,
-        weight: episodesAgo(b.id) === Infinity ? 1.15 : Math.min(1, 0.6 + 0.15 * episodesAgo(b.id)),
-      }));
-      // A measured, low-energy episode may deliberately skip the bed — music
-      // wallpaper under a sober conversation is exactly what we avoid.
+      // Two-stage decision: WHETHER to bed the episode is pool-size
+      // independent (a 5-bed library must not make beds 5× likelier); WHICH
+      // bed is a least-recently-used pick over the fresh pool.
       const lowEnergyEpisode = arc.mean < 0.85;
-      bedCandidates.push({ item: SILENCE, weight: lowEnergyEpisode ? 0.55 : 0.1 });
-      const picked = weightedPick(rand, bedCandidates);
+      const wantsBed = weightedPick<"bed" | typeof SILENCE>(rand, [
+        { item: "bed", weight: lowEnergyEpisode ? 1.0 : 1.4 },
+        // A measured, low-energy episode may deliberately skip the bed —
+        // music wallpaper under a sober conversation is exactly what we avoid.
+        { item: SILENCE, weight: lowEnergyEpisode ? 0.55 : 0.1 },
+      ]);
+      const picked =
+        wantsBed === "bed"
+          ? weightedPick(
+              rand,
+              freshBeds.map((b) => ({ item: b, weight: lruWeight(b.id) }))
+            )
+          : SILENCE;
       if (picked && picked !== SILENCE) {
         const bed = picked as PlannerAsset;
         bumpUse(bed.id);
@@ -542,17 +560,14 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
     const eligible = stingers.filter(
       (s) => (usesThisEpisode.get(s.id) ?? 0) < config.maxStingerUsesPerEpisode
     );
+    // Cooldown steers, it does not starve: within-window assets are excluded
+    // only because the LRU pick below substitutes an unused-or-older one.
     const fresh = eligible.filter((s) => episodesAgo(s.id) > config.cooldownEpisodes);
     cooldownSuppressions += eligible.length - fresh.length;
 
-    const candidates: Array<Weighted<PlannerAsset | typeof SILENCE>> = fresh.map((s) => ({
-      item: s,
-      weight:
-        (line.breakKind === "topic" ? 1.0 : 0.65) *
-        (0.6 + 0.4 * Math.min(segEnergy / 1.2, 1.5)) *
-        (episodesAgo(s.id) === Infinity ? 1.15 : Math.min(1, 0.7 + 0.1 * episodesAgo(s.id))),
-    }));
-
+    // Restraint silences (pacing, arc) are deliberate production choices and
+    // always stay on the table. Forced silences exist only for the genuine
+    // dead-ends, each with its own explicit reason.
     let silenceWeight = 0.4;
     let silenceReason = "boundary held silent — natural pause carries the turn";
     if (prevBoundaryGotStinger) {
@@ -563,16 +578,37 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       silenceWeight += 0.35;
       silenceReason = "low-energy segment ahead — let it breathe";
     }
-    if (fresh.length === 0) {
+    if (stingers.length === 0) {
       silenceWeight = 1;
-      silenceReason =
-        stingers.length > 0
-          ? "all stingers cooling down from recent episodes"
-          : "no stinger assets available";
+      silenceReason = "no stinger assets available";
+    } else if (eligible.length === 0) {
+      silenceWeight = 1;
+      silenceReason = "stinger budget spent — every stinger already used this episode";
+    } else if (fresh.length === 0) {
+      silenceWeight = 1;
+      silenceReason = `stinger pool exhausted — all ${eligible.length} eligible stinger(s) ran within the last ${config.cooldownEpisodes} episodes`;
     }
-    candidates.push({ item: SILENCE, weight: silenceWeight });
 
-    const picked = weightedPick(rand, candidates);
+    // Two-stage decision: WHETHER this boundary gets a stinger is pool-size
+    // independent (deep libraries must not fire more often than shallow
+    // ones); WHICH stinger is a least-recently-used pick over fresh assets.
+    const slotWeight =
+      fresh.length === 0
+        ? 0
+        : 2.5 *
+          (line.breakKind === "topic" ? 1.0 : 0.65) *
+          (0.6 + 0.4 * Math.min(segEnergy / 1.2, 1.5));
+    const wantsStinger = weightedPick<"stinger" | typeof SILENCE>(rand, [
+      { item: "stinger", weight: slotWeight },
+      { item: SILENCE, weight: silenceWeight },
+    ]);
+    const picked =
+      wantsStinger === "stinger"
+        ? weightedPick(
+            rand,
+            fresh.map((s) => ({ item: s, weight: lruWeight(s.id) }))
+          )
+        : SILENCE;
     if (picked && picked !== SILENCE) {
       const asset = picked as PlannerAsset;
       bumpUse(asset.id);
@@ -626,26 +662,27 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       const isPeak = arc.peaks.has(i);
       const followedByInterruption = i + 1 < lines.length && lines[i + 1].isInterruption === true;
 
-      const candidates: Array<Weighted<{ asset: PlannerAsset; category: string } | typeof SILENCE>> = [];
+      // Stage-2 candidates: every pickable asset per usable category. The
+      // soft cooldown keeps recently-used reactions possible (pools can be
+      // one-deep) but heavily down-weighted; only HARD exclusions
+      // (stinger/bed) count as cooldownSuppressions.
+      const assetCandidates: Array<Weighted<{ asset: PlannerAsset; category: string }>> = [];
+      let fireWeight = 0; // pool-size independent: sums CATEGORY weights, not assets
       for (const cat of beat.categories) {
         if (cat.hypeOnly && !density.allowHype) continue;
         if (cat.minDensity && DENSITY_RANK[input.sfxDensity] < DENSITY_RANK[cat.minDensity]) continue;
-        const pool = sfxByCategory.get(cat.category) || [];
+        const pool = (sfxByCategory.get(cat.category) || []).filter(
+          (a) => (usesThisEpisode.get(a.id) ?? 0) < config.maxSfxUsesPerEpisode
+        );
+        if (pool.length === 0) continue;
+        fireWeight += cat.weight * (isPeak ? 1.5 : 1) * (followedByInterruption ? 1.2 : 1);
         for (const asset of pool) {
-          if ((usesThisEpisode.get(asset.id) ?? 0) >= config.maxSfxUsesPerEpisode) continue;
           const ago = episodesAgo(asset.id);
-          // Soft cooldown for SFX pools: a recently-used reaction is heavily
-          // down-weighted but never impossible (pools can be one-deep). Only
-          // HARD exclusions (stinger/bed) count as cooldownSuppressions.
           const coolPenalty = ago <= config.sfxCooldownEpisodes ? 0.25 : 1;
-          candidates.push({
+          assetCandidates.push({
             item: { asset, category: cat.category },
             weight:
-              cat.weight *
-              coolPenalty *
-              (isPeak ? 1.5 : 1) *
-              (followedByInterruption ? 1.2 : 1) *
-              (1 / (1 + (usesThisEpisode.get(asset.id) ?? 0))),
+              cat.weight * coolPenalty * (1 / (1 + (usesThisEpisode.get(asset.id) ?? 0))),
           });
         }
       }
@@ -658,12 +695,15 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
           estStartOfCue(c) >= windowStart
       ).length;
       const silenceWeight =
-        candidates.length === 0
+        assetCandidates.length === 0
           ? 1
           : density.silenceBias * (0.45 + 0.35 * recentLoad) * (isPeak ? 0.55 : 1);
-      candidates.push({ item: SILENCE, weight: silenceWeight });
 
-      const picked = weightedPick(rand, candidates);
+      const wantsReaction = weightedPick<"reaction" | typeof SILENCE>(rand, [
+        { item: "reaction", weight: assetCandidates.length === 0 ? 0 : fireWeight },
+        { item: SILENCE, weight: silenceWeight },
+      ]);
+      const picked = wantsReaction === "reaction" ? weightedPick(rand, assetCandidates) : SILENCE;
       if (picked && picked !== SILENCE) {
         const { asset, category } = picked as { asset: PlannerAsset; category: string };
         bumpUse(asset.id);

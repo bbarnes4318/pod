@@ -248,16 +248,99 @@ async function main() {
     }
   });
 
-  await check("with every stinger cooling, boundaries fall back to silence", () => {
+  await check("TRUE pool exhaustion (every stinger in-window) falls to explicit silence", () => {
     const cooldown: CooldownSnapshot = {
       episodes: [{ episodeId: "prev-1", assetIds: ["sting-a", "sting-b", "sting-c"] }],
     };
     const plan = generateProductionPlan(basePlanInput({ cooldown }));
-    assert(plan.stats.stingerCues === 0, "no stinger may play while all are cooling");
-    const boundarySilences = plan.cues.filter(
-      (c) => c.type === "silence" && c.reason.includes("cooling")
+    assert(plan.stats.stingerCues === 0, "no stinger may play while the whole pool is cooling");
+    const exhaustion = plan.cues.filter(
+      (c) => c.type === "silence" && c.reason.includes("pool exhausted")
     );
-    assert(boundarySilences.length > 0, "cooldown fallback silence must be documented");
+    assert(exhaustion.length > 0, "true exhaustion must be documented as 'pool exhausted'");
+  });
+
+  await check("cooldown SUBSTITUTES the freshest asset — never starves while alternatives exist", () => {
+    // 6-stinger library, 3 cooling: every boundary must still be able to
+    // fill from the fresh half; famine silences must not appear.
+    const bigCatalog = [
+      ...makeCatalog(),
+      { id: "sting-d", name: "Bell Rise", kind: "stinger", category: null, durationMs: 1500 },
+      { id: "sting-e", name: "Sub Drop", kind: "stinger", category: null, durationMs: 1400 },
+      { id: "sting-f", name: "Snare Rush", kind: "stinger", category: null, durationMs: 1500 },
+    ];
+    const cooldown: CooldownSnapshot = {
+      episodes: [{ episodeId: "prev-1", assetIds: ["sting-a", "sting-b", "sting-c"] }],
+    };
+    let sawStinger = false;
+    for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4", "ep-5", "ep-6"]) {
+      const plan = generateProductionPlan(basePlanInput({ episodeId, assets: bigCatalog, cooldown }));
+      for (const cue of plan.cues) {
+        if (cue.type === "stinger") {
+          sawStinger = true;
+          assert(
+            !["sting-a", "sting-b", "sting-c"].includes(cue.assetId!),
+            `cooled asset ${cue.assetId} must be substituted, not reused`
+          );
+        }
+        if (cue.type === "silence") {
+          assert(
+            !cue.reason.includes("pool exhausted"),
+            `famine silence with fresh alternatives available: ${cue.reason}`
+          );
+        }
+      }
+      assert(plan.stats.cooldownSuppressions > 0, "steering must still be counted as suppressions");
+    }
+    assert(sawStinger, "boundaries must still fill from the fresh pool");
+  });
+
+  await check("budget-spent silences are labeled distinctly from cooldown exhaustion", () => {
+    // One stinger, no cooldown: after its single allowed use, later
+    // boundaries must say the BUDGET is spent — not blame the cooldown.
+    const oneStinger = makeCatalog().filter((a) => a.kind !== "stinger");
+    oneStinger.push({ id: "sting-only", name: "Solo Hit", kind: "stinger", category: null, durationMs: 1200 });
+    for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4", "ep-5", "ep-6", "ep-7", "ep-8"]) {
+      const plan = generateProductionPlan(basePlanInput({ episodeId, assets: oneStinger }));
+      if (plan.stats.stingerCues === 0) continue; // silence-only seeds tell us nothing
+      const budgetSilences = plan.cues.filter(
+        (c) => c.type === "silence" && c.reason.includes("budget spent")
+      );
+      const mislabeled = plan.cues.filter(
+        (c) => c.type === "silence" && c.reason.includes("pool exhausted")
+      );
+      assert(mislabeled.length === 0, "budget exhaustion must never be labeled as cooldown");
+      assert(budgetSilences.length > 0, "spent budget must be documented");
+      return;
+    }
+    throw new Error("no seed produced a stinger use — cannot exercise the budget path");
+  });
+
+  await check("bed exhaustion reason names the pool, substitution picks a fresh bed", () => {
+    const bothBedsCooling: CooldownSnapshot = {
+      episodes: [
+        { episodeId: "prev-1", assetIds: ["bed-a"] },
+        { episodeId: "prev-2", assetIds: ["bed-b"] },
+      ],
+    };
+    const exhausted = generateProductionPlan(basePlanInput({ cooldown: bothBedsCooling }));
+    assert(!exhausted.cues.some((c) => c.type === "bed_change"), "no bed while all are cooling");
+    assert(
+      exhausted.cues.some((c) => c.type === "silence" && c.reason.includes("bed pool exhausted")),
+      "bed exhaustion must be explicit"
+    );
+    const oneCooling: CooldownSnapshot = {
+      episodes: [{ episodeId: "prev-1", assetIds: ["bed-a"] }],
+    };
+    for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4", "ep-5", "ep-6"]) {
+      const plan = generateProductionPlan(basePlanInput({ episodeId, cooldown: oneCooling }));
+      const bed = plan.cues.find((c) => c.type === "bed_change");
+      if (bed) assert(bed.assetId === "bed-b", "the fresh bed must substitute for the cooling one");
+      assert(
+        !plan.cues.some((c) => c.type === "silence" && c.reason.includes("bed pool exhausted")),
+        "no bed famine while a fresh bed exists"
+      );
+    }
   });
 
   await check("per-episode max-uses is enforced (stingers once, sfx twice)", () => {

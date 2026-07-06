@@ -93,10 +93,15 @@ rendering:
   `silence` cue with a reason, so the cue sheet documents restraint.
 - **Anti-repetition**: the `SoundCueUsage` table records what every rendered
   episode consumed. At plan time the planner reads the last N episodes
-  (`SOUND_DESIGN_COOLDOWN_EPISODES`, default 2) — a stinger/bed used within
-  the window is hard-excluded (falls back to silence when everything is
-  cooling), reaction SFX are soft-penalized, and per-episode max-uses are
-  enforced (`SOUND_DESIGN_MAX_STINGER_USES`=1, `SOUND_DESIGN_MAX_SFX_USES`=2).
+  (`SOUND_DESIGN_COOLDOWN_EPISODES`, default 2) and **substitutes, never
+  starves**: whether a slot fires is decided pool-size-independently
+  (restraint weights), then WHICH asset plays is a least-recently-used pick
+  over assets outside the window. Cooldown silence happens only on true pool
+  exhaustion (every eligible asset ran within the window) and says so
+  explicitly, distinct from budget-spent ("every stinger already used this
+  episode") and from arc-driven restraint holds. Reaction SFX are
+  soft-penalized, and per-episode max-uses are enforced
+  (`SOUND_DESIGN_MAX_STINGER_USES`=1, `SOUND_DESIGN_MAX_SFX_USES`=2).
 - The renderer **executes** the plan (`src/lib/audio/planExecution.ts`) with
   the exact timing conventions above; it stops inventing placements. The
   full plan is persisted in the stitch job log (`output.productionPlan`)

@@ -119,6 +119,109 @@ export const STARTER_PACK: GeneratedAssetSpec[] = [
     post: "bandpass=f=1400:width_type=h:w=1800,afade=t=in:d=0.15,afade=t=out:st=0.7:d=0.3",
   },
   {
+    name: "Power Chord Stab (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["chord", "heavy", "transition", "seed"],
+    fileName: "stinger-power-chord.mp3",
+    durationSec: 1.6,
+    // Driven E-minor stab with a noise transient — heavier than the riser.
+    lavfi:
+      "aevalsrc=exprs='0.5*tanh(2.5*(sin(2*PI*82.41*t)+sin(2*PI*123.47*t)+sin(2*PI*164.81*t)))*exp(-t*2.2)" +
+      "+0.3*(random(0)-0.5)*exp(-t*30)" +
+      "|0.5*tanh(2.5*(sin(2*PI*82.41*t)+sin(2*PI*123.47*t)+sin(2*PI*165.5*t)))*exp(-t*2.2)" +
+      "+0.3*(random(0)-0.5)*exp(-t*30)':s=44100",
+    post: "highpass=f=40,lowpass=f=9000,afade=t=out:st=1.3:d=0.3",
+  },
+  {
+    name: "Laser Sweep Down (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["sweep", "sci-fi", "transition", "seed"],
+    fileName: "stinger-laser-down.mp3",
+    durationSec: 1.3,
+    // Falling chirp into a sub thump — the inverse shape of Slam Riser.
+    lavfi:
+      "aevalsrc=exprs='0.4*sin(2*PI*(2400-1500*t)*t)*lt(t,0.78)*min(t/0.05,1)" +
+      "+0.8*sin(2*PI*50*t)*exp(-max(t-0.78,0)*14)*gt(t,0.78)" +
+      "|0.4*sin(2*PI*(2300-1450*t)*t)*lt(t,0.78)*min(t/0.05,1)" +
+      "+0.8*sin(2*PI*50*t)*exp(-max(t-0.78,0)*14)*gt(t,0.78)':s=44100",
+    post: "highpass=f=35,lowpass=f=10000,afade=t=out:st=1.05:d=0.25",
+  },
+  {
+    name: "Bell Rise (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["bells", "bright", "transition", "seed"],
+    fileName: "stinger-bell-rise.mp3",
+    durationSec: 1.5,
+    // Four ascending bell strikes resolving on the octave — bright, no drums.
+    lavfi:
+      "aevalsrc=exprs='0.5*sin(2*PI*(523+mod(floor(t/0.18),4)*175)*t)*exp(-mod(t,0.18)*14)*lt(t,0.72)" +
+      "+0.35*sin(2*PI*1046.5*t)*exp(-max(t-0.72,0)*5)*gt(t,0.72)" +
+      "|0.5*sin(2*PI*(525+mod(floor(t/0.18),4)*175)*t)*exp(-mod(t,0.18)*14)*lt(t,0.72)" +
+      "+0.35*sin(2*PI*1046.5*t)*exp(-max(t-0.72,0)*5)*gt(t,0.72)':s=44100",
+    post: "highpass=f=200,lowpass=f=11000,afade=t=out:st=1.2:d=0.3",
+  },
+  {
+    name: "Sub Drop (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["sub", "drop", "transition", "seed"],
+    fileName: "stinger-sub-drop.mp3",
+    durationSec: 1.4,
+    // Pitch-falling sub with a noise splash at the landing.
+    lavfi:
+      "aevalsrc=exprs='0.85*sin(2*PI*(160-80*t)*t)*min(t/0.03,1)*lt(t,0.95)" +
+      "+0.4*(random(0)-0.5)*exp(-abs(t-0.95)*10)" +
+      "|0.85*sin(2*PI*(158-79*t)*t)*min(t/0.03,1)*lt(t,0.95)" +
+      "+0.4*(random(0)-0.5)*exp(-abs(t-0.97)*10)':s=44100",
+    post: "highpass=f=28,lowpass=f=7000,afade=t=out:st=1.15:d=0.25",
+  },
+  {
+    name: "Snare Rush (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["drums", "roll", "transition", "seed"],
+    fileName: "stinger-snare-rush.mp3",
+    durationSec: 1.5,
+    // Accelerating snare roll into a kick + splash landing.
+    lavfi:
+      "aevalsrc=exprs='0.6*(random(0)-0.5)*exp(-mod(t*t*5,1)*9)*lt(t,1.1)" +
+      "+0.9*sin(2*PI*48*t)*exp(-max(t-1.1,0)*15)*gt(t,1.1)" +
+      "+0.4*(random(0)-0.5)*exp(-max(t-1.1,0)*18)*gt(t,1.1)" +
+      "|0.6*(random(0)-0.5)*exp(-mod(t*t*5,1)*9)*lt(t,1.1)" +
+      "+0.9*sin(2*PI*48*t)*exp(-max(t-1.1,0)*15)*gt(t,1.1)" +
+      "+0.4*(random(0)-0.5)*exp(-max(t-1.1,0)*18)*gt(t,1.1)':s=44100",
+    post: "highpass=f=120,lowpass=f=10000,afade=t=out:st=1.25:d=0.25",
+  },
+  {
+    name: "Horn Fall (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["horn", "falling", "transition", "seed"],
+    fileName: "stinger-horn-fall.mp3",
+    durationSec: 1.2,
+    // Driven horn sliding down a minor third — a deflating-momentum beat.
+    lavfi:
+      "aevalsrc=exprs='0.55*tanh(3*sin(2*PI*(330-40*t)*t))*min(t/0.06,1)" +
+      "|0.55*tanh(3*sin(2*PI*(328-39*t)*t))*min(t/0.06,1)':s=44100",
+    post: "highpass=f=90,lowpass=f=6000,afade=t=out:st=0.85:d=0.35",
+  },
+  {
+    name: "Glitch Zap (stinger)",
+    kind: "stinger",
+    category: null,
+    tags: ["glitch", "electronic", "transition", "seed"],
+    fileName: "stinger-glitch-zap.mp3",
+    durationSec: 0.9,
+    // Stepped square-wave zap — short, dry, electronic.
+    lavfi:
+      "aevalsrc=exprs='0.4*tanh(6*sin(2*PI*(400+mod(floor(t*12),5)*180)*t))*exp(-t*3)*min(t/0.02,1)" +
+      "|0.4*tanh(6*sin(2*PI*(410+mod(floor(t*12),5)*180)*t))*exp(-t*3)*min(t/0.02,1)':s=44100",
+    post: "highpass=f=150,lowpass=f=9500,afade=t=out:st=0.65:d=0.25",
+  },
+  {
     name: "Fast Break (music bed)",
     kind: "bed",
     category: null,
@@ -134,6 +237,76 @@ export const STARTER_PACK: GeneratedAssetSpec[] = [
       "|0.35*sin(2*PI*49*t)*exp(-mod(t,0.9375)*10)" +
       "+(0.14*sin(2*PI*146.83*t)+0.12*sin(2*PI*196*t)+0.1*sin(2*PI*293.66*t))*(0.7+0.3*sin(2*PI*1.0667*t+0.5))" +
       "+0.05*(random(0)-0.5)':s=44100",
+    post: "highpass=f=45,lowpass=f=5200,acompressor=threshold=-18dB:ratio=2.5:attack=20:release=300",
+  },
+  {
+    name: "Slow Burn (music bed)",
+    kind: "bed",
+    category: null,
+    tags: ["bed", "instrumental", "dark", "loop", "seed"],
+    fileName: "bed-slow-burn.mp3",
+    durationSec: 26,
+    // 84bpm brooding minor pulse — for post-mortems and bad-news segments.
+    lavfi:
+      "aevalsrc=exprs='0.4*sin(2*PI*46*t)*exp(-mod(t,0.714)*8)" +
+      "+(0.13*sin(2*PI*110*t)+0.11*sin(2*PI*130.81*t)+0.09*sin(2*PI*164.81*t))*(0.65+0.35*sin(2*PI*0.7*t))" +
+      "+0.04*(random(0)-0.5)" +
+      "|0.4*sin(2*PI*46*t)*exp(-mod(t,0.714)*8)" +
+      "+(0.13*sin(2*PI*110*t)+0.11*sin(2*PI*130.81*t)+0.09*sin(2*PI*164.81*t))*(0.65+0.35*sin(2*PI*0.7*t+0.6))" +
+      "+0.04*(random(0)-0.5)':s=44100",
+    post: "highpass=f=40,lowpass=f=3800,acompressor=threshold=-18dB:ratio=2.5:attack=20:release=300",
+  },
+  {
+    name: "Crunch Time (music bed)",
+    kind: "bed",
+    category: null,
+    tags: ["bed", "instrumental", "urgent", "loop", "seed"],
+    fileName: "bed-crunch-time.mp3",
+    durationSec: 22,
+    // 140bpm urgent driver — deadline energy: driving eighth-note bass,
+    // offbeat ticks, tight kick.
+    lavfi:
+      "aevalsrc=exprs='0.38*sin(2*PI*52*t)*exp(-mod(t,0.4286)*16)" +
+      "+0.22*tanh(2.5*sin(2*PI*55*t))*(0.5+0.5*sin(2*PI*4.667*t))" +
+      "+0.07*(random(0)-0.5)*exp(-mod(t+0.2143,0.4286)*70)" +
+      "+0.08*sin(2*PI*220*t)*(0.6+0.4*sin(2*PI*2.333*t))" +
+      "|0.38*sin(2*PI*52*t)*exp(-mod(t,0.4286)*16)" +
+      "+0.22*tanh(2.5*sin(2*PI*55*t))*(0.5+0.5*sin(2*PI*4.667*t+0.5))" +
+      "+0.07*(random(0)-0.5)*exp(-mod(t+0.2143,0.4286)*70)" +
+      "+0.08*sin(2*PI*220*t)*(0.6+0.4*sin(2*PI*2.333*t+0.4))':s=44100",
+    post: "highpass=f=45,lowpass=f=5000,acompressor=threshold=-18dB:ratio=2.5:attack=15:release=250",
+  },
+  {
+    name: "Film Room (music bed)",
+    kind: "bed",
+    category: null,
+    tags: ["bed", "instrumental", "ambient", "loop", "seed"],
+    fileName: "bed-film-room.mp3",
+    durationSec: 28,
+    // Drumless analytical drone — slow-beating pad + a sparse soft arp.
+    // For X-and-O breakdowns where any pulse would fight the numbers.
+    lavfi:
+      "aevalsrc=exprs='(0.15*sin(2*PI*98*t)+0.12*sin(2*PI*146.83*t)+0.09*sin(2*PI*220.3*t))*(0.7+0.3*sin(2*PI*0.11*t))" +
+      "+0.06*sin(2*PI*(392+mod(floor(t/0.75),3)*49)*t)*exp(-mod(t,0.75)*4)" +
+      "|(0.15*sin(2*PI*98.2*t)+0.12*sin(2*PI*146.83*t)+0.09*sin(2*PI*220*t))*(0.7+0.3*sin(2*PI*0.11*t+1))" +
+      "+0.06*sin(2*PI*(392+mod(floor(t/0.75),3)*49)*t)*exp(-mod(t,0.75)*4)':s=44100",
+    post: "highpass=f=50,lowpass=f=2800,acompressor=threshold=-20dB:ratio=2:attack=30:release=400",
+  },
+  {
+    name: "Victory Lap (music bed)",
+    kind: "bed",
+    category: null,
+    tags: ["bed", "instrumental", "bright", "loop", "seed"],
+    fileName: "bed-victory-lap.mp3",
+    durationSec: 24,
+    // 120bpm bright major-key bounce — celebration and hype recaps.
+    lavfi:
+      "aevalsrc=exprs='0.36*sin(2*PI*55*t)*exp(-mod(t,0.5)*11)" +
+      "+(0.12*sin(2*PI*220*t)+0.1*sin(2*PI*277.18*t)+0.09*sin(2*PI*329.63*t))*(0.6+0.4*sin(2*PI*2*t))" +
+      "+0.05*(random(0)-0.5)*exp(-mod(t+0.25,0.5)*80)" +
+      "|0.36*sin(2*PI*55*t)*exp(-mod(t,0.5)*11)" +
+      "+(0.12*sin(2*PI*220.4*t)+0.1*sin(2*PI*277.18*t)+0.09*sin(2*PI*329.63*t))*(0.6+0.4*sin(2*PI*2*t+0.7))" +
+      "+0.05*(random(0)-0.5)*exp(-mod(t+0.25,0.5)*80)':s=44100",
     post: "highpass=f=45,lowpass=f=5200,acompressor=threshold=-18dB:ratio=2.5:attack=20:release=300",
   },
   {

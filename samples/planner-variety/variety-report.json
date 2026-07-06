@@ -29,7 +29,62 @@
       "category": null
     },
     {
+      "id": "stinger-power-chord.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-laser-down.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-bell-rise.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-sub-drop.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-snare-rush.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-horn-fall.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-glitch-zap.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
       "id": "bed-fast-break.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-slow-burn.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-crunch-time.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-film-room.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-victory-lap.mp3",
       "kind": "bed",
       "category": null
     },
@@ -79,7 +134,62 @@
       "category": null
     },
     {
+      "id": "stinger-power-chord-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-laser-down-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-bell-rise-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-sub-drop-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-snare-rush-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-horn-fall-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
+      "id": "stinger-glitch-zap-ii.mp3",
+      "kind": "stinger",
+      "category": null
+    },
+    {
       "id": "bed-fast-break-ii.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-slow-burn-ii.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-crunch-time-ii.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-film-room-ii.mp3",
+      "kind": "bed",
+      "category": null
+    },
+    {
+      "id": "bed-victory-lap-ii.mp3",
       "kind": "bed",
       "category": null
     }
@@ -90,10 +200,10 @@
       "cueStats": {
         "lineCount": 16,
         "boundaryCount": 4,
-        "stingerCues": 3,
+        "stingerCues": 2,
         "reactionCues": 0,
-        "silenceCues": 3,
-        "distinctAssetsUsed": 6,
+        "silenceCues": 4,
+        "distinctAssetsUsed": 5,
         "cooldownSuppressions": 0
       },
       "legacyForComparison": {
@@ -101,10 +211,9 @@
         "reactionCount": 1
       },
       "assetsUsed": [
-        "bed-fast-break.mp3",
-        "stinger-slam-riser-ii.mp3",
-        "stinger-drum-hit-ii.mp3",
-        "stinger-drum-hit.mp3"
+        "bed-fast-break-ii.mp3",
+        "stinger-power-chord.mp3",
+        "stinger-horn-fall.mp3"
       ]
     },
     {
@@ -112,23 +221,24 @@
       "cueStats": {
         "lineCount": 17,
         "boundaryCount": 4,
-        "stingerCues": 3,
-        "reactionCues": 3,
+        "stingerCues": 4,
+        "reactionCues": 2,
         "silenceCues": 2,
-        "distinctAssetsUsed": 8,
-        "cooldownSuppressions": 13
+        "distinctAssetsUsed": 9,
+        "cooldownSuppressions": 9
       },
       "legacyForComparison": {
         "stingerCount": 4,
         "reactionCount": 3
       },
       "assetsUsed": [
-        "bed-fast-break-ii.mp3",
-        "stinger-slam-riser.mp3",
+        "bed-fast-break.mp3",
+        "stinger-snare-rush.mp3",
         "sfx-rimshot.mp3",
-        "stinger-whoosh-cut.mp3",
+        "stinger-glitch-zap-ii.mp3",
         "sfx-big-impact.mp3",
-        "stinger-whoosh-cut-ii.mp3"
+        "stinger-slam-riser-ii.mp3",
+        "stinger-horn-fall-ii.mp3"
       ]
     },
     {
@@ -136,10 +246,10 @@
       "cueStats": {
         "lineCount": 16,
         "boundaryCount": 5,
-        "stingerCues": 0,
-        "reactionCues": 2,
-        "silenceCues": 6,
-        "distinctAssetsUsed": 4,
+        "stingerCues": 4,
+        "reactionCues": 1,
+        "silenceCues": 1,
+        "distinctAssetsUsed": 8,
         "cooldownSuppressions": 32
       },
       "legacyForComparison": {
@@ -147,8 +257,12 @@
         "reactionCount": 1
       },
       "assetsUsed": [
+        "bed-film-room.mp3",
+        "stinger-sub-drop.mp3",
         "sfx-crowd-surge.mp3",
-        "sfx-rimshot.mp3"
+        "stinger-slam-riser.mp3",
+        "stinger-drum-hit-ii.mp3",
+        "stinger-laser-down-ii.mp3"
       ]
     },
     {
@@ -156,21 +270,20 @@
       "cueStats": {
         "lineCount": 16,
         "boundaryCount": 4,
-        "stingerCues": 3,
+        "stingerCues": 2,
         "reactionCues": 0,
-        "silenceCues": 3,
-        "distinctAssetsUsed": 6,
-        "cooldownSuppressions": 13
+        "silenceCues": 4,
+        "distinctAssetsUsed": 5,
+        "cooldownSuppressions": 34
       },
       "legacyForComparison": {
         "stingerCount": 4,
         "reactionCount": 1
       },
       "assetsUsed": [
-        "bed-fast-break.mp3",
-        "stinger-drum-hit-ii.mp3",
-        "stinger-drum-hit.mp3",
-        "stinger-slam-riser-ii.mp3"
+        "bed-crunch-time-ii.mp3",
+        "stinger-sub-drop-ii.mp3",
+        "stinger-snare-rush-ii.mp3"
       ]
     }
   ],
@@ -181,25 +294,25 @@
     },
     {
       "pair": "blowout vs betting-line",
-      "jaccard": 0.273
+      "jaccard": 0.231
     },
     {
       "pair": "blowout vs injury-news",
-      "jaccard": 0.25
+      "jaccard": 0.273
     },
     {
       "pair": "rivalry vs betting-line",
-      "jaccard": 0.286
+      "jaccard": 0.111
     },
     {
       "pair": "rivalry vs injury-news",
-      "jaccard": 0.188
+      "jaccard": 0.2
     },
     {
       "pair": "betting-line vs injury-news",
-      "jaccard": 0.364
+      "jaccard": 0.231
     }
   ],
-  "totalCooldownSuppressions": 58,
+  "totalCooldownSuppressions": 75,
   "assertionFailures": []
 }

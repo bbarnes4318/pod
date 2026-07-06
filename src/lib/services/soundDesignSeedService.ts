@@ -6,7 +6,7 @@
 import fs from "fs";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
-import { SEED_LICENSE, generateStarterPack } from "@/lib/audio/soundPackGenerator";
+import { SEED_LICENSE, STARTER_PACK, generateStarterPack } from "@/lib/audio/soundPackGenerator";
 
 export async function seedStarterSoundPackCore(): Promise<{ seededCount: number }> {
   const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
@@ -74,14 +74,24 @@ export async function seedStarterSoundPackCore(): Promise<{ seededCount: number 
 }
 
 /**
- * Worker-startup hook: if the library has no seed assets yet, synthesize and
- * seed the starter pack. Disable with SOUND_DESIGN_AUTOSEED=false.
+ * Worker-startup hook: seed whenever any STARTER_PACK asset is missing — so
+ * a grown pack lands its NEW assets on the next boot even though older seed
+ * rows already exist (the core upserts by storageKey, never duplicating).
+ * Disable with SOUND_DESIGN_AUTOSEED=false.
  */
 export async function ensureStarterSoundPack(): Promise<void> {
   if (process.env.SOUND_DESIGN_AUTOSEED === "false") return;
-  const existing = await db.audioAsset.count({ where: { source: "seed" } });
-  if (existing > 0) return;
-  console.log("[SoundDesign] No seed assets found — synthesizing the starter sports pack…");
+  const existing = await db.audioAsset.findMany({
+    where: { source: "seed" },
+    select: { storageKey: true },
+  });
+  const have = new Set(existing.map((r) => r.storageKey));
+  const missing = STARTER_PACK.filter((s) => !have.has(`sound-design/seed/${s.fileName}`));
+  if (missing.length === 0) return;
+  console.log(
+    `[SoundDesign] ${missing.length} of ${STARTER_PACK.length} starter assets missing ` +
+      `(${missing.map((m) => m.fileName).join(", ")}) — synthesizing the sports pack…`
+  );
   const res = await seedStarterSoundPackCore();
   console.log(`[SoundDesign] Seeded ${res.seededCount} starter assets and filled empty show-config slots.`);
 }

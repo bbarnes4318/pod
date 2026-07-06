@@ -26,20 +26,20 @@
       {
         "type": "bed_change",
         "lineIndex": 0,
-        "assetId": "bed-fast-break.mp3",
-        "assetName": "Fast Break (music bed)",
+        "assetId": "bed-crunch-time-ii.mp3",
+        "assetName": "Crunch Time II (music bed)",
         "category": null,
         "timing": "under",
         "gainDb": 0,
         "fadeInMs": 1500,
         "fadeOutMs": 2500,
-        "reason": "bed 'Fast Break (music bed)' under the episode (arc mean 0.93)"
+        "reason": "bed 'Crunch Time II (music bed)' under the episode (arc mean 0.93)"
       },
       {
         "type": "stinger",
         "lineIndex": 2,
-        "assetId": "stinger-drum-hit-ii.mp3",
-        "assetName": "Drum Hit II (stinger)",
+        "assetId": "stinger-sub-drop-ii.mp3",
+        "assetName": "Sub Drop II (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
@@ -50,8 +50,8 @@
       {
         "type": "stinger",
         "lineIndex": 6,
-        "assetId": "stinger-drum-hit.mp3",
-        "assetName": "Drum Hit (stinger)",
+        "assetId": "stinger-snare-rush-ii.mp3",
+        "assetName": "Snare Rush II (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
@@ -96,16 +96,16 @@
         "reason": "low-energy segment ahead — let it breathe"
       },
       {
-        "type": "stinger",
+        "type": "silence",
         "lineIndex": 14,
-        "assetId": "stinger-slam-riser-ii.mp3",
-        "assetName": "Slam Riser II (stinger)",
+        "assetId": null,
+        "assetName": null,
         "category": null,
-        "timing": "before",
-        "gainDb": -8,
-        "fadeInMs": 15,
-        "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "timing": "gap",
+        "gainDb": 0,
+        "fadeInMs": 0,
+        "fadeOutMs": 0,
+        "reason": "low-energy segment ahead — let it breathe"
       },
       {
         "type": "outro",
@@ -123,33 +123,27 @@
     "stats": {
       "lineCount": 16,
       "boundaryCount": 4,
-      "stingerCues": 3,
+      "stingerCues": 2,
       "reactionCues": 0,
-      "silenceCues": 3,
-      "distinctAssetsUsed": 6,
-      "cooldownSuppressions": 13
+      "silenceCues": 4,
+      "distinctAssetsUsed": 5,
+      "cooldownSuppressions": 34
     }
   },
   "executed": {
-    "bedAsset": "Fast Break (music bed)",
+    "bedAsset": "Crunch Time II (music bed)",
     "stingers": [
       {
         "lineIndex": 2,
-        "asset": "Drum Hit II (stinger)",
+        "asset": "Sub Drop II (stinger)",
         "reason": "topic turn into a measured segment",
-        "atMs": 16172
+        "atMs": 15590
       },
       {
         "lineIndex": 6,
-        "asset": "Drum Hit (stinger)",
+        "asset": "Snare Rush II (stinger)",
         "reason": "topic turn into a high-energy segment",
-        "atMs": 32775
-      },
-      {
-        "lineIndex": 14,
-        "asset": "Slam Riser II (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 64122
+        "atMs": 31692
       }
     ],
     "reactions": [],
@@ -164,6 +158,10 @@
       },
       {
         "lineIndex": 11,
+        "reason": "low-energy segment ahead — let it breathe"
+      },
+      {
+        "lineIndex": 14,
         "reason": "low-energy segment ahead — let it breathe"
       }
     ]

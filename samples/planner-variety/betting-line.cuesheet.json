@@ -24,28 +24,28 @@
         "reason": "show open"
       },
       {
-        "type": "silence",
+        "type": "bed_change",
         "lineIndex": 0,
-        "assetId": null,
-        "assetName": null,
+        "assetId": "bed-film-room.mp3",
+        "assetName": "Film Room (music bed)",
         "category": null,
         "timing": "under",
         "gainDb": 0,
-        "fadeInMs": 0,
-        "fadeOutMs": 0,
-        "reason": "no bed this episode — every bed ran within the last 2 episodes"
+        "fadeInMs": 1500,
+        "fadeOutMs": 2500,
+        "reason": "bed 'Film Room (music bed)' kept despite a measured episode"
       },
       {
-        "type": "silence",
+        "type": "stinger",
         "lineIndex": 2,
-        "assetId": null,
-        "assetName": null,
+        "assetId": "stinger-sub-drop.mp3",
+        "assetName": "Sub Drop (stinger)",
         "category": null,
-        "timing": "gap",
-        "gainDb": 0,
-        "fadeInMs": 0,
-        "fadeOutMs": 0,
-        "reason": "all stingers cooling down from recent episodes"
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a measured segment"
       },
       {
         "type": "silence",
@@ -57,7 +57,7 @@
         "gainDb": 0,
         "fadeInMs": 0,
         "fadeOutMs": 0,
-        "reason": "all stingers cooling down from recent episodes"
+        "reason": "boundary held silent — back-to-back stingers would wear thin"
       },
       {
         "type": "reaction",
@@ -72,52 +72,40 @@
         "reason": "excited peak at an arc peak"
       },
       {
-        "type": "silence",
+        "type": "stinger",
         "lineIndex": 10,
-        "assetId": null,
-        "assetName": null,
+        "assetId": "stinger-slam-riser.mp3",
+        "assetName": "Slam Riser (stinger)",
         "category": null,
-        "timing": "gap",
-        "gainDb": 0,
-        "fadeInMs": 0,
-        "fadeOutMs": 0,
-        "reason": "all stingers cooling down from recent episodes"
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "segment turn into the next segment"
       },
       {
-        "type": "silence",
+        "type": "stinger",
         "lineIndex": 11,
-        "assetId": null,
-        "assetName": null,
+        "assetId": "stinger-drum-hit-ii.mp3",
+        "assetName": "Drum Hit II (stinger)",
         "category": null,
-        "timing": "gap",
-        "gainDb": 0,
-        "fadeInMs": 0,
-        "fadeOutMs": 0,
-        "reason": "all stingers cooling down from recent episodes"
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a measured segment"
       },
       {
-        "type": "reaction",
-        "lineIndex": 13,
-        "assetId": "sfx-rimshot.mp3",
-        "assetName": "Rimshot (sfx)",
-        "category": "rimshot",
-        "timing": "after",
-        "gainDb": -13,
-        "fadeInMs": 25,
-        "fadeOutMs": 150,
-        "reason": "amused beat"
-      },
-      {
-        "type": "silence",
+        "type": "stinger",
         "lineIndex": 14,
-        "assetId": null,
-        "assetName": null,
+        "assetId": "stinger-laser-down-ii.mp3",
+        "assetName": "Laser Sweep Down II (stinger)",
         "category": null,
-        "timing": "gap",
-        "gainDb": 0,
-        "fadeInMs": 0,
-        "fadeOutMs": 0,
-        "reason": "all stingers cooling down from recent episodes"
+        "timing": "before",
+        "gainDb": -8,
+        "fadeInMs": 15,
+        "fadeOutMs": 90,
+        "reason": "topic turn into a measured segment"
       },
       {
         "type": "outro",
@@ -135,54 +123,53 @@
     "stats": {
       "lineCount": 16,
       "boundaryCount": 5,
-      "stingerCues": 0,
-      "reactionCues": 2,
-      "silenceCues": 6,
-      "distinctAssetsUsed": 4,
+      "stingerCues": 4,
+      "reactionCues": 1,
+      "silenceCues": 1,
+      "distinctAssetsUsed": 8,
       "cooldownSuppressions": 32
     }
   },
   "executed": {
-    "bedAsset": null,
-    "stingers": [],
+    "bedAsset": "Film Room (music bed)",
+    "stingers": [
+      {
+        "lineIndex": 2,
+        "asset": "Sub Drop (stinger)",
+        "reason": "topic turn into a measured segment",
+        "atMs": 15646
+      },
+      {
+        "lineIndex": 10,
+        "asset": "Slam Riser (stinger)",
+        "reason": "segment turn into the next segment",
+        "atMs": 46958
+      },
+      {
+        "lineIndex": 11,
+        "asset": "Drum Hit II (stinger)",
+        "reason": "topic turn into a measured segment",
+        "atMs": 53679
+      },
+      {
+        "lineIndex": 14,
+        "asset": "Laser Sweep Down II (stinger)",
+        "reason": "topic turn into a measured segment",
+        "atMs": 66022
+      }
+    ],
     "reactions": [
       {
         "lineIndex": 8,
         "asset": "Crowd Surge (sfx)",
         "reason": "excited peak at an arc peak",
-        "atMs": 39485
-      },
-      {
-        "lineIndex": 13,
-        "asset": "Rimshot (sfx)",
-        "reason": "amused beat",
-        "atMs": 57495
+        "atMs": 43141
       }
     ],
     "silences": [
       {
-        "lineIndex": 0,
-        "reason": "no bed this episode — every bed ran within the last 2 episodes"
-      },
-      {
-        "lineIndex": 2,
-        "reason": "all stingers cooling down from recent episodes"
-      },
-      {
         "lineIndex": 6,
-        "reason": "all stingers cooling down from recent episodes"
-      },
-      {
-        "lineIndex": 10,
-        "reason": "all stingers cooling down from recent episodes"
-      },
-      {
-        "lineIndex": 11,
-        "reason": "all stingers cooling down from recent episodes"
-      },
-      {
-        "lineIndex": 14,
-        "reason": "all stingers cooling down from recent episodes"
+        "reason": "boundary held silent — back-to-back stingers would wear thin"
       }
     ]
   },
