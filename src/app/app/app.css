@@ -568,6 +568,120 @@ body:has(.userSurface) {
 .uPlayerPill:hover { color: var(--u-ink); border-color: var(--u-brand); transform: translateY(-1px); }
 .uPillLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- Podcast creation wizard ---------- */
+.uWiz { max-width: 640px; }
+
+.uWizProgress { margin-bottom: 1.6rem; }
+.uWizProgressBar {
+  height: 6px; border-radius: 3px; background: var(--u-hairline);
+  overflow: hidden; margin-bottom: 0.55rem;
+}
+.uWizProgressBar span {
+  display: block; height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, var(--u-brand), #7b93ff);
+  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.uWizProgressSteps { display: flex; justify-content: space-between; gap: 0.4rem; }
+.uWizProgressStep { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; color: var(--u-ink-3); text-transform: uppercase; }
+.uWizProgressStep.now { color: var(--u-brand); }
+.uWizProgressStep.past { color: var(--u-ink-2); }
+
+.uWizScreen { min-height: 300px; }
+@keyframes uWizInFwd { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+@keyframes uWizInBack { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+.uWizFwd { animation: uWizInFwd 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
+.uWizBack { animation: uWizInBack 0.32s cubic-bezier(0.22, 1, 0.36, 1); }
+
+.uWizQuestion { font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.5rem; }
+.uWizHint { font-size: 0.84rem; color: var(--u-ink-2); margin-bottom: 1.1rem; }
+
+.uWizInput {
+  width: 100%; padding: 0.85rem 1rem; font-size: 1rem; font-weight: 600;
+  border: 1.5px solid var(--u-hairline-2); border-radius: var(--u-radius);
+  background: var(--u-surface); color: var(--u-ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  margin-bottom: 1.1rem; font-family: inherit;
+}
+.uWizInput:focus { outline: none; border-color: var(--u-brand); box-shadow: 0 0 0 3px var(--u-brand-soft); }
+
+.uWizChoiceRow { display: flex; gap: 0.8rem; }
+.uWizGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.7rem; }
+
+.uWizCard {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem;
+  padding: 0.95rem 1rem; text-align: left; cursor: pointer; font-family: inherit;
+  border: 1.5px solid var(--u-hairline-2); border-radius: var(--u-radius);
+  background: var(--u-surface); color: var(--u-ink);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.12s ease;
+}
+.uWizCard:hover { border-color: var(--u-brand); transform: translateY(-1px); }
+.uWizCard.sel { border-color: var(--u-brand); background: var(--u-brand-soft); box-shadow: 0 0 0 3px var(--u-brand-soft); }
+.uWizCardEmoji { font-size: 1.3rem; }
+.uWizCardTitle { font-size: 0.92rem; font-weight: 750; }
+.uWizCardSub { font-size: 0.72rem; color: var(--u-ink-3); font-weight: 550; }
+
+.uWizDayRow { display: flex; gap: 0.45rem; margin-top: 1.1rem; flex-wrap: wrap; }
+.uWizDay {
+  min-width: 52px; padding: 0.55rem 0.6rem; font-size: 0.78rem; font-weight: 750; font-family: inherit;
+  border: 1.5px solid var(--u-hairline-2); border-radius: 999px; background: var(--u-surface);
+  color: var(--u-ink-2); cursor: pointer; transition: all 0.13s ease;
+}
+.uWizDay:hover { border-color: var(--u-brand); color: var(--u-brand); }
+.uWizDay.sel { background: var(--u-brand); border-color: var(--u-brand); color: #fff; }
+
+.uWizLeagueLabel { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; color: var(--u-ink-3); margin-bottom: 0.45rem; }
+.uWizChipWrap { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.uWizChip {
+  padding: 0.4rem 0.75rem; font-size: 0.78rem; font-weight: 650; font-family: inherit;
+  border: 1.5px solid var(--u-hairline-2); border-radius: 999px; background: var(--u-surface);
+  color: var(--u-ink-2); cursor: pointer; transition: all 0.13s ease;
+}
+.uWizChip:hover { border-color: var(--u-brand); color: var(--u-brand); }
+.uWizChip.sel { background: var(--u-brand); border-color: var(--u-brand); color: #fff; }
+
+.uWizStepper { display: flex; align-items: center; gap: 1.4rem; margin: 1.4rem 0 1rem; }
+.uWizStepBtn {
+  width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--u-hairline-2);
+  background: var(--u-surface); font-size: 1.4rem; cursor: pointer; color: var(--u-ink);
+  transition: all 0.13s ease; font-family: inherit;
+}
+.uWizStepBtn:hover:not(:disabled) { border-color: var(--u-brand); color: var(--u-brand); }
+.uWizStepBtn:disabled { opacity: 0.35; cursor: default; }
+.uWizStepValue { display: flex; flex-direction: column; align-items: center; min-width: 110px; }
+.uWizStepNum { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+.uWizStepUnit { font-size: 0.75rem; color: var(--u-ink-3); font-weight: 650; margin-top: 0.2rem; }
+.uWizSegDots { display: flex; gap: 0.45rem; }
+.uWizSegDots span { width: 34px; height: 8px; border-radius: 4px; background: var(--u-hairline); transition: background 0.2s ease; }
+.uWizSegDots span.on { background: var(--u-brand); }
+
+.uWizReview { display: flex; flex-direction: column; border: 1px solid var(--u-hairline); border-radius: var(--u-radius-lg); overflow: hidden; }
+.uWizReviewRow { display: flex; align-items: baseline; gap: 1rem; padding: 0.85rem 1.1rem; background: var(--u-surface); }
+.uWizReviewRow + .uWizReviewRow { border-top: 1px solid var(--u-hairline); }
+.uWizReviewLabel { width: 92px; flex-shrink: 0; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--u-ink-3); }
+.uWizReviewValue { flex: 1; font-size: 0.88rem; font-weight: 600; }
+.uWizReviewEdit { border: none; background: none; color: var(--u-brand); font-size: 0.78rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+.uWizReviewEdit:hover { text-decoration: underline; }
+
+.uWizError {
+  margin-top: 1rem; padding: 0.7rem 1rem; border-radius: 10px;
+  background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+  font-size: 0.84rem; font-weight: 600;
+  animation: uWizInFwd 0.25s ease;
+}
+
+.uWizNav { display: flex; justify-content: space-between; align-items: center; margin-top: 1.6rem; }
+.uWizNext { background: var(--u-brand); padding: 0.7rem 1.6rem; font-size: 0.9rem; }
+
+@keyframes uWizPop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
+@keyframes uWizDraw { to { stroke-dashoffset: 0; } }
+.uWizSuccess { text-align: center; padding: 3rem 1rem; animation: uWizPop 0.4s cubic-bezier(0.22, 1, 0.36, 1); }
+.uWizCheck svg { width: 84px; height: 84px; }
+.uWizCheck circle { stroke: var(--u-brand); stroke-width: 2.4; stroke-dasharray: 151; stroke-dashoffset: 151; animation: uWizDraw 0.6s ease forwards; }
+.uWizCheck path { stroke: var(--u-brand); stroke-width: 3.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 36; stroke-dashoffset: 36; animation: uWizDraw 0.35s ease 0.45s forwards; }
+.uWizSuccessTitle { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; margin: 1rem 0 0.5rem; }
+.uWizSuccessSub { font-size: 0.92rem; color: var(--u-ink-2); max-width: 420px; margin: 0 auto 1.6rem; line-height: 1.55; }
+.uWizSuccessActions { display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap; }
+
 @media (max-width: 900px) {
   .uSidebar { display: none; }
   .uPlayerBar { left: 0; }

@@ -13,6 +13,10 @@ const NAV = [
     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="m10 9 5 3-5 3z" /></svg>,
   },
   {
+    href: "/app/podcasts", label: "My podcasts",
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="M12 15.5V21" /></svg>,
+  },
+  {
     href: "/app/topics", label: "Hot topics",
     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3c1 3-2 4.5-2 7a4 4 0 0 0 8 .5C20 14 19 20 12 21c-5 .7-8-3-8-7 0-4.5 4-6 5-9 .4 1.2 1.6 2 3 2z" /></svg>,
   },
