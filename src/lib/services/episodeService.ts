@@ -1,5 +1,6 @@
 import { db } from "../db";
 import crypto from "crypto";
+import { topicMatchesAnyVertical } from "../verticals";
 import { scoreTopicTalkability } from "./talkabilityService";
 import { isTtsProviderId } from "../providers/tts/providerIds";
 import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
@@ -17,10 +18,18 @@ export interface EpisodeBuildInput {
   podcastId?: string;
   /** Restrict auto-selection to these leagues (multi-vertical podcasts). */
   leagueIds?: string[];
-  /** Prefer topics that mention any of these team names. Soft preference:
-   *  team-matching topics rank first, others fill remaining slots, so a
-   *  quiet news day never bricks a recurring show. */
+  /** Restrict auto-selection to topics matching any of these verticals
+   *  (sports verticals match on league; Gambling/Fantasy/Poker match on
+   *  seeded league rows, betting score, or keywords). */
+  verticals?: string[];
+  /** Restrict selection to topics that mention any of these team names.
+   *  Hard filter while matches exist; falls back to vertical-wide with a
+   *  recorded reason when nothing matches, so a quiet news day never
+   *  bricks a recurring show. */
   teamNames?: string[];
+  /** AiHost ids to cast for this episode (persisted; script generation uses
+   *  them, falling back to the default duo when empty). */
+  hostIds?: string[];
   /** Voice engine chosen at build time; persisted on the Episode so every
    *  TTS run (and re-run) for it uses the same provider. Omit for the
    *  host-profile/env default. */
@@ -110,6 +119,20 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
 
   const minScore = input.minDebateScore !== undefined ? Number(input.minDebateScore) : 70;
   const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
+
+  // Validate host casting up front: every id must be an active AiHost.
+  const chosenHostIds = [...new Set(input.hostIds || [])];
+  if (chosenHostIds.length > 0) {
+    const activeHosts = await db.aiHost.findMany({
+      where: { id: { in: chosenHostIds }, isActive: true },
+      select: { id: true },
+    });
+    if (activeHosts.length !== chosenHostIds.length) {
+      const msg = "One or more selected hosts are missing or inactive.";
+      result.reasons.push(msg);
+      throw new Error(msg);
+    }
+  }
 
   let chosenTopics: any[] = [];
 
@@ -214,8 +237,26 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
       candidates.push(r.t);
     }
 
-    // Team preference (podcast configs): stable-partition so topics that
-    // mention a followed team are considered first, everything else after.
+    // Vertical filter (podcast configs): sports verticals match on league;
+    // Gambling/Fantasy/Poker match on seeded league, betting score, or
+    // keywords — works for topics that predate vertical tagging.
+    if (input.verticals && input.verticals.length > 0) {
+      const before = candidates.length;
+      const matching = candidates.filter((t) =>
+        topicMatchesAnyVertical(
+          { leagueId: t.leagueId, sport: t.sport, title: t.title, summary: t.summary, bettingRelevanceScore: t.bettingRelevanceScore },
+          input.verticals!
+        )
+      );
+      candidates.length = 0;
+      candidates.push(...matching);
+      result.skippedTopicCount += before - matching.length;
+      result.reasons.push(`Vertical filter [${input.verticals.join(", ")}]: ${matching.length}/${before} candidate(s) qualify.`);
+    }
+
+    // Team filter (podcast configs): HARD filter while any candidate
+    // mentions a followed team; explicit vertical-wide fallback otherwise
+    // so a quiet news day never bricks a recurring show.
     const teamNeedles = (input.teamNames || [])
       .flatMap((n) => {
         const full = n.toLowerCase();
@@ -228,11 +269,14 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         const text = `${t.title} ${t.summary || ""}`.toLowerCase();
         return teamNeedles.some((needle) => text.includes(needle));
       };
-      const preferred = candidates.filter(mentionsTeam);
-      const rest = candidates.filter((t) => !mentionsTeam(t));
-      candidates.length = 0;
-      candidates.push(...preferred, ...rest);
-      result.reasons.push(`Team preference active: ${preferred.length} candidate(s) mention a followed team.`);
+      const matching = candidates.filter(mentionsTeam);
+      if (matching.length > 0) {
+        candidates.length = 0;
+        candidates.push(...matching);
+        result.reasons.push(`Team filter active: restricted to ${matching.length} candidate(s) mentioning a followed team.`);
+      } else {
+        result.reasons.push("Team filter: no candidate mentions a followed team today — fell back to vertical-wide selection.");
+      }
     }
 
     for (const t of candidates) {
@@ -356,6 +400,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         ttsVoiceOverrides: chosenVoiceOverrides ? (chosenVoiceOverrides as any) : undefined,
         soundDesign: chosenSoundDesign ? (chosenSoundDesign as any) : undefined,
         podcastId: input.podcastId || undefined,
+        hostIds: chosenHostIds,
       },
     });
 

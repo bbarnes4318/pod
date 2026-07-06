@@ -167,15 +167,48 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     console.warn(`[ScriptService] ${msg} (CONTENT_GATE_MODE=warn — proceeding)`);
   }
 
-  // 3. Load Active Hosts Max Voltage & Dr. Linebreak
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
+  // 3. Cast the hosts. The episode's saved hostIds (from its podcast config
+  // or standalone build) win; the classic duo is the fallback. A debate
+  // needs exactly two voices — a single selected host gets paired with the
+  // best available sparring partner.
+  let hostA: any = null;
+  let hostB: any = null;
+  const savedHostIds: string[] = Array.isArray((ep as any).hostIds) ? ((ep as any).hostIds as string[]) : [];
+  if (savedHostIds.length > 0) {
+    const selected = await db.aiHost.findMany({ where: { id: { in: savedHostIds }, isActive: true } });
+    const ordered = savedHostIds
+      .map((id) => selected.find((h) => h.id === id))
+      .filter((h): h is NonNullable<typeof h> => !!h);
+    hostA = ordered[0] || null;
+    hostB = ordered[1] || null;
+    if (ordered.length > 2) {
+      result.reasons.push(`Host casting: ${ordered.length} hosts selected; the debate format uses the first two (${ordered[0].name}, ${ordered[1].name}).`);
+    }
+  }
+  if (!hostA) hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
+  if (!hostB || (hostA && hostB.id === hostA.id)) {
+    hostB =
+      (await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true, ...(hostA ? { id: { not: hostA.id } } : {}) } })) ||
+      (hostA ? await db.aiHost.findFirst({ where: { isActive: true, id: { not: hostA.id } } }) : null);
+  }
 
   if (!hostA || !hostB) {
-    const msg = "Active profiles for Max Voltage and Dr. Linebreak must exist and be active.";
+    const msg = "Two active host profiles are required to generate a debate script.";
     result.reasons.push(msg);
     throw new Error(msg);
   }
+  result.reasons.push(`Host casting: ${hostA.name} vs ${hostB.name}${savedHostIds.length > 0 ? " (from saved episode/podcast config)" : " (default duo)"}.`);
+
+  // Persona-specific delivery notes only apply to the canonical duo; custom
+  // hosts speak through their own profile fields.
+  const hostAFingerprint =
+    hostA.name === "Max Voltage"
+      ? `\n- Verbal fingerprint: talks in bursts. Short sentences. Repeats words for emphasis ("He's done. DONE."). Starts sentences with "Listen," "No no no," "Are you kidding me?" Trails off when disgusted. Interrupts when he smells weakness.`
+      : "";
+  const hostBFingerprint =
+    hostB.name === "Dr. Linebreak"
+      ? `\n- Verbal fingerprint: longer, measured sentences with dry pauses. Weaponized politeness ("With respect, Max — no."). Lets Max burn out, then dissects. Occasionally amused despite himself. Never raises his voice; lowers it for the kill shot.`
+      : "";
 
   // 4. Verify Versioning & Duplicate Check
   const existingScripts = await db.script.findMany({
@@ -241,8 +274,8 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     if (richBrief.contrarianAngle) richLines.push(`Contrarian Angle (use it): ${richBrief.contrarianAngle}`);
     if (richBrief.suggestedHostTake) richLines.push(`Suggested Host Take: ${richBrief.suggestedHostTake}`);
     richLines.push(
-      `Max Voltage Debate Stance: ${b.argumentForHostA}`,
-      `Dr. Linebreak Debate Stance: ${b.argumentForHostB}`,
+      `${hostA.name} Debate Stance: ${b.argumentForHostA}`,
+      `${hostB.name} Debate Stance: ${b.argumentForHostB}`,
       `Key Grounded Facts: ${JSON.stringify(
         Array.isArray(richBrief.keyFactsContext) && richBrief.keyFactsContext.length > 0
           ? richBrief.keyFactsContext
@@ -265,7 +298,7 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // 7. Formulate system and user prompts
   const systemPrompt = `You are the head writer for Take Machine, a two-host sports debate podcast. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
 
-Host 1: Max Voltage (ID: ${hostA.id})
+Host 1: ${hostA.name} (ID: ${hostA.id})
 - Role: ${hostA.role}
 - Worldview: ${hostA.worldview}
 - Speaking Style: ${hostA.speakingStyle}
@@ -274,10 +307,9 @@ Host 1: Max Voltage (ID: ${hostA.id})
 - Dislikes: ${JSON.stringify(hostA.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostA.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostA.bannedPhrases)}
-- Intensity Level: ${hostA.intensityLevel}/10
-- Verbal fingerprint: talks in bursts. Short sentences. Repeats words for emphasis ("He's done. DONE."). Starts sentences with "Listen," "No no no," "Are you kidding me?" Trails off when disgusted. Interrupts when he smells weakness.
+- Intensity Level: ${hostA.intensityLevel}/10${hostAFingerprint}
 
-Host 2: Dr. Linebreak (ID: ${hostB.id})
+Host 2: ${hostB.name} (ID: ${hostB.id})
 - Role: ${hostB.role}
 - Worldview: ${hostB.worldview}
 - Speaking Style: ${hostB.speakingStyle}
@@ -286,8 +318,7 @@ Host 2: Dr. Linebreak (ID: ${hostB.id})
 - Dislikes: ${JSON.stringify(hostB.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostB.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostB.bannedPhrases)}
-- Intensity Level: ${hostB.intensityLevel}/10
-- Verbal fingerprint: longer, measured sentences with dry pauses. Weaponized politeness ("With respect, Max — no."). Lets Max burn out, then dissects. Occasionally amused despite himself. Never raises his voice; lowers it for the kill shot.
+- Intensity Level: ${hostB.intensityLevel}/10${hostBFingerprint}
 
 HOW REAL PODCAST SPEECH WORKS — follow all of these:
 1. Contractions always: "he's", "don't", "that's", "would've". Nobody says "he is not clutch" out loud.
@@ -313,9 +344,9 @@ EPISODE SHAPE:
 - closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
 
 CHEMISTRY CONTRACT (the engine of the show):
-- Max swings; Doc counters. Max escalates emotionally; Doc deflates surgically. Doc wins on facts, Max wins on moments — neither wins outright.
+- ${hostA.name} swings; ${hostB.name} counters. ${hostA.name} escalates emotionally; ${hostB.name} deflates surgically. ${hostB.name} wins on facts, ${hostA.name} wins on moments — neither wins outright.
 - Each host concedes exactly ONE point per episode, grudgingly, and the other pounces on it.
-- Max interrupts when he smells blood. Doc interrupts exactly once per episode, for a kill shot delivered quietly.
+- ${hostA.name} interrupts when he smells blood. ${hostB.name} interrupts exactly once per episode, for a kill shot delivered quietly.
 - Introduce ONE running gag in the cold open and call it back at least twice later — shorter each time.
 - They know each other. Reference shared history ("You did this exact thing during the playoffs", "Here comes the folder").
 
@@ -373,7 +404,7 @@ You MUST return valid JSON matching this schema:
       "lines": [
         {
           "lineIndex": 0,
-          "speakerName": "Max Voltage" | "Dr. Linebreak",
+          "speakerName": "${hostA.name}" | "${hostB.name}",
           "text": "spoken text here, optionally with inline audio tags like [laughs]",
           "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",
           "energy": "low" | "medium" | "high",
@@ -482,7 +513,7 @@ Delivery field meanings:
       }
 
       // Check speakerName
-      if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+      if (line.speakerName !== hostA.name && line.speakerName !== hostB.name) {
         result.invalidSpeakerCount++;
         result.rejectedLineCount++;
         continue; // Reject line
@@ -568,7 +599,7 @@ Delivery field meanings:
       }
 
       // Attach speakerHostId
-      const speakerHostId = line.speakerName === "Max Voltage" ? hostA.id : hostB.id;
+      const speakerHostId = line.speakerName === hostA.name ? hostA.id : hostB.id;
 
       const delivery = normalizeDelivery(line);
 
@@ -588,7 +619,7 @@ Delivery field meanings:
       });
 
       // Track distribution
-      if (line.speakerName === "Max Voltage") maxVoltageLinesCount++;
+      if (line.speakerName === hostA.name) maxVoltageLinesCount++;
       else drLinebreakLinesCount++;
       totalLinesCount++;
     }
@@ -624,7 +655,7 @@ Delivery field meanings:
   drLinebreakLinesCount = 0;
   for (const seg of finalSegments) {
     for (const line of seg.lines) {
-      if (line.speakerName === "Max Voltage") maxVoltageLinesCount++;
+      if (line.speakerName === hostA.name) maxVoltageLinesCount++;
       else drLinebreakLinesCount++;
       totalLinesCount++;
     }
@@ -650,7 +681,7 @@ Delivery field meanings:
   const hostADistribution = maxVoltageLinesCount / totalLinesCount;
   const hostBDistribution = drLinebreakLinesCount / totalLinesCount;
   if (hostADistribution < 0.25 || hostBDistribution < 0.25) {
-    const msg = `Validation failed: Hosts line distribution is unbalanced. Max Voltage: ${Math.round(hostADistribution * 100)}%, Dr. Linebreak: ${Math.round(hostBDistribution * 100)}%. Must be >= 25% for each.`;
+    const msg = `Validation failed: Hosts line distribution is unbalanced. ${hostA.name}: ${Math.round(hostADistribution * 100)}%, ${hostB.name}: ${Math.round(hostBDistribution * 100)}%. Must be >= 25% for each.`;
     result.reasons.push(msg);
     throw new Error(msg);
   }

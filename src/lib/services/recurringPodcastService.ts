@@ -1,6 +1,5 @@
 import { db } from "../db";
 import { queueEpisodeBuildJob } from "../queue/podcastQueue";
-import { teamLeagueIdsForVerticals } from "../verticals";
 
 // Recurring podcast auto-generation. One daily scheduler tick (registered as
 // a BullMQ job scheduler at worker boot) finds every recurring podcast whose
@@ -38,6 +37,7 @@ export async function enqueueEpisodeBuildForPodcast(
     verticals: string[];
     teams: string[];
     segmentCount: number;
+    hostIds: string[];
   },
   opts?: { titleSuffix?: string; jobId?: string }
 ) {
@@ -47,7 +47,6 @@ export async function enqueueEpisodeBuildForPodcast(
           await db.team.findMany({ where: { id: { in: podcast.teams } }, select: { name: true } })
         ).map((t) => t.name)
       : [];
-  const leagueIds = teamLeagueIdsForVerticals(podcast.verticals);
 
   return queueEpisodeBuildJob(
     {
@@ -55,8 +54,9 @@ export async function enqueueEpisodeBuildForPodcast(
       description: `Generated from the "${podcast.name}" podcast configuration.`,
       podcastId: podcast.id,
       targetTopicCount: podcast.segmentCount,
-      leagueIds: leagueIds.length > 0 ? leagueIds : undefined,
+      verticals: podcast.verticals.length > 0 ? podcast.verticals : undefined,
       teamNames: teamNames.length > 0 ? teamNames : undefined,
+      hostIds: podcast.hostIds.length > 0 ? podcast.hostIds : undefined,
     },
     opts?.jobId ? { jobId: opts.jobId } : undefined
   );

@@ -311,7 +311,7 @@ export default function PodcastWizard({
         return (
           <div>
             <h2 className="uWizQuestion">Who's in the booth?</h2>
-            <p className="uWizHint">The debate works best with two voices.</p>
+            <p className="uWizHint">Pick two for the debate — pick one and we pair them with a sparring partner.</p>
             {hosts.length === 0 ? (
               <p className="uWizHint" style={{ color: "var(--u-ink-2)" }}>No hosts are available right now — you can still finish and pick hosts later.</p>
             ) : (

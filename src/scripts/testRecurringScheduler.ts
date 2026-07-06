@@ -49,5 +49,25 @@ const run1 = schedulerDateParts(new Date("2026-07-06T11:05:00Z"));
 const run2 = schedulerDateParts(new Date("2026-07-06T20:00:00Z"));
 check("same-day re-run produces the same claim key", run1.dateKey === run2.dateKey, true);
 
-console.log(failures === 0 ? "\nAll scheduler date-logic checks passed." : `\n${failures} check(s) FAILED.`);
+// ---- Vertical ↔ topic matching (episode auto-selection) ----
+import { topicMatchesVertical, topicMatchesAnyVertical } from "../lib/verticals";
+
+const nflTopic = { leagueId: "NFL", sport: "Football", title: "Is Mahomes cooked?", summary: "", bettingRelevanceScore: 30 };
+const bettingTopic = { leagueId: "NBA", sport: "Basketball", title: "Lakers moneyline madness", summary: "The spread moved 4 points overnight", bettingRelevanceScore: 82 };
+const pokerTopic = { leagueId: "POKER", sport: "Poker", title: "Was that WSOP bluff genius?", summary: "", bettingRelevanceScore: 10 };
+const fantasyTopic = { leagueId: "NFL", sport: "Football", title: "Waiver wire gold: who do you start?", summary: "Fantasy managers scramble", bettingRelevanceScore: 5 };
+const mmaTopic = { leagueId: "MMA", sport: "Combat Sports", title: "Was the stoppage early?", summary: "", bettingRelevanceScore: 5 };
+
+check("NFL topic matches NFL vertical", topicMatchesVertical(nflTopic, "NFL"), true);
+check("NFL topic does not match NBA vertical", topicMatchesVertical(nflTopic, "NBA"), false);
+check("high-betting topic matches Gambling vertical", topicMatchesVertical(bettingTopic, "Gambling/Point Spread"), true);
+check("plain NFL topic does not match Gambling", topicMatchesVertical(nflTopic, "Gambling/Point Spread"), false);
+check("POKER-league topic matches Poker vertical", topicMatchesVertical(pokerTopic, "Poker"), true);
+check("fantasy keywords match Fantasy vertical", topicMatchesVertical(fantasyTopic, "Fantasy Sports"), true);
+check("multi-vertical any-match", topicMatchesAnyVertical(bettingTopic, ["NFL", "Gambling/Point Spread"]), true);
+check("'All' passes every topic (even MMA)", topicMatchesAnyVertical(mmaTopic, ["All"]), true);
+check("full expanded selection also passes MMA", topicMatchesAnyVertical(mmaTopic, ["NFL","NBA","MLB","NHL","College Football","College Basketball","Gambling/Point Spread","Fantasy Sports","Poker"]), true);
+check("narrow selection excludes MMA", topicMatchesAnyVertical(mmaTopic, ["NFL"]), false);
+
+console.log(failures === 0 ? "\nAll scheduler + vertical-matching checks passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

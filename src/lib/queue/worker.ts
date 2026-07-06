@@ -766,8 +766,8 @@ You must return a JSON object containing a 'topics' array of 10-20 candidates.
 Schema for each topic candidate in the array:
 {
   "title": "A short punchy sports-radio style question",
-  "sport": "Football | Basketball | Baseball | Combat Sports | etc.",
-  "leagueId": "NFL | NBA | MLB | NCAAF | NCAAB | MMA",
+  "sport": "Football | Basketball | Baseball | Combat Sports | Betting | Fantasy Sports | Poker | etc.",
+  "leagueId": "NFL | NBA | MLB | NHL | NCAAF | NCAAB | MMA | GAMBLING | FANTASY | POKER",
   "summary": "One-paragraph summary explaining the debate angle",
   "whyFansCare": "A brief sentence why fans will click",
   "whyMaxVoltageWillAgree": "Why Max Voltage will have a strong legacy/emotional stance",

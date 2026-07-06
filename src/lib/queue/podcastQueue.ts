@@ -84,7 +84,9 @@ export interface EpisodeBuildJobData {
   minDebateScore?: number;
   podcastId?: string;
   leagueIds?: string[];
+  verticals?: string[];
   teamNames?: string[];
+  hostIds?: string[];
   ttsProvider?: string;
   ttsVoiceOverrides?: TtsVoiceOverrides;
   productionStyle?: string;

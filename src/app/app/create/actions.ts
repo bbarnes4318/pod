@@ -13,7 +13,7 @@ import {
   queueEpisodeBuildJob,
 } from "@/lib/queue/podcastQueue";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
-import { isValidVertical, TEAM_LEAGUE_BY_VERTICAL } from "@/lib/verticals";
+import { isValidVertical } from "@/lib/verticals";
 import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
 
 /** Lock in a pending take so it can be researched. */
@@ -93,15 +93,15 @@ export async function createStandaloneEpisode(input: {
       return { success: false as const, error: "Keep the title under 120 characters." };
     }
 
-    let leagueId: string | undefined;
-    if (input.vertical) {
+    let verticals: string[] | undefined;
+    if (input.vertical && input.vertical !== "All") {
       if (!isValidVertical(input.vertical)) return { success: false as const, error: "Unknown vertical." };
-      leagueId = TEAM_LEAGUE_BY_VERTICAL[input.vertical]; // undefined for All / no-team verticals = no filter
+      verticals = [input.vertical]; // matcher handles sports AND non-sport verticals
     }
 
     const job = await queueEpisodeBuildJob({
       title,
-      leagueId,
+      verticals,
       targetTopicCount: segmentCount,
     });
 
