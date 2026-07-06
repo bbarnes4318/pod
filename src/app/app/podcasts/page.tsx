@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { WEEKDAY_LABELS } from "./config";
+import GenerateNowButton from "./GenerateNowButton";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,12 @@ export default async function PodcastsPage() {
                     <span>{p.segmentCount} segment{p.segmentCount === 1 ? "" : "s"}</span>
                     <span>{p._count.episodes} episode{p._count.episodes === 1 ? "" : "s"}</span>
                   </div>
+                </div>
+                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexShrink: 0 }}>
+                  <GenerateNowButton podcastId={p.id} />
+                  <Link href={`/app/podcasts/${p.id}`} className="uRecordBtn" style={{ textDecoration: "none" }}>
+                    Manage →
+                  </Link>
                 </div>
               </div>
             ))}

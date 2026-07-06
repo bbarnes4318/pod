@@ -8,9 +8,9 @@
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { approveTopic } from "../../admin/topics/actions";
-import { triggerResearchBriefGeneration } from "../../admin/research-briefs/actions";
-import { createEpisodeFromSelectedTopics, triggerScriptGeneration } from "../../admin/episodes/actions";
+import { approveTake, researchTake, produceEpisodeFromTopics, startDebate, createStandaloneEpisode } from "./actions";
+import { VERTICALS } from "@/lib/verticals";
+import { SEGMENT_MIN, SEGMENT_MAX, SEGMENT_DEFAULT } from "../podcasts/config";
 import VoicePicker from "./VoicePicker";
 
 export interface FlowTake {
@@ -44,6 +44,9 @@ export default function CreateFlow({ takes, episodes, highlight, defaultEngineHi
   // Voice engine for the next produced episode; persisted on the episode at
   // creation so re-runs keep using it. "default" = don't pin one.
   const [engine, setEngine] = useState("default");
+  // Instant episode: no podcast, no take-picking — auto-select best topics.
+  const [instantVertical, setInstantVertical] = useState<string>("All");
+  const [instantSegments, setInstantSegments] = useState(SEGMENT_DEFAULT);
 
   const run = (id: string, fn: () => Promise<any>, successNote: string) => {
     setBusyId(id);
@@ -65,18 +68,13 @@ export default function CreateFlow({ takes, episodes, highlight, defaultEngineHi
   };
 
   const actionFor = (t: FlowTake) => {
-    if (t.status === "pending") return { label: "Start with this take", note: "Take locked in. Tap again to start the research.", fn: () => approveTopic(t.id) };
-    if (!t.hasBrief) return { label: "Research it", note: "Digging into the story — takes about a minute. Refresh to continue.", fn: () => triggerResearchBriefGeneration(t.id, false) };
+    if (t.status === "pending") return { label: "Start with this take", note: "Take locked in. Tap again to start the research.", fn: () => approveTake(t.id) };
+    if (!t.hasBrief) return { label: "Research it", note: "Digging into the story — takes about a minute. Refresh to continue.", fn: () => researchTake(t.id, false) };
     return {
       label: "Produce the episode",
       note: "Episode created! The hosts start arguing below.",
       fn: async () => {
-        const res: any = await createEpisodeFromSelectedTopics(
-          [t.id],
-          undefined,
-          undefined,
-          engine === "default" ? undefined : engine
-        );
+        const res: any = await produceEpisodeFromTopics([t.id], engine === "default" ? undefined : engine);
         return res;
       },
     };
@@ -107,6 +105,52 @@ export default function CreateFlow({ takes, episodes, highlight, defaultEngineHi
         </div>
       )}
 
+      {/* Instant episode — standalone, no podcast setup required */}
+      <div className="uTakeCard" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.8rem", marginBottom: "1.6rem", borderColor: "var(--u-brand)", background: "var(--u-brand-soft)" }}>
+        <div>
+          <div className="uTakeTitle" style={{ fontSize: "0.98rem" }}>⚡ Instant episode</div>
+          <p style={{ fontSize: "0.82rem", color: "var(--u-ink-2)", margin: "0.3rem 0 0", lineHeight: 1.5 }}>
+            Skip the picking — we grab the best researched takes and produce a full episode.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "0.7rem", flexWrap: "wrap", alignItems: "center" }}>
+          <select
+            className="uWizInput"
+            style={{ width: "auto", marginBottom: 0, padding: "0.5rem 0.8rem", fontSize: "0.84rem" }}
+            aria-label="Vertical"
+            value={instantVertical}
+            onChange={(e) => setInstantVertical(e.target.value)}
+          >
+            {VERTICALS.map((v) => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <select
+            className="uWizInput"
+            style={{ width: "auto", marginBottom: 0, padding: "0.5rem 0.8rem", fontSize: "0.84rem" }}
+            aria-label="Segments"
+            value={instantSegments}
+            onChange={(e) => setInstantSegments(Number(e.target.value))}
+          >
+            {Array.from({ length: SEGMENT_MAX - SEGMENT_MIN + 1 }, (_, i) => SEGMENT_MIN + i).map((n) => (
+              <option key={n} value={n}>{n} segment{n === 1 ? "" : "s"}</option>
+            ))}
+          </select>
+          <button
+            className="uPlayLg"
+            style={{ background: "var(--u-brand)", padding: "0.55rem 1.2rem", fontSize: "0.84rem" }}
+            disabled={pending && busyId === "instant"}
+            onClick={() =>
+              run(
+                "instant",
+                () => createStandaloneEpisode({ vertical: instantVertical, segmentCount: instantSegments }),
+                "On it — your episode shows up under \"in production\" in a moment. Refresh to follow along."
+              )
+            }
+          >
+            {pending && busyId === "instant" ? "Queuing…" : "Create episode now"}
+          </button>
+        </div>
+      </div>
+
       {/* In production */}
       {episodes.length > 0 && (
         <>
@@ -134,7 +178,7 @@ export default function CreateFlow({ takes, episodes, highlight, defaultEngineHi
                     className="uRecordBtn"
                     style={{ borderColor: "var(--u-brand)", color: "var(--u-brand)" }}
                     disabled={pending && busyId === ep.id}
-                    onClick={() => run(ep.id, () => triggerScriptGeneration(ep.id) as any, "The hosts are writing — the debate takes a few minutes.")}
+                    onClick={() => run(ep.id, () => startDebate(ep.id) as any, "The hosts are writing — the debate takes a few minutes.")}
                   >
                     {pending && busyId === ep.id ? "Starting…" : "Start the debate"}
                   </button>

@@ -13,6 +13,7 @@ import {
   teamLeagueIdsForVerticals,
 } from "@/lib/verticals";
 import { WEEKDAYS, SEGMENT_MIN, SEGMENT_MAX, type PodcastInput } from "./config";
+import { enqueueEpisodeBuildForPodcast } from "@/lib/services/recurringPodcastService";
 
 interface Validated {
   name: string;
@@ -91,6 +92,32 @@ export async function createPodcast(input: PodcastInput) {
     return { success: true as const, podcastId: podcast.id };
   } catch (err: any) {
     return { success: false as const, error: err.message || "Could not create the podcast." };
+  }
+}
+
+/**
+ * On-demand generation: enqueue one episode build from the podcast's CURRENT
+ * saved config, any time, regardless of cadence/schedule. Unlike the daily
+ * scheduler this is intentionally not once-per-day-idempotent — pressing the
+ * button twice queues two builds; the timestamped jobId only guards against
+ * accidental double-submits within the same second.
+ */
+export async function generateEpisodesNow(podcastId: string) {
+  try {
+    const podcast = await db.podcast.findUnique({ where: { id: podcastId } });
+    if (!podcast) return { success: false as const, error: "Podcast not found." };
+
+    const stamp = new Date().toISOString();
+    const job = await enqueueEpisodeBuildForPodcast(podcast, {
+      titleSuffix: stamp.slice(0, 10),
+      jobId: `manual-${podcastId}-${stamp.slice(0, 19)}`,
+    });
+
+    revalidatePath("/app/podcasts");
+    revalidatePath(`/app/podcasts/${podcastId}`);
+    return { success: true as const, jobId: String(job.id) };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Could not queue the episode." };
   }
 }
 
