@@ -20,6 +20,13 @@ import { generateTtsSegments } from "../services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
+import { podcastQueue } from "./podcastQueue";
+import {
+  runRecurringPodcastGeneration,
+  recurringCronPattern,
+  RECURRING_GENERATION_TIME,
+  RECURRING_GENERATION_TZ,
+} from "../services/recurringPodcastService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -35,6 +42,22 @@ console.log("--------------------------------------------------");
 ensureStarterSoundPack().catch((err) =>
   console.warn(`[Worker] Sound pack auto-seed skipped: ${err.message}`)
 );
+
+// Daily recurring-podcast tick. upsertJobScheduler is idempotent: re-running
+// it on every boot just refreshes the schedule (and picks up env changes to
+// RECURRING_GENERATION_TIME / RECURRING_GENERATION_TZ).
+podcastQueue
+  .upsertJobScheduler(
+    "recurring-podcast-generation",
+    { pattern: recurringCronPattern(), tz: RECURRING_GENERATION_TZ },
+    { name: "scheduler:recurring-podcasts", data: {} }
+  )
+  .then(() =>
+    console.log(
+      `[Worker] Recurring-podcast scheduler registered: daily at ${RECURRING_GENERATION_TIME} ${RECURRING_GENERATION_TZ}`
+    )
+  )
+  .catch((err) => console.error(`[Worker] Failed to register recurring-podcast scheduler: ${err.message}`));
 
 // Initialize BullMQ Worker
 const worker = new Worker(
@@ -58,6 +81,8 @@ const worker = new Worker(
       return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
     } else if (job.name === "content:generate-assets") {
       return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
+    } else if (job.name === "scheduler:recurring-podcasts") {
+      return handleRecurringPodcastScheduler(job);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -129,6 +154,42 @@ async function handlePodcastGeneration(job: Job<JobData>) {
 
   console.log(`[Worker] Podcast generation job completed successfully!`);
   return { success: true, processedStage: stage, episodeId };
+}
+
+// Recurring-podcast scheduler tick: enqueue an episode build for every
+// recurring podcast due today (idempotent — see recurringPodcastService).
+async function handleRecurringPodcastScheduler(job: Job) {
+  console.log(`[Worker] Recurring-podcast scheduler tick started (job ${job.id})`);
+
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "scheduler:recurring-podcasts",
+      status: "running",
+      input: { scheduledAt: new Date().toISOString() },
+      output: {},
+    },
+  });
+
+  try {
+    const result = await runRecurringPodcastGeneration();
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "completed", output: result as any },
+    });
+    const enqueued = result.outcomes.filter((o) => o.status === "enqueued").length;
+    const skipped = result.outcomes.filter((o) => o.status === "skipped_already_generated").length;
+    console.log(
+      `[Worker] Recurring scheduler done for ${result.dateKey} (${result.weekday}): due=${result.dueCount}, enqueued=${enqueued}, skipped=${skipped}`
+    );
+    return { success: true, ...result };
+  } catch (err: any) {
+    console.error(`[Worker] Recurring scheduler failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "failed", error: err.message || "Unknown scheduler error" },
+    });
+    throw err;
+  }
 }
 
 // 2. Real Sports Data Ingestion Handler

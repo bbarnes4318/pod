@@ -13,6 +13,14 @@ export interface EpisodeBuildInput {
   sport?: string;
   targetTopicCount?: number;
   minDebateScore?: number;
+  /** Podcast this episode belongs to; persisted on the Episode row. */
+  podcastId?: string;
+  /** Restrict auto-selection to these leagues (multi-vertical podcasts). */
+  leagueIds?: string[];
+  /** Prefer topics that mention any of these team names. Soft preference:
+   *  team-matching topics rank first, others fill remaining slots, so a
+   *  quiet news day never bricks a recurring show. */
+  teamNames?: string[];
   /** Voice engine chosen at build time; persisted on the Episode so every
    *  TTS run (and re-run) for it uses the same provider. Omit for the
    *  host-profile/env default. */
@@ -206,6 +214,27 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
       candidates.push(r.t);
     }
 
+    // Team preference (podcast configs): stable-partition so topics that
+    // mention a followed team are considered first, everything else after.
+    const teamNeedles = (input.teamNames || [])
+      .flatMap((n) => {
+        const full = n.toLowerCase();
+        const nickname = full.split(" ").slice(-1)[0];
+        return nickname.length >= 4 ? [full, nickname] : [full];
+      })
+      .filter(Boolean);
+    if (teamNeedles.length > 0) {
+      const mentionsTeam = (t: (typeof candidates)[number]) => {
+        const text = `${t.title} ${t.summary || ""}`.toLowerCase();
+        return teamNeedles.some((needle) => text.includes(needle));
+      };
+      const preferred = candidates.filter(mentionsTeam);
+      const rest = candidates.filter((t) => !mentionsTeam(t));
+      candidates.length = 0;
+      candidates.push(...preferred, ...rest);
+      result.reasons.push(`Team preference active: ${preferred.length} candidate(s) mention a followed team.`);
+    }
+
     for (const t of candidates) {
       // Filter by minDebateScore
       if (t.debateScore < minScore) {
@@ -215,6 +244,12 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
 
       // Filter by leagueId if provided
       if (input.leagueId && t.leagueId?.toUpperCase() !== input.leagueId.toUpperCase()) {
+        result.skippedTopicCount++;
+        continue;
+      }
+
+      // Filter by leagueIds list if provided (multi-vertical podcasts)
+      if (input.leagueIds && input.leagueIds.length > 0 && !input.leagueIds.includes((t.leagueId || "").toUpperCase())) {
         result.skippedTopicCount++;
         continue;
       }
@@ -320,6 +355,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
         ttsProvider: chosenTtsProvider,
         ttsVoiceOverrides: chosenVoiceOverrides ? (chosenVoiceOverrides as any) : undefined,
         soundDesign: chosenSoundDesign ? (chosenSoundDesign as any) : undefined,
+        podcastId: input.podcastId || undefined,
       },
     });
 

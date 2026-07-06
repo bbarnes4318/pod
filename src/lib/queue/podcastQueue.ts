@@ -82,14 +82,19 @@ export interface EpisodeBuildJobData {
   sport?: string;
   targetTopicCount?: number;
   minDebateScore?: number;
+  podcastId?: string;
+  leagueIds?: string[];
+  teamNames?: string[];
   ttsProvider?: string;
   ttsVoiceOverrides?: TtsVoiceOverrides;
   productionStyle?: string;
   sfxDensity?: string;
 }
 
-export async function queueEpisodeBuildJob(data: EpisodeBuildJobData) {
-  return podcastQueue.add("build:episode", data);
+export async function queueEpisodeBuildJob(data: EpisodeBuildJobData, opts?: { jobId?: string }) {
+  // A deterministic jobId makes the enqueue idempotent: BullMQ ignores a
+  // second add with the same id (used by the recurring scheduler).
+  return podcastQueue.add("build:episode", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
 }
 
 export interface ScriptGenJobData {
