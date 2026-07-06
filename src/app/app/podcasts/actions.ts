@@ -7,6 +7,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { currentUser } from "@/lib/currentUser";
 import {
   isValidVertical,
   normalizeVerticals,
@@ -81,6 +82,7 @@ async function validatePodcastInput(input: PodcastInput): Promise<{ ok: true; da
 
 export async function createPodcast(input: PodcastInput) {
   try {
+    if (!(await currentUser())) return { success: false as const, error: "Please sign in to create a podcast." };
     const v = await validatePodcastInput(input);
     if (!v.ok) return { success: false as const, error: v.error };
 
@@ -104,6 +106,7 @@ export async function createPodcast(input: PodcastInput) {
  */
 export async function generateEpisodesNow(podcastId: string) {
   try {
+    if (!(await currentUser())) return { success: false as const, error: "Please sign in to generate episodes." };
     const podcast = await db.podcast.findUnique({ where: { id: podcastId } });
     if (!podcast) return { success: false as const, error: "Podcast not found." };
 
@@ -123,6 +126,7 @@ export async function generateEpisodesNow(podcastId: string) {
 
 export async function updatePodcast(id: string, input: PodcastInput) {
   try {
+    if (!(await currentUser())) return { success: false as const, error: "Please sign in to edit a podcast." };
     const existing = await db.podcast.findUnique({ where: { id }, select: { id: true } });
     if (!existing) return { success: false as const, error: "Podcast not found." };
 

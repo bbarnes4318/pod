@@ -8,12 +8,59 @@ generator client {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String?
-  role      String   @default("USER")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String?
+  role          String    @default("USER")
+  // --- Auth.js additions (all additive/nullable; existing columns unchanged) ---
+  emailVerified DateTime? // set when the user confirms their email (email flow is stubbed until a mail provider is configured)
+  image         String?   // avatar URL (from OAuth or account settings)
+  passwordHash  String?   // bcrypt hash for the Credentials provider; null for OAuth-only accounts
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// --- Auth.js (NextAuth v5) / @auth/prisma-adapter standard tables ---
+// Sessions use the JWT strategy (Credentials provider requires it), so the
+// Session table is present for adapter compatibility but not the primary
+// session store. OAuth (Google) links accounts here.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
 }
 
 model AiHost {

@@ -1,5 +1,6 @@
 import React from "react";
 import { db } from "@/lib/db";
+import { requireUserPage } from "@/lib/currentUser";
 import { accentForSport } from "../accent";
 import { emojiForTitle, friendlyStage } from "../lib";
 import { ttsProviderLabel } from "@/lib/providers/tts/providerIds";
@@ -17,6 +18,7 @@ function stageIndexFor(status: string): number {
 }
 
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
+  await requireUserPage("/app/create"); // creation requires an account
   const { topic: highlight } = await searchParams;
 
   // What "Studio default" resolves to when an episode doesn't pin an engine.

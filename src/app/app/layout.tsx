@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import AppNav from "./AppNav";
+import SidebarAccount from "./SidebarAccount";
 import { PlayerProvider } from "./PlayerBar";
 import "./app.css";
 
@@ -23,6 +24,7 @@ export default function UserAppLayout({ children }: { children: React.ReactNode 
           <span>＋</span>
           <span>Create</span>
         </Link>
+        <SidebarAccount />
       </aside>
 
       <PlayerProvider>

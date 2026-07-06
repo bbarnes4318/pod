@@ -3,10 +3,12 @@ import { db } from "@/lib/db";
 import { SEED_TEAMS } from "@/lib/data/teamSeed";
 import { verticalForTopic } from "@/lib/verticals";
 import PodcastWizard, { WizardHost, WizardTeam, WizardInitial } from "./PodcastWizard";
+import { requireUserPage } from "@/lib/currentUser";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewPodcastPage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
+  await requireUserPage("/app/podcasts/new"); // creating a podcast requires an account
   const { topic: topicId } = await searchParams;
 
   const [hostsRaw, teamsRaw] = await Promise.all([

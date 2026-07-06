@@ -751,3 +751,94 @@ body:has(.userSurface) {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
 }
+
+/* ---------- Sidebar account block ---------- */
+.uAccount { width: 100%; margin-top: 0.6rem; display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
+.uAccountChip {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 0.55rem 0.25rem;
+  border-radius: 12px;
+  color: var(--u-ink-2);
+  font-size: 0.68rem;
+  font-weight: 600;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  text-align: center;
+}
+.uAccountChip:hover { color: var(--u-ink); background: var(--u-canvas); }
+.uAccountChip.active { color: var(--u-brand); background: var(--u-brand-soft); }
+.uAccountName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uLogout {
+  width: 100%; border: 1px solid var(--u-hairline-2); background: var(--u-surface);
+  color: var(--u-ink-3); font-size: 0.66rem; font-weight: 700; border-radius: 10px;
+  padding: 0.4rem 0.25rem; cursor: pointer; transition: color 0.15s ease, border-color 0.15s ease;
+}
+.uLogout:hover { color: var(--u-ink); border-color: var(--u-ink-3); }
+.uSignInBtn {
+  width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 0.6rem 0.25rem; border-radius: 12px; border: 1px solid var(--u-brand);
+  background: var(--u-brand-soft); color: var(--u-brand); font-size: 0.72rem; font-weight: 700;
+  transition: transform 0.12s ease; text-align: center;
+}
+.uSignInBtn:hover { transform: translateY(-1px); }
+
+/* ---------- Auth pages (login / signup) ---------- */
+.uAuthWrap { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 3.5rem 1.5rem; }
+.uAuthCard {
+  width: 100%; max-width: 400px; background: var(--u-surface); border: 1px solid var(--u-hairline);
+  border-radius: var(--u-radius-lg); box-shadow: var(--u-shadow); padding: 2.2rem 2rem; margin-top: 2rem;
+}
+.uAuthMark { width: 44px; height: 44px; border-radius: 13px; background: var(--u-brand); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 800;
+  box-shadow: 0 6px 16px -6px rgba(59, 91, 255, 0.5); margin-bottom: 1.1rem; }
+.uAuthTitle { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.35rem; }
+.uAuthSub { font-size: 0.88rem; color: var(--u-ink-2); margin-bottom: 1.5rem; }
+.uAuthForm { display: flex; flex-direction: column; gap: 0.95rem; }
+.uField { display: flex; flex-direction: column; gap: 0.35rem; }
+.uFieldLabel { font-size: 0.78rem; font-weight: 700; color: var(--u-ink-2); }
+.uInput {
+  width: 100%; background: var(--u-surface); border: 1px solid var(--u-hairline-2);
+  border-radius: var(--u-radius); padding: 0.7rem 0.9rem; font-size: 0.9rem; color: var(--u-ink);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.uInput::placeholder { color: var(--u-ink-3); }
+.uInput:focus { outline: none; border-color: var(--u-brand); box-shadow: 0 0 0 3px var(--u-brand-soft); }
+.uInput[aria-invalid="true"] { border-color: #e5484d; }
+.uFieldError { font-size: 0.76rem; color: #e5484d; }
+.uAuthError {
+  background: #fef2f2; border: 1px solid #fecaca; color: #b42318; border-radius: var(--u-radius);
+  padding: 0.65rem 0.85rem; font-size: 0.82rem;
+}
+.uAuthBtn {
+  width: 100%; background: var(--u-brand); color: #fff; border: none; border-radius: var(--u-radius);
+  padding: 0.8rem 1rem; font-size: 0.92rem; font-weight: 700; cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.15s ease;
+  box-shadow: 0 8px 20px -8px rgba(59, 91, 255, 0.55);
+}
+.uAuthBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 26px -10px rgba(59, 91, 255, 0.6); }
+.uAuthBtn:disabled { opacity: 0.6; cursor: default; }
+.uAuthDivider { display: flex; align-items: center; gap: 0.8rem; color: var(--u-ink-3); font-size: 0.75rem; margin: 1.2rem 0; }
+.uAuthDivider::before, .uAuthDivider::after { content: ""; flex: 1; height: 1px; background: var(--u-hairline-2); }
+.uGoogleBtn {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+  background: var(--u-surface); border: 1px solid var(--u-hairline-2); border-radius: var(--u-radius);
+  padding: 0.75rem 1rem; font-size: 0.9rem; font-weight: 600; color: var(--u-ink); cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+.uGoogleBtn:hover { border-color: var(--u-ink-3); background: var(--u-canvas); }
+.uAuthAlt { margin-top: 1.4rem; font-size: 0.85rem; color: var(--u-ink-2); text-align: center; }
+.uAuthAlt a { color: var(--u-brand); font-weight: 600; }
+.uAuthHint { font-size: 0.72rem; color: var(--u-ink-3); }
+
+/* ---------- Account page ---------- */
+.uAccountPage { max-width: 560px; }
+.uAccountRow { display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 0.95rem 0; border-bottom: 1px solid var(--u-hairline); }
+.uAccountRow:last-child { border-bottom: none; }
+.uAccountLabel { font-size: 0.78rem; font-weight: 700; color: var(--u-ink-3); text-transform: uppercase; letter-spacing: 0.03em; }
+.uAccountValue { font-size: 0.92rem; color: var(--u-ink); }
+.uAvatarLg { width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, var(--u-brand), #6f86ff);
+  color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 800; }

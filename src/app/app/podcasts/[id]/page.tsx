@@ -7,11 +7,13 @@ import { friendlyStage } from "../../lib";
 import { WEEKDAY_LABELS } from "../config";
 import PodcastWizard, { WizardHost, WizardTeam } from "../new/PodcastWizard";
 import GenerateNowButton from "../GenerateNowButton";
+import { requireUserPage } from "@/lib/currentUser";
 
 export const dynamic = "force-dynamic";
 
 export default async function ManagePodcastPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  await requireUserPage(`/app/podcasts/${id}`); // managing a podcast requires an account
 
   const podcast = await db.podcast
     .findUnique({

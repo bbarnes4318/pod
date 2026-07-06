@@ -7,6 +7,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { currentUser } from "@/lib/currentUser";
 import {
   queueResearchBriefGenerationJob,
   queueScriptGenerationJob,
@@ -16,9 +17,19 @@ import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episod
 import { isValidVertical } from "@/lib/verticals";
 import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
 
+/** Shared /app creation guard: returns the standard error shape when the
+ *  caller is not signed in. Creation/management requires an account. */
+async function requireSignedIn(): Promise<{ success: false; error: string } | null> {
+  if (!(await currentUser())) {
+    return { success: false as const, error: "Please sign in to create or manage content." };
+  }
+  return null;
+}
+
 /** Lock in a pending take so it can be researched. */
 export async function approveTake(topicId: string) {
   try {
+    const gate = await requireSignedIn(); if (gate) return gate;
     await db.topicCandidate.update({ where: { id: topicId }, data: { status: "approved" } });
     revalidatePath("/app/create");
     revalidatePath("/app/topics");
@@ -31,6 +42,7 @@ export async function approveTake(topicId: string) {
 /** Kick off research for an approved take. */
 export async function researchTake(topicId: string, forceRegenerate = false) {
   try {
+    const gate = await requireSignedIn(); if (gate) return gate;
     if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
       throw new Error("LLM provider is stub. Real research brief generation disabled.");
     }
@@ -53,6 +65,7 @@ export async function produceEpisodeFromTopics(
   ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"]
 ) {
   try {
+    const gate = await requireSignedIn(); if (gate) return gate;
     const res = await buildEpisodeFromTopics({ topicIds, ttsProvider, ttsVoiceOverrides });
     revalidatePath("/app/create");
     revalidatePath("/app/episodes");
@@ -65,6 +78,7 @@ export async function produceEpisodeFromTopics(
 /** Start the debate (script generation) for a draft episode. */
 export async function startDebate(episodeId: string) {
   try {
+    const gate = await requireSignedIn(); if (gate) return gate;
     const job = await queueScriptGenerationJob({ episodeId });
     revalidatePath(`/app/episodes/${episodeId}`);
     return { success: true as const, jobId: job.id };
@@ -84,6 +98,7 @@ export async function createStandaloneEpisode(input: {
   segmentCount: number;
 }) {
   try {
+    const gate = await requireSignedIn(); if (gate) return gate;
     const segmentCount = Math.round(Number(input.segmentCount));
     if (!Number.isFinite(segmentCount) || segmentCount < SEGMENT_MIN || segmentCount > SEGMENT_MAX) {
       return { success: false as const, error: `Segments must be between ${SEGMENT_MIN} and ${SEGMENT_MAX}.` };
