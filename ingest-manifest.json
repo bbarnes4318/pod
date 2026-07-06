@@ -1,0 +1,327 @@
+[
+ {
+  "file": "stinger-1.wav",
+  "name": "Designed, Whoosh, Medium Transition",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "whoosh",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 36d506f7-b031-4bf5-8b50-cad859dde276, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-2.wav",
+  "name": "Designed, Synthetic, Transition, Sweep, Flange",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "synthetic",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id d6845f9c-c5e0-45ee-9462-4fc2089f38b5, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-3.wav",
+  "name": "Designed, Impact, Cinematic, Impact, Hit, Electric Tonne",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "impact",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 0e356c2f-1089-4faa-8143-326dbeee3085, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-4.wav",
+  "name": "Swooshes, Swish, Swoosh, Short, Fast, Multiple 01",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "swish",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id c9829aea-1aba-4cb4-8a46-de5a7f42dd18, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-5.wav",
+  "name": "Designed, Riser, Cymbal, Reverse, Crescendo, Suspense, Climax 02",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "riser",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 566b642a-4341-4ad7-961a-d25000cf8341, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-6.wav",
+  "name": "Musical, Percussion, Ethnic Drum, Small",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "percussion",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id b7c687b0-cfbe-4de9-849b-e23ae7ce5aa3, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-7.wav",
+  "name": "User Interface, Glitch, Glitch Transition 06",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "glitch",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 0244f0f4-eef1-4cbd-9925-b4ed26660eed, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "stinger-8.wav",
+  "name": "Swooshes, Whoosh, Tech, Data Transition 02",
+  "kind": "stinger",
+  "category": null,
+  "tags": [
+   "whoosh",
+   "transition",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 27384f5f-7e69-4f29-916d-b31071cf0112, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "sfx-crowd.wav",
+  "name": "Crowds, Sport, Stadium Crowd, Groan",
+  "kind": "sfx",
+  "category": "crowd",
+  "tags": [
+   "sport",
+   "reaction",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id fb3578ee-0fd8-4305-9cbf-aec8823705de, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "sfx-impact.wav",
+  "name": "Designed, Boom, Cinematic, Deep, Boom, Impact",
+  "kind": "sfx",
+  "category": "impact",
+  "tags": [
+   "boom",
+   "reaction",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 2f0a40ab-f23a-4927-a911-1d70459d52e7, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "sfx-whoosh.wav",
+  "name": "Swooshes, Swish, Short, Bright, Fast, Flyby",
+  "kind": "sfx",
+  "category": "whoosh",
+  "tags": [
+   "swish",
+   "reaction",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 93505bfe-e95d-4b5f-96aa-508d405b7013, artist Epidemic Sound SFX"
+ },
+ {
+  "file": "bed-1-urgent.wav",
+  "name": "Well, That's a Fancy Roadblock",
+  "kind": "bed",
+  "category": null,
+  "tags": [
+   "busy & frantic",
+   "electronica",
+   "experimental electronic",
+   "no vocals",
+   "restless",
+   "strange & weird",
+   "135bpm",
+   "urgent",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 561badd6-0237-4233-9d34-647cc1713929, artist Trevor Kowalski"
+ },
+ {
+  "file": "bed-2-dark.wav",
+  "name": "Code of Violence",
+  "kind": "bed",
+  "category": null,
+  "tags": [
+   "crime scene",
+   "dark",
+   "dark ambient",
+   "mysterious",
+   "no vocals",
+   "suspense",
+   "102bpm",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 8b36c332-a349-4289-b02f-b96a294c4b6b, artist Dian Shuai"
+ },
+ {
+  "file": "bed-3-neutral.wav",
+  "name": "Observatory",
+  "kind": "bed",
+  "category": null,
+  "tags": [
+   "corporate",
+   "dreamy",
+   "electronic",
+   "hopeful",
+   "no vocals",
+   "pulses",
+   "128bpm",
+   "neutral",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 0c47304b-4e50-43b2-8230-2397e7991316, artist Out To The World"
+ },
+ {
+  "file": "bed-4-upbeat.wav",
+  "name": "Feelings",
+  "kind": "bed",
+  "category": null,
+  "tags": [
+   "dreamy",
+   "funk",
+   "happy",
+   "no vocals",
+   "119bpm",
+   "upbeat",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id f0c522fe-8214-4c36-b894-b13da20aeef8, artist Ryan James Carr"
+ },
+ {
+  "file": "bed-5-cinematic.wav",
+  "name": "Rise to the Power",
+  "kind": "bed",
+  "category": null,
+  "tags": [
+   "action",
+   "adventure",
+   "epic",
+   "no vocals",
+   "orchestral hybrid",
+   "suspense",
+   "101bpm",
+   "cinematic",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id bb1ba429-b34e-4995-8000-f798ec24b95b, artist Siddharth Parashar"
+ },
+ {
+  "file": "theme-intro-1.wav",
+  "name": "Palantir",
+  "kind": "theme_intro",
+  "category": null,
+  "tags": [
+   "dark",
+   "hopeful",
+   "no vocals",
+   "rock",
+   "93bpm",
+   "intro",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id 5d9d88ad-909c-4d76-8509-3827950214cd, artist Rymdklang Soundtracks, edit-for-length via ES Track Adaptation"
+ },
+ {
+  "file": "theme-intro-2.wav",
+  "name": "Crunching",
+  "kind": "theme_intro",
+  "category": null,
+  "tags": [
+   "angry",
+   "dark",
+   "no vocals",
+   "trap",
+   "139bpm",
+   "intro",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id d26c0d20-d2d2-40c0-81f8-07c28673a754, artist Azucares, edit-for-length via ES Track Adaptation"
+ },
+ {
+  "file": "theme-outro-1.wav",
+  "name": "All the Wonders",
+  "kind": "theme_outro",
+  "category": null,
+  "tags": [
+   "adventure",
+   "contemporary classical",
+   "epic",
+   "happy",
+   "no vocals",
+   "orchestral",
+   "118bpm",
+   "outro",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id f38cc722-580a-4721-b594-b35e8b1a695c, artist Adriel Fair, locally trimmed to 13000ms from full track"
+ },
+ {
+  "file": "theme-outro-2.wav",
+  "name": "Hold It Down",
+  "kind": "theme_outro",
+  "category": null,
+  "tags": [
+   "funk",
+   "laid back",
+   "no vocals",
+   "smooth",
+   "101bpm",
+   "outro",
+   "epidemic"
+  ],
+  "durationMs": null,
+  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
+  "licenseNote": "ES id b52d1b96-a2f3-44c0-bad1-cefc5b62d254, artist Ryan James Carr, locally trimmed to 13000ms from full track"
+ }
+]

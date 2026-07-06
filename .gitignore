@@ -49,3 +49,4 @@ next-env.d.ts
 # ...except the shipped planner variety-harness artifacts (cue sheets,
 # report, before/after renders) - regenerable via npm run demo:sound-variety
 !/samples/planner-variety/
+ingest-assets/

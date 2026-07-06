@@ -28,6 +28,10 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+# next start reads next.config at RUNTIME — without this file in the runner
+# stage, every custom setting (e.g. serverActions.bodySizeLimit for asset
+# uploads) silently reverts to Next defaults.
+COPY --from=builder /app/next.config.ts ./next.config.ts
 
 EXPOSE 3000
 
