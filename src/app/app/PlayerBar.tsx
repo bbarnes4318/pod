@@ -59,6 +59,8 @@ function fmt(t: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+const OPEN_KEY = "tm.playerOpen";
+
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const waveRef = useRef<HTMLDivElement | null>(null);
@@ -66,10 +68,36 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [open, setOpen] = useState(true);
+
+  // Session-persisted open/closed state. Read in an effect (not lazy init)
+  // so the SSR and first client render agree.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(OPEN_KEY) === "0") setOpen(false);
+    } catch {
+      // sessionStorage unavailable (private mode etc.) — stay open
+    }
+  }, []);
+
+  const setOpenPersist = useCallback((v: boolean) => {
+    setOpen(v);
+    try {
+      sessionStorage.setItem(OPEN_KEY, v ? "1" : "0");
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const closePlayer = useCallback(() => {
+    audioRef.current?.pause(); // closing pauses playback
+    setOpenPersist(false);
+  }, [setOpenPersist]);
 
   const play = useCallback((t: Track) => {
     const a = audioRef.current;
     if (!a) return;
+    setOpenPersist(true); // starting playback always resurfaces the bar
     if (track?.id === t.id) {
       if (a.paused) void a.play();
       else a.pause();
@@ -79,7 +107,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     a.src = t.audioUrl;
     a.currentTime = 0;
     void a.play();
-  }, [track]);
+  }, [track, setOpenPersist]);
 
   const toggle = useCallback(() => {
     const a = audioRef.current;
@@ -97,6 +125,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const playAt = useCallback((t: Track, frac: number) => {
     const a = audioRef.current;
     if (!a) return;
+    setOpenPersist(true); // starting playback always resurfaces the bar
     if (track?.id === t.id && a.duration) {
       a.currentTime = Math.max(0, Math.min(0.999, frac)) * a.duration;
       if (a.paused) void a.play();
@@ -110,7 +139,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     };
     a.addEventListener("loadedmetadata", onMeta);
     void a.play();
-  }, [track]);
+  }, [track, setOpenPersist]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -154,6 +183,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
       />
 
+      {open ? (
       <div className="uPlayerBar" role="region" aria-label="Player">
         {track ? (
           <>
@@ -215,7 +245,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             Pick an episode to start listening
           </div>
         )}
+        <button className="uPbBtn uPbClose" aria-label="Close player" title="Close player" onClick={closePlayer}>
+          ✕
+        </button>
       </div>
+      ) : (
+        <button className="uPlayerPill" aria-label="Open player" onClick={() => setOpenPersist(true)}>
+          <span aria-hidden="true">🎧</span>
+          <span className="uPillLabel">{track ? track.title : "Player"}</span>
+        </button>
+      )}
     </Ctx.Provider>
   );
 }

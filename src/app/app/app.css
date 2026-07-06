@@ -21,6 +21,7 @@
   --u-radius-lg: 18px;
   --u-shadow: 0 1px 2px rgba(22, 24, 29, 0.04), 0 8px 24px -12px rgba(22, 24, 29, 0.1);
   --u-shadow-lift: 0 2px 4px rgba(22, 24, 29, 0.05), 0 16px 40px -16px rgba(22, 24, 29, 0.16);
+  --u-player-h: 72px;
 
   min-height: 100vh;
   display: flex;
@@ -134,7 +135,13 @@ body:has(.userSurface) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding-bottom: 132px; /* clear the fixed player bar (72px) + breathing room */
+  padding-bottom: calc(2.5rem + env(safe-area-inset-bottom)); /* player closed — content uses full height */
+}
+
+/* Reserve the player's height (+ mobile safe area) only while the bar is
+   mounted, so closing the player gives the space back. */
+.userSurface:has(.uPlayerBar) .uMain {
+  padding-bottom: calc(var(--u-player-h) + env(safe-area-inset-bottom) + 60px);
 }
 
 .uTopbar {
@@ -488,8 +495,8 @@ body:has(.userSurface) {
   display: flex;
   align-items: center;
   gap: 1.1rem;
-  min-height: 72px;
-  padding: 0.7rem 1.6rem;
+  min-height: calc(var(--u-player-h) + env(safe-area-inset-bottom));
+  padding: 0.7rem 1.6rem calc(0.7rem + env(safe-area-inset-bottom));
   background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(14px);
   border-top: 1px solid var(--u-hairline-2);
@@ -534,12 +541,47 @@ body:has(.userSurface) {
 
 .uPbEmpty { color: var(--u-ink-3); font-size: 0.8rem; display: flex; align-items: center; gap: 0.6rem; }
 
+.uPbClose { margin-left: auto; flex-shrink: 0; font-size: 0.8rem; }
+
+/* Reopen handle shown while the player is closed */
+.uPlayerPill {
+  position: fixed;
+  right: 1.1rem;
+  bottom: calc(1.1rem + env(safe-area-inset-bottom));
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 240px;
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--u-hairline-2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--u-shadow-lift);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--u-ink-2);
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+}
+.uPlayerPill:hover { color: var(--u-ink); border-color: var(--u-brand); transform: translateY(-1px); }
+.uPillLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 @media (max-width: 900px) {
   .uSidebar { display: none; }
   .uPlayerBar { left: 0; }
   .uTopbar, .uContent { padding-left: 1.1rem; padding-right: 1.1rem; }
   .uHero { grid-template-columns: 1fr; }
   .uHeroCover { max-width: 260px; }
+}
+
+/* Narrow phones: drop the waveform + timestamps so the bar keeps a single
+   72px row (the reserved space depends on it) instead of overflowing. */
+@media (max-width: 700px) {
+  .uPbWave { display: none; }
+  .uPbTime { display: none; }
+  .uPbInfo { flex: 1; width: auto; min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
