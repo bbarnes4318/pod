@@ -287,10 +287,20 @@ export interface SoundDesignAssetSet {
   /** Reaction SFX indexed by category; multiple per category allowed. */
   sfxByCategory: Map<SfxCategory, LoadedAsset[]>;
   highlights: Map<string, LoadedAsset>;
+  /** Every loaded asset by id — how ProductionPlan cues resolve to files. */
+  byId: Map<string, LoadedAsset>;
 }
 
 export function emptyAssetSet(): SoundDesignAssetSet {
-  return { intro: null, outro: null, bed: null, stingers: [], sfxByCategory: new Map(), highlights: new Map() };
+  return {
+    intro: null,
+    outro: null,
+    bed: null,
+    stingers: [],
+    sfxByCategory: new Map(),
+    highlights: new Map(),
+    byId: new Map(),
+  };
 }
 
 /** Pick one SFX asset for a placement, deterministic per line. */
@@ -321,6 +331,12 @@ export interface SoundDesignSummary {
   reactions: Array<{ lineIndex: number; asset: string; reason: string; atMs: number }>;
   highlightCount: number;
   highlights: Array<{ lineIndex: number; asset: string }>;
+  /** Set when SOUND_DESIGN_PLANNER rendered this episode from a cue sheet. */
+  planner?: boolean;
+  plannerVersion?: string;
+  stingers?: Array<{ lineIndex: number; asset: string; reason: string; atMs: number }>;
+  /** Deliberate holds — the plan's documented restraint. */
+  silences?: Array<{ lineIndex: number; reason: string }>;
 }
 
 /**

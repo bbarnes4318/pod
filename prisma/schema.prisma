@@ -392,6 +392,24 @@ model SoundDesignConfig {
   updatedAt         DateTime @updatedAt
 }
 
+// One row per sound asset a rendered episode consumed (stingers, beds,
+// reaction SFX). The production planner reads the last N episodes' rows as
+// its anti-repetition cooldown; rows are rewritten atomically when an
+// episode re-renders so re-runs never double-count.
+model SoundCueUsage {
+  id        String   @id @default(uuid())
+  episodeId String
+  scriptId  String?
+  assetId   String
+  assetName String?
+  cueType   String   // "stinger" | "bed_change" | "reaction"
+  usedAt    DateTime @default(now())
+
+  @@index([assetId, usedAt])
+  @@index([episodeId])
+  @@index([usedAt])
+}
+
 model JobLog {
   id        String   @id @default(uuid())
   jobType   String
