@@ -1,10 +1,12 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueResearchBriefGenerationJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
 
 export async function triggerResearchBriefGeneration(topicId: string, forceRegenerate = false) {
+  await requireAdmin();
   try {
     // 1. Guard against stub LLM provider
     if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
@@ -38,6 +40,7 @@ export async function triggerResearchBriefGeneration(topicId: string, forceRegen
 }
 
 export async function deleteResearchBrief(id: string) {
+  await requireAdmin();
   try {
     await db.researchBrief.delete({
       where: { id },

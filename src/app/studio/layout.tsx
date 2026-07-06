@@ -2,8 +2,13 @@ import React from "react";
 import Link from "next/link";
 import StudioNav from "./StudioNav";
 import "./studio.css";
+import { requireAdminPage } from "@/lib/adminAuth";
 
-export default function StudioLayout({ children }: { children: React.ReactNode }) {
+export default async function StudioLayout({ children }: { children: React.ReactNode }) {
+  // Second line of defense behind proxy.ts — 404s non-admin requests even if
+  // the proxy matcher ever stops covering this segment.
+  await requireAdminPage();
+
   return (
     <div className="studioShell">
       <header className="studioTopbar">

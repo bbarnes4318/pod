@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./layout.css";
 import { db } from "@/lib/db";
 import { getRedisClient } from "@/lib/redis";
+import { requireAdminPage } from "@/lib/adminAuth";
 import SidebarNav from "./SidebarNav";
 
 export const dynamic = "force-dynamic";
@@ -37,6 +38,10 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // Second line of defense behind proxy.ts — 404s non-admin requests even if
+  // the proxy matcher ever stops covering this segment.
+  await requireAdminPage();
+
   const { dbConnected, redisConnected } = await checkInfrastructureStatus();
 
   return (

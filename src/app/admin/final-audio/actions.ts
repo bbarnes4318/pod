@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueFinalAudioStitchJob } from "@/lib/queue/podcastQueue";
 import {
@@ -10,6 +11,7 @@ import {
 import { revalidatePath } from "next/cache";
 
 export async function fetchFinalAudioEligibility(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -122,6 +124,7 @@ export async function triggerFinalAudioStitch(
     highlights?: Array<{ lineIndex: number; assetId: string }>;
   }
 ) {
+  await requireAdmin();
   try {
     const el = await fetchFinalAudioEligibility(scriptId);
     if (!el.eligible) {
@@ -182,6 +185,7 @@ export async function triggerFinalAudioStitch(
 /** Sound-design context for the stitch console: episode settings, show
  *  defaults, and the cleared highlight assets available for placement. */
 export async function fetchSoundDesignContext(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -215,6 +219,7 @@ export async function fetchSoundDesignContext(scriptId: string) {
 }
 
 export async function fetchLatestAudioStitchJob(scriptId: string) {
+  await requireAdmin();
   try {
     const latestJob = await db.jobLog.findFirst({
       where: {
@@ -247,6 +252,7 @@ export async function fetchLatestAudioStitchJob(scriptId: string) {
 }
 
 export async function fetchFinalAudioDetail(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -306,6 +312,7 @@ export async function fetchFinalAudioDashboard(filters?: {
   episodeStatus?: string;
   finalAudioStatus?: string;
 }) {
+  await requireAdmin();
   try {
     const where: any = {
       status: "approved",

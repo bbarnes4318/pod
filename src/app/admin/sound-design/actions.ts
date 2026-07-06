@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getFileDurationMs } from "@/lib/audio/assembly";
@@ -41,6 +42,7 @@ function serializeAsset(a: {
 }
 
 export async function fetchSoundDesignData() {
+  await requireAdmin();
   try {
     const [assets, config] = await Promise.all([
       db.audioAsset.findMany({ orderBy: [{ kind: "asc" }, { createdAt: "desc" }] }),
@@ -71,6 +73,7 @@ export async function fetchSoundDesignData() {
  * hold the rights or the upload is rejected outright.
  */
 export async function uploadAudioAsset(formData: FormData) {
+  await requireAdmin();
   try {
     const name = String(formData.get("name") || "").trim();
     const kind = String(formData.get("kind") || "").trim();
@@ -147,6 +150,7 @@ export async function uploadAudioAsset(formData: FormData) {
 }
 
 export async function setAssetActive(assetId: string, isActive: boolean) {
+  await requireAdmin();
   try {
     await db.audioAsset.update({ where: { id: assetId }, data: { isActive } });
     revalidatePath("/admin/sound-design");
@@ -157,6 +161,7 @@ export async function setAssetActive(assetId: string, isActive: boolean) {
 }
 
 export async function deleteAudioAsset(assetId: string) {
+  await requireAdmin();
   try {
     // Unhook from the show config first so we never point at a dead id.
     const config = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
@@ -188,6 +193,7 @@ export async function updateSoundDesignConfig(input: {
   defaultStyle?: string;
   defaultSfxDensity?: string;
 }) {
+  await requireAdmin();
   try {
     if (input.defaultStyle !== undefined && !isProductionStyle(input.defaultStyle)) {
       throw new Error(`Style must be one of ${PRODUCTION_STYLES.join(", ")}.`);
@@ -223,6 +229,7 @@ export async function updateSoundDesignConfig(input: {
  * auto-seeds on boot when the library is empty (soundDesignSeedService).
  */
 export async function seedStarterSoundPack() {
+  await requireAdmin();
   try {
     const res = await seedStarterSoundPackCore();
     revalidatePath("/admin/sound-design");

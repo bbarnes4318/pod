@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import { TTS_ELIGIBLE_EPISODE_STATUSES } from "@/lib/services/ttsSegmentService";
@@ -44,6 +45,7 @@ async function prepareVoiceSelection(
 // or non-passed fact check — come back as warnings so the operator console
 // stays fully usable instead of turning into a fact-check error wall.
 export async function fetchTtsEligibility(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -92,6 +94,7 @@ export async function triggerTtsGeneration(
   voiceOverrides?: TtsVoiceOverrides,
   saveToEpisode?: boolean
 ) {
+  await requireAdmin();
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -115,6 +118,7 @@ export async function triggerTtsRange(
   voiceOverrides?: TtsVoiceOverrides,
   saveToEpisode?: boolean
 ) {
+  await requireAdmin();
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -143,6 +147,7 @@ export async function triggerTtsForHost(
   voiceOverrides?: TtsVoiceOverrides,
   saveToEpisode?: boolean
 ) {
+  await requireAdmin();
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -171,6 +176,7 @@ export async function retryTtsSegment(
   voiceOverrides?: TtsVoiceOverrides,
   saveToEpisode?: boolean
 ) {
+  await requireAdmin();
   try {
     const check = await fetchTtsEligibility(scriptId);
     if (!check.success || !check.eligible) {
@@ -193,6 +199,7 @@ export async function retryTtsSegment(
 }
 
 export async function fetchTtsSegments(scriptId: string) {
+  await requireAdmin();
   try {
     const segments = await db.audioSegment.findMany({
       where: { scriptId },

@@ -1,10 +1,12 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueFactCheckJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
 
 export async function triggerFactCheck(scriptId: string, forceRecheck = false) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -34,6 +36,7 @@ export async function fetchFactChecks(filters: {
   provider?: string;
   search?: string;
 }) {
+  await requireAdmin();
   try {
     const where: any = {};
     if (filters.status) {
@@ -98,6 +101,7 @@ export async function fetchFactChecks(filters: {
 }
 
 export async function fetchLatestFactCheckForScript(scriptId: string) {
+  await requireAdmin();
   try {
     const f = await db.factCheckResult.findFirst({
       where: { scriptId },
@@ -123,6 +127,7 @@ export async function fetchLatestFactCheckForScript(scriptId: string) {
 }
 
 export async function fetchFactCheckDetail(factCheckId: string) {
+  await requireAdmin();
   try {
     const f = await db.factCheckResult.findUnique({
       where: { id: factCheckId },
@@ -161,6 +166,7 @@ export async function fetchFactCheckDetail(factCheckId: string) {
 }
 
 export async function overrideFactCheck(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },

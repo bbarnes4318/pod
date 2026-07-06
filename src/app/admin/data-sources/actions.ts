@@ -1,11 +1,13 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueIngestionJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
 import { getOddsApiKey, getRssNewsFeeds } from "@/lib/env";
 
 export async function fetchIngestionStats() {
+  await requireAdmin();
   try {
     const leagues = await db.league.count();
     const teams = await db.team.count();
@@ -26,6 +28,7 @@ export async function fetchIngestionStats() {
 }
 
 export async function fetchRecentJobLogs() {
+  await requireAdmin();
   try {
     const logs = await db.jobLog.findMany({
       take: 10,
@@ -56,6 +59,7 @@ interface IngestParams {
 }
 
 export async function triggerDataIngestion(params: IngestParams) {
+  await requireAdmin();
   try {
     const provider = params.providerType.toLowerCase();
     

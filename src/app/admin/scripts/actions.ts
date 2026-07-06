@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { validateScriptContent, sanitizeScriptContent, ValidationSummary } from "@/lib/services/scriptValidation";
@@ -87,6 +88,7 @@ export async function fetchScripts(filters: {
   version?: string | number;
   search?: string;
 }) {
+  await requireAdmin();
   try {
     const where: any = {};
     if (filters.status) {
@@ -137,6 +139,7 @@ export async function fetchScripts(filters: {
 }
 
 export async function fetchScriptForReview(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -210,6 +213,7 @@ export async function fetchScriptForReview(scriptId: string) {
 }
 
 export async function saveScriptEdits(scriptId: string, updatedContent: any) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {
@@ -287,6 +291,7 @@ export async function saveScriptEdits(scriptId: string, updatedContent: any) {
 }
 
 export async function saveScriptAsNewVersion(scriptId: string, updatedContent: any) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {
@@ -369,6 +374,7 @@ export async function saveScriptAsNewVersion(scriptId: string, updatedContent: a
 }
 
 export async function validateScript(scriptId: string, optionalContent?: any) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {
@@ -409,6 +415,7 @@ export async function validateScript(scriptId: string, optionalContent?: any) {
 }
 
 export async function approveScript(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {
@@ -547,6 +554,7 @@ export async function approveScript(scriptId: string) {
 }
 
 export async function rejectScript(scriptId: string, reason: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {
@@ -594,6 +602,7 @@ export async function rejectScript(scriptId: string, reason: string) {
 }
 
 export async function markScriptNeedsRevision(scriptId: string, reason?: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
     if (!script) {

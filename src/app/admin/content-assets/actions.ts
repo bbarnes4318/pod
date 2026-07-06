@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueContentAssetGenerationJob } from "@/lib/queue/podcastQueue";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
@@ -15,6 +16,7 @@ export async function triggerContentAssetGeneration(
     providerOverride?: string;
   } = {}
 ) {
+  await requireAdmin();
   try {
     // 1. Stricter eligibility checks on status
     const script = await db.script.findUnique({
@@ -54,6 +56,7 @@ export async function triggerContentAssetGeneration(
 }
 
 export async function fetchContentAssetEligibility(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -240,6 +243,7 @@ export async function fetchContentAssetEligibility(scriptId: string) {
 }
 
 export async function fetchContentAssetDetail(scriptId: string) {
+  await requireAdmin();
   try {
     const script = await db.script.findUnique({
       where: { id: scriptId },
@@ -349,6 +353,7 @@ export async function fetchContentAssetDashboard(filters: {
   contentStatus?: string;
   search?: string;
 } = {}) {
+  await requireAdmin();
   try {
     const whereClause: any = {};
 
@@ -424,6 +429,7 @@ export async function fetchContentAssetDashboard(filters: {
 }
 
 export async function fetchLatestContentAssetJob(scriptId: string) {
+  await requireAdmin();
   try {
     const recentJobs = await db.jobLog.findMany({
       where: { jobType: "content:generate-assets" },

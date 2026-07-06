@@ -1,10 +1,12 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueTopicGenerationJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
 
 export async function approveTopic(id: string) {
+  await requireAdmin();
   try {
     await db.topicCandidate.update({
       where: { id },
@@ -18,6 +20,7 @@ export async function approveTopic(id: string) {
 }
 
 export async function rejectTopic(id: string) {
+  await requireAdmin();
   try {
     await db.topicCandidate.update({
       where: { id },
@@ -31,6 +34,7 @@ export async function rejectTopic(id: string) {
 }
 
 export async function resetTopicToPending(id: string) {
+  await requireAdmin();
   try {
     await db.topicCandidate.update({
       where: { id },
@@ -44,6 +48,7 @@ export async function resetTopicToPending(id: string) {
 }
 
 export async function fetchTopicStats() {
+  await requireAdmin();
   try {
     const games = await db.game.count();
     const news = await db.newsItem.count();
@@ -73,6 +78,7 @@ interface GenerateParams {
 }
 
 export async function triggerTopicGeneration(params: GenerateParams) {
+  await requireAdmin();
   try {
     // 1. Guard against stub LLM provider
     if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {

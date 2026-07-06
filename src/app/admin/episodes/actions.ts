@@ -1,11 +1,13 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueEpisodeBuildJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { revalidatePath } from "next/cache";
 
 export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
+  await requireAdmin();
   try {
     // Submit the BullMQ building job
     const job = await queueEpisodeBuildJob({
@@ -38,6 +40,7 @@ export async function createEpisodeFromSelectedTopics(
   productionStyle?: string,
   sfxDensity?: string
 ) {
+  await requireAdmin();
   try {
     const res = await buildEpisodeFromTopics({
       topicIds,
@@ -58,6 +61,7 @@ export async function createEpisodeFromSelectedTopics(
 
 /** Active debate hosts for voice pickers (slug is the override key). */
 export async function fetchActiveDebateHosts() {
+  await requireAdmin();
   try {
     const hosts = await db.aiHost.findMany({
       where: { isActive: true, name: { in: ["Max Voltage", "Dr. Linebreak"] } },
@@ -79,6 +83,7 @@ export async function fetchActiveDebateHosts() {
 }
 
 export async function updateEpisodeMetadata(episodeId: string, title: string, description: string) {
+  await requireAdmin();
   try {
     await db.episode.update({
       where: { id: episodeId },
@@ -97,6 +102,7 @@ export async function updateEpisodeMetadata(episodeId: string, title: string, de
 }
 
 export async function deleteDraftEpisode(episodeId: string) {
+  await requireAdmin();
   try {
     const ep = await db.episode.findUnique({
       where: { id: episodeId },
@@ -153,6 +159,7 @@ export async function fetchEligibleTopics(filters: {
   sport?: string;
   minDebateScore?: number;
 }) {
+  await requireAdmin();
   try {
     const minScore = filters.minDebateScore !== undefined ? Number(filters.minDebateScore) : 70;
     const where: any = {
@@ -207,6 +214,7 @@ export async function fetchEligibleTopics(filters: {
 }
 
 export async function triggerScriptGeneration(episodeId: string, forceRegenerate?: boolean) {
+  await requireAdmin();
   try {
     const job = await queueScriptGenerationJob({
       episodeId,
@@ -221,6 +229,7 @@ export async function triggerScriptGeneration(episodeId: string, forceRegenerate
 }
 
 export async function fetchEpisodeScripts(episodeId: string) {
+  await requireAdmin();
   try {
     const scripts = await db.script.findMany({
       where: { episodeId },

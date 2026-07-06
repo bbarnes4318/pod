@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
@@ -35,6 +36,7 @@ interface HostInput {
 }
 
 export async function createHost(input: HostInput) {
+  await requireAdmin();
   try {
     // 1. Basic validation
     if (!input.name.trim()) throw new Error("Name is required");
@@ -91,6 +93,7 @@ export async function createHost(input: HostInput) {
 }
 
 export async function updateHost(id: string, input: HostInput) {
+  await requireAdmin();
   try {
     // 1. Basic validation
     if (!id) throw new Error("Host ID is required for update");
@@ -153,6 +156,7 @@ export async function updateHost(id: string, input: HostInput) {
 }
 
 export async function toggleHostStatus(id: string, isActive: boolean) {
+  await requireAdmin();
   try {
     if (!id) throw new Error("Host ID is required");
 
@@ -169,6 +173,7 @@ export async function toggleHostStatus(id: string, isActive: boolean) {
 }
 
 export async function getElevenLabsVoices() {
+  await requireAdmin();
   try {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
@@ -216,6 +221,7 @@ export async function getElevenLabsVoices() {
 }
 
 export async function getCartesiaVoices() {
+  await requireAdmin();
   try {
     const apiKey = process.env.CARTESIA_API_KEY;
     if (!apiKey) {

@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import {
@@ -11,6 +12,7 @@ import {
 import { getPodcastConfig, validatePodcastConfig } from "@/lib/services/rssFeedService";
 
 export async function fetchRssDashboard(filters?: { status?: string; search?: string }) {
+  await requireAdmin();
   const whereClause: any = {};
 
   if (filters?.status) {
@@ -45,6 +47,7 @@ export async function fetchRssDashboard(filters?: { status?: string; search?: st
 }
 
 export async function fetchRssDetail(scriptId: string) {
+  await requireAdmin();
   const script = await db.script.findUnique({
     where: { id: scriptId },
     include: {
@@ -60,10 +63,12 @@ export async function fetchRssDetail(scriptId: string) {
 }
 
 export async function fetchRssEligibility(scriptId: string) {
+  await requireAdmin();
   return await validateEpisodeForRss(scriptId);
 }
 
 export async function prepareEpisodeForRssAction(scriptId: string) {
+  await requireAdmin();
   const result = await prepareEpisodeForPublishing(scriptId);
   revalidatePath("/admin/rss");
   revalidatePath(`/admin/rss/${scriptId}`);
@@ -71,6 +76,7 @@ export async function prepareEpisodeForRssAction(scriptId: string) {
 }
 
 export async function publishEpisodeAction(scriptId: string, forceRepublish = false) {
+  await requireAdmin();
   const result = await publishEpisode(scriptId, { forceRepublish });
   revalidatePath("/admin/rss");
   revalidatePath(`/admin/rss/${scriptId}`);
@@ -78,6 +84,7 @@ export async function publishEpisodeAction(scriptId: string, forceRepublish = fa
 }
 
 export async function unpublishEpisodeAction(scriptId: string) {
+  await requireAdmin();
   const result = await unpublishEpisode(scriptId);
   revalidatePath("/admin/rss");
   revalidatePath(`/admin/rss/${scriptId}`);
@@ -85,6 +92,7 @@ export async function unpublishEpisodeAction(scriptId: string) {
 }
 
 export async function fetchPodcastConfigChecklist() {
+  await requireAdmin();
   const config = getPodcastConfig();
   const missingKeys = validatePodcastConfig(config);
   return {
@@ -95,6 +103,7 @@ export async function fetchPodcastConfigChecklist() {
 }
 
 export async function fetchLatestRssJob(scriptId: string) {
+  await requireAdmin();
   const jobs = await db.jobLog.findMany({
     where: {
       jobType: {

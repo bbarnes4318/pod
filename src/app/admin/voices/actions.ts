@@ -1,5 +1,6 @@
 "use server";
 
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
@@ -8,6 +9,7 @@ import { revalidatePath } from "next/cache";
  * provider to elevenlabs and stores the chosen voice ID.
  */
 export async function assignElevenLabsVoiceToHost(hostId: string, voiceId: string) {
+  await requireAdmin();
   try {
     if (!hostId) throw new Error("Host is required.");
     if (!voiceId) throw new Error("Voice is required.");
