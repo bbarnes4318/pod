@@ -34,11 +34,19 @@ export function validateScriptContent(
   content: any,
   episodeContext: {
     allowedSourceRefs: Set<string>;
-    hostA: { id: string };
-    hostB: { id: string };
+    hostA: { id: string; name: string };
+    hostB: { id: string; name: string };
     unsafeClaims: string[];
   }
 ): ValidationSummary {
+  // Whichever two hosts this episode was cast with — no hardcoded names.
+  const castByName = new Map<string, { id: string; name: string }>([
+    [episodeContext.hostA.name.toLowerCase(), episodeContext.hostA],
+    [episodeContext.hostB.name.toLowerCase(), episodeContext.hostB],
+  ]);
+  const hostForSpeaker = (speakerName: unknown) =>
+    typeof speakerName === "string" ? castByName.get(speakerName.trim().toLowerCase()) : undefined;
+
   const summary: ValidationSummary = {
     factualLineCount: 0,
     factualLineWithEvidenceCount: 0,
@@ -52,7 +60,7 @@ export function validateScriptContent(
     cleanedEvidenceRefCount: content?.safety?.cleanedEvidenceRefCount || 0,
     invalidSpeakerCount: 0,
     totalLineCount: 0,
-    hostLineShare: { "Max Voltage": 0, "Dr. Linebreak": 0 },
+    hostLineShare: { [episodeContext.hostA.name]: 0, [episodeContext.hostB.name]: 0 },
     lastValidatedAt: new Date().toISOString(),
     validationPassed: false,
     reasons: [],
@@ -69,8 +77,10 @@ export function validateScriptContent(
       return summary;
     }
 
-    let maxVoltageCount = 0;
-    let drLinebreakCount = 0;
+    const lineCountByHostId = new Map<string, number>([
+      [episodeContext.hostA.id, 0],
+      [episodeContext.hostB.id, 0],
+    ]);
 
     for (let sIdx = 0; sIdx < content.segments.length; sIdx++) {
       const seg = content.segments[sIdx];
@@ -108,28 +118,26 @@ export function validateScriptContent(
           continue;
         }
 
-        // Validate speakerName
-        if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+        // Validate speakerName against the episode's cast (either host).
+        const speakerHost = hostForSpeaker(line.speakerName);
+        if (!speakerHost) {
           summary.invalidSpeakerCount++;
-          summary.reasons.push(`Line ${summary.totalLineCount}: Invalid speakerName '${line.speakerName}'. Only 'Max Voltage' and 'Dr. Linebreak' allowed.`);
+          summary.reasons.push(
+            `Line ${summary.totalLineCount}: Invalid speakerName '${line.speakerName}'. Only '${episodeContext.hostA.name}' and '${episodeContext.hostB.name}' allowed.`
+          );
           continue;
         }
 
-        // Validate speakerHostId
-        if (line.speakerName === "Max Voltage" && line.speakerHostId !== episodeContext.hostA.id) {
+        // Validate speakerHostId matches the host that speakerName resolves to.
+        if (line.speakerHostId !== speakerHost.id) {
           summary.invalidSpeakerCount++;
-          summary.reasons.push(`Line ${summary.totalLineCount}: Max Voltage speakerHostId does not match the active Max Voltage profile ID.`);
-        } else if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== episodeContext.hostB.id) {
-          summary.invalidSpeakerCount++;
-          summary.reasons.push(`Line ${summary.totalLineCount}: Dr. Linebreak speakerHostId does not match the active Dr. Linebreak profile ID.`);
+          summary.reasons.push(
+            `Line ${summary.totalLineCount}: ${speakerHost.name} speakerHostId does not match the cast host profile ID.`
+          );
         }
 
-        // Track speaker count
-        if (line.speakerName === "Max Voltage") {
-          maxVoltageCount++;
-        } else if (line.speakerName === "Dr. Linebreak") {
-          drLinebreakCount++;
-        }
+        // Track speaker count by host id.
+        lineCountByHostId.set(speakerHost.id, (lineCountByHostId.get(speakerHost.id) ?? 0) + 1);
 
         // Validate unsafe claims (on tag-free spoken content)
         const textLower = stripAudioTags(String(line.text)).toLowerCase();
@@ -221,9 +229,11 @@ export function validateScriptContent(
       summary.evidenceCoveragePercent = 100;
     }
 
+    const shareA = episodeContext.hostA.name;
+    const shareB = episodeContext.hostB.name;
     if (summary.totalLineCount > 0) {
-      summary.hostLineShare["Max Voltage"] = Math.round((maxVoltageCount / summary.totalLineCount) * 100);
-      summary.hostLineShare["Dr. Linebreak"] = Math.round((drLinebreakCount / summary.totalLineCount) * 100);
+      summary.hostLineShare[shareA] = Math.round(((lineCountByHostId.get(episodeContext.hostA.id) ?? 0) / summary.totalLineCount) * 100);
+      summary.hostLineShare[shareB] = Math.round(((lineCountByHostId.get(episodeContext.hostB.id) ?? 0) / summary.totalLineCount) * 100);
     }
 
     // Strict validation assertions
@@ -231,8 +241,8 @@ export function validateScriptContent(
       summary.reasons.push(`Total lines count is ${summary.totalLineCount}, which is under the minimum of 40 lines.`);
     }
 
-    if (summary.hostLineShare["Max Voltage"] < 25 || summary.hostLineShare["Dr. Linebreak"] < 25) {
-      summary.reasons.push(`Dialogue split is unbalanced. Max Voltage has ${summary.hostLineShare["Max Voltage"]}%, Dr. Linebreak has ${summary.hostLineShare["Dr. Linebreak"]}%. Each must have at least 25%.`);
+    if (summary.hostLineShare[shareA] < 25 || summary.hostLineShare[shareB] < 25) {
+      summary.reasons.push(`Dialogue split is unbalanced. ${shareA} has ${summary.hostLineShare[shareA]}%, ${shareB} has ${summary.hostLineShare[shareB]}%. Each must have at least 25%.`);
     }
 
     if (summary.evidenceCoveragePercent < 90) {
@@ -251,10 +261,14 @@ export function sanitizeScriptContent(
   content: any,
   episodeContext: {
     allowedSourceRefs: Set<string>;
-    hostA: { id: string };
-    hostB: { id: string };
+    hostA: { id: string; name: string };
+    hostB: { id: string; name: string };
   }
 ): { sanitizedContent: any; cleanedEvidenceRefCount: number } {
+  const hostIdByName = new Map<string, string>([
+    [episodeContext.hostA.name.toLowerCase(), episodeContext.hostA.id],
+    [episodeContext.hostB.name.toLowerCase(), episodeContext.hostB.id],
+  ]);
   let cleanedCount = 0;
 
   if (!content || typeof content !== "object") {
@@ -281,11 +295,10 @@ export function sanitizeScriptContent(
       // Normalize lineIndex values globally within segments
       line.lineIndex = globalIndex++;
 
-      // Ensure speakerHostId matches the active speaker ID
-      if (line.speakerName === "Max Voltage") {
-        line.speakerHostId = episodeContext.hostA.id;
-      } else if (line.speakerName === "Dr. Linebreak") {
-        line.speakerHostId = episodeContext.hostB.id;
+      // Ensure speakerHostId matches the cast host this line's speaker names.
+      if (typeof line.speakerName === "string") {
+        const boundId = hostIdByName.get(line.speakerName.trim().toLowerCase());
+        if (boundId) line.speakerHostId = boundId;
       }
 
       // Sanitize evidenceRefs on every single line (factual & non-factual)

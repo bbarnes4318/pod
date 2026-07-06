@@ -39,22 +39,41 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
   const [description, setDescription] = useState("");
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
 
+  // Host casting: which two active hosts front THIS episode. Empty = let the
+  // pipeline fall back to the two most-intense active hosts.
+  interface RosterHost { id: string; slug: string; name: string }
+  const [roster, setRoster] = useState<RosterHost[]>([]);
+  const [selectedHostIds, setSelectedHostIds] = useState<string[]>([]);
+
   // Voice engine + per-host voice picks pinned on the episode at build time.
   // "default" = studio default (host-profile/env chain, no episode pin).
   const [ttsEngine, setTtsEngine] = useState("default");
   const [voicePicks, setVoicePicks] = useState<VoicePicks>({});
-  const [voiceHosts, setVoiceHosts] = useState<PickerHost[]>([
-    { slug: "max-voltage", name: "Max Voltage" },
-    { slug: "dr-linebreak", name: "Dr. Linebreak" },
-  ]);
 
   useEffect(() => {
     fetchActiveDebateHosts().then((res) => {
-      if (res.success && res.hosts && res.hosts.length > 0) {
-        setVoiceHosts(res.hosts.map((h) => ({ slug: h.slug, name: h.name })));
+      if (res.success && res.hosts) {
+        setRoster(res.hosts.map((h) => ({ id: h.id, slug: h.slug, name: h.name })));
+        // Default the cast to the first two active hosts (most intense first).
+        setSelectedHostIds(res.hosts.slice(0, 2).map((h) => h.id));
       }
     });
   }, []);
+
+  // The voice picker labels the hosts actually cast for this episode.
+  const castHosts: RosterHost[] = selectedHostIds
+    .map((id) => roster.find((h) => h.id === id))
+    .filter((h): h is RosterHost => !!h);
+  const voiceHosts: PickerHost[] = castHosts.map((h) => ({ slug: h.slug, name: h.name }));
+
+  const toggleHost = (id: string) => {
+    setSelectedHostIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) return [prev[1], id]; // keep it to a pair; drop oldest
+      return [...prev, id];
+    });
+    setVoicePicks({}); // voice ids are per-host; re-pick when the cast changes
+  };
 
   // Reset picks when the engine changes — voice ids don't cross engines.
   const [picksEngine, setPicksEngine] = useState(ttsEngine);
@@ -127,6 +146,7 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
       targetTopicCount,
       title: title || undefined,
       description: description || undefined,
+      hostIds: selectedHostIds.length > 0 ? selectedHostIds : undefined,
       ...voiceSelection(),
       ...soundSelection(),
     });
@@ -170,7 +190,8 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
       ttsProvider,
       ttsVoiceOverrides,
       sound.productionStyle,
-      sound.sfxDensity
+      sound.sfxDensity,
+      selectedHostIds.length > 0 ? selectedHostIds : undefined
     );
 
     if (res.success) {
@@ -303,6 +324,41 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
             disabled={submitting}
           />
         </div>
+      </div>
+
+      {/* Debate Hosts — pick exactly two from the active roster */}
+      <div className="sectionGroup">
+        <span className="sectionGroupLabel">Debate Hosts ({castHosts.length}/2)</span>
+        {roster.length === 0 ? (
+          <div style={{ color: "var(--text-secondary)", padding: "0.5rem", fontSize: "0.8rem", fontStyle: "italic" }}>
+            No active hosts. Activate at least two on the Personalities page.
+          </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              {roster.map((h) => {
+                const idx = selectedHostIds.indexOf(h.id);
+                const on = idx !== -1;
+                return (
+                  <button
+                    type="button"
+                    key={h.id}
+                    onClick={() => toggleHost(h.id)}
+                    disabled={submitting}
+                    className={on ? "buttonPrimary" : "btnReset"}
+                    style={{ padding: "0.4rem 0.75rem", fontSize: "0.8rem", display: "flex", alignItems: "center", gap: "0.4rem" }}
+                  >
+                    {on && <span className="orderIndicator">{idx === 0 ? "A" : "B"}</span>}
+                    {h.name}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ color: "var(--text-secondary)", fontSize: "0.72rem", marginTop: "0.4rem" }}>
+              First pick is host A (opens the show); second is host B. Leave empty to use the two most-intense active hosts.
+            </div>
+          </>
+        )}
       </div>
 
       {/* Voice Engine & per-host Voice IDs (pinned on the episode) */}

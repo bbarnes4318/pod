@@ -47,6 +47,7 @@ import {
   resolveIntroFromPlan,
 } from "@/lib/audio/planExecution";
 import { readCooldownSnapshot, recordPlanUsage } from "@/lib/services/cueCooldownService";
+import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
 
 interface StitchInput {
   scriptId: string;
@@ -331,12 +332,9 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       );
     }
 
-    // Load active host profiles
-    const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-    const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-    if (!hostA || !hostB) {
-      throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must be active.");
-    }
+    // Resolve the two hosts this episode was cast with (no hardcoded names).
+    const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: episode.hostIds });
+    const speakers = makeSpeakerMatchers({ hostA, hostB });
 
     // Flatten script lines
     const allLines: any[] = [];
@@ -368,15 +366,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           console.warn(`[Stitcher] Line ${line.lineIndex} flagged needsHumanReview but script is approved; proceeding.`);
         }
 
-        if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
-          throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only Max Voltage and Dr. Linebreak are allowed.`);
+        const lineHost = speakers.hostForSpeaker(line.speakerName);
+        if (!lineHost) {
+          throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only ${hostA.name} and ${hostB.name} are allowed for this episode.`);
         }
-
-        if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA.id) {
-          throw new Error(`Line ${line.lineIndex} host ID does not match Max Voltage active profile.`);
-        }
-        if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== hostB.id) {
-          throw new Error(`Line ${line.lineIndex} host ID does not match Dr. Linebreak active profile.`);
+        if (line.speakerHostId !== lineHost.id) {
+          throw new Error(`Line ${line.lineIndex} host ID does not match the cast profile for ${lineHost.name}.`);
         }
 
         allLines.push(line);

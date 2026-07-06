@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { getStorageProvider } from "../providers/storage/factory";
 import { getLLMProvider } from "../providers/llm/factory";
+import { resolveEpisodeHosts, makeSpeakerMatchers } from "./hostCasting";
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
@@ -262,12 +263,9 @@ export async function generateEpisodeContentAssets(input: {
     throw new Error(`Latest fact check status is '${latestFactCheck.status}'. Fact check must pass to generate content assets.`);
   }
 
-  // Active hosts check
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-  if (!hostA || !hostB) {
-    throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must exist.");
-  }
+  // Resolve the two hosts this episode was cast with (no hardcoded names).
+  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: episode.hostIds });
+  const speakers = makeSpeakerMatchers({ hostA, hostB });
 
   // Flatten lines and perform validations
   const segments = (script.content as any).segments;
@@ -304,16 +302,13 @@ export async function generateEpisodeContentAssets(input: {
       if (line.needsHumanReview === true) {
         throw new Error(`Script contains lines marked as requiring human review.`);
       }
-      // 16. speakerName is either Max Voltage or Dr. Linebreak
-      if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
-        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'.`);
+      // 16 & 17. speakerName is one of the cast hosts, and speakerHostId matches.
+      const lineHost = speakers.hostForSpeaker(line.speakerName);
+      if (!lineHost) {
+        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only ${hostA.name} and ${hostB.name} are allowed for this episode.`);
       }
-      // 17. speakerHostId matches correct active host
-      if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA.id) {
-        throw new Error(`Line ${line.lineIndex} host ID does not match active Max Voltage profile.`);
-      }
-      if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== hostB.id) {
-        throw new Error(`Line ${line.lineIndex} host ID does not match active Dr. Linebreak profile.`);
+      if (line.speakerHostId !== lineHost.id) {
+        throw new Error(`Line ${line.lineIndex} host ID does not match the cast profile for ${lineHost.name}.`);
       }
       allLines.push({
         line,
@@ -544,7 +539,7 @@ export async function generateEpisodeContentAssets(input: {
   let transcriptMarkdown = `# ${episode.title}\n\n`;
   transcriptMarkdown += `**Take Machine**\n`;
   transcriptMarkdown += `**Duration:** ${durationStr}\n`;
-  transcriptMarkdown += `**Hosts:** Max Voltage and Dr. Linebreak\n\n`;
+  transcriptMarkdown += `**Hosts:** ${hostA.name} and ${hostB.name}\n\n`;
   transcriptMarkdown += `## Transcript\n\n`;
 
   let topicCounter = 0;
@@ -681,14 +676,14 @@ Rules:
   "keyDebates": [
     {
       "topicTitle": "Topic Title",
-      "maxVoltageAngle": "Max Voltage's argument/angle.",
-      "drLinebreakAngle": "Dr. Linebreak's argument/angle.",
+      "maxVoltageAngle": "${hostA.name}'s argument/angle.",
+      "drLinebreakAngle": "${hostB.name}'s argument/angle.",
       "whatMakesItDebatable": "What makes this controversial or debatable."
     }
   ],
   "bestLines": [
     {
-      "speakerName": "Max Voltage or Dr. Linebreak",
+      "speakerName": "${hostA.name} or ${hostB.name}",
       "quote": "Short verbatim quote from the transcript."
     }
   ],
@@ -796,8 +791,8 @@ Rules:
   showNotesMarkdown += `## Key Debates\n\n`;
   for (const kd of showNotesJson.keyDebates) {
     showNotesMarkdown += `### ${kd.topicTitle}\n\n`;
-    showNotesMarkdown += `* Max Voltage angle: ${kd.maxVoltageAngle}\n`;
-    showNotesMarkdown += `* Dr. Linebreak angle: ${kd.drLinebreakAngle}\n`;
+    showNotesMarkdown += `* ${hostA.name} angle: ${kd.maxVoltageAngle}\n`;
+    showNotesMarkdown += `* ${hostB.name} angle: ${kd.drLinebreakAngle}\n`;
     showNotesMarkdown += `* What makes it debatable: ${kd.whatMakesItDebatable}\n\n`;
   }
 
@@ -872,7 +867,7 @@ Rules:
         startTimeSeconds: jsonSegments.find(js => js.topicId === et.topicId)?.startTimeSeconds || 0,
         endTimeSeconds: jsonSegments.find(js => js.topicId === et.topicId)?.endTimeSeconds || 0,
       })),
-      hosts: ["Max Voltage", "Dr. Linebreak"],
+      hosts: [hostA.name, hostB.name],
       assets: {
         transcriptMarkdownUrl: uploadTranscriptMd.url,
         transcriptJsonUrl: uploadTranscriptJson.url,

@@ -2,6 +2,7 @@
 
 import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
+import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
 import { queueContentAssetGenerationJob } from "@/lib/queue/podcastQueue";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { revalidatePath } from "next/cache";
@@ -111,12 +112,20 @@ export async function fetchContentAssetEligibility(scriptId: string) {
     if (script && script.episode) {
       const episode = script.episode;
 
-      // Host profiles
-      const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-      const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
+      // Resolve the two hosts this episode was cast with (no hardcoded names).
+      let hostA: { id: string; name: string } | null = null;
+      let hostB: { id: string; name: string } | null = null;
+      try {
+        const cast = await resolveEpisodeHosts({ hostIds: episode.hostIds });
+        hostA = cast.hostA;
+        hostB = cast.hostB;
+      } catch {
+        /* leave null → activeHostsExist=false below */
+      }
+      const speakers = hostA && hostB ? makeSpeakerMatchers({ hostA: hostA as any, hostB: hostB as any }) : null;
       checks.activeHostsExist = !!hostA && !!hostB;
       if (!checks.activeHostsExist) {
-        errorReasons.push("Active host profiles for Max Voltage and Dr. Linebreak must exist.");
+        errorReasons.push("Two active host profiles must exist to cast this episode.");
       }
 
       // Extract lines
@@ -131,12 +140,11 @@ export async function fetchContentAssetEligibility(scriptId: string) {
           for (const line of seg.lines) {
             allLines.push(line);
             if (line.needsHumanReview) noReview = false;
-            if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+            const lineHost = speakers?.hostForSpeaker(line.speakerName) ?? null;
+            if (!lineHost) {
               speakerNamesOk = false;
-            }
-            if (checks.activeHostsExist) {
-              if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA?.id) speakerHostIdsOk = false;
-              if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== hostB?.id) speakerHostIdsOk = false;
+            } else if (line.speakerHostId !== lineHost.id) {
+              speakerHostIdsOk = false;
             }
           }
         }

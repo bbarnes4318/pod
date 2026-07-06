@@ -9,6 +9,7 @@ import {
   resolveTtsProviderAndVoice,
 } from "@/lib/providers/tts/voiceResolution";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
+import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
 
 // Episode statuses in which (re)generating audio segments is allowed: from
 // the moment the episode passes fact check all the way through published.
@@ -121,15 +122,12 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     (script.content as any).segments = segments;
   }
 
-  // Gather active host records
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-  if (!hostA || !hostB) {
-    throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must be active.");
-  }
+  // Resolve the two hosts this episode was cast with (no hardcoded names).
+  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: script.episode.hostIds });
+  const speakers = makeSpeakerMatchers({ hostA, hostB });
 
   if (hostId && hostId !== hostA.id && hostId !== hostB.id) {
-    throw new Error(`Invalid hostId '${hostId}'. Host filter must match the active Max Voltage or Dr. Linebreak host ID.`);
+    throw new Error(`Invalid hostId '${hostId}'. Host filter must match one of this episode's cast host IDs (${hostA.name}, ${hostB.name}).`);
   }
 
   // 2. Flatten and validate dialogue lines
@@ -155,8 +153,9 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         throw new Error(`Script line at segment ${sIdx}, index ${lIdx} is missing required fields.`);
       }
 
-      if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
-        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only Max Voltage and Dr. Linebreak are allowed.`);
+      const lineHost = speakers.hostForSpeaker(line.speakerName);
+      if (!lineHost) {
+        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only ${hostA.name} and ${hostB.name} are allowed for this episode.`);
       }
 
       // Note: a per-line needsHumanReview flag is NOT a hard block here. TTS
@@ -168,12 +167,9 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         console.warn(`[TTS Service] Line ${line.lineIndex} was flagged needsHumanReview but the script is approved; proceeding.`);
       }
 
-      // Check line host bindings
-      if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA.id) {
-        throw new Error(`Line ${line.lineIndex} speaker speakerHostId does not match Max Voltage active profile.`);
-      }
-      if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== hostB.id) {
-        throw new Error(`Line ${line.lineIndex} speaker speakerHostId does not match Dr. Linebreak active profile.`);
+      // Check line host binding matches the host its speakerName resolves to.
+      if (line.speakerHostId !== lineHost.id) {
+        throw new Error(`Line ${line.lineIndex} speakerHostId does not match the cast profile for ${lineHost.name}.`);
       }
 
       allLines.push(line);
@@ -301,17 +297,9 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
       createdSegmentCount++;
     }
 
-    let host;
-    if (line.speakerName === "Max Voltage") {
-      host = hostA;
-    } else if (line.speakerName === "Dr. Linebreak") {
-      host = hostB;
-    } else {
-      throw new Error(`Invalid speakerName '${line.speakerName}' on line ${line.lineIndex}.`);
-    }
-
+    const host = speakers.hostForSpeaker(line.speakerName);
     if (!host) {
-      throw new Error(`Host profile not found for speaker: ${line.speakerName}`);
+      throw new Error(`Invalid speakerName '${line.speakerName}' on line ${line.lineIndex}.`);
     }
 
     const resolved = resolvedByHostId.get(host.id);

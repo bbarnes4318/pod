@@ -18,6 +18,7 @@ export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
       sport: input.sport,
       targetTopicCount: input.targetTopicCount,
       minDebateScore: input.minDebateScore,
+      hostIds: input.hostIds,
       ttsProvider: input.ttsProvider,
       ttsVoiceOverrides: input.ttsVoiceOverrides,
       productionStyle: input.productionStyle,
@@ -38,7 +39,8 @@ export async function createEpisodeFromSelectedTopics(
   ttsProvider?: string,
   ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"],
   productionStyle?: string,
-  sfxDensity?: string
+  sfxDensity?: string,
+  hostIds?: string[]
 ) {
   await requireAdmin();
   try {
@@ -46,6 +48,7 @@ export async function createEpisodeFromSelectedTopics(
       topicIds,
       title,
       description,
+      hostIds,
       ttsProvider,
       ttsVoiceOverrides,
       productionStyle,
@@ -59,13 +62,16 @@ export async function createEpisodeFromSelectedTopics(
   }
 }
 
-/** Active debate hosts for voice pickers (slug is the override key). */
+/** Every ACTIVE host, for the episode host picker + voice pickers. No name
+ *  filter — whoever the operator has activated on /admin/personalities is
+ *  castable. Ordered most-intense first so the default pair keeps the
+ *  emotional-vs-analytical framing. */
 export async function fetchActiveDebateHosts() {
   await requireAdmin();
   try {
     const hosts = await db.aiHost.findMany({
-      where: { isActive: true, name: { in: ["Max Voltage", "Dr. Linebreak"] } },
-      orderBy: { name: "desc" }, // Max Voltage first
+      where: { isActive: true },
+      orderBy: [{ intensityLevel: "desc" }, { name: "asc" }],
     });
     return {
       success: true,

@@ -2,6 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { fetchTtsEligibility } from "../actions";
 import AudioSegmentsConsole from "./AudioSegmentsConsole";
+import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -82,12 +83,13 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
 
   const eligibility = await fetchTtsEligibility(scriptId);
 
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-
-  const hosts = [hostA, hostB]
-    .filter((h): h is NonNullable<typeof h> => !!h)
-    .map((h) => ({ id: h.id, slug: h.slug, name: h.name }));
+  let hosts: Array<{ id: string; slug: string; name: string }> = [];
+  try {
+    const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: script.episode.hostIds });
+    hosts = [hostA, hostB].map((h) => ({ id: h.id, slug: h.slug, name: h.name }));
+  } catch {
+    hosts = [];
+  }
 
   return (
     <AudioSegmentsConsole
@@ -96,8 +98,8 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
       eligible={!!eligibility.eligible}
       eligibilityReason={eligibility.reason}
       eligibilityWarnings={eligibility.warnings || []}
-      hostAId={hostA?.id || ""}
-      hostBId={hostB?.id || ""}
+      hostAId={hosts[0]?.id || ""}
+      hostBId={hosts[1]?.id || ""}
       hosts={hosts}
       episodeVoiceOverrides={
         (script.episode.ttsVoiceOverrides as unknown as Record<

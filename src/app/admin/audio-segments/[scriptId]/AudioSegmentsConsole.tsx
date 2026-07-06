@@ -284,7 +284,7 @@ export default function AudioSegmentsConsole({
                           #{line.lineIndex + 1}
                         </td>
                         <td>
-                          <span style={{ fontWeight: 700, color: line.speakerName === "Max Voltage" ? "var(--error-color)" : "var(--accent-color)" }}>
+                          <span style={{ fontWeight: 700, color: line.speakerHostId === hostAId ? "var(--error-color)" : "var(--accent-color)" }}>
                             {line.speakerName}
                           </span>
                         </td>
@@ -468,8 +468,16 @@ export default function AudioSegmentsConsole({
                     className="select"
                   >
                     <option value="">Choose Host...</option>
-                    <option value={hostAId}>Max Voltage</option>
-                    <option value={hostBId}>Dr. Linebreak</option>
+                    {(hosts && hosts.length > 0
+                      ? hosts
+                      : [hostAId && { id: hostAId, name: "Host A" }, hostBId && { id: hostBId, name: "Host B" }].filter(
+                          (h): h is { id: string; name: string } => !!h
+                        )
+                    ).map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
                   </select>
                   <button
                     onClick={handleHostTts}

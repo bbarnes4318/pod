@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { getFactCheckLLMProvider, resolveFactCheckLLMConfig } from "@/lib/providers/llm/factory";
 import { stripAudioTags } from "@/lib/audio/speechText";
+import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
 import {
   RUMOR_KEYWORDS,
   findRumorKeyword,
@@ -190,12 +191,9 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     }
   }
 
-  // 4. Fetch host profiles
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-  if (!hostA || !hostB) {
-    throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must be active.");
-  }
+  // 4. Resolve the two hosts this episode was cast with (no hardcoded names).
+  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: script.episode.hostIds });
+  const speakers = makeSpeakerMatchers({ hostA, hostB });
 
   // 5. Layer 1: Deterministic Checks
   let totalLineCount = 0;
@@ -207,8 +205,10 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let rumorLanguageCount = 0;
   let needsHumanReviewCount = 0;
   let invalidSpeakerCount = 0;
-  let maxVoltageCount = 0;
-  let drLinebreakCount = 0;
+  const lineCountByHostId = new Map<string, number>([
+    [hostA.id, 0],
+    [hostB.id, 0],
+  ]);
 
   // Semantic issue counters
   let semanticUnsupportedCount = 0;
@@ -266,34 +266,26 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           continue;
         }
 
-        // Validate speaker
-        if (line.speakerName !== "Max Voltage" && line.speakerName !== "Dr. Linebreak") {
+        // Validate speaker against this episode's cast.
+        const lineHost = speakers.hostForSpeaker(line.speakerName);
+        if (!lineHost) {
           invalidSpeakerCount++;
           errorsList.push({
             type: "invalid_speaker",
             lineIndex: line.lineIndex,
-            reason: `Speaker name '${line.speakerName}' is not allowed. Only 'Max Voltage' and 'Dr. Linebreak' are valid.`,
+            reason: `Speaker name '${line.speakerName}' is not allowed. Only '${hostA.name}' and '${hostB.name}' are valid.`,
           });
+        } else {
+          if (line.speakerHostId !== lineHost.id) {
+            invalidSpeakerCount++;
+            errorsList.push({
+              type: "invalid_speaker_host_id",
+              lineIndex: line.lineIndex,
+              reason: `${lineHost.name} speakerHostId does not match the cast host profile ID.`,
+            });
+          }
+          lineCountByHostId.set(lineHost.id, (lineCountByHostId.get(lineHost.id) ?? 0) + 1);
         }
-
-        if (line.speakerName === "Max Voltage" && line.speakerHostId !== hostA.id) {
-          invalidSpeakerCount++;
-          errorsList.push({
-            type: "invalid_speaker_host_id",
-            lineIndex: line.lineIndex,
-            reason: "Max Voltage speakerHostId does not match the active host profile ID.",
-          });
-        } else if (line.speakerName === "Dr. Linebreak" && line.speakerHostId !== hostB.id) {
-          invalidSpeakerCount++;
-          errorsList.push({
-            type: "invalid_speaker_host_id",
-            lineIndex: line.lineIndex,
-            reason: "Dr. Linebreak speakerHostId does not match the active host profile ID.",
-          });
-        }
-
-        if (line.speakerName === "Max Voltage") maxVoltageCount++;
-        if (line.speakerName === "Dr. Linebreak") drLinebreakCount++;
 
         // Validate needsHumanReview flag
         if (line.needsHumanReview === true) {
@@ -450,8 +442,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   const evidenceCoveragePercent =
     factualLineCount > 0 ? Math.round((factualLineWithValidEvidenceCount / factualLineCount) * 100) : 100;
 
-  const maxVoltageShare = totalLineCount > 0 ? Math.round((maxVoltageCount / totalLineCount) * 100) : 0;
-  const drLinebreakShare = totalLineCount > 0 ? Math.round((drLinebreakCount / totalLineCount) * 100) : 0;
+  const hostAShare = totalLineCount > 0 ? Math.round(((lineCountByHostId.get(hostA.id) ?? 0) / totalLineCount) * 100) : 0;
+  const hostBShare = totalLineCount > 0 ? Math.round(((lineCountByHostId.get(hostB.id) ?? 0) / totalLineCount) * 100) : 0;
 
   // Strict deterministic pass checks
   const deterministicPassed =
@@ -464,8 +456,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     needsHumanReviewCount === 0 &&
     invalidSpeakerCount === 0 &&
     totalLineCount >= 40 &&
-    maxVoltageShare >= 25 &&
-    drLinebreakShare >= 25 &&
+    hostAShare >= 25 &&
+    hostBShare >= 25 &&
     script.plainText.trim().length > 0;
 
   // 6. Layer 2: LLM semantic review. Provider resolves like the script path:
@@ -752,8 +744,8 @@ Run the fact-checking comparison and output the JSON structure containing status
     needsHumanReviewCount,
     invalidSpeakerCount,
     hostLineShare: {
-      "Max Voltage": maxVoltageShare,
-      "Dr. Linebreak": drLinebreakShare,
+      [hostA.name]: hostAShare,
+      [hostB.name]: hostBShare,
     },
     semanticUnsupportedCount,
     semanticNeedsReviewCount,

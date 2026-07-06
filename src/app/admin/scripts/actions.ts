@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { validateScriptContent, sanitizeScriptContent, ValidationSummary } from "@/lib/services/scriptValidation";
+import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
 
 // Helper to compile episode context
 async function getEpisodeContextForScript(script: any) {
@@ -26,12 +27,9 @@ async function getEpisodeContextForScript(script: any) {
     throw new Error(`Episode not found for script ID ${script.id}.`);
   }
 
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-
-  if (!hostA || !hostB) {
-    throw new Error("Active host profiles for Max Voltage and Dr. Linebreak must be active.");
-  }
+  // Resolve whichever two hosts this episode was cast with (falls back to the
+  // two most-intense active hosts). No hardcoded names.
+  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: ep.hostIds });
 
   const allowedSourceRefs = new Set<string>();
   const unsafeClaims: string[] = [];

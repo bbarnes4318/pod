@@ -36,6 +36,8 @@ export interface ScriptBuildResult {
 }
 
 import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
+import { resolveEpisodeHosts } from "./hostCasting";
+import type { AiHost } from "@prisma/client";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -171,33 +173,20 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // or standalone build) win; the classic duo is the fallback. A debate
   // needs exactly two voices — a single selected host gets paired with the
   // best available sparring partner.
-  let hostA: any = null;
-  let hostB: any = null;
   const savedHostIds: string[] = Array.isArray((ep as any).hostIds) ? ((ep as any).hostIds as string[]) : [];
-  if (savedHostIds.length > 0) {
-    const selected = await db.aiHost.findMany({ where: { id: { in: savedHostIds }, isActive: true } });
-    const ordered = savedHostIds
-      .map((id) => selected.find((h) => h.id === id))
-      .filter((h): h is NonNullable<typeof h> => !!h);
-    hostA = ordered[0] || null;
-    hostB = ordered[1] || null;
-    if (ordered.length > 2) {
-      result.reasons.push(`Host casting: ${ordered.length} hosts selected; the debate format uses the first two (${ordered[0].name}, ${ordered[1].name}).`);
-    }
+  if (savedHostIds.length > 2) {
+    result.reasons.push(`Host casting: ${savedHostIds.length} hosts pinned; the debate format uses the first two.`);
   }
-  if (!hostA) hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  if (!hostB || (hostA && hostB.id === hostA.id)) {
-    hostB =
-      (await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true, ...(hostA ? { id: { not: hostA.id } } : {}) } })) ||
-      (hostA ? await db.aiHost.findFirst({ where: { isActive: true, id: { not: hostA.id } } }) : null);
-  }
-
-  if (!hostA || !hostB) {
-    const msg = "Two active host profiles are required to generate a debate script.";
+  let hostA: AiHost;
+  let hostB: AiHost;
+  try {
+    ({ hostA, hostB } = await resolveEpisodeHosts({ hostIds: savedHostIds }));
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Two active host profiles are required to generate a debate script.";
     result.reasons.push(msg);
     throw new Error(msg);
   }
-  result.reasons.push(`Host casting: ${hostA.name} vs ${hostB.name}${savedHostIds.length > 0 ? " (from saved episode/podcast config)" : " (default duo)"}.`);
+  result.reasons.push(`Host casting: ${hostA.name} vs ${hostB.name}${savedHostIds.length > 0 ? " (episode cast)" : " (default: most-intense active pair)"}.`);
 
   // Persona-specific delivery notes only apply to the canonical duo; custom
   // hosts speak through their own profile fields.
