@@ -1,73 +1,76 @@
 import React from "react";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
-import { nextActionFor, statusChip, FINISHED_STATUSES } from "../lib";
-import CreateConsole from "./CreateConsole";
+import { FINISHED_STATUSES } from "../lib";
+import CreateConsole, { StepperTake, StepperHost, ResumeEpisode } from "./CreateConsole";
 
 export const dynamic = "force-dynamic";
 
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
   const { topic: highlightTopic } = await searchParams;
+  const user = await currentUser(); // layout already gates /studio; used here for resume scoping
 
-  const [topics, inFlight] = await Promise.all([
+  const [topics, hosts, resume] = await Promise.all([
     db.topicCandidate.findMany({
       where: { status: { in: ["pending", "approved"] } },
       include: { researchBrief: true },
       orderBy: { debateScore: "desc" },
-      take: 8,
+      take: 12,
     }),
-    db.episode.findMany({
-      where: { status: { notIn: [...FINISHED_STATUSES, "failed"] } },
-      orderBy: { updatedAt: "desc" },
-      take: 5,
-      include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true } } },
+    db.aiHost.findMany({
+      where: { isActive: true },
+      orderBy: { intensityLevel: "desc" },
+      select: { id: true, name: true, intensityLevel: true },
     }),
+    // The creator's own most-recent unfinished episode — lets the stepper
+    // resume mid-pipeline instead of starting over.
+    user
+      ? db.episode.findFirst({
+          where: { ownerId: user.id, status: { notIn: [...FINISHED_STATUSES, "failed", "published"] } },
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            topics: { orderBy: { orderIndex: "asc" }, take: 1, select: { topicId: true } },
+          },
+        })
+      : Promise.resolve(null),
   ]);
 
-  const takes = topics.map((t) => {
-    const talk = scoreTopicTalkability({
-      title: t.title,
-      summary: t.summary,
-      createdAt: t.createdAt,
-      brief: t.researchBrief as any,
-    });
-    return {
-      id: t.id,
-      title: t.title,
-      sport: t.sport,
-      status: t.status,
-      hasBrief: !!t.researchBrief,
-      talkability: talk.total,
-      scores: [
-        { label: "Controversy", value: t.controversyScore },
-        { label: "Star power", value: t.starPowerScore },
-        { label: "Betting heat", value: t.bettingRelevanceScore },
-        { label: "Freshness", value: t.recencyScore },
-      ],
-    };
-  }).sort((a, b) => b.talkability - a.talkability);
+  const takes: StepperTake[] = topics
+    .map((t) => {
+      const talk = scoreTopicTalkability({
+        title: t.title,
+        summary: t.summary,
+        createdAt: t.createdAt,
+        brief: t.researchBrief as any,
+      });
+      return {
+        id: t.id,
+        title: t.title,
+        sport: t.sport,
+        status: t.status,
+        hasBrief: !!t.researchBrief,
+        heat: talk.total,
+      };
+    })
+    .sort((a, b) => b.heat - a.heat);
 
-  const episodes = inFlight.map((ep) => {
-    const action = nextActionFor(ep, ep.scripts[0]?.id);
-    return {
-      id: ep.id,
-      title: ep.title,
-      status: ep.status,
-      statusLabel: statusChip(ep.status).label,
-      scriptId: ep.scripts[0]?.id ?? null,
-      nextLabel: action.label,
-      nextHref: action.href,
-    };
-  });
+  const hostOptions: StepperHost[] = hosts.map((h) => ({ id: h.id, name: h.name, intensity: h.intensityLevel }));
+
+  const resumeEp: ResumeEpisode | null = resume
+    ? { id: resume.id, title: resume.title, status: resume.status, topicId: resume.topics[0]?.topicId ?? null }
+    : null;
 
   return (
     <div className="fadeUp">
       <h1 className="pageTitle">Create</h1>
       <p className="pageSub">
-        One take in, one episode out. Pick the story, and each card walks you through the single next step —
-        research, script, voices, mix, publish.
+        One take in, one episode out — research, script, voices, mix. Review before the studio spends on voices.
       </p>
-      <CreateConsole takes={takes} episodes={episodes} highlightTopic={highlightTopic} />
+      <CreateConsole takes={takes} hosts={hostOptions} highlightTopic={highlightTopic} resume={resumeEp} />
     </div>
   );
 }

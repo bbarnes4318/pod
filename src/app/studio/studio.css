@@ -614,6 +614,155 @@
 }
 
 /* ============================================================
+   CREATE STEPPER — streaming take → episode flow
+   ============================================================ */
+
+/* Progress rail */
+.stepRail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+.stepPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem 0.35rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.stepDot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.step-active { color: var(--accent); border-color: rgba(255, 90, 31, 0.45); background: var(--accent-muted); }
+.step-active .stepDot { background: var(--accent); color: var(--bg); }
+.step-done { color: var(--success); border-color: var(--success-border); }
+.step-done .stepDot { background: var(--success-muted); color: var(--success); }
+
+/* Alerts + checkpoint notes */
+.createAlert { border-color: var(--error-border); margin-bottom: 1.25rem; font-size: 0.9rem; color: var(--text); }
+.createReasons { margin: 0.5rem 0 0; padding-left: 1.1rem; color: var(--text-muted); font-size: 0.82rem; }
+.createReasons li { margin-top: 0.2rem; }
+.checkpointNote {
+  margin: 1rem 0 0;
+  font-size: 0.8rem;
+  color: var(--warning);
+  background: var(--warning-muted);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.8rem;
+}
+
+/* Stage shell */
+.stageTop { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.stageBody { min-height: 60px; }
+.stageHint { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; }
+.stageActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 1.4rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+.stageActions .btnPrimary { margin-left: auto; }
+
+/* Setup stage */
+.setupHead { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 1.3rem; }
+.setupGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1.3rem; }
+.segRow { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.segBtn {
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+.segBtn:hover { border-color: var(--border-hover); color: var(--text); }
+.segBtn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-muted); }
+.hostBtn { display: inline-flex; align-items: center; gap: 0.45rem; }
+.hostSwatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+/* Research brief */
+.briefBlock { display: flex; flex-direction: column; gap: 0.9rem; }
+.briefWhy { font-size: 0.92rem; line-height: 1.55; color: var(--text); }
+.briefTag {
+  display: inline-block;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.05rem 0.35rem; margin-right: 0.5rem; vertical-align: 1px;
+}
+.briefMeta { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.briefArgs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.8rem; }
+.briefArg {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+}
+.briefArgHost { display: block; font-weight: 800; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.3rem; }
+.briefPoints { margin: 0; padding-left: 1.1rem; color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; }
+
+/* Script view */
+.scriptScroller {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.4rem 0.2rem;
+  border-radius: var(--radius);
+}
+.scriptLine { display: flex; flex-direction: column; gap: 0.2rem; }
+.scriptSpeaker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.scriptText { font-size: 0.9rem; line-height: 1.55; color: var(--text); }
+.scriptLive .scriptLine:last-child { animation: fadeUp 0.25s ease both; }
+
+/* Voice progress */
+.voiceProg { display: flex; align-items: center; gap: 0.8rem; margin-top: 0.9rem; }
+.voiceProg .scoreBarTrack { flex: 1; }
+.voiceProgLabel { font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Skeleton (working state) */
+.skelWrap { display: flex; flex-direction: column; gap: 0.55rem; }
+.skelBar { height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--surface-2), var(--border), var(--surface-2)); background-size: 200% 100%; animation: skelShimmer 1.4s ease-in-out infinite; }
+.skelPulse { width: 60px; height: 6px; border-radius: 4px; background: var(--accent); opacity: 0.7; animation: onAirPulse 1.6s ease-in-out infinite; margin-bottom: 0.3rem; }
+@keyframes skelShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Done + take picker */
+.doneBlock { display: flex; flex-direction: column; align-items: flex-start; gap: 1rem; }
+.doneTitle { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; text-transform: uppercase; color: var(--text); }
+.takeChoice { text-align: left; cursor: pointer; border: 1px solid var(--border); }
+.takeChoiceCta { margin-top: auto; font-size: 0.8rem; font-weight: 700; color: var(--accent); }
+
+/* ============================================================
    Responsive — off-canvas rail below 900px, no horizontal
    overflow from 320px to 2560px.
    ============================================================ */
