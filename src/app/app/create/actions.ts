@@ -19,6 +19,8 @@ import {
 } from "@/lib/queue/podcastQueue";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
+import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
+import { validateEpisodeForRss, publishEpisode } from "@/lib/services/rssPublishingService";
 import { stageForStatus } from "@/lib/createFlow";
 import { isValidVertical } from "@/lib/verticals";
 import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
@@ -26,18 +28,21 @@ import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
 /** Ownership guard for the Create flow's per-episode actions: the caller must
  *  be signed in AND own the episode (or be an admin). Returns the episode +
  *  its latest script id, or a standard error shape. */
-async function ownedEpisode(episodeId: string) {
+type OwnedFail = { ok: false; error: { success: false; error: string } };
+type OwnedOk = { ok: true; user: NonNullable<Awaited<ReturnType<typeof currentUser>>>; episode: any; scriptId: string | null };
+async function ownedEpisode(episodeId: string): Promise<OwnedFail | OwnedOk> {
+  const fail = (error: string): OwnedFail => ({ ok: false, error: { success: false, error } });
   const user = await currentUser();
-  if (!user) return { error: { success: false as const, error: "Please sign in to do that." } };
+  if (!user) return fail("Please sign in to do that.");
   const episode = await db.episode.findUnique({
     where: { id: episodeId },
     include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true } } },
   });
-  if (!episode) return { error: { success: false as const, error: "That episode no longer exists." } };
+  if (!episode) return fail("That episode no longer exists.");
   if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
-    return { error: { success: false as const, error: "That episode belongs to someone else." } };
+    return fail("That episode belongs to someone else.");
   }
-  return { user, episode, scriptId: episode.scripts[0]?.id ?? null };
+  return { ok: true, user, episode, scriptId: episode.scripts[0]?.id ?? null };
 }
 
 /** Shared /app creation guard: returns the standard error shape when the
@@ -197,7 +202,7 @@ export async function createStandaloneEpisode(input: {
  *  voicing is a separate, explicit step. */
 export async function approveEpisodeScript(episodeId: string) {
   const gate = await ownedEpisode(episodeId);
-  if ("error" in gate) return gate.error;
+  if (!gate.ok) return gate.error;
   try {
     const res = await approveEpisodeLatestScript(episodeId);
     if (!res.success) return { success: false as const, error: res.error, reasons: res.reasons };
@@ -212,7 +217,7 @@ export async function approveEpisodeScript(episodeId: string) {
 /** Voices: synthesize the TTS segments for the approved+fact-checked script. */
 export async function castEpisodeVoices(episodeId: string) {
   const gate = await ownedEpisode(episodeId);
-  if ("error" in gate) return gate.error;
+  if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There's no script to voice yet." };
   try {
     const job = await queueTtsSegmentGenerationJob({ scriptId: gate.scriptId });
@@ -227,7 +232,7 @@ export async function castEpisodeVoices(episodeId: string) {
  *  settings; the service falls back to sensible defaults). */
 export async function mixEpisode(episodeId: string) {
   const gate = await ownedEpisode(episodeId);
-  if ("error" in gate) return gate.error;
+  if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There's nothing to mix yet." };
   try {
     const job = await queueFinalAudioStitchJob({ scriptId: gate.scriptId });
@@ -241,7 +246,7 @@ export async function mixEpisode(episodeId: string) {
 /** Assets: generate show notes / transcript / chapters for the finished audio. */
 export async function generateEpisodeAssets(episodeId: string) {
   const gate = await ownedEpisode(episodeId);
-  if ("error" in gate) return gate.error;
+  if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There are no assets to build yet." };
   try {
     const job = await queueContentAssetGenerationJob({ scriptId: gate.scriptId });
@@ -368,4 +373,167 @@ export async function getCreateProgress(params: { topicId?: string; episodeId?: 
     script,
     audio: { totalSegments, readySegments },
   };
+}
+
+/* ============================================================================
+ * STEP 4 — Editable transcript, per-line variants, publish gate (owner-gated)
+ * All reuse existing data/services; nothing here fabricates evidence.
+ * ========================================================================== */
+
+/** Rebuild the plainText transcript after an in-place line edit. */
+function transcriptPlainText(segments: any[]): string {
+  return (segments || [])
+    .map((seg) => {
+      const label = `[${String(seg?.type || "").toUpperCase()}${seg?.title ? ` — ${seg.title}` : ""}]`;
+      const dialogue = (seg?.lines || []).map((l: any) => `${l.speakerName}:\n${l.text}`).join("\n\n");
+      return `${label}\n\n${dialogue}`;
+    })
+    .join("\n\n");
+}
+
+/** Load the latest script for an owned episode, mutate the line at lineIndex,
+ *  and persist content (+ plainText). Marks the line dirty so the fact-check
+ *  gate treats it as unresolved until it's re-checked. */
+async function mutateLatestScriptLine(
+  episodeId: string,
+  lineIndex: number,
+  mutate: (line: any) => void
+): Promise<{ success: true } | { success: false; error: string }> {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "There's no script to edit yet." };
+
+  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
+  if (!script) return { success: false as const, error: "Script not found." };
+  const content = (script.content as any) || {};
+  const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+
+  let found = false;
+  for (const seg of segments) {
+    for (const line of seg?.lines || []) {
+      if (line && line.lineIndex === lineIndex) {
+        mutate(line);
+        line.dirty = true; // edited/varied since the last fact check
+        found = true;
+      }
+    }
+  }
+  if (!found) return { success: false as const, error: "That line no longer exists." };
+
+  content.segments = segments;
+  await db.script.update({
+    where: { id: script.id },
+    data: { content: content as any, plainText: transcriptPlainText(segments) },
+  });
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  return { success: true as const };
+}
+
+/** Read the editable transcript + citations + fact-check + gate view-model. */
+export async function getEpisodeTranscript(episodeId: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Please sign in." };
+  const episode = await db.episode.findUnique({ where: { id: episodeId }, select: { ownerId: true } });
+  if (!episode) return { ok: false as const, error: "Episode not found." };
+  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
+    return { ok: false as const, error: "That episode belongs to someone else." };
+  }
+  return getEpisodeTranscriptVM(episodeId);
+}
+
+/** Edit a line's text in place. Marks it dirty (→ unresolved until re-checked). */
+export async function saveLineEdit(episodeId: string, lineIndex: number, newText: string) {
+  const text = String(newText ?? "").trim();
+  if (!text) return { success: false as const, error: "A line can't be empty." };
+  if (text.length > 2000) return { success: false as const, error: "That line is too long." };
+  return mutateLatestScriptLine(episodeId, lineIndex, (line) => {
+    line.text = text;
+  });
+}
+
+/** Request a plain-language variant for a line ("spicier" | "calmer" |
+ *  "regenerate"). The pipeline has no per-line LLM rewrite, so this records the
+ *  intent on the line (dirty + requestedTone) — the Step-5 hook the per-line
+ *  audio splice will act on. Use regenerateEpisodeScript for a real rewrite. */
+export async function requestLineVariant(
+  episodeId: string,
+  lineIndex: number,
+  variant: "spicier" | "calmer" | "regenerate"
+) {
+  if (!["spicier", "calmer", "regenerate"].includes(variant)) {
+    return { success: false as const, error: "Unknown variant." };
+  }
+  return mutateLatestScriptLine(episodeId, lineIndex, (line) => {
+    line.requestedTone = variant;
+  });
+}
+
+/** Real script rewrite via the existing generation job, tone-mapped from a
+ *  plain-language variant. (Whole-script — the only rewrite the pipeline has.) */
+export async function regenerateEpisodeScript(
+  episodeId: string,
+  tone?: "spicier" | "calmer" | "regenerate"
+) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  const scriptStyle = tone === "spicier" ? "heated-debate" : tone === "calmer" ? "balanced-analysis" : undefined;
+  try {
+    const job = await queueScriptGenerationJob({ episodeId, scriptStyle: scriptStyle as any, forceRegenerate: true });
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const, jobId: job.id };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Failed to regenerate the script." };
+  }
+}
+
+/**
+ * Publish with the fact-check HARD GATE. Refuses (with the user's work intact —
+ * no mutation) whenever any claim is unresolved or the latest FactCheckResult
+ * isn't "passed". Only when the gate is clear does it call the REAL publish
+ * path (validateEpisodeForRss → publishEpisode), which independently re-checks
+ * fact-check status plus audio/assets.
+ */
+export async function attemptPublish(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+
+  const vm = await getEpisodeTranscriptVM(episodeId);
+  if (!vm.ok) return { success: false as const, error: vm.error || "Couldn't load the transcript." };
+
+  if (!vm.gate.canPublish) {
+    const n = vm.gate.unresolvedCount;
+    const msg =
+      n > 0
+        ? `Couldn't verify ${n} claim${n === 1 ? "" : "s"} — review or regenerate before publishing.`
+        : vm.gate.reasons[0] || "This episode isn't fact-checked yet.";
+    return {
+      success: false as const,
+      blocked: true as const,
+      unresolvedCount: n,
+      dirtyCount: vm.gate.dirtyCount,
+      reasons: vm.gate.reasons,
+      error: msg,
+    };
+  }
+
+  if (!gate.scriptId) return { success: false as const, error: "No script to publish." };
+
+  // Fact-check gate is clear — hand off to the real publish path, which
+  // enforces the remaining requirements (audio, assets, metadata).
+  try {
+    const eligibility = await validateEpisodeForRss(gate.scriptId, "publish");
+    if (!eligibility.eligible) {
+      return {
+        success: false as const,
+        notReady: true as const,
+        error: `Fact check passed, but the episode isn't publish-ready yet: ${eligibility.errorReasons.join(" ")}`,
+      };
+    }
+    const res: any = await publishEpisode(gate.scriptId, {});
+    if (res && res.success === false) return { success: false as const, error: res.error || "Publish failed." };
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Publish failed." };
+  }
 }

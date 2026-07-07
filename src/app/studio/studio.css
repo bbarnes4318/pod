@@ -763,6 +763,159 @@
 .takeChoiceCta { margin-top: auto; font-size: 0.8rem; font-weight: 700; color: var(--accent); }
 
 /* ============================================================
+   TRANSCRIPT WORKSPACE — editable transcript + citations + fact check
+   ============================================================ */
+.transcriptWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.transcriptCard { min-width: 0; }
+.transcriptHead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.transcriptLegend { display: flex; gap: 1rem; font-size: 0.76rem; color: var(--text-muted); }
+.transcriptLegend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.legendSwatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.transcriptScroller { max-height: 560px; overflow-y: auto; padding-right: 0.3rem; }
+.transcriptSeg { margin-bottom: 1.2rem; }
+.transcriptSegTag { margin-bottom: 0.7rem; }
+
+.tLine {
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  border-left: 3px solid var(--border);
+  margin-bottom: 0.5rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.tLine:hover { background: var(--surface-2); }
+.tLine-dirty { border-left-color: var(--warning); background: var(--warning-muted); }
+.tLineHead { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
+.tSpeaker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.tDirtyChip { background: var(--warning-muted); color: var(--warning); border-color: var(--warning-border); }
+
+.tText {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  padding: 0.15rem 0.3rem;
+  margin: 0 -0.3rem;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  font-family: inherit;
+  cursor: text;
+}
+.tText:hover { border-color: var(--border-hover); background: var(--bg); }
+.tEditRow { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.2rem 0; }
+.tEditArea { min-height: 70px; font-size: 0.9rem; }
+.tEditActions { display: flex; gap: 0.5rem; }
+.tEditActions .btnPrimary, .tEditActions .btnGhost { padding: 0.4rem 0.9rem; font-size: 0.82rem; }
+
+.tCites { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
+.citeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+.citeChip-link { cursor: pointer; }
+.citeChip-link:hover { border-color: var(--accent); color: var(--text); }
+.citeType { font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text); opacity: 0.75; }
+.citeName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+.citeLink { color: var(--accent); font-weight: 700; }
+
+.tLineActions { display: flex; gap: 0.35rem; margin-top: 0.45rem; opacity: 0; transition: opacity 0.15s ease; flex-wrap: wrap; }
+.tLine:hover .tLineActions, .tLine:focus-within .tLineActions { opacity: 1; }
+.tMini {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tMini:hover { border-color: var(--border-hover); color: var(--text); background: var(--surface-2); }
+.tMini:disabled { opacity: 0.5; cursor: default; }
+
+.transcriptFoot { margin-top: 1rem; padding-top: 0.9rem; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; }
+.transcriptRegen { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.transcriptRegen .btnGhost { padding: 0.4rem 0.85rem; font-size: 0.8rem; }
+
+/* Fact status pill — ALWAYS icon(glyph) + label + colour, never colour alone */
+.factPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.14rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.factGlyph {
+  display: inline-grid;
+  place-items: center;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  font-size: 0.62rem;
+  font-weight: 900;
+  border: 1.5px solid currentColor;
+}
+.fact-ok { color: var(--success); background: var(--success-muted); border-color: var(--success-border); }
+.fact-warn { color: var(--warning); background: var(--warning-muted); border-color: var(--warning-border); }
+.fact-err { color: var(--error-text); background: var(--error-muted); border-color: var(--error-border); }
+
+/* Fact-check panel */
+.factPanel { position: sticky; top: calc(var(--studio-topbar-h) + 1rem); }
+.factSummary { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+.factCounts { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.factCount { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.76rem; font-weight: 700; }
+.factCount .factGlyph { border-color: currentColor; }
+.claimList { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; max-height: 340px; overflow-y: auto; }
+.claimRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  background: var(--surface-2);
+}
+.claimRow.fact-ok { border-left-color: var(--success); }
+.claimRow.fact-warn { border-left-color: var(--warning); }
+.claimRow.fact-err { border-left-color: var(--error-text); }
+.claimText { flex: 1; min-width: 0; font-size: 0.8rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.claimCites { font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.publishGate { border-top: 1px solid var(--border); padding-top: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.publishGate .btnPrimary { width: 100%; }
+.gateReasons { font-size: 0.8rem; color: var(--warning); background: var(--warning-muted); border: 1px solid var(--warning-border); border-radius: var(--radius); padding: 0.6rem 0.75rem; }
+.gateResult { font-size: 0.82rem; border-radius: var(--radius); padding: 0.6rem 0.75rem; font-weight: 600; }
+.gate-ok { color: var(--success); background: var(--success-muted); border: 1px solid var(--success-border); }
+.gate-err { color: var(--error-text); background: var(--error-muted); border: 1px solid var(--error-border); }
+
+@media (max-width: 860px) {
+  .transcriptWorkspace { grid-template-columns: 1fr; }
+  .factPanel { position: static; }
+}
+
+/* ============================================================
    Responsive — off-canvas rail below 900px, no horizontal
    overflow from 320px to 2560px.
    ============================================================ */

@@ -2,9 +2,10 @@ import React from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { stripAudioTags } from "@/lib/audio/speechText";
 import { qualityOf, fmtDuration, fmtDate, statusChip, nextActionFor } from "../../lib";
+import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
+import TranscriptWorkspace from "../../TranscriptWorkspace";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,9 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const script = episode.scripts[0] ?? null;
   const q = qualityOf(script);
   const segments: any[] = (script?.content as any)?.segments ?? [];
+
+  // Editable transcript + citations + fact-check view-model (real data).
+  const transcriptVm = script ? await getEpisodeTranscriptVM(id) : null;
 
   const audioSegments = script
     ? await db.audioSegment.findMany({ where: { scriptId: script.id }, select: { lineIndex: true, durationMs: true, hostId: true } })
@@ -153,35 +157,14 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {/* Transcript */}
-      {segments.length > 0 && (
-        <details style={{ marginTop: "1.5rem" }}>
-          <summary className="sectionTitle" style={{ cursor: "pointer", listStyle: "none" }}>
-            Transcript ▾
-          </summary>
-          <div className="studioCard" style={{ marginTop: "0.75rem", maxHeight: 480, overflowY: "auto" }}>
-            {segments.map((seg, si) => (
-              <div key={si} style={{ marginBottom: "1.25rem" }}>
-                <div className="chip chipAccent" style={{ marginBottom: "0.6rem" }}>{seg.title || seg.type}</div>
-                {(seg.lines || []).map((line: any, li: number) => (
-                  <div key={li} style={{ display: "flex", gap: "0.75rem", marginBottom: "0.55rem", fontSize: "0.9rem", lineHeight: 1.55 }}>
-                    <span style={{
-                      flexShrink: 0,
-                      width: 90,
-                      fontWeight: 700,
-                      fontSize: "0.75rem",
-                      paddingTop: 2,
-                      color: line.speakerName === "Dr. Linebreak" ? "#58a6ff" : "var(--accent-color)",
-                    }}>
-                      {line.speakerName === "Dr. Linebreak" ? "DOC" : "MAX"}
-                    </span>
-                    <span style={{ color: "var(--text-primary)" }}>{stripAudioTags(String(line.text || ""))}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
+      {/* Editable transcript + inline citations + fact-check + publish gate */}
+      {transcriptVm && script && (
+        <div style={{ marginTop: "1.75rem" }}>
+          <div className="sectionHead" style={{ marginTop: 0 }}>
+            <h2 className="sectionTitle">Transcript & fact check</h2>
           </div>
-        </details>
+          <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish />
+        </div>
       )}
     </div>
   );

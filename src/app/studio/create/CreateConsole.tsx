@@ -36,6 +36,7 @@ import {
   streamingMessage,
   type StageKey,
 } from "@/lib/createFlow";
+import TranscriptWorkspace from "../TranscriptWorkspace";
 
 export interface StepperTake {
   id: string;
@@ -444,7 +445,11 @@ export default function CreateConsole({
           secondary={{ label: busy ? "…" : "Rewrite the debate", disabled: busy || !script?.present, onClick: rewriteScript }}
           checkpointNote="Checkpoint — approving locks the script and starts fact-checking. Voices (the costly step) run only after this."
         >
-          <ScriptView lines={scriptLines} colorForSpeaker={colorForSpeaker} />
+          {episodeId ? (
+            <TranscriptWorkspace episodeId={episodeId} showPublish={false} />
+          ) : (
+            <ScriptView lines={scriptLines} colorForSpeaker={colorForSpeaker} />
+          )}
         </StageShell>
       )}
 
