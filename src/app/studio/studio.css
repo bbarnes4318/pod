@@ -449,6 +449,171 @@
 .epAudio { width: 100%; height: 36px; }
 
 /* ============================================================
+   THE BOARD — login-gated /studio home
+   ============================================================ */
+
+/* Hero: title on the left, feed-health + Generate CTA on the right. */
+.boardHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.boardHeadMain { min-width: 0; flex: 1 1 320px; }
+.boardHeadAside {
+  display: grid;
+  grid-template-columns: auto;
+  justify-items: end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.boardFeedDetail {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  text-align: right;
+  max-width: 260px;
+}
+.boardHeroCta {
+  margin-top: 0.35rem;
+  font-size: 0.98rem;
+  padding: 0.75rem 1.5rem;
+}
+
+/* Take grid — collapses to one column on phones. */
+.boardGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.1rem;
+}
+.boardCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.boardCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.boardCardTitle {
+  font-size: 1.08rem;
+  -webkit-line-clamp: 3;
+  margin: 0.1rem 0;
+}
+.boardWhy {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.boardWhyLabel {
+  display: inline-block;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  margin-right: 0.45rem;
+  vertical-align: 1px;
+}
+.boardCardFoot { margin-top: auto; padding-top: 0.35rem; }
+.boardGenBtn { width: 100%; }
+
+/* Heat badge — icon + label + score + color, so it never relies on color
+   alone. Amber for the hottest, neutral / muted for cooler takes. Signal
+   Orange is intentionally avoided (reserved for Generate & live). */
+.heatBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.heatBadge svg { width: 14px; height: 14px; flex-shrink: 0; }
+.heatScore {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  padding-left: 0.15rem;
+  border-left: 1px solid currentColor;
+  opacity: 0.95;
+  margin-left: 0.1rem;
+}
+.heat-blazing {
+  color: var(--warning);
+  background: var(--warning-muted);
+  border-color: var(--warning-border);
+}
+.heat-hot { color: var(--text); }
+.heat-warm { color: var(--text-muted); }
+
+/* Empty state */
+.boardEmpty { text-align: left; padding: 2.25rem; }
+.boardEmptyTitle {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+/* Recent episodes strip — horizontal row of compact cards, wraps on narrow. */
+.boardStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.boardEpCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem 1.1rem;
+}
+.boardEpTitle {
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.boardEpMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  margin-top: auto;
+}
+
+@media (max-width: 560px) {
+  .boardHead { align-items: flex-start; }
+  .boardHeadAside { justify-items: flex-start; width: 100%; }
+  .boardFeedDetail { text-align: left; }
+  .boardHeroCta { width: 100%; }
+  .boardGrid, .boardStrip { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
    Responsive — off-canvas rail below 900px, no horizontal
    overflow from 320px to 2560px.
    ============================================================ */

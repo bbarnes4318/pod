@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { logoutAction } from "@/lib/authActions";
 
 /* ------------------------------------------------------------------ *
  * Navigation model. "The Board · Create · Episodes · Hosts ·
@@ -63,8 +64,19 @@ const NAV: NavItem[] = [
 
 const RAIL_KEY = "tm.studio.rail.collapsed";
 
-export default function StudioShell({ children }: { children: React.ReactNode }) {
+type ShellUser = { name: string | null; email: string | null };
+
+function initialsFor(user?: ShellUser): string {
+  const source = user?.name?.trim() || user?.email?.trim() || "";
+  if (!source) return "TM";
+  const parts = source.split(/[\s@._-]+/).filter(Boolean);
+  const letters = (parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[1]?.[0] ?? "" : "");
+  return (letters || source[0]).toUpperCase();
+}
+
+export default function StudioShell({ user, children }: { user?: ShellUser; children: React.ReactNode }) {
   const pathname = usePathname() || "/studio";
+  const displayName = user?.name?.trim() || user?.email?.trim() || "Your account";
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -207,8 +219,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((o) => !o)}
               >
-                <span className="studioAvatar" aria-hidden="true">OP</span>
-                <span className="studioAccountName">Operator</span>
+                <span className="studioAvatar" aria-hidden="true">{initialsFor(user)}</span>
+                <span className="studioAccountName">{displayName}</span>
                 <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="m6 9 6 6 6-6" />
                 </svg>
@@ -217,8 +229,8 @@ export default function StudioShell({ children }: { children: React.ReactNode })
               {menuOpen && (
                 <div className="studioAccountMenu" role="menu">
                   <div className="studioAccountMenuHead">
-                    <div className="studioAccountMenuName">Studio operator</div>
-                    <div className="studioAccountMenuSub">Signed in via admin access</div>
+                    <div className="studioAccountMenuName">{displayName}</div>
+                    <div className="studioAccountMenuSub">{user?.email ? "Signed in" : "Studio"}</div>
                   </div>
                   <Link href="/studio/settings" className="studioAccountMenuItem" role="menuitem">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -238,6 +250,14 @@ export default function StudioShell({ children }: { children: React.ReactNode })
                     </svg>
                     Listener view
                   </Link>
+                  <form action={logoutAction}>
+                    <button type="submit" className="studioAccountMenuItem" role="menuitem">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+                      </svg>
+                      Sign out
+                    </button>
+                  </form>
                 </div>
               )}
             </div>

@@ -3,14 +3,19 @@
 // The guided take → episode flow. Each take card exposes exactly ONE next
 // step (approve → research → create episode → write script), and each
 // in-flight episode shows a stage stepper with its single next action.
-// All mutations reuse the existing ops server actions — no new pipeline.
+// All mutations reuse the NextAuth-authorized /app creation actions (the same
+// services/queue jobs the admin console uses, guarded by the end-user session
+// instead of Basic Auth) — /studio is now gated by login, not admin access.
 
 import React, { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { approveTopic } from "../../admin/topics/actions";
-import { triggerResearchBriefGeneration } from "../../admin/research-briefs/actions";
-import { createEpisodeFromSelectedTopics, triggerScriptGeneration } from "../../admin/episodes/actions";
+import {
+  approveTake,
+  researchTake,
+  produceEpisodeFromTopics,
+  startDebate,
+} from "../../app/create/actions";
 
 const STAGES = ["Take", "Script", "Fact-check", "Voices", "Mix", "Publish"] as const;
 
@@ -82,19 +87,19 @@ export default function CreateConsole({ takes, episodes, highlightTopic }: {
 
   const takeAction = (t: TakeVM) => {
     if (t.status === "pending") {
-      return { label: "Approve this take", fn: () => approveTopic(t.id), note: "Take approved. Next: research it." };
+      return { label: "Approve this take", fn: () => approveTake(t.id), note: "Take approved. Next: research it." };
     }
     if (!t.hasBrief) {
       return {
         label: "Research it",
-        fn: () => triggerResearchBriefGeneration(t.id, false),
+        fn: () => researchTake(t.id, false),
         note: "Research queued — the brief lands in about a minute. Refresh to continue.",
       };
     }
     return {
       label: "Create the episode",
       fn: async () => {
-        const res: any = await createEpisodeFromSelectedTopics([t.id]);
+        const res: any = await produceEpisodeFromTopics([t.id]);
         return res;
       },
       note: "Episode created — now write the script below.",
@@ -148,7 +153,7 @@ export default function CreateConsole({ takes, episodes, highlightTopic }: {
                       <button
                         className="btnPrimary"
                         disabled={pending && busyId === ep.id}
-                        onClick={() => run(ep.id, () => triggerScriptGeneration(ep.id) as any, "Script generation queued — it'll appear in Scripts for review in a couple of minutes.")}
+                        onClick={() => run(ep.id, () => startDebate(ep.id) as any, "Script generation queued — it'll appear in Scripts for review in a couple of minutes.")}
                       >
                         {pending && busyId === ep.id ? "Queuing…" : "Write the script"}
                       </button>

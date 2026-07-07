@@ -1,12 +1,16 @@
 import React from "react";
+import { headers } from "next/headers";
 import StudioShell from "./StudioShell";
 import "./studio.css";
-import { requireAdminPage } from "@/lib/adminAuth";
+import { requireUserPage } from "@/lib/currentUser";
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
-  // Second line of defense behind proxy.ts — 404s non-admin requests even if
-  // the proxy matcher ever stops covering this segment.
-  await requireAdminPage();
+  // Gate the whole /studio surface behind the NextAuth end-user session.
+  // proxy.ts forwards the requested path in x-pathname so an unauthenticated
+  // visitor is bounced to /app/login and returned here after signing in.
+  // (/admin keeps its separate Basic Auth lock in proxy.ts — untouched.)
+  const dest = (await headers()).get("x-pathname") || "/studio";
+  const user = await requireUserPage(dest);
 
-  return <StudioShell>{children}</StudioShell>;
+  return <StudioShell user={{ name: user.name, email: user.email }}>{children}</StudioShell>;
 }

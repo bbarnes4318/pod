@@ -2,235 +2,217 @@ import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
-import { nextActionFor, qualityOf, fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
+import { fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
 
 export const dynamic = "force-dynamic";
 
-export default async function StudioHome() {
-  const [hotTopics, recentScripts, libraryEpisodes, onDeck] = await Promise.all([
-    // The hottest available material — ranked by debate score, enriched for talkability
+/* ------------------------------------------------------------------ *
+ * The Board — the login-gated /studio home. It elevates the material
+ * the studio already ranks (topicCandidate by debateScore, enriched
+ * with the deterministic talkability score) into a scannable grid of
+ * trending takes, each one click away from the real generation flow.
+ * No data here is invented: takes, scores, "why now", episodes, and
+ * the feed-health read are all pulled straight from the database.
+ * ------------------------------------------------------------------ */
+
+const AVAILABLE = ["approved", "pending"] as const;
+
+/** Heat tiers over the 0-100 talkability score. Meaning is carried by an
+ *  icon + a text label + color together — never color alone — and Signal
+ *  Orange is deliberately NOT used here (it's reserved for Generate / live). */
+function heatTier(total: number): { key: string; label: string } {
+  if (total >= 70) return { key: "blazing", label: "Blazing" };
+  if (total >= 45) return { key: "hot", label: "Hot" };
+  return { key: "warm", label: "Warm" };
+}
+
+/** Human "3h ago" / "2d ago" from a timestamp. */
+function agoLabel(d: Date | string): string {
+  const ms = Date.now() - new Date(d).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "just now";
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return `${days}d ago`;
+}
+
+/** Feed health from the real take pool: how many are available and how fresh
+ *  the newest one is. Returned as an icon+label+color status, plus detail. */
+function feedHealth(poolCount: number, newestAt: Date | null): {
+  tone: "ok" | "warn" | "err";
+  label: string;
+  detail: string;
+} {
+  if (poolCount === 0 || !newestAt) {
+    return { tone: "err", label: "Feed quiet", detail: "No takes waiting — generate topics to refill the board" };
+  }
+  const ageHrs = (Date.now() - new Date(newestAt).getTime()) / 3600000;
+  const detail = `${poolCount} take${poolCount === 1 ? "" : "s"} ready · newest ${agoLabel(newestAt)}`;
+  if (ageHrs <= 24 && poolCount >= 4) return { tone: "ok", label: "Feed healthy", detail };
+  if (ageHrs <= 72) return { tone: "warn", label: "Feed cooling", detail };
+  return { tone: "warn", label: "Feed stale", detail };
+}
+
+function FlameIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3c1.6 3.2 4.2 4.7 4.2 8.2A4.2 4.2 0 0 1 12 15.4a4.2 4.2 0 0 1-4.2-4.2c0-1.3.4-2.4 1.1-3.2.2 1.1.9 1.8 1.6 2C10.6 8 10.5 5.3 12 3Z" />
+      <path d="M12 21a5 5 0 0 0 5-5c0-1.6-.8-2.9-1.7-3.9.1 2.3-1.3 3.6-2.6 4.1.4-1.3.1-2.7-1.2-4-1.2 1-2 2.3-2 3.8a5 5 0 0 0 4.5 5Z" opacity="0.55" />
+    </svg>
+  );
+}
+
+export default async function StudioBoard() {
+  const [takes, poolCount, newest, recentEpisodes] = await Promise.all([
+    // The ranked take pool — reuse the EXISTING ranking (debateScore desc).
     db.topicCandidate.findMany({
-      where: { status: { in: ["approved", "pending"] } },
+      where: { status: { in: [...AVAILABLE] } },
       include: { researchBrief: true },
       orderBy: { debateScore: "desc" },
-      take: 4,
+      take: 12,
     }),
-    // Recent scripts carrying the 0-100 quality rubric
-    db.script.findMany({
+    db.topicCandidate.count({ where: { status: { in: [...AVAILABLE] } } }),
+    db.topicCandidate.findFirst({
+      where: { status: { in: [...AVAILABLE] } },
       orderBy: { createdAt: "desc" },
-      take: 10,
-      select: { id: true, createdAt: true, content: true, episode: { select: { title: true } } },
+      select: { createdAt: true },
     }),
-    // Finished audio for the library strip
+    // Real episodes — most recently touched, whatever their stage.
     db.episode.findMany({
-      where: { status: { in: FINISHED_STATUSES }, audioUrl: { not: null } },
       orderBy: { updatedAt: "desc" },
-      take: 6,
-      include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true, content: true } } },
-    }),
-    // The episode currently in flight
-    db.episode.findFirst({
-      where: { status: { notIn: [...FINISHED_STATUSES, "failed"] } },
-      orderBy: { updatedAt: "desc" },
-      include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true } } },
+      take: 8,
+      select: { id: true, title: true, status: true, audioUrl: true, durationSeconds: true, updatedAt: true },
     }),
   ]);
 
-  const rankedTakes = hotTopics
-    .map((t) => ({
-      topic: t,
-      talk: scoreTopicTalkability({
-        title: t.title,
-        summary: t.summary,
-        createdAt: t.createdAt,
-        brief: t.researchBrief as any,
-      }),
-    }))
-    .sort((a, b) => b.talk.total - a.talk.total);
+  // Enrich each take with the studio's existing talkability score (the "heat").
+  const cards = takes.map((t) => {
+    const talk = scoreTopicTalkability({
+      title: t.title,
+      summary: t.summary,
+      createdAt: t.createdAt,
+      brief: t.researchBrief as any,
+    });
+    const whyNow = (t.researchBrief?.whyMattersNow?.trim() || t.summary?.trim() || "") || null;
+    return {
+      id: t.id,
+      title: t.title,
+      sport: t.sport,
+      status: t.status,
+      heat: talk.total,
+      tier: heatTier(talk.total),
+      whyNow,
+    };
+  });
 
-  const scored = recentScripts
-    .map((s) => ({ script: s, q: qualityOf(s) }))
-    .filter((x) => x.q !== null) as { script: (typeof recentScripts)[number]; q: NonNullable<ReturnType<typeof qualityOf>> }[];
-
-  const latestQ = scored[0]?.q ?? null;
-  const avgRecent = scored.length
-    ? Math.round(scored.slice(0, 3).reduce((a, x) => a + x.q.total, 0) / Math.min(3, scored.length))
-    : null;
-
-  const deckAction = onDeck ? nextActionFor(onDeck, onDeck.scripts[0]?.id) : null;
+  const feed = feedHealth(poolCount, newest?.createdAt ?? null);
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">
-        What are we <span style={{ color: "var(--accent-color)" }}>arguing</span> tonight?
-      </h1>
-      <p className="pageSub">
-        Pick a take, and the studio handles the rest — research, script, voices, mix.
-      </p>
-
-      {/* ---- ON DECK: the in-flight episode, one clear next move ---- */}
-      {onDeck && deckAction && (
-        <div className="studioCard" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1.25rem", flexWrap: "wrap", borderColor: "rgba(255,90,31,0.35)" }}>
-          <div style={{ minWidth: 0 }}>
-            <div className="chip chipAccent" style={{ marginBottom: "0.5rem" }}>On deck · {deckAction.stage}</div>
-            <div className="epTitle" style={{ fontSize: "1.15rem" }}>{onDeck.title}</div>
-            <div className="epMeta" style={{ marginTop: "0.3rem" }}>
-              <span>{statusChip(onDeck.status).label}</span>
-              <span>·</span>
-              <span>updated {fmtDate(onDeck.updatedAt)}</span>
-            </div>
-          </div>
-          <Link href={deckAction.href} className="btnPrimary">
-            {deckAction.label} →
+      {/* ---------------- Hero: title, feed health, big Generate CTA --------- */}
+      <header className="boardHead">
+        <div className="boardHeadMain">
+          <h1 className="pageTitle">The Board</h1>
+          <p className="pageSub" style={{ marginBottom: 0 }}>
+            Tonight&apos;s hottest takes, ranked by debate heat. Pick one and the studio
+            handles the rest — research, script, voices, mix.
+          </p>
+        </div>
+        <div className="boardHeadAside">
+          <span
+            className={`statusPill statusPill--${feed.tone}`}
+            title={feed.detail}
+            role="status"
+          >
+            {feed.label}
+          </span>
+          <span className="boardFeedDetail">{feed.detail}</span>
+          <Link href="/studio/create" className="btnPrimary boardHeroCta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ width: 18, height: 18 }}>
+              <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
+            </svg>
+            Generate Episode
           </Link>
         </div>
-      )}
+      </header>
 
-      {/* ---- HOT TAKES: the fastest path to the next episode ---- */}
+      {/* ---------------- Trending takes grid ------------------------------- */}
       <div className="sectionHead">
-        <h2 className="sectionTitle">Tonight&apos;s hottest takes</h2>
+        <h2 className="sectionTitle">Trending takes</h2>
         <Link href="/studio/takes" className="sectionAction">All takes →</Link>
       </div>
-      {rankedTakes.length === 0 ? (
-        <div className="emptyNote">
-          No takes on the board yet. <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>Generate topics</Link> from the latest sports data to get started.
+
+      {cards.length === 0 ? (
+        <div className="emptyNote boardEmpty">
+          <div className="boardEmptyTitle">The board is clear</div>
+          <p style={{ margin: "0.5rem 0 1.25rem", maxWidth: 440 }}>
+            No takes are waiting yet. Kick off your first episode and the studio will
+            pull in fresh sports material, research it, and write the debate.
+          </p>
+          <Link href="/studio/create" className="btnPrimary">Generate your first episode</Link>
         </div>
       ) : (
-        <div className="grid2">
-          {rankedTakes.map(({ topic, talk }) => (
-            <div key={topic.id} className="studioCard">
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "flex-start" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="epMeta" style={{ marginBottom: "0.35rem" }}>
-                    <span className="chip">{topic.sport}</span>
-                    {topic.status === "approved" && <span className="chip chipSuccess">Ready</span>}
-                  </div>
-                  <div className="epTitle" style={{ fontSize: "1.05rem" }}>{topic.title}</div>
-                </div>
-                <div className="scoreBadge" title="Talkability — how argue-worthy this take is right now">
-                  {talk.total}<small> /100</small>
-                </div>
+        <div className="boardGrid">
+          {cards.map((c) => (
+            <article key={c.id} className="studioCard boardCard">
+              <div className="boardCardTop">
+                <span className="chip">{c.sport}</span>
+                <span className={`heatBadge heat-${c.tier.key}`} title={`Debate heat ${c.heat} of 100`}>
+                  <FlameIcon />
+                  <span className="heatLabel">{c.tier.label}</span>
+                  <span className="heatScore" aria-label={`heat ${c.heat} of 100`}>{c.heat}</span>
+                </span>
               </div>
 
-              {/* WHY it's hot — the score breakdown as a visual */}
-              <div style={{ margin: "0.85rem 0 1rem" }}>
-                {[
-                  ["Controversy", topic.controversyScore],
-                  ["Star power", topic.starPowerScore],
-                  ["Betting heat", topic.bettingRelevanceScore],
-                  ["Freshness", topic.recencyScore],
-                ].map(([label, v]) => (
-                  <div key={label as string} className="axisRow">
-                    <span>{label}</span>
-                    <div className="scoreBarTrack">
-                      <div className="scoreBarFill" style={{ width: `${Math.min(100, Number(v))}%` }} />
-                    </div>
-                    <strong>{Math.round(Number(v))}</strong>
-                  </div>
-                ))}
-              </div>
+              <h3 className="epTitle boardCardTitle">{c.title}</h3>
 
-              <div style={{ display: "flex", gap: "0.6rem" }}>
-                <Link href={`/studio/create?topic=${topic.id}`} className="btnPrimary" style={{ flex: 1 }}>
-                  Make this episode
+              {c.whyNow && (
+                <p className="boardWhy">
+                  <span className="boardWhyLabel">Why now</span>
+                  {c.whyNow}
+                </p>
+              )}
+
+              <div className="boardCardFoot">
+                <Link href={`/studio/create?topic=${c.id}`} className="btnPrimary boardGenBtn">
+                  Generate Episode
                 </Link>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
 
-      {/* ---- QUALITY PULSE ---- */}
+      {/* ---------------- Recent episodes strip ----------------------------- */}
       <div className="sectionHead">
-        <h2 className="sectionTitle">Quality pulse</h2>
-        <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-          Every script is scored 0–100 before it&apos;s voiced
-        </span>
-      </div>
-      {scored.length === 0 ? (
-        <div className="emptyNote">No scored scripts yet — your first generated script will show its quality breakdown here.</div>
-      ) : (
-        <div className="grid2">
-          <div className="studioCard">
-            <div style={{ display: "flex", alignItems: "baseline", gap: "1rem", marginBottom: "0.75rem" }}>
-              <span className="scoreBadge" style={{ fontSize: "2.6rem" }}>
-                {latestQ!.total}<small> /100 latest</small>
-              </span>
-              {avgRecent !== null && (
-                <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                  {avgRecent} avg over last {Math.min(3, scored.length)}
-                </span>
-              )}
-            </div>
-            {Object.entries(latestQ!.axes).map(([axis, v]) => (
-              <div key={axis} className="axisRow">
-                <span style={{ textTransform: "capitalize" }}>{axis}</span>
-                <div className="scoreBarTrack">
-                  <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
-                </div>
-                <strong>{v.score}/{v.max}</strong>
-              </div>
-            ))}
-          </div>
-
-          <div className="studioCard">
-            <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.9rem" }}>
-              Recent scripts
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", height: "110px" }}>
-              {scored.slice(0, 8).reverse().map(({ script, q }) => (
-                <Link
-                  key={script.id}
-                  href={`/admin/scripts/${script.id}`}
-                  title={`${script.episode?.title ?? "Script"} — ${q.total}/100`}
-                  style={{
-                    flex: 1,
-                    height: `${q.total}%`,
-                    borderRadius: "4px 4px 0 0",
-                    background: "linear-gradient(180deg, var(--wave-warm), var(--wave-hot))",
-                    opacity: 0.9,
-                    minWidth: "14px",
-                  }}
-                />
-              ))}
-            </div>
-            <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "0.5rem" }}>
-              oldest → newest · tap a bar to open the script
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- LIBRARY ---- */}
-      <div className="sectionHead">
-        <h2 className="sectionTitle">Latest episodes</h2>
+        <h2 className="sectionTitle">Recent episodes</h2>
         <Link href="/studio/episodes" className="sectionAction">Full library →</Link>
       </div>
-      {libraryEpisodes.length === 0 ? (
-        <div className="emptyNote">No finished episodes yet — your first mix lands here with a player and its score.</div>
+
+      {recentEpisodes.length === 0 ? (
+        <div className="emptyNote">
+          No episodes yet — your first one lands here the moment you generate it.
+        </div>
       ) : (
-        <div className="grid3">
-          {libraryEpisodes.map((ep) => {
-            const q = qualityOf(ep.scripts[0]);
+        <div className="boardStrip">
+          {recentEpisodes.map((ep) => {
             const chip = statusChip(ep.status);
+            const isLive = ep.status === "published";
+            const isReady = FINISHED_STATUSES.includes(ep.status) && !!ep.audioUrl;
+            const tone = isLive ? "live" : isReady ? "ok" : ep.status === "failed" ? "err" : "warn";
             return (
-              <div key={ep.id} className="studioCard epCard">
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem" }}>
-                  <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-                  {q && <span className="scoreBadge" style={{ fontSize: "1.15rem" }}>{q.total}<small>/100</small></span>}
-                </div>
-                <Link href={`/studio/episodes/${ep.id}`} className="epTitle" style={{ color: "var(--text-primary)" }}>
-                  {ep.title}
-                </Link>
-                <div className="epMeta">
-                  <span>{fmtDuration(ep.durationSeconds)}</span>
-                  <span>·</span>
+              <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard boardEpCard clickable">
+                <span className={`statusPill statusPill--${tone}`}>{chip.label}</span>
+                <span className="boardEpTitle">{ep.title}</span>
+                <span className="boardEpMeta">
+                  {isReady && <span>{fmtDuration(ep.durationSeconds)}</span>}
+                  {isReady && <span aria-hidden="true">·</span>}
                   <span>{fmtDate(ep.updatedAt)}</span>
-                </div>
-                <Link href={`/studio/episodes/${ep.id}`} className="btnGhost" style={{ justifyContent: "center" }}>
-                  ▶ Listen
-                </Link>
-              </div>
+                </span>
+              </Link>
             );
           })}
         </div>

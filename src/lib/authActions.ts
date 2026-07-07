@@ -9,6 +9,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { signIn, signOut } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { safeCallbackUrl } from "@/lib/authCallback";
 
 export interface AuthActionState {
   error?: string;
@@ -31,9 +32,8 @@ const signupSchema = z.object({
 });
 
 function safeCallback(raw: FormDataEntryValue | null): string {
-  const v = typeof raw === "string" ? raw : "";
-  // Only allow same-origin app paths — never an open redirect.
-  return v.startsWith("/app") ? v : "/app";
+  // Allow same-origin /app and /studio paths — never an open redirect.
+  return safeCallbackUrl(typeof raw === "string" ? raw : null);
 }
 
 /** Register a new email/password account, then sign the user in. */

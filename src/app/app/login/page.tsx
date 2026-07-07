@@ -2,13 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/currentUser";
 import { googleAuthConfigured } from "@/lib/auth";
+import { safeCallbackUrl } from "@/lib/authCallback";
 import LoginForm from "./LoginForm";
 
 export const dynamic = "force-dynamic";
 
 function normalizeCallback(v: string | string[] | undefined): string {
-  const raw = Array.isArray(v) ? v[0] : v;
-  return raw && raw.startsWith("/app") ? raw : "/app";
+  return safeCallbackUrl(v);
 }
 
 export default async function LoginPage({
