@@ -16,37 +16,77 @@
    ============================================================ */
 
 :root {
-  /* Base surfaces — deep studio black-blue */
-  --bg-primary: #0b0d12;        /* app background */
-  --bg-secondary: #12151d;      /* cards / panels */
-  --bg-tertiary: #1a1e29;       /* inputs, hovers, wells */
-  --border-color: #232837;
-  --border-hover: #36405a;
+  /* ============================================================
+     STEP 1 — Semantic design tokens (canonical names)
+     ------------------------------------------------------------
+     These are the single source of truth for the Take Machine
+     palette. Legacy variable names below alias to them, so every
+     existing page keeps rendering while the whole surface adopts
+     the new values. Edit values HERE only.
+     ============================================================ */
 
-  /* Text — warm studio white */
-  --text-primary: #f2f0eb;
-  --text-secondary: #97a0b5;
+  /* Base surfaces — near-black studio (NOT pure black).
+     Elevation is expressed by lightness: surfaces get lighter, not
+     shadowed. --surface-2 is for elevated / advanced-mode panels. */
+  --bg: #0E1116;
+  --surface: #161A21;
+  --surface-2: #1E242D;
+  --border: #2A313B;
 
-  /* Signature accent — Signal Orange (the ON AIR lamp) */
-  --accent-color: #ff5a1f;
-  --accent-hover: #ff7038;
-  --accent-muted: rgba(255, 90, 31, 0.12);
+  /* Text — soft-white (NOT pure white) + muted */
+  --text: #EDEFF2;
+  --text-muted: #9BA3AF;
+
+  /* Signature accent — Signal Orange.
+     Reserved for primary / live / Generate ONLY. */
+  --accent: #FF5A1F;
+  --accent-hover: #FF6E3C;
+  --accent-press: #E64D15;
+
+  /* Semantic status */
+  --success: #3BB273;
+  --warning: #E0A82E;
+  --error: #E5484D;
+  /* AA-safe red for small TEXT on dark surfaces (--error itself is
+     kept at the exact spec value for fills/borders, where it only
+     needs 3:1). #E5484D as body text is 3.99:1 on elevated panels. */
+  --error-text: #FF6B6E;
+
+  /* Host identity */
+  --host-max: #FF5A1F;
+  --host-doc: #4C8DFF;
+
+  /* ------------------------------------------------------------
+     Legacy aliases — load-bearing: every existing page consumes
+     these names. They now resolve to the tokens above.
+     ------------------------------------------------------------ */
+  --bg-primary: var(--bg);            /* app background */
+  --bg-secondary: var(--surface);     /* cards / panels */
+  --bg-tertiary: var(--surface-2);    /* inputs, hovers, wells */
+  --border-color: var(--border);
+  --border-hover: #3A4453;            /* one step lighter than --border */
+
+  --text-primary: var(--text);
+  --text-secondary: var(--text-muted);
+
+  --accent-color: var(--accent);
+  /* --accent-hover defined above */
+  --accent-muted: rgba(255, 90, 31, 0.14);
   --accent-glow: rgba(255, 90, 31, 0.35);
 
   /* Waveform / audio gradient stops (audio elements only) */
-  --wave-hot: #ff5a1f;
-  --wave-warm: #ffb224;
+  --wave-hot: var(--accent);
+  --wave-warm: #FFB224;
 
-  /* Semantic (kept muted so the accent stays the loudest voice) */
-  --success-color: #3dd68c;
-  --success-muted: rgba(61, 214, 140, 0.12);
-  --success-border: rgba(61, 214, 140, 0.35);
-  --warning-color: #ffb224;
-  --warning-muted: rgba(255, 178, 36, 0.12);
-  --warning-border: rgba(255, 178, 36, 0.35);
-  --error-color: #ff5c5c;
-  --error-muted: rgba(255, 92, 92, 0.12);
-  --error-border: rgba(255, 92, 92, 0.35);
+  --success-color: var(--success);
+  --success-muted: rgba(59, 178, 115, 0.14);
+  --success-border: rgba(59, 178, 115, 0.38);
+  --warning-color: var(--warning);
+  --warning-muted: rgba(224, 168, 46, 0.14);
+  --warning-border: rgba(224, 168, 46, 0.38);
+  --error-color: var(--error);
+  --error-muted: rgba(229, 72, 77, 0.14);
+  --error-border: rgba(229, 72, 77, 0.40);
 
   /* Type */
   --font-family: var(--font-body-next), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -60,6 +100,11 @@
   --shadow-1: 0 2px 10px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 14px 40px -12px rgba(0, 0, 0, 0.6);
   --shadow-accent: 0 8px 30px -8px var(--accent-glow);
+
+  /* Studio shell metrics (consumed by studio.css) */
+  --studio-rail: 248px;
+  --studio-rail-collapsed: 76px;
+  --studio-topbar-h: 60px;
 }
 
 * {
@@ -74,6 +119,8 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-family);
+  /* Never render UI/body text below 400 on dark — thin weights smear. */
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -119,9 +166,11 @@ textarea {
   background: transparent;
 }
 
-/* Accessible focus — accent ring everywhere */
+/* Accessible focus — 3px accent ring + 2px offset everywhere.
+   (The /app light surface intentionally overrides this with its own
+   brand-blue ring in app.css.) */
 :focus-visible {
-  outline: 2px solid var(--accent-color);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -140,15 +189,19 @@ textarea {
 }
 
 .studioCard {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.25rem 1.4rem;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  /* Elevation by lightness, not shadow: hovering lifts the surface. */
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 .studioCard:hover {
+  background: var(--surface-2);
   border-color: var(--border-hover);
-  box-shadow: var(--shadow-1);
+}
+.studioCard.clickable {
+  cursor: pointer;
 }
 .studioCard.clickable:hover {
   transform: translateY(-2px);
@@ -258,6 +311,98 @@ textarea {
 .fadeUp {
   animation: fadeUp 0.35s ease both;
 }
+
+/* ============================================================
+   Token utilities — the palette exposed as single-purpose classes
+   so tokens are usable anywhere without writing new CSS.
+   (bg-*, text-*, border-*, font-* mirror the semantic tokens.)
+   ============================================================ */
+.bg-bg        { background-color: var(--bg); }
+.bg-surface   { background-color: var(--surface); }
+.bg-surface-2 { background-color: var(--surface-2); }
+.bg-accent    { background-color: var(--accent); color: var(--bg); }
+
+.text-fg      { color: var(--text); }
+.text-muted   { color: var(--text-muted); }
+.text-accent  { color: var(--accent); }
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-error   { color: var(--error-text); }
+.text-host-max { color: var(--host-max); }
+.text-host-doc { color: var(--host-doc); }
+
+.border-default { border: 1px solid var(--border); }
+
+.font-display { font-family: var(--font-display); }
+/* Monospace + tabular figures for scores, odds, and timestamps. */
+.font-mono, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* Screen-reader-only (used to keep accessible names when the rail
+   collapses to icons). */
+.srOnly {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   Status pill — icon + label + color (never color alone).
+   A shaped indicator (dot / pulse) plus an always-present text
+   label carry the state, so meaning survives color-blindness.
+   ============================================================ */
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  padding: 0.24rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.statusPill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.statusPill--live {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: rgba(255, 90, 31, 0.4);
+}
+.statusPill--live::before {
+  box-shadow: 0 0 8px var(--accent-glow);
+  animation: onAirPulse 2s ease-in-out infinite;
+}
+.statusPill--ok {
+  color: var(--success);
+  background: var(--success-muted);
+  border-color: var(--success-border);
+}
+.statusPill--warn {
+  color: var(--warning);
+  background: var(--warning-muted);
+  border-color: var(--warning-border);
+}
+.statusPill--err {
+  color: var(--error-text);
+  background: var(--error-muted);
+  border-color: var(--error-border);
+}
+.statusPill--idle { color: var(--text-muted); }
 
 @media (prefers-reduced-motion: reduce) {
   *,

@@ -1,96 +1,293 @@
-/* Studio shell — the user-facing product surface. */
+/* ============================================================
+   STUDIO SHELL — the authenticated operator surface (/studio)
+   A collapsible left rail + a persistent top bar wrap every
+   studio page. All color comes from the tokens in globals.css;
+   elevation is expressed by lightness (surfaces get lighter),
+   not by drop shadows.
+   ============================================================ */
 
 .studioShell {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: var(--studio-rail) minmax(0, 1fr);
   background:
-    radial-gradient(ellipse 70% 40% at 85% -10%, rgba(255, 90, 31, 0.08) 0%, transparent 55%),
-    var(--bg-primary);
+    radial-gradient(ellipse 70% 40% at 85% -10%, rgba(255, 90, 31, 0.07) 0%, transparent 55%),
+    var(--bg);
+  transition: grid-template-columns 0.2s ease;
+}
+.studioShell[data-collapsed="true"] {
+  grid-template-columns: var(--studio-rail-collapsed) minmax(0, 1fr);
 }
 
-.studioTopbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  padding: 0.9rem 2rem;
-  border-bottom: 1px solid var(--border-color);
+/* ---------- Left rail ---------- */
+.studioSidebar {
   position: sticky;
   top: 0;
-  z-index: 40;
-  background: rgba(11, 13, 18, 0.85);
-  backdrop-filter: blur(12px);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 0.7rem 1.1rem;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  z-index: 60;
 }
 
 .studioBrand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem 0.9rem;
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   white-space: nowrap;
+  color: var(--text);
 }
+.studioBrand em { font-style: normal; color: var(--accent); }
+.studioBrandWord { transition: opacity 0.15s ease; }
+.studioShell[data-collapsed="true"] .studioBrandWord { opacity: 0; pointer-events: none; }
 
-.studioBrand em {
-  font-style: normal;
-  color: var(--accent-color);
-}
-
-.studioNav {
+.studioNavList {
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.2rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .studioNavLink {
-  padding: 0.45rem 0.9rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  font-size: 0.92rem;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  white-space: nowrap;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
-
 .studioNavLink:hover {
-  color: var(--text-primary);
-  background: var(--bg-tertiary);
+  color: var(--text);
+  background: var(--surface-2);
 }
-
 .studioNavLink.active {
-  color: var(--accent-color);
+  color: var(--accent);
   background: var(--accent-muted);
 }
+.studioNavIcon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+.studioNavIcon svg { width: 20px; height: 20px; display: block; }
+.studioNavLabel { transition: opacity 0.15s ease; }
+.studioShell[data-collapsed="true"] .studioNavLabel { opacity: 0; }
+.studioShell[data-collapsed="true"] .studioNavLink { justify-content: center; }
 
-.opsLink {
+/* Rail collapse toggle (desktop) */
+.studioRailToggle {
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
   font-size: 0.8rem;
   font-weight: 600;
-  color: var(--text-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 0.4rem 0.8rem;
+  cursor: pointer;
   white-space: nowrap;
-  transition: border-color 0.15s ease, color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.studioRailToggle:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface-2); }
+.studioRailToggle svg { width: 18px; height: 18px; flex-shrink: 0; transition: transform 0.2s ease; }
+.studioShell[data-collapsed="true"] .studioRailToggle { justify-content: center; }
+.studioShell[data-collapsed="true"] .studioRailToggle svg { transform: rotate(180deg); }
+.studioShell[data-collapsed="true"] .studioRailToggleLabel { display: none; }
+
+/* ---------- Body column ---------- */
+.studioBody {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.opsLink:hover {
-  border-color: var(--border-hover);
-  color: var(--text-primary);
+.studioTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: var(--studio-topbar-h);
+  padding: 0.7rem 1.6rem;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
 }
 
+.studioTopbarLeft { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
+.studioTopbarRight { display: flex; align-items: center; gap: 0.8rem; }
+
+/* Mobile brand shown in the top bar when the rail is off-canvas */
+.studioTopbarBrand {
+  display: none;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text);
+}
+.studioTopbarBrand em { font-style: normal; color: var(--accent); }
+
+/* Hamburger — mobile only */
+.studioHamburger {
+  display: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+.studioHamburger:hover { background: var(--surface-2); border-color: var(--border-hover); }
+.studioHamburger svg { width: 20px; height: 20px; }
+
+/* Global Generate button — the one place Signal Orange leads a CTA */
+.studioGenerateBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, box-shadow 0.18s ease, transform 0.1s ease;
+}
+.studioGenerateBtn:hover { background: var(--accent-hover); box-shadow: var(--shadow-accent); }
+.studioGenerateBtn:active { background: var(--accent-press); transform: scale(0.98); }
+.studioGenerateBtn svg { width: 16px; height: 16px; }
+.studioGenerateLabel { white-space: nowrap; }
+
+/* Account menu */
+.studioAccount { position: relative; }
+.studioAccountBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.studioAccountBtn:hover { border-color: var(--border-hover); background: var(--surface-2); }
+.studioAvatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-press));
+  color: var(--bg);
+  font-size: 0.72rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.studioAccountName { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studioAccountCaret { width: 14px; height: 14px; color: var(--text-muted); }
+
+.studioAccountMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 210px;
+  padding: 0.4rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  z-index: 70;
+  animation: fadeUp 0.16s ease both;
+}
+.studioAccountMenuHead {
+  padding: 0.5rem 0.7rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+.studioAccountMenuName { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+.studioAccountMenuSub { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.studioAccountMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.14s ease, background-color 0.14s ease;
+}
+.studioAccountMenuItem:hover { color: var(--text); background: var(--surface); }
+.studioAccountMenuItem svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Scrim behind the mobile drawer */
+.studioScrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 55;
+  border: none;
+  cursor: pointer;
+}
+
+/* ---------- Main content ---------- */
 .studioMain {
   flex: 1;
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;
   padding: 2.25rem 2rem 4rem;
+  min-width: 0;
 }
 
-/* ---- Common studio page primitives ---- */
+/* ============================================================
+   Common studio page primitives (class names consumed across
+   every /studio page — restyled to the token system, names kept).
+   ============================================================ */
 
 .pageTitle {
   font-family: var(--font-display);
@@ -98,12 +295,15 @@
   font-weight: 700;
   text-transform: uppercase;
   line-height: 0.95;
+  letter-spacing: 0.005em;
   margin-bottom: 0.4rem;
+  color: var(--text);
 }
 
 .pageSub {
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 0.95rem;
+  line-height: 1.55;
   margin-bottom: 2rem;
   max-width: 640px;
 }
@@ -122,38 +322,36 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
 .sectionAction {
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--accent-color);
+  color: var(--accent);
 }
-
-.sectionAction:hover {
-  color: var(--accent-hover);
-}
+.sectionAction:hover { color: var(--accent-hover); }
 
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
 .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 
 .emptyNote {
-  border: 1px dashed var(--border-color);
+  border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
   padding: 2rem;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
+/* ---- Buttons ---- */
 .btnPrimary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: var(--accent-color);
-  color: #0b0d12;
+  background: var(--accent);
+  color: var(--bg);
   font-weight: 700;
   font-size: 0.92rem;
   padding: 0.65rem 1.35rem;
@@ -163,24 +361,53 @@
   transition: background-color 0.15s ease, box-shadow 0.18s ease, transform 0.1s ease;
 }
 .btnPrimary:hover { background: var(--accent-hover); box-shadow: var(--shadow-accent); }
-.btnPrimary:active { transform: scale(0.98); }
-.btnPrimary:disabled { background: var(--bg-tertiary); color: var(--text-secondary); cursor: not-allowed; box-shadow: none; }
+.btnPrimary:active { background: var(--accent-press); transform: scale(0.98); }
+.btnPrimary:disabled { background: var(--surface-2); color: var(--text-muted); cursor: not-allowed; box-shadow: none; }
 
 .btnGhost {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--text);
   font-weight: 600;
   font-size: 0.88rem;
   padding: 0.6rem 1.1rem;
   border-radius: var(--radius);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
-.btnGhost:hover { border-color: var(--border-hover); background: var(--bg-tertiary); }
+.btnGhost:hover { border-color: var(--border-hover); background: var(--surface-2); }
+
+/* ---- Form primitives (inputs / selects / textareas / labels) ---- */
+.fieldLabel {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+.input, .select, .textarea {
+  width: 100%;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input::placeholder, .textarea::placeholder { color: var(--text-muted); }
+.input:focus, .select:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+.textarea { min-height: 120px; resize: vertical; }
+.select { cursor: pointer; }
 
 /* Score breakdown rows (talkability / quality axes) */
 .axisRow {
@@ -189,21 +416,24 @@
   align-items: center;
   gap: 0.6rem;
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   margin-top: 0.4rem;
 }
-.axisRow strong { color: var(--text-primary); font-weight: 600; text-align: right; }
+.axisRow strong {
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Episode cards */
-.epCard {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
+.epCard { display: flex; flex-direction: column; gap: 0.65rem; }
 .epTitle {
   font-weight: 700;
   font-size: 1rem;
   line-height: 1.3;
+  color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -214,12 +444,47 @@
   align-items: center;
   gap: 0.6rem;
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-muted);
 }
 .epAudio { width: 100%; height: 36px; }
 
+/* ============================================================
+   Responsive — off-canvas rail below 900px, no horizontal
+   overflow from 320px to 2560px.
+   ============================================================ */
+@media (max-width: 900px) {
+  .studioShell,
+  .studioShell[data-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+
+  .studioSidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: min(84vw, var(--studio-rail));
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: var(--shadow-2);
+  }
+  .studioShell[data-mobile-open="true"] .studioSidebar { transform: translateX(0); }
+  /* On mobile the rail is always full width when open — never the icon rail. */
+  .studioShell[data-collapsed="true"] .studioBrandWord,
+  .studioShell[data-collapsed="true"] .studioNavLabel { opacity: 1; }
+  .studioShell[data-collapsed="true"] .studioNavLink { justify-content: flex-start; }
+  .studioRailToggle { display: none; }
+
+  .studioHamburger { display: inline-flex; }
+  .studioTopbarBrand { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .studioAccountName { display: none; }
+}
+
+@media (min-width: 901px) {
+  .studioScrim { display: none; }
+}
+
 @media (max-width: 720px) {
-  .studioTopbar { padding: 0.75rem 1rem; flex-wrap: wrap; }
-  .studioMain { padding: 1.5rem 1rem 3rem; }
+  .studioTopbar { padding: 0.6rem 1rem; }
+  .studioMain { padding: 1.6rem 1rem 3rem; }
   .pageTitle { font-size: 1.9rem; }
+  .studioGenerateLabel { display: none; }
+  .studioGenerateBtn { padding: 0.55rem 0.7rem; }
 }
