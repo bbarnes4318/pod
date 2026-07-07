@@ -12,7 +12,7 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData } from "./podcastQueue";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
@@ -98,6 +98,8 @@ const worker = new Worker(
       return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
     } else if (job.name === "audio:stitch-final") {
       return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
+    } else if (job.name === "audio:regenerate-line") {
+      return handleLineAudioRegen(job as Job<LineAudioRegenJobData>);
     } else if (job.name === "content:generate-assets") {
       return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
     } else if (job.name === "scheduler:recurring-podcasts") {
@@ -2092,6 +2094,49 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
     return { success: true, ...res };
   } catch (err: any) {
     console.error(`[Worker] Final audio stitching job failed:`, err.message);
+    throw err;
+  }
+}
+
+/**
+ * Line-level audio regeneration — the budget-protection payoff.
+ * Step 1: re-synthesize ONLY the one edited line via generateTtsSegments with
+ *   segmentRange = {start:end:lineIndex} + forceRegenerate. Every other line is
+ *   filtered out, so no TTS is spent on unchanged lines.
+ * Step 2: re-splice with the EXISTING stitchFinalEpisodeAudio, which downloads
+ *   each line's already-synthesized AudioSegment.audioUrl (the new one for this
+ *   line, the untouched ones for the rest) and re-mixes — no TTS at stitch.
+ */
+async function handleLineAudioRegen(job: Job<LineAudioRegenJobData>) {
+  const { scriptId, lineIndex } = job.data;
+  console.log(`[Worker] Starting audio:regenerate-line for Script ${scriptId}, line #${lineIndex}`);
+  const jobLog = await db.jobLog.create({
+    data: { jobType: "audio:regenerate-line", status: "running", input: { scriptId, lineIndex } as any, output: {} },
+  });
+  try {
+    // 1. Re-voice ONLY this line (segmentRange collapses to one line).
+    const tts = await generateTtsSegments({
+      scriptId,
+      segmentRange: { startLineIndex: lineIndex, endLineIndex: lineIndex },
+      forceRegenerate: true,
+    });
+    // 2. Re-splice reusing every other line's existing audio (no TTS here).
+    const stitch = await stitchFinalEpisodeAudio({ scriptId });
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: stitch.finalStatus === "completed" ? "completed" : "completed_with_errors",
+        output: { scriptId, lineIndex, tts, stitch } as any,
+      },
+    });
+    console.log(`[Worker] Line regen complete for line #${lineIndex}; re-stitch: ${stitch.finalStatus}`);
+    return { success: true, tts, stitch };
+  } catch (err: any) {
+    console.error(`[Worker] Line audio regen failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "failed", error: err.message || "Line regen error", output: { scriptId, lineIndex } as any },
+    });
     throw err;
   }
 }

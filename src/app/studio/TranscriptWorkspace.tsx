@@ -13,6 +13,7 @@ import {
   saveLineEdit,
   requestLineVariant,
   regenerateEpisodeScript,
+  regenerateLineAudio,
   attemptPublish,
 } from "../app/create/actions";
 import type { TranscriptVM, TranscriptLineVM, Citation, FactStatus } from "@/lib/services/transcriptView";
@@ -37,11 +38,15 @@ export default function TranscriptWorkspace({
   episodeId,
   initialVm,
   showPublish = true,
+  canRevoice = false,
   onChanged,
 }: {
   episodeId: string;
   initialVm?: TranscriptVM;
   showPublish?: boolean;
+  /** When the episode is fully voiced, per-line actions re-synthesize that one
+   *  line's audio + re-splice (Step 5) instead of just recording the intent. */
+  canRevoice?: boolean;
   onChanged?: () => void;
 }) {
   const [vm, setVm] = useState<TranscriptVM | null>(initialVm ?? null);
@@ -78,7 +83,7 @@ export default function TranscriptWorkspace({
 
   return (
     <div className="transcriptWorkspace">
-      <TranscriptEditor vm={vm} episodeId={episodeId} colorFor={colorFor} onChanged={refresh} />
+      <TranscriptEditor vm={vm} episodeId={episodeId} colorFor={colorFor} canRevoice={canRevoice} onChanged={refresh} />
       <FactCheckPanel vm={vm} episodeId={episodeId} showPublish={showPublish} onChanged={refresh} />
     </div>
   );
@@ -92,11 +97,13 @@ function TranscriptEditor({
   vm,
   episodeId,
   colorFor,
+  canRevoice,
   onChanged,
 }: {
   vm: TranscriptVM;
   episodeId: string;
   colorFor: (s: string) => string;
+  canRevoice: boolean;
   onChanged: () => void;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -114,11 +121,22 @@ function TranscriptEditor({
     setBusyLine(lineIndex);
     try {
       const res: any = await saveLineEdit(episodeId, lineIndex, draft);
-      if (res?.success === false) setNote(res.error || "Couldn't save that edit.");
-      else {
-        setEditing(null);
-        await onChanged();
+      if (res?.success === false) {
+        setNote(res.error || "Couldn't save that edit.");
+        return;
       }
+      setEditing(null);
+      // Text edit → new line audio: if the episode is voiced, re-synthesize
+      // ONLY this line and re-splice so the new words are actually heard.
+      if (canRevoice) {
+        const rv: any = await regenerateLineAudio(episodeId, lineIndex);
+        setNote(
+          rv?.success === false
+            ? `Saved. ${rv.error}`
+            : `Saved — re-voicing line #${lineIndex + 1} with the new text (one line of TTS, then a re-splice).`
+        );
+      }
+      await onChanged();
     } finally {
       setBusyLine(null);
     }
@@ -127,9 +145,20 @@ function TranscriptEditor({
   const variant = async (lineIndex: number, v: "spicier" | "calmer" | "regenerate") => {
     setBusyLine(lineIndex);
     try {
-      const res: any = await requestLineVariant(episodeId, lineIndex, v);
+      // When the episode is voiced, per-line actions actually re-voice that ONE
+      // line + re-splice (Step 5). Otherwise they record the intent (Step 4).
+      const res: any = canRevoice
+        ? await regenerateLineAudio(episodeId, lineIndex, v === "regenerate" ? undefined : { tone: v })
+        : await requestLineVariant(episodeId, lineIndex, v);
       if (res?.success === false) setNote(res.error || "Couldn't request that.");
-      else await onChanged();
+      else {
+        setNote(
+          canRevoice
+            ? `Re-voicing line #${lineIndex + 1} — only this line is re-synthesized, then the mix is re-spliced.`
+            : null
+        );
+        await onChanged();
+      }
     } finally {
       setBusyLine(null);
     }
@@ -208,7 +237,9 @@ function TranscriptEditor({
                     <div className="tLineActions">
                       <button className="tMini" onClick={() => variant(line.lineIndex, "spicier")} disabled={busyLine === line.lineIndex}>🌶 Spicier</button>
                       <button className="tMini" onClick={() => variant(line.lineIndex, "calmer")} disabled={busyLine === line.lineIndex}>🧊 Calmer</button>
-                      <button className="tMini" onClick={() => variant(line.lineIndex, "regenerate")} disabled={busyLine === line.lineIndex}>↻ Regenerate</button>
+                      <button className="tMini" onClick={() => variant(line.lineIndex, "regenerate")} disabled={busyLine === line.lineIndex}>
+                        {canRevoice ? "↻ Re-voice line" : "↻ Regenerate"}
+                      </button>
                     </div>
                   )}
                 </div>

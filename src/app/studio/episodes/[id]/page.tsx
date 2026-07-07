@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { qualityOf, fmtDuration, fmtDate, statusChip, nextActionFor } from "../../lib";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
+import { getEpisodeMixVM } from "@/lib/services/mixView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
+import MixView from "../../MixView";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +33,8 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
   // Editable transcript + citations + fact-check view-model (real data).
   const transcriptVm = script ? await getEpisodeTranscriptVM(id) : null;
+  // Mix / timeline view-model (real per-line audio + sound-design plan).
+  const mixVm = script ? await getEpisodeMixVM(id) : null;
 
   const audioSegments = script
     ? await db.audioSegment.findMany({ where: { scriptId: script.id }, select: { lineIndex: true, durationMs: true, hostId: true } })
@@ -157,13 +161,23 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
+      {/* Mix / timeline — per-line audio, music-bed lane, per-line re-voice */}
+      {mixVm && script && (
+        <div style={{ marginTop: "1.75rem" }}>
+          <div className="sectionHead" style={{ marginTop: 0 }}>
+            <h2 className="sectionTitle">Mix & timeline</h2>
+          </div>
+          <MixView episodeId={episode.id} initialVm={mixVm} />
+        </div>
+      )}
+
       {/* Editable transcript + inline citations + fact-check + publish gate */}
       {transcriptVm && script && (
         <div style={{ marginTop: "1.75rem" }}>
           <div className="sectionHead" style={{ marginTop: 0 }}>
             <h2 className="sectionTitle">Transcript & fact check</h2>
           </div>
-          <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish />
+          <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
         </div>
       )}
     </div>

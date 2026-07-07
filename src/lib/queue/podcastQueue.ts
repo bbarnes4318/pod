@@ -169,3 +169,22 @@ export async function queueContentAssetGenerationJob(data: ContentAssetJobData) 
   return podcastQueue.add("content:generate-assets", data);
 }
 
+export interface LineAudioRegenJobData {
+  scriptId: string;
+  /** The single script line to re-voice. */
+  lineIndex: number;
+}
+
+/**
+ * Line-level audio regeneration: re-synthesize ONE line's TTS and re-splice the
+ * episode. The handler runs the existing per-line TTS (segmentRange = just this
+ * line) and then the existing stitcher, which reuses every OTHER line's already
+ * synthesized audio — so a one-line change costs one line of TTS, not a full
+ * episode re-render. jobId is per (script,line) so rapid re-clicks coalesce.
+ */
+export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
+  return podcastQueue.add("audio:regenerate-line", data, {
+    jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
+  });
+}
+

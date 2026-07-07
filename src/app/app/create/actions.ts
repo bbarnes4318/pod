@@ -16,10 +16,12 @@ import {
   queueTtsSegmentGenerationJob,
   queueFinalAudioStitchJob,
   queueContentAssetGenerationJob,
+  queueLineAudioRegenJob,
 } from "@/lib/queue/podcastQueue";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
+import { getEpisodeMixVM } from "@/lib/services/mixView";
 import { validateEpisodeForRss, publishEpisode } from "@/lib/services/rssPublishingService";
 import { stageForStatus } from "@/lib/createFlow";
 import { isValidVertical } from "@/lib/verticals";
@@ -536,4 +538,112 @@ export async function attemptPublish(episodeId: string) {
   } catch (err: any) {
     return { success: false as const, error: err.message || "Publish failed." };
   }
+}
+
+/* ============================================================================
+ * STEP 5 — Line-level audio regen, table-read preview, mix view (owner-gated)
+ * Reuses the real per-line TTS (generateTtsSegments, segmentRange) + stitcher
+ * (stitchFinalEpisodeAudio). No whole-episode re-synthesis for a one-line edit.
+ * ========================================================================== */
+
+// Episode statuses at which every line is voiced, so a re-splice is valid.
+const VOICED_STATUSES = [
+  "audio_segments_ready",
+  "audio_stitching",
+  "audio_ready",
+  "content_generating",
+  "content_ready",
+  "publish_ready",
+  "published",
+];
+
+/**
+ * Re-voice ONE line and re-splice the episode. Optionally nudge delivery
+ * ("spicier" → high energy/heated, "calmer" → low energy/analytical) by editing
+ * that line's tone/energy — which flow into synthesizeSpeech — then regenerate.
+ * NOTE: this changes DELIVERY, not words; there is no per-line AI text rewrite
+ * in the pipeline (see requestLineVariant / regenerateEpisodeScript).
+ */
+export async function regenerateLineAudio(
+  episodeId: string,
+  lineIndex: number,
+  opts?: { tone?: "spicier" | "calmer" }
+) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "There's no script to voice yet." };
+  if (!VOICED_STATUSES.includes(gate.episode.status)) {
+    return {
+      success: false as const,
+      error: "Voice the episode first — line re-voice re-splices the finished mix.",
+    };
+  }
+
+  // Optional delivery nudge (tone/energy only — no fact-affecting text change,
+  // so we don't mark the line dirty for the publish gate).
+  if (opts?.tone) {
+    const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
+    const content = (script?.content as any) || {};
+    const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+    let found = false;
+    for (const seg of segments) {
+      for (const line of seg?.lines || []) {
+        if (line && line.lineIndex === lineIndex) {
+          line.energy = opts.tone === "spicier" ? "high" : "low";
+          line.tone = opts.tone === "spicier" ? "heated" : "analytical";
+          line.requestedTone = null;
+          found = true;
+        }
+      }
+    }
+    if (found && script) {
+      content.segments = segments;
+      await db.script.update({ where: { id: script.id }, data: { content: content as any } });
+    }
+  }
+
+  try {
+    const job = await queueLineAudioRegenJob({ scriptId: gate.scriptId, lineIndex });
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const, jobId: job.id };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Failed to re-voice the line." };
+  }
+}
+
+/**
+ * Table read: cheaply synthesize a short span of lines (one host exchange) via
+ * the SAME per-line TTS, so the user hears the vibe before committing to the
+ * full episode. No stitch — the UI plays the individual line clips.
+ */
+export async function tableReadEpisode(episodeId: string, startLineIndex: number, endLineIndex: number) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "Write the script first." };
+  const start = Math.max(0, Math.min(startLineIndex, endLineIndex));
+  const end = Math.max(startLineIndex, endLineIndex);
+  if (end - start > 11) return { success: false as const, error: "Keep the table read to a dozen lines." };
+  try {
+    const job = await queueTtsSegmentGenerationJob({
+      scriptId: gate.scriptId,
+      segmentRange: { startLineIndex: start, endLineIndex: end },
+      forceRegenerate: true,
+    });
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const, jobId: job.id };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Failed to start the table read." };
+  }
+}
+
+/** Read the mix/timeline view-model (dialogue lane + music-bed lane + cues). */
+export async function getMixView(episodeId: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Please sign in." };
+  const episode = await db.episode.findUnique({ where: { id: episodeId }, select: { ownerId: true } });
+  if (!episode) return { ok: false as const, error: "Episode not found." };
+  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
+    return { ok: false as const, error: "That episode belongs to someone else." };
+  }
+  return getEpisodeMixVM(episodeId);
 }
