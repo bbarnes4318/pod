@@ -22,7 +22,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     // the first two) is the creator's OWN two most-recently-created hosts — not
     // a baked-in cartoon duo. The picker still lists every active host.
     db.aiHost.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isArchived: false },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, intensityLevel: true },
     }),

@@ -977,6 +977,26 @@
   .advWrap { grid-template-columns: 1fr; }
 }
 
+/* ============================================================
+   CHARACTER STUDIO — provenance badges + host editor.
+   ============================================================ */
+.provRow { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.7rem; }
+.provBadge {
+  font-size: 0.72rem; font-weight: 800; border-radius: var(--radius-sm);
+  padding: 0.2rem 0.55rem; border: 1px solid transparent; white-space: nowrap;
+}
+.provRisk { color: var(--warning); background: var(--warning-muted); border-color: var(--warning-border); }
+.provOk { color: var(--success); background: var(--success-muted); border-color: var(--success-border); }
+.provVoice { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); }
+
+.hostFormGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+.hostField { display: flex; flex-direction: column; gap: 0.35rem; }
+.hostFieldWide { grid-column: 1 / -1; }
+.hostField textarea.advSelect { resize: vertical; line-height: 1.45; font-family: inherit; }
+@media (max-width: 720px) {
+  .hostFormGrid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 860px) {
   .transcriptWorkspace { grid-template-columns: 1fr; }
   .factPanel { position: static; }

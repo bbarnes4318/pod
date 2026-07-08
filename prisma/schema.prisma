@@ -81,6 +81,10 @@ model AiHost {
   ttsVoiceId       String
   intensityLevel   Int
   isActive         Boolean  @default(true)
+  // Soft archive (Step 8 Character Studio): archived hosts drop out of active
+  // pickers but keep their association with existing episodes. Additive +
+  // default false (migration 20260707140000).
+  isArchived       Boolean  @default(false)
   // Documented voice provenance — the legal-safety fields (cf. Greene v. Google).
   // voiceSource: "owned" | "licensed" | "synthetic" | "cloned" (free-text for now).
   // voiceProvenanceNote: license id / consent record / source documentation.

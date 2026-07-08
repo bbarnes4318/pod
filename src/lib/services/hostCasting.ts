@@ -57,7 +57,7 @@ export async function resolveEpisodeHosts(source: HostCastingSource): Promise<De
   // back to the strongest available pair.
   if (!hostA || !hostB) {
     const active = await db.aiHost.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isArchived: false },
       orderBy: [{ intensityLevel: "desc" }, { name: "asc" }],
     });
     for (const h of active) {

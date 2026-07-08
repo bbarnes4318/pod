@@ -106,7 +106,7 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
 
   const hostRows = episode.hostIds?.length
     ? await db.aiHost.findMany({ where: { id: { in: episode.hostIds } }, select: { id: true, name: true, intensityLevel: true } })
-    : await db.aiHost.findMany({ where: { isActive: true }, orderBy: { intensityLevel: "desc" }, take: 2, select: { id: true, name: true, intensityLevel: true } });
+    : await db.aiHost.findMany({ where: { isActive: true, isArchived: false }, orderBy: { intensityLevel: "desc" }, take: 2, select: { id: true, name: true, intensityLevel: true } });
   const sorted = [...hostRows].sort((a, b) => b.intensityLevel - a.intensityLevel);
   if (sorted[0]) base.hostA = { id: sorted[0].id, name: sorted[0].name };
   if (sorted[1]) base.hostB = { id: sorted[1].id, name: sorted[1].name };
