@@ -30,6 +30,7 @@ interface Props {
   chapters: PlayerChapter[];
   hostSpans: HostSpan[];
   hostNames: [string, string];
+  episodeId?: string; // for the play-event beacon (Step 9b analytics)
 }
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
@@ -55,8 +56,22 @@ function pseudoPeaks(n: number, seed = 7): number[] {
   return out;
 }
 
-export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hostNames }: Props) {
+export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hostNames, episodeId }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Fire the play beacon at most once per mount (real "play" event, deduped
+  // server-side per client/day). Fire-and-forget; never blocks playback.
+  const beaconSentRef = useRef(false);
+  const sendPlayBeacon = () => {
+    if (beaconSentRef.current || !episodeId) return;
+    beaconSentRef.current = true;
+    try {
+      const body = JSON.stringify({ episodeId });
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/analytics/play", new Blob([body], { type: "application/json" }));
+      else void fetch("/api/analytics/play", { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true });
+    } catch {
+      /* analytics must never break the player */
+    }
+  };
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const peaksRef = useRef<number[]>(pseudoPeaks(160));
@@ -241,7 +256,7 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
         preload="metadata"
         crossOrigin="anonymous"
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
-        onPlay={() => setPlaying(true)}
+        onPlay={() => { setPlaying(true); sendPlayBeacon(); }}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onTimeUpdate={(e) => !playing && setCurrent(e.currentTarget.currentTime)}

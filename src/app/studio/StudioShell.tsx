@@ -44,6 +44,11 @@ const I = {
       <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none" />
     </svg>
   ),
+  analytics: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 3v18h18" /><rect x="7" y="12" width="3" height="5" /><rect x="12" y="8" width="3" height="9" /><rect x="17" y="5" width="3" height="12" />
+    </svg>
+  ),
   settings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
@@ -59,6 +64,7 @@ const NAV: NavItem[] = [
   { href: "/studio/takes", label: "Takes", icon: I.takes },
   { href: "/studio/hosts", label: "Hosts", icon: I.hosts },
   { href: "/studio/publish", label: "Publishing", icon: I.publishing },
+  { href: "/studio/analytics", label: "Analytics", icon: I.analytics },
   { href: "/studio/settings", label: "Settings", icon: I.settings },
 ];
 

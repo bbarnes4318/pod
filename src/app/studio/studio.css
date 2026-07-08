@@ -1224,3 +1224,51 @@
 .clipDl { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
 .clipSpin { font-size: 0.78rem; color: var(--text-muted); }
 .clipErr { font-size: 0.74rem; color: var(--warning); }
+
+/* ============================================================
+   ANALYTICS (Step 9b) — owner-scoped download/listen dashboard.
+   ============================================================ */
+.anRange { display: inline-flex; gap: 0.3rem; }
+.anRangeBtn {
+  padding: 0.35rem 0.7rem; border-radius: var(--radius); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-secondary); font-size: 0.8rem; font-weight: 700; text-decoration: none;
+}
+.anRangeBtn:hover { border-color: var(--accent); color: var(--text); }
+.anRangeBtn.on { border-color: var(--accent); color: var(--accent); background: var(--surface-2); }
+
+.anStats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; margin-top: 1.4rem; }
+.anStat { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
+.anStatNum { font-family: var(--font-display, inherit); font-size: 2rem; font-weight: 800; color: var(--text); line-height: 1; }
+.anStatLabel { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.anBars { display: flex; align-items: flex-end; gap: 2px; height: 140px; }
+.anBarCol { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.anBarStack { width: 100%; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; }
+.anBarDl { background: var(--accent); border-radius: 2px 2px 0 0; }
+.anBarPlay { background: var(--host-doc); border-radius: 2px 2px 0 0; }
+.anBarCol:hover .anBarDl { filter: brightness(1.15); }
+.anLegend { display: flex; gap: 1rem; align-items: center; margin-top: 0.7rem; font-size: 0.74rem; color: var(--text-muted); }
+.anDot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 0.35rem; vertical-align: middle; }
+.anDotDl { background: var(--accent); }
+.anDotPlay { background: var(--host-doc); }
+.anAxis { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.anRow { display: flex; align-items: center; gap: 0.6rem; margin: 0.4rem 0; }
+.anRowLabel { flex-shrink: 0; width: 110px; font-size: 0.82rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anRowTrack { flex: 1; height: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.anRowFill { height: 100%; background: var(--accent); }
+.anRowNum { flex-shrink: 0; width: 48px; text-align: right; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.anMuted { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+
+.anTable { display: flex; flex-direction: column; }
+.anTHead, .anTRow { display: grid; grid-template-columns: 1fr 110px 110px; gap: 0.6rem; align-items: center; padding: 0.55rem 0.2rem; }
+.anTHead { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.anTRow { border-bottom: 1px solid var(--border); text-decoration: none; color: var(--text); }
+.anTRow:hover { background: var(--surface-2); }
+.anEpTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 0.86rem; }
+.anTNum { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; color: var(--text-secondary); }
+.anFoot { font-size: 0.72rem; color: var(--text-muted); margin-top: 1.2rem; line-height: 1.5; max-width: 720px; }
+
+@media (max-width: 720px) {
+  .anStats { grid-template-columns: 1fr; }
+}

@@ -170,13 +170,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     [track, playing, play, toggle, seekFracFn, playAt]
   );
 
+  // Play-event beacon (Step 9b analytics) — fire once per episode when playback
+  // starts. Deduped again server-side per client/day. Never blocks the player.
+  const beaconIdRef = useRef<string | null>(null);
+  const sendPlayBeacon = () => {
+    const id = track?.id;
+    if (!id || beaconIdRef.current === id) return;
+    beaconIdRef.current = id;
+    try {
+      const body = JSON.stringify({ episodeId: id });
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/analytics/play", new Blob([body], { type: "application/json" }));
+      else void fetch("/api/analytics/play", { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true });
+    } catch {
+      /* analytics must never break the player */
+    }
+  };
+
   return (
     <Ctx.Provider value={value}>
       {children}
       <audio
         ref={audioRef}
         preload="metadata"
-        onPlay={() => setPlaying(true)}
+        onPlay={() => { setPlaying(true); sendPlayBeacon(); }}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
         onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}

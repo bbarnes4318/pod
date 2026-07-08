@@ -377,6 +377,7 @@ model Episode {
   scripts            Script[]
   audioSegments      AudioSegment[]
   socialClips        SocialClip[]
+  playEvents         PlayEvent[]
 
   @@index([status])
   @@index([publishedAt])
@@ -523,6 +524,33 @@ model JobLog {
   @@index([jobType])
   @@index([status])
   @@index([createdAt])
+}
+
+// IAB-style download/listen analytics (Step 9b). Privacy-first: NO raw IP or
+// PII is ever stored — only a truncated salted hash of (ip + user-agent) used
+// solely for dedup, a coarse app bucket derived from the user-agent, and a
+// 2-letter country ONLY when the edge/proxy supplies a geo header. IAB dedup:
+// the @@unique on (episodeId, clientHash, dayBucket, kind) collapses repeat
+// requests from the same client for the same episode within a UTC-day window
+// (range requests / re-fetches) to a single counted event. Additive
+// (migration 20260708130000). ownerId is denormalized from Episode for
+// owner-scoped queries; cascade cleans up on episode delete.
+model PlayEvent {
+  id         String   @id @default(uuid())
+  episodeId  String
+  ownerId    String?  // Episode.ownerId at record time; null for legacy episodes
+  kind       String   // "download" | "play"
+  source     String   // "rss" | "direct" | "player"
+  clientHash String   // sha256(ip + ua + daily salt), truncated — never the raw IP
+  country    String?  // 2-letter ISO, only when a geo header is present; else null
+  appBucket  String?  // coarse client bucket from UA (Apple Podcasts, Spotify, Web, …)
+  dayBucket  String   // UTC "YYYY-MM-DD" — the IAB dedup window
+  at         DateTime @default(now())
+  episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, clientHash, dayBucket, kind])
+  @@index([ownerId, at])
+  @@index([episodeId, kind])
 }
 
 // Auto social clip — a short vertical (9:16) captioned promo cut of an episode's

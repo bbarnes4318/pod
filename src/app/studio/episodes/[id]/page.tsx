@@ -135,6 +135,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
       {episode.audioUrl ? (
         <StudioPlayer
+          episodeId={episode.id}
           audioUrl={episode.audioUrl}
           title={episode.title}
           chapters={chaptersFrac}
