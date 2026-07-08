@@ -9,6 +9,7 @@ import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
 import PublishPanel from "../../PublishPanel";
+import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,27 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
   const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage" }, select: { id: true, name: true } });
   const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak" }, select: { id: true, name: true } });
+
+  // ---- Advanced Producer: the APPLIED (persisted) producer settings ----
+  // findUnique (include, not select) returns all scalar Episode fields, so the
+  // real persisted inputs are already on `episode`.
+  const soundDesign = (episode.soundDesign as any) || {};
+  const appliedStyle: string | null = typeof soundDesign.style === "string" ? soundDesign.style : null;
+  const appliedDensity: string | null = typeof soundDesign.sfxDensity === "string" ? soundDesign.sfxDensity : null;
+  const voiceOverrides = (episode.ttsVoiceOverrides as Record<string, any>) || {};
+  const overrideKeys = Object.keys(voiceOverrides);
+  const overrideHosts = overrideKeys.length
+    ? await db.aiHost.findMany({
+        where: { OR: [{ id: { in: overrideKeys } }, { slug: { in: overrideKeys } }] },
+        select: { id: true, slug: true, name: true },
+      })
+    : [];
+  const nameFor = (key: string) =>
+    overrideHosts.find((h) => h.id === key || h.slug === key)?.name ?? key;
+  const appliedVoices: AppliedVoice[] = overrideKeys
+    .map((k) => ({ host: nameFor(k), provider: voiceOverrides[k]?.provider ?? "", voiceId: voiceOverrides[k]?.voiceId ?? "" }))
+    .filter((v) => v.voiceId);
+  const canRemix = audioSegments.length > 0 && audioSegments.every((s) => (s.durationMs ?? 0) > 0);
 
   // ---- Build the approximate timeline for chapters + host strip ----
   const chapters: PlayerChapter[] = [];
@@ -161,6 +183,20 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           </div>
         </div>
       </div>
+
+      {/* Advanced Producer — per-stage control (real re-gen / re-mix) on this same episode */}
+      {script && (
+        <div style={{ marginTop: "1.5rem" }}>
+          <AdvancedProducer
+            episodeId={episode.id}
+            canRemix={canRemix}
+            appliedProvider={episode.ttsProvider ?? null}
+            appliedVoices={appliedVoices}
+            appliedStyle={appliedStyle}
+            appliedDensity={appliedDensity}
+          />
+        </div>
+      )}
 
       {/* Mix / timeline — per-line audio, music-bed lane, per-line re-voice */}
       {mixVm && script && (

@@ -73,6 +73,47 @@ const SFX = [
 const LENGTHS = [8, 10, 12, 15, 20];
 const PROD_FOR_SFX: Record<string, string> = { subtle: "clean", medium: "light", hype: "full" };
 
+// ---- Advanced Producer options (every one backed by a REAL pipeline input) ----
+// Script density → scriptService `maxWords` (prompt "Max Word Count"; default 2200).
+const DENSITY_PRESETS = [
+  { key: "tight", label: "Tight", words: 1600, hint: "punchier, fewer words" },
+  { key: "standard", label: "Standard", words: 2200, hint: "the default budget" },
+  { key: "meaty", label: "Meaty", words: 2800, hint: "more room to argue" },
+] as const;
+// Sound-design level → Episode.soundDesign.style (audioStitchingService gate).
+const PROD_LEVELS = [
+  { key: "clean", label: "Clean", hint: "dialogue only" },
+  { key: "light", label: "Light", hint: "theme + stingers" },
+  { key: "full", label: "Full", hint: "themes, reactions, ducked bed" },
+] as const;
+// TTS engines → Episode.ttsProvider (voice-resolution cascade). "stub" omitted.
+const TTS_ENGINES = [
+  { key: "", label: "Auto (host default)" },
+  { key: "elevenlabs", label: "ElevenLabs" },
+  { key: "cartesia", label: "Cartesia" },
+  { key: "openai", label: "OpenAI" },
+  { key: "boson", label: "Boson AI" },
+  { key: "fish", label: "Fish Audio" },
+] as const;
+
+// Convert the UI's {hostId → voiceId} picks into the real TtsVoiceOverrides
+// shape the pipeline consumes (Episode.ttsVoiceOverrides → voice-resolution
+// cascade). Only produces entries when an engine is chosen AND a voice id is
+// typed, so an untouched panel yields `undefined` (no override at all). The
+// server re-validates via validateTtsVoiceOverridesInput.
+function buildVoiceOverrides(
+  picks: Record<string, string>,
+  engine: string
+): Record<string, { provider: string; voiceId: string }> | undefined {
+  if (!engine) return undefined;
+  const out: Record<string, { provider: string; voiceId: string }> = {};
+  for (const [hostId, voiceId] of Object.entries(picks)) {
+    const v = voiceId.trim();
+    if (v) out[hostId] = { provider: engine, voiceId: v };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 const CHECKPOINTS: StageKey[] = ["research", "preview"];
 const orderOf = (s: StageKey | "done" | "failed"): number =>
   s === "done" ? STAGE_ORDER.length : s === "failed" ? -1 : STAGE_ORDER.indexOf(s);
@@ -94,6 +135,16 @@ export default function CreateConsole({
   const [sfx, setSfx] = useState<string>("hype");
   const [lengthMin, setLengthMin] = useState<number>(12);
   const [hostIds, setHostIds] = useState<string[]>(defaultHostIds);
+
+  // ---- Advanced Producer (progressive disclosure) ----
+  // Collapsed by default: the beginner path never touches any of this and reaches
+  // Generate in one click. Every value below stays "unset" until the producer
+  // opts in, so an untouched Advanced panel changes nothing about the build.
+  const [advanced, setAdvanced] = useState(false);
+  const [maxWords, setMaxWords] = useState<number | null>(null); // null → scriptService default (2200)
+  const [prodStyleOverride, setProdStyleOverride] = useState<string | null>(null); // null → derived from sfx
+  const [ttsEngine, setTtsEngine] = useState<string>(""); // "" → host/env default
+  const [voicePicks, setVoicePicks] = useState<Record<string, string>>({}); // hostId → voiceId
 
   const seedTake = highlightTopic ? takes.find((t) => t.id === highlightTopic) : undefined;
   const [topicId, setTopicId] = useState<string | null>(resume?.topicId ?? seedTake?.id ?? null);
@@ -233,17 +284,22 @@ export default function CreateConsole({
     run(
       async () => {
         if (!topicId) return { success: false, error: "No take selected." };
-        const prod = PROD_FOR_SFX[sfx] ?? "light";
-        const res: any = await produceEpisodeFromTopics([topicId], undefined, undefined, {
-          hostIds,
-          productionStyle: prod,
-          sfxDensity: sfx,
-        });
+        // Advanced overrides win when set; otherwise the beginner defaults apply
+        // verbatim (prod derived from sfx, engine/voices/maxWords all "unset").
+        const prod = prodStyleOverride ?? PROD_FOR_SFX[sfx] ?? "light";
+        const overrides = buildVoiceOverrides(voicePicks, ttsEngine);
+        const res: any = await produceEpisodeFromTopics(
+          [topicId],
+          ttsEngine || undefined,
+          overrides,
+          { hostIds, productionStyle: prod, sfxDensity: sfx }
+        );
         if (res?.success === false) return res;
         if (!res?.episodeId) return { success: false, error: "Episode wasn't created — try again." };
         const s: any = await startDebate(res.episodeId, {
           scriptStyle: style as any,
           targetDurationMinutes: lengthMin,
+          maxWords: maxWords ?? undefined,
         });
         if (s?.success === false) return s;
         return { success: true, episodeId: res.episodeId };
@@ -267,7 +323,7 @@ export default function CreateConsole({
     run(
       () =>
         episodeId
-          ? startDebate(episodeId, { scriptStyle: style as any, targetDurationMinutes: lengthMin, forceRegenerate: true })
+          ? startDebate(episodeId, { scriptStyle: style as any, targetDurationMinutes: lengthMin, maxWords: maxWords ?? undefined, forceRegenerate: true })
           : Promise.resolve({ success: false, error: "No episode." }),
       () => {
         setRevealCount(0);
@@ -353,6 +409,16 @@ export default function CreateConsole({
           busy={busy}
           onBack={goBack}
           onGenerate={beginResearch}
+          advanced={advanced}
+          setAdvanced={setAdvanced}
+          maxWords={maxWords}
+          setMaxWords={setMaxWords}
+          prodStyleOverride={prodStyleOverride}
+          setProdStyleOverride={setProdStyleOverride}
+          ttsEngine={ttsEngine}
+          setTtsEngine={setTtsEngine}
+          voicePicks={voicePicks}
+          setVoicePicks={setVoicePicks}
         />
       )}
 
@@ -547,6 +613,7 @@ function TakePicker({ takes, highlight, onPick }: { takes: StepperTake[]; highli
 
 function SetupStage({
   take, style, setStyle, sfx, setSfx, lengthMin, setLengthMin, hosts, hostIds, setHostIds, busy, onBack, onGenerate,
+  advanced, setAdvanced, maxWords, setMaxWords, prodStyleOverride, setProdStyleOverride, ttsEngine, setTtsEngine, voicePicks, setVoicePicks,
 }: {
   take: StepperTake;
   style: string; setStyle: (s: string) => void;
@@ -554,6 +621,11 @@ function SetupStage({
   lengthMin: number; setLengthMin: (n: number) => void;
   hosts: StepperHost[]; hostIds: string[]; setHostIds: (ids: string[]) => void;
   busy: boolean; onBack: () => void; onGenerate: () => void;
+  advanced: boolean; setAdvanced: (b: boolean) => void;
+  maxWords: number | null; setMaxWords: (n: number | null) => void;
+  prodStyleOverride: string | null; setProdStyleOverride: (s: string | null) => void;
+  ttsEngine: string; setTtsEngine: (s: string) => void;
+  voicePicks: Record<string, string>; setVoicePicks: (v: Record<string, string>) => void;
 }) {
   const toggleHost = (id: string) => {
     if (hostIds.includes(id)) {
@@ -570,6 +642,15 @@ function SetupStage({
       <div className="setupHead">
         <span className="chip">{take.sport}</span>
         <span className="epTitle" style={{ fontSize: "1.05rem" }}>{take.title}</span>
+        <button
+          type="button"
+          className={`advToggle${advanced ? " on" : ""}`}
+          onClick={() => setAdvanced(!advanced)}
+          aria-pressed={advanced}
+          style={{ marginLeft: "auto" }}
+        >
+          <span className="advDot" /> Advanced
+        </button>
       </div>
 
       <div className="setupGrid">
@@ -631,12 +712,182 @@ function SetupStage({
         </div>
       </div>
 
+      {advanced && (
+        <AdvancedPanels
+          hosts={hosts}
+          hostIds={hostIds}
+          maxWords={maxWords}
+          setMaxWords={setMaxWords}
+          prodStyleOverride={prodStyleOverride}
+          setProdStyleOverride={setProdStyleOverride}
+          sfx={sfx}
+          ttsEngine={ttsEngine}
+          setTtsEngine={setTtsEngine}
+          voicePicks={voicePicks}
+          setVoicePicks={setVoicePicks}
+        />
+      )}
+
       <div className="stageActions">
         <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
         <button type="button" className="btnPrimary" onClick={onGenerate} disabled={busy || hostIds.length < 2}>
           {busy ? "Starting…" : "Generate Episode"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Advanced Producer — progressive-disclosure control panels.          */
+/* Every control here maps to a REAL pipeline input, verified against   */
+/* the generation code. Panels render on --surface-2 so the mode reads  */
+/* as visually distinct. Controls default to "unset" → beginner build   */
+/* is unchanged. Controls with NO backing input are shown as honest     */
+/* read-only notes rather than dead sliders.                            */
+/* ------------------------------------------------------------------ */
+function AdvancedPanels({
+  hosts, hostIds, maxWords, setMaxWords, prodStyleOverride, setProdStyleOverride, sfx,
+  ttsEngine, setTtsEngine, voicePicks, setVoicePicks,
+}: {
+  hosts: StepperHost[]; hostIds: string[];
+  maxWords: number | null; setMaxWords: (n: number | null) => void;
+  prodStyleOverride: string | null; setProdStyleOverride: (s: string | null) => void;
+  sfx: string;
+  ttsEngine: string; setTtsEngine: (s: string) => void;
+  voicePicks: Record<string, string>; setVoicePicks: (v: Record<string, string>) => void;
+}) {
+  const [showWords, setShowWords] = useState(false); // Riverside rule: numbers on demand
+  const castHosts = hosts.filter((h) => hostIds.includes(h.id));
+  const effectiveProd = prodStyleOverride ?? PROD_FOR_SFX[sfx] ?? "light";
+  const voiceIdHint =
+    ttsEngine === "openai" ? "e.g. onyx, echo, nova" :
+    ttsEngine === "fish" ? "32-char hex reference id" :
+    ttsEngine === "elevenlabs" ? "ElevenLabs voice id" :
+    ttsEngine ? "provider voice id" : "";
+
+  return (
+    <div className="advWrap" aria-label="Advanced producer controls">
+      {/* ---------- SCRIPT ---------- */}
+      <section className="advPanel">
+        <div className="advPanelHead">Script</div>
+        <div className="advField">
+          <div className="fieldLabel">Density <span className="advParam">maxWords</span></div>
+          <div className="segRow">
+            {DENSITY_PRESETS.map((d) => (
+              <button
+                key={d.key}
+                type="button"
+                className={`segBtn${maxWords === d.words ? " on" : ""}`}
+                onClick={() => setMaxWords(d.words)}
+                title={d.hint}
+              >
+                {d.label}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={`segBtn${maxWords === null ? " on" : ""}`}
+              onClick={() => setMaxWords(null)}
+              title="scriptService default (2200)"
+            >
+              Auto
+            </button>
+          </div>
+          <button type="button" className="advLink" onClick={() => setShowWords((v) => !v)}>
+            {showWords ? "Hide exact word budget" : "Set exact word budget"}
+          </button>
+          {showWords && (
+            <input
+              type="number"
+              className="advNumber"
+              min={600}
+              max={5000}
+              step={100}
+              value={maxWords ?? ""}
+              placeholder="2200"
+              onChange={(e) => setMaxWords(e.target.value ? Number(e.target.value) : null)}
+            />
+          )}
+          <p className="advNote">Written into the script prompt as the word budget. Debate intensity &amp; edge are set by the <strong>Format</strong> preset above (heated-debate / analysis / sports-radio) — the only real script-style input; there is no separate humor or profanity parameter in the pipeline.</p>
+        </div>
+      </section>
+
+      {/* ---------- SOUND ---------- */}
+      <section className="advPanel">
+        <div className="advPanelHead">Sound</div>
+        <div className="advField">
+          <div className="fieldLabel">Sound-design level <span className="advParam">soundDesign.style</span></div>
+          <div className="segRow">
+            {PROD_LEVELS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                className={`segBtn${effectiveProd === p.key ? " on" : ""}`}
+                onClick={() => setProdStyleOverride(p.key)}
+                title={p.hint}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <p className="advNote">
+            Density is the <strong>Reactions &amp; SFX</strong> preset above (<code>{sfx}</code> → <span className="advParam">sfxDensity</span>): spacing, probability &amp; airhorns.
+            {prodStyleOverride === null && " Level currently follows that preset — pick one to decouple it."}
+          </p>
+        </div>
+      </section>
+
+      {/* ---------- VOICES ---------- */}
+      <section className="advPanel">
+        <div className="advPanelHead">Voices</div>
+        <div className="advField">
+          <div className="fieldLabel">TTS engine <span className="advParam">ttsProvider</span></div>
+          <select className="advSelect" value={ttsEngine} onChange={(e) => { setTtsEngine(e.target.value); setVoicePicks({}); }}>
+            {TTS_ENGINES.map((e) => (
+              <option key={e.key} value={e.key}>{e.label}</option>
+            ))}
+          </select>
+        </div>
+        {ttsEngine && (
+          <div className="advField">
+            <div className="fieldLabel">Per-host voice id <span className="advParam">ttsVoiceOverrides</span></div>
+            {castHosts.map((h) => (
+              <div key={h.id} className="advVoiceRow">
+                <span className="advVoiceHost">{h.name}</span>
+                <input
+                  type="text"
+                  className="advVoiceInput"
+                  placeholder={voiceIdHint}
+                  value={voicePicks[h.id] ?? ""}
+                  onChange={(e) => setVoicePicks({ ...voicePicks, [h.id]: e.target.value })}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="advNote">Pace &amp; emphasis are per-line <span className="advParam">tone</span>/<span className="advParam">energy</span> (set by the writer, tunable in the Mix step) — not a build-level knob. No pronunciation-lexicon / phoneme override exists in the TTS path.</p>
+      </section>
+
+      {/* ---------- FACT-CHECK (honest read-only) ---------- */}
+      <section className="advPanel">
+        <div className="advPanelHead">Fact-check</div>
+        <div className="advField">
+          <div className="advLockRow">
+            <span className="advLock">🔒 On</span>
+            <span>Block publish on unresolved claims</span>
+          </div>
+          <p className="advNote">The publish gate is a hard, always-on requirement — it cannot be weakened here. There is no strictness-level input in the fact-check service (the checks are deterministic), so no dial is exposed.</p>
+        </div>
+      </section>
+
+      {/* ---------- SOURCING (honest note — no live control on a pinned take) ---------- */}
+      <section className="advPanel advPanelWide">
+        <div className="advPanelHead">Sourcing</div>
+        <p className="advNote">
+          League / vertical / debate-score / team filters (<span className="advParam">verticals</span>, <span className="advParam">leagueIds</span>, <span className="advParam">minDebateScore</span>, <span className="advParam">teamNames</span>) are real inputs, but they only steer <em>auto-selection</em> of topics. You picked a specific take, so they don&apos;t apply to this build. No recency-window, betting-intensity threshold, or source allow/deny input exists in the pipeline.
+        </p>
+      </section>
     </div>
   );
 }

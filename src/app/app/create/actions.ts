@@ -133,6 +133,9 @@ export async function startDebate(
   opts?: {
     scriptStyle?: "heated-debate" | "balanced-analysis" | "sports-radio";
     targetDurationMinutes?: number;
+    /** Advanced Producer: soft word budget written into the script prompt
+     *  (scriptService reads maxWords, default 2200). Real generation input. */
+    maxWords?: number;
     forceRegenerate?: boolean;
   }
 ) {
@@ -142,6 +145,7 @@ export async function startDebate(
       episodeId,
       scriptStyle: opts?.scriptStyle,
       targetDurationMinutes: opts?.targetDurationMinutes,
+      maxWords: opts?.maxWords,
       forceRegenerate: opts?.forceRegenerate,
     });
     revalidatePath(`/app/episodes/${episodeId}`);
@@ -233,13 +237,22 @@ export async function castEpisodeVoices(episodeId: string) {
 }
 
 /** Mix: stitch the final episode audio (uses the episode's stored sound-design
- *  settings; the service falls back to sensible defaults). */
-export async function mixEpisode(episodeId: string) {
+ *  settings; the service falls back to sensible defaults). Advanced Producer may
+ *  pass a productionStyle / sfxDensity override — a real stitch-job input
+ *  (audioStitchingService resolves override > Episode.soundDesign > default). */
+export async function mixEpisode(
+  episodeId: string,
+  opts?: { productionStyle?: "clean" | "light" | "full"; sfxDensity?: "subtle" | "medium" | "hype" }
+) {
   const gate = await ownedEpisode(episodeId);
   if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There's nothing to mix yet." };
   try {
-    const job = await queueFinalAudioStitchJob({ scriptId: gate.scriptId });
+    const job = await queueFinalAudioStitchJob({
+      scriptId: gate.scriptId,
+      productionStyle: opts?.productionStyle,
+      sfxDensity: opts?.sfxDensity,
+    });
     revalidatePath(`/app/episodes/${episodeId}`);
     return { success: true as const, jobId: job.id };
   } catch (err: any) {
@@ -476,13 +489,29 @@ export async function requestLineVariant(
  *  plain-language variant. (Whole-script — the only rewrite the pipeline has.) */
 export async function regenerateEpisodeScript(
   episodeId: string,
-  tone?: "spicier" | "calmer" | "regenerate"
+  tone?: "spicier" | "calmer" | "regenerate",
+  /** Advanced Producer overrides. When supplied these WIN over the tone→style
+   *  shorthand and flow straight into the real script-generation job
+   *  (queueScriptGenerationJob → scriptService reads scriptStyle / maxWords /
+   *  targetDurationMinutes). Omitted fields fall back to the tone default. */
+  opts?: {
+    scriptStyle?: "heated-debate" | "balanced-analysis" | "sports-radio";
+    maxWords?: number;
+    targetDurationMinutes?: number;
+  }
 ) {
   const gate = await ownedEpisode(episodeId);
   if (!gate.ok) return gate.error;
-  const scriptStyle = tone === "spicier" ? "heated-debate" : tone === "calmer" ? "balanced-analysis" : undefined;
+  const toneStyle = tone === "spicier" ? "heated-debate" : tone === "calmer" ? "balanced-analysis" : undefined;
+  const scriptStyle = opts?.scriptStyle ?? toneStyle;
   try {
-    const job = await queueScriptGenerationJob({ episodeId, scriptStyle: scriptStyle as any, forceRegenerate: true });
+    const job = await queueScriptGenerationJob({
+      episodeId,
+      scriptStyle: scriptStyle as any,
+      maxWords: opts?.maxWords,
+      targetDurationMinutes: opts?.targetDurationMinutes,
+      forceRegenerate: true,
+    });
     revalidatePath(`/studio/episodes/${episodeId}`);
     return { success: true as const, jobId: job.id };
   } catch (err: any) {

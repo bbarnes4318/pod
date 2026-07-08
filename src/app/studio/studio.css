@@ -910,6 +910,73 @@
 .gate-ok { color: var(--success); background: var(--success-muted); border: 1px solid var(--success-border); }
 .gate-err { color: var(--error-text); background: var(--error-muted); border: 1px solid var(--error-border); }
 
+/* ============================================================
+   ADVANCED PRODUCER — progressive-disclosure control panels.
+   Rendered on --surface-2 so the power-user mode reads distinct.
+   ============================================================ */
+.advToggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.32rem 0.7rem; border-radius: var(--radius);
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-secondary); font-size: 0.78rem; font-weight: 700; cursor: pointer;
+}
+.advToggle:hover { border-color: var(--accent); color: var(--text); }
+.advToggle.on { border-color: var(--accent); color: var(--accent); background: var(--surface-2); }
+.advDot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-hover); }
+.advToggle.on .advDot { background: var(--accent); }
+
+.advWrap {
+  margin-top: 1.1rem; padding-top: 1.1rem; border-top: 1px dashed var(--border);
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem;
+}
+.advPanelWide { grid-column: 1 / -1; }
+.advPanel {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 0.85rem 0.95rem;
+}
+.advPanelHead {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 0.7rem;
+}
+.advField { margin-bottom: 0.6rem; }
+.advField:last-child { margin-bottom: 0; }
+.advParam {
+  font-family: var(--font-mono); font-size: 0.66rem; font-weight: 600;
+  color: var(--accent); background: var(--accent-muted, rgba(255,122,0,0.1));
+  padding: 0.05rem 0.35rem; border-radius: var(--radius-sm); margin-left: 0.35rem;
+}
+.advNote { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.45; }
+.advNote code { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-secondary); }
+.advLink {
+  display: inline-block; margin-top: 0.5rem; background: none; border: none; padding: 0;
+  color: var(--accent); font-size: 0.74rem; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.advNumber, .advSelect, .advVoiceInput {
+  margin-top: 0.5rem; width: 100%; font-size: 0.82rem;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius-sm); padding: 0.4rem 0.55rem;
+}
+.advNumber:focus, .advSelect:focus, .advVoiceInput:focus { outline: none; border-color: var(--accent); }
+.advVoiceRow { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.45rem; }
+.advVoiceHost { flex-shrink: 0; width: 110px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+.advVoiceInput { margin-top: 0; }
+.advLockRow { display: flex; align-items: center; gap: 0.6rem; font-size: 0.82rem; color: var(--text); }
+.advLock {
+  font-size: 0.72rem; font-weight: 700; color: var(--success);
+  background: var(--success-muted); border: 1px solid var(--success-border);
+  border-radius: var(--radius-sm); padding: 0.15rem 0.5rem;
+}
+.advCardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.advCardSub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
+.advCard .advWrap { margin-top: 1rem; }
+.advApplied {
+  margin-top: 0.4rem; font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-secondary);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.35rem 0.55rem;
+}
+@media (max-width: 860px) {
+  .advWrap { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 860px) {
   .transcriptWorkspace { grid-template-columns: 1fr; }
   .factPanel { position: static; }
