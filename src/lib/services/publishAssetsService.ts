@@ -64,10 +64,11 @@ function xmlEscape(s: string): string {
 
 /**
  * Bold, high-contrast, orange-forward, thumbnail-legible cover art. Carbon
- * ground, a Signal-Orange band, and the title set large. Rendered as SVG (no
- * rasteriser is available in this environment — see the flagged limitation:
- * Apple Podcasts wants JPEG/PNG ≥1400px, so this should be rasterised before a
- * real store submission).
+ * ground, a Signal-Orange band, and the title set large. The SVG is the vector
+ * source of truth; it is rasterised to a directory-compliant PNG by
+ * {@link rasterizeCoverArtPng} before storage (Apple/Spotify require JPEG/PNG,
+ * 1400–3000px, RGB), while the SVG itself is kept alongside as the editable
+ * source.
  */
 export function generateCoverArtSvg(title: string, tag: string): string {
   const S = 1500;
@@ -88,6 +89,48 @@ export function generateCoverArtSvg(title: string, tag: string): string {
   <circle cx="${S - 150}" cy="150" r="46" fill="#FF5A1F"/>
   ${textEls}
 </svg>`;
+}
+
+// Directory requirements the raster output is built to satisfy:
+//  - Apple Podcasts: square JPEG/PNG, 1400×1400 min, 3000×3000 max, RGB.
+//  - Spotify: square JPEG/PNG, ≥1400×1400 (3000×3000 recommended).
+// We render at the 3000×3000 maximum so a single asset satisfies both.
+export const COVER_PNG_SIZE = 3000;
+// YouTube (and other 16:9 surfaces) want a widescreen image; 1920×1080 is the
+// standard, universally-accepted size. Best-effort — the square PNG is what the
+// podcast directories consume.
+export const COVER_16X9_WIDTH = 1920;
+export const COVER_16X9_HEIGHT = 1080;
+// Carbon ground — used to flatten any transparency and to pillarbox the 16:9.
+const COVER_BG = "#0E1116";
+
+/**
+ * Rasterise the cover-art SVG to a square RGB PNG at {@link COVER_PNG_SIZE}
+ * (3000×3000). Uses `sharp` (libvips/librsvg), which Next.js already ships and
+ * auto-externalises for server code. `flatten` drops the alpha channel so the
+ * result is a directory-safe RGB PNG (no alpha), and `png()` keeps it lossless.
+ */
+export async function rasterizeCoverArtPng(svg: string, size: number = COVER_PNG_SIZE): Promise<Buffer> {
+  const { default: sharp } = await import("sharp");
+  return sharp(Buffer.from(svg, "utf8"), { density: 96 })
+    .resize(size, size, { fit: "fill" })
+    .flatten({ background: COVER_BG })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+/**
+ * Rasterise the (square) cover art onto a 16:9 RGB PNG for YouTube-style
+ * surfaces — the square art is centred on the carbon ground (pillarboxed). Best
+ * effort; not consumed by the podcast RSS feed.
+ */
+export async function rasterizeCoverArt16x9(svg: string): Promise<Buffer> {
+  const { default: sharp } = await import("sharp");
+  return sharp(Buffer.from(svg, "utf8"), { density: 96 })
+    .resize(COVER_16X9_WIDTH, COVER_16X9_HEIGHT, { fit: "contain", background: COVER_BG })
+    .flatten({ background: COVER_BG })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 }
 
 export interface EnsurePublishAssetsResult {
@@ -134,21 +177,46 @@ export async function ensurePublishAssets(episodeId: string, opts?: { regenerate
     disclaimerAdded = true;
   }
 
-  // 2. Cover art.
+  // 2. Cover art. Directories (Apple Podcasts, Spotify) require a rasterised
+  //    JPEG/PNG — not SVG — so we keep the SVG as the vector source and publish
+  //    a 3000×3000 RGB PNG as the feed image. Legacy episodes whose rssImageUrl
+  //    still points at a `.svg` are auto-upgraded to the PNG on the next pass
+  //    (additive: the SVG file is never removed, only the pointer improves).
   let coverArtUrl = episode.rssImageUrl ?? null;
-  if (!coverArtUrl || opts?.regenerateCover) {
+  const isLegacySvg = !!coverArtUrl && coverArtUrl.toLowerCase().endsWith(".svg");
+  if (!coverArtUrl || isLegacySvg || opts?.regenerateCover) {
     try {
       const tag = episode.topics[0]?.topic?.sport || episode.podcast?.verticals?.[0] || "Sports";
       const svg = generateCoverArtSvg(episode.title, tag);
       const storage = getStorageProvider();
-      const uploaded = await storage.putObject({
+      // Keep the editable vector source.
+      await storage.putObject({
         key: `episodes/${episode.id}/cover.svg`,
         body: Buffer.from(svg, "utf8"),
         contentType: "image/svg+xml",
       });
-      coverArtUrl = uploaded.url;
+      // The directory-facing asset: a 3000×3000 RGB PNG.
+      const png = await rasterizeCoverArtPng(svg);
+      const uploadedPng = await storage.putObject({
+        key: `episodes/${episode.id}/cover.png`,
+        body: png,
+        contentType: "image/png",
+      });
+      coverArtUrl = uploadedPng.url;
+      // Best-effort 16:9 for YouTube-style surfaces; failure here never blocks
+      // the square PNG that the feed actually uses.
+      try {
+        const wide = await rasterizeCoverArt16x9(svg);
+        await storage.putObject({
+          key: `episodes/${episode.id}/cover-16x9.png`,
+          body: wide,
+          contentType: "image/png",
+        });
+      } catch {
+        /* non-fatal: widescreen variant is optional */
+      }
     } catch (err: any) {
-      // Non-fatal: publishing doesn't require cover art; surface via reasons.
+      // Non-fatal: publishing doesn't require cover art; keep whatever we had.
       coverArtUrl = episode.rssImageUrl ?? null;
     }
   }
