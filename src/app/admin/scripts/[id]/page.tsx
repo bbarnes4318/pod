@@ -1,6 +1,7 @@
 import React from "react";
 import ScriptReviewView from "./ScriptReviewView";
 import { db } from "@/lib/db";
+import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
 import "../scripts.css";
 import { notFound } from "next/navigation";
 
@@ -37,15 +38,17 @@ export default async function ScriptReviewDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  // Load hosts Max Voltage and Dr. Linebreak
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage", isActive: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak", isActive: true } });
-
-  if (!hostA || !hostB) {
+  // Resolve THIS script's real episode cast (pinned hostIds → most-intense
+  // active pair). Never keyed to specific host names.
+  let hostA: Awaited<ReturnType<typeof resolveEpisodeHosts>>["hostA"];
+  let hostB: Awaited<ReturnType<typeof resolveEpisodeHosts>>["hostB"];
+  try {
+    ({ hostA, hostB } = await resolveEpisodeHosts({ hostIds: script.episode?.hostIds ?? [] }));
+  } catch {
     return (
       <div className="panel" style={{ padding: "4rem", textAlign: "center" }}>
         <p style={{ color: "#ef4444", fontSize: "1.1rem", margin: 0 }}>
-          Missing Host Profiles: Active profiles for 'Max Voltage' and 'Dr. Linebreak' must exist to review scripts.
+          Missing host profiles: two active AI hosts are required to review scripts. Activate at least two on /admin/personalities.
         </p>
       </div>
     );

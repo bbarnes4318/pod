@@ -24,9 +24,11 @@ export default async function HostsPage() {
       </div>
 
       <div className="grid2" style={{ marginTop: "2rem" }}>
-        {hosts.map((host) => {
-          const isDoc = host.name === "Dr. Linebreak";
-          const accent = isDoc ? "#58a6ff" : "var(--accent-color)";
+        {hosts.map((host, i) => {
+          // Two-host colour alternation keys off roster position, not a host
+          // name — the second chair reads blue, the first orange.
+          const isSecond = i % 2 === 1;
+          const accent = isSecond ? "#58a6ff" : "var(--accent-color)";
           return (
             <div key={host.id} className="studioCard" style={{ borderTop: `3px solid ${accent}` }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem" }}>
@@ -41,7 +43,7 @@ export default async function HostsPage() {
               <div className="axisRow" style={{ margin: "1rem 0" }}>
                 <span>Intensity</span>
                 <div className="scoreBarTrack">
-                  <div className="scoreBarFill" style={{ width: `${host.intensityLevel * 10}%`, background: isDoc ? "linear-gradient(90deg,#2b6cb0,#58a6ff)" : undefined }} />
+                  <div className="scoreBarFill" style={{ width: `${host.intensityLevel * 10}%`, background: isSecond ? "linear-gradient(90deg,#2b6cb0,#58a6ff)" : undefined }} />
                 </div>
                 <strong>{host.intensityLevel}/10</strong>
               </div>

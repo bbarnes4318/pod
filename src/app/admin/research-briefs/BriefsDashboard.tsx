@@ -444,7 +444,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                           <div className="hostBox" style={{ borderLeft: "3px solid var(--error-color)" }}>
                             <div className="hostHeader">
                               <span className="hostAvatar" style={{ backgroundColor: "var(--error-color)" }} />
-                              <span className="hostName" style={{ color: "var(--error-color)" }}>Max Voltage Stance</span>
+                              <span className="hostName" style={{ color: "var(--error-color)" }}>Host A Stance</span>
                             </div>
                             <p className="hostStance">{selectedTopic.brief.argumentForHostA}</p>
                           </div>
@@ -452,7 +452,7 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                           <div className="hostBox" style={{ borderLeft: "3px solid var(--accent-color)" }}>
                             <div className="hostHeader">
                               <span className="hostAvatar" style={{ backgroundColor: "var(--accent-color)" }} />
-                              <span className="hostName" style={{ color: "var(--accent-color)" }}>Dr. Linebreak Stance</span>
+                              <span className="hostName" style={{ color: "var(--accent-color)" }}>Host B Stance</span>
                             </div>
                             <p className="hostStance">{selectedTopic.brief.argumentForHostB}</p>
                           </div>
@@ -463,11 +463,14 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                       <div>
                         <h5 className="detailSectionTitle">Dialogue Back-And-Forth</h5>
                         <div className="backAndForth">
-                          {getArray(selectedTopic.brief.counterArguments).map((item: DialogueItem, idx) => (
+                          {(() => {
+                          // Two-host colour by first-seen order — not a hardcoded name.
+                          const cpHosts = [...new Set(getArray(selectedTopic.brief.counterArguments).map((i: DialogueItem) => i.host))];
+                          return getArray(selectedTopic.brief.counterArguments).map((item: DialogueItem, idx) => (
                             <div key={idx} className="dialogueRow">
                               <span
                                 className="dialogueSpeaker"
-                                style={{ color: item.host === "Dr. Linebreak" ? "var(--accent-color)" : "var(--error-color)" }}
+                                style={{ color: item.host === cpHosts[1] ? "var(--accent-color)" : "var(--error-color)" }}
                               >
                                 {item.host}:
                               </span>
@@ -484,7 +487,8 @@ export default function BriefsDashboard({ topics, isLlmStub }: DashboardProps) {
                                 )}
                               </div>
                             </div>
-                          ))}
+                          ));
+                          })()}
                         </div>
                       </div>
 

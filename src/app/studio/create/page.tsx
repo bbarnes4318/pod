@@ -18,9 +18,12 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       orderBy: { debateScore: "desc" },
       take: 12,
     }),
+    // Ordered newest-first so the stepper's default pair (CreateConsole takes
+    // the first two) is the creator's OWN two most-recently-created hosts — not
+    // a baked-in cartoon duo. The picker still lists every active host.
     db.aiHost.findMany({
       where: { isActive: true },
-      orderBy: { intensityLevel: "desc" },
+      orderBy: { createdAt: "desc" },
       select: { id: true, name: true, intensityLevel: true },
     }),
     // The creator's own most-recent unfinished episode — lets the stepper

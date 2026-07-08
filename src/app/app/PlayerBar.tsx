@@ -194,7 +194,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
               <div className="uPbTitle">{track.title}</div>
               <div className="uPbHost">
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: track.accentSolid, display: "inline-block" }} />
-                {track.hosts || "Max Voltage & Dr. Linebreak"}
+                {track.hosts || "Your hosts"}
               </div>
             </div>
 

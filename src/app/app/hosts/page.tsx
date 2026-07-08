@@ -3,10 +3,13 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const HOST_STYLE: Record<string, { solid: string; soft: string; tint: string; deep: string; tagline: string }> = {
-  "Max Voltage": { solid: "#E86A5E", soft: "#F8D9D5", tint: "#FDF1EF", deep: "#9C3B32", tagline: "The heart. Loud, loyal, allergic to spreadsheets." },
-  "Dr. Linebreak": { solid: "#3E7BD6", soft: "#D5E2F7", tint: "#F0F5FD", deep: "#26518F", tagline: "The brain. Calm, surgical, married to the numbers." },
-};
+// Two-host palette keyed by ROSTER POSITION, not a host name. First chair reads
+// warm, second cool. The tagline is each host's own role (from its record) —
+// no cartoon-specific copy baked in.
+const HOST_PALETTES: { solid: string; soft: string; tint: string; deep: string }[] = [
+  { solid: "#E86A5E", soft: "#F8D9D5", tint: "#FDF1EF", deep: "#9C3B32" },
+  { solid: "#3E7BD6", soft: "#D5E2F7", tint: "#F0F5FD", deep: "#26518F" },
+];
 
 function arr(v: unknown): string[] {
   return Array.isArray(v) ? (v as string[]) : [];
@@ -26,8 +29,8 @@ export default async function HostsPage() {
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.2rem", maxWidth: 900 }}>
-          {hosts.map((host) => {
-            const s = HOST_STYLE[host.name] ?? HOST_STYLE["Max Voltage"];
+          {hosts.map((host, i) => {
+            const s = HOST_PALETTES[i % 2];
             return (
               <div key={host.id} style={{ background: "var(--u-surface)", border: "1px solid var(--u-hairline)", borderRadius: 18, overflow: "hidden" }}>
                 <div style={{ background: `linear-gradient(140deg, ${s.soft}, ${s.tint})`, padding: "1.6rem 1.5rem 1.2rem" }}>
@@ -35,7 +38,7 @@ export default async function HostsPage() {
                     {host.name.split(" ").map((w: string) => w[0]).join("")}
                   </div>
                   <div style={{ fontSize: "1.35rem", fontWeight: 800, letterSpacing: "-0.015em" }}>{host.name}</div>
-                  <div style={{ fontSize: "0.85rem", color: s.deep, fontWeight: 600, marginTop: 3 }}>{s.tagline}</div>
+                  <div style={{ fontSize: "0.85rem", color: s.deep, fontWeight: 600, marginTop: 3 }}>{host.role}</div>
                 </div>
                 <div style={{ padding: "1.2rem 1.5rem 1.5rem" }}>
                   <p style={{ fontSize: "0.87rem", lineHeight: 1.6, color: "var(--u-ink-2)", marginBottom: "1rem", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>

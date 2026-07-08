@@ -23,6 +23,17 @@ export default async function UserEpisodePage({ params }: { params: Promise<{ id
 
   const script = episode.scripts[0] ?? null;
   const segments: any[] = (script?.content as any)?.segments ?? [];
+
+  // Resolve THIS episode's real cast for colour coding (no hardcoded host
+  // names). Highest-intensity first, matching the rest of the pipeline; the
+  // second chair reads "DOC" (blue), the first "MAX" (orange).
+  const castRows = episode.hostIds?.length
+    ? await db.aiHost.findMany({ where: { id: { in: episode.hostIds } }, select: { id: true, name: true, intensityLevel: true } }).catch(() => [])
+    : [];
+  const castSorted = [...castRows].sort((x, y) => y.intensityLevel - x.intensityLevel);
+  const hostBId = castSorted[1]?.id ?? null;
+  const hostBName = castSorted[1]?.name ?? null;
+  const castLabel = castSorted.length ? castSorted.map((h) => h.name).join(" & ") : "Your hosts";
   const audioSegments = script
     ? await db.audioSegment.findMany({ where: { scriptId: script.id }, select: { lineIndex: true, durationMs: true } }).catch(() => [])
     : [];
@@ -53,7 +64,10 @@ export default async function UserEpisodePage({ params }: { params: Promise<{ id
   const transcript: DetailSegment[] = segments.map((seg) => ({
     title: seg.title || seg.type,
     lines: (seg.lines || []).map((l: any) => ({
-      speaker: l.speakerName === "Dr. Linebreak" ? ("DOC" as const) : ("MAX" as const),
+      speaker:
+        (l.speakerHostId && hostBId && l.speakerHostId === hostBId) || (hostBName && l.speakerName === hostBName)
+          ? ("DOC" as const)
+          : ("MAX" as const),
       text: stripAudioTags(String(l.text || "")),
     })),
   }));
@@ -77,7 +91,7 @@ export default async function UserEpisodePage({ params }: { params: Promise<{ id
         }
         emoji={emoji}
         accent={{ solid: a.solid, soft: a.soft, tint: a.tint, deep: a.deep }}
-        meta={["Max Voltage & Dr. Linebreak", fmtMin(episode.durationSeconds), fmtDay(episode.updatedAt)]}
+        meta={[castLabel, fmtMin(episode.durationSeconds), fmtDay(episode.updatedAt)]}
         title={episode.title}
         chapters={episode.audioUrl ? chaptersOut : []}
         transcript={transcript}

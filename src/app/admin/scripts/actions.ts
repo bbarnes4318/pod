@@ -498,7 +498,10 @@ export async function approveScript(scriptId: string) {
       throw new Error(`Cannot approve script: total lines count is ${summary.totalLineCount}, which is under the minimum of 40.`);
     }
 
-    if (summary.hostLineShare["Max Voltage"] < 25 || summary.hostLineShare["Dr. Linebreak"] < 25) {
+    // hostLineShare is keyed by the episode's real host names — check every
+    // cast host generically rather than assuming specific names.
+    const lineShares = Object.values(summary.hostLineShare ?? {});
+    if (lineShares.length < 2 || lineShares.some((v) => v < 25)) {
       throw new Error("Cannot approve script: dialogue host split is unbalanced. Each must have >= 25% line share.");
     }
 

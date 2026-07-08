@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { db } from "@/lib/db";
 import { getDiscoverData } from "./discoverData";
 import { accentForSport } from "./accent";
 import { EpisodeCard, HeroPlay, CardEpisode } from "./EpisodeCard";
@@ -36,6 +37,19 @@ export default async function DiscoverPage() {
   const featured = cards[0] ?? null;
   const fresh = cards.slice(1);
 
+  // Resolve the featured episode's REAL cast for the hero (no hardcoded host
+  // names). Falls back to a neutral label for mock/host-less episodes.
+  const initials = (n: string) => n.split(/\s+/).filter(Boolean).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  let heroHosts: { name: string; ini: string }[] = [];
+  if (featured) {
+    const ep = await db.episode.findUnique({ where: { id: featured.id }, select: { hostIds: true } }).catch(() => null);
+    if (ep?.hostIds?.length) {
+      const rows = await db.aiHost.findMany({ where: { id: { in: ep.hostIds } }, select: { id: true, name: true } });
+      heroHosts = ep.hostIds.map((id) => rows.find((r) => r.id === id)).filter(Boolean).map((r) => ({ name: r!.name, ini: initials(r!.name) }));
+    }
+  }
+  const heroHostLabel = heroHosts.length ? heroHosts.map((h) => h.name).join(" & ") : "Your hosts";
+
   return (
     <>
       <div className="uTopbar">
@@ -69,11 +83,14 @@ export default async function DiscoverPage() {
               <h2 className="uHeroTitle">{featured.title}</h2>
               {featured.description && <p className="uHeroDesc">{featured.description}</p>}
               <div className="uHeroMeta">
-                <span className="uHostAvas" aria-hidden="true">
-                  <span className="uHostAva" style={{ background: "#E86A5E" }}>MV</span>
-                  <span className="uHostAva" style={{ background: "#3E7BD6" }}>DL</span>
-                </span>
-                <span style={{ fontWeight: 650, color: "var(--u-ink-2)" }}>Max Voltage & Dr. Linebreak</span>
+                {heroHosts.length > 0 && (
+                  <span className="uHostAvas" aria-hidden="true">
+                    {heroHosts.slice(0, 2).map((h, i) => (
+                      <span key={i} className="uHostAva" style={{ background: i % 2 === 1 ? "#3E7BD6" : "#E86A5E" }}>{h.ini}</span>
+                    ))}
+                  </span>
+                )}
+                <span style={{ fontWeight: 650, color: "var(--u-ink-2)" }}>{heroHostLabel}</span>
                 <span className="uDot" />
                 <span>{featured.meta}</span>
                 {typeof featured.score === "number" && (

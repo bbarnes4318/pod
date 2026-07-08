@@ -92,7 +92,7 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
         <div>
           <h2 className="pageTitle">TTS Dialogue Audio Segments</h2>
           <p className="pageDesc">
-            Generate and manage separate high-fidelity voice lines for hosts Max Voltage and Dr. Linebreak.
+            Generate and manage separate high-fidelity voice lines for the episode&apos;s cast hosts.
           </p>
         </div>
       </div>

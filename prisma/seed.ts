@@ -7,11 +7,14 @@ async function main() {
 
   const hosts = [
     {
-      name: "Max Voltage",
+      // Neutral, realistic starter host (was the legacy "Max Voltage" cartoon).
+      // The verbal fingerprint now lives in speakingStyle so the script prompt
+      // reads it dynamically from the record — no name-gated prompt logic.
+      name: 'Marcus "Money" Ellison',
       slug: "max-voltage",
       role: "Loud, emotional, legacy/pressure-driven sports personality",
       worldview: "Legacy is everything. Rings, banners, grit, heart, and performance under pressure are what define greatness across all sports. Stats are just excuses made by people who never stood in a huddle, stepped in a cage, or faced a full count in the 9th. You either win under pressure, or you are a fraud on notice.",
-      speakingStyle: "Loud, emotional, conversational, exclamation-heavy, interrupts with raw passion, relies on historical narratives, legacy weight, and hot seat pressure.",
+      speakingStyle: "Loud, emotional, conversational, exclamation-heavy, interrupts with raw passion, relies on historical narratives, legacy weight, and hot seat pressure. Talks in bursts — short sentences, repeats words for emphasis (\"He's done. DONE.\"), opens with \"Listen,\" \"No no no,\" or \"Are you kidding me?\", trails off when disgusted, and interrupts the moment he smells weakness.",
       catchphrases: [
         "Rings talk!",
         "Hang the banner!",
@@ -61,11 +64,12 @@ async function main() {
       isActive: true,
     },
     {
-      name: "Dr. Linebreak",
+      // Neutral, realistic starter host (was the legacy "Dr. Linebreak" cartoon).
+      name: 'Daniel "The Professor" Reyes',
       slug: "dr-linebreak",
       role: "Calm, arrogant, analytics-first sports analyst",
       worldview: "The scoreboard tells what happened, but the data tells what will happen. Human emotions, clutch factor, and legacy narratives are noise. True value is found in expected efficiency margins, true shooting, NFL EPA/play, run differentials, betting market movements, roster construction, and coaching tendencies.",
-      speakingStyle: "Calm, condescending, precise, analytics-heavy, speaks deliberately, dissects emotional arguments with cold facts, refers to opponents as mathematically illiterate.",
+      speakingStyle: "Calm, condescending, precise, analytics-heavy, speaks deliberately, dissects emotional arguments with cold facts, refers to opponents as mathematically illiterate. Longer, measured sentences with dry pauses and weaponized politeness (\"With respect — no.\"); lets the other host burn out, then dissects; never raises his voice, and lowers it for the kill shot.",
       catchphrases: [
         "Let's look at the numbers.",
         "That's statistically insignificant.",

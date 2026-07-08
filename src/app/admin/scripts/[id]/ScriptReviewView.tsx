@@ -134,8 +134,8 @@ function ScriptLineItem({
           disabled={isLocked || submitting}
           className="speakerSelector"
         >
-          <option value="Max Voltage">Max Voltage</option>
-          <option value="Dr. Linebreak">Dr. Linebreak</option>
+          <option value={hostA.name}>{hostA.name}</option>
+          <option value={hostB.name}>{hostB.name}</option>
         </select>
 
         {/* Tone selector */}
@@ -405,7 +405,7 @@ export default function ScriptReviewView({
       const next = [...prev];
       const line = next[sIdx].lines[lIdx];
       line.speakerName = speaker;
-      line.speakerHostId = speaker === "Max Voltage" ? hostA.id : hostB.id;
+      line.speakerHostId = speaker === hostA.name ? hostA.id : hostB.id;
       return next;
     });
   };
@@ -1045,15 +1045,15 @@ export default function ScriptReviewView({
                   <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
                     <span className="sectionGroupLabel" style={{ fontSize: "0.7rem" }}>Host Line Share</span>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginTop: "0.25rem" }}>
-                      <span>Max Voltage:</span>
-                      <strong style={{ color: (validationSummary.hostLineShare?.["Max Voltage"] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
-                        {validationSummary.hostLineShare?.["Max Voltage"] || 0}%
+                      <span>{hostA.name}:</span>
+                      <strong style={{ color: (validationSummary.hostLineShare?.[hostA.name] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
+                        {validationSummary.hostLineShare?.[hostA.name] || 0}%
                       </strong>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
-                      <span>Dr. Linebreak:</span>
-                      <strong style={{ color: (validationSummary.hostLineShare?.["Dr. Linebreak"] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
-                        {validationSummary.hostLineShare?.["Dr. Linebreak"] || 0}%
+                      <span>{hostB.name}:</span>
+                      <strong style={{ color: (validationSummary.hostLineShare?.[hostB.name] || 0) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
+                        {validationSummary.hostLineShare?.[hostB.name] || 0}%
                       </strong>
                     </div>
                   </div>

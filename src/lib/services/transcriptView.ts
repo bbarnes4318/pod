@@ -163,8 +163,8 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
     scriptStatus: null,
     episodeStatus: null,
     episodeTitle: "",
-    hostA: { id: null, name: "Max Voltage" },
-    hostB: { id: null, name: "Dr. Linebreak" },
+    hostA: { id: null, name: "Host 1" },
+    hostB: { id: null, name: "Host 2" },
     segments: [],
     claims: [],
     factCheck: { present: false, status: null, checkedAt: null, coveragePercent: null },
@@ -184,13 +184,14 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
   if (!episode) return empty("Episode not found.");
   const script = episode.scripts[0] ?? null;
 
-  // Resolve the two cast hosts (for colour coding); default duo if unset.
+  // Resolve the two cast hosts (for colour coding) from the episode's real cast;
+  // neutral placeholders only if no active hosts exist at all.
   const hostRows = episode.hostIds?.length
     ? await db.aiHost.findMany({ where: { id: { in: episode.hostIds } }, select: { id: true, name: true, intensityLevel: true } })
     : await db.aiHost.findMany({ where: { isActive: true }, orderBy: { intensityLevel: "desc" }, take: 2, select: { id: true, name: true, intensityLevel: true } });
   const sorted = [...hostRows].sort((a, b) => b.intensityLevel - a.intensityLevel);
-  const hostA = sorted[0] ? { id: sorted[0].id, name: sorted[0].name } : { id: null, name: "Max Voltage" };
-  const hostB = sorted[1] ? { id: sorted[1].id, name: sorted[1].name } : { id: null, name: "Dr. Linebreak" };
+  const hostA = sorted[0] ? { id: sorted[0].id, name: sorted[0].name } : { id: null, name: "Host 1" };
+  const hostB = sorted[1] ? { id: sorted[1].id, name: sorted[1].name } : { id: null, name: "Host 2" };
 
   const base = empty();
   base.scriptId = script?.id ?? null;

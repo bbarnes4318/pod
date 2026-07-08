@@ -349,7 +349,7 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginTop: "0.5rem" }}>
                       <div style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderLeft: "4px solid var(--error-color)", padding: "1rem", borderRadius: "6px" }}>
                         <span style={{ color: "var(--error-color)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", display: "block", marginBottom: "0.5rem" }}>
-                          Max Voltage Debate Stance
+                          Host A Debate Stance
                         </span>
                         <p style={{ fontSize: "0.85rem", color: "var(--text-primary)", lineHeight: 1.5, margin: 0 }}>
                           {brief.argumentForHostA}
@@ -358,7 +358,7 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
 
                       <div style={{ backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderLeft: "4px solid var(--accent-color)", padding: "1rem", borderRadius: "6px" }}>
                         <span style={{ color: "var(--accent-color)", fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", display: "block", marginBottom: "0.5rem" }}>
-                          Dr. Linebreak Debate Stance
+                          Host B Debate Stance
                         </span>
                         <p style={{ fontSize: "0.85rem", color: "var(--text-primary)", lineHeight: 1.5, margin: 0 }}>
                           {brief.argumentForHostB}
@@ -370,14 +370,18 @@ export default function EpisodeDetailView({ episode, initialScripts, initialFact
                     <div>
                       <span className="sectionGroupLabel">Host Counterpoints</span>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {getArray(brief.counterArguments).map((item: DialogueItem, caIdx) => (
+                        {(() => {
+                          // Colour the two hosts by first-seen order, not a hardcoded name.
+                          const cpHosts = [...new Set(getArray(brief.counterArguments).map((i: DialogueItem) => i.host))];
+                          return getArray(brief.counterArguments).map((item: DialogueItem, caIdx) => (
                           <div key={caIdx} style={{ fontSize: "0.85rem", padding: "0.6rem 0.85rem", backgroundColor: "var(--bg-primary)", border: "1px solid var(--border-color)", borderRadius: "6px", display: "flex", gap: "0.5rem" }}>
-                            <span style={{ fontWeight: 700, color: item.host === "Dr. Linebreak" ? "var(--accent-color)" : "var(--error-color)" }}>
+                            <span style={{ fontWeight: 700, color: item.host === cpHosts[1] ? "var(--accent-color)" : "var(--error-color)" }}>
                               {item.host}:
                             </span>
                             <span style={{ color: "var(--text-primary)" }}>{item.claim}</span>
                           </div>
-                        ))}
+                          ));
+                        })()}
                       </div>
                     </div>
 

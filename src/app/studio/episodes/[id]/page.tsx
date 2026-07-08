@@ -43,8 +43,11 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
     : [];
   const durByLine = new Map(audioSegments.map((s) => [s.lineIndex, s.durationMs || 4000]));
 
-  const hostA = await db.aiHost.findFirst({ where: { name: "Max Voltage" }, select: { id: true, name: true } });
-  const hostB = await db.aiHost.findFirst({ where: { name: "Dr. Linebreak" }, select: { id: true, name: true } });
+  // The two-host cast for coloring comes from THIS episode's real, resolved
+  // cast (mixVm resolves Episode.hostIds, highest-intensity first) — never a
+  // hardcoded host name. Neutral fallback only if the episode has no cast yet.
+  const hostA = mixVm?.hostA ?? { id: null as string | null, name: "Host 1" };
+  const hostB = mixVm?.hostB ?? { id: null as string | null, name: "Host 2" };
 
   // ---- Advanced Producer: the APPLIED (persisted) producer settings ----
   // findUnique (include, not select) returns all scalar Episode fields, so the
@@ -85,7 +88,11 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         if (cursor < 0) cursor = 0;
       }
       const dur = durByLine.get(line.lineIndex) ?? 4000;
-      const slot: 0 | 1 = line.speakerHostId && hostB && line.speakerHostId === hostB.id ? 1 : line.speakerName === "Dr. Linebreak" ? 1 : 0;
+      // Slot the line to host B (blue) by matching THIS episode's cast — by
+      // host id first, then by the cast's actual name — else host A (orange).
+      const slot: 0 | 1 =
+        line.speakerHostId && hostB.id && line.speakerHostId === hostB.id ? 1
+        : hostB.name && line.speakerName === hostB.name ? 1 : 0;
       const prev = rawSpans[rawSpans.length - 1];
       if (prev && prev.hostSlot === slot && cursor - prev.endMs < 1500) {
         prev.endMs = cursor + dur;
@@ -131,7 +138,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           title={episode.title}
           chapters={chaptersFrac}
           hostSpans={hostSpans}
-          hostNames={[hostA?.name ?? "Max Voltage", hostB?.name ?? "Dr. Linebreak"]}
+          hostNames={[hostA.name, hostB.name]}
         />
       ) : (
         <div className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>

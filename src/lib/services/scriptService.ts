@@ -188,16 +188,9 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   }
   result.reasons.push(`Host casting: ${hostA.name} vs ${hostB.name}${savedHostIds.length > 0 ? " (episode cast)" : " (default: most-intense active pair)"}.`);
 
-  // Persona-specific delivery notes only apply to the canonical duo; custom
-  // hosts speak through their own profile fields.
-  const hostAFingerprint =
-    hostA.name === "Max Voltage"
-      ? `\n- Verbal fingerprint: talks in bursts. Short sentences. Repeats words for emphasis ("He's done. DONE."). Starts sentences with "Listen," "No no no," "Are you kidding me?" Trails off when disgusted. Interrupts when he smells weakness.`
-      : "";
-  const hostBFingerprint =
-    hostB.name === "Dr. Linebreak"
-      ? `\n- Verbal fingerprint: longer, measured sentences with dry pauses. Weaponized politeness ("With respect, Max — no."). Lets Max burn out, then dissects. Occasionally amused despite himself. Never raises his voice; lowers it for the kill shot.`
-      : "";
+  // Every host speaks through its own profile fields (worldview, speakingStyle,
+  // catchphrases, argument patterns) — pulled dynamically from the AiHost record
+  // below. No name-gated prompt logic: renaming a host never changes generation.
 
   // 4. Verify Versioning & Duplicate Check
   const existingScripts = await db.script.findMany({
@@ -296,7 +289,7 @@ Host 1: ${hostA.name} (ID: ${hostA.id})
 - Dislikes: ${JSON.stringify(hostA.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostA.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostA.bannedPhrases)}
-- Intensity Level: ${hostA.intensityLevel}/10${hostAFingerprint}
+- Intensity Level: ${hostA.intensityLevel}/10
 
 Host 2: ${hostB.name} (ID: ${hostB.id})
 - Role: ${hostB.role}
@@ -307,7 +300,7 @@ Host 2: ${hostB.name} (ID: ${hostB.id})
 - Dislikes: ${JSON.stringify(hostB.dislikes)}
 - Argument Patterns: ${JSON.stringify(hostB.argumentPatterns)}
 - Banned Phrases: ${JSON.stringify(hostB.bannedPhrases)}
-- Intensity Level: ${hostB.intensityLevel}/10${hostBFingerprint}
+- Intensity Level: ${hostB.intensityLevel}/10
 
 HOW REAL PODCAST SPEECH WORKS — follow all of these:
 1. Contractions always: "he's", "don't", "that's", "would've". Nobody says "he is not clutch" out loud.

@@ -219,7 +219,7 @@ export default function HostForm({ initialData }: HostFormProps) {
                 type="text"
                 id="name"
                 className="input"
-                placeholder="e.g. Max Voltage"
+                placeholder={'e.g. Marcus "Money" Ellison'}
                 value={name}
                 onChange={handleNameChange}
                 disabled={loading}
@@ -234,7 +234,7 @@ export default function HostForm({ initialData }: HostFormProps) {
                 type="text"
                 id="slug"
                 className="input"
-                placeholder="e.g. max-voltage"
+                placeholder="e.g. marcus-ellison"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value.toLowerCase())}
                 disabled={loading}

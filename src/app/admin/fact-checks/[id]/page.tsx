@@ -40,7 +40,7 @@ export default async function FactCheckDetailPage({ params }: PageProps) {
   const rumorLanguageCount = coverage.rumorLanguageCount || 0;
   const needsHumanReviewCount = coverage.needsHumanReviewCount || 0;
   const invalidSpeakerCount = coverage.invalidSpeakerCount || 0;
-  const hostLineShare = coverage.hostLineShare || { "Max Voltage": 0, "Dr. Linebreak": 0 };
+  const hostLineShare: Record<string, number> = coverage.hostLineShare || {};
 
   return (
     <div className="formContainer" style={{ maxWidth: "100%" }}>
@@ -256,21 +256,17 @@ export default async function FactCheckDetailPage({ params }: PageProps) {
                 </strong>
               </div>
 
-              {/* Host shares */}
+              {/* Host shares — keyed by the episode's real host names */}
               <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "0.5rem", marginTop: "0.5rem" }}>
                 <span className="sectionGroupLabel" style={{ fontSize: "0.7rem" }}>Dialogue Splits</span>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginTop: "0.25rem" }}>
-                  <span>Max Voltage:</span>
-                  <strong style={{ color: hostLineShare["Max Voltage"] >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
-                    {hostLineShare["Max Voltage"]}%
-                  </strong>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
-                  <span>Dr. Linebreak:</span>
-                  <strong style={{ color: hostLineShare["Dr. Linebreak"] >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
-                    {hostLineShare["Dr. Linebreak"]}%
-                  </strong>
-                </div>
+                {Object.entries(hostLineShare).map(([hostName, share], i) => (
+                  <div key={hostName} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginTop: i === 0 ? "0.25rem" : 0 }}>
+                    <span>{hostName}:</span>
+                    <strong style={{ color: (share as number) >= 25 ? "var(--success-color)" : "var(--error-color)" }}>
+                      {share as number}%
+                    </strong>
+                  </div>
+                ))}
               </div>
 
             </div>

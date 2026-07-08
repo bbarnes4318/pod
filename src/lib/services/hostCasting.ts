@@ -11,8 +11,8 @@
 // Ordering convention: hostA is the higher-intensity / "emotional" chair,
 // hostB the lower-intensity / "analytical" chair. For a pinned cast the
 // operator's chosen order wins; for the fallback we sort by intensityLevel so
-// the classic duo (Max Voltage 9 vs Dr. Linebreak 3) keeps its historical
-// A/B roles and existing episodes render identically.
+// a higher-intensity host keeps the A chair and existing episodes render
+// identically. No host name is ever special-cased.
 
 import { db } from "@/lib/db";
 import type { AiHost } from "@prisma/client";
