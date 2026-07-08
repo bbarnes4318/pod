@@ -18,6 +18,8 @@ import {
   archiveHost,
   unarchiveHost,
   deleteHostSafely,
+  createStudioHost,
+  cloneHostToRoster,
 } from "./actions";
 import { VOICE_SOURCES, STUDIO_TTS_PROVIDERS, type StudioHostInput } from "./constants";
 
@@ -38,7 +40,25 @@ export interface StudioHostVM {
   isArchived: boolean;
   episodeCount: number;
   segmentCount: number;
+  // Ownership (Step: per-account rosters)
+  isShared: boolean; // ownerId === null (system starter)
+  ownedByMe: boolean;
+  canEdit: boolean; // ownedByMe || admin
 }
+
+const EMPTY_INPUT: StudioHostInput = {
+  name: "",
+  role: "",
+  worldview: "",
+  speakingStyle: "",
+  catchphrasesRaw: "",
+  boundariesRaw: "",
+  intensityLevel: 6,
+  ttsProvider: "elevenlabs",
+  ttsVoiceId: "",
+  voiceSource: "",
+  voiceProvenanceNote: "",
+};
 
 const SOURCE_LABEL: Record<string, string> = {
   owned: "Owned",
@@ -60,6 +80,7 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
   const archived = useMemo(() => hosts.filter((h) => h.isArchived), [hosts]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   return (
     <div className="fadeUp">
@@ -67,15 +88,24 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
         <div>
           <h1 className="pageTitle">Character Studio</h1>
           <p className="pageSub" style={{ marginBottom: 0 }}>
-            Your recurring characters — worldview, voice, and documented provenance. Edit anyone; archive retires them without touching past episodes.
+            Your roster — plus shared starter characters. Your hosts are yours alone; edit, archive, or clone a starter to make it your own.
           </p>
         </div>
+        <button type="button" className="btnPrimary" onClick={() => setCreating((v) => !v)}>
+          {creating ? "Close" : "+ New host"}
+        </button>
       </div>
 
       {/* Two-host casting reality — reported honestly, not faked. */}
       <div className="advNote" style={{ marginTop: "0.9rem", maxWidth: 720 }}>
         An episode is cast with exactly <strong>two</strong> hosts (the debate format). You can keep a whole roster here, but casting a third/guest into a single episode isn&apos;t supported by the generation path yet — that needs its own step.
       </div>
+
+      {creating && (
+        <div style={{ marginTop: "1.2rem" }}>
+          <HostEditor mode="create" host={null} accent="var(--host-max)" onClose={() => setCreating(false)} />
+        </div>
+      )}
 
       <div className="grid2" style={{ marginTop: "1.5rem" }}>
         {active.map((host, i) => (
@@ -91,7 +121,7 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
       </div>
 
       {active.length === 0 && (
-        <div className="emptyNote" style={{ marginTop: "1.5rem" }}>No active hosts. Restore one from the archive below, or create hosts in the personalities console.</div>
+        <div className="emptyNote" style={{ marginTop: "1.5rem" }}>No hosts yet — add one above, or clone a shared starter.</div>
       )}
 
       {archived.length > 0 && (
@@ -127,7 +157,7 @@ function HostCard({
   const accent = slot === 1 ? "var(--host-doc)" : "var(--host-max)";
   const provenanceUndocumented = !host.voiceSource;
 
-  const [busy, setBusy] = useState<null | "audition" | "archive">(null);
+  const [busy, setBusy] = useState<null | "audition" | "archive" | "clone">(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -162,8 +192,16 @@ function HostCard({
     setBusy(null);
   };
 
-  if (editing) {
-    return <HostEditor host={host} accent={accent} onClose={onCloseEdit} />;
+  const doClone = async () => {
+    setBusy("clone"); setErr(null); setMsg(null);
+    const res: any = await cloneHostToRoster(host.id);
+    if (res?.success === false) setErr(res.error);
+    else setMsg("Cloned to your roster — find your editable copy above.");
+    setBusy(null);
+  };
+
+  if (editing && host.canEdit) {
+    return <HostEditor mode="edit" host={host} accent={accent} onClose={onCloseEdit} />;
   }
 
   return (
@@ -173,7 +211,10 @@ function HostCard({
           <div className="displayTitle" style={{ fontSize: "1.6rem", color: accent }}>{host.name}</div>
           <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: 4 }}>{host.role}</div>
         </div>
-        <span className={`chip ${host.isActive ? "chipSuccess" : ""}`}>{host.isActive ? "On air" : "Benched"}</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", alignItems: "flex-end" }}>
+          <span className={`chip ${host.isActive ? "chipSuccess" : ""}`}>{host.isActive ? "On air" : "Benched"}</span>
+          {host.isShared && <span className="chip">Shared</span>}
+        </div>
       </div>
 
       {/* Voice provenance — prominent risk badge when undocumented. */}
@@ -208,13 +249,21 @@ function HostCard({
         <button type="button" className="btnPrimary" onClick={audition} disabled={busy === "audition"}>
           {busy === "audition" ? "Synthesizing…" : "▶ Play sample"}
         </button>
-        <button type="button" className="btnGhost" onClick={onEdit}>Edit character</button>
-        <button type="button" className="btnGhost" onClick={doArchive} disabled={busy === "archive"} style={{ marginLeft: "auto" }}>
-          {busy === "archive" ? "…" : "Archive"}
-        </button>
+        {host.canEdit ? (
+          <>
+            <button type="button" className="btnGhost" onClick={onEdit}>Edit character</button>
+            <button type="button" className="btnGhost" onClick={doArchive} disabled={busy === "archive"} style={{ marginLeft: "auto" }}>
+              {busy === "archive" ? "…" : "Archive"}
+            </button>
+          </>
+        ) : (
+          <button type="button" className="btnGhost" onClick={doClone} disabled={busy === "clone"} style={{ marginLeft: "auto" }}>
+            {busy === "clone" ? "Cloning…" : "Clone to my roster"}
+          </button>
+        )}
       </div>
       <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.6rem" }}>
-        In {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.
+        {host.isShared ? "Shared starter — read-only. " : ""}In {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.
       </div>
       {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
       <audio ref={audioRef} preload="none" />
@@ -225,20 +274,24 @@ function HostCard({
 /* ------------------------------------------------------------------ */
 /* Inline character editor.                                            */
 /* ------------------------------------------------------------------ */
-function HostEditor({ host, accent, onClose }: { host: StudioHostVM; accent: string; onClose: () => void }) {
-  const [form, setForm] = useState<StudioHostInput>({
-    name: host.name,
-    role: host.role,
-    worldview: host.worldview,
-    speakingStyle: host.speakingStyle,
-    catchphrasesRaw: host.catchphrases.join("\n"),
-    boundariesRaw: host.boundaries.join("\n"),
-    intensityLevel: host.intensityLevel,
-    ttsProvider: host.ttsProvider,
-    ttsVoiceId: host.ttsVoiceId,
-    voiceSource: host.voiceSource,
-    voiceProvenanceNote: host.voiceProvenanceNote,
-  });
+function HostEditor({ mode, host, accent, onClose }: { mode: "edit" | "create"; host: StudioHostVM | null; accent: string; onClose: () => void }) {
+  const [form, setForm] = useState<StudioHostInput>(
+    host
+      ? {
+          name: host.name,
+          role: host.role,
+          worldview: host.worldview,
+          speakingStyle: host.speakingStyle,
+          catchphrasesRaw: host.catchphrases.join("\n"),
+          boundariesRaw: host.boundaries.join("\n"),
+          intensityLevel: host.intensityLevel,
+          ttsProvider: host.ttsProvider,
+          ttsVoiceId: host.ttsVoiceId,
+          voiceSource: host.voiceSource,
+          voiceProvenanceNote: host.voiceProvenanceNote,
+        }
+      : { ...EMPTY_INPUT }
+  );
   const [busy, setBusy] = useState<null | "save" | "test">(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -247,7 +300,7 @@ function HostEditor({ host, accent, onClose }: { host: StudioHostVM; accent: str
 
   const save = async () => {
     setBusy("save"); setErr(null); setMsg(null);
-    const res: any = await saveStudioHost(host.id, form);
+    const res: any = mode === "create" ? await createStudioHost(form) : await saveStudioHost(host!.id, form);
     if (res?.success) { setMsg("Saved."); onClose(); }
     else setErr(res?.error || "Save failed.");
     setBusy(null);
@@ -275,7 +328,7 @@ function HostEditor({ host, accent, onClose }: { host: StudioHostVM; accent: str
 
   return (
     <div className="studioCard advPanelWide" style={{ borderTop: `3px solid ${accent}` }}>
-      <div className="advPanelHead">Edit character</div>
+      <div className="advPanelHead">{mode === "create" ? "New host" : "Edit character"}</div>
 
       <div className="hostFormGrid">
         <label className="hostField">
@@ -344,7 +397,7 @@ function HostEditor({ host, accent, onClose }: { host: StudioHostVM; accent: str
       {(msg || err) && <div className={`gateResult ${err ? "gate-err" : "gate-ok"}`} style={{ margin: "0.9rem 0" }}>{err || msg}</div>}
 
       <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
-        <button type="button" className="btnPrimary" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : "Save character"}</button>
+        <button type="button" className="btnPrimary" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : mode === "create" ? "Create host" : "Save character"}</button>
         <button type="button" className="btnGhost" onClick={test} disabled={busy === "test"}>{busy === "test" ? "Synthesizing…" : "▶ Test this voice"}</button>
         <button type="button" className="btnGhost" onClick={onClose} style={{ marginLeft: "auto" }}>Cancel</button>
       </div>
@@ -388,14 +441,18 @@ function ArchivedCard({ host }: { host: StudioHostVM }) {
         In {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}{host.segmentCount > 0 ? ` · ${host.segmentCount} audio segments` : ""} — preserved.
       </div>
       {err && <div className="gateResult gate-err" style={{ marginBottom: "0.6rem" }}>{err}</div>}
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <button type="button" className="btnGhost" onClick={restore} disabled={busy}>Restore</button>
-        {referenced ? (
-          <span className="advNote" style={{ margin: 0, alignSelf: "center" }}>Can&apos;t delete — referenced by episodes (protected).</span>
-        ) : (
-          <button type="button" className="btnGhost" onClick={del} disabled={busy} style={{ color: "var(--error-text)" }}>Delete permanently</button>
-        )}
-      </div>
+      {host.canEdit ? (
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button type="button" className="btnGhost" onClick={restore} disabled={busy}>Restore</button>
+          {referenced ? (
+            <span className="advNote" style={{ margin: 0, alignSelf: "center" }}>Can&apos;t delete — referenced by episodes (protected).</span>
+          ) : (
+            <button type="button" className="btnGhost" onClick={del} disabled={busy} style={{ color: "var(--error-text)" }}>Delete permanently</button>
+          )}
+        </div>
+      ) : (
+        <span className="advNote" style={{ margin: 0 }}>Shared host — read-only.</span>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React from "react";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,14 @@ function arr(v: unknown): string[] {
 }
 
 export default async function HostsPage() {
-  const hosts = await db.aiHost.findMany({ orderBy: { createdAt: "asc" } }).catch(() => [] as any[]);
+  const user = await currentUser();
+  // Own + shared hosts only — never another account's roster.
+  const hosts = await db.aiHost
+    .findMany({
+      where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null },
+      orderBy: { createdAt: "asc" },
+    })
+    .catch(() => [] as any[]);
 
   return (
     <>

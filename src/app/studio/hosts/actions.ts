@@ -1,12 +1,16 @@
 "use server";
 
-// Character Studio server actions — signed-in gated (AiHost is a GLOBAL table
-// with no ownerId yet; per-account rosters are the NEXT step). Every mutation
-// goes through requireSignedIn. Reuses the REAL voice-id validation rules
-// (isVoiceIdValidForProvider — same rules as Step 7's ttsVoiceOverrides) and the
-// REAL per-line TTS synthesis primitive (getTTSProvider().synthesizeSpeech — the
-// exact call generateTtsSegments makes per line in Step 5) for auditions.
+// Character Studio server actions — per-account host ownership.
+//
+// AiHost.ownerId is nullable: null = system/shared host (visible read-only to
+// everyone, never editable by non-admins); non-null = owned by that user. Every
+// MUTATION is owner-gated server-side (requireOwnedHost) so a user can never
+// edit/archive/delete another account's — or a shared — host; they clone it
+// first. New hosts stamp ownerId = currentUser. Reuses the REAL voice-id
+// validation (isVoiceIdValidForProvider) and the REAL per-line TTS primitive
+// (getTTSProvider().synthesizeSpeech, Step 5) for auditions.
 
+import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -22,9 +26,47 @@ async function requireSignedIn(): Promise<{ success: false; error: string } | nu
   return null;
 }
 
+/**
+ * Ownership gate for a mutation: the host must exist AND be owned by the current
+ * user (or the user is an admin). Shared (ownerId=null) and other users' hosts
+ * are rejected here — server-side, not just in the UI. This is the check that
+ * guarantees a user can never mutate a host that isn't theirs.
+ */
+async function requireOwnedHost(id: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Please sign in to manage hosts." };
+  if (!id) return { ok: false as const, error: "Host id is required." };
+  const host = await db.aiHost.findUnique({ where: { id }, select: { id: true, ownerId: true } });
+  if (!host) return { ok: false as const, error: "That host no longer exists." };
+  const isAdmin = user.role === "ADMIN";
+  if (host.ownerId !== user.id && !isAdmin) {
+    return {
+      ok: false as const,
+      error:
+        host.ownerId === null
+          ? "This is a shared starter host — clone it to your roster to make an editable copy."
+          : "This host belongs to another account.",
+    };
+  }
+  return { ok: true as const, user, host };
+}
+
 function parseLines(input: string): string[] {
   if (!input) return [];
   return input.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+function slugify(name: string): string {
+  const base = name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return base || "host";
+}
+
+/** A slug guaranteed unique against AiHost.slug (@unique). */
+async function uniqueSlug(name: string): Promise<string> {
+  const base = slugify(name);
+  const existing = await db.aiHost.findUnique({ where: { slug: base }, select: { id: true } });
+  if (!existing) return base;
+  return `${base}-${crypto.randomUUID().slice(0, 6)}`;
 }
 
 /**
@@ -35,10 +77,9 @@ function parseLines(input: string): string[] {
  * written to the real columns (the Greene v. Google safeguard).
  */
 export async function saveStudioHost(id: string, input: StudioHostInput) {
-  const gate = await requireSignedIn();
-  if (gate) return gate;
+  const owned = await requireOwnedHost(id);
+  if (!owned.ok) return { success: false as const, error: owned.error };
   try {
-    if (!id) throw new Error("Host id is required.");
     const name = input.name.trim();
     if (!name) throw new Error("Name is required.");
     const role = input.role.trim();
@@ -174,8 +215,8 @@ async function episodeReferenceCount(hostId: string): Promise<number> {
  * isActive/isArchived filter). Always safe — no reference check needed.
  */
 export async function archiveHost(id: string) {
-  const gate = await requireSignedIn();
-  if (gate) return gate;
+  const owned = await requireOwnedHost(id);
+  if (!owned.ok) return { success: false as const, error: owned.error };
   try {
     await db.aiHost.update({ where: { id }, data: { isArchived: true } });
     revalidatePath("/studio/hosts");
@@ -186,8 +227,8 @@ export async function archiveHost(id: string) {
 }
 
 export async function unarchiveHost(id: string) {
-  const gate = await requireSignedIn();
-  if (gate) return gate;
+  const owned = await requireOwnedHost(id);
+  if (!owned.ok) return { success: false as const, error: owned.error };
   try {
     await db.aiHost.update({ where: { id }, data: { isArchived: false } });
     revalidatePath("/studio/hosts");
@@ -203,8 +244,8 @@ export async function unarchiveHost(id: string) {
  * instead, so existing episodes never lose their cast.
  */
 export async function deleteHostSafely(id: string) {
-  const gate = await requireSignedIn();
-  if (gate) return gate;
+  const owned = await requireOwnedHost(id);
+  if (!owned.ok) return { success: false as const, error: owned.error };
   try {
     const [epRefs, segRefs] = await Promise.all([
       episodeReferenceCount(id),
@@ -222,5 +263,125 @@ export async function deleteHostSafely(id: string) {
     return { success: true as const };
   } catch (err: any) {
     return { success: false as const, error: err?.message || "Failed to delete the host." };
+  }
+}
+
+/** Shared validation for create/save persona + voice input. */
+function validateHostInput(input: StudioHostInput) {
+  const name = input.name.trim();
+  if (!name) throw new Error("Name is required.");
+  const role = input.role.trim();
+  const worldview = input.worldview.trim();
+  const speakingStyle = input.speakingStyle.trim();
+  if (!role || !worldview || !speakingStyle) {
+    throw new Error("Role, worldview, and speaking style are required.");
+  }
+  const intensity = Math.round(Number(input.intensityLevel));
+  if (!Number.isFinite(intensity) || intensity < 1 || intensity > 10) {
+    throw new Error("Intensity must be a number between 1 and 10.");
+  }
+  const provider = input.ttsProvider.trim().toLowerCase();
+  if (!isTtsProviderId(provider)) throw new Error(`Unknown TTS provider '${input.ttsProvider}'.`);
+  const voiceId = input.ttsVoiceId.trim();
+  if (!voiceId) throw new Error("A voice id is required.");
+  if (provider !== "stub" && !isVoiceIdValidForProvider(provider, voiceId)) {
+    throw new Error(
+      provider === "openai"
+        ? "Invalid OpenAI voice — must be one of the OpenAI voice names (e.g. onyx, echo, nova)."
+        : provider === "fish"
+          ? "Invalid Fish reference id — it must be a 32-character hex string."
+          : `That voice id isn't valid for ${provider}.`
+    );
+  }
+  const voiceSource = input.voiceSource.trim();
+  if (voiceSource && !(VOICE_SOURCES as readonly string[]).includes(voiceSource)) {
+    throw new Error("Voice source must be owned, licensed, or synthetic-stock.");
+  }
+  return { name, role, worldview, speakingStyle, intensity, provider, voiceId, voiceSource };
+}
+
+/**
+ * Create a brand-new host OWNED by the current user (ownerId stamped). Uses the
+ * same voice-id validation as save. The slug is auto-generated + made unique.
+ */
+export async function createStudioHost(input: StudioHostInput) {
+  const user = await currentUser();
+  if (!user) return { success: false as const, error: "Please sign in to create hosts." };
+  try {
+    const v = validateHostInput(input);
+    const host = await db.aiHost.create({
+      data: {
+        name: v.name,
+        slug: await uniqueSlug(v.name),
+        role: v.role,
+        worldview: v.worldview,
+        speakingStyle: v.speakingStyle,
+        catchphrases: parseLines(input.catchphrasesRaw),
+        likes: [],
+        dislikes: [],
+        argumentPatterns: [],
+        bannedPhrases: parseLines(input.boundariesRaw),
+        ttsProvider: v.provider,
+        ttsVoiceId: v.voiceId,
+        intensityLevel: v.intensity,
+        voiceSource: v.voiceSource || null,
+        voiceProvenanceNote: input.voiceProvenanceNote.trim() || null,
+        isActive: true,
+        isArchived: false,
+        ownerId: user.id, // stamp ownership
+      },
+      select: { id: true },
+    });
+    revalidatePath("/studio/hosts");
+    return { success: true as const, hostId: host.id };
+  } catch (err: any) {
+    return { success: false as const, error: err?.message || "Failed to create the host." };
+  }
+}
+
+/**
+ * Clone a SHARED (ownerId=null) or your own host into an owner-owned editable
+ * copy — the mechanism that gives each account independent characters (so it's
+ * never "the same two voices everywhere"). Another user's private host cannot be
+ * cloned. The full persona + voice assignment + provenance carry over; the copy
+ * is owned by the current user with a fresh unique slug.
+ */
+export async function cloneHostToRoster(sourceId: string) {
+  const user = await currentUser();
+  if (!user) return { success: false as const, error: "Please sign in to clone hosts." };
+  try {
+    const src = await db.aiHost.findUnique({ where: { id: sourceId } });
+    if (!src) return { success: false as const, error: "That host no longer exists." };
+    // Clonable when shared (null owner), owned by me, or I'm an admin.
+    if (src.ownerId !== null && src.ownerId !== user.id && user.role !== "ADMIN") {
+      return { success: false as const, error: "You can only clone shared starter hosts or your own." };
+    }
+    const copy = await db.aiHost.create({
+      data: {
+        name: src.name,
+        slug: await uniqueSlug(src.name),
+        role: src.role,
+        worldview: src.worldview,
+        speakingStyle: src.speakingStyle,
+        catchphrases: src.catchphrases as any,
+        likes: src.likes as any,
+        dislikes: src.dislikes as any,
+        argumentPatterns: src.argumentPatterns as any,
+        bannedPhrases: src.bannedPhrases as any,
+        ttsProvider: src.ttsProvider,
+        ttsVoiceId: src.ttsVoiceId,
+        intensityLevel: src.intensityLevel,
+        voiceSource: src.voiceSource,
+        voiceProvenanceNote: src.voiceProvenanceNote,
+        isActive: true,
+        isArchived: false,
+        ownerId: user.id, // the copy is mine
+      },
+      select: { id: true },
+    });
+    revalidatePath("/studio/hosts");
+    return { success: true as const, hostId: copy.id };
+  } catch (err: any) {
+    return { success: false as const, error: err?.message || "Failed to clone the host." };
   }
 }

@@ -26,7 +26,7 @@ interface Validated {
   hostIds: string[];
 }
 
-async function validatePodcastInput(input: PodcastInput): Promise<{ ok: true; data: Validated } | { ok: false; error: string }> {
+async function validatePodcastInput(input: PodcastInput, userId?: string): Promise<{ ok: true; data: Validated } | { ok: false; error: string }> {
   const name = (input.name || "").trim();
   if (!name) return { ok: false, error: "Give your podcast a name." };
   if (name.length > 80) return { ok: false, error: "Keep the name under 80 characters." };
@@ -74,7 +74,16 @@ async function validatePodcastInput(input: PodcastInput): Promise<{ ok: true; da
 
   const hostIds = [...new Set(input.hostIds || [])];
   if (hostIds.length === 0) return { ok: false, error: "Pick at least one host." };
-  const hosts = await db.aiHost.findMany({ where: { id: { in: hostIds }, isActive: true }, select: { id: true } });
+  // Only the caller's own hosts + shared (null-owner) starters may be cast —
+  // server-enforced so a crafted request can't pin another account's host.
+  const hosts = await db.aiHost.findMany({
+    where: {
+      id: { in: hostIds },
+      isActive: true,
+      ...(userId ? { OR: [{ ownerId: userId }, { ownerId: null }] } : { ownerId: null }),
+    },
+    select: { id: true },
+  });
   if (hosts.length !== hostIds.length) return { ok: false, error: "One of the selected hosts is unavailable." };
 
   return { ok: true, data: { name, cadence: input.cadence, scheduleDays, verticals, teams, segmentCount, hostIds } };
@@ -84,7 +93,7 @@ export async function createPodcast(input: PodcastInput) {
   try {
     const user = await currentUser();
     if (!user) return { success: false as const, error: "Please sign in to create a podcast." };
-    const v = await validatePodcastInput(input);
+    const v = await validatePodcastInput(input, user.id);
     if (!v.ok) return { success: false as const, error: v.error };
 
     const podcast = await db.podcast.create({
@@ -141,7 +150,7 @@ export async function updatePodcast(id: string, input: PodcastInput) {
       return { success: false as const, error: "This podcast belongs to another account." };
     }
 
-    const v = await validatePodcastInput(input);
+    const v = await validatePodcastInput(input, user.id);
     if (!v.ok) return { success: false as const, error: v.error };
 
     await db.podcast.update({ where: { id }, data: v.data });

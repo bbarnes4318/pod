@@ -8,11 +8,12 @@ import { requireUserPage } from "@/lib/currentUser";
 export const dynamic = "force-dynamic";
 
 export default async function NewPodcastPage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
-  await requireUserPage("/app/podcasts/new"); // creating a podcast requires an account
+  const user = await requireUserPage("/app/podcasts/new"); // creating a podcast requires an account
   const { topic: topicId } = await searchParams;
 
   const [hostsRaw, teamsRaw] = await Promise.all([
-    db.aiHost.findMany({ where: { isActive: true }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }).catch(() => [] as any[]),
+    // Own + shared hosts only — never another account's roster.
+    db.aiHost.findMany({ where: { isActive: true, isArchived: false, OR: [{ ownerId: user.id }, { ownerId: null }] }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }).catch(() => [] as any[]),
     db.team.findMany({ where: { id: { startsWith: "seed:" } }, orderBy: [{ leagueId: "asc" }, { name: "asc" }], select: { id: true, leagueId: true, name: true, city: true } }).catch(() => [] as any[]),
   ]);
 

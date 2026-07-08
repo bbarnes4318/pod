@@ -20,9 +20,15 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     }),
     // Ordered newest-first so the stepper's default pair (CreateConsole takes
     // the first two) is the creator's OWN two most-recently-created hosts — not
-    // a baked-in cartoon duo. The picker still lists every active host.
+    // a baked-in cartoon duo. Scoped to the user's own hosts + shared (null)
+    // starters, so a picker never shows another account's characters and a new
+    // account still gets a working default pair.
     db.aiHost.findMany({
-      where: { isActive: true, isArchived: false },
+      where: {
+        isActive: true,
+        isArchived: false,
+        ...(user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null }),
+      },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, intensityLevel: true },
     }),

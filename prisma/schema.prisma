@@ -20,6 +20,7 @@ model User {
   sessions      Session[]
   podcasts      Podcast[] // shows this user owns
   episodes      Episode[] // episodes this user created
+  aiHosts       AiHost[]  // Character Studio hosts this user owns (null owner = shared)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -85,6 +86,12 @@ model AiHost {
   // pickers but keep their association with existing episodes. Additive +
   // default false (migration 20260707140000).
   isArchived       Boolean  @default(false)
+  // Per-account ownership (additive, nullable, migration 20260707150000).
+  // null = system/shared host (existing rows + seed) — visible read-only to
+  // every account; non-null = owned by that User.id. Pickers show own + shared;
+  // mutations are owner-gated; the resolver stays owner-agnostic.
+  ownerId          String?
+  ownerUser        User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   // Documented voice provenance — the legal-safety fields (cf. Greene v. Google).
   // voiceSource: "owned" | "licensed" | "synthetic" | "cloned" (free-text for now).
   // voiceProvenanceNote: license id / consent record / source documentation.

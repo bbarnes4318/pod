@@ -1,5 +1,6 @@
 import React from "react";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 import CharacterStudio, { StudioHostVM } from "./CharacterStudio";
 
 export const dynamic = "force-dynamic";
@@ -9,15 +10,25 @@ function arr(val: unknown): string[] {
 }
 
 export default async function HostsPage() {
-  const hosts = await db.aiHost.findMany({ orderBy: { createdAt: "asc" } });
+  const user = await currentUser(); // the /studio layout already gates sign-in
 
-  // Reference counts for orphan-protection UX (Episode.hostIds `has` + segments).
+  // Roster scoping: the user's OWN hosts + shared (ownerId=null) starter hosts —
+  // never another account's. Enforced server-side in the query, not just the UI.
+  const hosts = await db.aiHost.findMany({
+    where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const isAdmin = user?.role === "ADMIN";
+
   const vms: StudioHostVM[] = await Promise.all(
     hosts.map(async (h) => {
       const [episodeCount, segmentCount] = await Promise.all([
         db.episode.count({ where: { hostIds: { has: h.id } } }),
         db.audioSegment.count({ where: { hostId: h.id } }),
       ]);
+      const ownedByMe = !!user && h.ownerId === user.id;
+      const isShared = h.ownerId === null;
       return {
         id: h.id,
         name: h.name,
@@ -35,6 +46,10 @@ export default async function HostsPage() {
         isArchived: h.isArchived,
         episodeCount,
         segmentCount,
+        isShared,
+        ownedByMe,
+        // Only the owner (or an admin) can mutate; shared/others are read-only.
+        canEdit: ownedByMe || isAdmin,
       };
     })
   );
