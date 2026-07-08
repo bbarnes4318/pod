@@ -1186,3 +1186,41 @@
   .studioGenerateLabel { display: none; }
   .studioGenerateBtn { padding: 0.55rem 0.7rem; }
 }
+
+/* ============================================================
+   SOCIAL CLIP PANEL (Step 9a) — auto/manual selection + clips.
+   ============================================================ */
+.clipHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.clipSub { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+.clipPicker { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.clipPickerBar { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 0.7rem; }
+.clipPickerLabel { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); }
+.clipWarn { color: var(--warning); font-weight: 700; }
+.clipLineList { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem; background: var(--surface-2); }
+.clipLine {
+  display: flex; align-items: center; gap: 0.6rem; text-align: left; width: 100%;
+  padding: 0.4rem 0.6rem; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text); cursor: pointer; font-size: 0.82rem;
+}
+.clipLine:hover { background: var(--surface); }
+.clipLine.inRange { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.clipLine.edge { border-color: var(--accent); }
+.clipLine.noAudio { opacity: 0.45; cursor: not-allowed; }
+.clipLineSpk { flex-shrink: 0; width: 96px; font-weight: 700; font-size: 0.74rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clipLineText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clipHot { flex-shrink: 0; }
+.clipMuted { flex-shrink: 0; font-size: 0.68rem; color: var(--text-muted); }
+
+.clipList { margin-top: 1rem; display: flex; flex-direction: column; gap: 0.6rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+.clipRow { display: flex; flex-direction: column; gap: 0.4rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.7rem 0.85rem; }
+.clipRowMain { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.clipStatus { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.12rem 0.5rem; border-radius: var(--radius-sm); }
+.clip-ready { color: var(--success); background: var(--success-muted); border: 1px solid var(--success-border); }
+.clip-failed { color: var(--error-text); background: var(--error-muted); border: 1px solid var(--error-border); }
+.clip-pending, .clip-rendering { color: var(--text-secondary); background: var(--surface); border: 1px solid var(--border); }
+.clipMeta { font-size: 0.78rem; color: var(--text-muted); }
+.clipDownloads { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.clipDl { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
+.clipSpin { font-size: 0.78rem; color: var(--text-muted); }
+.clipErr { font-size: 0.74rem; color: var(--warning); }

@@ -12,7 +12,8 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
-import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData } from "./podcastQueue";
+import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
+import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeService";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
@@ -102,6 +103,8 @@ const worker = new Worker(
       return handleLineAudioRegen(job as Job<LineAudioRegenJobData>);
     } else if (job.name === "content:generate-assets") {
       return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
+    } else if (job.name === "social-clip:generate") {
+      return handleSocialClipGeneration(job as Job<SocialClipJobData>);
     } else if (job.name === "scheduler:recurring-podcasts") {
       return handleRecurringPodcastScheduler(job);
     } else if (job.name === "generate-podcast") {
@@ -2094,6 +2097,37 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
     return { success: true, ...res };
   } catch (err: any) {
     console.error(`[Worker] Final audio stitching job failed:`, err.message);
+    throw err;
+  }
+}
+
+/**
+ * Auto social clip — renders a 9:16 captioned promo cut from the REAL per-line
+ * audio (renderSocialClip reuses planConversationTimeline → renderTimelineToWav
+ * → masterToMp3, then attempts an ffmpeg 9:16 mp4 with burned host-coloured
+ * captions, falling back to mp3 + vtt). Results are written onto the SocialClip
+ * row; failure marks it failed so the UI can report honestly.
+ */
+async function handleSocialClipGeneration(job: Job<SocialClipJobData>) {
+  const { clipId } = job.data;
+  console.log(`[Worker] Starting social-clip:generate for clip ${clipId}`);
+  const jobLog = await db.jobLog.create({
+    data: { jobType: "social-clip:generate", status: "running", input: { clipId } as any, output: {} },
+  });
+  try {
+    const res = await renderSocialClip(clipId);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "completed", output: { clipId, ...res } as any },
+    });
+    console.log(`[Worker] Social clip ${clipId} rendered as ${res.kind}.`);
+    return { success: true, ...res };
+  } catch (err: any) {
+    console.error(`[Worker] Social clip generation failed:`, err.message);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "failed", error: err.message, output: { clipId } as any },
+    });
     throw err;
   }
 }

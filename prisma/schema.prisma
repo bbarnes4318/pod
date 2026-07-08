@@ -376,6 +376,7 @@ model Episode {
   topics             EpisodeTopic[]
   scripts            Script[]
   audioSegments      AudioSegment[]
+  socialClips        SocialClip[]
 
   @@index([status])
   @@index([publishedAt])
@@ -522,4 +523,32 @@ model JobLog {
   @@index([jobType])
   @@index([status])
   @@index([createdAt])
+}
+
+// Auto social clip — a short vertical (9:16) captioned promo cut of an episode's
+// spiciest exchange. Selection reuses the real transcript tone/energy; the clip
+// audio is rendered from the real per-line AudioSegment audio via the same
+// ffmpeg path the full stitch uses. Additive (migration 20260708120000).
+model SocialClip {
+  id             String   @id @default(uuid())
+  episodeId      String
+  scriptId       String
+  ownerId        String?  // creator (Episode.ownerId); null for legacy episodes
+  startLineIndex Int
+  endLineIndex   Int
+  title          String?
+  status         String   @default("pending") // pending | rendering | ready | failed
+  kind           String?  // "video" (9:16 mp4) | "audio+captions" (mp3 + vtt fallback)
+  audioUrl       String?  // always produced (real episode audio)
+  videoUrl       String?  // 9:16 burned-caption mp4 when the ffmpeg build allows it
+  captionsUrl    String?  // WebVTT caption track (host-colour cues)
+  durationMs     Int?
+  autoSelected   Boolean  @default(false)
+  error          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  episode        Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@index([ownerId])
 }

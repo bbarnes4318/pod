@@ -10,6 +10,7 @@ import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
 import PublishPanel from "../../PublishPanel";
 import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
+import SocialClipPanel from "../../SocialClipPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -212,6 +213,16 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
             <h2 className="sectionTitle">Mix & timeline</h2>
           </div>
           <MixView episodeId={episode.id} initialVm={mixVm} />
+        </div>
+      )}
+
+      {/* Auto social clip — vertical captioned promo cut from the real audio */}
+      {script && (
+        <div style={{ marginTop: "1.75rem" }}>
+          <div className="sectionHead" style={{ marginTop: 0 }}>
+            <h2 className="sectionTitle">Promote</h2>
+          </div>
+          <SocialClipPanel episodeId={episode.id} />
         </div>
       )}
 

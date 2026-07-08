@@ -169,6 +169,19 @@ export async function queueContentAssetGenerationJob(data: ContentAssetJobData) 
   return podcastQueue.add("content:generate-assets", data);
 }
 
+// Auto social clip render. Carries the SocialClip row id; the handler renders
+// the clip audio from the real per-line AudioSegments and attempts a 9:16
+// captioned mp4, then writes the URLs back onto the row.
+export interface SocialClipJobData {
+  clipId: string;
+}
+
+export async function queueSocialClipJob(data: SocialClipJobData) {
+  return podcastQueue.add("social-clip:generate", data, {
+    jobId: `social-clip-${data.clipId}`,
+  });
+}
+
 export interface LineAudioRegenJobData {
   scriptId: string;
   /** The single script line to re-voice. */

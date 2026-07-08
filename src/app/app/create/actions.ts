@@ -17,7 +17,9 @@ import {
   queueFinalAudioStitchJob,
   queueContentAssetGenerationJob,
   queueLineAudioRegenJob,
+  queueSocialClipJob,
 } from "@/lib/queue/podcastQueue";
+import { selectHottestRange } from "@/lib/services/socialClipService";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
@@ -798,4 +800,100 @@ export async function getPublishState(episodeId: string) {
     feedPath: ep.podcastId ? `/rss/${ep.podcastId}` : "/rss",
     downloadPath: `/api/episodes/${ep.id}/download`,
   };
+}
+
+/* ============================================================================
+ * SOCIAL CLIPS (Step 9a) — owner-gated. Selection reuses the real transcript
+ * tone/energy; render reuses the real per-line AudioSegment audio via a
+ * background job (social-clip:generate → renderSocialClip).
+ * ========================================================================== */
+
+/** The suggested (hottest) auto range + the per-line list for manual picking. */
+export async function getClipCandidate(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "No script yet." };
+  const vm = await getEpisodeMixVM(episodeId);
+  const lines = vm.segments.flatMap((s) =>
+    s.lines.map((l) => ({
+      lineIndex: l.lineIndex,
+      speaker: l.speaker,
+      textShort: l.textShort,
+      tone: l.tone,
+      energy: l.energy,
+      durationMs: l.durationMs,
+      hasAudio: l.hasAudio,
+    }))
+  );
+  const suggested = await selectHottestRange(gate.scriptId);
+  return {
+    success: true as const,
+    fullyVoiced: vm.fullyVoiced,
+    hostA: vm.hostA.name,
+    hostB: vm.hostB.name,
+    lines,
+    suggested, // {startLineIndex, endLineIndex} | null
+  };
+}
+
+/**
+ * Create a SocialClip (auto-selected if no range is given) and enqueue the
+ * render job. Owner-gated. Requires at least the selected lines to be voiced.
+ */
+export async function generateSocialClip(
+  episodeId: string,
+  opts?: { startLineIndex?: number; endLineIndex?: number; title?: string }
+) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "There's no script to clip yet." };
+
+  let start = opts?.startLineIndex;
+  let end = opts?.endLineIndex;
+  const auto = start === undefined || end === undefined;
+  if (auto) {
+    const range = await selectHottestRange(gate.scriptId);
+    if (!range) {
+      return { success: false as const, error: "No voiced audio to clip yet — voice the episode first." };
+    }
+    start = range.startLineIndex;
+    end = range.endLineIndex;
+  }
+  if (start! > end!) [start, end] = [end, start];
+
+  try {
+    const clip = await db.socialClip.create({
+      data: {
+        episodeId,
+        scriptId: gate.scriptId,
+        ownerId: gate.episode.ownerId ?? gate.user.id,
+        startLineIndex: start!,
+        endLineIndex: end!,
+        title: opts?.title?.trim() || null,
+        autoSelected: auto,
+        status: "pending",
+      },
+      select: { id: true },
+    });
+    await queueSocialClipJob({ clipId: clip.id });
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const, clipId: clip.id };
+  } catch (err: any) {
+    return { success: false as const, error: err?.message || "Failed to start the clip render." };
+  }
+}
+
+/** List this episode's social clips (owner-gated). */
+export async function getSocialClips(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  const clips = await db.socialClip.findMany({
+    where: { episodeId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true, status: true, kind: true, audioUrl: true, videoUrl: true, captionsUrl: true,
+      durationMs: true, startLineIndex: true, endLineIndex: true, autoSelected: true, error: true, createdAt: true,
+    },
+  });
+  return { success: true as const, clips };
 }
