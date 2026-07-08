@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { queueEpisodeBuildJob } from "../queue/podcastQueue";
+import { assertCanCreateEpisode, getEpisodeUsage, getUserPlan } from "./entitlementService";
 
 // Recurring podcast auto-generation. One daily scheduler tick (registered as
 // a BullMQ job scheduler at worker boot) finds every recurring podcast whose
@@ -24,9 +25,12 @@ import { schedulerDateParts } from "./recurringSchedule";
 export interface PodcastGenerationOutcome {
   podcastId: string;
   name: string;
-  status: "enqueued" | "skipped_already_generated" | "failed";
+  status: "enqueued" | "skipped_already_generated" | "skipped_over_cap" | "failed";
   jobId?: string;
   error?: string;
+  /** Owner-visible explanation for a skip (e.g. monthly-cap reached). Persisted
+   *  in the scheduler JobLog output. */
+  reason?: string;
 }
 
 /** Enqueue one episode build from a podcast's current saved config. */
@@ -73,8 +77,44 @@ export async function runRecurringPodcastGeneration(now: Date = new Date()) {
   });
 
   const outcomes: PodcastGenerationOutcome[] = [];
+  // Episodes enqueued for an owner earlier in THIS tick aren't reflected in the
+  // metered Episode-row count yet (the worker writes the row later), so track
+  // them here and fold them into the cap so an owner with several recurring
+  // shows due the same day can't slip multiple builds past a single-remaining
+  // cap within one run.
+  const enqueuedByOwner = new Map<string, number>();
+
   for (const p of due) {
     try {
+      // Entitlement gate (Step 9c parity): a recurring schedule must not bypass
+      // the monthly episode cap. Meter the podcast OWNER against the SAME
+      // entitlementService check the user-initiated entrypoints use — one
+      // source of truth (real Episode-row count). Over-cap owners are skipped
+      // for today (recorded with an owner-visible reason) and never crash the
+      // run for other podcasts. Ownerless (system) podcasts have no cap.
+      if (p.ownerId) {
+        const gate = await assertCanCreateEpisode(p.ownerId);
+        let overCap = !gate.ok;
+        if (!overCap) {
+          const pending = enqueuedByOwner.get(p.ownerId) ?? 0;
+          if (pending > 0) {
+            const usage = await getEpisodeUsage(p.ownerId);
+            overCap = usage.limit !== null && usage.used + pending >= usage.limit;
+          }
+        }
+        if (overCap) {
+          const plan = await getUserPlan(p.ownerId);
+          outcomes.push({
+            podcastId: p.id,
+            name: p.name,
+            status: "skipped_over_cap",
+            reason: `skipped: monthly limit reached on ${plan.name} plan`,
+          });
+          continue; // do NOT claim or enqueue — checked before the claim so the
+          // day isn't consumed and an upgrade later can still generate.
+        }
+      }
+
       // Atomic claim: only one runner per podcast per day wins this update.
       const claimed = await db.podcast.updateMany({
         where: {
@@ -92,6 +132,7 @@ export async function runRecurringPodcastGeneration(now: Date = new Date()) {
         titleSuffix: dateKey,
         jobId: `recurring-${p.id}-${dateKey}`,
       });
+      if (p.ownerId) enqueuedByOwner.set(p.ownerId, (enqueuedByOwner.get(p.ownerId) ?? 0) + 1);
       outcomes.push({ podcastId: p.id, name: p.name, status: "enqueued", jobId: String(job.id) });
     } catch (err: any) {
       outcomes.push({ podcastId: p.id, name: p.name, status: "failed", error: err.message });

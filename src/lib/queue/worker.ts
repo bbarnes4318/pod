@@ -202,8 +202,9 @@ async function handleRecurringPodcastScheduler(job: Job) {
     });
     const enqueued = result.outcomes.filter((o) => o.status === "enqueued").length;
     const skipped = result.outcomes.filter((o) => o.status === "skipped_already_generated").length;
+    const overCap = result.outcomes.filter((o) => o.status === "skipped_over_cap").length;
     console.log(
-      `[Worker] Recurring scheduler done for ${result.dateKey} (${result.weekday}): due=${result.dueCount}, enqueued=${enqueued}, skipped=${skipped}`
+      `[Worker] Recurring scheduler done for ${result.dateKey} (${result.weekday}): due=${result.dueCount}, enqueued=${enqueued}, skipped=${skipped}, over-cap=${overCap}`
     );
     return { success: true, ...result };
   } catch (err: any) {
