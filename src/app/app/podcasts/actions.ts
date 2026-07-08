@@ -8,6 +8,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
+import { assertCanCreatePodcast } from "@/lib/services/entitlementService";
 import {
   isValidVertical,
   normalizeVerticals,
@@ -93,6 +94,9 @@ export async function createPodcast(input: PodcastInput) {
   try {
     const user = await currentUser();
     if (!user) return { success: false as const, error: "Please sign in to create a podcast." };
+    // Monetization gate (Step 9c) — podcast-count cap, server-enforced.
+    const gate = await assertCanCreatePodcast(user.id);
+    if (!gate.ok) return { success: false as const, error: gate.error, upgrade: true as const };
     const v = await validatePodcastInput(input, user.id);
     if (!v.ok) return { success: false as const, error: v.error };
 

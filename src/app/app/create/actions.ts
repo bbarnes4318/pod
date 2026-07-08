@@ -20,6 +20,7 @@ import {
   queueSocialClipJob,
 } from "@/lib/queue/podcastQueue";
 import { selectHottestRange } from "@/lib/services/socialClipService";
+import { assertCanCreateEpisode, assertPremiumVoiceAllowed } from "@/lib/services/entitlementService";
 import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
@@ -110,6 +111,12 @@ export async function produceEpisodeFromTopics(
   try {
     const owner = await currentUser();
     if (!owner) return { success: false as const, error: "Please sign in to create or manage content." };
+    // Monetization gate (Step 9c) — metered episode cap + premium-voice
+    // entitlement, enforced server-side before any build work.
+    const quota = await assertCanCreateEpisode(owner.id);
+    if (!quota.ok) return { success: false as const, error: quota.error, upgrade: true as const };
+    const voiceGate = await assertPremiumVoiceAllowed(owner.id, ttsProvider);
+    if (!voiceGate.ok) return { success: false as const, error: voiceGate.error, upgrade: true as const };
     const res = await buildEpisodeFromTopics({
       topicIds,
       ttsProvider,
@@ -170,6 +177,9 @@ export async function createStandaloneEpisode(input: {
   try {
     const owner = await currentUser();
     if (!owner) return { success: false as const, error: "Please sign in to create or manage content." };
+    // Monetization gate (Step 9c) — the metered episode cap, server-enforced.
+    const quota = await assertCanCreateEpisode(owner.id);
+    if (!quota.ok) return { success: false as const, error: quota.error, upgrade: true as const };
     const segmentCount = Math.round(Number(input.segmentCount));
     if (!Number.isFinite(segmentCount) || segmentCount < SEGMENT_MIN || segmentCount > SEGMENT_MAX) {
       return { success: false as const, error: `Segments must be between ${SEGMENT_MIN} and ${SEGMENT_MAX}.` };

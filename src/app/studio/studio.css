@@ -1272,3 +1272,32 @@
 @media (max-width: 720px) {
   .anStats { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   PLAN & USAGE (Step 9c) — tiers, real usage, gating surface.
+   ============================================================ */
+.planCurrent { display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; margin-top: 1.4rem; }
+.planCurLabel { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.planCurName { font-size: 1.8rem; font-weight: 800; color: var(--text); line-height: 1.1; }
+.planCurPrice { font-size: 0.9rem; color: var(--accent); font-weight: 700; }
+.planUsage { flex: 1; min-width: 260px; }
+.planUsageHead { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
+.planUsageHead strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.planCapHit { background: var(--warning) !important; }
+.planCapNote { font-size: 0.76rem; color: var(--warning); margin-top: 0.4rem; }
+.planUsageSub { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.5rem; }
+
+.planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.planCard { display: flex; flex-direction: column; }
+.planCardCurrent { border-color: var(--accent); box-shadow: var(--shadow-accent); }
+.planCardHead { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
+.planCardName { font-size: 1.2rem; font-weight: 800; color: var(--text); }
+.planCardPrice { font-size: 1.4rem; font-weight: 800; color: var(--accent); margin-top: 0.3rem; }
+.planCardBlurb { font-size: 0.82rem; color: var(--text-secondary); margin: 0.5rem 0 0.9rem; line-height: 1.5; }
+.planFeatures { list-style: none; padding: 0; margin: 0 0 1.1rem; display: flex; flex-direction: column; gap: 0.45rem; }
+.planFeatures li { font-size: 0.82rem; color: var(--text); padding-left: 1.3rem; position: relative; }
+.planFeatures li::before { content: "✓"; position: absolute; left: 0; color: var(--success); font-weight: 800; }
+
+@media (max-width: 860px) {
+  .planGrid { grid-template-columns: 1fr; }
+}

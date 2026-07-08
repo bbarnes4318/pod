@@ -12,6 +12,10 @@ model User {
   email         String    @unique
   name          String?
   role          String    @default("USER")
+  // Monetization tier (Step 9c). Additive, defaults to "free" for every existing
+  // + new account. This single column is the entitlement source of truth a
+  // future billing webhook would update — no processor is wired in this step.
+  plan          String    @default("free")
   // --- Auth.js additions (all additive/nullable; existing columns unchanged) ---
   emailVerified DateTime? // set when the user confirms their email (email flow is stubbed until a mail provider is configured)
   image         String?   // avatar URL (from OAuth or account settings)
