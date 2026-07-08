@@ -22,7 +22,9 @@ import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episod
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
-import { validateEpisodeForRss, publishEpisode } from "@/lib/services/rssPublishingService";
+import { validateEpisodeForRss, publishEpisode, prepareEpisodeForPublishing } from "@/lib/services/rssPublishingService";
+import { ensurePublishAssets, generateTitleOptions } from "@/lib/services/publishAssetsService";
+import { episodeHasBettingContent, scanProhibitedGamblingLanguage, checkGamblingCompliance } from "@/lib/services/compliance";
 import { stageForStatus } from "@/lib/createFlow";
 import { isValidVertical } from "@/lib/verticals";
 import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
@@ -646,4 +648,125 @@ export async function getMixView(episodeId: string) {
     return { ok: false as const, error: "That episode belongs to someone else." };
   }
   return getEpisodeMixVM(episodeId);
+}
+
+/* ============================================================================
+ * STEP 6 — Publishing (owner-gated). Reuses the real publish path
+ * (validateEpisodeForRss → prepareEpisodeForPublishing → publishEpisode); the
+ * gambling gate lives inside validateEpisodeForRss so every path enforces it.
+ * ========================================================================== */
+
+/** Generate/refresh publish assets (title options, cover art, and — for betting
+ *  episodes — the responsible-gambling disclaimer injected into show notes). */
+export async function preparePublishAssets(episodeId: string, opts?: { regenerateCover?: boolean }) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  try {
+    const res = await ensurePublishAssets(episodeId, opts);
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const, ...res };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Failed to prepare assets." };
+  }
+}
+
+/** Set the episode title (from a generated option or free text). Betting titles
+ *  are scanned for prohibited profit-promise language. */
+export async function setEpisodeTitle(episodeId: string, title: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  const t = String(title || "").trim();
+  if (t.length < 3 || t.length > 120) return { success: false as const, error: "Title must be 3–120 characters." };
+
+  const ep = await db.episode.findUnique({
+    where: { id: episodeId },
+    include: {
+      podcast: { select: { verticals: true } },
+      topics: { include: { topic: { select: { title: true, summary: true, leagueId: true, bettingRelevanceScore: true } } } },
+    },
+  });
+  if (!ep) return { success: false as const, error: "Episode not found." };
+  const betting = episodeHasBettingContent({
+    podcastVerticals: ep.podcast?.verticals ?? null,
+    topics: ep.topics.map((et) => ({ title: et.topic?.title ?? "", summary: et.topic?.summary ?? null, leagueId: et.topic?.leagueId ?? null, bettingRelevanceScore: et.topic?.bettingRelevanceScore ?? null })),
+  });
+  if (betting) {
+    const hits = scanProhibitedGamblingLanguage(t);
+    if (hits.length > 0) return { success: false as const, error: `Title can't contain: ${hits.map((h) => `"${h.match}"`).join(", ")}` };
+  }
+  await db.episode.update({ where: { id: episodeId }, data: { title: t } });
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  return { success: true as const };
+}
+
+/**
+ * Publish to the feed. Ensures assets (incl. disclaimer), then runs the REAL
+ * gate + publish. The gate hard-blocks on the Step-4 fact-check requirement AND
+ * the gambling compliance requirement — returned as structured reasons with the
+ * user's work intact (nothing is mutated on refusal beyond idempotent assets).
+ */
+export async function publishOwnedEpisode(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "No script to publish." };
+
+  // Idempotent: injects the responsible-gambling disclaimer for betting episodes
+  // so a compliant episode isn't blocked purely because assets weren't prepped.
+  await ensurePublishAssets(episodeId).catch(() => {});
+
+  const ep = await db.episode.findUnique({ where: { id: episodeId }, select: { status: true } });
+  const action = ep?.status === "content_ready" ? "prepare" : "publish";
+  try {
+    const val = await validateEpisodeForRss(gate.scriptId, action as any);
+    if (!val.eligible) {
+      return { success: false as const, blocked: true as const, reasons: val.errorReasons, error: val.errorReasons[0] || "Not eligible to publish." };
+    }
+    if (ep?.status === "content_ready") await prepareEpisodeForPublishing(gate.scriptId);
+    await publishEpisode(gate.scriptId, {});
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    revalidatePath("/studio/publish");
+    return { success: true as const };
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Publish failed." };
+  }
+}
+
+/** Read-only publish state for the UI: status, compliance (betting?
+ *  disclaimer? prohibited language?), title options, cover art, feed +
+ *  download URLs. No mutation. */
+export async function getPublishState(episodeId: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Please sign in." };
+  const ep = await db.episode.findUnique({
+    where: { id: episodeId },
+    include: {
+      podcast: { select: { verticals: true } },
+      topics: { orderBy: { orderIndex: "asc" }, include: { topic: { select: { title: true, summary: true, leagueId: true, bettingRelevanceScore: true } } } },
+    },
+  });
+  if (!ep) return { ok: false as const, error: "Episode not found." };
+  if (ep.ownerId && ep.ownerId !== user.id && user.role !== "ADMIN") {
+    return { ok: false as const, error: "That episode belongs to someone else." };
+  }
+  const topicTitles = ep.topics.map((et) => et.topic?.title).filter(Boolean) as string[];
+  const betting = episodeHasBettingContent({
+    podcastVerticals: ep.podcast?.verticals ?? null,
+    topics: ep.topics.map((et) => ({ title: et.topic?.title ?? "", summary: et.topic?.summary ?? null, leagueId: et.topic?.leagueId ?? null, bettingRelevanceScore: et.topic?.bettingRelevanceScore ?? null })),
+  });
+  const marketingText = [ep.title, ep.rssSummary, ep.description, ep.longShowNotes].filter(Boolean).join("\n");
+  const compliance = checkGamblingCompliance({ betting, showNotes: ep.longShowNotes ?? null, marketingText });
+  return {
+    ok: true as const,
+    title: ep.title,
+    status: ep.status,
+    published: ep.status === "published",
+    podcastId: ep.podcastId,
+    betting,
+    compliance,
+    coverArtUrl: ep.rssImageUrl ?? null,
+    hasShowNotes: !!(ep.longShowNotes && ep.longShowNotes.trim()),
+    titleOptions: generateTitleOptions(ep.title, topicTitles),
+    feedPath: ep.podcastId ? `/rss/${ep.podcastId}` : "/rss",
+    downloadPath: `/api/episodes/${ep.id}/download`,
+  };
 }

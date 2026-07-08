@@ -81,6 +81,13 @@ model AiHost {
   ttsVoiceId       String
   intensityLevel   Int
   isActive         Boolean  @default(true)
+  // Documented voice provenance — the legal-safety fields (cf. Greene v. Google).
+  // voiceSource: "owned" | "licensed" | "synthetic" | "cloned" (free-text for now).
+  // voiceProvenanceNote: license id / consent record / source documentation.
+  // Surfacing + editing is Step 8; the columns exist now so provenance can be
+  // recorded. Additive + nullable (migration 20260707130000).
+  voiceSource         String?
+  voiceProvenanceNote String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }

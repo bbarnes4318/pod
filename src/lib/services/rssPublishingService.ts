@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { getStorageProvider } from "../providers/storage/factory";
+import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance";
 
 export async function validateEpisodeForRss(
   scriptId: string,
@@ -22,6 +23,7 @@ export async function validateEpisodeForRss(
     podcastConfigValid: false,
     rssGuidValid: false,
     noPlaceholderMetadata: true,
+    gamblingComplianceOk: true, // stays true for non-betting content
   };
 
   const errorReasons: string[] = [];
@@ -42,6 +44,7 @@ export async function validateEpisodeForRss(
               },
             },
           },
+          podcast: { select: { verticals: true } },
         },
       },
       audioSegments: true,
@@ -149,6 +152,27 @@ export async function validateEpisodeForRss(
         ? `Latest fact check status is '${latestFactCheck.status}', must be 'passed'.`
         : "No fact check results found."
     );
+  }
+
+  // 6b. Gambling responsible-marketing gate — HARD requirement for betting
+  // content. A betting episode cannot publish without the disclaimer/helpline
+  // in its show notes, and its published-facing text must be free of
+  // profit-promise language. Non-betting episodes pass through untouched.
+  {
+    const ep = script.episode;
+    const topics = (ep?.topics || []).map((et: any) => ({
+      title: et.topic?.title ?? "",
+      summary: et.topic?.summary ?? null,
+      leagueId: et.topic?.leagueId ?? null,
+      bettingRelevanceScore: et.topic?.bettingRelevanceScore ?? null,
+    }));
+    const betting = episodeHasBettingContent({ podcastVerticals: ep?.podcast?.verticals ?? null, topics });
+    const marketingText = [ep?.title, ep?.rssSummary, ep?.description, ep?.longShowNotes].filter(Boolean).join("\n");
+    const compliance = checkGamblingCompliance({ betting, showNotes: ep?.longShowNotes ?? null, marketingText });
+    if (!compliance.compliant) {
+      checks.gamblingComplianceOk = false;
+      for (const r of compliance.reasons) errorReasons.push(r);
+    }
   }
 
   // 7. AudioSegments validation against Script.content lines

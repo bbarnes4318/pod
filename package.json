@@ -13,6 +13,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts",
+    "validate:rss": "tsx src/scripts/validateRssFeed.ts",
     "test": "tsx --conditions=react-server src/scripts/testSourceRouting.ts",
     "sample:ab": "tsx --conditions=react-server src/scripts/abSample.ts",
     "test:repetition": "tsx --conditions=react-server src/scripts/testRepetition.ts",

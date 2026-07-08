@@ -8,6 +8,7 @@ import { getEpisodeMixVM } from "@/lib/services/mixView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
+import PublishPanel from "../../PublishPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -178,6 +179,16 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
             <h2 className="sectionTitle">Transcript & fact check</h2>
           </div>
           <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
+        </div>
+      )}
+
+      {/* Publishing — assets, compliance, per-podcast feed, hard publish gate */}
+      {script && (
+        <div style={{ marginTop: "1.75rem" }}>
+          <div className="sectionHead" style={{ marginTop: 0 }}>
+            <h2 className="sectionTitle">Publish</h2>
+          </div>
+          <PublishPanel episodeId={episode.id} />
         </div>
       )}
     </div>
