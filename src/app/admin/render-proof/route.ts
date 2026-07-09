@@ -46,8 +46,10 @@ export async function POST(req: NextRequest) {
   }
   const r = await triggerFinalAudioStitch(scriptId, {
     forceRegenerate: true,
-    productionStyle: "full",
-    sfxDensity: "medium",
+    productionStyle: typeof body.productionStyle === "string" ? body.productionStyle : "full",
+    sfxDensity: typeof body.sfxDensity === "string" ? body.sfxDensity : "medium",
+    includeIntro: body.includeIntro !== false,
+    includeOutro: body.includeOutro !== false,
   });
   return NextResponse.json(r);
 }
