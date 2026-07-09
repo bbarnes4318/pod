@@ -1,327 +1,1233 @@
 [
- {
-  "file": "stinger-1.wav",
-  "name": "Designed, Whoosh, Medium Transition",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "whoosh",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 36d506f7-b031-4bf5-8b50-cad859dde276, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-2.wav",
-  "name": "Designed, Synthetic, Transition, Sweep, Flange",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "synthetic",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id d6845f9c-c5e0-45ee-9462-4fc2089f38b5, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-3.wav",
-  "name": "Designed, Impact, Cinematic, Impact, Hit, Electric Tonne",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "impact",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 0e356c2f-1089-4faa-8143-326dbeee3085, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-4.wav",
-  "name": "Swooshes, Swish, Swoosh, Short, Fast, Multiple 01",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "swish",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id c9829aea-1aba-4cb4-8a46-de5a7f42dd18, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-5.wav",
-  "name": "Designed, Riser, Cymbal, Reverse, Crescendo, Suspense, Climax 02",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "riser",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 566b642a-4341-4ad7-961a-d25000cf8341, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-6.wav",
-  "name": "Musical, Percussion, Ethnic Drum, Small",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "percussion",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id b7c687b0-cfbe-4de9-849b-e23ae7ce5aa3, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-7.wav",
-  "name": "User Interface, Glitch, Glitch Transition 06",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "glitch",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 0244f0f4-eef1-4cbd-9925-b4ed26660eed, artist Epidemic Sound SFX"
- },
- {
-  "file": "stinger-8.wav",
-  "name": "Swooshes, Whoosh, Tech, Data Transition 02",
-  "kind": "stinger",
-  "category": null,
-  "tags": [
-   "whoosh",
-   "transition",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 27384f5f-7e69-4f29-916d-b31071cf0112, artist Epidemic Sound SFX"
- },
- {
-  "file": "sfx-crowd.wav",
-  "name": "Crowds, Sport, Stadium Crowd, Groan",
-  "kind": "sfx",
-  "category": "crowd",
-  "tags": [
-   "sport",
-   "reaction",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id fb3578ee-0fd8-4305-9cbf-aec8823705de, artist Epidemic Sound SFX"
- },
- {
-  "file": "sfx-impact.wav",
-  "name": "Designed, Boom, Cinematic, Deep, Boom, Impact",
-  "kind": "sfx",
-  "category": "impact",
-  "tags": [
-   "boom",
-   "reaction",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 2f0a40ab-f23a-4927-a911-1d70459d52e7, artist Epidemic Sound SFX"
- },
- {
-  "file": "sfx-whoosh.wav",
-  "name": "Swooshes, Swish, Short, Bright, Fast, Flyby",
-  "kind": "sfx",
-  "category": "whoosh",
-  "tags": [
-   "swish",
-   "reaction",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 93505bfe-e95d-4b5f-96aa-508d405b7013, artist Epidemic Sound SFX"
- },
- {
-  "file": "bed-1-urgent.wav",
-  "name": "Well, That's a Fancy Roadblock",
-  "kind": "bed",
-  "category": null,
-  "tags": [
-   "busy & frantic",
-   "electronica",
-   "experimental electronic",
-   "no vocals",
-   "restless",
-   "strange & weird",
-   "135bpm",
-   "urgent",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 561badd6-0237-4233-9d34-647cc1713929, artist Trevor Kowalski"
- },
- {
-  "file": "bed-2-dark.wav",
-  "name": "Code of Violence",
-  "kind": "bed",
-  "category": null,
-  "tags": [
-   "crime scene",
-   "dark",
-   "dark ambient",
-   "mysterious",
-   "no vocals",
-   "suspense",
-   "102bpm",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 8b36c332-a349-4289-b02f-b96a294c4b6b, artist Dian Shuai"
- },
- {
-  "file": "bed-3-neutral.wav",
-  "name": "Observatory",
-  "kind": "bed",
-  "category": null,
-  "tags": [
-   "corporate",
-   "dreamy",
-   "electronic",
-   "hopeful",
-   "no vocals",
-   "pulses",
-   "128bpm",
-   "neutral",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 0c47304b-4e50-43b2-8230-2397e7991316, artist Out To The World"
- },
- {
-  "file": "bed-4-upbeat.wav",
-  "name": "Feelings",
-  "kind": "bed",
-  "category": null,
-  "tags": [
-   "dreamy",
-   "funk",
-   "happy",
-   "no vocals",
-   "119bpm",
-   "upbeat",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id f0c522fe-8214-4c36-b894-b13da20aeef8, artist Ryan James Carr"
- },
- {
-  "file": "bed-5-cinematic.wav",
-  "name": "Rise to the Power",
-  "kind": "bed",
-  "category": null,
-  "tags": [
-   "action",
-   "adventure",
-   "epic",
-   "no vocals",
-   "orchestral hybrid",
-   "suspense",
-   "101bpm",
-   "cinematic",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id bb1ba429-b34e-4995-8000-f798ec24b95b, artist Siddharth Parashar"
- },
- {
-  "file": "theme-intro-1.wav",
-  "name": "Palantir",
-  "kind": "theme_intro",
-  "category": null,
-  "tags": [
-   "dark",
-   "hopeful",
-   "no vocals",
-   "rock",
-   "93bpm",
-   "intro",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id 5d9d88ad-909c-4d76-8509-3827950214cd, artist Rymdklang Soundtracks, edit-for-length via ES Track Adaptation"
- },
- {
-  "file": "theme-intro-2.wav",
-  "name": "Crunching",
-  "kind": "theme_intro",
-  "category": null,
-  "tags": [
-   "angry",
-   "dark",
-   "no vocals",
-   "trap",
-   "139bpm",
-   "intro",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id d26c0d20-d2d2-40c0-81f8-07c28673a754, artist Azucares, edit-for-length via ES Track Adaptation"
- },
- {
-  "file": "theme-outro-1.wav",
-  "name": "All the Wonders",
-  "kind": "theme_outro",
-  "category": null,
-  "tags": [
-   "adventure",
-   "contemporary classical",
-   "epic",
-   "happy",
-   "no vocals",
-   "orchestral",
-   "118bpm",
-   "outro",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id f38cc722-580a-4721-b594-b35e8b1a695c, artist Adriel Fair, locally trimmed to 13000ms from full track"
- },
- {
-  "file": "theme-outro-2.wav",
-  "name": "Hold It Down",
-  "kind": "theme_outro",
-  "category": null,
-  "tags": [
-   "funk",
-   "laid back",
-   "no vocals",
-   "smooth",
-   "101bpm",
-   "outro",
-   "epidemic"
-  ],
-  "durationMs": null,
-  "license": "Epidemic Sound \u2014 Pro commercial (via MCP)",
-  "licenseNote": "ES id b52d1b96-a2f3-44c0-bad1-cefc5b62d254, artist Ryan James Carr, locally trimmed to 13000ms from full track"
- }
+  {
+    "esId": "83f693ff-d31e-401d-9fce-20d2aaf1e5a0",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Vroom Vroom",
+    "tags": [
+      "bpm:130",
+      "restless",
+      "suspense",
+      "action",
+      "chase",
+      "electronic",
+      "no vocals",
+      "energy:urgent/driving"
+    ],
+    "durationMs": 139365,
+    "artist": "Ruiqi Zhao",
+    "bpm": 130,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 83f693ff-d31e-401d-9fce-20d2aaf1e5a0, artist Ruiqi Zhao",
+    "esTitle": "Vroom Vroom"
+  },
+  {
+    "esId": "91cf6493-ef3e-4330-a4db-0fd3b3afd980",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Joga Bonito",
+    "tags": [
+      "bpm:136",
+      "euphoric",
+      "restless",
+      "beats",
+      "clean",
+      "latin house",
+      "vocal presence",
+      "world",
+      "energy:urgent/driving"
+    ],
+    "durationMs": 190160,
+    "artist": "El Equipo Del Norte",
+    "bpm": 136,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 91cf6493-ef3e-4330-a4db-0fd3b3afd980, artist El Equipo Del Norte",
+    "esTitle": "Joga Bonito"
+  },
+  {
+    "esId": "5ca69341-b7b2-3d58-91c6-30269829ce23",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Old Arcade (Indie Pop Version)",
+    "tags": [
+      "bpm:138",
+      "chasing",
+      "running",
+      "indie pop",
+      "no vocals",
+      "energy:urgent/driving"
+    ],
+    "durationMs": 123478,
+    "artist": "Josef Falkensköld",
+    "bpm": 138,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 5ca69341-b7b2-3d58-91c6-30269829ce23, artist Josef Falkensköld",
+    "esTitle": "Old Arcade (Indie Pop Version)"
+  },
+  {
+    "esId": "c9bff66b-2000-4cfd-b32b-8190efa94a35",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "TIME OUT (Instrumental Version)",
+    "tags": [
+      "bpm:150",
+      "heavy & ponderous",
+      "restless",
+      "alternative rock",
+      "no vocals",
+      "energy:urgent/driving"
+    ],
+    "durationMs": 128725,
+    "artist": "Andrea Turk",
+    "bpm": 150,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id c9bff66b-2000-4cfd-b32b-8190efa94a35, artist Andrea Turk",
+    "esTitle": "TIME OUT (Instrumental Version)"
+  },
+  {
+    "esId": "8b36c332-a349-4289-b02f-b96a294c4b6b",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Code of Violence",
+    "tags": [
+      "bpm:102",
+      "dark",
+      "mysterious",
+      "crime scene",
+      "dark ambient",
+      "no vocals",
+      "suspense",
+      "energy:dark/tense"
+    ],
+    "durationMs": 162375,
+    "artist": "Dian Shuai",
+    "bpm": 102,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 8b36c332-a349-4289-b02f-b96a294c4b6b, artist Dian Shuai",
+    "esTitle": "Code of Violence"
+  },
+  {
+    "esId": "001c8add-383e-3f96-8922-550d8d7ec196",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Enter The Night 1",
+    "tags": [
+      "bpm:110",
+      "angry",
+      "fear",
+      "action",
+      "dark ambient",
+      "no vocals",
+      "supernatural",
+      "energy:dark/tense"
+    ],
+    "durationMs": 105225,
+    "artist": "Fredrik Ekström",
+    "bpm": 110,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 001c8add-383e-3f96-8922-550d8d7ec196, artist Fredrik Ekström",
+    "esTitle": "Enter The Night 1"
+  },
+  {
+    "esId": "ae07fcde-0c8a-4241-b8d3-626f0e7f72c5",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "I'm the Villain",
+    "tags": [
+      "bpm:73",
+      "dark",
+      "sneaking",
+      "classical crossover",
+      "mystery",
+      "no vocals",
+      "suspense",
+      "energy:dark/tense"
+    ],
+    "durationMs": 172250,
+    "artist": "Dream Cave",
+    "bpm": 73,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id ae07fcde-0c8a-4241-b8d3-626f0e7f72c5, artist Dream Cave",
+    "esTitle": "I'm the Villain"
+  },
+  {
+    "esId": "3d59ec8e-9ad0-3446-87b4-b2f57773c457",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Tracker",
+    "tags": [
+      "bpm:90",
+      "sneaking",
+      "suspense",
+      "electronic",
+      "no vocals",
+      "energy:dark/tense"
+    ],
+    "durationMs": 177917,
+    "artist": "Christoffer Moe Ditlevsen",
+    "bpm": 90,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 3d59ec8e-9ad0-3446-87b4-b2f57773c457, artist Christoffer Moe Ditlevsen",
+    "esTitle": "Tracker"
+  },
+  {
+    "esId": "bc333bec-1d67-4019-b369-9ddb194aa1c1",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Axon Terminal",
+    "tags": [
+      "bpm:120",
+      "dark",
+      "restless",
+      "ambient",
+      "no vocals",
+      "suspense",
+      "energy:neutral/underscore"
+    ],
+    "durationMs": 200000,
+    "artist": "Out To The World",
+    "bpm": 120,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id bc333bec-1d67-4019-b369-9ddb194aa1c1, artist Out To The World",
+    "esTitle": "Axon Terminal"
+  },
+  {
+    "esId": "f3c70d59-d7f6-46c2-bb04-c24f403d91a6",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "River Running",
+    "tags": [
+      "bpm:101",
+      "eccentric",
+      "laid back",
+      "downtempo",
+      "no vocals",
+      "energy:neutral/underscore"
+    ],
+    "durationMs": 176342,
+    "artist": "Rocket Jr",
+    "bpm": 101,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id f3c70d59-d7f6-46c2-bb04-c24f403d91a6, artist Rocket Jr",
+    "esTitle": "River Running"
+  },
+  {
+    "esId": "d34c8a2b-1f65-49e3-9efb-0a06b99e58c3",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Rich (Instrumental Version)",
+    "tags": [
+      "bpm:120",
+      "hopeful",
+      "laid back",
+      "2020s",
+      "alternative pop",
+      "no vocals",
+      "energy:neutral/underscore"
+    ],
+    "durationMs": 172250,
+    "artist": "Mindme",
+    "bpm": 120,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id d34c8a2b-1f65-49e3-9efb-0a06b99e58c3, artist Mindme",
+    "esTitle": "Rich (Instrumental Version)"
+  },
+  {
+    "esId": "abe6f3cf-d1a6-4e19-96ce-80bfd24399a9",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Aftermath",
+    "tags": [
+      "bpm:96",
+      "dreamy",
+      "eccentric",
+      "ambient",
+      "no vocals",
+      "energy:neutral/underscore"
+    ],
+    "durationMs": 125625,
+    "artist": "Harbours & Oceans",
+    "bpm": 96,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id abe6f3cf-d1a6-4e19-96ce-80bfd24399a9, artist Harbours & Oceans",
+    "esTitle": "Aftermath"
+  },
+  {
+    "esId": "483a7f49-af71-4b9a-b574-b11a23511828",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Chasing the Top",
+    "tags": [
+      "bpm:132",
+      "euphoric",
+      "happy",
+      "corporate",
+      "no vocals",
+      "pop",
+      "energy:upbeat"
+    ],
+    "durationMs": 152524,
+    "artist": "Experia",
+    "bpm": 132,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 483a7f49-af71-4b9a-b574-b11a23511828, artist Experia",
+    "esTitle": "Chasing the Top"
+  },
+  {
+    "esId": "51c90d41-e9e1-4af0-8b0d-2ed497e8c822",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "TO THE MOON (Instrumental Version)",
+    "tags": [
+      "bpm:116",
+      "happy",
+      "hopeful",
+      "k-pop",
+      "no vocals",
+      "energy:upbeat"
+    ],
+    "durationMs": 190214,
+    "artist": "Adelyn Paik",
+    "bpm": 116,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 51c90d41-e9e1-4af0-8b0d-2ed497e8c822, artist Adelyn Paik",
+    "esTitle": "TO THE MOON (Instrumental Version)"
+  },
+  {
+    "esId": "653474c8-9692-33ab-b4a9-e075eebf5a67",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Plenty Of Time (Instrumental Version)",
+    "tags": [
+      "bpm:125",
+      "epic",
+      "happy",
+      "2010s",
+      "no vocals",
+      "pop",
+      "energy:upbeat"
+    ],
+    "durationMs": 233784,
+    "artist": "Ray",
+    "bpm": 125,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 653474c8-9692-33ab-b4a9-e075eebf5a67, artist Ray",
+    "esTitle": "Plenty Of Time (Instrumental Version)"
+  },
+  {
+    "esId": "36d26cb0-ba48-4e26-9556-5257da926454",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Lost Maiden (Hollow) (Instrumental Version)",
+    "tags": [
+      "bpm:122",
+      "happy",
+      "hopeful",
+      "k-pop",
+      "no vocals",
+      "energy:upbeat"
+    ],
+    "durationMs": 196619,
+    "artist": "dasloe",
+    "bpm": 122,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 36d26cb0-ba48-4e26-9556-5257da926454, artist dasloe",
+    "esTitle": "Lost Maiden (Hollow) (Instrumental Version)"
+  },
+  {
+    "esId": "a69634fb-6fc9-4369-bcb4-09ebc91f883a",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "The Sky King",
+    "tags": [
+      "bpm:87",
+      "epic",
+      "restless",
+      "adventure",
+      "build",
+      "orchestral hybrid",
+      "vocal presence",
+      "energy:cinematic"
+    ],
+    "durationMs": 213232,
+    "artist": "Hampus Naeselius",
+    "bpm": 87,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a69634fb-6fc9-4369-bcb4-09ebc91f883a, artist Hampus Naeselius",
+    "esTitle": "The Sky King"
+  },
+  {
+    "esId": "27c82ee9-2234-408d-b05d-9ab84ccf3717",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Uncharted Land",
+    "tags": [
+      "bpm:82",
+      "epic",
+      "sentimental",
+      "adventure",
+      "build",
+      "orchestral",
+      "vocal presence",
+      "energy:cinematic"
+    ],
+    "durationMs": 219790,
+    "artist": "Helmut Schenker",
+    "bpm": 82,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 27c82ee9-2234-408d-b05d-9ab84ccf3717, artist Helmut Schenker",
+    "esTitle": "Uncharted Land"
+  },
+  {
+    "esId": "e8fca9fd-9ca1-4896-8d5f-e884e39f1e4e",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "Beyond the Horizon",
+    "tags": [
+      "bpm:100",
+      "dark",
+      "epic",
+      "build",
+      "cinematic",
+      "clean",
+      "orchestral hybrid",
+      "vocal presence",
+      "energy:cinematic"
+    ],
+    "durationMs": 219600,
+    "artist": "Rachel Sandy",
+    "bpm": 100,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id e8fca9fd-9ca1-4896-8d5f-e884e39f1e4e, artist Rachel Sandy",
+    "esTitle": "Beyond the Horizon"
+  },
+  {
+    "esId": "a5b8c42b-a800-4ad2-9070-482021b9e6e5",
+    "esType": "recording",
+    "stemType": "FULL",
+    "kind": "bed",
+    "category": null,
+    "name": "On the Brink of Glory",
+    "tags": [
+      "bpm:138",
+      "epic",
+      "restless",
+      "adventure",
+      "no vocals",
+      "orchestral",
+      "energy:cinematic"
+    ],
+    "durationMs": 149615,
+    "artist": "Dian Shuai",
+    "bpm": 138,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a5b8c42b-a800-4ad2-9070-482021b9e6e5, artist Dian Shuai",
+    "esTitle": "On the Brink of Glory"
+  },
+  {
+    "esId": "bc1e283f-973c-4e50-892a-573f86904244",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Intense, Tremolo 03",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 11250,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id bc1e283f-973c-4e50-892a-573f86904244",
+    "esTitle": "Designed, Riser, Transition, Build Up, Intense, Tremolo 03"
+  },
+  {
+    "esId": "8cd4a39d-3777-4e71-a4c5-718cf2394f1c",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Designed, Riser, Epic Build, High Energy",
+    "tags": [
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 8088,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 8cd4a39d-3777-4e71-a4c5-718cf2394f1c",
+    "esTitle": "Designed, Riser, Designed, Riser, Epic Build, High Energy"
+  },
+  {
+    "esId": "6245d25c-9b7c-441b-8f52-1a24b52fdc88",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Long, Intense, Build Up, Eerie",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 13750,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 6245d25c-9b7c-441b-8f52-1a24b52fdc88",
+    "esTitle": "Designed, Riser, Transition, Long, Intense, Build Up, Eerie"
+  },
+  {
+    "esId": "13f68025-e8f8-4720-bf0c-a4243e863860",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Intense, Tremolo 02",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 7625,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 13f68025-e8f8-4720-bf0c-a4243e863860",
+    "esTitle": "Designed, Riser, Transition, Build Up, Intense, Tremolo 02"
+  },
+  {
+    "esId": "410746cb-fd6a-4c89-83bf-2f47ced524b3",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Long, Build Up, Musical, Electronic, Scifi, Intense 03",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 11750,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 410746cb-fd6a-4c89-83bf-2f47ced524b3",
+    "esTitle": "Designed, Riser, Transition, Long, Build Up, Musical, Electronic, Scifi, Intense 03"
+  },
+  {
+    "esId": "8a4614ce-2b38-4dc5-8eb0-d64a35fbc204",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Charge, Eerie, Futuristic",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 10000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 8a4614ce-2b38-4dc5-8eb0-d64a35fbc204",
+    "esTitle": "Designed, Riser, Transition, Build Up, Charge, Eerie, Futuristic"
+  },
+  {
+    "esId": "4cfc4736-3a01-4734-b7aa-0a8c75996a5a",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Long, Build Up, Musical, Electronic, Reverse, Intense",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 11750,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 4cfc4736-3a01-4734-b7aa-0a8c75996a5a",
+    "esTitle": "Designed, Riser, Transition, Long, Build Up, Musical, Electronic, Reverse, Intense"
+  },
+  {
+    "esId": "b15e04de-8463-49ee-a721-f6d82aa95b8e",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Eerie, Futuristic, Scifi 03",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 11000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id b15e04de-8463-49ee-a721-f6d82aa95b8e",
+    "esTitle": "Designed, Riser, Transition, Build Up, Eerie, Futuristic, Scifi 03"
+  },
+  {
+    "esId": "681b0e58-e0ba-46a7-a59f-d247a02ea615",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Intense, Tremolo 01",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 6500,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 681b0e58-e0ba-46a7-a59f-d247a02ea615",
+    "esTitle": "Designed, Riser, Transition, Build Up, Intense, Tremolo 01"
+  },
+  {
+    "esId": "a50d2d0f-60ae-4e5e-bde6-9207ec39a85b",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Riser, Transition, Build Up, Eerie, Futuristic, Scifi 02",
+    "tags": [
+      "riser",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 10875,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a50d2d0f-60ae-4e5e-bde6-9207ec39a85b",
+    "esTitle": "Designed, Riser, Transition, Build Up, Eerie, Futuristic, Scifi 02"
+  },
+  {
+    "esId": "27384f5f-7e69-4f29-916d-b31071cf0112",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Whoosh, Tech, Data Transition 02",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 1560,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 27384f5f-7e69-4f29-916d-b31071cf0112",
+    "esTitle": "Swooshes, Whoosh, Tech, Data Transition 02"
+  },
+  {
+    "esId": "0b66a972-0aa7-4886-a1ae-f06cf284d626",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Swish, Fast, Clothy",
+    "tags": [
+      "swish",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 3473,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 0b66a972-0aa7-4886-a1ae-f06cf284d626",
+    "esTitle": "Swooshes, Swish, Fast, Clothy"
+  },
+  {
+    "esId": "36d506f7-b031-4bf5-8b50-cad859dde276",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Whoosh, Medium Transition",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 2001,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 36d506f7-b031-4bf5-8b50-cad859dde276",
+    "esTitle": "Designed, Whoosh, Medium Transition"
+  },
+  {
+    "esId": "33ae4559-48cf-42f9-8f00-b516b107b675",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Whoosh, Technical, Sharp, Fast, Impact",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 3397,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 33ae4559-48cf-42f9-8f00-b516b107b675",
+    "esTitle": "Swooshes, Whoosh, Technical, Sharp, Fast, Impact"
+  },
+  {
+    "esId": "ee376821-d9f5-4dc8-ad62-ba43751e8780",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Whoosh, Smacky, Fast",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 3537,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id ee376821-d9f5-4dc8-ad62-ba43751e8780",
+    "esTitle": "Swooshes, Whoosh, Smacky, Fast"
+  },
+  {
+    "esId": "ab558a3c-83fd-4df6-bb12-ddd19ffe77dd",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Swish, Digital, High, Fast",
+    "tags": [
+      "swish",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 5317,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id ab558a3c-83fd-4df6-bb12-ddd19ffe77dd",
+    "esTitle": "Swooshes, Swish, Digital, High, Fast"
+  },
+  {
+    "esId": "e785167c-c09d-42db-8fe1-8acddd8fae9f",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Whoosh, Double, Clean, Smooth, Variations, Short, Fast 03",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 6507,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id e785167c-c09d-42db-8fe1-8acddd8fae9f",
+    "esTitle": "Swooshes, Whoosh, Double, Clean, Smooth, Variations, Short, Fast 03"
+  },
+  {
+    "esId": "90096082-5b88-452f-b763-d6ef234ce47f",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Swish, Fast, Double Swish, Variations",
+    "tags": [
+      "swish",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 4743,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 90096082-5b88-452f-b763-d6ef234ce47f",
+    "esTitle": "Swooshes, Swish, Fast, Double Swish, Variations"
+  },
+  {
+    "esId": "a841407e-22a5-416c-a1bc-fb3732e96456",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Swish, Short, Tonal Flyby",
+    "tags": [
+      "swish",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 1200,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a841407e-22a5-416c-a1bc-fb3732e96456",
+    "esTitle": "Swooshes, Swish, Short, Tonal Flyby"
+  },
+  {
+    "esId": "75cd8852-f661-4d98-ab73-6b5ae80b0d19",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Swooshes, Whoosh, Tech, Data Transition 11",
+    "tags": [
+      "whoosh",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 4257,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 75cd8852-f661-4d98-ab73-6b5ae80b0d19",
+    "esTitle": "Swooshes, Whoosh, Tech, Data Transition 11"
+  },
+  {
+    "esId": "8a6f92a9-e833-4f22-9e2c-0f13df989d9c",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Stinger, Creaking Riser, Low Hit, Logo, Signature",
+    "tags": [
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 5802,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 8a6f92a9-e833-4f22-9e2c-0f13df989d9c",
+    "esTitle": "Designed, Stinger, Creaking Riser, Low Hit, Logo, Signature"
+  },
+  {
+    "esId": "a50b0b5c-9eac-4dd6-b593-74119097e2ba",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Impact, Dark Hit, Electric, Distored Riser, Ultra Boom",
+    "tags": [
+      "impact",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 7837,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a50b0b5c-9eac-4dd6-b593-74119097e2ba",
+    "esTitle": "Designed, Impact, Dark Hit, Electric, Distored Riser, Ultra Boom"
+  },
+  {
+    "esId": "e2d9ff2e-1d00-4fc1-95c2-3d079823f612",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Boom, Big Hit 04",
+    "tags": [
+      "boom",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 8143,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id e2d9ff2e-1d00-4fc1-95c2-3d079823f612",
+    "esTitle": "Designed, Boom, Big Hit 04"
+  },
+  {
+    "esId": "e3964fd5-102b-47a1-ae33-460a21d2b660",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Boom, Big Hit 02",
+    "tags": [
+      "boom",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 6994,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id e3964fd5-102b-47a1-ae33-460a21d2b660",
+    "esTitle": "Designed, Boom, Big Hit 02"
+  },
+  {
+    "esId": "e62c8aae-6a8b-4baf-9094-4f29b4af7d9f",
+    "esType": "soundEffect",
+    "kind": "stinger",
+    "category": null,
+    "name": "Designed, Impact, Cinematic, Riser, Fast, Big Hit, Warping",
+    "tags": [
+      "impact",
+      "stinger",
+      "transition"
+    ],
+    "durationMs": 5826,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id e62c8aae-6a8b-4baf-9094-4f29b4af7d9f",
+    "esTitle": "Designed, Impact, Cinematic, Riser, Fast, Big Hit, Warping"
+  },
+  {
+    "esId": "a7890bad-75d0-415f-b721-e31c7b87fd6f",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Cartoon, Musical, Success, Fanfare",
+    "tags": [
+      "musical",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 3468,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a7890bad-75d0-415f-b721-e31c7b87fd6f",
+    "esTitle": "Cartoon, Musical, Success, Fanfare"
+  },
+  {
+    "esId": "f456ee3f-0c47-41d2-99ca-6140ce311645",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Horns, Misc, Fanfare, Horse Race Start",
+    "tags": [
+      "misc",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 9495,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id f456ee3f-0c47-41d2-99ca-6140ce311645",
+    "esTitle": "Horns, Misc, Fanfare, Horse Race Start"
+  },
+  {
+    "esId": "97981ea3-d61c-457f-b2df-3bb2753139de",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Sample, Cartoon Orchestra, Short Reaction, Determined, Energetic",
+    "tags": [
+      "sample",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 5611,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 97981ea3-d61c-457f-b2df-3bb2753139de",
+    "esTitle": "Musical, Sample, Cartoon Orchestra, Short Reaction, Determined, Energetic"
+  },
+  {
+    "esId": "547c05f6-862a-4ca5-bd1a-30fbb647eb80",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Sample, Cartoon Orchestra, Short Reaction, Suspense, Energetic, Goofy",
+    "tags": [
+      "sample",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 7548,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 547c05f6-862a-4ca5-bd1a-30fbb647eb80",
+    "esTitle": "Musical, Sample, Cartoon Orchestra, Short Reaction, Suspense, Energetic, Goofy"
+  },
+  {
+    "esId": "f7718561-13c9-43d3-abf5-d3956bc62b48",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Sample, Cartoon Orchestra, Short Reaction, Energetic, Suspense, Cheerful",
+    "tags": [
+      "sample",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 11460,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id f7718561-13c9-43d3-abf5-d3956bc62b48",
+    "esTitle": "Musical, Sample, Cartoon Orchestra, Short Reaction, Energetic, Suspense, Cheerful"
+  },
+  {
+    "esId": "59c4cadf-8bae-46ac-987c-37f3ac03d765",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Sample, Cartoon Orchestra, Short Reaction, Energetic, Cheerful 01",
+    "tags": [
+      "sample",
+      "intro",
+      "theme"
+    ],
+    "durationMs": 5638,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 59c4cadf-8bae-46ac-987c-37f3ac03d765",
+    "esTitle": "Musical, Sample, Cartoon Orchestra, Short Reaction, Energetic, Cheerful 01"
+  },
+  {
+    "esId": "09fec1b0-1d94-4d0d-b779-61969eee39cf",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Games, Video, Retro, Musical, Success, Complete, Orchestral Horns 01",
+    "tags": [
+      "video",
+      "outro",
+      "theme"
+    ],
+    "durationMs": 4466,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 09fec1b0-1d94-4d0d-b779-61969eee39cf",
+    "esTitle": "Games, Video, Retro, Musical, Success, Complete, Orchestral Horns 01"
+  },
+  {
+    "esId": "34f017b0-ae53-44f4-b0d1-02f22028b793",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Games, Video, Retro, Musical, Success, Complete, Orchestral Horns 02",
+    "tags": [
+      "video",
+      "outro",
+      "theme"
+    ],
+    "durationMs": 4860,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 34f017b0-ae53-44f4-b0d1-02f22028b793",
+    "esTitle": "Games, Video, Retro, Musical, Success, Complete, Orchestral Horns 02"
+  },
+  {
+    "esId": "7b9b3540-e93b-416f-9182-609009e4618f",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Cartoon, Musical, Transitions Phrases Orchestral, The End",
+    "tags": [
+      "musical",
+      "outro",
+      "theme"
+    ],
+    "durationMs": 2988,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 7b9b3540-e93b-416f-9182-609009e4618f",
+    "esTitle": "Cartoon, Musical, Transitions Phrases Orchestral, The End"
+  },
+  {
+    "esId": "daeb0db9-5c22-401a-861d-d0d2c59d2135",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Sample, Victory, Achievement, Positive, Orchestra, Video Game 01",
+    "tags": [
+      "sample",
+      "outro",
+      "theme"
+    ],
+    "durationMs": 4477,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id daeb0db9-5c22-401a-861d-d0d2c59d2135",
+    "esTitle": "Musical, Sample, Victory, Achievement, Positive, Orchestra, Video Game 01"
+  },
+  {
+    "esId": "750c8c26-a9cf-4fc9-8b06-4fee8baf9139",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Sample, Victory, Achievement, Positive, Orchestra, Video Game 02",
+    "tags": [
+      "sample",
+      "outro",
+      "theme"
+    ],
+    "durationMs": 4049,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 750c8c26-a9cf-4fc9-8b06-4fee8baf9139",
+    "esTitle": "Musical, Sample, Victory, Achievement, Positive, Orchestra, Video Game 02"
+  },
+  {
+    "esId": "13273064-70a4-497d-b7a6-74157c38404f",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Cartoon, Musical, Phrase, Trumpet, Ascends, Big Final Hit",
+    "tags": [
+      "outro",
+      "theme"
+    ],
+    "durationMs": 3719,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 13273064-70a4-497d-b7a6-74157c38404f",
+    "esTitle": "Cartoon, Musical, Phrase, Trumpet, Ascends, Big Final Hit"
+  },
+  {
+    "esId": "06cadf86-bf2e-4f12-8ffd-3ad1202fab06",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "crowd",
+    "name": "Crowds, Sport, Medium Big, Cheer And Applause",
+    "tags": [
+      "sport",
+      "crowd"
+    ],
+    "durationMs": 11000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 06cadf86-bf2e-4f12-8ffd-3ad1202fab06",
+    "esTitle": "Crowds, Sport, Medium Big, Cheer And Applause"
+  },
+  {
+    "esId": "0c2ce91b-c890-4854-bee5-168493147124",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "crowd",
+    "name": "Sports, Field, Designed, Football, Kick Ball, Flame Ball, Crowd Cheer",
+    "tags": [
+      "field",
+      "crowd"
+    ],
+    "durationMs": 11241,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 0c2ce91b-c890-4854-bee5-168493147124",
+    "esTitle": "Sports, Field, Designed, Football, Kick Ball, Flame Ball, Crowd Cheer"
+  },
+  {
+    "esId": "29559a92-5ea1-417e-ad7c-beb4fcf0b6de",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "crowd",
+    "name": "Sports, Field, Designed, Football, Slow Motion Football, Crowd Cheer, Euro 2021 02",
+    "tags": [
+      "field",
+      "crowd"
+    ],
+    "durationMs": 7716,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 29559a92-5ea1-417e-ad7c-beb4fcf0b6de",
+    "esTitle": "Sports, Field, Designed, Football, Slow Motion Football, Crowd Cheer, Euro 2021 02"
+  },
+  {
+    "esId": "6d82b75c-2d2f-40b3-9e1b-4d822c1173d5",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "impact",
+    "name": "Designed, Boom, Low Hit",
+    "tags": [
+      "boom",
+      "impact"
+    ],
+    "durationMs": 3549,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 6d82b75c-2d2f-40b3-9e1b-4d822c1173d5",
+    "esTitle": "Designed, Boom, Low Hit"
+  },
+  {
+    "esId": "d97c9224-83db-4d27-99c0-6a2c88524852",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "impact",
+    "name": "Designed, Boom, Big Hit 03",
+    "tags": [
+      "boom",
+      "impact"
+    ],
+    "durationMs": 4468,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id d97c9224-83db-4d27-99c0-6a2c88524852",
+    "esTitle": "Designed, Boom, Big Hit 03"
+  },
+  {
+    "esId": "d106e784-e06e-4673-ae48-a36e145a715d",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "impact",
+    "name": "Designed, Boom, Impact, Dark, Cinematic, Low HIt",
+    "tags": [
+      "boom",
+      "impact"
+    ],
+    "durationMs": 4303,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id d106e784-e06e-4673-ae48-a36e145a715d",
+    "esTitle": "Designed, Boom, Impact, Dark, Cinematic, Low HIt"
+  },
+  {
+    "esId": "a0bc0ebb-412c-420e-910a-131fa097be83",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "whoosh",
+    "name": "Swooshes, Swish, Kick, Fast, Short, Variations",
+    "tags": [
+      "swish",
+      "whoosh"
+    ],
+    "durationMs": 1055,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id a0bc0ebb-412c-420e-910a-131fa097be83",
+    "esTitle": "Swooshes, Swish, Kick, Fast, Short, Variations"
+  },
+  {
+    "esId": "b7c25d77-694e-4b55-b99b-539c940a9b33",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "whoosh",
+    "name": "Swooshes, Swish, Stick, Bendy, Whoosh, Air, Fast 01",
+    "tags": [
+      "swish",
+      "whoosh"
+    ],
+    "durationMs": 268,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id b7c25d77-694e-4b55-b99b-539c940a9b33",
+    "esTitle": "Swooshes, Swish, Stick, Bendy, Whoosh, Air, Fast 01"
+  },
+  {
+    "esId": "15fb5184-c52e-4dbf-ab44-b99879eb60ba",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "buzzer",
+    "name": "Alarms, Buzzer, Wrong Answer Buzzer",
+    "tags": [
+      "buzzer"
+    ],
+    "durationMs": 1274,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 15fb5184-c52e-4dbf-ab44-b99879eb60ba",
+    "esTitle": "Alarms, Buzzer, Wrong Answer Buzzer"
+  },
+  {
+    "esId": "6d6d2636-b16f-4e54-a948-ec9e73835887",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "airhorn",
+    "name": "Horns, Air Powered, Air Horn, Blast, Long, Reverb",
+    "tags": [
+      "air powered",
+      "airhorn"
+    ],
+    "durationMs": 4147,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 6d6d2636-b16f-4e54-a948-ec9e73835887",
+    "esTitle": "Horns, Air Powered, Air Horn, Blast, Long, Reverb"
+  },
+  {
+    "esId": "4ea6b702-3217-4f2d-87cb-96c05bee79b4",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "rimshot",
+    "name": "Musical, Sample, Drum Rimshot",
+    "tags": [
+      "sample",
+      "rimshot"
+    ],
+    "durationMs": 1945,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 4ea6b702-3217-4f2d-87cb-96c05bee79b4",
+    "esTitle": "Musical, Sample, Drum Rimshot"
+  },
+  {
+    "esId": "bd074609-9d20-4069-a346-8daf51382c3e",
+    "esType": "soundEffect",
+    "kind": "sfx",
+    "category": "laugh",
+    "name": "Crowds, Laughter, Applause, Large Audience, Short",
+    "tags": [
+      "laughter",
+      "laugh"
+    ],
+    "durationMs": 4414,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id bd074609-9d20-4069-a346-8daf51382c3e",
+    "esTitle": "Crowds, Laughter, Applause, Large Audience, Short"
+  }
 ]

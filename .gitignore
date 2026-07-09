@@ -50,3 +50,6 @@ next-env.d.ts
 # report, before/after renders) - regenerable via npm run demo:sound-variety
 !/samples/planner-variety/
 ingest-assets/
+
+# Epidemic ingest runtime report (contains prod asset ids)
+ingest-report.json
