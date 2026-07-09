@@ -9,10 +9,26 @@ interface FormProps {
   hasNoEvidence: boolean;
 }
 
+// The sport the generator must match is DERIVED from the selected league so the
+// two can never disagree. Previously the sport was a separate free-text field
+// defaulting to "Basketball"; picking (e.g.) MLB left sport="Basketball", and
+// the worker rejected every MLB/Baseball candidate as a sport mismatch
+// (worker.ts handleTopicGeneration). Keys match the league <option> values.
+const LEAGUE_TO_SPORT: Record<string, string> = {
+  NFL: "Football",
+  NBA: "Basketball",
+  MLB: "Baseball",
+  NCAAF: "Football",
+  NCAAB: "Basketball",
+  MMA: "Combat Sports",
+};
+
 export default function TopicGenerationForm({ onTriggerSuccess, isLlmStub, hasNoEvidence }: FormProps) {
   const [leagueId, setLeagueId] = useState("");
-  const [sport, setSport] = useState("Basketball");
   const [minScore, setMinScore] = useState(50);
+  // Empty when "All Leagues" is selected → the worker applies no sport/league
+  // constraint and generates across every league's evidence.
+  const sport = leagueId ? LEAGUE_TO_SPORT[leagueId] ?? "" : "";
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -74,17 +90,17 @@ export default function TopicGenerationForm({ onTriggerSuccess, isLlmStub, hasNo
             </select>
           </div>
 
-          {/* Sport Input */}
+          {/* Target sport — derived from the league above, shown read-only so it
+              can't drift out of sync with the selection. */}
           <div className="formGroup">
-            <label className="label" htmlFor="sportInput">Target Sport Name</label>
+            <label className="label" htmlFor="sportDisplay">Target Sport (from league)</label>
             <input
               type="text"
-              id="sportInput"
+              id="sportDisplay"
               className="input"
-              value={sport}
-              onChange={(e) => setSport(e.target.value)}
-              disabled={loading || isDisabled}
-              required
+              value={leagueId ? sport : "All sports (no filter)"}
+              readOnly
+              disabled
             />
           </div>
 
