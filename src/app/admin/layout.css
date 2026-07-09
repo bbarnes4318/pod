@@ -1,53 +1,61 @@
 /* ============================================================
-   TAKE MACHINE — /admin operator console (LIGHT)
+   TAKE MACHINE — /admin operator console (STUDIO DARK)
    ------------------------------------------------------------
-   Same design language as the /app user surface: light canvas,
-   white cards, hairline borders, Inter type, restrained blue
-   primary. Scoped: the legacy token NAMES (--bg-primary etc.)
-   are redefined under .adminLayout so every admin page that
-   consumes them flips to light — while /studio and the public
-   landing page keep the dark globals untouched.
+   The operator console now shares the SAME design tokens as
+   /studio (globals.css :root): near-black studio surfaces,
+   elevation expressed by lightness (surface → surface-2, not
+   shadows), soft-white text, and Signal-Orange reserved for
+   primary / live / destructive actions only. The legacy token
+   NAMES (--bg-primary etc.) are aliased to the studio values so
+   every admin page + shared primitive adopts the dark system in
+   one place, with no per-page rewrites.
    ============================================================ */
 
 .adminLayout {
-  /* Base surfaces — light canvas / white panels (mirrors .userSurface) */
-  --bg-primary: #fcfcfd;        /* canvas */
-  --bg-secondary: #ffffff;      /* cards / panels */
-  --bg-tertiary: #f3f4f7;       /* wells, hovers, inputs */
-  --border-color: #eef0f3;      /* hairline */
-  --border-hover: #e3e6ea;      /* hairline-2 */
+  /* Base surfaces — studio near-black; elevation by lightness. */
+  --bg-primary: #0E1116;        /* canvas (--bg) */
+  --bg-secondary: #161A21;      /* cards / panels (--surface) */
+  --bg-tertiary: #1E242D;       /* wells, hovers, inputs (--surface-2) */
+  --border-color: #2A313B;      /* hairline (--border) */
+  --border-hover: #3A4453;      /* hairline-2 */
 
-  /* Text — dark ink on light */
-  --text-primary: #16181d;
-  --text-secondary: #6b7280;
+  /* Text — soft-white + muted (AA on the dark surfaces). */
+  --text-primary: #EDEFF2;
+  --text-secondary: #9BA3AF;
 
-  /* Primary accent — the /app brand blue */
-  --accent-color: #3b5bff;
-  --accent-hover: #2f4ae0;
-  --accent-muted: #eef1ff;
-  --accent-glow: rgba(59, 91, 255, 0.3);
+  /* Primary accent — Signal Orange (primary / live / destructive only). */
+  --accent-color: #FF5A1F;
+  --accent-hover: #FF6E3C;
+  --accent-press: #E64D15;
+  --accent-muted: rgba(255, 90, 31, 0.14);
+  --accent-glow: rgba(255, 90, 31, 0.35);
 
-  /* Semantic — soft chips, readable on white */
-  --success-color: #15803d;
-  --success-muted: #e9f9f0;
-  --success-border: #c4ecd4;
-  --warning-color: #b45309;
-  --warning-muted: #fdf5e7;
-  --warning-border: #f3dfb8;
-  --error-color: #dc2626;
-  --error-muted: #fdecec;
-  --error-border: #f6caca;
+  /* Semantic status — spec hues + dark translucent chip fills/borders.
+     --*-text are AA-safe for small text on the dark panels. */
+  --success-color: #3BB273;
+  --success-text: #55C88C;
+  --success-muted: rgba(59, 178, 115, 0.14);
+  --success-border: rgba(59, 178, 115, 0.42);
+  --warning-color: #E0A82E;
+  --warning-text: #E7B948;
+  --warning-muted: rgba(224, 168, 46, 0.14);
+  --warning-border: rgba(224, 168, 46, 0.42);
+  --error-color: #E5484D;
+  --error-text: #FF6B6E;
+  --error-muted: rgba(229, 72, 77, 0.14);
+  --error-border: rgba(229, 72, 77, 0.42);
 
-  /* Admin is body-type only: neutralize the condensed display face */
+  /* Admin is body-type only: neutralize the condensed display face. */
   --font-display: var(--font-body-next), -apple-system, "Segoe UI", sans-serif;
 
-  /* Shape & depth — /app radii + feather shadows */
+  /* Shape & depth — studio radii; shadows are minimal (elevation is by
+     lightness, not drop shadows). */
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 18px;
-  --shadow-1: 0 1px 2px rgba(22, 24, 29, 0.04), 0 8px 24px -12px rgba(22, 24, 29, 0.1);
-  --shadow-2: 0 2px 4px rgba(22, 24, 29, 0.05), 0 16px 40px -16px rgba(22, 24, 29, 0.16);
-  --shadow-accent: 0 8px 20px -8px rgba(59, 91, 255, 0.5);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --shadow-2: 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  --shadow-accent: 0 8px 20px -8px rgba(255, 90, 31, 0.45);
 
   display: flex;
   min-height: 100vh;
@@ -57,11 +65,10 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* Keep the dark global body from bleeding behind short pages —
-   same :has() scoping trick as .userSurface. */
+/* Keep the global body dark behind short admin pages. */
 html:has(.adminLayout),
 body:has(.adminLayout) {
-  background: #fcfcfd;
+  background: #0E1116;
 }
 
 /* Light-appropriate selection, focus ring, and scrollbars */
@@ -115,14 +122,14 @@ body:has(.adminLayout) {
   height: 34px;
   border-radius: 11px;
   background: var(--accent-color);
-  color: #fff;
+  color: var(--bg-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.95rem;
   font-weight: 800;
   flex-shrink: 0;
-  box-shadow: 0 6px 16px -6px rgba(59, 91, 255, 0.5);
+  box-shadow: 0 6px 16px -6px rgba(255, 90, 31, 0.5);
 }
 
 .brandText {
@@ -184,7 +191,7 @@ body:has(.adminLayout) {
 /* Header bar */
 .header {
   height: 60px;
-  background-color: rgba(255, 255, 255, 0.92);
+  background-color: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border-color);
   display: flex;
@@ -234,13 +241,13 @@ body:has(.adminLayout) {
 }
 
 .statusDotOnline {
-  background-color: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+  background-color: var(--success-color);
+  box-shadow: 0 0 0 3px rgba(59, 178, 115, 0.18);
 }
 
 .statusDotOffline {
   background-color: var(--error-color);
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.18);
 }
 
 /* Content Area */
@@ -445,8 +452,8 @@ body:has(.adminLayout) {
 }
 
 .input, .select, .textarea {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-hover);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: 9px;
   color: var(--text-primary);
   padding: 0.6rem 0.8rem;
@@ -456,7 +463,7 @@ body:has(.adminLayout) {
 }
 
 .input::placeholder, .textarea::placeholder {
-  color: #9aa0ab;
+  color: var(--text-secondary);
 }
 
 .input:focus, .select:focus, .textarea:focus {
@@ -472,7 +479,7 @@ body:has(.adminLayout) {
 /* Buttons */
 .buttonPrimary {
   background-color: var(--accent-color);
-  color: #ffffff;
+  color: var(--bg-primary);
   border: 1px solid var(--accent-color);
   border-radius: 999px;
   padding: 0.55rem 1.25rem;
@@ -484,7 +491,7 @@ body:has(.adminLayout) {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  box-shadow: 0 8px 20px -8px rgba(59, 91, 255, 0.55);
+  box-shadow: var(--shadow-accent);
 }
 
 .buttonPrimary:hover {
@@ -519,8 +526,8 @@ body:has(.adminLayout) {
 }
 
 .editButton:hover, .btnReset:hover {
-  border-color: #9aa0ab;
-  background-color: var(--bg-primary);
+  border-color: var(--border-hover);
+  background-color: var(--bg-tertiary);
 }
 
 /* Tables */
@@ -545,7 +552,7 @@ body:has(.adminLayout) {
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-secondary);
-  background-color: #fafbfc;
+  background-color: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
 }
@@ -567,7 +574,7 @@ body:has(.adminLayout) {
 }
 
 .table tbody tr:hover td {
-  background-color: #fafbfc;
+  background-color: var(--bg-tertiary);
 }
 
 /* Badges — soft pills */
@@ -593,7 +600,7 @@ body:has(.adminLayout) {
 .badgeRunning, .badgeGenerating, .badgeActive {
   background-color: var(--accent-muted);
   color: var(--accent-color);
-  border: 1px solid #d9e0ff;
+  border: 1px solid color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
 }
 
 .badgeCompleted, .badgeSuccess, .badgePassed, .badgeReady, .badgePublished, .badgeApproved {
@@ -604,7 +611,7 @@ body:has(.adminLayout) {
 
 .badgeFailed, .badgeError, .badgeDanger {
   background-color: var(--error-muted);
-  color: var(--error-color);
+  color: var(--error-text);
   border: 1px solid var(--error-border);
 }
 
@@ -635,7 +642,7 @@ body:has(.adminLayout) {
 .alertDanger {
   background-color: var(--error-muted);
   border: 1px solid var(--error-border);
-  color: var(--error-color);
+  color: var(--error-text);
 }
 
 .alertSuccess {

@@ -9,26 +9,60 @@ export const dynamic = "force-dynamic";
 
 export default async function TopicsPage() {
   const statsRes = await fetchTopicStats();
+
+  // Load every candidate WITH its real consumption trail:
+  //   TopicCandidate.episodeTopics[] → Episode → Podcast
+  // (the EpisodeTopic join is the only place the topic→episode→podcast link is
+  // stored). A topic with ≥1 episodeTopics has been USED to build an episode;
+  // the rest are UNUSED and still available to draft from.
   const candidates = await db.topicCandidate.findMany({
-    orderBy: { debateScore: "desc" },
+    orderBy: { createdAt: "desc" },
+    include: {
+      episodeTopics: {
+        include: {
+          episode: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              publishedAt: true,
+              podcast: { select: { id: true, name: true } },
+            },
+          },
+        },
+      },
+    },
   });
 
-  // Serialize models
-  const serializedTopics = candidates.map((topic) => ({
-    id: topic.id,
-    title: topic.title,
-    sport: topic.sport,
-    leagueId: topic.leagueId,
-    summary: topic.summary,
-    controversyScore: topic.controversyScore,
-    starPowerScore: topic.starPowerScore,
-    bettingRelevanceScore: topic.bettingRelevanceScore,
-    recencyScore: topic.recencyScore,
-    debateScore: topic.debateScore,
-    evidenceIds: topic.evidenceIds,
-    status: topic.status,
-    createdAt: topic.createdAt.toISOString(),
-  }));
+  const serializedTopics = candidates.map((topic) => {
+    const usages = topic.episodeTopics
+      .filter((et) => et.episode)
+      .map((et) => ({
+        episodeId: et.episode.id,
+        episodeTitle: et.episode.title,
+        episodeStatus: et.episode.status,
+        episodePublishedAt: et.episode.publishedAt ? et.episode.publishedAt.toISOString() : null,
+        podcastId: et.episode.podcast?.id ?? null,
+        podcastName: et.episode.podcast?.name ?? null,
+      }));
+    return {
+      id: topic.id,
+      title: topic.title,
+      sport: topic.sport,
+      leagueId: topic.leagueId,
+      summary: topic.summary,
+      controversyScore: topic.controversyScore,
+      starPowerScore: topic.starPowerScore,
+      bettingRelevanceScore: topic.bettingRelevanceScore,
+      recencyScore: topic.recencyScore,
+      debateScore: topic.debateScore,
+      evidenceIds: topic.evidenceIds,
+      status: topic.status,
+      createdAt: topic.createdAt.toISOString(),
+      usages,
+      used: usages.length > 0,
+    };
+  });
 
   const initialStats = statsRes.success && statsRes.stats ? statsRes.stats : {
     evidenceCount: 0,
@@ -44,16 +78,7 @@ export default async function TopicsPage() {
   };
 
   return (
-    <div className="formContainer" style={{ maxWidth: "100%" }}>
-      {/* Header */}
-      <div className="topicsHeader">
-        <div className="titleGroup">
-          <h2>Sports Debate Topic Engine</h2>
-          <p>Generate debate topic candidates from real database evidence, rank by controversy, and review profiles.</p>
-        </div>
-      </div>
-
-      {/* Dashboard */}
+    <div className="topicsPage">
       <TopicsDashboard
         initialTopics={serializedTopics}
         initialStats={initialStats}

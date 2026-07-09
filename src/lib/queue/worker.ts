@@ -653,18 +653,46 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
     });
 
     const newsItems = await db.newsItem.findMany({
-      take: 30,
+      take: 60,
       orderBy: { publishedAt: "desc" },
     });
 
-    // Filter news items by league keyword if provided
-    const filteredNews = leagueId
-      ? newsItems.filter(
-          (n) =>
-            n.title.toLowerCase().includes(leagueId.toLowerCase()) ||
-            (n.summary && n.summary.toLowerCase().includes(leagueId.toLowerCase()))
-        )
-      : newsItems;
+    // Filter news to the requested league by its TEAM NAMES — not a substring
+    // match on the league abbreviation. NewsItem has no leagueId/team FK (only
+    // title, summary, and an `entities` keyword array), and real headlines say
+    // "Yankees" / "Dodgers", never "MLB", so the old `includes("mlb")` filter
+    // dropped virtually all league news. Resolve the league's teams (the same
+    // League→Team relation games/odds/injuries/stats already use) and match any
+    // team name or city (word-bounded) — plus the league code itself — across
+    // the title, summary, and extracted entities.
+    let filteredNews = newsItems;
+    if (leagueId) {
+      const leagueTeams = await db.team.findMany({
+        where: { leagueId: leagueId.toUpperCase() },
+        select: { name: true, city: true },
+      });
+      const terms = new Set<string>([leagueId.toLowerCase()]);
+      for (const t of leagueTeams) {
+        if (t.name) terms.add(t.name.toLowerCase());
+        if (t.city) terms.add(t.city.toLowerCase());
+      }
+      // Word-bounded, >=3 chars, regex-escaped so "Heat" can't match "heated".
+      const escaped = [...terms]
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 3)
+        .map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      const matcher = escaped.length > 0 ? new RegExp(`\\b(${escaped.join("|")})\\b`, "i") : null;
+      if (matcher) {
+        filteredNews = newsItems.filter((n) => {
+          const entityText = Array.isArray((n as any).entities)
+            ? (n as any).entities
+                .map((e: any) => (typeof e === "string" ? e : e?.name ?? e?.text ?? ""))
+                .join(" ")
+            : "";
+          return matcher.test(`${n.title} ${n.summary ?? ""} ${entityText}`);
+        });
+      }
+    }
 
     const injuries = await db.injury.findMany({
       where: {
@@ -721,6 +749,7 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
             invalidLeagueCount: 0,
             leagueMismatchCount: 0,
             skippedWeakEvidenceCount: 0,
+            belowScoreCount: 0,
           },
         },
       });
@@ -846,6 +875,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let invalidLeagueCount = 0;
     let leagueMismatchCount = 0;
     let skippedWeakEvidenceCount = 0;
+    let belowScoreCount = 0;
 
     const skippedRecordsReasonSummary: string[] = [];
 
@@ -994,6 +1024,18 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         recency * 0.20 +
         evidenceStrengthScore * 0.10;
 
+      // Honor the operator's "Minimum Debate Score" (previously accepted from
+      // the form but never applied): drop candidates weaker than the requested
+      // threshold before insert, so the slider is a real control.
+      if (typeof minScore === "number" && minScore > 0 && debateScore < minScore) {
+        belowScoreCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(
+          `Topic '${topic.title}' skipped: debate score ${debateScore.toFixed(1)} below the ${minScore} minimum.`
+        );
+        continue;
+      }
+
       // Advanced Duplicate protection check
       const normalizedCandidateTitle = normalizeTitle(topic.title);
       const candidateEvidenceIds = validEvidence.map((ev) => ev.id).sort().join(",");
@@ -1055,6 +1097,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       invalidLeagueCount,
       leagueMismatchCount,
       skippedWeakEvidenceCount,
+      belowScoreCount,
       skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20),
     };
 
