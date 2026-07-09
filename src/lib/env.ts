@@ -243,7 +243,24 @@ export function assertProductionEnv(): void {
   }
 
   // 2. Integration Provider Checks
+  // Sports provider must be a real, IMPLEMENTED provider in production. A stub
+  // or unknown value (e.g. the unimplemented "api-sports", which silently
+  // resolved to the stub and ingested nothing) must fail the boot, not sail
+  // through. Keep this list in sync with the factory's IMPLEMENTED_SPORTS_PROVIDERS.
   const sports = getSportsProvider();
+  const IMPLEMENTED_SPORTS = ["sportsdataio", "oddsapi", "rss-news", "rss"];
+  if (sports === "stub") {
+    throw new Error("SPORTS_PROVIDER=stub is not allowed in production. Set a real provider (recommended: sportsdataio).");
+  }
+  if (!IMPLEMENTED_SPORTS.includes(sports)) {
+    throw new Error(`Unsupported SPORTS_PROVIDER '${sports}' — no adapter is implemented. Use one of: ${IMPLEMENTED_SPORTS.join(", ")}.`);
+  }
+  if (sports === "sportsdataio") {
+    const key = (process.env.SPORTSDATAIO_API_KEY || "").trim();
+    if (!key || key === "your-sportsdataio-api-key") {
+      throw new Error("Missing required production env var: SPORTSDATAIO_API_KEY (required for SPORTS_PROVIDER=sportsdataio).");
+    }
+  }
   if (sports === "oddsapi") {
     if (getOddsApiKeyStatus() !== "CONFIGURED") {
       throw new Error("Missing required production env var: ODDS_API_KEY");

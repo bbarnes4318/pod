@@ -6,6 +6,7 @@ import { SportsDataProvider } from "./interface";
  */
 export class StubSportsDataProvider implements SportsDataProvider {
   name = "stub-sports-data";
+  isStub = true as const;
 
   async getSchedules(league: string, season: string): Promise<any[]> {
     console.log(`[StubSportsDataProvider] getSchedules called for league: ${league}, season: ${season} - Returning stub empty array`);

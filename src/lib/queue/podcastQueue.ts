@@ -50,9 +50,16 @@ export interface IngestJobData {
   dateOrRange: string;
 }
 
-export async function queueIngestionJob(data: IngestJobData) {
-  // Use a deterministic jobId if appropriate, or let BullMQ generate one
-  return podcastQueue.add("ingest:sports-data", data);
+export async function queueIngestionJob(
+  data: IngestJobData,
+  opts?: { jobId?: string; delayMs?: number }
+) {
+  // A deterministic jobId makes the enqueue idempotent (used by the scheduled
+  // ingest fan-out); delayMs lets the odds job run after the games it matches.
+  const jobOpts: { jobId?: string; delay?: number } = {};
+  if (opts?.jobId) jobOpts.jobId = opts.jobId;
+  if (opts?.delayMs && opts.delayMs > 0) jobOpts.delay = opts.delayMs;
+  return podcastQueue.add("ingest:sports-data", data, Object.keys(jobOpts).length ? jobOpts : undefined);
 }
 
 export interface TopicGenJobData {

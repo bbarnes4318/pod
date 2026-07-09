@@ -1,5 +1,9 @@
 export interface SportsDataProvider {
   name: string;
+  /** True only for the no-op StubSportsDataProvider. Lets guards detect a stub
+   *  by instance instead of string-matching the SPORTS_PROVIDER env value (so an
+   *  unimplemented value like "api-sports" that resolves to a stub is caught). */
+  isStub?: boolean;
   getSchedules(league: string, season: string): Promise<any[]>;
   getScores(league: string, date: string): Promise<any[]>;
   getStandings(league: string, season: string): Promise<any[]>;

@@ -10,7 +10,7 @@ assertProductionEnv();
 import { Worker, Job } from "bullmq";
 import { getRedisClient } from "../redis";
 import { db } from "../db";
-import { getSportsDataProvider } from "../providers/sports/factory";
+import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { renderSocialClip } from "../services/socialClipService";
@@ -47,6 +47,17 @@ import {
   RECURRING_GENERATION_TIME,
   RECURRING_GENERATION_TZ,
 } from "../services/recurringPodcastService";
+import { queueIngestionJob } from "./podcastQueue";
+import {
+  SPORTS_INGEST_TZ,
+  SPORTS_ODDS_DELAY_MS,
+  getSportsIngestLeagues,
+  getSportsIngestSeason,
+  sportsIngestCron,
+  sportsNewsCron,
+  ingestDateKey,
+  ingestHourKey,
+} from "../services/sportsIngestSchedule";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -79,6 +90,34 @@ podcastQueue
   )
   .catch((err) => console.error(`[Worker] Failed to register recurring-podcast scheduler: ${err.message}`));
 
+// Scheduled SPORTS-DATA ingestion (previously nonexistent — data went stale).
+// Two idempotent schedulers; upsertJobScheduler refreshes them on every boot and
+// picks up env cadence changes. Each tick fans out real `ingest:sports-data`
+// jobs; child jobs use deterministic per-day ids + upsert-based writes, so a
+// re-run never double-writes. Leagues/cadence/season are env-tunable to respect
+// provider rate limits. The manual /admin/data-sources trigger is untouched.
+podcastQueue
+  .upsertJobScheduler(
+    "sports-ingest-daily",
+    { pattern: sportsIngestCron(), tz: SPORTS_INGEST_TZ },
+    { name: "scheduler:sports-ingest", data: {} }
+  )
+  .then(() =>
+    console.log(
+      `[Worker] Sports-ingest scheduler registered: '${sportsIngestCron()}' ${SPORTS_INGEST_TZ} for [${getSportsIngestLeagues().join(", ")}]`
+    )
+  )
+  .catch((err) => console.error(`[Worker] Failed to register sports-ingest scheduler: ${err.message}`));
+
+podcastQueue
+  .upsertJobScheduler(
+    "sports-news-frequent",
+    { pattern: sportsNewsCron(), tz: SPORTS_INGEST_TZ },
+    { name: "scheduler:sports-news", data: {} }
+  )
+  .then(() => console.log(`[Worker] Sports-news scheduler registered: '${sportsNewsCron()}' ${SPORTS_INGEST_TZ}`))
+  .catch((err) => console.error(`[Worker] Failed to register sports-news scheduler: ${err.message}`));
+
 // Initialize BullMQ Worker
 const worker = new Worker(
   QUEUE_NAME,
@@ -107,6 +146,10 @@ const worker = new Worker(
       return handleSocialClipGeneration(job as Job<SocialClipJobData>);
     } else if (job.name === "scheduler:recurring-podcasts") {
       return handleRecurringPodcastScheduler(job);
+    } else if (job.name === "scheduler:sports-ingest") {
+      return handleSportsIngestScheduler(job);
+    } else if (job.name === "scheduler:sports-news") {
+      return handleSportsNewsScheduler(job);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -150,8 +193,17 @@ async function handlePodcastGeneration(job: Job<JobData>) {
   switch (stage) {
     case "fetch-sports":
       console.log("[Worker] Stage: Fetching sports Talking Points & scoring them...");
-      if (process.env.SPORTS_PROVIDER === "stub" || !process.env.SPORTS_PROVIDER) {
-        console.warn("[Worker] GUARD: SPORTS_PROVIDER is set to 'stub'. The stub provider is for architecture validation only. It must never be used to generate real topics, research briefs, scripts, or published episodes. Skipping real content generation.");
+      // Guard on the RESOLVED provider instance, not the literal env string: an
+      // unimplemented value (e.g. "api-sports") used to slip past a `=== "stub"`
+      // check while actually resolving to a stub. getSportsDataProvider throws
+      // on unknown values, and isStubSportsProvider catches the real stub.
+      try {
+        const sportsProvider = getSportsDataProvider();
+        if (isStubSportsProvider(sportsProvider)) {
+          console.warn("[Worker] GUARD: sports provider resolved to the STUB (architecture validation only). It must never be used to generate real topics, briefs, scripts, or published episodes. Skipping real content generation.");
+        }
+      } catch (err: any) {
+        console.error(`[Worker] GUARD: SPORTS_PROVIDER is misconfigured — ${err.message}. Skipping real content generation.`);
       }
       await simulateProgress(1000);
       break;
@@ -217,6 +269,89 @@ async function handleRecurringPodcastScheduler(job: Job) {
   }
 }
 
+// Curated season-stat fields worth storing as debate evidence, per league.
+// Only fields that are present AND numeric on a SportsDataIO record are written
+// (as statType/value rows), so an unexpected schema just yields fewer rows —
+// never garbage.
+const TEAM_STAT_FIELDS: Record<string, string[]> = {
+  MLB: ["Wins", "Losses", "Runs", "RunsAgainst", "Hits", "HomeRuns", "BattingAverage", "EarnedRunAverage", "OnBasePercentage", "SluggingPercentage"],
+  NBA: ["Wins", "Losses", "Points", "OpponentPoints", "FieldGoalsPercentage", "ThreePointersPercentage", "Rebounds", "Assists", "Steals", "Blocks"],
+  NFL: ["Wins", "Losses", "PointsFor", "PointsAgainst", "Touchdowns", "OffensiveYards", "OffensiveYardsPerPlay", "Turnovers"],
+};
+const PLAYER_STAT_FIELDS: Record<string, string[]> = {
+  MLB: ["Games", "AtBats", "Hits", "HomeRuns", "RunsBattedIn", "BattingAverage", "OnBasePercentage", "EarnedRunAverage", "Strikeouts", "Wins", "Saves"],
+  NBA: ["Games", "Points", "Rebounds", "Assists", "Steals", "BlockedShots", "FieldGoalsPercentage", "Minutes"],
+  NFL: ["PassingYards", "PassingTouchdowns", "RushingYards", "RushingTouchdowns", "Receptions", "ReceivingYards", "Interceptions"],
+};
+/** Pull the present, finite-numeric stat fields off a provider record. */
+function extractStatRows(record: any, fields: string[]): { statType: string; value: number }[] {
+  const out: { statType: string; value: number }[] = [];
+  for (const f of fields) {
+    const v = record?.[f];
+    if (typeof v === "number" && Number.isFinite(v)) out.push({ statType: f, value: v });
+  }
+  return out;
+}
+
+// Scheduled fan-out: enqueue real ingest jobs per league — SportsDataIO for the
+// structured data (games / team+player stats / injuries / news) and Odds API for
+// odds (delayed so it matches games ingested this run). Deterministic per-UTC-day
+// child job ids keep it idempotent. Records its own JobLog with what it dispatched.
+async function handleSportsIngestScheduler(job: Job) {
+  const leagues = getSportsIngestLeagues();
+  const season = getSportsIngestSeason();
+  const dateKey = ingestDateKey();
+  const jobLog = await db.jobLog.create({
+    data: { jobType: "scheduler:sports-ingest", status: "running", input: { leagues, season, dateKey } as any, output: {} },
+  });
+  const dispatched: any[] = [];
+  try {
+    for (const league of leagues) {
+      const sio = await queueIngestionJob(
+        { providerType: "sportsdataio", leagueId: league, sport: "", dateOrRange: season },
+        { jobId: `ingest-sio-${league}-${dateKey}` }
+      );
+      const odds = await queueIngestionJob(
+        { providerType: "oddsapi", leagueId: league, sport: "", dateOrRange: "" },
+        { jobId: `ingest-odds-${league}-${dateKey}`, delayMs: SPORTS_ODDS_DELAY_MS }
+      );
+      dispatched.push({ league, sportsdataioJobId: String(sio.id), oddsJobId: String(odds.id) });
+    }
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "completed", output: { message: `Dispatched ${dispatched.length} league ingest(s).`, season, dateKey, dispatched } as any },
+    });
+    console.log(`[Worker] Sports-ingest scheduler dispatched ${dispatched.length} league(s) for ${dateKey}.`);
+    return { success: true, dispatched };
+  } catch (err: any) {
+    await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "failed", error: err.message || "Sports-ingest scheduler failed" } });
+    throw err;
+  }
+}
+
+// Scheduled fan-out: RSS news ingest on the shorter cadence. leagueId "" means
+// no keyword filter (store all headlines); the dedupe id is bucketed per hour.
+async function handleSportsNewsScheduler(job: Job) {
+  const hourKey = ingestHourKey();
+  const jobLog = await db.jobLog.create({
+    data: { jobType: "scheduler:sports-news", status: "running", input: { hourKey } as any, output: {} },
+  });
+  try {
+    const news = await queueIngestionJob(
+      { providerType: "rss-news", leagueId: "", sport: "", dateOrRange: "" },
+      { jobId: `ingest-news-${hourKey}` }
+    );
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "completed", output: { message: "Dispatched RSS news ingest.", newsJobId: String(news.id), hourKey } as any },
+    });
+    return { success: true, newsJobId: String(news.id) };
+  } catch (err: any) {
+    await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "failed", error: err.message || "Sports-news scheduler failed" } });
+    throw err;
+  }
+}
+
 // 2. Real Sports Data Ingestion Handler
 async function handleSportsIngestion(job: Job<IngestJobData>) {
   const { providerType, leagueId, sport, dateOrRange } = job.data;
@@ -233,25 +368,27 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
   });
 
   try {
-    // Check if the stub provider is active
-    if (providerType.toLowerCase() === "stub") {
+    // Resolve the provider by INSTANCE. An unknown providerType throws here and
+    // is surfaced as a FAILED JobLog below (no more silent stub fallthrough).
+    const provider = getSportsDataProvider(providerType);
+
+    // An explicit stub is a labelled no-op, never a real ingest reporting
+    // success — the output makes clear nothing real was written.
+    if (isStubSportsProvider(provider)) {
       console.log("[Worker] Stub provider active — real sports ingestion disabled.");
-      
       await db.jobLog.update({
         where: { id: jobLog.id },
         data: {
           status: "completed",
-          output: { 
-            message: "Stub provider active — real sports ingestion disabled.", 
-            counts: { games: 0, news: 0, odds: 0, injuries: 0, stats: 0 } 
+          output: {
+            message: "Stub provider active — real sports ingestion disabled (no real data ingested).",
+            stub: true,
+            counts: { games: 0, news: 0, odds: 0, injuries: 0, stats: 0 },
           },
         },
       });
-      return { success: true, message: "Stub provider active — real sports ingestion disabled.", counts: { games: 0, news: 0, odds: 0 } };
+      return { success: true, stub: true, message: "Stub provider active — real sports ingestion disabled.", counts: { games: 0, news: 0, odds: 0 } };
     }
-
-    // Initialize the real provider instance (fails if API credentials are missing)
-    const provider = getSportsDataProvider(providerType);
     
     // Ingestion Counts
     let gamesCount = 0;
@@ -476,6 +613,20 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
           const playerIdStr = `sio:${leagueId.toLowerCase()}:${injury.PlayerID}`;
           const teamIdStr = `sio:${leagueId.toLowerCase()}:${injury.TeamID}`;
 
+          // Ensure Team exists (FK for Player/Injury) — minimal upsert.
+          await db.team.upsert({
+            where: { id: teamIdStr },
+            update: {},
+            create: {
+              id: teamIdStr,
+              leagueId: leagueId.toUpperCase(),
+              name: injury.Team || String(injury.TeamID),
+              city: "",
+              abbreviation: injury.Team || String(injury.TeamID),
+              slug: `${leagueId.toLowerCase()}-team-${injury.TeamID}`,
+            },
+          });
+
           // Ensure Player exists
           await db.player.upsert({
             where: { id: playerIdStr },
@@ -494,9 +645,20 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
             },
           });
 
-          // Insert Injury Event
-          await db.injury.create({
-            data: {
+          // Upsert the current injury snapshot for this player (deterministic id
+          // → idempotent: scheduled re-runs update the latest status instead of
+          // accumulating duplicate rows).
+          const injuryId = `sio:${leagueId.toLowerCase()}:inj:${injury.PlayerID}`;
+          await db.injury.upsert({
+            where: { id: injuryId },
+            update: {
+              teamId: teamIdStr,
+              status: injury.Status,
+              description: injury.Injury || "Injured",
+              reportedAt: new Date(),
+            },
+            create: {
+              id: injuryId,
               playerId: playerIdStr,
               teamId: teamIdStr,
               status: injury.Status,
@@ -509,6 +671,111 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
         }
       } catch (err: any) {
         console.warn(`[Worker] Injuries Ingestion skipped or failed: ${err.message}`);
+      }
+
+      // 5. Team season stats — real evidence for TeamStat (first-ever writer).
+      //    Idempotent upsert keyed by team/season/statType.
+      try {
+        const season = dateOrRange || String(new Date().getFullYear());
+        const teamStats = await provider.getTeamStats(leagueId, season);
+        const fields = TEAM_STAT_FIELDS[leagueId.toUpperCase()] || [];
+        for (const rec of teamStats) {
+          if (!rec?.TeamID) continue;
+          const teamIdStr = `sio:${leagueId.toLowerCase()}:${rec.TeamID}`;
+          await db.team.upsert({
+            where: { id: teamIdStr },
+            update: {},
+            create: {
+              id: teamIdStr,
+              leagueId: leagueId.toUpperCase(),
+              name: rec.Name || rec.Team || rec.Key || String(rec.TeamID),
+              city: rec.City || "",
+              abbreviation: rec.Key || rec.Team || String(rec.TeamID),
+              slug: `${leagueId.toLowerCase()}-team-${rec.TeamID}`,
+            },
+          });
+          for (const s of extractStatRows(rec, fields)) {
+            const statId = `sio:${leagueId.toLowerCase()}:teamstat:${rec.TeamID}:${season}:${s.statType}`;
+            await db.teamStat.upsert({
+              where: { id: statId },
+              update: { value: s.value, recordedAt: new Date() },
+              create: {
+                id: statId,
+                teamId: teamIdStr,
+                leagueId: leagueId.toUpperCase(),
+                season,
+                statType: s.statType,
+                value: s.value,
+                sourceId: String(rec.TeamID),
+                recordedAt: new Date(),
+              },
+            });
+            statsCount++;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Worker] Team stats ingestion skipped or failed: ${err.message}`);
+      }
+
+      // 6. Player season stats — real evidence for PlayerStat (first-ever
+      //    writer). Bounded per run; idempotent upsert keyed by player/season/statType.
+      try {
+        const season = dateOrRange || String(new Date().getFullYear());
+        const playerStats = await provider.getPlayerStats(leagueId, season);
+        const fields = PLAYER_STAT_FIELDS[leagueId.toUpperCase()] || [];
+        for (const rec of playerStats.slice(0, 400)) {
+          if (!rec?.PlayerID || !rec?.Name) continue;
+          const rows = extractStatRows(rec, fields);
+          if (rows.length === 0) continue;
+          const playerIdStr = `sio:${leagueId.toLowerCase()}:${rec.PlayerID}`;
+          const teamIdStr = rec.TeamID ? `sio:${leagueId.toLowerCase()}:${rec.TeamID}` : null;
+          if (teamIdStr) {
+            await db.team.upsert({
+              where: { id: teamIdStr },
+              update: {},
+              create: {
+                id: teamIdStr,
+                leagueId: leagueId.toUpperCase(),
+                name: rec.Team || String(rec.TeamID),
+                city: "",
+                abbreviation: rec.Team || String(rec.TeamID),
+                slug: `${leagueId.toLowerCase()}-team-${rec.TeamID}`,
+              },
+            });
+          }
+          await db.player.upsert({
+            where: { id: playerIdStr },
+            update: { name: rec.Name, position: rec.Position || undefined },
+            create: {
+              id: playerIdStr,
+              leagueId: leagueId.toUpperCase(),
+              teamId: teamIdStr || undefined,
+              name: rec.Name,
+              position: rec.Position || null,
+            },
+          });
+          for (const s of rows) {
+            const statId = `sio:${leagueId.toLowerCase()}:playerstat:${rec.PlayerID}:${season}:${s.statType}`;
+            await db.playerStat.upsert({
+              where: { id: statId },
+              update: { value: s.value, recordedAt: new Date() },
+              create: {
+                id: statId,
+                playerId: playerIdStr,
+                teamId: teamIdStr,
+                leagueId: leagueId.toUpperCase(),
+                season,
+                statType: s.statType,
+                value: s.value,
+                sourceId: String(rec.PlayerID),
+                recordedAt: new Date(),
+              },
+            });
+            statsCount++;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[Worker] Player stats ingestion skipped or failed: ${err.message}`);
       }
     } else if (providerType.toLowerCase() === "oddsapi") {
       // 1. Fetch live odds
@@ -564,8 +831,13 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       }
     }
 
+    const totalWritten = gamesCount + newsCount + oddsCount + injuriesCount + statsCount;
+
     const outputObj = {
-      message: "Ingestion completed successfully.",
+      message:
+        totalWritten > 0
+          ? "Ingestion completed successfully."
+          : "Ingestion wrote 0 rows across every table.",
       counts: {
         games: gamesCount,
         news: newsCount,
@@ -573,11 +845,29 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
         injuries: injuriesCount,
         stats: statsCount,
       },
+      totalWritten,
       skippedGamesMissingTeams,
       skippedOddsMissingGame,
       skippedNewsMissingUrl,
       skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20), // Cap reasons to prevent payload bloat
     };
+
+    // FIX 3 — a REAL provider that writes zero rows across every table is a
+    // failure, not a green success. Surface it as `failed` with the real reason
+    // (provider returned nothing, league unsupported, all records skipped, …)
+    // so a broken feed can't masquerade as "completed successfully".
+    if (totalWritten === 0) {
+      const reason =
+        `${provider.name} ingest for ${leagueId || "(no league)"} wrote 0 rows across games/news/odds/injuries/stats. ` +
+        `Likely causes: provider returned no data, unsupported league/season, or every record was skipped. ` +
+        (skippedRecordsReasonSummary.length ? `First skips: ${skippedRecordsReasonSummary.slice(0, 3).join(" | ")}` : "No records were returned by the provider.");
+      console.warn(`[Worker] Ingestion produced 0 rows — marking FAILED: ${reason}`);
+      await db.jobLog.update({
+        where: { id: jobLog.id },
+        data: { status: "failed", error: reason, output: outputObj },
+      });
+      throw new Error(reason);
+    }
 
     // Update JobLog on completion
     await db.jobLog.update({
@@ -588,8 +878,8 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
       },
     });
 
-    console.log(`[Worker] Ingestion completed. Stats: games=${gamesCount}, news=${newsCount}, odds=${oddsCount}, skippedGames=${skippedGamesMissingTeams}, skippedOdds=${skippedOddsMissingGame}`);
-    return { success: true, counts: { games: gamesCount, news: newsCount, odds: oddsCount } };
+    console.log(`[Worker] Ingestion completed. Stats: games=${gamesCount}, news=${newsCount}, odds=${oddsCount}, injuries=${injuriesCount}, stats=${statsCount}, skippedGames=${skippedGamesMissingTeams}, skippedOdds=${skippedOddsMissingGame}`);
+    return { success: true, counts: { games: gamesCount, news: newsCount, odds: oddsCount, injuries: injuriesCount, stats: statsCount } };
   } catch (err: any) {
     console.error(`[Worker] Ingestion job ${job.id} failed:`, err.message);
     await db.jobLog.update({

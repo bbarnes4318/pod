@@ -144,10 +144,21 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checkOptional("CARTESIA_API_KEY", true);
   }
 
-  const sportsProvider = process.env.SPORTS_PROVIDER || "api-sports";
+  // Sports provider readiness. api-sports was never implemented (no adapter, no
+  // factory case) — the old check pointed at a phantom API_SPORTS_KEY. Validate
+  // the providers that actually exist instead.
+  const sportsProvider = (process.env.SPORTS_PROVIDER || "").trim().toLowerCase();
   checkRequired("SPORTS_PROVIDER");
-  if (sportsProvider === "api-sports") {
-    checkRequired("API_SPORTS_KEY", true);
+  if (sportsProvider === "sportsdataio") {
+    checkRequired("SPORTSDATAIO_API_KEY", true);
+  } else if (sportsProvider === "oddsapi") {
+    checkRequired("ODDS_API_KEY", true);
+  } else if (sportsProvider === "rss-news" || sportsProvider === "rss") {
+    checkRequired("NEWS_RSS_FEEDS");
+  } else if (sportsProvider === "stub") {
+    checks.push({ key: "SPORTS_PROVIDER", status: "fail", value: "stub", message: "SPORTS_PROVIDER=stub is not a real provider — set sportsdataio in production." });
+  } else if (sportsProvider) {
+    checks.push({ key: "SPORTS_PROVIDER", status: "fail", value: sportsProvider, message: `Unsupported SPORTS_PROVIDER '${sportsProvider}' — no adapter implemented. Use sportsdataio (recommended) or oddsapi.` });
   }
 
   // 6. Preview Token
