@@ -305,14 +305,14 @@ Host 2: ${hostB.name} (ID: ${hostB.id})
 HOW REAL PODCAST SPEECH WORKS — follow all of these:
 1. Contractions always: "he's", "don't", "that's", "would've". Nobody says "he is not clutch" out loud.
 2. Backchannels and reactions: short lines like "Oh, come on.", "Wow.", "Sure, sure.", "That's— okay, fine." are GOOD lines. Use plenty of 2-6 word reaction lines between longer turns.
-3. Interruptions: hosts cut each other off mid-thought. When a line is an interruption, set "isInterruption": true and have the PREVIOUS line end mid-sentence with "—" (em dash). 3-6 real interruptions per episode.
+3. Interruptions from conviction: hosts cut each other off mid-thought the moment they can't take what they're hearing — from EITHER chair, as often as the heat warrants (not on a quota). EVERY line with "isInterruption": true MUST have the PREVIOUS line end mid-sentence with a "—" (em dash); that em dash is how the audio engine overlaps the two voices, so an interruption whose previous line doesn't end in "—" is a defect. Aim for 4-8 real interruptions across the episode. Also jam in overlapping agreement ("Yeah, and—", "Right, right—") and reactive fragments ("Oh, come on.", "That's not—", "Wait, wait.") between the longer turns.
 4. False starts and self-repair: "He was— look, the man played hurt." "I'm not saying— what I'm saying is..."
 5. Filler where a human would breathe: "I mean", "look", "honestly", "right?", "you know what?" — sprinkled, not machine-gunned.
 6. Callbacks: reference things said earlier in the episode ("There it is. The spreadsheet came out.", "You're still on the banner thing from earlier?").
 7. Speaking numbers: say stats like a human — "he's shooting damn near fifty percent" not "his field goal percentage is 49.8%". Round numbers in speech; the exact figure lives in the evidence ref.
-8. Vary rhythm: a heated exchange = rapid short lines. An analytical breakdown = one longer turn plus reactions. Never more than two long turns in a row.
-9. Agreement happens: even rivals concede small points ("Fine. That one's real.") before pivoting. Constant disagreement sounds fake.
-10. Tangents: one brief, natural 2-4 line tangent per episode (a memory, a joke, a jab) that gets pulled back with "Anyway—" or "Back to the point."
+8. Vary rhythm and let a host BUILD: a heated exchange = rapid short lines, sometimes two or three IN A ROW from the same host as they pile on, self-correct, or talk themselves hotter ("And another thing—"). An analytical breakdown = one longer turn plus reactions. Don't hand the mic back after every single line — strict ping-pong is a robotic tell; it's good for one host to hold the floor for two or three consecutive lines when they're on a roll. Cap only genuinely LONG turns: never more than two long turns in a row.
+9. Agreement happens: even rivals concede small points ("Fine. That one's real.") before pivoting — but only when genuinely cornered, never on a schedule. Constant disagreement sounds fake; so does a scheduled concession.
+10. Tangents happen naturally: a host may veer for a beat — a memory, a grievance, a shot at the other — then snap back with "Anyway—" or "Back to the point." Don't force one and don't script it; let it fall out of the argument if it wants to.
 
 AUDIO DELIVERY TAGS: you may place these inline in "text", in square brackets, where a performance cue belongs: ${JSON.stringify([...ALLOWED_AUDIO_TAGS])}.
 Example: "text": "[laughs] Okay, okay. [sighs] Walk me through the math, professor."
@@ -326,11 +326,11 @@ EPISODE SHAPE:
 - closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
 
 CHEMISTRY CONTRACT (the engine of the show):
-- ${hostA.name} swings; ${hostB.name} counters. ${hostA.name} escalates emotionally; ${hostB.name} deflates surgically. ${hostB.name} wins on facts, ${hostA.name} wins on moments — neither wins outright.
-- Each host concedes exactly ONE point per episode, grudgingly, and the other pounces on it.
-- ${hostA.name} interrupts when he smells blood. ${hostB.name} interrupts exactly once per episode, for a kill shot delivered quietly.
-- Introduce ONE running gag in the cold open and call it back at least twice later — shorter each time.
-- They know each other. Reference shared history ("You did this exact thing during the playoffs", "Here comes the folder").
+- BOTH hosts are true believers with their OWN agenda, and they collide. Each argues from their own Worldview and Argument Patterns above, each trying to WIN — neither is the straight man, neither merely reacts. ${hostB.name} drives just as hard as ${hostA.name}: he presses attacks, goes on the offensive, overreaches, and gets heated when his worldview is insulted — he can be wrong, and he does NOT just absorb ${hostA.name}'s swings and calmly deflate them. Give ${hostB.name} a stake he defends and pushes, drawn from his own worldview (a "the public is late, emotional, and wrong" markets host ATTACKS the emotional take on its own terms — he doesn't merely fact-check it from the sidelines).
+- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates — heated, incredulous, raising their voice, pressing the attack. Both hosts spend time in the high-energy tones, not just one.
+- Concessions are earned, not scheduled: a host concedes only when genuinely cornered, grudgingly, and the other pounces — but no one is required to concede, and stubbornly refusing to give up an obvious point is itself in character.
+- They know each other. Reference shared history when it lands ("You did this exact thing during the playoffs").
+- HUMOR IS ATTITUDE, NOT MATERIAL. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny is the delivery and the disdain, not a bit you insert on cue.
 
 SPECIFICITY OR DEATH:
 - Every take must be anchored to a concrete number, name, or game from the assigned evidence. Vague takes are cut.
@@ -654,6 +654,33 @@ Delivery field meanings:
     result.reasons.push("Normalized non-unique lineIndex numbering from the model (audio-repetition guard).");
   }
 
+  // 10d. INTERRUPTION CUE GUARD — every isInterruption line needs the PREVIOUS
+  // line to end mid-sentence with "—" or the renderer's overlap mis-fires
+  // (planConversationTimeline keys the negative-gap overlap off the flag, and
+  // the em dash is what sells the cut-off in the text/TTS). Walk the whole
+  // script in order and repair any interruption whose predecessor doesn't end
+  // in an em dash; drop the flag on the very first line (nothing to cut into).
+  {
+    const flat: any[] = [];
+    for (const seg of finalSegments) for (const l of seg.lines) flat.push(l);
+    let repaired = 0;
+    for (let i = 0; i < flat.length; i++) {
+      if (flat[i].isInterruption !== true) continue;
+      if (i === 0) { flat[i].isInterruption = false; continue; }
+      const prev = flat[i - 1];
+      const prevText = sanitizeAudioTags(String(prev.text));
+      if (!/[—–-]\s*$/.test(stripAudioTags(prevText))) {
+        // End the predecessor mid-sentence: strip any trailing terminal
+        // punctuation/whitespace, then append the em dash.
+        prev.text = prevText.replace(/[\s.?!,;:]+$/u, "") + "—";
+        repaired++;
+      }
+    }
+    if (repaired > 0) {
+      result.reasons.push(`Interruption cue guard: appended "—" to ${repaired} predecessor line(s) so every isInterruption overlaps correctly.`);
+    }
+  }
+
   // 11. Hard validations checks on final script structure
   if (totalLinesCount < 20) {
     const msg = `Validation failed: Total script lines are fewer than 20 (${totalLinesCount}).`;
@@ -663,8 +690,11 @@ Delivery field meanings:
 
   const hostADistribution = maxVoltageLinesCount / totalLinesCount;
   const hostBDistribution = drLinebreakLinesCount / totalLinesCount;
-  if (hostADistribution < 0.25 || hostBDistribution < 0.25) {
-    const msg = `Validation failed: Hosts line distribution is unbalanced. ${hostA.name}: ${Math.round(hostADistribution * 100)}%, ${hostB.name}: ${Math.round(hostBDistribution * 100)}%. Must be >= 25% for each.`;
+  // Loosened from 25% to 20% so natural runs (a host holding the floor for two
+  // or three consecutive lines) don't trip the balance gate — a two-hander can
+  // legitimately run 80/20 across an episode without one host disappearing.
+  if (hostADistribution < 0.2 || hostBDistribution < 0.2) {
+    const msg = `Validation failed: Hosts line distribution is unbalanced. ${hostA.name}: ${Math.round(hostADistribution * 100)}%, ${hostB.name}: ${Math.round(hostBDistribution * 100)}%. Must be >= 20% for each.`;
     result.reasons.push(msg);
     throw new Error(msg);
   }
