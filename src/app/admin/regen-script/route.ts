@@ -45,7 +45,15 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       success: true,
-      job: job ? { id: job.id, status: job.status, error: job.error, createdAt: job.createdAt.toISOString() } : null,
+      job: job
+        ? {
+            id: job.id,
+            status: job.status,
+            error: job.error,
+            createdAt: job.createdAt.toISOString(),
+            output: job.output ? (job.output as any) : null,
+          }
+        : null,
     });
   }
 

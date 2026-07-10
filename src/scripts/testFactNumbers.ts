@@ -109,16 +109,26 @@ function main() {
     assert(vals.includes(56), `expected 56 runs flagged, got ${JSON.stringify(vals)}`);
   });
 
-  // --- Names (Gibson/Gausman cases) ---
-  check("name check: 'Gibson' FAILS when absent from evidence", () => {
-    const v = verifyClaimFigures("You're booing Gibson, a rookie kid.", "The rookie starter gave up six runs.", { checkNames: true, hostNames: ["Louie", "Mickey"] });
-    assert(v.unsupportedNames.includes("Gibson"), `expected Gibson flagged, got ${JSON.stringify(v.unsupportedNames)}`);
+  // --- FIX 2: named-person attribution (Boone / Michael Kay cases) ---
+  const H = { checkAttributions: true, hostNames: ["Louie", "Mickey"] };
+  check("attribution: invented quote 'Michael Kay's callin' it a disaster' FAILS", () => {
+    const v = verifyClaimFigures("Even Michael Kay's callin' it a disaster down there.", "The team lost again at home; the fans booed.", H);
+    assert(v.unsupportedAttributions.some((n) => /kay/i.test(n)), `expected Kay flagged, got ${JSON.stringify(v.unsupportedAttributions)}`);
   });
 
-  check("name check: a present name PASSES; direction words are not names", () => {
-    const v = verifyClaimFigures("Carpenter went deep, second in the East.", "Carpenter homered; the team is second in the East.", { checkNames: true, hostNames: ["Louie", "Mickey"] });
-    assert(!v.unsupportedNames.includes("Carpenter"), "Carpenter is in evidence");
-    assert(!v.unsupportedNames.includes("East"), "East is a direction, not a name");
+  check("attribution: possessive action 'Boone's decision' FAILS when Boone absent", () => {
+    const v = verifyClaimFigures("And Boone's decision in the tenth cost 'em the game.", "The team lost in extra innings.", H);
+    assert(v.unsupportedAttributions.some((n) => /boone/i.test(n)), `expected Boone flagged, got ${JSON.stringify(v.unsupportedAttributions)}`);
+  });
+
+  check("attribution: GENERAL reference 'Boone's bullpen management' is ALLOWED", () => {
+    const v = verifyClaimFigures("Boone's bullpen management is the whole story here.", "The bullpen has struggled all month.", H);
+    assert(v.unsupportedAttributions.length === 0, `general reference must not flag, got ${JSON.stringify(v.unsupportedAttributions)}`);
+  });
+
+  check("attribution: a person IN evidence passes even with a quote", () => {
+    const v = verifyClaimFigures("Boone said the pen's gotta be better.", "Manager Aaron Boone said the bullpen has to be better after the loss.", H);
+    assert(!v.unsupportedAttributions.some((n) => /boone/i.test(n)), "Boone is in the evidence");
   });
 
   // sanity on the primitives

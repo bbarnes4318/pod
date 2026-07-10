@@ -33,6 +33,17 @@ export interface ScriptBuildResult {
   providerError?: string;
   reasons: string[];
   scriptId?: string;
+  /** FIX 1 self-verify summary (how many ungrounded lines were corrected). */
+  selfVerify?: import("./scriptSelfVerify").SelfVerifyReport;
+  /** FIX 3 evidence-packet audit — how rich the facts actually are. */
+  evidenceAudit?: {
+    topicCount: number;
+    distinctRefIds: number;
+    totalFactTexts: number;
+    factsWithNumbers: number;
+    corpusChars: number;
+    samples: string[];
+  };
 }
 
 import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
@@ -218,6 +229,9 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // 6. Gather allowed evidence source refs & warnings
   const allowedSourceRefs = new Set<string>();
   const unsafeClaimsList: string[] = [];
+  // Evidence text keyed by ref id + the whole corpus, for FIX 1 self-verify.
+  const evidenceByRefId = new Map<string, string>();
+  const evidenceTexts: string[] = [];
 
   const topicsPrompts = ep.topics.map((et, idx) => {
     const t = et.topic;
@@ -230,6 +244,26 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
         allowedSourceRefs.add(`${src.type}:${src.id}`);
       }
     }
+
+    // Index evidence text by ref id (facts/stats carry their evidenceRefs) and
+    // accumulate the full corpus — both used by the self-verify loop.
+    const briefFacts = Array.isArray(b.facts) ? (b.facts as any[]) : [];
+    const briefStats = Array.isArray(b.stats) ? (b.stats as any[]) : [];
+    for (const item of [...briefFacts, ...briefStats]) {
+      const txt = item && typeof item.text === "string" ? item.text : "";
+      if (!txt) continue;
+      evidenceTexts.push(txt);
+      for (const r of Array.isArray(item.evidenceRefs) ? item.evidenceRefs : []) {
+        if (r && r.id) evidenceByRefId.set(r.id, `${evidenceByRefId.get(r.id) || ""} ${txt}`.trim());
+      }
+    }
+    const richKeyFacts = Array.isArray((b as any).keyFactsContext) ? (b as any).keyFactsContext : [];
+    for (const item of richKeyFacts) {
+      const txt = typeof item === "string" ? item : item && typeof item.text === "string" ? item.text : "";
+      if (txt) evidenceTexts.push(txt);
+    }
+    if (b.injuryContext) evidenceTexts.push(String(b.injuryContext));
+    if (b.oddsContext) evidenceTexts.push(String(b.oddsContext));
 
     // Collect unsafe claims to warn about
     const unsafe = Array.isArray(b.unsafeClaims) ? (b.unsafeClaims as any[]) : [];
@@ -276,6 +310,19 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     );
     return richLines.join("\n");
   }).join("\n---\n");
+
+  // FIX 3 — audit how rich the evidence packet actually is (reported, not acted
+  // on here): a model asked to sustain a long argument off a handful of facts
+  // will invent to fill space.
+  const numberRe = /\d|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|forty|fifty|hundred|thousand)\b/i;
+  result.evidenceAudit = {
+    topicCount: ep.topics.length,
+    distinctRefIds: evidenceByRefId.size,
+    totalFactTexts: evidenceTexts.length,
+    factsWithNumbers: evidenceTexts.filter((t) => numberRe.test(t)).length,
+    corpusChars: evidenceTexts.join(" ").length,
+    samples: evidenceTexts.slice(0, 80),
+  };
 
   // 7. Formulate system and user prompts
   const systemPrompt = `You are the head writer for Take Machine, a two-host sports debate podcast. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
@@ -336,6 +383,7 @@ GROUNDING — THE ONE UNBREAKABLE RULE (this outranks every "be specific" instru
 - Every number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come from the supplied evidence. If it is not in the evidence, it does not exist: do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.
 - When the evidence lacks a specific the argument wants, the host ARGUES WITHOUT IT. Conviction, memory, rhetoric, and qualitative claims are fully allowed — invented specifics are not. "They've been rotten since June" is great; "5-and-15 since June eighteenth" is fabrication unless that exact fact is supplied. "They've stunk for years" is great; "three straight 100-loss seasons" is fabrication unless it's supplied. A vivid unnumbered take always beats a made-up stat.
 - NEVER inflate or embellish a real fact into a bigger one: if the evidence says three home runs, it's three — never "five", never "most since 2018". Exaggerating a supplied number IS fabrication and fails the fact check.
+- NAMED-PERSON ATTRIBUTION IS RADIOACTIVE (legal exposure, not just accuracy): you may NOT put words, quotes, thoughts, or specific actions on a real named person unless the evidence contains them. Never invent that "Boone pulled the pitcher", "Michael Kay said it's an awful stretch", or "the GM guaranteed a trade". You MAY reference a public figure generally ("Boone's bullpen management has been a talking point", "the manager's on the hot seat") — a general reference carries no invented quote or specific action. Fabricated attributions to named people fail the fact check as unsupported_attribution.
 
 SPECIFICITY FROM EVIDENCE:
 - A take lands hardest on a concrete number, name, or game you actually HAVE — reach for the supplied evidence first. But specificity must come FROM the evidence; a take you can't ground stays qualitative and convicted, it is NOT padded with an invented number and it is NOT cut.
@@ -440,8 +488,17 @@ Delivery field meanings:
       temperature,
       maxTokens,
       speakerNames: [hostA.name, hostB.name],
+      evidenceByRefId,
+      fullEvidenceText: evidenceTexts.join("  "),
       log: (msg) => result.reasons.push(msg),
     });
+    if (llmResult?.selfVerify) {
+      const sv = llmResult.selfVerify;
+      result.selfVerify = sv;
+      result.reasons.push(
+        `Self-verify corrected ${sv.linesCorrected}/${sv.linesWithViolations} ungrounded line(s); ${sv.linesUnresolved} unresolved.`
+      );
+    }
   } catch (outlineErr: any) {
     console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
     result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);

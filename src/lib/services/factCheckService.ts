@@ -13,7 +13,7 @@ import {
   mostSevereStatus,
   processSemanticLineResults,
 } from "./semanticReview";
-import { verifyClaimFigures } from "./factNumbers";
+import { verifyLineAgainstEvidence } from "./factNumbers";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -228,6 +228,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let invalidSpeakerCount = 0;
   // FIX 1: figures a factual line asserts that don't appear in its evidence.
   let unsupportedFigureCount = 0;
+  // FIX 2: fabricated quotes/actions attributed to named real people.
+  let unsupportedAttributionCount = 0;
   const lineCountByHostId = new Map<string, number>([
     [hostA.id, 0],
     [hostB.id, 0],
@@ -471,37 +473,17 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           } else if (!hasRefError) {
             factualLineWithValidEvidenceCount++;
 
-            // FIX 1 — number-in-evidence verification. A ref proves the line
-            // CITES real evidence; it does not prove the line's FIGURES match
-            // that evidence. Verify each asserted number/name against the cited
-            // ref's text, falling back to the full episode corpus before failing
-            // (so ref-misattribution and legitimate rounding don't false-fail).
-            // A figure/name absent from BOTH is a fabrication. When there's no
-            // evidence text to check, we do nothing here and leave the line to
-            // the semantic reviewer (degrade, never silently pass).
+            // FIX 1 — number-in-evidence + attribution verification. A ref
+            // proves the line CITES real evidence; it does not prove the line's
+            // FIGURES or person-ATTRIBUTIONS match that evidence. Uses the same
+            // verifier the generation-time self-verify loop uses, so gate and
+            // generator agree exactly. No evidence text => degrade to semantic.
             const citedText = line.evidenceRefs
               .map((r: any) => refIdToText.get(r?.id) || "")
               .join("  ");
-            const hostNames = [hostA.name, hostB.name];
-            const cited = verifyClaimFigures(String(line.text), citedText, { checkNames: true, hostNames });
+            const v = verifyLineAgainstEvidence(String(line.text), citedText, fullEvidenceText, [hostA.name, hostB.name]);
 
-            let badFigures = cited.unsupportedFigures;
-            let badNames = cited.unsupportedNames;
-            if (cited.verifiable) {
-              // Keep only what's ALSO absent from the whole episode's evidence.
-              const corpus = verifyClaimFigures(String(line.text), fullEvidenceText, { checkNames: true, hostNames });
-              badFigures = cited.unsupportedFigures.filter((f) =>
-                corpus.unsupportedFigures.some((c) => c.value === f.value && c.surface === f.surface)
-              );
-              badNames = cited.unsupportedNames.filter((n) => corpus.unsupportedNames.includes(n));
-            } else {
-              // No cited text: check against the full corpus if we have any.
-              const corpus = verifyClaimFigures(String(line.text), fullEvidenceText, { checkNames: true, hostNames });
-              badFigures = corpus.verifiable ? corpus.unsupportedFigures : [];
-              badNames = corpus.verifiable ? corpus.unsupportedNames : [];
-            }
-
-            for (const f of badFigures) {
+            for (const f of v.unsupportedFigures) {
               unsupportedFigureCount++;
               const says = f.evidenceSays.length ? f.evidenceSays.join(", ") : "no matching figure";
               errorsList.push({
@@ -510,12 +492,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
                 reason: `Line #${line.lineIndex + 1} asserts "${f.surface}" (${f.value}) but the cited evidence does not contain it (evidence numbers: ${says}). Stated figures must appear in the evidence.`,
               });
             }
-            for (const n of badNames) {
-              unsupportedFigureCount++;
+            for (const n of v.unsupportedAttributions) {
+              unsupportedAttributionCount++;
               errorsList.push({
-                type: "unsupported_figure",
+                type: "unsupported_attribution",
                 lineIndex: line.lineIndex,
-                reason: `Line #${line.lineIndex + 1} asserts the name "${n}" as fact, but it does not appear in the cited evidence.`,
+                reason: `Line #${line.lineIndex + 1} attributes a specific quote/statement/action to "${n}", who does not appear in the cited evidence. Fabricated attributions to named people are prohibited.`,
               });
             }
           }
@@ -794,6 +776,7 @@ Run the fact-checking comparison and output the JSON structure containing status
     invalidEvidenceRefCount,
     unsupportedClaimCount,
     unsupportedFigureCount,
+    unsupportedAttributionCount,
     unsafeClaimCount,
     rumorLanguageCount,
     needsHumanReviewCount,

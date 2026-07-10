@@ -238,67 +238,139 @@ export interface FigureVerdict {
 export interface ClaimVerification {
   verifiable: boolean; // false => no evidence text; caller should degrade to semantic
   unsupportedFigures: FigureVerdict[];
-  unsupportedNames: string[];
+  /** Named real people presented as saying/doing something specific, absent from evidence. */
+  unsupportedAttributions: string[];
 }
 
-/** Proper-name candidates a line asserts (capitalized, not stopwords/hosts). */
-export function extractAssertedNames(text: string, hostNames: string[] = []): string[] {
-  const hostTokens = new Set(
-    hostNames.flatMap((h) => h.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 1))
-  );
-  const stripped = String(text ?? "").replace(/\[[^\]]*\]/g, " "); // drop [tags]
-  const names = new Set<string>();
-  // Capitalized word not at sentence start (index>0 in its sentence), 4+ letters.
-  const sentences = stripped.split(/(?<=[.!?—-])\s+/);
-  for (const sent of sentences) {
-    const words = sent.split(/\s+/);
-    words.forEach((raw, idx) => {
-      const w = raw.replace(/[^A-Za-z']/g, "");
-      if (w.length < 4) return;
-      if (!/^[A-Z][a-z']+$/.test(w)) return; // Proper-case only (skip ALLCAPS/lowercase)
-      const lw = w.toLowerCase();
-      if (idx === 0) return; // sentence-initial capital is ambiguous
-      if (NAME_STOPWORDS.has(lw) || hostTokens.has(lw)) return;
-      names.add(w);
-    });
-  }
-  return [...names];
+// A named person becomes a SPECIFIC ATTRIBUTION (a quote, statement, or specific
+// action — legal exposure, not just accuracy) when a speech/action verb or a
+// possessive action-noun attaches to them. General references ("Boone's bullpen
+// management") carry no such verb/noun and are allowed. Colloquial g-dropped
+// forms ("sayin'", "callin'") are included.
+const ATTRIBUTION_VERBS = new Set([
+  "said", "say", "says", "sayin", "saying", "told", "tells", "telling",
+  "call", "called", "calls", "callin", "calling", "claim", "claimed", "claims", "claiming",
+  "insist", "insists", "insisted", "argue", "argues", "argued", "admit", "admits", "admitted",
+  "think", "thinks", "thinkin", "thinking", "believe", "believes", "believed",
+  "decide", "decided", "decides", "deciding", "bench", "benched", "pull", "pulled",
+  "order", "ordered", "promise", "promised", "guarantee", "guaranteed", "announce", "announced",
+  "tweet", "tweeted", "wrote", "writes", "rip", "ripped", "blast", "blasted",
+  "praise", "praised", "vow", "vowed", "demand", "demanded", "pledge", "pledged",
+  "suggest", "suggested", "warn", "warned", "predict", "predicted",
+]);
+const ATTRIBUTION_NOUNS = new Set([
+  "decision", "call", "quote", "statement", "comment", "take", "promise", "guarantee",
+  "benching", "tweet", "remark", "pledge", "vow", "order", "claim", "prediction",
+  "admission", "warning", "guarantee's",
+]);
+
+const cleanTok = (w: string) => (w || "").replace(/[’]/g, "'").replace(/[.,!?;:"]+$/g, "");
+const nrmVerb = (w: string) => cleanTok(w).toLowerCase().replace(/'$/, "");
+function isProperNameTok(w: string): boolean {
+  const c = cleanTok(w);
+  return /^[A-Z][A-Za-z]*('s|')?$/.test(c) && c.replace(/'s?$/, "").length >= 3;
 }
 
 /**
- * Verify every figure (and asserted name) a factual line states appears in the
- * supplied evidence text. Returns verifiable=false when there is no evidence
- * text to check (degrade to semantic). A figure is supported if an exact
- * surface form is present OR it is within rounding tolerance of an evidence
- * number. Names are supported if the token appears in the evidence text.
+ * Named real people a line ASSERTS as saying/doing something specific — the
+ * fabricated-quote / invented-action risk. General mentions are NOT returned.
+ */
+export function extractAttributions(text: string, hostNames: string[] = []): string[] {
+  const hostTokens = new Set(
+    hostNames.flatMap((h) => h.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 1))
+  );
+  const stripped = String(text ?? "").replace(/\[[^\]]*\]/g, " ");
+  const out = new Set<string>();
+  for (const sent of stripped.split(/(?<=[.!?—])\s+/)) {
+    const words = sent.split(/\s+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      if (!isProperNameTok(words[i])) continue;
+      // Build a multi-word proper-name phrase (e.g. "Michael Kay['s]").
+      let j = i;
+      const parts: string[] = [cleanTok(words[i]).replace(/'s?$/, "")];
+      while (j + 1 < words.length && isProperNameTok(words[j + 1]) && !ATTRIBUTION_VERBS.has(nrmVerb(words[j + 1]))) {
+        parts.push(cleanTok(words[j + 1]).replace(/'s?$/, ""));
+        j++;
+      }
+      const lastTok = cleanTok(words[j]);
+      const possessive = /'s?$/.test(lastTok);
+      const nameStr = parts.join(" ");
+      const lowerParts = parts.map((p) => p.toLowerCase());
+      if (lowerParts.every((p) => hostTokens.has(p)) || lowerParts.every((p) => NAME_STOPWORDS.has(p))) {
+        i = j;
+        continue;
+      }
+      const after1 = nrmVerb(words[j + 1] || "");
+      const after2 = nrmVerb(words[j + 2] || "");
+      if (ATTRIBUTION_VERBS.has(after1) || ATTRIBUTION_VERBS.has(after2)) out.add(nameStr);
+      else if (possessive && ATTRIBUTION_NOUNS.has(after1)) out.add(nameStr);
+      i = j;
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Verify the figures and person-attributions a factual line states appear in the
+ * supplied evidence. verifiable=false when there's no evidence text (degrade to
+ * semantic). A figure is supported if an exact surface form is present OR it is
+ * within rounding tolerance of an evidence number. An attribution is supported
+ * if the person's name appears in the evidence.
  */
 export function verifyClaimFigures(
   lineText: string,
   evidenceText: string,
-  opts: { hostNames?: string[]; checkNames?: boolean } = {}
+  opts: { hostNames?: string[]; checkAttributions?: boolean } = {}
 ): ClaimVerification {
   const evidenceLower = normalize(evidenceText);
   if (!evidenceLower.trim()) {
-    return { verifiable: false, unsupportedFigures: [], unsupportedNames: [] };
+    return { verifiable: false, unsupportedFigures: [], unsupportedAttributions: [] };
   }
   const evidenceNums = extractEvidenceNumbers(evidenceText);
 
   const unsupportedFigures: FigureVerdict[] = [];
   for (const fig of extractAssertedFigures(lineText)) {
-    const exact = fig.forms.some((f) => tokenPresent(evidenceLower, f));
-    if (exact) continue;
+    if (fig.forms.some((f) => tokenPresent(evidenceLower, f))) continue;
     if (withinTolerance(fig.value, evidenceNums)) continue;
-    // nearest evidence numbers for the reason
     const near = [...evidenceNums].sort((a, b) => Math.abs(a - fig.value) - Math.abs(b - fig.value)).slice(0, 4);
     unsupportedFigures.push({ surface: fig.surface.replace(/#b$/, ""), value: fig.value, evidenceSays: near });
   }
 
-  const unsupportedNames: string[] = [];
-  if (opts.checkNames) {
-    for (const name of extractAssertedNames(lineText, opts.hostNames)) {
-      if (!tokenPresent(evidenceLower, name)) unsupportedNames.push(name);
+  const unsupportedAttributions: string[] = [];
+  if (opts.checkAttributions) {
+    for (const name of extractAttributions(lineText, opts.hostNames)) {
+      // supported if any token of the name appears in evidence
+      const nameTokens = name.split(/\s+/);
+      if (!nameTokens.some((t) => tokenPresent(evidenceLower, t))) unsupportedAttributions.push(name);
     }
   }
 
-  return { verifiable: true, unsupportedFigures, unsupportedNames };
+  return { verifiable: true, unsupportedFigures, unsupportedAttributions };
+}
+
+/**
+ * The canonical per-line verification used by BOTH the deterministic gate and
+ * the generation-time self-verify loop, so they agree exactly. Checks the line's
+ * cited evidence first, then keeps only violations ALSO absent from the full
+ * episode corpus (so ref-misattribution and rounding never false-fail).
+ */
+export function verifyLineAgainstEvidence(
+  lineText: string,
+  citedText: string,
+  fullEvidenceText: string,
+  hostNames: string[] = []
+): ClaimVerification {
+  const cited = verifyClaimFigures(lineText, citedText, { hostNames, checkAttributions: true });
+  if (cited.verifiable) {
+    const corpus = verifyClaimFigures(lineText, fullEvidenceText, { hostNames, checkAttributions: true });
+    return {
+      verifiable: true,
+      unsupportedFigures: cited.unsupportedFigures.filter((f) =>
+        corpus.unsupportedFigures.some((c) => c.value === f.value && c.surface === f.surface)
+      ),
+      unsupportedAttributions: cited.unsupportedAttributions.filter((n) => corpus.unsupportedAttributions.includes(n)),
+    };
+  }
+  const corpus = verifyClaimFigures(lineText, fullEvidenceText, { hostNames, checkAttributions: true });
+  return corpus.verifiable ? corpus : { verifiable: false, unsupportedFigures: [], unsupportedAttributions: [] };
 }
