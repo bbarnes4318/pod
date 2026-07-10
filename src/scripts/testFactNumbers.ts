@@ -59,6 +59,13 @@ function main() {
     assert(!vals.includes(20), `must NOT flag a bare 20 from a spoken year, got ${JSON.stringify(vals)}`);
   });
 
+  check("composite with 'and': 'seventeen thousand five hundred and eighty-one' => 17581", () => {
+    const figs = extractAssertedFigures("Seventeen thousand five hundred and eighty-one showed up.");
+    assert(figs.some((f) => f.value === 17581), `expected 17581, got ${JSON.stringify(figs.map((f) => f.value))}`);
+    const supported = verifyClaimFigures("Seventeen thousand five hundred and eighty-one showed up.", "Announced attendance: 17,581.");
+    assert(supported.unsupportedFigures.length === 0, `17,581 should match, got ${JSON.stringify(supported.unsupportedFigures)}`);
+  });
+
   check("composite 'seventeen thousand five hundred' => 17500 (not bare 1000)", () => {
     const supported = verifyClaimFigures(
       "Seventeen thousand five hundred paid to get in.",

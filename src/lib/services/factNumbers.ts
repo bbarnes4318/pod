@@ -177,6 +177,10 @@ export function collectNumbers(text: string): CollectedNumber[] {
       if (!run.length) runStart = m.index!;
       run.push(w);
       runEnd = m.index! + w.length;
+    } else if (w === "and" && run.length > 0) {
+      // "five hundred and eighty-one" is ONE number (17581-style) — keep the run
+      // open across a connecting "and" (wordsToNumber ignores it).
+      runEnd = m.index! + w.length;
     } else {
       flush();
     }
