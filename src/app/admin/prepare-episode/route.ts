@@ -104,21 +104,35 @@ export async function POST(req: NextRequest) {
   }
 
   const body: any = await req.json().catch(() => ({}));
-  const scriptId: string = body?.scriptId;
   const action: string = body?.action || "status";
-  if (!scriptId) {
-    return NextResponse.json({ success: false, error: "scriptId required" }, { status: 400 });
+  // Accept an explicit scriptId, or an episodeId (we resolve its latest script).
+  // The latter is how an operator drives an episode whose newest script hasn't
+  // been rendered yet (so its id isn't discoverable via /admin/render-proof).
+  let scriptId: string | undefined = body?.scriptId;
+  const episodeIdIn: string | undefined = body?.episodeId;
+  if (!scriptId && !episodeIdIn) {
+    return NextResponse.json({ success: false, error: "scriptId or episodeId required" }, { status: 400 });
   }
 
   // Clamp the in-route poll budget so we never hang a proxy connection.
   const waitMs = Math.min(Math.max(Number(body?.waitMs) || 55000, 0), 280000);
   const force = body?.force === true;
 
-  const script = await scriptWithEpisode(scriptId);
-  if (!script || !script.episode) {
+  let script = scriptId ? await scriptWithEpisode(scriptId) : null;
+  if (!script && episodeIdIn) {
+    const latest = await db.script.findFirst({
+      where: { episodeId: episodeIdIn },
+      orderBy: { version: "desc" },
+      include: { episode: { select: { id: true, status: true } } },
+    });
+    script = latest;
+    scriptId = latest?.id;
+  }
+  if (!script || !script.episode || !scriptId) {
     return NextResponse.json({ success: false, error: "Script (or its episode) not found." }, { status: 404 });
   }
   const episodeId = script.episode.id;
+  const resolvedScriptId = scriptId;
 
   // -- status ---------------------------------------------------------------
   if (action === "status") {
@@ -193,6 +207,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({
       action: "factcheck",
+      scriptId: resolvedScriptId,
       success: !pending,
       pending,
       enqueuedJobId: enqueued.id,
@@ -218,6 +233,7 @@ export async function POST(req: NextRequest) {
     const out = job?.output || null;
     return NextResponse.json({
       action: "voices",
+      scriptId: resolvedScriptId,
       success: !pending,
       pending,
       enqueuedJobId: enqueued.id,
