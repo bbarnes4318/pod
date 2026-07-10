@@ -476,6 +476,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         kind: r.kind,
         category: r.category,
         durationMs: r.durationMs ?? undefined,
+        // Metadata-aware selection reads bpm:/energy:/mood tags + the ES title.
+        tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
       }));
       const cooldown = await readCooldownSnapshot({
         episodeCount: Math.max(plannerConfig.cooldownEpisodes, plannerConfig.sfxCooldownEpisodes),

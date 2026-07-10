@@ -6,7 +6,7 @@
 
 import type { ProductionStyle, SfxDensity } from "./soundDesignShared";
 
-export const PRODUCTION_PLANNER_VERSION = "1.0.0";
+export const PRODUCTION_PLANNER_VERSION = "1.1.0";
 
 /** Feature flag: planner-driven rendering. Default OFF — the legacy
  *  rotation-based placement path runs unless this is exactly "true". */
@@ -43,6 +43,9 @@ export interface ProductionCue {
   gainDb: number;
   fadeInMs: number;
   fadeOutMs: number;
+  /** Musical-fit score 0–1 for the chosen asset (metadata-aware selection);
+   *  absent on silence/highlight cues. */
+  fit?: number;
   /** One line of why the planner made this call — the explainability layer. */
   reason: string;
 }
@@ -56,6 +59,10 @@ export interface ProductionPlanStats {
   distinctAssetsUsed: number;
   /** Times a candidate asset was excluded because a recent episode used it. */
   cooldownSuppressions: number;
+  /** Beds dropped by the vocal-presence hard rule (they'd fight the hosts). */
+  vocalBedsExcluded?: number;
+  /** Intro/outro themes dropped by the genre gate (cartoon/retro/horror/…). */
+  themesExcluded?: number;
 }
 
 /** The per-episode cue sheet. Reproducible: same script content + style +
@@ -99,6 +106,7 @@ export function parseProductionPlan(raw: unknown): ProductionPlan | null {
       gainDb: typeof cue.gainDb === "number" ? cue.gainDb : 0,
       fadeInMs: typeof cue.fadeInMs === "number" ? cue.fadeInMs : 0,
       fadeOutMs: typeof cue.fadeOutMs === "number" ? cue.fadeOutMs : 0,
+      ...(typeof cue.fit === "number" ? { fit: cue.fit } : {}),
       reason: typeof cue.reason === "string" ? cue.reason : "",
     });
   }

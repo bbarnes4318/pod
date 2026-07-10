@@ -69,6 +69,49 @@ import {
   plannedStingerDurations,
   resolveIntroFromPlan,
 } from "../lib/audio/planExecution";
+import { parseAssetMetadata } from "../lib/audio/assetMetadata";
+
+// Synth catalog metadata so the harness exercises MUSICAL-FIT selection (the
+// seed pack carries no Epidemic tags of its own). Beds span energy families;
+// stingers/sfx carry descriptive character words. This is test setup — it maps
+// synth assets to the same tag shape the real crate uses.
+const DEMO_BED_META: Record<string, { family: string; bpm: number; moods: string[] }> = {
+  "Fast Break": { family: "urgent/driving", bpm: 140, moods: ["action", "restless", "drive"] },
+  "Crunch Time": { family: "urgent/driving", bpm: 128, moods: ["intense", "aggressive"] },
+  "Victory Lap": { family: "upbeat", bpm: 120, moods: ["happy", "bright", "euphoric"] },
+  "Film Room": { family: "neutral", bpm: 100, moods: ["analytical", "clean", "corporate"] },
+  "Slow Burn": { family: "dark/tense", bpm: 80, moods: ["suspense", "dark", "sneaking"] },
+};
+const DEMO_STINGER_MOODS: Record<string, string[]> = {
+  "Slam Riser": ["riser", "epic", "build"],
+  "Drum Hit": ["impact", "hit"],
+  "Whoosh Cut": ["whoosh", "swish"],
+  "Power Chord Stab": ["impact", "aggressive"],
+  "Laser Sweep Down": ["whoosh", "dark"],
+  "Bell Rise": ["riser", "bright"],
+  "Sub Drop": ["impact", "dark", "boom"],
+  "Snare Rush": ["build", "urgent"],
+  "Horn Fall": ["horns", "fall"],
+  "Glitch Zap": ["glitch", "tech"],
+};
+function demoBaseName(name: string): string {
+  return name
+    .replace(/ \((music bed|stinger|intro theme|outro theme|sfx)\)/, "")
+    .trim()
+    .replace(/ II$/, "");
+}
+function demoTagsFor(name: string, kind: string, category: string | null): string[] {
+  const base = demoBaseName(name);
+  if (kind === "bed") {
+    const m = DEMO_BED_META[base];
+    return m ? [`energy:${m.family}`, `bpm:${m.bpm}`, ...m.moods, "no vocals"] : ["no vocals"];
+  }
+  if (kind === "stinger") return DEMO_STINGER_MOODS[base] ?? ["transition"];
+  if (kind === "theme_intro") return ["arena", "charge", "broadcast"];
+  if (kind === "theme_outro") return ["arena", "final", "whistle", "sport"];
+  if (kind === "sfx" && category) return [category];
+  return [];
+}
 
 function arg(name: string, fallback?: string): string | undefined {
   const idx = process.argv.indexOf(`--${name}`);
@@ -136,7 +179,14 @@ async function loadDemoAssets(work: string, opts: { withVariants: boolean }): Pr
       durationMs,
     };
     set.byId.set(loaded.id, loaded);
-    catalog.push({ id: loaded.id, name: loaded.name, kind: loaded.kind, category: loaded.category, durationMs });
+    catalog.push({
+      id: loaded.id,
+      name: loaded.name,
+      kind: loaded.kind,
+      category: loaded.category,
+      durationMs,
+      tags: demoTagsFor(loaded.name, loaded.kind, loaded.category),
+    });
     if (spec.kind === "theme_intro") set.intro = loaded;
     else if (spec.kind === "theme_outro") set.outro = loaded;
     else if (spec.kind === "bed") set.bed = set.bed ?? loaded;
@@ -602,6 +652,38 @@ async function runVariety(): Promise<void> {
       "plan replays deterministically from identical inputs"
     );
 
+    // 6. Metadata FIT (Step 5c): each fixture's chosen bed matches its emotional
+    //    profile, and the hard rules hold — injury-news must not ride an upbeat
+    //    bed; the blowout must not ride a somber one. Report fit scores.
+    const bedOf = (r: (typeof results)[number]) => {
+      const bedCue = r.plan.cues.find((c) => c.type === "bed_change");
+      if (!bedCue?.assetId) return { name: null as string | null, family: null as string | null, fit: null as number | null };
+      const asset = assets.catalog.find((a) => a.id === bedCue.assetId)!;
+      const m = parseAssetMetadata({ name: asset.name, kind: "bed", category: null, tags: asset.tags ?? [] });
+      return { name: bedCue.assetName, family: m.energyFamily, fit: bedCue.fit ?? null };
+    };
+    const beds = Object.fromEntries(results.map((r) => [r.name, bedOf(r)]));
+    const fitReport = results.map((r) => {
+      const withFit = r.plan.cues.filter((c) => typeof c.fit === "number");
+      const meanFit = withFit.length ? withFit.reduce((a, c) => a + (c.fit || 0), 0) / withFit.length : 0;
+      return {
+        fixture: r.name,
+        bed: beds[r.name],
+        placedCues: withFit.length,
+        meanFit: Number(meanFit.toFixed(2)),
+        stingerFits: r.plan.cues.filter((c) => c.type === "stinger").map((c) => ({ name: c.assetName, fit: c.fit })),
+      };
+    });
+    console.log("\n=== Fit report (Step 5) ===");
+    for (const f of fitReport) {
+      console.log(`  ${f.fixture}: bed '${f.bed.name}' [${f.bed.family}] fit ${f.bed.fit} | ${f.placedCues} placed cues, mean fit ${f.meanFit}`);
+    }
+    assertOk(beds["injury-news"].family !== "upbeat", `injury-news bed is not upbeat (got ${beds["injury-news"].family})`);
+    assertOk(beds["blowout"].family !== "dark/tense", `blowout bed is not somber (got ${beds["blowout"].family})`);
+    const distinctFamilies = new Set(Object.values(beds).map((b) => b.family).filter(Boolean));
+    assertOk(distinctFamilies.size >= 2, `bed energy families vary across fixtures (${[...distinctFamilies].join(", ")})`);
+    assertOk(fitReport.every((f) => f.placedCues === 0 || f.meanFit > 0), "placed cues carry musical fit scores");
+
     const report = {
       generatedBy: "produceLocalSoundDesignDemo.ts --variety",
       style,
@@ -620,6 +702,7 @@ async function runVariety(): Promise<void> {
         }))
       ),
       totalCooldownSuppressions: totalSuppressions,
+      fitReport,
       assertionFailures: failures,
     };
     fs.writeFileSync(path.join(outDir, "variety-report.json"), JSON.stringify(report, null, 2));

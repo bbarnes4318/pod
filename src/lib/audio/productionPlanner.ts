@@ -27,6 +27,16 @@ import {
   ProductionPlan,
   SOUND_DESIGN_PLANNER_ENV,
 } from "./productionPlan";
+import {
+  AssetMetadata,
+  DominantTone,
+  MomentTarget,
+  parseAssetMetadata,
+  scoreFit,
+  isVocalBed,
+  themeGenreOk,
+  targetForTone,
+} from "./assetMetadata";
 
 // ---------------------------------------------------------------------------
 // Feature flag
@@ -66,6 +76,10 @@ export interface PlannerAsset {
   kind: string; // "theme_intro" | "theme_outro" | "stinger" | "bed" | "sfx"
   category: string | null;
   durationMs?: number;
+  /** Structured Epidemic metadata (bpm:/energy:/mood words) + descriptive
+   *  title. Drives musical-fit selection; absent → the planner degrades to the
+   *  original kind + cooldown behavior for that asset. */
+  tags?: string[];
 }
 
 /** Cross-episode usage history, most recent episode first. */
@@ -407,8 +421,91 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
   const bumpUse = (assetId: string) =>
     usesThisEpisode.set(assetId, (usesThisEpisode.get(assetId) ?? 0) + 1);
 
+  // --- Metadata-aware selection setup (musical fit) --------------------------
+  const metaCache = new Map<string, AssetMetadata>();
+  const meta = (a: PlannerAsset): AssetMetadata => {
+    let m = metaCache.get(a.id);
+    if (!m) {
+      m = parseAssetMetadata({ name: a.name, kind: a.kind, category: a.category, tags: a.tags ?? [] });
+      metaCache.set(a.id, m);
+    }
+    return m;
+  };
+
+  // Step 2 — per-segment + episode emotional target from tone + smoothed arc.
+  const segLineIdx = new Map<number, number[]>();
+  lines.forEach((l, i) => {
+    const arr = segLineIdx.get(l.segmentIndex) ?? [];
+    arr.push(i);
+    segLineIdx.set(l.segmentIndex, arr);
+  });
+  const TONE_TO_DOMINANT: Record<string, DominantTone> = {
+    heated: "heated", excited: "hype", incredulous: "heated", dismissive: "heated",
+    amused: "amused", sarcastic: "amused",
+    analytical: "analytical", measured: "analytical", somber: "somber",
+  };
+  const dominantTone = (positions: number[]): DominantTone => {
+    const counts: Record<string, number> = {};
+    for (const i of positions) {
+      const d = TONE_TO_DOMINANT[(lines[i].tone || "").toLowerCase()] ?? "analytical";
+      counts[d] = (counts[d] || 0) + 1;
+    }
+    let best: DominantTone = "analytical";
+    let bestN = -1;
+    for (const k of Object.keys(counts) as DominantTone[]) if (counts[k] > bestN) { best = k; bestN = counts[k]; }
+    return best;
+  };
+  const intensityFromEnergy = (positions: number[]): number => {
+    if (positions.length === 0) return 5;
+    const mean = positions.reduce((a, i) => a + (arc.smoothed[i] ?? 0), 0) / positions.length;
+    return Math.max(1, Math.min(10, Math.round(2 + mean * 4)));
+  };
+  const segmentTarget = (segmentIndex: number): MomentTarget => {
+    const pos = segLineIdx.get(segmentIndex) ?? [];
+    return targetForTone(dominantTone(pos), intensityFromEnergy(pos));
+  };
+  const allPositions = lines.map((_, i) => i);
+  const episodeTarget: MomentTarget = targetForTone(
+    dominantTone(allPositions),
+    intensityFromEnergy(allPositions)
+  );
+
+  // Freshness ∈ [0,1] from cooldown recency — the fit's cooldown-penalty term.
+  const freshness = (assetId: string): number => {
+    const ago = episodesAgo(assetId);
+    return ago === Infinity ? 1 : Math.max(0, Math.min(1, 0.2 + 0.1 * Math.min(ago, 8)));
+  };
+
+  // Pick the best-scoring asset by musical fit. Among candidates within a small
+  // epsilon of the top fit (e.g. a tag-less library where everything ties), the
+  // seed varies the pick so cross-episode/boundary variety is preserved.
+  const pickByFit = (
+    pool: PlannerAsset[],
+    target: MomentTarget,
+    slot: "bed" | "stinger" | "reaction" | "theme"
+  ): { asset: PlannerAsset; fit: number } | null => {
+    if (pool.length === 0) return null;
+    const scored = pool.map((a) => ({ a, bd: scoreFit(meta(a), target, freshness(a.id), slot) }));
+    const maxFit = Math.max(...scored.map((s) => s.bd.fit));
+    const band = scored.filter((s) => s.bd.fit >= maxFit - 0.06);
+    const picked =
+      weightedPick(rand, band.map((s) => ({ item: s, weight: 0.2 + s.bd.freshness }))) ?? band[0];
+    return { asset: picked.a, fit: picked.bd.fit };
+  };
+  const fitLabel = (m: AssetMetadata): string => {
+    const bits: string[] = [];
+    if (m.energyFamily) bits.push(m.energyFamily);
+    if (m.bpm != null) bits.push(`${m.bpm}bpm`);
+    const mood = m.moodWords.slice(0, 2).join("/");
+    if (mood) bits.push(mood);
+    return bits.join(", ");
+  };
+
   const stingers = input.assets.filter((a) => a.kind === "stinger");
-  const beds = input.assets.filter((a) => a.kind === "bed");
+  const allBeds = input.assets.filter((a) => a.kind === "bed");
+  // HARD RULE: a bed with vocal presence fights the hosts — excluded entirely.
+  const excludedVocalBeds = allBeds.filter((b) => isVocalBed(meta(b)));
+  const beds = allBeds.filter((b) => !isVocalBed(meta(b)));
   const sfxByCategory = new Map<string, PlannerAsset[]>();
   for (const a of input.assets) {
     if (a.kind !== "sfx" || !a.category) continue;
@@ -421,49 +518,67 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
   const lastLineIndex = lines.length > 0 ? lines[lines.length - 1].lineIndex : 0;
   const hasColdOpen = lines.length > 0 && lines[0].segmentType === "cold_open";
 
-  // --- Intro / outro themes (config-driven; the plan records the choice) ---
+  // --- Intro / outro: genre-gated selection (Step 3 hard rule) --------------
+  // Bookends must read broadcast / arena / triumphant-orchestral, never
+  // cartoon / comedic / retro-8bit / horror / children. The config-pinned theme
+  // is honored ONLY if it passes the genre gate; otherwise the best genre-clean
+  // theme is chosen by fit. If none qualifies, fall back to the env clip or skip
+  // (never fall back to a cartoon).
+  const excludedThemes: Array<{ kind: string; name: string; reason: string }> = [];
+  const selectTheme = (
+    kind: "theme_intro" | "theme_outro",
+    configId: string | null | undefined,
+    envFallback: boolean
+  ): { asset: PlannerAsset | null; env: boolean; label: string } => {
+    const themes = input.assets.filter((a) => a.kind === kind);
+    const ok: PlannerAsset[] = [];
+    for (const a of themes) {
+      const g = themeGenreOk(meta(a));
+      if (g.ok) ok.push(a);
+      else excludedThemes.push({ kind, name: a.name, reason: g.reason });
+    }
+    if (ok.length === 0) return { asset: null, env: envFallback, label: "no genre-appropriate theme" };
+    const pinned = configId ? ok.find((a) => a.id === configId) : null;
+    const chosen = pinned ?? pickByFit(ok, episodeTarget, "theme")?.asset ?? ok[0];
+    return { asset: chosen, env: false, label: themeGenreOk(meta(chosen)).reason };
+  };
+
   if (input.includeIntro) {
-    const asset = input.introAssetId ? input.assets.find((a) => a.id === input.introAssetId) : null;
-    if (asset || input.envIntroFallback) {
+    const sel = selectTheme("theme_intro", input.introAssetId, !!input.envIntroFallback);
+    if (sel.asset || sel.env) {
       cues.push({
         type: "intro",
         lineIndex: firstLineIndex,
-        assetId: asset?.id ?? null,
-        assetName: asset?.name ?? "env intro clip",
+        assetId: sel.asset?.id ?? null,
+        assetName: sel.asset?.name ?? "env intro clip",
         category: null,
         timing: "before",
         gainDb: -2,
         fadeInMs: 20,
         fadeOutMs: 900,
-        reason: hasColdOpen ? "show open (after cold open script beat)" : "show open",
+        reason:
+          (hasColdOpen ? "show open (after cold open) " : "show open ") +
+          (sel.asset ? `→ ${sel.label} theme '${sel.asset.name}'` : "→ env intro clip"),
       });
     }
   }
   if (input.includeOutro) {
-    const asset = input.outroAssetId ? input.assets.find((a) => a.id === input.outroAssetId) : null;
-    if (asset || input.envOutroFallback) {
+    const sel = selectTheme("theme_outro", input.outroAssetId, !!input.envOutroFallback);
+    if (sel.asset || sel.env) {
       cues.push({
         type: "outro",
         lineIndex: lastLineIndex,
-        assetId: asset?.id ?? null,
-        assetName: asset?.name ?? "env outro clip",
+        assetId: sel.asset?.id ?? null,
+        assetName: sel.asset?.name ?? "env outro clip",
         category: null,
         timing: "after",
         gainDb: -2,
         fadeInMs: 900,
         fadeOutMs: 400,
-        reason: "show close",
+        reason: sel.asset ? `show close → ${sel.label} theme '${sel.asset.name}'` : "show close → env outro clip",
       });
     }
   }
-
-  // Least-recently-used freshness weight: never-heard assets outrank ones
-  // heard N episodes ago, which outrank anything just past the window. This
-  // is what makes cooldown SUBSTITUTE (rotate the pool) instead of starve.
-  const lruWeight = (assetId: string): number => {
-    const ago = episodesAgo(assetId);
-    return ago === Infinity ? 1.5 : 0.4 + 0.12 * Math.min(ago, 8);
-  };
 
   // --- Music bed (full style): cooldown-aware choice, or a deliberate no ---
   if (input.style === "full" && lines.length > 0) {
@@ -497,16 +612,13 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
         // music wallpaper under a sober conversation is exactly what we avoid.
         { item: SILENCE, weight: lowEnergyEpisode ? 0.55 : 0.1 },
       ]);
-      const picked =
-        wantsBed === "bed"
-          ? weightedPick(
-              rand,
-              freshBeds.map((b) => ({ item: b, weight: lruWeight(b.id) }))
-            )
-          : SILENCE;
-      if (picked && picked !== SILENCE) {
-        const bed = picked as PlannerAsset;
+      // WHICH bed: best MUSICAL FIT to the episode's emotional target over the
+      // fresh pool (BPM won't fight pacing; a somber episode won't ride upbeat).
+      const bedPick = wantsBed === "bed" ? pickByFit(freshBeds, episodeTarget, "bed") : null;
+      if (bedPick) {
+        const bed = bedPick.asset;
         bumpUse(bed.id);
+        const m = meta(bed);
         cues.push({
           type: "bed_change",
           lineIndex: firstLineIndex,
@@ -517,11 +629,14 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
           gainDb: 0, // bed level is governed by the duck mix, not per-clip gain
           fadeInMs: 1500,
           fadeOutMs: 2500,
-          reason: lowEnergyEpisode
-            ? `bed '${bed.name}' kept despite a measured episode`
-            : `bed '${bed.name}' under the episode (arc mean ${arc.mean.toFixed(2)})`,
+          fit: Number(bedPick.fit.toFixed(2)),
+          reason:
+            `${episodeTarget.tone} episode (intensity ${episodeTarget.intensity}) → ` +
+            `${episodeTarget.energyFamily} bed '${bed.name}'` +
+            (fitLabel(m) ? ` (${fitLabel(m)})` : "") +
+            `, fit ${bedPick.fit.toFixed(2)}`,
         });
-      } else if (picked === SILENCE) {
+      } else if (wantsBed === SILENCE) {
         cues.push({
           type: "silence",
           lineIndex: firstLineIndex,
@@ -602,17 +717,15 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       { item: "stinger", weight: slotWeight },
       { item: SILENCE, weight: silenceWeight },
     ]);
-    const picked =
-      wantsStinger === "stinger"
-        ? weightedPick(
-            rand,
-            fresh.map((s) => ({ item: s, weight: lruWeight(s.id) }))
-          )
-        : SILENCE;
-    if (picked && picked !== SILENCE) {
-      const asset = picked as PlannerAsset;
+    // WHICH stinger: best MUSICAL FIT to the segment we're transitioning INTO
+    // (urgent/driving into a heated segment, dark/tense into a somber one).
+    const target = segmentTarget(line.segmentIndex);
+    const stingerPick = wantsStinger === "stinger" ? pickByFit(fresh, target, "stinger") : null;
+    if (stingerPick) {
+      const asset = stingerPick.asset;
       bumpUse(asset.id);
       prevBoundaryGotStinger = true;
+      const m = meta(asset);
       cues.push({
         type: "stinger",
         lineIndex: line.lineIndex,
@@ -623,9 +736,12 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
         gainDb: -8,
         fadeInMs: 15,
         fadeOutMs: 90,
-        reason: `${line.breakKind} turn into ${
-          segEnergy >= 1.1 ? "a high-energy" : segEnergy < 0.9 ? "a measured" : "the next"
-        } segment`,
+        fit: Number(stingerPick.fit.toFixed(2)),
+        reason:
+          `${line.breakKind} turn into ${target.tone}/${target.energyFamily} ` +
+          `(intensity ${target.intensity}) → '${asset.name}'` +
+          (fitLabel(m) ? ` (${fitLabel(m)})` : "") +
+          `, fit ${stingerPick.fit.toFixed(2)}`,
       });
     } else {
       prevBoundaryGotStinger = false;
@@ -666,7 +782,14 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       // soft cooldown keeps recently-used reactions possible (pools can be
       // one-deep) but heavily down-weighted; only HARD exclusions
       // (stinger/bed) count as cooldownSuppressions.
-      const assetCandidates: Array<Weighted<{ asset: PlannerAsset; category: string }>> = [];
+      // Target for THIS beat: the line's own tone + local intensity. Fit biases
+      // WHICH sfx within the beat's categories (a punchline gets a bright hit,
+      // never a swelling riser; a heated peak gets an impact/crowd).
+      const reactTarget = targetForTone(
+        TONE_TO_DOMINANT[(line.tone || "").toLowerCase()] ?? "heated",
+        intensityFromEnergy([i])
+      );
+      const assetCandidates: Array<Weighted<{ asset: PlannerAsset; category: string; fit: number }>> = [];
       let fireWeight = 0; // pool-size independent: sums CATEGORY weights, not assets
       for (const cat of beat.categories) {
         if (cat.hypeOnly && !density.allowHype) continue;
@@ -679,10 +802,11 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
         for (const asset of pool) {
           const ago = episodesAgo(asset.id);
           const coolPenalty = ago <= config.sfxCooldownEpisodes ? 0.25 : 1;
+          const bd = scoreFit(meta(asset), reactTarget, freshness(asset.id), "reaction");
           assetCandidates.push({
-            item: { asset, category: cat.category },
+            item: { asset, category: cat.category, fit: bd.fit },
             weight:
-              cat.weight * coolPenalty * (1 / (1 + (usesThisEpisode.get(asset.id) ?? 0))),
+              cat.weight * coolPenalty * (0.4 + bd.fit) * (1 / (1 + (usesThisEpisode.get(asset.id) ?? 0))),
           });
         }
       }
@@ -705,7 +829,7 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       ]);
       const picked = wantsReaction === "reaction" ? weightedPick(rand, assetCandidates) : SILENCE;
       if (picked && picked !== SILENCE) {
-        const { asset, category } = picked as { asset: PlannerAsset; category: string };
+        const { asset, category, fit } = picked as { asset: PlannerAsset; category: string; fit: number };
         bumpUse(asset.id);
         lastReactionEndMs = estEnd[i];
         cues.push({
@@ -718,10 +842,12 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
           gainDb: density.gainDb,
           fadeInMs: 25,
           fadeOutMs: 150,
+          fit: Number(fit.toFixed(2)),
           reason:
             beat.reason +
-            (isPeak ? " at an arc peak" : "") +
-            (followedByInterruption ? ", rides into an interruption" : ""),
+            (isPeak ? ", arc peak" : "") +
+            (followedByInterruption ? ", into an interruption" : "") +
+            ` → ${category} '${asset.name}', fit ${fit.toFixed(2)}`,
         });
       } else if (beat.score >= 1.6) {
         // A strong beat deliberately held silent is worth documenting.
@@ -799,6 +925,8 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
       silenceCues: cues.filter((c) => c.type === "silence").length,
       distinctAssetsUsed: assetIdsUsed.size,
       cooldownSuppressions,
+      vocalBedsExcluded: excludedVocalBeds.length,
+      themesExcluded: excludedThemes.length,
     },
   };
 }
