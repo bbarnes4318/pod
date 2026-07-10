@@ -525,13 +525,14 @@ A FACTUAL CLAIM is a specific, checkable assertion about the world: a stat, scor
 
 Rules:
 1. ONLY evaluate lines where isFactualClaim is true. For every one of those, verify it against the provided facts and stats and identify unsupported claims, overstatements, missing context, or misleading wording of real evidence.
-2. Every line where isFactualClaim is false MUST be returned with status "supported" — never flag it. This includes rhetorical questions, exclamations, reactions, concessions, hot takes, predictions, jokes, the show intro/outro, interruptions (isInterruption true), and incomplete or cut-off sentences (isFragment true, or text ending in a dash "—"). Opinions and fragments are not verifiable and that is fine.
+2. Non-factual lines (isFactualClaim false) are supported by default — never flag them. This includes rhetorical questions, exclamations, reactions, concessions, hot takes, predictions, jokes, the show intro/outro, interruptions (isInterruption true), and incomplete or cut-off sentences (isFragment true, or text ending in a dash "—"). Opinions and fragments are not verifiable and that is fine.
 3. Fabricated sourcing ("sources say", "reportedly", "rumored", "insiders", "unnamed source") is prohibited on ANY line unless the provided evidence itself contains that reporting.
 4. You are NOT allowed to verify using outside knowledge or make up facts. You cannot create new evidence IDs.
 5. MANDATORY RATIONALE: for every line you mark "unsupported" or "needs_review", the "reason" field MUST be a specific, non-empty explanation that quotes the exact claim and says why the evidence does not support it. A verdict with an empty or missing reason is invalid and will be discarded — do not emit one.
-6. Return a strict JSON response.`;
+6. OUTPUT ONLY PROBLEMS: return a lineResults entry ONLY for lines you mark "unsupported" or "needs_review". Do NOT emit an entry for any "supported" line — omit them entirely. A line absent from lineResults is treated as supported. This keeps the response small; emitting all lines can truncate it and fail the whole review.
+7. Return a strict JSON response.`;
 
-      const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true; return every isFactualClaim:false line as "supported":
+      const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true. Return a lineResults entry ONLY for lines you flag as unsupported or needs_review — omit every supported line:
 ${JSON.stringify(reviewLines)}
 
 Allowed evidence packet:
@@ -545,7 +546,7 @@ ${JSON.stringify(RUMOR_KEYWORDS)}
 
 Reminder: predictive hedging ("expected to", "likely to", "could be", "might be") is NORMAL debate speech on opinion/prediction lines — never a violation by itself.
 
-Run the fact-checking comparison and output the JSON structure containing status, summary, and lineResults.`;
+Run the fact-checking comparison and output the JSON structure containing status, summary, and lineResults (flagged lines only).`;
 
       const jsonSchema = {
         type: "object",

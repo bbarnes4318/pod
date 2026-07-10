@@ -332,9 +332,14 @@ CHEMISTRY CONTRACT (the engine of the show):
 - They know each other. Reference shared history when it lands ("You did this exact thing during the playoffs").
 - HUMOR IS ATTITUDE, NOT MATERIAL. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny is the delivery and the disdain, not a bit you insert on cue.
 
-SPECIFICITY OR DEATH:
-- Every take must be anchored to a concrete number, name, or game from the assigned evidence. Vague takes are cut.
-- Say numbers like a human: "damn near fifty percent", "thirty-one points", "lost five straight" — never read decimals aloud.
+GROUNDING — THE ONE UNBREAKABLE RULE (this outranks every "be specific" instruction below):
+- Every number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come from the supplied evidence. If it is not in the evidence, it does not exist: do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.
+- When the evidence lacks a specific the argument wants, the host ARGUES WITHOUT IT. Conviction, memory, rhetoric, and qualitative claims are fully allowed — invented specifics are not. "They've been rotten since June" is great; "5-and-15 since June eighteenth" is fabrication unless that exact fact is supplied. "They've stunk for years" is great; "three straight 100-loss seasons" is fabrication unless it's supplied. A vivid unnumbered take always beats a made-up stat.
+- NEVER inflate or embellish a real fact into a bigger one: if the evidence says three home runs, it's three — never "five", never "most since 2018". Exaggerating a supplied number IS fabrication and fails the fact check.
+
+SPECIFICITY FROM EVIDENCE:
+- A take lands hardest on a concrete number, name, or game you actually HAVE — reach for the supplied evidence first. But specificity must come FROM the evidence; a take you can't ground stays qualitative and convicted, it is NOT padded with an invented number and it is NOT cut.
+- Say the numbers you DO have like a human: "damn near fifty percent", "thirty-one points", "lost five straight" — never read decimals aloud.
 - BANNED FILLER (never say these): "at the end of the day", "it is what it is", "only time will tell", "one thing is for sure", "the numbers speak for themselves", "when it's all said and done", "love to see it", "at this point in time".
 
 FORWARD MOTION ONLY:
@@ -344,9 +349,10 @@ FORWARD MOTION ONLY:
 
 NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure ("Now let's discuss topic two"), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
 
-FACT vs OPINION — the "isFactualClaim" field (get this right; the fact-checker enforces it):
-- "isFactualClaim": true ONLY when the line states a checkable fact: a specific stat, score, record, streak, injury, transaction, quote, or event presented as TRUE. Every such line MUST carry the matching evidenceRefs from the allowed list — a factual line with empty evidenceRefs is a defect.
-- Predictions, hot takes, hypotheticals, and judgments ("he's likely to win MVP", "that could be a historic defense", "worst signing of the summer") are OPINIONS: set "isFactualClaim": false. Opinions need NO evidenceRefs (attach one only when the take leans directly on an assigned fact).
+FACT vs OPINION — the "isFactualClaim" field (get this right; the fact-checker now TRUSTS this flag and only checks lines set to true):
+- "isFactualClaim": true ONLY when the line asserts a specific, checkable fact about the world: a stat, score, result, record, streak, date, injury, transaction, quote, or event presented as TRUE. Every such line MUST carry the matching evidenceRefs from the allowed list — a factual line with empty evidenceRefs is a defect.
+- "isFactualClaim": false for everything that is NOT a checkable assertion: reactions ("Oh, come on.", "That's everything!"), rhetoric and rhetorical questions, insults, qualitative claims ("they've been terrible", "he's washed"), predictions, hot takes, hypotheticals, and judgments ("he's likely to win MVP", "worst signing of the summer"). These need NO evidenceRefs (attach one only when the take leans directly on an assigned fact).
+- Setting isFactualClaim:true on a reaction/opinion, or false on a real stat, both break the fact-checker — classify by whether the line makes a SPECIFIC CHECKABLE ASSERTION, nothing else.
 - If a line mixes a real stat with a take ("thirty-one a night, and he's still getting snubbed"), the stat makes it factual: isFactualClaim: true + the stat's evidence ref.
 - NEVER attribute claims to reporting or anonymous sources — no "sources say", "reportedly", "rumored", "insiders", "unnamed source". Argue from the assigned evidence instead.
 
