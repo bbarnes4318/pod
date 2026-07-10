@@ -136,15 +136,18 @@ export async function rewriteLineForGrounding(
   const attrs = ctx.unsupportedAttributions
     .map((n) => `- "${n}" is presented as saying/doing something specific, but is NOT in the evidence (fabricated attribution — remove or make it a general reference)`)
     .join("\n");
+  const semantic = ctx.semanticReason
+    ? `\nSEMANTIC REVIEWER FLAG (fix exactly this): ${ctx.semanticReason}\n- If a real figure is attached to the WRONG subject/team, move it to the subject the evidence attributes it to, or drop it.\n- If the line is MORE precise than the evidence (e.g. "six innings, seven strikeouts" when the evidence only says "a shutout start"), reduce it to exactly what the evidence supports, or go qualitative.`
+    : "";
 
-  const prompt = `One line of the podcast script states specifics that are NOT in the evidence. Rewrite JUST this one line so every number and every named-person attribution is supported by the evidence below — OR restate the point qualitatively (conviction, memory, rhetoric — no invented figure or quote). Keep the SAME speaker, tone, energy, and conversational feel (fragments, interruptions, attitude, an ending "—" if it was an interruption). Introduce NO new fabrications.
+  const prompt = `One line of the podcast script states specifics that are NOT supported by the evidence. Rewrite JUST this one line so every number and every named-person attribution is supported by the evidence below — OR restate the point qualitatively (conviction, memory, rhetoric — no invented figure or quote). Keep the SAME speaker, tone, energy, and conversational feel (fragments, interruptions, attitude, an ending "—" if it was an interruption). Introduce NO new fabrications.
 
 SPEAKER: ${ctx.line.speakerName}
 CURRENT LINE: ${JSON.stringify(ctx.line.text)}
 
 VIOLATIONS:
 ${figs || "(no figure violations)"}
-${attrs}
+${attrs}${semantic}
 
 EVIDENCE (the only facts you may state as true):
 ${ctx.evidenceText || "(no specific evidence for this line — go qualitative: assert no figure and no named-person quote/action)"}
@@ -322,6 +325,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     `- EVERY number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come verbatim from the supplied evidence (your beats' assigned facts / the TOPIC EVIDENCE above). If it is not in the evidence, it does not exist — do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.`,
     `- If the evidence lacks a specific the argument wants, the host ARGUES WITHOUT IT. Conviction, memory, rhetoric, and qualitative claims are fully allowed; invented specifics are not. Say "they've been rotten since June" — NOT "5-and-15 since June eighteenth" unless that exact figure is supplied. Say "they've stunk for years" — NOT "three straight 100-loss seasons" unless it's supplied. A vivid, unnumbered take beats a fabricated stat every single time.`,
     `- Do NOT embellish a real fact into a bigger one: if your evidence says three home runs, the host says three — never "five", never "most since 2018". Matching the evidence exactly is mandatory; exaggerating a supplied number IS fabrication and fails the fact check.`,
+    `- BIND EVERY FIGURE TO ITS SUBJECT: a stat belongs to whichever team/player the evidence attributes it to — never transplant it onto another. If the evidence says the ORIOLES are 39-48 and nine under .500, a host must NOT say the YANKEES are 39-48 — that's a fabrication even though the number is real. Attach each figure to the exact subject the evidence names.`,
     `- NAMED-PERSON ATTRIBUTION IS RADIOACTIVE (legal exposure): never put a quote, statement, thought, or specific action on a real named person unless the evidence contains it — no invented "Boone pulled him", "Michael Kay called it a disaster", "the GM promised a move". A GENERAL reference to a public figure is fine ("Boone's bullpen management", "the skipper's on the hot seat"); a fabricated quote or specific action is not, and fails the fact check.`,
     `- The "Unsafe claims" list in your system prompt is RADIOACTIVE: never state any of those claims or numbers in any form — reworded, partial, or as a host's memory. The fact-checker knows that list and fails on contact.`,
     ``,

@@ -12,6 +12,7 @@ import {
   isFragmentLine,
   mostSevereStatus,
   processSemanticLineResults,
+  runSemanticReview,
 } from "./semanticReview";
 import { verifyLineAgainstEvidence } from "./factNumbers";
 
@@ -564,91 +565,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
         isFragment: ol.isFragment === true,
       }));
 
-      const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product, not violations. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records — not to demand citations for opinions.
-
-Each line is PRE-CLASSIFIED with an "isFactualClaim" flag plus "tone", "isInterruption", and "isFragment" context. Honor them.
-
-A FACTUAL CLAIM is a specific, checkable assertion about the world: a stat, score, record, date, result, standing, streak, transaction, injury, or an attribution/quote presented as true. Everything else is not a claim.
-
-Rules:
-1. ONLY evaluate lines where isFactualClaim is true. For every one of those, verify it against the provided facts and stats and identify unsupported claims, overstatements, missing context, or misleading wording of real evidence.
-2. Non-factual lines (isFactualClaim false) are supported by default — never flag them. This includes rhetorical questions, exclamations, reactions, concessions, hot takes, predictions, jokes, the show intro/outro, interruptions (isInterruption true), and incomplete or cut-off sentences (isFragment true, or text ending in a dash "—"). Opinions and fragments are not verifiable and that is fine.
-3. Fabricated sourcing ("sources say", "reportedly", "rumored", "insiders", "unnamed source") is prohibited on ANY line unless the provided evidence itself contains that reporting.
-4. You are NOT allowed to verify using outside knowledge or make up facts. You cannot create new evidence IDs.
-5. MANDATORY RATIONALE: for every line you mark "unsupported" or "needs_review", the "reason" field MUST be a specific, non-empty explanation that quotes the exact claim and says why the evidence does not support it. A verdict with an empty or missing reason is invalid and will be discarded — do not emit one.
-6. OUTPUT ONLY PROBLEMS: return a lineResults entry ONLY for lines you mark "unsupported" or "needs_review". Do NOT emit an entry for any "supported" line — omit them entirely. A line absent from lineResults is treated as supported. This keeps the response small; emitting all lines can truncate it and fail the whole review.
-7. Return a strict JSON response.`;
-
-      const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true. Return a lineResults entry ONLY for lines you flag as unsupported or needs_review — omit every supported line:
-${JSON.stringify(reviewLines)}
-
-Allowed evidence packet:
-${JSON.stringify(evidencePanelItems)}
-
-Unsafe claims (strictly disallowed):
-${JSON.stringify(unsafeClaims)}
-
-Prohibited fabricated-sourcing phrases (banned unless the evidence packet itself contains that reporting):
-${JSON.stringify(RUMOR_KEYWORDS)}
-
-Reminder: predictive hedging ("expected to", "likely to", "could be", "might be") is NORMAL debate speech on opinion/prediction lines — never a violation by itself.
-
-Run the fact-checking comparison and output the JSON structure containing status, summary, and lineResults (flagged lines only).`;
-
-      const jsonSchema = {
-        type: "object",
-        properties: {
-          status: { type: "string", enum: ["passed", "failed", "needs_review"] },
-          summary: { type: "string" },
-          lineResults: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                segmentIndex: { type: "integer" },
-                lineIndex: { type: "integer" },
-                speakerName: { type: "string" },
-                claimText: { type: "string" },
-                status: { type: "string", enum: ["supported", "unsupported", "needs_review"] },
-                reason: { type: "string" },
-                evidenceRefs: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      type: { type: "string" },
-                      id: { type: "string" },
-                    },
-                    required: ["type", "id"],
-                  },
-                },
-                suggestedFix: { type: "string" },
-              },
-              required: ["segmentIndex", "lineIndex", "speakerName", "claimText", "status", "reason", "evidenceRefs"],
-            },
-          },
-          unsupportedClaims: { type: "array", items: { type: "string" } },
-          misleadingClaims: { type: "array", items: { type: "string" } },
-          unsafeClaimsUsed: { type: "array", items: { type: "string" } },
-          missingEvidence: { type: "array", items: { type: "string" } },
-          confidence: { type: "number" },
-        },
-        required: [
-          "status",
-          "summary",
-          "lineResults",
-          "unsupportedClaims",
-          "misleadingClaims",
-          "unsafeClaimsUsed",
-          "missingEvidence",
-          "confidence",
-        ],
-      };
-
-      const resultObj = await provider.generateStructuredOutput<any>({
-        prompt,
-        systemPrompt,
-        jsonSchema,
+      // Reuse the shared reviewer (same prompt/schema the self-verify loop uses).
+      const resultObj = await runSemanticReview(provider, {
+        reviewLines,
+        evidencePanelItems,
+        unsafeClaims,
+        rumorKeywords: RUMOR_KEYWORDS,
       });
 
       rawLlmOutput = resultObj;

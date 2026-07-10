@@ -10,7 +10,7 @@
 // It drives processSemanticLineResults (the pure, provider-agnostic core) with a
 // SIMULATED reviewer response, so it's deterministic and needs no LLM/DB.
 
-import { processSemanticLineResults } from "../lib/services/semanticReview";
+import { processSemanticLineResults, reviewFactualLinesForRewrite } from "../lib/services/semanticReview";
 
 let passed = 0;
 let failed = 0;
@@ -111,8 +111,47 @@ function main() {
     assert(out.counts.invalidEvidenceRef === 1, "hallucinated evidence ref must be flagged");
   });
 
-  console.log(`\n${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
+  console.log("\nReviewer reuse (reviewFactualLinesForRewrite):");
+
+  // A stub LLM provider that returns a fixed structured review — proves the
+  // shared reviewer is invoked and its output scoped to factual + rationale'd.
+  const stubProvider: any = {
+    name: "stub",
+    async generateStructuredOutput() {
+      return {
+        status: "needs_review",
+        summary: "x",
+        lineResults: [
+          { lineIndex: 0, status: "needs_review", reason: "39-48 is the Orioles' record, not the Yankees'", evidenceRefs: [] }, // factual -> kept
+          { lineIndex: 1, status: "unsupported", reason: "", evidenceRefs: [] }, // no rationale -> dropped
+          { lineIndex: 2, status: "unsupported", reason: "banter", evidenceRefs: [] }, // non-factual -> dropped
+          { lineIndex: 3, status: "supported", reason: "", evidenceRefs: [] }, // supported -> ignored
+        ],
+        unsupportedClaims: [], misleadingClaims: [], unsafeClaimsUsed: [], missingEvidence: [], confidence: 1,
+      };
+    },
+  };
+
+  (async () => {
+    const flagged = await reviewFactualLinesForRewrite(stubProvider, {
+      reviewLines: [
+        { lineIndex: 0, speakerName: "Louie", text: "Yankees are 39-48.", isFactualClaim: true },
+        { lineIndex: 1, speakerName: "Mickey", text: "Five homers.", isFactualClaim: true },
+        { lineIndex: 2, speakerName: "Louie", text: "Oh, come on.", isFactualClaim: false },
+        { lineIndex: 3, speakerName: "Mickey", text: "They're 48-38.", isFactualClaim: true },
+      ],
+      evidencePanelItems: [{ detailText: "Orioles are 39-48. Yankees are 48-38." }],
+      unsafeClaims: [],
+      rumorKeywords: [],
+    });
+    check("reviewer reuse: keeps only factual + rationale'd flags (subject-mismatch)", () => {
+      assert(flagged.length === 1, `expected 1 flagged, got ${flagged.length}: ${JSON.stringify(flagged)}`);
+      assert(flagged[0].lineIndex === 0 && /orioles/i.test(flagged[0].reason), "the subject-mismatch line survives with its rationale");
+    });
+
+    console.log(`\n${passed} passed, ${failed} failed`);
+    if (failed > 0) process.exit(1);
+  })();
 }
 
 main();

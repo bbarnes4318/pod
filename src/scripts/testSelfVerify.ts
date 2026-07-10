@@ -74,6 +74,48 @@ async function main() {
     assert(fig && fig.attempts === 2 && !fig.resolved, `line 0 should be unresolved after 2 attempts: ${JSON.stringify(fig)}`);
   });
 
+  await check("semantic pass: flags + rewrites a subject-mismatch line (right figure, wrong team)", async () => {
+    const segs = [
+      { lines: [{ lineIndex: 0, speakerName: "Louie", isFactualClaim: true, text: "The Yankees are 39-48, nine under.", evidenceRefs: [{ type: "game", id: "f1" }] }] },
+    ];
+    const evByRef = new Map<string, string>([["f1", "The Orioles are 39-48, nine games under .500. The Yankees are 48-38."]]);
+    const full = "The Orioles are 39-48, nine under. The Yankees are 48-38, second in the East.";
+    const semanticReview = async (lines: any[]) => {
+      const l = lines.find((x) => x.lineIndex === 0);
+      // subject-mismatch = the Yankees stated AS 39-48 (adjacent)
+      return l && /yankees\s+(are\s+)?39-?48/i.test(l.text)
+        ? [{ lineIndex: 0, status: "needs_review", reason: "39-48 is the Orioles' record, not the Yankees'" }]
+        : [];
+    };
+    const rewrite = async (ctx: any) =>
+      ctx.semanticReason ? { text: "The Orioles are 39-48, nine under — the Yankees are 48-38.", evidenceRefs: ctx.line.evidenceRefs } : null;
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: full, hostNames: ["Louie", "Mickey"], rewrite, semanticReview, maxSemanticRounds: 2 });
+    assert(r.semantic.ran, "semantic pass ran");
+    assert(r.semantic.linesFlagged === 1, `flagged 1, got ${r.semantic.linesFlagged}`);
+    assert(r.semantic.linesCorrected === 1, `corrected 1, got ${r.semantic.linesCorrected}`);
+    assert(r.semantic.linesUnresolved === 0, `unresolved 0, got ${r.semantic.linesUnresolved}`);
+    assert(!/yankees are 39-?48/i.test(segs[0].lines[0].text), `subject must be fixed: ${segs[0].lines[0].text}`);
+  });
+
+  await check("semantic unresolved after maxSemanticRounds is reported (never silently passed)", async () => {
+    const segs = [{ lines: [{ lineIndex: 0, speakerName: "Louie", isFactualClaim: true, text: "The Yankees are 39-48.", evidenceRefs: [{ type: "game", id: "f1" }] }] }];
+    const evByRef = new Map<string, string>([["f1", "The Orioles are 39-48."]]);
+    const semanticReview = async () => [{ lineIndex: 0, status: "needs_review", reason: "wrong subject" }]; // never satisfied
+    const rewrite = async (ctx: any) => (ctx.semanticReason ? { text: "The Yankees are 39-48." } : null); // no real change
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "The Orioles are 39-48.", hostNames: ["Louie", "Mickey"], rewrite, semanticReview, maxSemanticRounds: 2 });
+    assert(r.semantic.rounds === 2, `expected 2 rounds, got ${r.semantic.rounds}`);
+    assert(r.semantic.linesUnresolved === 1, `expected 1 unresolved, got ${r.semantic.linesUnresolved}`);
+  });
+
+  await check("FIX 3: a rewrite preserves the trailing em-dash of an interruption predecessor", async () => {
+    const segs = [{ lines: [{ lineIndex: 0, speakerName: "Louie", isFactualClaim: true, text: "Five homers, and that's—", evidenceRefs: [{ type: "game", id: "f1" }] }] }];
+    const evByRef = new Map<string, string>([["f1", "Detroit hit three home runs."]]);
+    const rewrite = async () => ({ text: "Three homers, and that's the story." }); // drops the dash + period
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "Detroit hit three home runs.", hostNames: ["Louie", "Mickey"], rewrite, maxAttempts: 2 });
+    assert(/—$/.test(segs[0].lines[0].text.trim()), `em-dash must be preserved, got: ${segs[0].lines[0].text}`);
+    assert(r.linesCorrected === 1, "figure still corrected");
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }

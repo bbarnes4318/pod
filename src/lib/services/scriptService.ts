@@ -1,5 +1,6 @@
 import { db } from "../db";
-import { getScriptLLMProvider } from "../providers/llm/factory";
+import { getScriptLLMProvider, getFactCheckLLMProvider } from "../providers/llm/factory";
+import { reviewFactualLinesForRewrite } from "./semanticReview";
 import {
   ALLOWED_AUDIO_TAGS,
   normalizeDelivery,
@@ -47,7 +48,7 @@ export interface ScriptBuildResult {
   };
 }
 
-import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
+import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./claimLanguage";
 import { resolveEpisodeHosts } from "./hostCasting";
 import type { AiHost } from "@prisma/client";
 
@@ -384,6 +385,7 @@ GROUNDING — THE ONE UNBREAKABLE RULE (this outranks every "be specific" instru
 - Every number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come from the supplied evidence. If it is not in the evidence, it does not exist: do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.
 - When the evidence lacks a specific the argument wants, the host ARGUES WITHOUT IT. Conviction, memory, rhetoric, and qualitative claims are fully allowed — invented specifics are not. "They've been rotten since June" is great; "5-and-15 since June eighteenth" is fabrication unless that exact fact is supplied. "They've stunk for years" is great; "three straight 100-loss seasons" is fabrication unless it's supplied. A vivid unnumbered take always beats a made-up stat.
 - NEVER inflate or embellish a real fact into a bigger one: if the evidence says three home runs, it's three — never "five", never "most since 2018". Exaggerating a supplied number IS fabrication and fails the fact check.
+- BIND EVERY FIGURE TO ITS SUBJECT: a number belongs to whichever team/player the evidence attributes it to — never transplant it. If the evidence says the ORIOLES are 39-48 and nine games under .500, you may NOT say the YANKEES are 39-48 — that is a fabrication even though the figure is real. State each stat about the exact subject the evidence names, or don't state it.
 - NAMED-PERSON ATTRIBUTION IS RADIOACTIVE (legal exposure, not just accuracy): you may NOT put words, quotes, thoughts, or specific actions on a real named person unless the evidence contains them. Never invent that "Boone pulled the pitcher", "Michael Kay said it's an awful stretch", or "the GM guaranteed a trade". You MAY reference a public figure generally ("Boone's bullpen management has been a talking point", "the manager's on the hot seat") — a general reference carries no invented quote or specific action. Fabricated attributions to named people fail the fact check as unsupported_attribution.
 
 SPECIFICITY FROM EVIDENCE:
@@ -525,16 +527,43 @@ Delivery field meanings:
   // restatement) up to N times. Best-effort: a self-verify error never blocks
   // generation — the gate still catches anything left.
   try {
+    // Semantic pass reviewer: reuse the gate reviewer (one batched call per
+    // round) to catch subject-mismatch / over-precision the deterministic check
+    // can't. Its own provider instance so we can meter its tokens.
+    const reviewProvider = getFactCheckLLMProvider();
+    const evidencePanelItems = evidenceTexts.map((t) => ({ detailText: t }));
+    const usageOf = (p: any) =>
+      typeof p?.getAccumulatedUsage === "function" ? p.getAccumulatedUsage() : { inputTokens: 0, outputTokens: 0, requestCount: 0 };
+    const before = { llm: usageOf(llm), rev: usageOf(reviewProvider), t: Date.now() };
+
     const sv = await selfVerifyAndCorrect(llmResult.segments, {
       evidenceByRefId,
       fullEvidenceText: evidenceTexts.join("  "),
       hostNames: [hostA.name, hostB.name],
       maxAttempts: Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3,
       rewrite: (ctx) => rewriteLineForGrounding(llm, ctx, systemPrompt),
+      maxSemanticRounds: Number(process.env.SCRIPT_SELFVERIFY_SEMANTIC_ROUNDS) || 2,
+      semanticReview: (reviewLines) =>
+        reviewFactualLinesForRewrite(reviewProvider, {
+          reviewLines,
+          evidencePanelItems,
+          unsafeClaims: unsafeClaimsList,
+          rumorKeywords: RUMOR_KEYWORDS as unknown as string[],
+        }),
     });
+
+    const after = { llm: usageOf(llm), rev: usageOf(reviewProvider) };
+    sv.latencyMs = Date.now() - before.t;
+    sv.tokensDelta = {
+      inputTokens: after.llm.inputTokens - before.llm.inputTokens + (after.rev.inputTokens - before.rev.inputTokens),
+      outputTokens: after.llm.outputTokens - before.llm.outputTokens + (after.rev.outputTokens - before.rev.outputTokens),
+      requestCount: after.llm.requestCount - before.llm.requestCount + (after.rev.requestCount - before.rev.requestCount),
+    };
     result.selfVerify = sv;
     result.reasons.push(
-      `Self-verify: ${sv.linesWithViolations}/${sv.factualLinesChecked} factual lines had ungrounded specifics; ${sv.linesCorrected} corrected, ${sv.linesUnresolved} unresolved.`
+      `Self-verify: deterministic ${sv.linesCorrected}/${sv.linesWithViolations} corrected (${sv.linesUnresolved} unresolved); ` +
+        `semantic ${sv.semantic.linesCorrected}/${sv.semantic.linesFlagged} corrected over ${sv.semantic.rounds} round(s) (${sv.semantic.linesUnresolved} unresolved); ` +
+        `+${sv.latencyMs}ms, +${sv.tokensDelta.outputTokens} out / ${sv.tokensDelta.inputTokens} in tokens across ${sv.tokensDelta.requestCount} calls.`
     );
   } catch (svErr: any) {
     console.warn(`[ScriptService] self-verify failed: ${svErr?.message}`);
