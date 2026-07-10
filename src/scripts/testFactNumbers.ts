@@ -1,0 +1,114 @@
+// Number-in-evidence verification test. Run: npm run test:fact-numbers
+//
+// Locks in FIX 1 — the deterministic check that a factual line's stated figures
+// actually appear in its cited evidence (closing the "real ref on an inflated
+// number" blind spot that let v3/v4 pass at 100% coverage while asserting "five
+// homers" against evidence that says three). Pure: no DB, no LLM.
+
+import { verifyClaimFigures, extractAssertedFigures, extractEvidenceNumbers } from "../lib/services/factNumbers";
+
+let passed = 0;
+let failed = 0;
+function check(name: string, fn: () => void) {
+  try {
+    fn();
+    passed++;
+    console.log(`  ✓ ${name}`);
+  } catch (err) {
+    failed++;
+    console.error(`  ✗ ${name}\n      ${(err as Error).message}`);
+  }
+}
+function assert(cond: boolean, msg: string) {
+  if (!cond) throw new Error(msg);
+}
+
+function main() {
+  console.log("Number-in-evidence verification:");
+
+  // --- The three required cases ---
+  check("KNOWN CASE: 'five homers' FAILS against evidence that says three", () => {
+    const v = verifyClaimFigures(
+      "Five homers on the night — five! Detroit hadn't done that since twenty-eighteen.",
+      "Detroit hit three first-inning home runs (Carpenter, Greene, Torkelson) in the 9-3 win."
+    );
+    assert(v.verifiable, "should be verifiable");
+    const vals = v.unsupportedFigures.map((f) => f.value);
+    assert(vals.includes(5), `expected 5 flagged, got ${JSON.stringify(vals)}`);
+    const five = v.unsupportedFigures.find((f) => f.value === 5)!;
+    assert(five.evidenceSays.includes(3), `reason should surface evidence's 3, got ${JSON.stringify(five.evidenceSays)}`);
+  });
+
+  check("KNOWN CASE: 'three 100-loss seasons' FAILS (100 absent from evidence)", () => {
+    const v = verifyClaimFigures(
+      "These are people who sat through three hundred-loss seasons. Three!",
+      "Orioles fans booed the rookie starter after another home loss dropped them further in the standings."
+    );
+    assert(v.verifiable, "verifiable");
+    const vals = v.unsupportedFigures.map((f) => f.value);
+    assert(vals.includes(100), `expected 100 flagged, got ${JSON.stringify(vals)}`);
+  });
+
+  check("KNOWN CASE: '48-38, second in the East' PASSES (present in evidence)", () => {
+    const v = verifyClaimFigures(
+      "They're 48-38, second in the East — that's a real team.",
+      "The team sits at 48-38, good for second in the East entering the weekend."
+    );
+    assert(v.verifiable, "verifiable");
+    assert(v.unsupportedFigures.length === 0, `expected no unsupported figures, got ${JSON.stringify(v.unsupportedFigures)}`);
+  });
+
+  // --- Must NOT false-fail legitimate rounding (writer is told to round) ---
+  check("rounding OK: 'damn near fifty percent' supports evidence 49.8%", () => {
+    const v = verifyClaimFigures("He's shooting damn near fifty percent from deep.", "Three-point percentage: 49.8% on the season.");
+    assert(v.unsupportedFigures.every((f) => f.value !== 50), `50 should be within tolerance of 49.8, got ${JSON.stringify(v.unsupportedFigures)}`);
+  });
+
+  check("exact spelled/digit match: 'thirty-one points' supports evidence '31'", () => {
+    const v = verifyClaimFigures("Thirty-one points a night and still snubbed.", "Averaging 31 points per game.");
+    assert(v.unsupportedFigures.length === 0, `expected supported, got ${JSON.stringify(v.unsupportedFigures)}`);
+  });
+
+  check("inflation caught even near a real number: 'seven years' when evidence says 2018 only", () => {
+    const v = verifyClaimFigures("Seven years since they did it.", "Last accomplished in 2018.");
+    assert(v.unsupportedFigures.some((f) => f.value === 7), "7 is not supported by 2018");
+  });
+
+  // --- Degrade, never silently pass ---
+  check("degrade: empty evidence => verifiable=false (leave it to semantic)", () => {
+    const v = verifyClaimFigures("They went 5-and-15 since June.", "");
+    assert(v.verifiable === false, "no evidence text => not verifiable");
+    assert(v.unsupportedFigures.length === 0, "must not fabricate a failure with no evidence");
+  });
+
+  check("'5-and-15 since June' FAILS when the record is absent from evidence", () => {
+    const v = verifyClaimFigures("They're 5-and-15 since the middle of June — fifty-six runs, worst in the sport.", "The team has struggled recently, losing more than they've won since the break.");
+    const vals = v.unsupportedFigures.map((f) => f.value);
+    assert(vals.includes(5) && vals.includes(15), `expected 5 and 15 flagged, got ${JSON.stringify(vals)}`);
+    assert(vals.includes(56), `expected 56 runs flagged, got ${JSON.stringify(vals)}`);
+  });
+
+  // --- Names (Gibson/Gausman cases) ---
+  check("name check: 'Gibson' FAILS when absent from evidence", () => {
+    const v = verifyClaimFigures("You're booing Gibson, a rookie kid.", "The rookie starter gave up six runs.", { checkNames: true, hostNames: ["Louie", "Mickey"] });
+    assert(v.unsupportedNames.includes("Gibson"), `expected Gibson flagged, got ${JSON.stringify(v.unsupportedNames)}`);
+  });
+
+  check("name check: a present name PASSES; direction words are not names", () => {
+    const v = verifyClaimFigures("Carpenter went deep, second in the East.", "Carpenter homered; the team is second in the East.", { checkNames: true, hostNames: ["Louie", "Mickey"] });
+    assert(!v.unsupportedNames.includes("Carpenter"), "Carpenter is in evidence");
+    assert(!v.unsupportedNames.includes("East"), "East is a direction, not a name");
+  });
+
+  // sanity on the primitives
+  check("extractor sanity", () => {
+    assert(extractEvidenceNumbers("three homers, 48-38").includes(3), "spelled three");
+    assert(extractEvidenceNumbers("three homers, 48-38").includes(48), "digit 48");
+    assert(extractAssertedFigures("five bombs").some((f) => f.value === 5), "five => 5");
+  });
+
+  console.log(`\n${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exit(1);
+}
+
+main();
