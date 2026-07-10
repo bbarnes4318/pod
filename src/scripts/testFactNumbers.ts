@@ -41,12 +41,33 @@ function main() {
 
   check("KNOWN CASE: 'three 100-loss seasons' FAILS (100 absent from evidence)", () => {
     const v = verifyClaimFigures(
-      "These are people who sat through three hundred-loss seasons. Three!",
+      "These are people who sat through three 100-loss seasons. Three!",
       "Orioles fans booed the rookie starter after another home loss dropped them further in the standings."
     );
     assert(v.verifiable, "verifiable");
     const vals = v.unsupportedFigures.map((f) => f.value);
     assert(vals.includes(100), `expected 100 flagged, got ${JSON.stringify(vals)}`);
+  });
+
+  check("spoken year 'twenty twenty-three' => 2023 (not a bare 20), flagged if absent", () => {
+    const v = verifyClaimFigures(
+      "Longest skid since twenty twenty-three.",
+      "The team's recent slide is their worst in a while; they entered 9-11 over the stretch."
+    );
+    const vals = v.unsupportedFigures.map((f) => f.value);
+    assert(vals.includes(2023), `expected 2023 flagged, got ${JSON.stringify(vals)}`);
+    assert(!vals.includes(20), `must NOT flag a bare 20 from a spoken year, got ${JSON.stringify(vals)}`);
+  });
+
+  check("composite 'seventeen thousand five hundred' => 17500 (not bare 1000)", () => {
+    const supported = verifyClaimFigures(
+      "Seventeen thousand five hundred paid to get in.",
+      "Announced attendance was 17,500 at the gate."
+    );
+    assert(supported.unsupportedFigures.length === 0, `17,500 should match evidence 17,500, got ${JSON.stringify(supported.unsupportedFigures)}`);
+    const absent = verifyClaimFigures("Seventeen thousand five hundred paid to get in.", "The crowd was sparse and quiet.");
+    assert(absent.unsupportedFigures.some((f) => f.value === 17500), `expected 17500 flagged, got ${JSON.stringify(absent.unsupportedFigures)}`);
+    assert(!absent.unsupportedFigures.some((f) => f.value === 1000), "must not flag a bare 1000");
   });
 
   check("KNOWN CASE: '48-38, second in the East' PASSES (present in evidence)", () => {

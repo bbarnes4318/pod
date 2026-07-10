@@ -72,33 +72,123 @@ function spellNumber(n: number): string[] {
   return [...forms];
 }
 
-/** All numeric values that appear in evidence text (digits + spelled). */
+function isNumberWord(w: string): boolean {
+  return w in ONES || w in TENS || w in ORDINALS || w in SCALE;
+}
+
+/** Fold a run of spelled number-words into one value: "seventeen thousand five
+ *  hundred" -> 17500, "three hundred" -> 300, "twenty three" -> 23. */
+function wordsToNumber(words: string[]): number | null {
+  let result = 0;
+  let current = 0;
+  let any = false;
+  for (const w of words) {
+    if (w in ONES) { current += ONES[w]; any = true; }
+    else if (w in TENS) { current += TENS[w]; any = true; }
+    else if (w in ORDINALS) { current += ORDINALS[w]; any = true; }
+    else if (w === "hundred") { current = (current || 1) * 100; any = true; }
+    else if (w === "thousand") { result += (current || 1) * 1000; current = 0; any = true; }
+    else if (w === "dozen") { current = (current || 1) * 12; any = true; }
+    else return null;
+  }
+  return any ? result + current : null;
+}
+
+export interface CollectedNumber {
+  value: number;
+  surface: string;
+}
+
+/**
+ * Every numeric quantity a text asserts, as (value, surface) — correctly
+ * handling comma-grouped digits ("17,500"), digit records ("48-38"), SPOKEN
+ * YEARS ("twenty twenty-three" -> 2023, not a bare 20), and SPELLED COMPOSITES
+ * ("seventeen thousand five hundred" -> 17500). Used for both the evidence
+ * corpus (values) and a line's asserted figures (values + surfaces).
+ */
+export function collectNumbers(text: string): CollectedNumber[] {
+  let t = normalize(text);
+  const out: CollectedNumber[] = [];
+  const push = (value: number, surface: string) => {
+    if (Number.isFinite(value)) out.push({ value, surface: surface.trim() });
+  };
+  // Blank spans as they're consumed so nothing double-counts.
+  const blank = (start: number, len: number) => {
+    t = t.slice(0, start) + " ".repeat(len) + t.slice(start + len);
+  };
+
+  // 1. comma-grouped digits: 17,500 -> 17500
+  for (const m of t.matchAll(/\b\d{1,3}(?:,\d{3})+\b/g)) {
+    push(parseInt(m[0].replace(/,/g, ""), 10), m[0]);
+  }
+  t = t.replace(/\b\d{1,3}(?:,\d{3})+\b/g, (s) => " ".repeat(s.length));
+
+  // 2. digit records "48-38" / "5-and-15" (each half is a figure)
+  for (const m of t.matchAll(/\b(\d{1,3})\s*[-–](?:\s*and\s*[-–]?\s*)?(\d{1,3})\b/g)) {
+    push(parseInt(m[1], 10), m[0]);
+    push(parseInt(m[2], 10), m[0]);
+    blank(m.index!, m[0].length);
+  }
+
+  // 3. spoken years: (nineteen|twenty) + <tens-led remainder 0-99>
+  const yearRe = /\b(nineteen|twenty)[\s-]+((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)(?:[\s-]+(?:one|two|three|four|five|six|seven|eight|nine))?|nineteen|eighteen|seventeen|sixteen|fifteen|fourteen|thirteen)\b/g;
+  for (const m of t.matchAll(yearRe)) {
+    const base = m[1] === "nineteen" ? 1900 : 2000;
+    const remWords = m[2].split(/[\s-]+/).filter(Boolean);
+    const rem = m[2] === "hundred" ? 0 : wordsToNumber(remWords) ?? 0;
+    push(base + rem, m[0]);
+    blank(m.index!, m[0].length);
+  }
+
+  // 4. spelled digit "five and fifteen" record (both parts already covered by
+  //    ranges; handle the all-spelled variant)
+  for (const m of t.matchAll(/\b([a-z]+)\s+and\s+([a-z]+)\b/g)) {
+    const a = ONES[m[1]] ?? TENS[m[1]];
+    const b = ONES[m[2]] ?? TENS[m[2]];
+    if (a !== undefined && b !== undefined) {
+      push(a, m[0]);
+      push(b, m[0]);
+      blank(m.index!, m[0].length);
+    }
+  }
+
+  // 5. plain digits (ints/decimals), incl. 4-digit years
+  for (const m of t.matchAll(/\b\d+(?:\.\d+)?\b/g)) {
+    push(parseFloat(m[0]), m[0]);
+  }
+  t = t.replace(/\b\d+(?:\.\d+)?\b/g, (s) => " ".repeat(s.length));
+
+  // 6. maximal runs of spelled number-words -> one folded value each
+  const tokenRe = /[a-z]+/g;
+  let run: string[] = [];
+  let runStart = -1;
+  let runEnd = -1;
+  const flush = () => {
+    if (run.length) {
+      const v = wordsToNumber(run);
+      if (v !== null) push(v, t.slice(runStart, runEnd));
+    }
+    run = [];
+    runStart = runEnd = -1;
+  };
+  for (const m of t.matchAll(tokenRe)) {
+    const w = m[0];
+    if (isNumberWord(w)) {
+      if (!run.length) runStart = m.index!;
+      run.push(w);
+      runEnd = m.index! + w.length;
+    } else {
+      flush();
+    }
+  }
+  flush();
+
+  return out;
+}
+
+/** All numeric values that appear in evidence text. */
 export function extractEvidenceNumbers(text: string): number[] {
-  const t = normalize(text);
-  const nums: number[] = [];
-  // digit forms incl. decimals and record halves
-  for (const m of t.matchAll(/\d+(?:\.\d+)?/g)) {
-    const v = parseFloat(m[0]);
-    if (Number.isFinite(v)) nums.push(v);
-  }
-  // spelled cardinals / tens / ordinals (single-token)
-  const tokens = t.split(/[^a-z0-9]+/).filter(Boolean);
-  for (let i = 0; i < tokens.length; i++) {
-    const w = tokens[i];
-    if (w in ONES) nums.push(ONES[w]);
-    else if (w in TENS) {
-      // greedily combine "twenty one"
-      const next = tokens[i + 1];
-      if (next && next in ONES && ONES[next] < 10) nums.push(TENS[w] + ONES[next]);
-      else nums.push(TENS[w]);
-    } else if (w in ORDINALS) nums.push(ORDINALS[w]);
-    else if (w in SCALE) nums.push(SCALE[w]);
-  }
-  // hyphenated compounds like "twenty-one"
-  for (const m of t.matchAll(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-(one|two|three|four|five|six|seven|eight|nine)\b/g)) {
-    nums.push(TENS[m[1]] + ONES[m[2]]);
-  }
-  return nums;
+  return collectNumbers(text).map((n) => n.value);
 }
 
 export interface AssertedFigure {
@@ -108,59 +198,15 @@ export interface AssertedFigure {
   forms: string[];
 }
 
-/** Numeric figures a line asserts: digits, records ("48-38", "5-and-15"),
- *  spelled cardinals/ordinals, and tens compounds. */
+/** Numeric figures a line asserts (values + surfaces), for verification. */
 export function extractAssertedFigures(text: string): AssertedFigure[] {
-  const t = normalize(text);
-  const out: AssertedFigure[] = [];
   const seen = new Set<string>();
-  const push = (surface: string, value: number, extra: string[] = []) => {
+  const out: AssertedFigure[] = [];
+  for (const { value, surface } of collectNumbers(text)) {
     const key = `${value}|${surface}`;
-    if (seen.has(key) || !Number.isFinite(value)) return;
+    if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ surface, value, forms: Array.from(new Set([surface, String(value), ...spellNumber(value), ...extra])) });
-  };
-
-  // Records / scores: "48-38", "5-and-15", "five and fifteen"
-  for (const m of t.matchAll(/\b(\d{1,3})\s*[-–]\s*and\s*[-–]?\s*(\d{1,3})\b/g)) {
-    push(m[0], parseInt(m[1], 10), [`${m[1]}-${m[2]}`, `${m[1]} and ${m[2]}`]);
-    push(m[0] + "#b", parseInt(m[2], 10));
-  }
-  for (const m of t.matchAll(/\b(\d{1,3})[-–](\d{1,3})\b/g)) {
-    push(m[0], parseInt(m[1], 10), [`${m[1]}-${m[2]}`]);
-    push(m[0] + "#b", parseInt(m[2], 10), [`${m[1]}-${m[2]}`]);
-  }
-  // spelled record "five and fifteen"
-  for (const m of t.matchAll(/\b([a-z]+)\s+and\s+([a-z]+)\b/g)) {
-    const a = ONES[m[1]] ?? TENS[m[1]];
-    const b = ONES[m[2]] ?? TENS[m[2]];
-    if (a !== undefined && b !== undefined) {
-      push(m[0], a, [`${a}-${b}`, m[0]]);
-      push(m[0] + "#b", b);
-    }
-  }
-  // plain digit runs (ints/decimals)
-  for (const m of t.matchAll(/\b\d+(?:\.\d+)?\b/g)) {
-    push(m[0], parseFloat(m[0]));
-  }
-  // spelled single-token cardinals / ordinals / tens (+compound) / scale
-  const tokens = t.split(/[^a-z0-9]+/).filter(Boolean);
-  for (let i = 0; i < tokens.length; i++) {
-    const w = tokens[i];
-    if (w in TENS) {
-      const next = tokens[i + 1];
-      if (next && next in ONES && ONES[next] < 10) {
-        push(`${w}-${next}`, TENS[w] + ONES[next]);
-        i++; // consume the ones token so "thirty-one" doesn't also emit 1
-      } else {
-        push(w, TENS[w]);
-      }
-    } else if (w in ONES) push(w, ONES[w]);
-    else if (w in ORDINALS) push(w, ORDINALS[w]);
-    else if (w in SCALE) push(w, SCALE[w]);
-  }
-  for (const m of t.matchAll(/\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)-(one|two|three|four|five|six|seven|eight|nine)\b/g)) {
-    push(m[0], TENS[m[1]] + ONES[m[2]]);
+    out.push({ surface, value, forms: Array.from(new Set([surface, String(value), ...spellNumber(value)])) });
   }
   return out;
 }
