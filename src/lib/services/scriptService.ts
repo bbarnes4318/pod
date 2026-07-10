@@ -8,7 +8,8 @@ import {
 } from "../audio/speechText";
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
-import { generateOutlineDrivenScript } from "./scriptOutlineEngine";
+import { generateOutlineDrivenScript, rewriteLineForGrounding } from "./scriptOutlineEngine";
+import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface ScriptBuildInput {
@@ -488,17 +489,8 @@ Delivery field meanings:
       temperature,
       maxTokens,
       speakerNames: [hostA.name, hostB.name],
-      evidenceByRefId,
-      fullEvidenceText: evidenceTexts.join("  "),
       log: (msg) => result.reasons.push(msg),
     });
-    if (llmResult?.selfVerify) {
-      const sv = llmResult.selfVerify;
-      result.selfVerify = sv;
-      result.reasons.push(
-        `Self-verify corrected ${sv.linesCorrected}/${sv.linesWithViolations} ungrounded line(s); ${sv.linesUnresolved} unresolved.`
-      );
-    }
   } catch (outlineErr: any) {
     console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
     result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);
@@ -524,6 +516,29 @@ Delivery field meanings:
 
   if (!Array.isArray(llmResult.segments)) {
     throw new Error("Returned JSON is missing a 'segments' array.");
+  }
+
+  // FIX 1 — self-verify BEFORE persist, on WHICHEVER path produced the script
+  // (outline OR single-shot fallback). Every factual line is run through the
+  // same verifier the fact-check gate uses; each ungrounded figure/attribution
+  // is sent back to the model to rewrite (correct figure, or qualitative
+  // restatement) up to N times. Best-effort: a self-verify error never blocks
+  // generation — the gate still catches anything left.
+  try {
+    const sv = await selfVerifyAndCorrect(llmResult.segments, {
+      evidenceByRefId,
+      fullEvidenceText: evidenceTexts.join("  "),
+      hostNames: [hostA.name, hostB.name],
+      maxAttempts: Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3,
+      rewrite: (ctx) => rewriteLineForGrounding(llm, ctx, systemPrompt),
+    });
+    result.selfVerify = sv;
+    result.reasons.push(
+      `Self-verify: ${sv.linesWithViolations}/${sv.factualLinesChecked} factual lines had ungrounded specifics; ${sv.linesCorrected} corrected, ${sv.linesUnresolved} unresolved.`
+    );
+  } catch (svErr: any) {
+    console.warn(`[ScriptService] self-verify failed: ${svErr?.message}`);
+    result.reasons.push(`Self-verify skipped (error): ${svErr?.message}`);
   }
 
   const cleanSegments: any[] = [];

@@ -9,7 +9,7 @@
 
 import { LLMProvider } from "../providers/llm/interface";
 import { stripAudioTags } from "../audio/speechText";
-import { selfVerifyAndCorrect, SelfVerifyReport, RewriteContext } from "./scriptSelfVerify";
+import { RewriteContext } from "./scriptSelfVerify";
 
 export interface OutlineBeat {
   beatIndex: number;
@@ -33,17 +33,13 @@ export interface OutlineDrivenArgs {
   maxTokens: number;
   /** The two cast host names — the only valid speakerName values. */
   speakerNames: string[];
-  /** Evidence text keyed by ref id, for generation-time self-verification. */
-  evidenceByRefId?: Map<string, string>;
-  /** The whole episode's evidence corpus (fallback for self-verification). */
-  fullEvidenceText?: string;
   log: (msg: string) => void;
 }
 
 export async function generateOutlineDrivenScript(
   llm: LLMProvider,
   args: OutlineDrivenArgs
-): Promise<{ segments: any[]; selfVerify?: SelfVerifyReport }> {
+): Promise<{ segments: any[] }> {
   const beats = await generateEpisodeOutline(llm, args);
   args.log(`Outline: ${beats.length} beats, each fact assigned once.`);
 
@@ -114,33 +110,17 @@ export async function generateOutlineDrivenScript(
     );
   }
 
-  // FIX 1 — self-verify before persist. Run the SAME deterministic check the
-  // fact-check gate uses on every factual line, and send violations back to the
-  // model to rewrite (correct figure, or qualitative restatement). This is what
-  // stops the generator from persisting scripts we already know will fail.
-  let selfVerify: SelfVerifyReport | undefined;
-  if (args.evidenceByRefId && args.fullEvidenceText !== undefined) {
-    const maxAttempts = Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3;
-    selfVerify = await selfVerifyAndCorrect(rawSegments, {
-      evidenceByRefId: args.evidenceByRefId,
-      fullEvidenceText: args.fullEvidenceText,
-      hostNames: args.speakerNames,
-      maxAttempts,
-      rewrite: (ctx) => rewriteLineForGrounding(llm, ctx, args.systemPrompt),
-    });
-    args.log(
-      `Self-verify: ${selfVerify.linesWithViolations}/${selfVerify.factualLinesChecked} factual lines had ungrounded specifics; ` +
-        `${selfVerify.linesCorrected} corrected, ${selfVerify.linesUnresolved} unresolved after ${maxAttempts} attempts.`
-    );
-  }
-
-  return { segments: rawSegments, selfVerify };
+  // Self-verify (FIX 1) runs in scriptService AFTER generation, on whichever
+  // path produced the script (outline OR single-shot fallback), so a transient
+  // outline parse-failure never skips grounding.
+  return { segments: rawSegments };
 }
 
 /** Ask the model to rewrite ONE ungrounded line: use the correct figure from
  *  evidence, or restate the point qualitatively (the "argue without it" valve).
- *  Keeps the speaker, tone, and conversational feel; adds no new fabrication. */
-async function rewriteLineForGrounding(
+ *  Keeps the speaker, tone, and conversational feel; adds no new fabrication.
+ *  Exported so scriptService can run self-verify on both generation paths. */
+export async function rewriteLineForGrounding(
   llm: LLMProvider,
   ctx: RewriteContext,
   systemPrompt: string
