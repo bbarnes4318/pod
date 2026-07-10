@@ -177,9 +177,10 @@ export function collectNumbers(text: string): CollectedNumber[] {
       if (!run.length) runStart = m.index!;
       run.push(w);
       runEnd = m.index! + w.length;
-    } else if (w === "and" && run.length > 0) {
-      // "five hundred and eighty-one" is ONE number (17581-style) — keep the run
-      // open across a connecting "and" (wordsToNumber ignores it).
+    } else if (w === "and" && run.length > 0 && (run[run.length - 1] === "hundred" || run[run.length - 1] === "thousand")) {
+      // "five hundred and eighty-one" is ONE number — bridge the "and" ONLY
+      // after a scale word. "five and fifteen" (a 5-15 record) has no scale
+      // before the "and", so it correctly stays two separate figures.
       runEnd = m.index! + w.length;
     } else {
       flush();
@@ -224,10 +225,21 @@ function tokenPresent(evidenceLower: string, form: string): boolean {
   return re.test(evidenceLower);
 }
 
-/** Rounding-tolerant: "fifty" supports evidence 49.8; "five" does NOT support 3. */
+const isYearLike = (n: number): boolean => Number.isInteger(n) && n >= 1900 && n <= 2099;
+
+/**
+ * Rounding-tolerant matching that still catches fabrication:
+ *  - small counts stay tight ("five" does NOT support 3),
+ *  - "fifty" supports 49.8 (rounding),
+ *  - large figures allow spoken rounding ("seventeen thousand" ~ 17,581, 5%),
+ *  - years stay near-exact (2018 does NOT support 2016).
+ */
 function withinTolerance(value: number, evidenceNums: number[]): boolean {
   for (const e of evidenceNums) {
-    const tol = Math.max(0.5, Math.min(0.1 * Math.abs(e), 2));
+    let tol: number;
+    if (isYearLike(value) || isYearLike(e)) tol = 0.5;
+    else if (Math.abs(e) >= 1000) tol = Math.max(0.5, 0.05 * Math.abs(e));
+    else tol = Math.max(0.5, Math.min(0.1 * Math.abs(e), 2));
     if (Math.abs(value - e) <= tol) return true;
   }
   return false;

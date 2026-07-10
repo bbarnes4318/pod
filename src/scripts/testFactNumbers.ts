@@ -66,6 +66,24 @@ function main() {
     assert(supported.unsupportedFigures.length === 0, `17,581 should match, got ${JSON.stringify(supported.unsupportedFigures)}`);
   });
 
+  check("hyphenated record 'five-and-fifteen' => 5 and 15 (NOT folded to 20)", () => {
+    const figs = extractAssertedFigures("They're five-and-fifteen since June.").map((f) => f.value);
+    assert(figs.includes(5) && figs.includes(15), `expected 5 and 15, got ${JSON.stringify(figs)}`);
+    assert(!figs.includes(20), `must NOT fold to 20, got ${JSON.stringify(figs)}`);
+    const v = verifyClaimFigures("They're five-and-fifteen since June.", "The team is 5-15 since June 18.");
+    assert(v.unsupportedFigures.length === 0, `5-15 record should match, got ${JSON.stringify(v.unsupportedFigures)}`);
+  });
+
+  check("large-number spoken rounding: 'seventeen thousand' supports evidence 17,581", () => {
+    const v = verifyClaimFigures("Seventeen thousand people showed up.", "Announced attendance was 17,581.");
+    assert(v.unsupportedFigures.every((f) => f.value !== 17000), `17,000 should round-match 17,581, got ${JSON.stringify(v.unsupportedFigures)}`);
+  });
+
+  check("years stay near-exact: '2018' does NOT support evidence 2016", () => {
+    const v = verifyClaimFigures("Since twenty-eighteen.", "Last happened in 2016.");
+    assert(v.unsupportedFigures.some((f) => f.value === 2018), "2018 must not match 2016");
+  });
+
   check("composite 'seventeen thousand five hundred' => 17500 (not bare 1000)", () => {
     const supported = verifyClaimFigures(
       "Seventeen thousand five hundred paid to get in.",
