@@ -15,6 +15,7 @@ import {
   runSemanticReview,
 } from "./semanticReview";
 import { verifyLineAgainstEvidence } from "./factNumbers";
+import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -541,6 +542,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let semanticLineResults: any[] = [];
   let providerName = isStub ? "deterministic" : llmLabel;
   let rawLlmOutput: any = null;
+  let reviewerEvidenceFingerprint: { count: number; chars: number } | null = null;
 
   // Which lines the semantic reviewer is even allowed to fail: only genuine
   // factual claims. This map is the authoritative server-side guard — the model
@@ -565,10 +567,21 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
         isFragment: ol.isFragment === true,
       }));
 
-      // Reuse the shared reviewer (same prompt/schema the self-verify loop uses).
+      // Reuse the shared reviewer AND the shared evidence corpus, so the gate
+      // reviewer sees byte-identical evidence to the generation-time self-verify
+      // reviewer (previously the gate saw only ~1 fact per ref — a plumbing bug
+      // that made it false-flag facts it was never shown). The sourceId-based
+      // `evidencePanelItems` above is kept for the deterministic number check.
+      const reviewerEvidence = collectReviewerEvidence(
+        script.episode.topics.map((et) => ({ researchBrief: et.topic.researchBrief }))
+      );
+      const reviewerPanel = toEvidencePanel(reviewerEvidence.evidenceTexts);
+      reviewerEvidenceFingerprint = evidenceFingerprint(reviewerEvidence.evidenceTexts);
+      console.log(`[FactCheck] reviewer evidence: ${JSON.stringify(reviewerEvidenceFingerprint)}`);
+
       const resultObj = await runSemanticReview(provider, {
         reviewLines,
-        evidencePanelItems,
+        evidencePanelItems: reviewerPanel,
         unsafeClaims,
         rumorKeywords: RUMOR_KEYWORDS,
       });
@@ -730,6 +743,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     semanticUnsafeClaimCount,
     semanticSkippedNonFactualCount,
     semanticParseErrorCount,
+    reviewerEvidenceFingerprint,
   };
 
   const issuesData = {

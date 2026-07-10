@@ -2340,6 +2340,7 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
           unsupportedClaimCount: coverage.unsupportedClaimCount || 0,
           unsupportedFigureCount: coverage.unsupportedFigureCount || 0,
           unsupportedAttributionCount: coverage.unsupportedAttributionCount || 0,
+          reviewerEvidenceFingerprint: summary.reviewerEvidenceFingerprint || null,
           unsafeClaimCount: coverage.unsafeClaimCount || 0,
           invalidEvidenceRefCount: coverage.invalidEvidenceRefCount || 0,
           rumorLanguageCount: coverage.rumorLanguageCount || 0,

@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { getScriptLLMProvider, getFactCheckLLMProvider } from "../providers/llm/factory";
 import { reviewFactualLinesForRewrite } from "./semanticReview";
+import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
 import {
   ALLOWED_AUDIO_TAGS,
   normalizeDelivery,
@@ -231,9 +232,12 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // 6. Gather allowed evidence source refs & warnings
   const allowedSourceRefs = new Set<string>();
   const unsafeClaimsList: string[] = [];
-  // Evidence text keyed by ref id + the whole corpus, for FIX 1 self-verify.
-  const evidenceByRefId = new Map<string, string>();
-  const evidenceTexts: string[] = [];
+  // The reviewer evidence corpus is built by the SHARED collectReviewerEvidence
+  // so the generation-time self-verify reviewer and the fact-check gate reviewer
+  // receive byte-identical evidence (see evidenceContext.ts).
+  const { evidenceTexts, evidenceByRefId } = collectReviewerEvidence(
+    ep.topics.map((et) => ({ researchBrief: et.topic.researchBrief }))
+  );
 
   const topicsPrompts = ep.topics.map((et, idx) => {
     const t = et.topic;
@@ -246,26 +250,6 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
         allowedSourceRefs.add(`${src.type}:${src.id}`);
       }
     }
-
-    // Index evidence text by ref id (facts/stats carry their evidenceRefs) and
-    // accumulate the full corpus — both used by the self-verify loop.
-    const briefFacts = Array.isArray(b.facts) ? (b.facts as any[]) : [];
-    const briefStats = Array.isArray(b.stats) ? (b.stats as any[]) : [];
-    for (const item of [...briefFacts, ...briefStats]) {
-      const txt = item && typeof item.text === "string" ? item.text : "";
-      if (!txt) continue;
-      evidenceTexts.push(txt);
-      for (const r of Array.isArray(item.evidenceRefs) ? item.evidenceRefs : []) {
-        if (r && r.id) evidenceByRefId.set(r.id, `${evidenceByRefId.get(r.id) || ""} ${txt}`.trim());
-      }
-    }
-    const richKeyFacts = Array.isArray((b as any).keyFactsContext) ? (b as any).keyFactsContext : [];
-    for (const item of richKeyFacts) {
-      const txt = typeof item === "string" ? item : item && typeof item.text === "string" ? item.text : "";
-      if (txt) evidenceTexts.push(txt);
-    }
-    if (b.injuryContext) evidenceTexts.push(String(b.injuryContext));
-    if (b.oddsContext) evidenceTexts.push(String(b.oddsContext));
 
     // Collect unsafe claims to warn about
     const unsafe = Array.isArray(b.unsafeClaims) ? (b.unsafeClaims as any[]) : [];
@@ -531,7 +515,8 @@ Delivery field meanings:
     // round) to catch subject-mismatch / over-precision the deterministic check
     // can't. Its own provider instance so we can meter its tokens.
     const reviewProvider = getFactCheckLLMProvider();
-    const evidencePanelItems = evidenceTexts.map((t) => ({ detailText: t }));
+    const evidencePanelItems = toEvidencePanel(evidenceTexts);
+    result.reasons.push(`Self-verify reviewer evidence: ${JSON.stringify(evidenceFingerprint(evidenceTexts))}.`);
     const usageOf = (p: any) =>
       typeof p?.getAccumulatedUsage === "function" ? p.getAccumulatedUsage() : { inputTokens: 0, outputTokens: 0, requestCount: 0 };
     const before = { llm: usageOf(llm), rev: usageOf(reviewProvider), t: Date.now() };
