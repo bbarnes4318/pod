@@ -8,6 +8,11 @@ import {
   findSpeculationKeyword,
   isGenuineFactualAssertion,
 } from "./claimLanguage";
+import {
+  isFragmentLine,
+  mostSevereStatus,
+  processSemanticLineResults,
+} from "./semanticReview";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -23,6 +28,7 @@ interface FactCheckInput {
   scriptId: string;
   forceRecheck?: boolean;
 }
+
 
 function isRumorPhraseSupported(lineText: string, rumorWord: string, allowedTexts: string[]): boolean {
   const cleanLine = lineText.toLowerCase().replace(rumorWord, " ").replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, " ");
@@ -216,6 +222,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let semanticInvalidEvidenceRefCount = 0;
   let semanticMisleadingCount = 0;
   let semanticUnsafeClaimCount = 0;
+  // Non-factual line verdicts the reviewer returned that we ignore by design
+  // (the semantic layer judges only isFactualClaim:true lines), and flags the
+  // reviewer returned with no usable rationale (discarded as parse errors, so a
+  // reason-less verdict never fails a script).
+  let semanticSkippedNonFactualCount = 0;
+  let semanticParseErrorCount = 0;
 
   const originalFlatLines: any[] = [];
   const errorsList: any[] = [];
@@ -245,6 +257,14 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           lineIndex: line.lineIndex !== undefined ? line.lineIndex : (totalLineCount - 1),
           speakerName: line.speakerName || "",
           text: line.text || "",
+          // Conversational context for the semantic reviewer (STEP 1/3): the
+          // authoritative isFactualClaim flag (already required + trusted by the
+          // deterministic layer) plus tone/interruption/fragment cues so banter,
+          // reactions, intros, and cut-off lines are never fact-checked.
+          isFactualClaim: line.isFactualClaim === true,
+          tone: line.tone,
+          isInterruption: line.isInterruption === true,
+          isFragment: isFragmentLine(line.text),
         });
 
         // Required fields verification
@@ -474,22 +494,45 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   let providerName = isStub ? "deterministic" : llmLabel;
   let rawLlmOutput: any = null;
 
+  // Which lines the semantic reviewer is even allowed to fail: only genuine
+  // factual claims. This map is the authoritative server-side guard — the model
+  // is instructed to skip non-factual lines, but we never trust it to obey.
+  const factualByIndex = new Map<number, boolean>();
+  for (const ol of originalFlatLines) factualByIndex.set(ol.lineIndex, ol.isFactualClaim === true);
+
   if (!isStub && deterministicPassed) {
     try {
       const provider = getFactCheckLLMProvider();
 
-      const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product, not violations. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records — not to demand citations for opinions.
-Rules:
-1. First classify each line: FACTUAL ASSERTION (a specific stat, score, record, injury, transaction, quote, or event presented as true) vs OPINION/PREDICTION/BANTER (takes, forecasts like "he's likely to win MVP", hypotheticals, jokes, reactions).
-2. OPINION/PREDICTION/BANTER lines are "supported" by default — do NOT mark them unsupported for being unverifiable; opinions are not verifiable and that is fine. Only flag an opinion line if it smuggles in a specific false-or-unsupported factual detail or fabricated sourcing.
-3. FACTUAL ASSERTIONS must be backed by the provided facts and stats. Identify unsupported factual claims, overstatements, missing context, or misleading wording of real evidence.
-4. Fabricated sourcing ("sources say", "reportedly", "rumored", "insiders", "unnamed source") is prohibited on ANY line unless the provided evidence itself contains that reporting.
-5. You are NOT allowed to verify using outside knowledge or make up facts.
-6. You cannot create new evidence IDs.
-7. Return a strict JSON response.`;
+      // Give the reviewer each line already classified, with the conversational
+      // context (tone / interruption / fragment) that identifies banter — rather
+      // than the raw script JSON with no guidance on what to skip.
+      const reviewLines = originalFlatLines.map((ol) => ({
+        lineIndex: ol.lineIndex,
+        speakerName: ol.speakerName,
+        text: ol.text,
+        isFactualClaim: ol.isFactualClaim === true,
+        tone: ol.tone,
+        isInterruption: ol.isInterruption === true,
+        isFragment: ol.isFragment === true,
+      }));
 
-      const prompt = `Script dialogue:
-${JSON.stringify(script.content)}
+      const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product, not violations. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records — not to demand citations for opinions.
+
+Each line is PRE-CLASSIFIED with an "isFactualClaim" flag plus "tone", "isInterruption", and "isFragment" context. Honor them.
+
+A FACTUAL CLAIM is a specific, checkable assertion about the world: a stat, score, record, date, result, standing, streak, transaction, injury, or an attribution/quote presented as true. Everything else is not a claim.
+
+Rules:
+1. ONLY evaluate lines where isFactualClaim is true. For every one of those, verify it against the provided facts and stats and identify unsupported claims, overstatements, missing context, or misleading wording of real evidence.
+2. Every line where isFactualClaim is false MUST be returned with status "supported" — never flag it. This includes rhetorical questions, exclamations, reactions, concessions, hot takes, predictions, jokes, the show intro/outro, interruptions (isInterruption true), and incomplete or cut-off sentences (isFragment true, or text ending in a dash "—"). Opinions and fragments are not verifiable and that is fine.
+3. Fabricated sourcing ("sources say", "reportedly", "rumored", "insiders", "unnamed source") is prohibited on ANY line unless the provided evidence itself contains that reporting.
+4. You are NOT allowed to verify using outside knowledge or make up facts. You cannot create new evidence IDs.
+5. MANDATORY RATIONALE: for every line you mark "unsupported" or "needs_review", the "reason" field MUST be a specific, non-empty explanation that quotes the exact claim and says why the evidence does not support it. A verdict with an empty or missing reason is invalid and will be discarded — do not emit one.
+6. Return a strict JSON response.`;
+
+      const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true; return every isFactualClaim:false line as "supported":
+${JSON.stringify(reviewLines)}
 
 Allowed evidence packet:
 ${JSON.stringify(evidencePanelItems)}
@@ -563,8 +606,16 @@ Run the fact-checking comparison and output the JSON structure containing status
       rawLlmOutput = resultObj;
 
       if (resultObj && typeof resultObj === "object") {
-        semanticStatus = resultObj.status || "needs_review";
-        semanticSummary = resultObj.summary || "";
+        // The model's top-level status is ADVISORY only — recorded in the
+        // summary, but never a pass/fail driver on its own. A bare "failed" with
+        // no auditable line/global finding (e.g. it reacted to banter it should
+        // have skipped) must not sink a script. The decision is raised to
+        // needs_review / failed below solely by server-verified, rationale-backed
+        // findings.
+        const modelStatus = resultObj.status || "needs_review";
+        semanticStatus = "passed";
+        semanticSummary =
+          (resultObj.summary || "") + (modelStatus !== "passed" ? ` [model top-level status: ${modelStatus}]` : "");
 
         // Process global arrays
         const unsupportedClaims = Array.isArray(resultObj.unsupportedClaims) ? resultObj.unsupportedClaims : [];
@@ -616,87 +667,24 @@ Run the fact-checking comparison and output the JSON structure containing status
           }
         }
 
-        // Process lineResults to enforce safety rules
+        // Process lineResults — scope to factual claims + enforce rationale.
         const rawLineResults = Array.isArray(resultObj.lineResults) ? resultObj.lineResults : [];
-        for (const lr of rawLineResults) {
-          // Enrich with original script speaker and text if the LLM returned empty strings
-          const origLine = originalFlatLines.find((ol) => ol.lineIndex === lr.lineIndex);
-          if (origLine) {
-            if (!lr.speakerName || !lr.speakerName.trim()) {
-              lr.speakerName = origLine.speakerName;
-            }
-            if (!lr.claimText || !lr.claimText.trim()) {
-              lr.claimText = origLine.text;
-            }
-          }
-
-          // Filter out evidence refs outside allowedSourceRefs
-          const cleanRefs: any[] = [];
-          let lineHasInvalidRef = false;
-
-          const refs = Array.isArray(lr.evidenceRefs) ? lr.evidenceRefs : [];
-          for (const ref of refs) {
-            let refValid = true;
-            if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
-              refValid = false;
-            } else if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
-              refValid = false;
-            } else {
-              const refKey = `${ref.type}:${ref.id}`;
-              if (!allowedSourceRefs.has(refKey)) {
-                refValid = false;
-              }
-            }
-
-            if (!refValid) {
-              lineHasInvalidRef = true;
-              semanticInvalidEvidenceRefCount++;
-              errorsList.push({
-                type: "semantic_invalid_evidence_ref",
-                lineIndex: lr.lineIndex,
-                reason: `Semantic review: Line #${(lr.lineIndex || 0) + 1} has invalid evidence reference ${JSON.stringify(ref)}.`,
-              });
-            } else {
-              cleanRefs.push(ref);
-            }
-          }
-
-          if (lineHasInvalidRef) {
-            if (lr.status === "unsupported") {
-              semanticStatus = "failed";
-            } else {
-              if (semanticStatus !== "failed") {
-                semanticStatus = "needs_review";
-              }
-            }
-          }
-
-          semanticLineResults.push({
-            ...lr,
-            evidenceRefs: cleanRefs,
-          });
-
-          // Line-level semantic results override top-level LLM status
-          if (lr.status === "unsupported") {
-            semanticUnsupportedCount++;
-            semanticStatus = "failed";
-            errorsList.push({
-              type: "semantic_unsupported_claim",
-              lineIndex: lr.lineIndex,
-              reason: `Semantic review: Line #${(lr.lineIndex || 0) + 1} is unsupported. ${lr.reason}`,
-            });
-          } else if (lr.status === "needs_review") {
-            semanticNeedsReviewCount++;
-            if (semanticStatus !== "failed") {
-              semanticStatus = "needs_review";
-            }
-            warningsList.push({
-              type: "semantic_needs_review_claim",
-              lineIndex: lr.lineIndex,
-              reason: `Semantic review suspect: Line #${(lr.lineIndex || 0) + 1} needs review. ${lr.reason}`,
-            });
-          }
-        }
+        const lineOutput = processSemanticLineResults({
+          rawLineResults,
+          factualByIndex,
+          allowedSourceRefs,
+          originalFlatLines,
+          validEvidenceTypes: VALID_EVIDENCE_TYPES,
+        });
+        errorsList.push(...lineOutput.errors);
+        warningsList.push(...lineOutput.warnings);
+        semanticLineResults.push(...lineOutput.semanticLineResults);
+        semanticUnsupportedCount += lineOutput.counts.unsupported;
+        semanticNeedsReviewCount += lineOutput.counts.needsReview;
+        semanticInvalidEvidenceRefCount += lineOutput.counts.invalidEvidenceRef;
+        semanticSkippedNonFactualCount += lineOutput.counts.skippedNonFactual;
+        semanticParseErrorCount += lineOutput.counts.parseError;
+        semanticStatus = mostSevereStatus(semanticStatus, lineOutput.status);
       } else {
         semanticStatus = "needs_review";
         semanticSummary = "LLM returned invalid structured format. Semantic review flagged as needs_review.";
@@ -752,6 +740,8 @@ Run the fact-checking comparison and output the JSON structure containing status
     semanticInvalidEvidenceRefCount,
     semanticMisleadingCount,
     semanticUnsafeClaimCount,
+    semanticSkippedNonFactualCount,
+    semanticParseErrorCount,
   };
 
   const summaryData = {
@@ -766,6 +756,8 @@ Run the fact-checking comparison and output the JSON structure containing status
     semanticInvalidEvidenceRefCount,
     semanticMisleadingCount,
     semanticUnsafeClaimCount,
+    semanticSkippedNonFactualCount,
+    semanticParseErrorCount,
   };
 
   const issuesData = {
@@ -777,6 +769,8 @@ Run the fact-checking comparison and output the JSON structure containing status
     semanticInvalidEvidenceRefCount,
     semanticMisleadingCount,
     semanticUnsafeClaimCount,
+    semanticSkippedNonFactualCount,
+    semanticParseErrorCount,
   };
 
   // 8. Atomic database transaction updating statuses

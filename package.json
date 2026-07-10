@@ -27,6 +27,7 @@
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
     "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",
+    "test:factcheck-semantic": "tsx --conditions=react-server src/scripts/testSemanticFactCheck.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
     "ingest:audio-assets": "tsx --conditions=react-server src/scripts/ingestAudioAssets.ts",
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",
