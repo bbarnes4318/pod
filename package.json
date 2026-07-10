@@ -25,6 +25,8 @@
     "test:sound-design": "tsx src/scripts/testSoundDesign.ts",
     "test:production-planner": "tsx src/scripts/testProductionPlanner.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
+    "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
+    "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
     "ingest:audio-assets": "tsx --conditions=react-server src/scripts/ingestAudioAssets.ts",
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",

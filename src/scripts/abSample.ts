@@ -224,7 +224,9 @@ async function renderAfter(files: Map<number, string>, outPath: string): Promise
 }
 
 async function report(label: string, filePath: string): Promise<void> {
-  const qa = await analyzeEpisodeAudio(ffmpegPath, filePath);
+  const qa = await analyzeEpisodeAudio(ffmpegPath, filePath, {
+    scriptedPauses: lines.map((l) => l.pauseBefore),
+  });
   console.log(`\n=== QA: ${label} (${path.basename(filePath)}) ===`);
   for (const c of qa.checks) {
     console.log(`  ${c.status.toUpperCase().padEnd(7)} ${c.name}: ${c.value}`);

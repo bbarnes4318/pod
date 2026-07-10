@@ -8,13 +8,96 @@
 //                           digitally silent), clipping
 //   - mastering problems -> integrated loudness off podcast target
 
-import { runFfmpeg } from "./assembly";
+import { runFfmpeg, DEFAULT_PAUSE_MS } from "./assembly";
 
 export interface AudioQaCheck {
   name: string;
   status: "pass" | "warning" | "fail";
   value: string;
   detail: string;
+}
+
+export type ScriptedPause = "none" | "beat" | "breath" | "long";
+
+export interface PauseVarietyScore {
+  status: "pass" | "warning" | "fail";
+  value: string;
+  detail: string;
+  /** Population σ of the scripted pause lengths in ms (null when no lines). */
+  stdDevMs: number | null;
+  meanMs: number | null;
+  /** Did the script ever call for a dramatic "long" beat? */
+  hasLong: boolean;
+  count: number;
+  histogram: Record<ScriptedPause, number>;
+}
+
+// Meaningful-spread and floor thresholds for σ of the scripted pause lengths,
+// in ms. Chosen against the two anchors this metric must separate:
+//   - a well-paced script (v3: none 24 / beat 30 / breath 4 / long 5) → σ≈277ms
+//   - a metronome script  (every line the same beat)                   → σ=0ms
+const PAUSE_SIGMA_MEANINGFUL_MS = 150;
+const PAUSE_SIGMA_SOME_MS = 80;
+
+/**
+ * Score pacing variety from the SCRIPTED pause plan — the pauseBefore each line
+ * was authored with — rather than from silence detected in the mastered mix.
+ *
+ * Why not measure the audio? The final master carries a ducked music bed that
+ * sits above the −45dB silence gate, so it masks the very gaps we'd measure,
+ * and an 80ms "none" pause falls under ffmpeg's 0.15s detection floor. The old
+ * acoustic check therefore reported "σ=0.00 over 2 pauses" on a perfectly-paced
+ * script — an unmeetable, dishonest metric. The scripted plan is exactly what
+ * the pipeline controls and what planConversationTimeline turns into real gaps
+ * (via DEFAULT_PAUSE_MS), so it is the honest thing to grade.
+ *
+ * Pure and ffmpeg-free so it is unit-testable in isolation. Unknown/undefined
+ * pauseBefore maps to "beat", mirroring planConversationTimeline's fallback.
+ */
+export function scorePauseVariety(pauses: Array<ScriptedPause | undefined | null>): PauseVarietyScore {
+  const histogram: Record<ScriptedPause, number> = { none: 0, beat: 0, breath: 0, long: 0 };
+  const ms: number[] = [];
+  for (const p of pauses) {
+    const kind: ScriptedPause = p === "none" || p === "breath" || p === "long" ? p : "beat";
+    histogram[kind]++;
+    ms.push(DEFAULT_PAUSE_MS[kind]);
+  }
+  const count = ms.length;
+  const meanMs = count ? ms.reduce((a, b) => a + b, 0) / count : null;
+  const stdDevMs =
+    count > 1 && meanMs !== null
+      ? Math.sqrt(ms.reduce((a, b) => a + (b - meanMs) ** 2, 0) / count)
+      : count === 1
+        ? 0
+        : null;
+  const hasLong = histogram.long > 0;
+
+  let status: "pass" | "warning" | "fail";
+  if (stdDevMs === null) {
+    status = "warning"; // no scripted pacing data to grade
+  } else if (stdDevMs >= PAUSE_SIGMA_MEANINGFUL_MS && hasLong) {
+    status = "pass";
+  } else if (stdDevMs >= PAUSE_SIGMA_SOME_MS) {
+    status = "warning"; // some spread, but not enough or missing a "long" beat
+  } else {
+    status = "fail"; // metronome pacing
+  }
+
+  const shape = `none ${histogram.none} / beat ${histogram.beat} / breath ${histogram.breath} / long ${histogram.long}`;
+  return {
+    status,
+    value:
+      stdDevMs === null
+        ? "n/a (no script pacing data)"
+        : `σ=${Math.round(stdDevMs)}ms over ${count} pauses (${shape})`,
+    detail:
+      "Scripted pause plan (none 80 / beat 300 / breath 650 / long 1100 ms). Metronome pacing is the #1 splice tell; a human debate mixes short and long beats. Needs σ ≥ 150ms AND at least one 'long'.",
+    stdDevMs,
+    meanMs,
+    hasLong,
+    count,
+    histogram,
+  };
 }
 
 export interface AudioQaReport {
@@ -28,6 +111,10 @@ export interface AudioQaReport {
     maxSilenceGapSec: number;
     meanGapSec: number | null;
     gapStdDevSec: number | null;
+    /** σ of the SCRIPTED pause plan (ms) — the honest pacing-variety metric. */
+    scriptedPauseStdDevMs: number | null;
+    scriptedPauseHasLong: boolean;
+    scriptedPauseCount: number;
   };
 }
 
@@ -39,7 +126,7 @@ interface SilenceInterval {
 export async function analyzeEpisodeAudio(
   ffmpegPath: string,
   filePath: string,
-  opts: { targetLufs?: number } = {}
+  opts: { targetLufs?: number; scriptedPauses?: Array<ScriptedPause | undefined | null> } = {}
 ): Promise<AudioQaReport> {
   const targetLufs = opts.targetLufs ?? -16;
 
@@ -109,13 +196,18 @@ export async function analyzeEpisodeAudio(
     detail: "Peaks above -0.8 dBFS risk clipping after lossy re-encoding by podcast platforms.",
   });
 
-  check(checks, {
+  // Pace variety is graded from the SCRIPTED pause plan, not from silence in
+  // the mastered mix: the ducked music bed masks the gaps and 80ms "none"
+  // pauses fall under ffmpeg's detection floor, so the acoustic reading was an
+  // illusion ("σ=0.00 over 2 pauses" on a well-paced script). See
+  // scorePauseVariety. When no script pacing data is supplied it reports n/a
+  // (a warning), never a spurious fail.
+  const pauseVariety = scorePauseVariety(opts.scriptedPauses ?? []);
+  checks.push({
     name: "Pause variety (no metronome pacing)",
-    ok: gapStdDev === null || gapStdDev >= 0.12,
-    warn: gapStdDev !== null && gapStdDev >= 0.06,
-    value: gapStdDev === null ? "n/a" : `σ=${gapStdDev.toFixed(2)}s over ${gapLengths.length} pauses`,
-    detail:
-      "Identical gaps between every line is how splice-assembled audio gives itself away. Std deviation of pause lengths should exceed ~0.12s.",
+    status: pauseVariety.status,
+    value: pauseVariety.value,
+    detail: pauseVariety.detail,
   });
 
   check(checks, {
@@ -146,6 +238,9 @@ export async function analyzeEpisodeAudio(
       maxSilenceGapSec: maxGap,
       meanGapSec: meanGap,
       gapStdDevSec: gapStdDev,
+      scriptedPauseStdDevMs: pauseVariety.stdDevMs,
+      scriptedPauseHasLong: pauseVariety.hasLong,
+      scriptedPauseCount: pauseVariety.count,
     },
   };
 }

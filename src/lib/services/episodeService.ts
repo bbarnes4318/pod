@@ -5,6 +5,7 @@ import { scoreTopicTalkability } from "./talkabilityService";
 import { isTtsProviderId } from "../providers/tts/providerIds";
 import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
+import { resolveEpisodeHosts } from "./hostCasting";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -124,7 +125,7 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
   const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
 
   // Validate host casting up front: every id must be an active AiHost.
-  const chosenHostIds = [...new Set(input.hostIds || [])];
+  let chosenHostIds = [...new Set(input.hostIds || [])];
   if (chosenHostIds.length > 0) {
     const activeHosts = await db.aiHost.findMany({
       where: { id: { in: chosenHostIds }, isActive: true },
@@ -357,6 +358,43 @@ export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<
 
   result.selectedTopicCount = chosenTopics.length;
   result.selectedTopicIds = chosenTopics.map((t) => t.id);
+
+  // Topic-aware casting: when the operator did NOT pin a cast, pin the two
+  // hosts who best fit AND most disagree on this episode's primary topic,
+  // instead of leaving hostIds empty (which downstream resolves to the two most
+  // intense — how a betting persona once landed on a nostalgia debate). Pinned
+  // hosts (chosenHostIds.length > 0) always win and are untouched. Best-effort:
+  // any hiccup leaves hostIds empty and preserves today's fallback.
+  if (chosenHostIds.length === 0) {
+    try {
+      const primary = chosenTopics[0];
+      const brief = primary?.researchBrief;
+      const { hostA, hostB } = await resolveEpisodeHosts(
+        { hostIds: [] },
+        {
+          topic: primary
+            ? {
+                sport: primary.sport,
+                leagueId: primary.leagueId,
+                title: primary.title,
+                summary: primary.summary,
+              }
+            : null,
+          brief: brief
+            ? { mainAngle: brief.mainAngle, contrarianAngle: brief.contrarianAngle }
+            : null,
+        }
+      );
+      chosenHostIds = [hostA.id, hostB.id];
+      result.reasons.push(
+        `Topic-aware casting: pinned ${hostA.name} + ${hostB.name} for '${primary?.title ?? "primary topic"}'.`
+      );
+    } catch (err) {
+      result.reasons.push(
+        `Topic-aware casting skipped (${(err as Error).message}); using roster fallback at each stage.`
+      );
+    }
+  }
 
   // 2. Resolve title & description
   let title = input.title?.trim();

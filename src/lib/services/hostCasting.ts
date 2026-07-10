@@ -16,6 +16,11 @@
 
 import { db } from "@/lib/db";
 import type { AiHost } from "@prisma/client";
+import {
+  selectBestPair,
+  type CastingTopicInput,
+  type CastingBriefInput,
+} from "./hostCastingShared";
 
 // Re-export the client-safe matcher so server callers have one import site.
 export { makeSpeakerMatchers } from "./hostCastingShared";
@@ -32,12 +37,25 @@ export interface HostCastingSource {
 }
 
 /**
+ * Optional topic/brief context. When supplied AND no cast is pinned, the
+ * fallback picks the best-fit oppositional pair instead of the two most
+ * intense. Absent (today's callers) → identical to previous behavior.
+ */
+export interface EpisodeCastingContext {
+  topic?: CastingTopicInput | null;
+  brief?: CastingBriefInput | null;
+}
+
+/**
  * Resolve the two active hosts cast for an episode.
  * Precedence: the episode's pinned `hostIds` (in the operator's order) →
  * the two most-intense active hosts. Throws a clear, actionable error when
  * two active hosts can't be found.
  */
-export async function resolveEpisodeHosts(source: HostCastingSource): Promise<DebateHosts> {
+export async function resolveEpisodeHosts(
+  source: HostCastingSource,
+  context?: EpisodeCastingContext
+): Promise<DebateHosts> {
   const ids = Array.isArray(source.hostIds) ? source.hostIds.filter(Boolean) : [];
 
   let hostA: AiHost | null = null;
@@ -52,14 +70,27 @@ export async function resolveEpisodeHosts(source: HostCastingSource): Promise<De
     hostB = ordered[1] ?? null;
   }
 
-  // Fill any unresolved chair from the active roster (most intense first), so a
-  // single pinned host still gets a sparring partner and an empty pin falls
-  // back to the strongest available pair.
+  // Fill any unresolved chair from the active roster. Pinned hostIds above are
+  // an absolute override; this only runs for empty/partial pins.
   if (!hostA || !hostB) {
     const active = await db.aiHost.findMany({
       where: { isActive: true, isArchived: false },
       orderBy: [{ intensityLevel: "desc" }, { name: "asc" }],
     });
+
+    // Topic-aware fallback: with no cast pinned and a topic in hand, choose the
+    // two hosts who both have a stake AND will disagree — not just the two most
+    // intense (which is how a betting persona landed on a nostalgia debate).
+    // selectBestPair returns null on a sparse topic / no brief, in which case we
+    // drop through to the intensity-sorted fill below (today's behavior).
+    if (!hostA && !hostB && context?.topic) {
+      const best = selectBestPair(active, context.topic, context.brief ?? undefined);
+      if (best) {
+        hostA = active[best.aIndex] ?? null;
+        hostB = active[best.bIndex] ?? null;
+      }
+    }
+
     for (const h of active) {
       if (h.id === hostA?.id || h.id === hostB?.id) continue;
       if (!hostA) hostA = h;

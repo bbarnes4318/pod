@@ -909,7 +909,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 10b. Automated human-ness QA on the finished master.
     let qaReport: AudioQaReport | null = null;
     try {
-      qaReport = await analyzeEpisodeAudio(ffmpegPath, finalOutputPath, { targetLufs });
+      qaReport = await analyzeEpisodeAudio(ffmpegPath, finalOutputPath, {
+        targetLufs,
+        // Grade pacing from the pause plan we actually authored — the bed masks
+        // it in the mastered mix (see scorePauseVariety).
+        scriptedPauses: allLines.map((l) => l.pauseBefore),
+      });
       for (const c of qaReport.checks) {
         console.log(`[Stitcher][QA] ${c.status.toUpperCase()} — ${c.name}: ${c.value}`);
       }

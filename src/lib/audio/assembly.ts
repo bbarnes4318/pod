@@ -96,6 +96,18 @@ export async function standardizeClipToWav(
 
 export type SegmentBreak = "none" | "segment" | "topic";
 
+/** The four scripted pause lengths, in milliseconds. Single source of truth:
+ *  planConversationTimeline uses these as its gap defaults, and the QA
+ *  pause-variety check maps the script's `pauseBefore` values back through the
+ *  same table so it measures the pacing we actually authored (not silence
+ *  detected in the mastered mix, which the music bed masks). */
+export const DEFAULT_PAUSE_MS: Record<"none" | "beat" | "breath" | "long", number> = {
+  none: 80,
+  beat: 300,
+  breath: 650,
+  long: 1100,
+};
+
 export interface PlannedLine {
   filePath: string;
   durationMs: number;
@@ -161,10 +173,10 @@ export function planConversationTimeline(
   lines: PlannedLine[],
   opts: TimelinePlanOptions = {}
 ): TimelineClip[] {
-  const pauseNone = opts.pauseNoneMs ?? envNum("AUDIO_PAUSE_NONE_MS", 80);
-  const pauseBeat = opts.pauseBeatMs ?? envNum("AUDIO_PAUSE_BEAT_MS", 300);
-  const pauseBreath = opts.pauseBreathMs ?? envNum("AUDIO_PAUSE_BREATH_MS", 650);
-  const pauseLong = opts.pauseLongMs ?? envNum("AUDIO_PAUSE_LONG_MS", 1100);
+  const pauseNone = opts.pauseNoneMs ?? envNum("AUDIO_PAUSE_NONE_MS", DEFAULT_PAUSE_MS.none);
+  const pauseBeat = opts.pauseBeatMs ?? envNum("AUDIO_PAUSE_BEAT_MS", DEFAULT_PAUSE_MS.beat);
+  const pauseBreath = opts.pauseBreathMs ?? envNum("AUDIO_PAUSE_BREATH_MS", DEFAULT_PAUSE_MS.breath);
+  const pauseLong = opts.pauseLongMs ?? envNum("AUDIO_PAUSE_LONG_MS", DEFAULT_PAUSE_MS.long);
   const segmentGap = opts.segmentGapMs ?? envNum("AUDIO_SEGMENT_GAP_MS", 850);
   const topicGap = opts.topicGapMs ?? envNum("AUDIO_TOPIC_GAP_MS", 1200);
   const interruptOverlap = opts.interruptOverlapMs ?? envNum("AUDIO_INTERRUPT_OVERLAP_MS", 320);
