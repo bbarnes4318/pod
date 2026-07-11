@@ -112,6 +112,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, mode: "hard-deleted", referenced: false, host: { id: host.id, name: host.name } });
   }
 
+  // -- setcast (pin an episode's hostIds; used to re-cast before regenerating) --
+  if (action === "setcast") {
+    const targetEpisodeId = String(body?.episodeId || "");
+    const hostIds: string[] = Array.isArray(body?.hostIds) ? body.hostIds.map(String) : [];
+    if (!targetEpisodeId || hostIds.length < 1) {
+      return NextResponse.json({ success: false, error: "episodeId and hostIds[] required." }, { status: 400 });
+    }
+    const found = await db.aiHost.findMany({ where: { id: { in: hostIds }, isActive: true }, select: { id: true, name: true } });
+    if (found.length !== hostIds.length) {
+      return NextResponse.json({ success: false, error: "One or more hostIds are missing or inactive." }, { status: 400 });
+    }
+    const ep = await db.episode.findUnique({ where: { id: targetEpisodeId }, select: { id: true, hostIds: true } });
+    if (!ep) return NextResponse.json({ success: false, error: "Episode not found." }, { status: 404 });
+    await db.episode.update({ where: { id: targetEpisodeId }, data: { hostIds } });
+    // Preserve the operator's chosen order for the returned names.
+    const byId = new Map(found.map((h) => [h.id, h.name]));
+    return NextResponse.json({ success: true, episodeId: targetEpisodeId, before: ep.hostIds, after: hostIds, cast: hostIds.map((id) => byId.get(id)) });
+  }
+
   // -- archive (archive-only; keeps isActive so pinned episodes still resolve) --
   if (action === "archive") {
     const host = await resolveHost(body);
