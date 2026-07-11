@@ -22,7 +22,11 @@ export const RESPONSIBLE_GAMBLING_DISCLAIMER = [
  *  marketing text of a betting episode. */
 const PROHIBITED_PATTERNS: { label: string; re: RegExp }[] = [
   { label: "risk-free", re: /\brisk[\s-]?free\b/i },
-  { label: "guaranteed win/profit", re: /\bguarantee(?:d|s)?\b(?:[^.\n]{0,30})?\b(?:win|winner|profit|money|payout|cash|return)?/i },
+  // Requires an actual profit word after "guarantee" — otherwise the mandatory
+  // responsible-gaming disclaimer ("...not a prediction, guarantee, or
+  // recommendation to place a wager") false-positives and no betting episode can
+  // ever publish. Still catches "guaranteed win", "guarantee profit", etc.
+  { label: "guaranteed win/profit", re: /\bguarantee(?:d|s)?\b(?:[^.\n]{0,30})?\b(?:win|winner|winnings|profit|money|payout|cash|return)\b/i },
   { label: "can't lose", re: /\b(?:can'?t|cannot|no way to)\s+lose\b/i },
   { label: "sure thing / lock", re: /\b(?:sure\s+thing|guaranteed\s+lock|lock\s+of\s+the\s+(?:day|week|year|century))\b/i },
   { label: "free/easy money", re: /\b(?:free|easy)\s+money\b/i },

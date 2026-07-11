@@ -31,6 +31,7 @@
     "test:fact-numbers": "tsx src/scripts/testFactNumbers.ts",
     "test:self-verify": "tsx src/scripts/testSelfVerify.ts",
     "test:evidence-context": "tsx src/scripts/testEvidenceContext.ts",
+    "test:compliance": "tsx src/scripts/testCompliance.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
     "ingest:audio-assets": "tsx --conditions=react-server src/scripts/ingestAudioAssets.ts",
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",
