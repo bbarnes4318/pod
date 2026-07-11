@@ -65,6 +65,24 @@ export async function POST(req: NextRequest) {
   const body: any = await req.json().catch(() => ({}));
   const action: string = body?.action || "list";
 
+  // -- envcheck (runtime env presence probe; NO secret values returned) -----
+  if (action === "envcheck") {
+    const probe = (k: string) => {
+      const v = process.env[k];
+      return { present: typeof v === "string" && v.length > 0, len: (v || "").length };
+    };
+    return NextResponse.json({
+      success: true,
+      runtime: "web",
+      FISH_API_KEY: probe("FISH_API_KEY"),
+      FISH_MODEL: { present: !!process.env.FISH_MODEL, value: process.env.FISH_MODEL || null },
+      ANTHROPIC_API_KEY: probe("ANTHROPIC_API_KEY"),
+      DATABASE_URL: probe("DATABASE_URL"),
+      // Every process.env key that mentions FISH, so a differently-named var shows up.
+      fishKeys: Object.keys(process.env).filter((k) => k.toUpperCase().includes("FISH")),
+    });
+  }
+
   // -- list -----------------------------------------------------------------
   if (action === "list") {
     const hosts = await db.aiHost.findMany({ orderBy: { createdAt: "asc" } });
