@@ -5,10 +5,11 @@
 
 import { db } from "@/lib/db";
 import { parseEpisodeSoundDesign } from "@/lib/audio/soundDesignShared";
+import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
 // Gap model mirroring the stitch/assembly defaults so block positions line up
 // with the rendered timeline within ~a second (same table the player uses).
-const GAP: Record<string, number> = { none: 80, beat: 300, breath: 650, long: 1100, segment: 850, topic: 1200 };
+const GAP: Record<string, number> = { ...DEFAULT_PAUSE_MS, segment: DEFAULT_SEGMENT_GAP_MS, topic: DEFAULT_TOPIC_GAP_MS };
 
 export interface MixLineVM {
   lineIndex: number;

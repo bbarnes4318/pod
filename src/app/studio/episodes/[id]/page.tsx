@@ -11,13 +11,14 @@ import MixView from "../../MixView";
 import PublishPanel from "../../PublishPanel";
 import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
 import SocialClipPanel from "../../SocialClipPanel";
+import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
 export const dynamic = "force-dynamic";
 
 // Gap estimates mirroring the assembly defaults — the exact stitched
 // timeline isn't persisted, so chapter/host positions are close
 // approximations (within ~a second on a typical episode).
-const GAP = { none: 80, beat: 300, breath: 650, long: 1100, segment: 850, topic: 1200 };
+const GAP = { ...DEFAULT_PAUSE_MS, segment: DEFAULT_SEGMENT_GAP_MS, topic: DEFAULT_TOPIC_GAP_MS };
 
 export default async function EpisodePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

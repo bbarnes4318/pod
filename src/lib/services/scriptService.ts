@@ -8,6 +8,11 @@ import {
   sanitizeAudioTags,
   stripAudioTags,
 } from "../audio/speechText";
+import {
+  capLongPauses,
+  MAX_LONG_PAUSES_PER_EPISODE,
+  MIN_LINES_BETWEEN_LONG_PAUSES,
+} from "../audio/pauseTiming";
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript, rewriteLineForGrounding } from "./scriptOutlineEngine";
@@ -451,7 +456,7 @@ You MUST return valid JSON matching this schema:
 
 Delivery field meanings:
 - "energy": how much vocal intensity this line is performed with. Vary it across the episode — an all-"high" episode is exhausting and fake.
-- "pauseBefore": the gap the editor should leave before this line. "none" = jump in immediately (reactions, interruptions), "beat" = normal turn-taking (~0.3s), "breath" = thought pivot (~0.7s), "long" = dramatic beat (~1.2s, use rarely).
+- "pauseBefore": the gap the editor should leave before this line. "none" = jump in immediately (reactions, interruptions), "beat" = normal turn-taking (~0.3s), "breath" = thought pivot (~0.45s), "long" = dramatic beat (~0.6s). "long" is RARE by definition: at most 2-3 per episode, never two close together — the editor downgrades any excess to "breath".
 - "isInterruption": true only when this line cuts the previous speaker off (previous line should end with "—").
 `;
 
@@ -770,6 +775,22 @@ Delivery field meanings:
     }
     if (repaired > 0) {
       result.reasons.push(`Interruption cue guard: appended "—" to ${repaired} predecessor line(s) so every isInterruption overlaps correctly.`);
+    }
+  }
+
+  // 10e. LONG-PAUSE BUDGET — a dramatic beat is rare by definition, but models
+  // overuse "long" (v10 shipped enough of them to read as dead air). Enforce
+  // the budget structurally: at most MAX_LONG_PAUSES_PER_EPISODE per script,
+  // never two within MIN_LINES_BETWEEN_LONG_PAUSES lines; excess downgrades
+  // to "breath".
+  {
+    const flat: any[] = [];
+    for (const seg of finalSegments) for (const l of seg.lines) flat.push(l);
+    const capped = capLongPauses(flat);
+    if (capped.downgraded > 0) {
+      result.reasons.push(
+        `Long-pause budget: downgraded ${capped.downgraded} excess "long" pause(s) to "breath" (kept ${capped.kept}, max ${MAX_LONG_PAUSES_PER_EPISODE}, min spacing ${MIN_LINES_BETWEEN_LONG_PAUSES} lines).`
+      );
     }
   }
 

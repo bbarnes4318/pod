@@ -33,11 +33,14 @@ export interface PauseVarietyScore {
 }
 
 // Meaningful-spread and floor thresholds for σ of the scripted pause lengths,
-// in ms. Chosen against the two anchors this metric must separate:
-//   - a well-paced script (v3: none 24 / beat 30 / breath 4 / long 5) → σ≈277ms
-//   - a metronome script  (every line the same beat)                   → σ=0ms
-const PAUSE_SIGMA_MEANINGFUL_MS = 150;
-const PAUSE_SIGMA_SOME_MS = 80;
+// in ms. Chosen against the two anchors this metric must separate, recomputed
+// for the compressed pause table (none 80 / beat 300 / breath 450 / long 600 —
+// see pauseTiming.ts):
+//   - a well-paced script (v3 mix: none 24 / beat 30 / breath 4 / long 5) → σ≈156ms
+//   - a long-capped 68-line episode (none 11 / beat 50 / breath 4 / long 3) → σ≈114ms
+//   - a metronome script (every line the same beat)                        → σ=0ms
+const PAUSE_SIGMA_MEANINGFUL_MS = 100;
+const PAUSE_SIGMA_SOME_MS = 50;
 
 /**
  * Score pacing variety from the SCRIPTED pause plan — the pauseBefore each line
@@ -91,7 +94,7 @@ export function scorePauseVariety(pauses: Array<ScriptedPause | undefined | null
         ? "n/a (no script pacing data)"
         : `σ=${Math.round(stdDevMs)}ms over ${count} pauses (${shape})`,
     detail:
-      "Scripted pause plan (none 80 / beat 300 / breath 650 / long 1100 ms). Metronome pacing is the #1 splice tell; a human debate mixes short and long beats. Needs σ ≥ 150ms AND at least one 'long'.",
+      `Scripted pause plan (none ${DEFAULT_PAUSE_MS.none} / beat ${DEFAULT_PAUSE_MS.beat} / breath ${DEFAULT_PAUSE_MS.breath} / long ${DEFAULT_PAUSE_MS.long} ms). Metronome pacing is the #1 splice tell; a human debate mixes short and long beats. Needs σ ≥ ${PAUSE_SIGMA_MEANINGFUL_MS}ms AND at least one 'long'.`,
     stdDevMs,
     meanMs,
     hasLong,

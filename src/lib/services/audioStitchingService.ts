@@ -666,16 +666,41 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       dialogueStartMs = Math.max(0, introStd.durationMs - musicCrossfadeMs);
     }
 
-    // Stinger-aware gaps: a 1-3s transition needs room between segments, so
-    // widen the planned break gaps to fit the longest stinger that will
-    // actually play (plan-selected when the planner is on).
+    // Stinger-aware gaps: a transition needs room between segments, but ONLY
+    // at the break where a stinger actually plays, and only as much room as
+    // THAT stinger needs. (v10 postmortem: widening every break to fit the
+    // longest stinger cued anywhere in the episode turned all nine topic/
+    // segment turns into 10-17s of dead air once the Epidemic crate's 13.75s
+    // risers entered the pool.)
     const stingerDurations =
       plannerEnabled && productionPlan
         ? plannedStingerDurations(productionPlan, assetSet.byId)
         : assetSet.stingers.map((s) => s.durationMs);
     const maxStingerMs = stingerDurations.length > 0 ? Math.max(...stingerDurations) : 0;
     const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
-    if (style !== "clean" && maxStingerMs > 0) {
+    // (plannerEnabled already implies style !== "clean".)
+    if (plannerEnabled && productionPlan) {
+      // Per-break widening: the plan says exactly which stinger lands at which
+      // line, so give that line's gap room for that stinger and leave every
+      // other break at the normal conversational gap. The post-jitter floor
+      // guarantees a right-aligned stinger (ends 150ms before its line) can
+      // never start before the previous line has finished.
+      const stingerDurByLine = new Map<number, number>();
+      for (const cue of productionPlan.cues) {
+        if (cue.type !== "stinger" || !cue.assetId) continue;
+        const asset = assetSet.byId.get(cue.assetId);
+        if (asset) stingerDurByLine.set(cue.lineIndex, asset.durationMs);
+      }
+      for (const pl of plannedLines) {
+        if (pl.segmentBreak !== "topic" && pl.segmentBreak !== "segment") continue;
+        const stingerMs = stingerDurByLine.get(pl.lineIndex);
+        if (stingerMs === undefined) continue;
+        pl.breakGapBaseMs = stingerMs + (pl.segmentBreak === "topic" ? 800 : 700);
+        pl.breakGapMinMs = stingerMs + 450;
+      }
+    } else if (style !== "clean" && maxStingerMs > 0) {
+      // Legacy (planner off) keeps the global widening: stingers rotate onto
+      // every break, so every break genuinely needs the room.
       planOpts.topicGapMs = Math.max(Number(process.env.AUDIO_TOPIC_GAP_MS) || 1200, maxStingerMs + 800);
       if (style === "full") {
         planOpts.segmentGapMs = Math.max(Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850, maxStingerMs + 700);

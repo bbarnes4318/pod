@@ -5,12 +5,13 @@ import { stripAudioTags } from "@/lib/audio/speechText";
 import { accentFor } from "../../accent";
 import { emojiForTitle, fmtMin, fmtDay, friendlyStage } from "../../lib";
 import EpisodeDetail, { DetailChapter, DetailSegment } from "./EpisodeDetail";
+import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
 export const dynamic = "force-dynamic";
 
 // Gap estimates mirroring assembly defaults — chapter starts are close
 // approximations (the exact stitched timeline isn't persisted).
-const GAP = { none: 80, beat: 300, breath: 650, long: 1100, segment: 850, topic: 1200 } as const;
+const GAP = { ...DEFAULT_PAUSE_MS, segment: DEFAULT_SEGMENT_GAP_MS, topic: DEFAULT_TOPIC_GAP_MS } as const;
 
 export default async function UserEpisodePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

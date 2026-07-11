@@ -96,17 +96,10 @@ export async function standardizeClipToWav(
 
 export type SegmentBreak = "none" | "segment" | "topic";
 
-/** The four scripted pause lengths, in milliseconds. Single source of truth:
- *  planConversationTimeline uses these as its gap defaults, and the QA
- *  pause-variety check maps the script's `pauseBefore` values back through the
- *  same table so it measures the pacing we actually authored (not silence
- *  detected in the mastered mix, which the music bed masks). */
-export const DEFAULT_PAUSE_MS: Record<"none" | "beat" | "breath" | "long", number> = {
-  none: 80,
-  beat: 300,
-  breath: 650,
-  long: 1100,
-};
+// Single source of truth for pause lengths lives in pauseTiming.ts (pure, so
+// UI view-models can share it); re-exported here for existing importers.
+import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "./pauseTiming";
+export { DEFAULT_PAUSE_MS };
 
 export interface PlannedLine {
   filePath: string;
@@ -118,6 +111,13 @@ export interface PlannedLine {
   isInterruption?: boolean;
   /** Does a new script segment start at this line? */
   segmentBreak?: SegmentBreak;
+  /** Per-line base gap override (before jitter). The stitcher sets this on a
+   *  break line to fit the SPECIFIC stinger cued there — the v10 bug was
+   *  widening EVERY break to fit the longest stinger in the episode. */
+  breakGapBaseMs?: number;
+  /** Post-jitter floor for this line's gap (e.g. stinger duration + margin so
+   *  a right-aligned stinger can never start before the previous line ends). */
+  breakGapMinMs?: number;
 }
 
 export interface TimelineClip {
@@ -177,8 +177,8 @@ export function planConversationTimeline(
   const pauseBeat = opts.pauseBeatMs ?? envNum("AUDIO_PAUSE_BEAT_MS", DEFAULT_PAUSE_MS.beat);
   const pauseBreath = opts.pauseBreathMs ?? envNum("AUDIO_PAUSE_BREATH_MS", DEFAULT_PAUSE_MS.breath);
   const pauseLong = opts.pauseLongMs ?? envNum("AUDIO_PAUSE_LONG_MS", DEFAULT_PAUSE_MS.long);
-  const segmentGap = opts.segmentGapMs ?? envNum("AUDIO_SEGMENT_GAP_MS", 850);
-  const topicGap = opts.topicGapMs ?? envNum("AUDIO_TOPIC_GAP_MS", 1200);
+  const segmentGap = opts.segmentGapMs ?? envNum("AUDIO_SEGMENT_GAP_MS", DEFAULT_SEGMENT_GAP_MS);
+  const topicGap = opts.topicGapMs ?? envNum("AUDIO_TOPIC_GAP_MS", DEFAULT_TOPIC_GAP_MS);
   const interruptOverlap = opts.interruptOverlapMs ?? envNum("AUDIO_INTERRUPT_OVERLAP_MS", 320);
   const jitterFraction = opts.jitterFraction ?? envNum("AUDIO_GAP_JITTER", 0.35);
   const stereoSpread = opts.stereoSpread ?? envNum("AUDIO_STEREO_SPREAD", 0.14);
@@ -199,6 +199,15 @@ export function planConversationTimeline(
         interruptOverlap,
         Math.round(lines[i - 1].durationMs * 0.4)
       );
+    } else if (line.breakGapBaseMs !== undefined) {
+      // Stinger-fitted break: the floor holds the asset (it must fully fit,
+      // right-aligned, without touching the previous line), and jitter applies
+      // ONLY to the padding above the floor — jittering the asset's own
+      // duration would reopen multi-second silence before the stinger starts.
+      const floor = Math.max(40, line.breakGapMinMs ?? 40);
+      const pad = Math.max(0, line.breakGapBaseMs - floor);
+      const jitter = 1 + (rand() * 2 - 1) * jitterFraction;
+      gapMs = floor + Math.round(pad * jitter);
     } else {
       const base =
         line.segmentBreak === "topic"
