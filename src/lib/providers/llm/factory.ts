@@ -59,4 +59,27 @@ export function getFactCheckLLMProvider(): LLMProvider {
   return getLLMProvider({ provider: cfg.provider, model: cfg.model });
 }
 
+/**
+ * LLM used for VERIFICATION work: the self-verify grounding rewrites and the
+ * semantic fact-check reviewer. These are structured grading/rewrite tasks
+ * against supplied evidence — not creative generation — so they run on a
+ * cheaper model than the script writer by default (claude-sonnet-5 when the
+ * chain resolves to Anthropic). Override via VERIFY_LLM_PROVIDER /
+ * VERIFY_MODEL. Non-Anthropic and stub chains keep their existing model — we
+ * never silently upgrade "stub" to a paid call.
+ */
+export function resolveVerifyLLMConfig(): { provider: string; model?: string } {
+  const base = resolveFactCheckLLMConfig();
+  const provider = (process.env.VERIFY_LLM_PROVIDER || base.provider).toLowerCase();
+  const model =
+    process.env.VERIFY_MODEL ||
+    (provider === "anthropic" ? "claude-sonnet-5" : base.model);
+  return { provider, model };
+}
+
+export function getVerifyLLMProvider(): LLMProvider {
+  const cfg = resolveVerifyLLMConfig();
+  return getLLMProvider({ provider: cfg.provider, model: cfg.model });
+}
+
 export default getLLMProvider;

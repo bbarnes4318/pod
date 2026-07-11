@@ -69,8 +69,20 @@ export class AnthropicLLMProvider implements LLMProvider {
       messages: [{ role: "user", content: options.prompt }],
       max_tokens: options.maxTokens || 8192,
     };
+    // System prompt as content blocks with prompt-cache breakpoints. Within
+    // one episode the big script system prompt / evidence packet is byte-
+    // identical across many calls — the first call writes the cache (1.25x),
+    // every later call reads it at 0.1x input price. cache_control on a
+    // too-short prefix is a silent no-op, so the marker is always safe.
+    const systemBlocks: any[] = [];
     if (systemPrompt) {
-      body.system = systemPrompt;
+      systemBlocks.push({ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } });
+    }
+    if (options.cacheableContext) {
+      systemBlocks.push({ type: "text", text: options.cacheableContext, cache_control: { type: "ephemeral" } });
+    }
+    if (systemBlocks.length > 0) {
+      body.system = systemBlocks;
     }
     if (this.supportsSampling()) {
       if (options.temperature !== undefined) body.temperature = options.temperature;
@@ -78,6 +90,15 @@ export class AnthropicLLMProvider implements LLMProvider {
       // Adaptive thinking is the quality lever on these models (sampling
       // params are gone). Not on by default on Opus 4.7/4.8 — set explicitly.
       body.thinking = { type: "adaptive" };
+      // Thinking tokens COUNT AGAINST max_tokens. Callers size maxTokens for
+      // the visible JSON/text they expect, so without headroom the thinking
+      // spend truncates the answer mid-JSON (the v11 outline call died at
+      // exactly its 8000 cap and forced the single-shot fallback; the semantic
+      // reviewer's intermittent parse failures on v6-v9 were the same
+      // mechanism). Headroom only raises the CAP — actual billed output is
+      // whatever the model produces.
+      const headroom = Number(process.env.LLM_THINKING_HEADROOM_TOKENS) || 8192;
+      body.max_tokens = (options.maxTokens || 8192) + headroom;
     }
     return body;
   }

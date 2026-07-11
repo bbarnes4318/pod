@@ -1,6 +1,11 @@
 export interface GenerateTextOptions {
   prompt: string;
   systemPrompt?: string;
+  /** Large context that is byte-identical across several calls in a run
+   *  (evidence packet, character data). Providers place it in a separate
+   *  system block with a provider cache breakpoint so repeat calls read it
+   *  from the prompt cache instead of re-billing full input price. */
+  cacheableContext?: string;
   temperature?: number;
   maxTokens?: number;
 }

@@ -45,14 +45,23 @@ export class OpenAILLMProvider implements LLMProvider {
     return m.startsWith("o1") || m.startsWith("o3") || m === "gpt-5.5";
   }
 
+  /** OpenAI caches long identical prompt prefixes automatically — appending
+   *  the cacheable context to the system message keeps the stable content in
+   *  the prefix, matching the Anthropic provider's block layout. */
+  private buildMessages(options: GenerateTextOptions): any[] {
+    const messages: any[] = [];
+    const system = [options.systemPrompt, options.cacheableContext].filter(Boolean).join("\n\n");
+    if (system) {
+      messages.push({ role: "system", content: system });
+    }
+    messages.push({ role: "user", content: options.prompt });
+    return messages;
+  }
+
   async generateText(options: GenerateTextOptions): Promise<string> {
     console.log(`[OpenAI] Requesting completions via model: ${this.model}`);
 
-    const messages: any[] = [];
-    if (options.systemPrompt) {
-      messages.push({ role: "system", content: options.systemPrompt });
-    }
-    messages.push({ role: "user", content: options.prompt });
+    const messages = this.buildMessages(options);
 
     const body: any = {
       model: this.model,
@@ -99,11 +108,7 @@ export class OpenAILLMProvider implements LLMProvider {
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
     console.log(`[OpenAI] Requesting structured output (JSON mode) via model: ${this.model}`);
 
-    const messages: any[] = [];
-    if (options.systemPrompt) {
-      messages.push({ role: "system", content: options.systemPrompt });
-    }
-    messages.push({ role: "user", content: options.prompt });
+    const messages = this.buildMessages(options);
 
     const body: any = {
       model: this.model,

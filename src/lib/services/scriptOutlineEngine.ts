@@ -117,67 +117,86 @@ export async function generateOutlineDrivenScript(
   return { segments: rawSegments };
 }
 
-/** Ask the model to rewrite ONE ungrounded line: use the correct figure from
- *  evidence, or restate the point qualitatively (the "argue without it" valve).
- *  Keeps the speaker, tone, and conversational feel; adds no new fabrication.
+/** Ask the model to rewrite ALL flagged ungrounded lines in ONE batched call:
+ *  use the correct figure from evidence, or restate the point qualitatively
+ *  (the "argue without it" valve). Keeps each line's speaker, tone, and
+ *  conversational feel; adds no new fabrication. One call replaces the old
+ *  per-line loop (N calls); very large batches are chunked defensively.
  *  Exported so scriptService can run self-verify on both generation paths. */
-export async function rewriteLineForGrounding(
+export async function rewriteLinesForGrounding(
   llm: LLMProvider,
-  ctx: RewriteContext,
+  items: RewriteContext[],
   systemPrompt: string
-): Promise<{ text: string; evidenceRefs?: any[]; isFactualClaim?: boolean } | null> {
-  const figs = ctx.unsupportedFigures
-    .map(
-      (f) =>
-        `- "${f.surface}" (${f.value}) is NOT in the evidence${
-          f.evidenceSays.length ? `; the evidence's numbers are: ${f.evidenceSays.join(", ")}` : ""
-        }`
-    )
-    .join("\n");
-  const attrs = ctx.unsupportedAttributions
-    .map((n) => `- "${n}" is presented as saying/doing something specific, but is NOT in the evidence (fabricated attribution — remove or make it a general reference)`)
-    .join("\n");
-  const semantic = ctx.semanticReason
-    ? `\nSEMANTIC REVIEWER FLAG (fix exactly this): ${ctx.semanticReason}\n- If a real figure is attached to the WRONG subject/team, move it to the subject the evidence attributes it to, or drop it.\n- If the line is MORE precise than the evidence (e.g. "six innings, seven strikeouts" when the evidence only says "a shutout start"), reduce it to exactly what the evidence supports, or go qualitative.`
-    : "";
+): Promise<Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>> {
+  const out = new Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>();
+  if (items.length === 0) return out;
 
-  const prompt = `One line of the podcast script states specifics that are NOT supported by the evidence. Rewrite JUST this one line so every number and every named-person attribution is supported by the evidence below — OR restate the point qualitatively (conviction, memory, rhetoric — no invented figure or quote). Keep the SAME speaker, tone, energy, and conversational feel (fragments, interruptions, attitude, an ending "—" if it was an interruption). Introduce NO new fabrications.
+  // Keep each batched response comfortably under output limits.
+  const CHUNK = 15;
+  for (let i = 0; i < items.length; i += CHUNK) {
+    const chunk = items.slice(i, i + CHUNK);
 
-SPEAKER: ${ctx.line.speakerName}
-CURRENT LINE: ${JSON.stringify(ctx.line.text)}
-
-VIOLATIONS:
-${figs || "(no figure violations)"}
+    const lineBlocks = chunk.map((ctx) => {
+      const figs = ctx.unsupportedFigures
+        .map(
+          (f) =>
+            `  - "${f.surface}" (${f.value}) is NOT in the evidence${
+              f.evidenceSays.length ? `; the evidence's numbers are: ${f.evidenceSays.join(", ")}` : ""
+            }`
+        )
+        .join("\n");
+      const attrs = ctx.unsupportedAttributions
+        .map((n) => `  - "${n}" is presented as saying/doing something specific, but is NOT in the evidence (fabricated attribution — remove or make it a general reference)`)
+        .join("\n");
+      const semantic = ctx.semanticReason
+        ? `\n  SEMANTIC REVIEWER FLAG (fix exactly this): ${ctx.semanticReason}\n  - If a real figure is attached to the WRONG subject/team, move it to the subject the evidence attributes it to, or drop it.\n  - If the line is MORE precise than the evidence, reduce it to exactly what the evidence supports, or go qualitative.`
+        : "";
+      return `LINE ${ctx.line.lineIndex} — SPEAKER: ${ctx.line.speakerName}
+  CURRENT TEXT: ${JSON.stringify(ctx.line.text)}
+  VIOLATIONS:
+${figs || "  (no figure violations)"}
 ${attrs}${semantic}
+  EVIDENCE FOR THIS LINE (the only facts it may state as true):
+  ${ctx.evidenceText || "(no specific evidence for this line — go qualitative: assert no figure and no named-person quote/action)"}`;
+    });
 
-EVIDENCE (the only facts you may state as true):
-${ctx.evidenceText || "(no specific evidence for this line — go qualitative: assert no figure and no named-person quote/action)"}
+    const prompt = `${chunk.length} line(s) of the podcast script state specifics that are NOT supported by their evidence. Rewrite EACH listed line so every number and every named-person attribution is supported by that line's evidence — OR restate the point qualitatively (conviction, memory, rhetoric — no invented figure or quote). Keep each line's SAME speaker, tone, energy, and conversational feel (fragments, interruptions, attitude, an ending "—" if it was an interruption). Introduce NO new fabrications. Do not touch any line not listed.
+
+${lineBlocks.join("\n\n")}
 
 Return valid JSON only:
-{ "text": "the rewritten spoken line", "isFactualClaim": true | false, "evidenceRefs": [ { "type": "game|newsItem|injury|oddsSnapshot|teamStat|playerStat", "id": "..." } ] }
-- Keep a real figure only if it is in the evidence above -> isFactualClaim true + the matching evidenceRefs.
+{ "rewrites": [ { "lineIndex": <number from LINE header>, "text": "the rewritten spoken line", "isFactualClaim": true | false, "evidenceRefs": [ { "type": "game|newsItem|injury|oddsSnapshot|teamStat|playerStat", "id": "..." } ] } ] }
+- One rewrites entry per listed line, keyed by its lineIndex.
+- Keep a real figure only if it is in that line's evidence -> isFactualClaim true + the matching evidenceRefs.
 - Go qualitative (no specific figure/quote) -> isFactualClaim false + evidenceRefs [].`;
 
-  try {
-    const res = await withLlmStage("script:selfverify-rewrite", () =>
-      llm.generateStructuredOutput<any>({
-        prompt,
-        systemPrompt,
-        temperature: 0.6,
-        maxTokens: 900,
-      })
-    );
-    if (res && typeof res.text === "string" && res.text.trim()) {
-      return {
-        text: res.text,
-        evidenceRefs: Array.isArray(res.evidenceRefs) ? res.evidenceRefs : undefined,
-        isFactualClaim: typeof res.isFactualClaim === "boolean" ? res.isFactualClaim : undefined,
-      };
+    try {
+      const res = await withLlmStage("script:selfverify-rewrite", () =>
+        llm.generateStructuredOutput<any>({
+          prompt,
+          systemPrompt,
+          temperature: 0.6,
+          maxTokens: Math.min(300 * chunk.length + 600, 8000),
+        })
+      );
+      const rewrites = Array.isArray(res?.rewrites) ? res.rewrites : [];
+      const requested = new Set(chunk.map((c) => c.line.lineIndex));
+      for (const rw of rewrites) {
+        if (!requested.has(rw?.lineIndex)) continue; // never touch unlisted lines
+        if (typeof rw?.text !== "string" || !rw.text.trim()) continue;
+        out.set(rw.lineIndex, {
+          text: rw.text,
+          evidenceRefs: Array.isArray(rw.evidenceRefs) ? rw.evidenceRefs : undefined,
+          isFactualClaim: typeof rw.isFactualClaim === "boolean" ? rw.isFactualClaim : undefined,
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[SelfVerify] batched rewrite failed: ${err?.message}`);
+      // Chunk failure = those lines stay unrewritten this round; the
+      // deterministic re-check and the fact-check gate still catch them.
     }
-  } catch (err: any) {
-    console.warn(`[SelfVerify] rewrite failed: ${err?.message}`);
   }
-  return null;
+  return out;
 }
 
 async function generateEpisodeOutline(llm: LLMProvider, args: OutlineDrivenArgs): Promise<OutlineBeat[]> {

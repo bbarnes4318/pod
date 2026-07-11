@@ -26,12 +26,13 @@ export interface RewriteContext {
   attempt: number;
 }
 
-/** Returns the corrected spoken text (and optionally revised evidenceRefs and a
- *  downgraded isFactualClaim when the line goes qualitative), or null to give up
- *  this attempt. */
-export type LineRewriter = (
-  ctx: RewriteContext
-) => Promise<{ text: string; evidenceRefs?: any[]; isFactualClaim?: boolean } | null>;
+/** Rewrites ALL flagged lines in one batched call. Returns a map keyed by
+ *  lineIndex with the corrected spoken text (and optionally revised
+ *  evidenceRefs and a downgraded isFactualClaim when the line goes
+ *  qualitative). A line absent from the map was not rewritten this round. */
+export type BatchLineRewriter = (
+  items: RewriteContext[]
+) => Promise<Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>>;
 
 /** One batched semantic review over all lines; returns only the flagged ones. */
 export type SemanticReviewFn = (
@@ -71,11 +72,11 @@ export interface SelfVerifyOptions {
   evidenceByRefId: Map<string, string>;
   fullEvidenceText: string;
   hostNames: string[];
-  rewrite: LineRewriter;
+  rewrite: BatchLineRewriter;
   maxAttempts?: number;
   /** Optional batched semantic reviewer (the gate reviewer). */
   semanticReview?: SemanticReviewFn;
-  /** Max semantic rewrite rounds (each round = 1 review call + K rewrites). */
+  /** Max semantic rewrite rounds (each round = 1 review call + 1 batched rewrite). */
   maxSemanticRounds?: number;
 }
 
@@ -152,50 +153,80 @@ export async function selfVerifyAndCorrect(
   };
 
   // ---- Pass 1: deterministic (figures / attributions) ----
+  // Round-based and BATCHED: every violating line is verified (free,
+  // deterministic), then ALL violators are rewritten in ONE model call per
+  // round, re-verified, and only the still-failing lines go into the next
+  // round. Same checks, same caps, same never-silently-pass behavior as the
+  // old per-line loop — just K calls instead of N×K.
+  interface Tracked {
+    line: any;
+    before: string;
+    attempts: number;
+    resolved: boolean;
+    initialFigures: string[];
+    initialAttrs: string[];
+    verdict: ReturnType<typeof verifyLineAgainstEvidence>;
+  }
+  const violating: Tracked[] = [];
   for (const seg of Array.isArray(segments) ? segments : []) {
     if (!seg || !Array.isArray(seg.lines)) continue;
     for (const line of seg.lines) {
       if (!line || line.isFactualClaim !== true || typeof line.text !== "string") continue;
       report.factualLinesChecked++;
 
-      const before = line.text;
-      let v = verifyLineAgainstEvidence(line.text, citedTextFor(line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
+      const v = verifyLineAgainstEvidence(line.text, citedTextFor(line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
       if (!v.verifiable || (v.unsupportedFigures.length === 0 && v.unsupportedAttributions.length === 0)) continue;
 
       report.linesWithViolations++;
-      const initialFigures = v.unsupportedFigures.map((f) => `${f.surface}(${f.value})`);
-      const initialAttrs = [...v.unsupportedAttributions];
+      violating.push({
+        line,
+        before: line.text,
+        attempts: 0,
+        resolved: false,
+        initialFigures: v.unsupportedFigures.map((f) => `${f.surface}(${f.value})`),
+        initialAttrs: [...v.unsupportedAttributions],
+        verdict: v,
+      });
+    }
+  }
 
-      let attempts = 0;
-      let resolved = false;
-      while (attempts < maxAttempts) {
-        attempts++;
-        let result: { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean } | null = null;
-        try {
-          result = await opts.rewrite({
-            line,
-            evidenceText: citedTextFor(line, opts.evidenceByRefId) || opts.fullEvidenceText,
-            unsupportedFigures: v.unsupportedFigures,
-            unsupportedAttributions: v.unsupportedAttributions,
-            attempt: attempts,
-          });
-        } catch {
-          result = null;
-        }
-        if (!result || typeof result.text !== "string" || !result.text.trim()) continue;
+  let pending = violating;
+  for (let attempt = 1; attempt <= maxAttempts && pending.length > 0; attempt++) {
+    const contexts: RewriteContext[] = pending.map((t) => ({
+      line: t.line,
+      evidenceText: citedTextFor(t.line, opts.evidenceByRefId) || opts.fullEvidenceText,
+      unsupportedFigures: t.verdict.unsupportedFigures,
+      unsupportedAttributions: t.verdict.unsupportedAttributions,
+      attempt,
+    }));
+    let results: Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>;
+    try {
+      results = await opts.rewrite(contexts); // ONE batched call
+    } catch {
+      results = new Map();
+    }
 
-        applyRewrite(line, result, before);
-        v = verifyLineAgainstEvidence(line.text, citedTextFor(line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
-        if (!v.verifiable || (v.unsupportedFigures.length === 0 && v.unsupportedAttributions.length === 0)) {
-          resolved = true;
-          break;
+    const next: Tracked[] = [];
+    for (const t of pending) {
+      t.attempts = attempt;
+      const result = results.get(t.line.lineIndex);
+      if (result && typeof result.text === "string" && result.text.trim()) {
+        applyRewrite(t.line, result, t.before);
+        t.verdict = verifyLineAgainstEvidence(t.line.text, citedTextFor(t.line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
+        if (!t.verdict.verifiable || (t.verdict.unsupportedFigures.length === 0 && t.verdict.unsupportedAttributions.length === 0)) {
+          t.resolved = true;
+          continue;
         }
       }
-
-      if (resolved) report.linesCorrected++;
-      else report.linesUnresolved++;
-      report.corrections.push({ lineIndex: line.lineIndex, attempts, resolved, before, after: line.text, figures: initialFigures, attributions: initialAttrs });
+      next.push(t); // unrewritten or still violating — retry next round
     }
+    pending = next;
+  }
+
+  for (const t of violating) {
+    if (t.resolved) report.linesCorrected++;
+    else report.linesUnresolved++;
+    report.corrections.push({ lineIndex: t.line.lineIndex, attempts: t.attempts, resolved: t.resolved, before: t.before, after: t.line.text, figures: t.initialFigures, attributions: t.initialAttrs });
   }
 
   // ---- Pass 2: semantic (subject-mismatch / over-precision) ----
@@ -207,24 +238,32 @@ export async function selfVerifyAndCorrect(
     let flagged = await opts.semanticReview(collectReviewLines(segments)); // review call #1
     while (flagged.length > 0 && report.semantic.rounds < maxRounds) {
       report.semantic.rounds++;
+
+      // ONE batched rewrite for every flagged line this round.
+      const roundItems: Array<{ f: { lineIndex: number; reason: string }; line: any; before: string }> = [];
       for (const f of flagged) {
         everFlagged.add(f.lineIndex);
         const line = findLine(segments, f.lineIndex);
         if (!line || line.isFactualClaim !== true || typeof line.text !== "string") continue;
-        const before = line.text;
-        let result: { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean } | null = null;
-        try {
-          result = await opts.rewrite({
+        roundItems.push({ f, line, before: line.text });
+      }
+      let results: Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>;
+      try {
+        results = await opts.rewrite(
+          roundItems.map(({ f, line }) => ({
             line,
             evidenceText: citedTextFor(line, opts.evidenceByRefId) || opts.fullEvidenceText,
             unsupportedFigures: [],
             unsupportedAttributions: [],
             semanticReason: f.reason,
             attempt: report.semantic.rounds,
-          });
-        } catch {
-          result = null;
-        }
+          }))
+        );
+      } catch {
+        results = new Map();
+      }
+      for (const { f, line, before } of roundItems) {
+        const result = results.get(line.lineIndex);
         if (!result || typeof result.text !== "string" || !result.text.trim()) continue;
         applyRewrite(line, result, before);
         report.semantic.corrections.push({ lineIndex: f.lineIndex, round: report.semantic.rounds, reason: f.reason, before, after: line.text });

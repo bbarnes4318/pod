@@ -33,9 +33,17 @@ export interface SemanticReviewInput {
 }
 
 /** The SINGLE semantic-reviewer prompt + schema, shared by the fact-check gate
- *  and the generation-time self-verify loop (one reviewer, not two). */
+ *  and the generation-time self-verify loop (one reviewer, not two).
+ *
+ *  The evidence packet + unsafe-claims + rumor-keyword lists are byte-identical
+ *  across every reviewer call in an episode (self-verify rounds AND the
+ *  fact-check gate share the same corpus by design), so they ride in
+ *  `cacheableContext` — the provider puts them behind a prompt-cache
+ *  breakpoint and repeat calls read them at cache price. Only the (rewritten)
+ *  review lines vary per call, and they stay in the user prompt. */
 export function buildSemanticReviewPrompt(input: SemanticReviewInput): {
   systemPrompt: string;
+  cacheableContext: string;
   prompt: string;
   jsonSchema: any;
 } {
@@ -54,10 +62,7 @@ Rules:
 6. OUTPUT ONLY PROBLEMS: return a lineResults entry ONLY for lines you mark "unsupported" or "needs_review". Do NOT emit an entry for any "supported" line — omit them entirely. A line absent from lineResults is treated as supported. This keeps the response small; emitting all lines can truncate it and fail the whole review.
 7. Return a strict JSON response.`;
 
-  const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true. Return a lineResults entry ONLY for lines you flag as unsupported or needs_review — omit every supported line:
-${JSON.stringify(input.reviewLines)}
-
-Allowed evidence packet:
+  const cacheableContext = `Allowed evidence packet:
 ${JSON.stringify(input.evidencePanelItems)}
 
 Unsafe claims (strictly disallowed):
@@ -66,7 +71,10 @@ ${JSON.stringify(input.unsafeClaims)}
 Prohibited fabricated-sourcing phrases (banned unless the evidence packet itself contains that reporting):
 ${JSON.stringify(input.rumorKeywords)}
 
-Reminder: predictive hedging ("expected to", "likely to", "could be", "might be") is NORMAL debate speech on opinion/prediction lines — never a violation by itself.
+Reminder: predictive hedging ("expected to", "likely to", "could be", "might be") is NORMAL debate speech on opinion/prediction lines — never a violation by itself.`;
+
+  const prompt = `Script dialogue — each line is pre-classified. Evaluate ONLY lines with isFactualClaim:true against the allowed evidence packet provided above. Return a lineResults entry ONLY for lines you flag as unsupported or needs_review — omit every supported line:
+${JSON.stringify(input.reviewLines)}
 
 Run the fact-checking comparison and output the JSON structure containing status, summary, and lineResults (flagged lines only).`;
 
@@ -108,13 +116,13 @@ Run the fact-checking comparison and output the JSON structure containing status
     required: ["status", "summary", "lineResults", "unsupportedClaims", "misleadingClaims", "unsafeClaimsUsed", "missingEvidence", "confidence"],
   };
 
-  return { systemPrompt, prompt, jsonSchema };
+  return { systemPrompt, cacheableContext, prompt, jsonSchema };
 }
 
 /** One batched semantic-review LLM call. Returns the raw structured result. */
 export async function runSemanticReview(provider: LLMProvider, input: SemanticReviewInput): Promise<any> {
-  const { systemPrompt, prompt, jsonSchema } = buildSemanticReviewPrompt(input);
-  return provider.generateStructuredOutput<any>({ prompt, systemPrompt, jsonSchema });
+  const { systemPrompt, cacheableContext, prompt, jsonSchema } = buildSemanticReviewPrompt(input);
+  return provider.generateStructuredOutput<any>({ prompt, systemPrompt, cacheableContext, jsonSchema });
 }
 
 /**

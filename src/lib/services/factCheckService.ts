@@ -1,5 +1,5 @@
 import { db } from "@/lib/db";
-import { getFactCheckLLMProvider, resolveFactCheckLLMConfig } from "@/lib/providers/llm/factory";
+import { getVerifyLLMProvider, resolveVerifyLLMConfig } from "@/lib/providers/llm/factory";
 import { withLlmStage } from "@/lib/providers/llm/costLedger";
 import { stripAudioTags } from "@/lib/audio/speechText";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
@@ -530,10 +530,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     hostBShare >= 25 &&
     script.plainText.trim().length > 0;
 
-  // 6. Layer 2: LLM semantic review. Provider resolves like the script path:
-  // FACTCHECK_LLM_* > SCRIPT_LLM_* > LLM_PROVIDER — stub only when NONE are set,
-  // so the checker runs on the same strong model that wrote the script.
-  const llmConfig = resolveFactCheckLLMConfig();
+  // 6. Layer 2: LLM semantic review. Runs on the VERIFY model (structured
+  // grading against supplied evidence — not creative work): VERIFY_LLM_* >
+  // the factcheck chain (FACTCHECK_LLM_* > SCRIPT_LLM_* > LLM_PROVIDER),
+  // defaulting to claude-sonnet-5 on Anthropic chains. Stub only when the
+  // whole chain is unset.
+  const llmConfig = resolveVerifyLLMConfig();
   const isStub = llmConfig.provider === "stub";
   const llmLabel = llmConfig.model ? `${llmConfig.provider}/${llmConfig.model}` : llmConfig.provider;
   let semanticStatus: "passed" | "failed" | "needs_review" = "passed";
@@ -553,7 +555,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
 
   if (!isStub && deterministicPassed) {
     try {
-      const provider = getFactCheckLLMProvider();
+      const provider = getVerifyLLMProvider();
 
       // Give the reviewer each line already classified, with the conversational
       // context (tone / interruption / fragment) that identifies banter — rather

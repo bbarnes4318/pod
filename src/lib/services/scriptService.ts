@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { getScriptLLMProvider, getFactCheckLLMProvider } from "../providers/llm/factory";
+import { getScriptLLMProvider, getVerifyLLMProvider } from "../providers/llm/factory";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { reviewFactualLinesForRewrite } from "./semanticReview";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
@@ -16,7 +16,7 @@ import {
 } from "../audio/pauseTiming";
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
-import { generateOutlineDrivenScript, rewriteLineForGrounding } from "./scriptOutlineEngine";
+import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { scoreTopicTalkability } from "./talkabilityService";
 
@@ -519,26 +519,29 @@ Delivery field meanings:
   // restatement) up to N times. Best-effort: a self-verify error never blocks
   // generation — the gate still catches anything left.
   try {
-    // Semantic pass reviewer: reuse the gate reviewer (one batched call per
-    // round) to catch subject-mismatch / over-precision the deterministic check
-    // can't. Its own provider instance so we can meter its tokens.
-    const reviewProvider = getFactCheckLLMProvider();
+    // Verification provider: the semantic reviewer AND the grounding rewrites
+    // are structured grading/rewrite tasks, so they run on the cheaper VERIFY
+    // model (getVerifyLLMProvider — VERIFY_LLM_PROVIDER / VERIFY_MODEL), while
+    // the flagship stays on script WRITING. One instance so its tokens are
+    // metered together.
+    const verifyLlm = getVerifyLLMProvider();
     const evidencePanelItems = toEvidencePanel(evidenceTexts);
     result.reasons.push(`Self-verify reviewer evidence: ${JSON.stringify(evidenceFingerprint(evidenceTexts))}.`);
     const usageOf = (p: any) =>
       typeof p?.getAccumulatedUsage === "function" ? p.getAccumulatedUsage() : { inputTokens: 0, outputTokens: 0, requestCount: 0 };
-    const before = { llm: usageOf(llm), rev: usageOf(reviewProvider), t: Date.now() };
+    const before = { llm: usageOf(llm), rev: usageOf(verifyLlm), t: Date.now() };
 
     const sv = await selfVerifyAndCorrect(llmResult.segments, {
       evidenceByRefId,
       fullEvidenceText: evidenceTexts.join("  "),
       hostNames: [hostA.name, hostB.name],
       maxAttempts: Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3,
-      rewrite: (ctx) => rewriteLineForGrounding(llm, ctx, systemPrompt),
+      // ONE batched rewrite call per round for ALL flagged lines.
+      rewrite: (items) => rewriteLinesForGrounding(verifyLlm, items, systemPrompt),
       maxSemanticRounds: Number(process.env.SCRIPT_SELFVERIFY_SEMANTIC_ROUNDS) || 2,
       semanticReview: (reviewLines) =>
         withLlmStage("script:selfverify-semantic", () =>
-          reviewFactualLinesForRewrite(reviewProvider, {
+          reviewFactualLinesForRewrite(verifyLlm, {
             reviewLines,
             evidencePanelItems,
             unsafeClaims: unsafeClaimsList,
@@ -547,7 +550,7 @@ Delivery field meanings:
         ),
     });
 
-    const after = { llm: usageOf(llm), rev: usageOf(reviewProvider) };
+    const after = { llm: usageOf(llm), rev: usageOf(verifyLlm) };
     sv.latencyMs = Date.now() - before.t;
     sv.tokensDelta = {
       inputTokens: after.llm.inputTokens - before.llm.inputTokens + (after.rev.inputTokens - before.rev.inputTokens),
