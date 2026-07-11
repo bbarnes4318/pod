@@ -18,10 +18,16 @@ function arr(v: unknown): string[] {
 
 export default async function HostsPage() {
   const user = await currentUser();
-  // Own + shared hosts only — never another account's roster.
+  // Own + shared hosts only — never another account's roster. Only ACTIVE,
+  // non-archived hosts are shown, so a retired/archived host never lingers on
+  // the public roster (matches every pick-a-host selector).
   const hosts = await db.aiHost
     .findMany({
-      where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null },
+      where: {
+        isActive: true,
+        isArchived: false,
+        ...(user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null }),
+      },
       orderBy: { createdAt: "asc" },
     })
     .catch(() => [] as any[]);
