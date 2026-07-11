@@ -12,6 +12,7 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
 import { getLLMProvider } from "../providers/llm/factory";
+import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeService";
@@ -1132,11 +1133,13 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let providerError = null;
 
     try {
-      llmResult = await llm.generateStructuredOutput<{ topics: any[] }>({
-        prompt,
-        systemPrompt,
-        temperature: 0.25,
-      });
+      llmResult = await withLlmStage("topics:generate", () =>
+        llm.generateStructuredOutput<{ topics: any[] }>({
+          prompt,
+          systemPrompt,
+          temperature: 0.25,
+        })
+      );
     } catch (err: any) {
       providerError = err.message;
       parseErrorCount = 1;
@@ -1439,11 +1442,13 @@ Return valid JSON matching this schema:
   const prompt = `Topic Title: ${title}\nTopic Summary: ${summary}`;
 
   try {
-    const res = await llm.generateStructuredOutput<{ classification: string }>({
-      prompt,
-      systemPrompt,
-      temperature: 0.1,
-    });
+    const res = await withLlmStage("topics:classify", () =>
+      llm.generateStructuredOutput<{ classification: string }>({
+        prompt,
+        systemPrompt,
+        temperature: 0.1,
+      })
+    );
     const type = res.classification?.trim().toLowerCase();
     const validTypes = [
       "game_preview",
@@ -1857,11 +1862,13 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let providerError = null;
 
     try {
-      llmResult = await llm.generateStructuredOutput<any>({
-        prompt,
-        systemPrompt,
-        temperature: 0.2,
-      });
+      llmResult = await withLlmStage("topics:research-brief", () =>
+        llm.generateStructuredOutput<any>({
+          prompt,
+          systemPrompt,
+          temperature: 0.2,
+        })
+      );
     } catch (err: any) {
       providerError = err.message;
       parseErrorCount = 1;
@@ -2276,6 +2283,8 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
     },
   });
 
+  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  const llmMark = llmCostMark();
   try {
     const res = await generateScriptForEpisode(job.data);
 
@@ -2283,7 +2292,7 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       where: { id: jobLog.id },
       data: {
         status: "completed",
-        output: res as any,
+        output: { ...res, llmCost: llmCostSince(llmMark) } as any,
       },
     });
 
@@ -2296,6 +2305,8 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       data: {
         status: "failed",
         error: err.message || "Unknown script generation error",
+        // Failed runs still spent tokens — record where they went.
+        output: { llmCost: llmCostSince(llmMark) } as any,
       },
     });
     throw err;
@@ -2316,6 +2327,8 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
     },
   });
 
+  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  const llmMark = llmCostMark();
   try {
     const res = await factCheckScript({ scriptId, forceRecheck });
 
@@ -2354,6 +2367,7 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
           issueCount: (summary.totalErrors || 0) + (summary.totalWarnings || 0),
           factCheckResultId: res.id,
           reasons,
+          llmCost: llmCostSince(llmMark),
         } as any,
       },
     });
@@ -2370,6 +2384,7 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
         output: {
           finalStatus: "failed",
           reasons: [err.message || "Execution error"],
+          llmCost: llmCostSince(llmMark),
         } as any,
       },
     });
@@ -2526,6 +2541,8 @@ async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
     },
   });
 
+  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  const llmMark = llmCostMark();
   try {
     const res = await generateEpisodeContentAssets(job.data);
     const isSkipped = res.finalStatus === "skipped";
@@ -2534,7 +2551,7 @@ async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
       where: { id: jobLog.id },
       data: {
         status: isSkipped ? "skipped" : "completed",
-        output: res as any,
+        output: { ...res, llmCost: llmCostSince(llmMark) } as any,
       },
     });
 

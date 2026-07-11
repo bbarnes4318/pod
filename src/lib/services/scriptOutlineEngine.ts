@@ -8,6 +8,7 @@
 // ever handed to two different parts of the episode.
 
 import { LLMProvider } from "../providers/llm/interface";
+import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
 import { RewriteContext } from "./scriptSelfVerify";
 
@@ -158,12 +159,14 @@ Return valid JSON only:
 - Go qualitative (no specific figure/quote) -> isFactualClaim false + evidenceRefs [].`;
 
   try {
-    const res = await llm.generateStructuredOutput<any>({
-      prompt,
-      systemPrompt,
-      temperature: 0.6,
-      maxTokens: 900,
-    });
+    const res = await withLlmStage("script:selfverify-rewrite", () =>
+      llm.generateStructuredOutput<any>({
+        prompt,
+        systemPrompt,
+        temperature: 0.6,
+        maxTokens: 900,
+      })
+    );
     if (res && typeof res.text === "string" && res.text.trim()) {
       return {
         text: res.text,
@@ -211,12 +214,14 @@ async function generateEpisodeOutline(llm: LLMProvider, args: OutlineDrivenArgs)
     `}`,
   ].join("\n");
 
-  const res = await llm.generateStructuredOutput<any>({
-    prompt,
-    systemPrompt: args.systemPrompt,
-    temperature: Math.min(args.temperature, 0.7),
-    maxTokens: Math.min(args.maxTokens, 8000),
-  });
+  const res = await withLlmStage("script:outline", () =>
+    llm.generateStructuredOutput<any>({
+      prompt,
+      systemPrompt: args.systemPrompt,
+      temperature: Math.min(args.temperature, 0.7),
+      maxTokens: Math.min(args.maxTokens, 8000),
+    })
+  );
 
   const beats: OutlineBeat[] = Array.isArray(res?.beats) ? res.beats : [];
   if (beats.length < 6) {
@@ -360,12 +365,14 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     `}`,
   ].join("\n");
 
-  const res = await llm.generateStructuredOutput<any>({
-    prompt,
-    systemPrompt: args.systemPrompt,
-    temperature: args.temperature,
-    maxTokens: args.maxTokens,
-  });
+  const res = await withLlmStage("script:acts", () =>
+    llm.generateStructuredOutput<any>({
+      prompt,
+      systemPrompt: args.systemPrompt,
+      temperature: args.temperature,
+      maxTokens: args.maxTokens,
+    })
+  );
 
   const segments = Array.isArray(res?.segments) ? res.segments : [];
   const lineCount = segments.reduce(

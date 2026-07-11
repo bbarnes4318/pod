@@ -1,4 +1,5 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
+import { recordLlmCall } from "./costLedger";
 
 /**
  * Anthropic Claude provider, hardened for modern models (Opus 4.7/4.8,
@@ -86,6 +87,7 @@ export class AnthropicLLMProvider implements LLMProvider {
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const startedAt = Date.now();
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -104,6 +106,16 @@ export class AnthropicLLMProvider implements LLMProvider {
             this.usage.inputTokens += u.input_tokens || 0;
             this.usage.outputTokens += u.output_tokens || 0;
             this.usage.requestCount += 1;
+            // Measurement only: per-stage cost ledger, provider-reported counts.
+            recordLlmCall({
+              provider: this.name,
+              model: this.model,
+              tkIn: u.input_tokens || 0,
+              tkOut: u.output_tokens || 0,
+              tkCacheRead: u.cache_read_input_tokens || 0,
+              tkCacheWrite: u.cache_creation_input_tokens || 0,
+              durationMs: Date.now() - startedAt,
+            });
           }
           return data;
         }

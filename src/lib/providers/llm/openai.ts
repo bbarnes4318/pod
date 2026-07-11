@@ -1,4 +1,5 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
+import { recordLlmCall } from "./costLedger";
 
 export class OpenAILLMProvider implements LLMProvider {
   name = "openai";
@@ -10,12 +11,23 @@ export class OpenAILLMProvider implements LLMProvider {
     return { ...this.usage };
   }
 
-  private recordUsage(data: any): void {
+  private recordUsage(data: any, durationMs: number): void {
     const u = data?.usage;
     if (u) {
       this.usage.inputTokens += u.prompt_tokens || 0;
       this.usage.outputTokens += u.completion_tokens || 0;
       this.usage.requestCount += 1;
+      // Measurement only: per-stage cost ledger, provider-reported counts.
+      // OpenAI reports cached prompt tokens inside prompt_tokens; break them out.
+      const cached = u.prompt_tokens_details?.cached_tokens || 0;
+      recordLlmCall({
+        provider: this.name,
+        model: this.model,
+        tkIn: (u.prompt_tokens || 0) - cached,
+        tkOut: u.completion_tokens || 0,
+        tkCacheRead: cached,
+        durationMs,
+      });
     }
   }
 
@@ -59,6 +71,7 @@ export class OpenAILLMProvider implements LLMProvider {
       body.temperature = options.temperature ?? 0.7;
     }
 
+    const startedAt = Date.now();
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -74,7 +87,7 @@ export class OpenAILLMProvider implements LLMProvider {
     }
 
     const data = await response.json();
-    this.recordUsage(data);
+    this.recordUsage(data, Date.now() - startedAt);
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error("[OpenAI] Received empty response content from model.");
@@ -110,6 +123,7 @@ export class OpenAILLMProvider implements LLMProvider {
       body.temperature = options.temperature ?? 0.2; // Low temperature for high structure fidelity
     }
 
+    const startedAt = Date.now();
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -125,7 +139,7 @@ export class OpenAILLMProvider implements LLMProvider {
     }
 
     const data = await response.json();
-    this.recordUsage(data);
+    this.recordUsage(data, Date.now() - startedAt);
     console.log("[OpenAI] Response data:", JSON.stringify(data));
     const content = data.choices?.[0]?.message?.content;
     if (!content) {

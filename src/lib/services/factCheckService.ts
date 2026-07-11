@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { getFactCheckLLMProvider, resolveFactCheckLLMConfig } from "@/lib/providers/llm/factory";
+import { withLlmStage } from "@/lib/providers/llm/costLedger";
 import { stripAudioTags } from "@/lib/audio/speechText";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
 import {
@@ -579,12 +580,14 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
       reviewerEvidenceFingerprint = evidenceFingerprint(reviewerEvidence.evidenceTexts);
       console.log(`[FactCheck] reviewer evidence: ${JSON.stringify(reviewerEvidenceFingerprint)}`);
 
-      const resultObj = await runSemanticReview(provider, {
-        reviewLines,
-        evidencePanelItems: reviewerPanel,
-        unsafeClaims,
-        rumorKeywords: RUMOR_KEYWORDS,
-      });
+      const resultObj = await withLlmStage("factcheck:semantic-review", () =>
+        runSemanticReview(provider, {
+          reviewLines,
+          evidencePanelItems: reviewerPanel,
+          unsafeClaims,
+          rumorKeywords: RUMOR_KEYWORDS,
+        })
+      );
 
       rawLlmOutput = resultObj;
 

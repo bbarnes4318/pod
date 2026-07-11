@@ -1,6 +1,7 @@
 import { db } from "../db";
 import { getStorageProvider } from "../providers/storage/factory";
 import { getLLMProvider } from "../providers/llm/factory";
+import { withLlmStage } from "../providers/llm/costLedger";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "./hostCasting";
 import { spawn } from "child_process";
 import fs from "fs";
@@ -684,11 +685,13 @@ Rules:
   ]
 }`;
 
-      const res = await llm.generateStructuredOutput<any>({
-        prompt,
-        systemPrompt,
-        temperature: 0.2,
-      });
+      const res = await withLlmStage("content-assets:show-notes", () =>
+        llm.generateStructuredOutput<any>({
+          prompt,
+          systemPrompt,
+          temperature: 0.2,
+        })
+      );
 
       // Validate bestLines quotes verbatim
       const cleanBestLines: any[] = [];

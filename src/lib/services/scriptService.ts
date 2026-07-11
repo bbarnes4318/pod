@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { getScriptLLMProvider, getFactCheckLLMProvider } from "../providers/llm/factory";
+import { withLlmStage } from "../providers/llm/costLedger";
 import { reviewFactualLinesForRewrite } from "./semanticReview";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
 import {
@@ -486,12 +487,14 @@ Delivery field meanings:
     console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
     result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);
     try {
-      llmResult = await llm.generateStructuredOutput<any>({
-        prompt,
-        systemPrompt,
-        temperature,
-        maxTokens,
-      });
+      llmResult = await withLlmStage("script:single-shot-fallback", () =>
+        llm.generateStructuredOutput<any>({
+          prompt,
+          systemPrompt,
+          temperature,
+          maxTokens,
+        })
+      );
     } catch (err: any) {
       result.providerError = err.message;
       const msg = `LLM call failed: ${err.message}`;
@@ -534,12 +537,14 @@ Delivery field meanings:
       rewrite: (ctx) => rewriteLineForGrounding(llm, ctx, systemPrompt),
       maxSemanticRounds: Number(process.env.SCRIPT_SELFVERIFY_SEMANTIC_ROUNDS) || 2,
       semanticReview: (reviewLines) =>
-        reviewFactualLinesForRewrite(reviewProvider, {
-          reviewLines,
-          evidencePanelItems,
-          unsafeClaims: unsafeClaimsList,
-          rumorKeywords: RUMOR_KEYWORDS as unknown as string[],
-        }),
+        withLlmStage("script:selfverify-semantic", () =>
+          reviewFactualLinesForRewrite(reviewProvider, {
+            reviewLines,
+            evidencePanelItems,
+            unsafeClaims: unsafeClaimsList,
+            rumorKeywords: RUMOR_KEYWORDS as unknown as string[],
+          })
+        ),
     });
 
     const after = { llm: usageOf(llm), rev: usageOf(reviewProvider) };
