@@ -94,6 +94,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, mode: "hard-deleted", referenced: false, host: { id: host.id, name: host.name } });
   }
 
+  // -- archive (archive-only; keeps isActive so pinned episodes still resolve) --
+  if (action === "archive") {
+    const host = await resolveHost(body);
+    if (!host) return NextResponse.json({ success: false, error: "Host not found." }, { status: 404 });
+    // isArchived drops it from every user picker + the resolver fallback + the
+    // admin build form (all filter isArchived:false), while isActive stays true
+    // so episodes PINNED to it keep resolving their cast unchanged (the pinned
+    // resolver filters isActive only). Reversible via unarchive.
+    await db.aiHost.update({ where: { id: host.id }, data: { isArchived: true } });
+    const [episodeCount, segmentCount] = await Promise.all([
+      db.episode.count({ where: { hostIds: { has: host.id } } }),
+      db.audioSegment.count({ where: { hostId: host.id } }),
+    ]);
+    return NextResponse.json({ success: true, mode: "archived (isActive kept)", host: { id: host.id, name: host.name }, episodeCount, segmentCount });
+  }
+
   // -- setvoice -------------------------------------------------------------
   if (action === "setvoice") {
     const host = await resolveHost(body);

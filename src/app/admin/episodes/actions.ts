@@ -70,7 +70,7 @@ export async function fetchActiveDebateHosts() {
   await requireAdmin();
   try {
     const hosts = await db.aiHost.findMany({
-      where: { isActive: true },
+      where: { isActive: true, isArchived: false },
       orderBy: [{ intensityLevel: "desc" }, { name: "asc" }],
     });
     return {
