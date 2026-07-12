@@ -34,6 +34,7 @@ import {
   TimelineClip,
   getFileDurationMs,
   masterToMp3,
+  measureEdgeSilenceMs,
   planConversationTimeline,
   renderTimelineToWav,
   runFfmpeg,
@@ -65,6 +66,8 @@ import {
 } from "../lib/audio/productionPlanner";
 import {
   PlanTimelineResult,
+  applyPlannedStingerRoom,
+  applyRotationStingerRoom,
   executePlanOnTimeline,
   plannedStingerDurations,
   resolveIntroFromPlan,
@@ -260,11 +263,11 @@ async function renderLegacyMix(
   }
 
   const stingerDurations = assetSet.stingers.map((s) => s.durationMs);
-  const maxStingerMs = stingerDurations.length ? Math.max(...stingerDurations) : 0;
   const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
-  if (!dry && style !== "clean" && maxStingerMs > 0) {
-    planOpts.topicGapMs = Math.max(1200, maxStingerMs + 800);
-    if (style === "full") planOpts.segmentGapMs = Math.max(850, maxStingerMs + 700);
+  if (!dry) {
+    // Same per-break sizing as the production stitcher: each break fits the
+    // stinger the rotation actually lands there, capped.
+    applyRotationStingerRoom(plannedLines, stingerDurations, style);
   }
   const dialogueClips = planConversationTimeline(plannedLines, planOpts);
 
@@ -274,9 +277,16 @@ async function renderLegacyMix(
     .filter(({ l }) => l.segmentBreak === "segment" || l.segmentBreak === "topic")
     .map(({ l, c }) => ({ lineIndex: l.lineIndex, breakKind: l.segmentBreak as "segment" | "topic", lineStartMs: c.startMs }));
   const stingerPlacements = dry ? [] : planStingers(slots, style, stingerDurations);
+  const prevClipEndByLine = new Map<number, number>();
+  plannedLines.forEach((l, i) => {
+    if (i > 0) prevClipEndByLine.set(l.lineIndex, dialogueClips[i - 1].startMs + dialogueClips[i - 1].durationMs);
+  });
   const stingerClips: TimelineClip[] = stingerPlacements.map((p) => {
     const a = assetSet.stingers[p.stingerIndex];
-    return { filePath: a.filePath, startMs: p.atMs, durationMs: a.durationMs, kind: "sfx", pan: 0, fadeInMs: 15, fadeOutMs: 90, gainDb: p.gainDb };
+    // Stingers longer than their reserved room start under the previous
+    // line's tail — ease them in, mirroring the production stitcher.
+    const overlapMs = Math.max(0, (prevClipEndByLine.get(p.lineIndex) ?? 0) - p.atMs);
+    return { filePath: a.filePath, startMs: p.atMs, durationMs: a.durationMs, kind: "sfx", pan: 0, fadeInMs: overlapMs > 0 ? Math.min(1200, Math.max(15, overlapMs)) : 15, fadeOutMs: 90, gainDb: p.gainDb };
   });
 
   const reactionClips: TimelineClip[] = [];
@@ -328,13 +338,10 @@ async function renderPlannedMix(
     plan, assetsById: assets.set.byId, musicCrossfadeMs, warnings,
   });
 
-  const stingerDurations = plannedStingerDurations(plan, assets.set.byId);
-  const maxStingerMs = stingerDurations.length ? Math.max(...stingerDurations) : 0;
   const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
-  if (maxStingerMs > 0) {
-    planOpts.topicGapMs = Math.max(1200, maxStingerMs + 800);
-    if (plan.style === "full") planOpts.segmentGapMs = Math.max(850, maxStingerMs + 700);
-  }
+  // Same per-break sizing as the production stitcher: each cued break fits
+  // its own stinger, capped; un-cued breaks keep conversational gaps.
+  applyPlannedStingerRoom(plannedLines, plan, assets.set.byId);
   const dialogueClips = planConversationTimeline(plannedLines, planOpts);
 
   const executed = executePlanOnTimeline({
@@ -448,6 +455,17 @@ async function buildPlannedLines(
       segmentBreak: segmentBreakFor(segments, allLines, i),
     });
     if ((i + 1) % 10 === 0) console.log(`  prepared ${i + 1}/${allLines.length} clips`);
+  }
+  // Same edge-silence widening the production stitcher applies: an
+  // interruption's overlap must bite into voice, not TTS clip padding.
+  for (let i = 1; i < plannedLines.length; i++) {
+    if (!plannedLines[i].isInterruption) continue;
+    const [prevEdge, currEdge] = await Promise.all([
+      measureEdgeSilenceMs(ffmpegPath, plannedLines[i - 1].filePath),
+      measureEdgeSilenceMs(ffmpegPath, plannedLines[i].filePath),
+    ]);
+    plannedLines[i - 1].tailSilenceMs = prevEdge.tailMs;
+    plannedLines[i].leadSilenceMs = currEdge.leadMs;
   }
   return { allLines, plannedLines };
 }

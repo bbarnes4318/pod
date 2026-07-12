@@ -13,9 +13,79 @@
 //   bed      ("under"):  selected here, mixed by mixBedUnderForeground()
 
 import type { PlannedLine, TimelineClip } from "./assembly";
-import type { LoadedAsset } from "./soundDesign";
+import type { LoadedAsset, ProductionStyle } from "./soundDesign";
 import { shiftTimelineForInsert } from "./soundDesign";
 import type { ProductionCue, ProductionPlan } from "./productionPlan";
+
+/**
+ * Voice-free room (ms) a break gap may reserve for its stinger, unless
+ * overridden via AUDIO_STINGER_MAX_ROOM_MS (read by callers — this module
+ * stays env-free). A stinger longer than the room is still right-aligned
+ * (ends 150ms before its line) but starts under the outgoing line's tail,
+ * a riser building beneath speech — instead of stretching the gap to its
+ * full length. The v12 postmortem: exact-fit gaps for the Epidemic crate's
+ * 6-12s risers turned every cued break into a voice-free music interlude
+ * over the bed (62s of one episode).
+ */
+export const DEFAULT_STINGER_ROOM_CAP_MS = 2500;
+
+/** Widen break gaps for the stingers the PLAN cues — each break gets room
+ *  for exactly the stinger that lands there, capped at roomCapMs. */
+export function applyPlannedStingerRoom(
+  plannedLines: PlannedLine[],
+  plan: ProductionPlan,
+  assetsById: Map<string, LoadedAsset>,
+  roomCapMs: number = DEFAULT_STINGER_ROOM_CAP_MS
+): void {
+  const stingerDurByLine = new Map<number, number>();
+  for (const cue of plan.cues) {
+    if (cue.type !== "stinger" || !cue.assetId) continue;
+    const asset = assetsById.get(cue.assetId);
+    if (asset) stingerDurByLine.set(cue.lineIndex, asset.durationMs);
+  }
+  for (const pl of plannedLines) {
+    if (pl.segmentBreak !== "topic" && pl.segmentBreak !== "segment") continue;
+    // Clear first so re-applying (e.g. the demo harness rendering the same
+    // lines through both the legacy and planner paths) never leaks a stale
+    // reservation onto a break this plan leaves silent.
+    delete pl.breakGapBaseMs;
+    delete pl.breakGapMinMs;
+    const stingerMs = stingerDurByLine.get(pl.lineIndex);
+    if (stingerMs === undefined) continue;
+    const roomMs = Math.min(stingerMs, roomCapMs);
+    pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
+    pl.breakGapMinMs = roomMs + 450;
+  }
+}
+
+/** Legacy (planner-off) widening: planStingers() lands stinger i % N on the
+ *  i-th eligible break, so the assignment is known before the timeline is
+ *  planned — size each break for the stinger that actually lands there,
+ *  never a worst-case reservation for the longest one in the set. */
+export function applyRotationStingerRoom(
+  plannedLines: PlannedLine[],
+  stingerDurationsMs: number[],
+  style: ProductionStyle,
+  roomCapMs: number = DEFAULT_STINGER_ROOM_CAP_MS
+): void {
+  for (const pl of plannedLines) {
+    if (pl.segmentBreak !== "topic" && pl.segmentBreak !== "segment") continue;
+    delete pl.breakGapBaseMs;
+    delete pl.breakGapMinMs;
+  }
+  if (style === "clean" || stingerDurationsMs.length === 0) return;
+  const eligible = plannedLines.filter(
+    (pl) =>
+      pl.segmentBreak === "topic" ||
+      (style === "full" && pl.segmentBreak === "segment")
+  );
+  eligible.forEach((pl, i) => {
+    const stingerMs = stingerDurationsMs[i % stingerDurationsMs.length];
+    const roomMs = Math.min(stingerMs, roomCapMs);
+    pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
+    pl.breakGapMinMs = roomMs + 450;
+  });
+}
 
 export interface ResolvedTheme {
   filePath: string;

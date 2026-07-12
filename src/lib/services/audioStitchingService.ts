@@ -43,6 +43,9 @@ import {
   resolvePlannerConfig,
 } from "@/lib/audio/productionPlanner";
 import {
+  DEFAULT_STINGER_ROOM_CAP_MS,
+  applyPlannedStingerRoom,
+  applyRotationStingerRoom,
   executePlanOnTimeline,
   plannedStingerDurations,
   resolveIntroFromPlan,
@@ -695,53 +698,20 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       plannerEnabled && productionPlan
         ? plannedStingerDurations(productionPlan, assetSet.byId)
         : assetSet.stingers.map((s) => s.durationMs);
-    // Voice-free room a break may reserve for its stinger. A stinger longer
-    // than this is right-aligned as always but STARTS UNDER the outgoing
-    // line's tail (a riser building beneath speech) instead of stretching the
-    // gap — the v12 postmortem: exact-fit gaps for the Epidemic crate's
-    // 6-12s risers turned every cued break into a voice-free music interlude
-    // over the bed (62s of the episode).
-    const stingerRoomCapMs = Math.max(0, Number(process.env.AUDIO_STINGER_MAX_ROOM_MS) || 2500);
-    const roomFor = (stingerMs: number) => Math.min(stingerMs, stingerRoomCapMs);
+    // Per-break widening, capped: each break gets room for exactly the
+    // stinger that lands there; longer risers start under the outgoing
+    // line's tail instead of stretching the gap into a voice-free interlude
+    // (see DEFAULT_STINGER_ROOM_CAP_MS).
+    const stingerRoomCapMs = Math.max(
+      0,
+      Number(process.env.AUDIO_STINGER_MAX_ROOM_MS) || DEFAULT_STINGER_ROOM_CAP_MS
+    );
     const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
     // (plannerEnabled already implies style !== "clean".)
     if (plannerEnabled && productionPlan) {
-      // Per-break widening: the plan says exactly which stinger lands at which
-      // line, so give that line's gap room for that stinger (capped) and leave
-      // every other break at the normal conversational gap. The post-jitter
-      // floor guarantees a right-aligned stinger's audible landing zone.
-      const stingerDurByLine = new Map<number, number>();
-      for (const cue of productionPlan.cues) {
-        if (cue.type !== "stinger" || !cue.assetId) continue;
-        const asset = assetSet.byId.get(cue.assetId);
-        if (asset) stingerDurByLine.set(cue.lineIndex, asset.durationMs);
-      }
-      for (const pl of plannedLines) {
-        if (pl.segmentBreak !== "topic" && pl.segmentBreak !== "segment") continue;
-        const stingerMs = stingerDurByLine.get(pl.lineIndex);
-        if (stingerMs === undefined) continue;
-        const roomMs = roomFor(stingerMs);
-        pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
-        pl.breakGapMinMs = roomMs + 450;
-      }
-    } else if (style !== "clean" && stingerDurations.length > 0) {
-      // Legacy (planner off): planStingers() places stinger i % N on the i-th
-      // eligible break, so the assignment is known BEFORE the timeline is
-      // planned — size each break for the stinger that actually lands there
-      // (capped), never a worst-case reservation for the longest one in the
-      // set (that reservation minus a short stinger was pure bed-only dead
-      // air at every other break).
-      const eligible = plannedLines.filter(
-        (pl) =>
-          pl.segmentBreak === "topic" ||
-          (style === "full" && pl.segmentBreak === "segment")
-      );
-      eligible.forEach((pl, i) => {
-        const stingerMs = stingerDurations[i % stingerDurations.length];
-        const roomMs = roomFor(stingerMs);
-        pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
-        pl.breakGapMinMs = roomMs + 450;
-      });
+      applyPlannedStingerRoom(plannedLines, productionPlan, assetSet.byId, stingerRoomCapMs);
+    } else {
+      applyRotationStingerRoom(plannedLines, stingerDurations, style, stingerRoomCapMs);
     }
 
     const dialogueClips = planConversationTimeline(plannedLines, planOpts);
