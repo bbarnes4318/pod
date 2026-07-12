@@ -8,7 +8,7 @@
 // processor is touched anywhere in this file.
 
 import { db } from "@/lib/db";
-import { planFor, isPlanId, isPremiumTtsProvider, type PlanConfig, type PlanId, DEFAULT_PLAN } from "@/lib/plans";
+import { planFor, isPlanId, isPremiumTtsProvider, OWNER_PLAN, type PlanConfig, type PlanId, DEFAULT_PLAN } from "@/lib/plans";
 
 /** First instant of the current calendar month (UTC) — the metering period. */
 function periodStart(d = new Date()): Date {
@@ -18,8 +18,33 @@ function periodLabel(d = new Date()): string {
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
+/** Emails granted owner entitlements without a role change: OWNER_EMAILS is a
+ *  comma-separated, case-insensitive env list, set on BOTH the web and worker
+ *  environments (the recurring scheduler meters owners on the worker). */
+function ownerEmails(): string[] {
+  return (process.env.OWNER_EMAILS || "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** The account that owns/operates the app: ADMIN role, or listed in
+ *  OWNER_EMAILS. Owner accounts get OWNER_PLAN (no caps, all features) from
+ *  getUserPlan, so every gate below passes for them — while the tier ladder
+ *  and its server-side enforcement stay fully intact for everyone else. */
+export function isOwnerAccount(user: { role?: string | null; email?: string | null }): boolean {
+  if (user.role === "ADMIN") return true;
+  const email = user.email?.trim().toLowerCase();
+  return !!email && ownerEmails().includes(email);
+}
+
 export async function getUserPlan(userId: string): Promise<PlanConfig> {
-  const user = await db.user.findUnique({ where: { id: userId }, select: { plan: true } });
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { plan: true, role: true, email: true },
+  });
+  // Owner/admin bypass — the operator's own account is never plan-limited.
+  if (user && isOwnerAccount(user)) return OWNER_PLAN;
   return planFor(user?.plan);
 }
 

@@ -85,6 +85,32 @@ export const PLANS: Record<PlanId, PlanConfig> = {
 export const PLAN_ORDER: PlanId[] = ["free", "creator", "pro"];
 export const DEFAULT_PLAN: PlanId = "free";
 
+/**
+ * The operator/owner's implicit entitlements — every feature on, no caps.
+ * Deliberately NOT in PLANS/PLAN_ORDER: it can't be picked on the pricing
+ * surface, setUserPlanId() can't write it, and no billing webhook will ever
+ * produce it. entitlementService grants it to owner/admin accounts
+ * (User.role === "ADMIN", or an email listed in OWNER_EMAILS); every other
+ * account keeps the normal tier ladder + enforcement above.
+ */
+export const OWNER_PLAN: PlanConfig = {
+  id: "pro", // top tier in plan-id terms; the limits below are wider than Pro's
+  name: "Owner",
+  priceLabel: "—",
+  blurb: "Operator account — full access, no caps.",
+  maxEpisodesPerMonth: null,
+  premiumVoices: true,
+  maxPodcasts: null,
+  privateFeeds: true,
+  teamSeats: 5,
+  features: [
+    "Unlimited episodes",
+    "Unlimited podcasts",
+    "All premium voices",
+    "Private / premium RSS feeds",
+  ],
+};
+
 /** TTS engines that count as "premium" and require a premium-voices plan. The
  *  stub + OpenAI engines are the free tier's standard voices. */
 export const PREMIUM_TTS_PROVIDERS = ["elevenlabs", "cartesia", "fish", "boson"] as const;
