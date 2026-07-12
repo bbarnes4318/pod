@@ -71,6 +71,44 @@ export async function getFileDurationMs(ffprobePath: string, filePath: string): 
 }
 
 /**
+ * Leading/trailing silence of a clip, in ms. TTS clips ship with ~50ms of
+ * lead-in and 150-280ms of tail padding; an interruption overlap that only
+ * eats that padding sounds like polite turn-taking, not a cut-in, so the
+ * timeline planner widens interruption overlaps by exactly this much.
+ */
+export async function measureEdgeSilenceMs(
+  ffmpegPath: string,
+  filePath: string,
+  opts: { noiseDb?: number; minSilenceMs?: number } = {}
+): Promise<{ leadMs: number; tailMs: number }> {
+  const noiseDb = opts.noiseDb ?? -40;
+  const minSilenceSec = (opts.minSilenceMs ?? 50) / 1000;
+  const out = await runFfmpeg(ffmpegPath, [
+    "-i", filePath,
+    "-af", `silencedetect=noise=${noiseDb}dB:d=${minSilenceSec}`,
+    "-f", "null", "-",
+  ]);
+  const starts = [...out.matchAll(/silence_start:\s*(-?[\d.]+)/g)].map((m) => parseFloat(m[1]));
+  const ends = [...out.matchAll(/silence_end:\s*(-?[\d.]+)/g)].map((m) => parseFloat(m[1]));
+  let leadMs = 0;
+  if (starts.length > 0 && starts[0] <= 0.02 && ends.length > 0) {
+    leadMs = Math.max(0, Math.round(ends[0] * 1000));
+  }
+  let tailMs = 0;
+  // A final silence_start without a matching silence_end (or one ending at
+  // EOF) means the clip fades to silence and stays there.
+  if (starts.length > 0 && starts.length > ends.length) {
+    const durMatch = out.match(/time=(\d+):(\d+):([\d.]+)/g);
+    const last = durMatch?.[durMatch.length - 1]?.match(/time=(\d+):(\d+):([\d.]+)/);
+    if (last) {
+      const totalSec = Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3]);
+      tailMs = Math.max(0, Math.round((totalSec - starts[starts.length - 1]) * 1000));
+    }
+  }
+  return { leadMs, tailMs };
+}
+
+/**
  * Decode any source clip to a standardized WAV at a consistent speech
  * loudness so no host is louder than the other before the mix.
  */
@@ -118,6 +156,10 @@ export interface PlannedLine {
   /** Post-jitter floor for this line's gap (e.g. stinger duration + margin so
    *  a right-aligned stinger can never start before the previous line ends). */
   breakGapMinMs?: number;
+  /** Measured silence at the head of this clip (TTS lead-in padding). */
+  leadSilenceMs?: number;
+  /** Measured silence at the tail of this clip (TTS tail padding). */
+  tailSilenceMs?: number;
 }
 
 export interface TimelineClip {
@@ -194,9 +236,16 @@ export function planConversationTimeline(
     if (i === 0) {
       gapMs = 0;
     } else if (line.isInterruption) {
-      // Real interruption: bite into the previous speaker's tail.
+      // Real interruption: bite into the previous speaker's tail. The bite
+      // must land on VOICE — TTS clips carry ~50ms lead-in and 150-280ms tail
+      // padding, and an overlap that only eats that padding renders as polite
+      // turn-taking. Widen the overlap by the measured edge silence so the
+      // audible voice-on-voice overlap is the configured window, clamped so
+      // the interruption never swallows 40% of the previous line.
+      const edgeSilence =
+        (lines[i - 1].tailSilenceMs ?? 0) + (line.leadSilenceMs ?? 0);
       gapMs = -Math.min(
-        interruptOverlap,
+        interruptOverlap + edgeSilence,
         Math.round(lines[i - 1].durationMs * 0.4)
       );
     } else if (line.breakGapBaseMs !== undefined) {

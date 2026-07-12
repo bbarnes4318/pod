@@ -386,6 +386,12 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
               voiceSource: resolved.voiceSource,
               ...(model ? { model } : {}),
               ...(ttsResult.providerAudioId ? { providerAudioId: ttsResult.providerAudioId } : {}),
+              // Fish returns the delivery-cued text it actually synthesized
+              // ([angry], [cutting in], ...); persist it so tone/energy
+              // reaching the engine is auditable per line.
+              ...(typeof (ttsResult.raw as any)?.cuedText === "string"
+                ? { cuedText: (ttsResult.raw as any).cuedText }
+                : {}),
             },
           },
         });

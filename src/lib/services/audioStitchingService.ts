@@ -8,6 +8,7 @@ import {
   TimelineClip,
   getFileDurationMs,
   masterToMp3,
+  measureEdgeSilenceMs,
   planConversationTimeline,
   renderTimelineToWav,
   runFfmpeg,
@@ -620,6 +621,24 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       });
     }
 
+    // 7b. Edge-silence for interruptions: an overlap that only eats the TTS
+    // clips' lead-in/tail padding sounds sequential, not like a cut-in. The
+    // timeline planner widens each interruption's bite by the measured
+    // padding, so only the pairs around an interruption need measuring.
+    for (let i = 1; i < plannedLines.length; i++) {
+      if (!plannedLines[i].isInterruption) continue;
+      const [prevEdge, currEdge] = await Promise.all([
+        measureEdgeSilenceMs(ffmpegPath, plannedLines[i - 1].filePath),
+        measureEdgeSilenceMs(ffmpegPath, plannedLines[i].filePath),
+      ]);
+      plannedLines[i - 1].tailSilenceMs = prevEdge.tailMs;
+      plannedLines[i].leadSilenceMs = currEdge.leadMs;
+      console.log(
+        `[Stitcher] Interruption at line ${plannedLines[i].lineIndex}: widening overlap past ` +
+          `${prevEdge.tailMs}ms tail + ${currEdge.leadMs}ms lead of clip padding.`
+      );
+    }
+
     // 8. Plan the conversational timeline (variable gaps, jitter, overlaps
     // on interruptions), then splice intro/outro music in with crossfades.
     const musicCrossfadeMs = Number(process.env.AUDIO_MUSIC_CROSSFADE_MS) || 900;
@@ -676,15 +695,21 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       plannerEnabled && productionPlan
         ? plannedStingerDurations(productionPlan, assetSet.byId)
         : assetSet.stingers.map((s) => s.durationMs);
-    const maxStingerMs = stingerDurations.length > 0 ? Math.max(...stingerDurations) : 0;
+    // Voice-free room a break may reserve for its stinger. A stinger longer
+    // than this is right-aligned as always but STARTS UNDER the outgoing
+    // line's tail (a riser building beneath speech) instead of stretching the
+    // gap — the v12 postmortem: exact-fit gaps for the Epidemic crate's
+    // 6-12s risers turned every cued break into a voice-free music interlude
+    // over the bed (62s of the episode).
+    const stingerRoomCapMs = Math.max(0, Number(process.env.AUDIO_STINGER_MAX_ROOM_MS) || 2500);
+    const roomFor = (stingerMs: number) => Math.min(stingerMs, stingerRoomCapMs);
     const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
     // (plannerEnabled already implies style !== "clean".)
     if (plannerEnabled && productionPlan) {
       // Per-break widening: the plan says exactly which stinger lands at which
-      // line, so give that line's gap room for that stinger and leave every
-      // other break at the normal conversational gap. The post-jitter floor
-      // guarantees a right-aligned stinger (ends 150ms before its line) can
-      // never start before the previous line has finished.
+      // line, so give that line's gap room for that stinger (capped) and leave
+      // every other break at the normal conversational gap. The post-jitter
+      // floor guarantees a right-aligned stinger's audible landing zone.
       const stingerDurByLine = new Map<number, number>();
       for (const cue of productionPlan.cues) {
         if (cue.type !== "stinger" || !cue.assetId) continue;
@@ -695,16 +720,28 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         if (pl.segmentBreak !== "topic" && pl.segmentBreak !== "segment") continue;
         const stingerMs = stingerDurByLine.get(pl.lineIndex);
         if (stingerMs === undefined) continue;
-        pl.breakGapBaseMs = stingerMs + (pl.segmentBreak === "topic" ? 800 : 700);
-        pl.breakGapMinMs = stingerMs + 450;
+        const roomMs = roomFor(stingerMs);
+        pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
+        pl.breakGapMinMs = roomMs + 450;
       }
-    } else if (style !== "clean" && maxStingerMs > 0) {
-      // Legacy (planner off) keeps the global widening: stingers rotate onto
-      // every break, so every break genuinely needs the room.
-      planOpts.topicGapMs = Math.max(Number(process.env.AUDIO_TOPIC_GAP_MS) || 1200, maxStingerMs + 800);
-      if (style === "full") {
-        planOpts.segmentGapMs = Math.max(Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850, maxStingerMs + 700);
-      }
+    } else if (style !== "clean" && stingerDurations.length > 0) {
+      // Legacy (planner off): planStingers() places stinger i % N on the i-th
+      // eligible break, so the assignment is known BEFORE the timeline is
+      // planned — size each break for the stinger that actually lands there
+      // (capped), never a worst-case reservation for the longest one in the
+      // set (that reservation minus a short stinger was pure bed-only dead
+      // air at every other break).
+      const eligible = plannedLines.filter(
+        (pl) =>
+          pl.segmentBreak === "topic" ||
+          (style === "full" && pl.segmentBreak === "segment")
+      );
+      eligible.forEach((pl, i) => {
+        const stingerMs = stingerDurations[i % stingerDurations.length];
+        const roomMs = roomFor(stingerMs);
+        pl.breakGapBaseMs = roomMs + (pl.segmentBreak === "topic" ? 800 : 700);
+        pl.breakGapMinMs = roomMs + 450;
+      });
     }
 
     const dialogueClips = planConversationTimeline(plannedLines, planOpts);
@@ -799,15 +836,28 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         lineStartMs: clip.startMs,
       }));
     const stingerPlacements = planStingers(stingerSlots, style, stingerDurations);
+    // Stingers longer than their break's reserved room start under the
+    // previous line's tail — ease those in like the planner path does.
+    const prevClipEndByLine = new Map<number, number>();
+    plannedLines.forEach((l, i) => {
+      if (i > 0) {
+        prevClipEndByLine.set(
+          l.lineIndex,
+          dialogueClips[i - 1].startMs + dialogueClips[i - 1].durationMs
+        );
+      }
+    });
     stingerClips = stingerPlacements.map((p) => {
       const asset = assetSet.stingers[p.stingerIndex];
+      const prevEndMs = prevClipEndByLine.get(p.lineIndex) ?? 0;
+      const overlapMs = Math.max(0, prevEndMs - p.atMs);
       return {
         filePath: asset.filePath,
         startMs: p.atMs,
         durationMs: asset.durationMs,
         kind: "sfx",
         pan: 0,
-        fadeInMs: 15,
+        fadeInMs: overlapMs > 0 ? Math.min(1200, Math.max(15, overlapMs)) : 15,
         fadeOutMs: 90,
         gainDb: p.gainDb,
       };

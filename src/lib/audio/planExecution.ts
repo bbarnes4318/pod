@@ -172,13 +172,24 @@ export function executePlanOnTimeline(opts: {
         const asset = lineClip ? assetFor(cue) : null;
         if (!lineClip || !asset) break;
         const atMs = Math.max(0, lineClip.startMs - asset.durationMs - 150);
+        // A stinger longer than its break's reserved room starts while the
+        // previous speaker is still talking (a riser building under speech).
+        // Ease it in across the overlapped stretch so it swells instead of
+        // popping in mid-sentence.
+        const pos = posByLineIndex.get(cue.lineIndex)!;
+        const prevClip = pos > 0 ? dialogueClips[pos - 1] : null;
+        const overlapMs = prevClip
+          ? Math.max(0, prevClip.startMs + prevClip.durationMs - atMs)
+          : 0;
+        const fadeInMs =
+          overlapMs > 0 ? Math.max(cue.fadeInMs, Math.min(1200, overlapMs)) : cue.fadeInMs;
         result.stingerClips.push({
           filePath: asset.filePath,
           startMs: atMs,
           durationMs: asset.durationMs,
           kind: "sfx",
           pan: 0,
-          fadeInMs: cue.fadeInMs,
+          fadeInMs,
           fadeOutMs: cue.fadeOutMs,
           gainDb: cue.gainDb,
         });
