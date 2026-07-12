@@ -54,6 +54,8 @@ export class RssNewsProvider implements SportsDataProvider {
         if (!Array.isArray(items)) {
           items = [items];
         }
+        // Filter out the empty-object artifact from parsing a childless channel.
+        items = items.filter((it: any) => it && (it.title || it.link || it.guid));
 
         // Handle Atom <entry> array/object if RSS is empty
         if (items.length === 0) {
@@ -68,6 +70,20 @@ export class RssNewsProvider implements SportsDataProvider {
             pubDate: e.updated || e.published || "",
           }));
         }
+
+        if (items.length === 0) {
+          // SOFT BLOCK diagnostic: a host can return 2xx with an empty or
+          // HTML body to datacenter IPs (ESPN does). Without this line such a
+          // feed is indistinguishable from a genuinely empty one.
+          const sample = xmlText.slice(0, 160).replace(/\s+/g, " ");
+          this.lastRunIssues.push(
+            `Feed ${url}: HTTP ${response.status} but 0 parseable items (content-type=${response.headers.get("content-type")}, bytes=${xmlText.length}, body sample: ${JSON.stringify(sample)})`
+          );
+          continue;
+        }
+        // Per-feed success line so the job output shows exactly which feeds
+        // delivered from this runtime's IP.
+        this.lastRunIssues.push(`Feed ${url}: OK — HTTP ${response.status}, ${items.length} items ("${String(sourceName).slice(0, 40)}")`);
 
         for (const item of items) {
           const title = item.title || "";
