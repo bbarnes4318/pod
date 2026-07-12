@@ -53,3 +53,7 @@ ingest-assets/
 
 # Epidemic ingest runtime report (contains prod asset ids)
 ingest-report.json
+_es_payload.json
+
+# local StorageProvider output (dev fallback for S3)
+/public/storage/

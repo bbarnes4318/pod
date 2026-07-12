@@ -4,7 +4,7 @@
   "arc": "measured and analytical almost throughout — one genuine spike when the sharp money story lands",
   "plan": {
     "version": 1,
-    "plannerVersion": "1.0.0",
+    "plannerVersion": "1.1.0",
     "episodeId": "variety-betting-line",
     "scriptId": "variety-script-betting-line",
     "style": "full",
@@ -21,7 +21,7 @@
         "gainDb": -2,
         "fadeInMs": 20,
         "fadeOutMs": 900,
-        "reason": "show open"
+        "reason": "show open → arena theme 'Arena Charge (intro theme)'"
       },
       {
         "type": "bed_change",
@@ -33,19 +33,21 @@
         "gainDb": 0,
         "fadeInMs": 1500,
         "fadeOutMs": 2500,
-        "reason": "bed 'Film Room (music bed)' kept despite a measured episode"
+        "fit": 0.87,
+        "reason": "analytical episode (intensity 5) → neutral bed 'Film Room (music bed)' (neutral, 100bpm, analytical/clean), fit 0.87"
       },
       {
         "type": "stinger",
         "lineIndex": 2,
-        "assetId": "stinger-sub-drop.mp3",
-        "assetName": "Sub Drop (stinger)",
+        "assetId": "stinger-whoosh-cut-ii.mp3",
+        "assetName": "Whoosh Cut II (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "fit": 0.61,
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Whoosh Cut II (stinger)' (whoosh/swish), fit 0.61"
       },
       {
         "type": "silence",
@@ -69,31 +71,34 @@
         "gainDb": -13,
         "fadeInMs": 25,
         "fadeOutMs": 150,
-        "reason": "excited peak at an arc peak"
+        "fit": 0.65,
+        "reason": "excited peak, arc peak → crowd 'Crowd Surge (sfx)', fit 0.65"
       },
       {
         "type": "stinger",
         "lineIndex": 10,
-        "assetId": "stinger-slam-riser.mp3",
-        "assetName": "Slam Riser (stinger)",
+        "assetId": "stinger-drum-hit.mp3",
+        "assetName": "Drum Hit (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "segment turn into the next segment"
+        "fit": 0.56,
+        "reason": "segment turn into analytical/neutral (intensity 6) → 'Drum Hit (stinger)' (impact/hit), fit 0.56"
       },
       {
         "type": "stinger",
         "lineIndex": 11,
-        "assetId": "stinger-drum-hit-ii.mp3",
-        "assetName": "Drum Hit II (stinger)",
+        "assetId": "stinger-whoosh-cut.mp3",
+        "assetName": "Whoosh Cut (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "fit": 0.61,
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Whoosh Cut (stinger)' (whoosh/swish), fit 0.61"
       },
       {
         "type": "stinger",
@@ -105,7 +110,8 @@
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "fit": 0.67,
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Laser Sweep Down II (stinger)' (whoosh/dark), fit 0.67"
       },
       {
         "type": "outro",
@@ -117,7 +123,7 @@
         "gainDb": -2,
         "fadeInMs": 900,
         "fadeOutMs": 400,
-        "reason": "show close"
+        "reason": "show close → arena theme 'Final Whistle (outro theme)'"
       }
     ],
     "stats": {
@@ -127,7 +133,9 @@
       "reactionCues": 1,
       "silenceCues": 1,
       "distinctAssetsUsed": 8,
-      "cooldownSuppressions": 32
+      "cooldownSuppressions": 32,
+      "vocalBedsExcluded": 0,
+      "themesExcluded": 0
     }
   },
   "executed": {
@@ -135,35 +143,35 @@
     "stingers": [
       {
         "lineIndex": 2,
-        "asset": "Sub Drop (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 15646
+        "asset": "Whoosh Cut II (stinger)",
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Whoosh Cut II (stinger)' (whoosh/swish), fit 0.61",
+        "atMs": 14630
       },
       {
         "lineIndex": 10,
-        "asset": "Slam Riser (stinger)",
-        "reason": "segment turn into the next segment",
-        "atMs": 46958
+        "asset": "Drum Hit (stinger)",
+        "reason": "segment turn into analytical/neutral (intensity 6) → 'Drum Hit (stinger)' (impact/hit), fit 0.56",
+        "atMs": 43961
       },
       {
         "lineIndex": 11,
-        "asset": "Drum Hit II (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 53679
+        "asset": "Whoosh Cut (stinger)",
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Whoosh Cut (stinger)' (whoosh/swish), fit 0.61",
+        "atMs": 49048
       },
       {
         "lineIndex": 14,
         "asset": "Laser Sweep Down II (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 66022
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Laser Sweep Down II (stinger)' (whoosh/dark), fit 0.67",
+        "atMs": 60462
       }
     ],
     "reactions": [
       {
         "lineIndex": 8,
         "asset": "Crowd Surge (sfx)",
-        "reason": "excited peak at an arc peak",
-        "atMs": 43141
+        "reason": "excited peak, arc peak → crowd 'Crowd Surge (sfx)', fit 0.65",
+        "atMs": 39852
       }
     ],
     "silences": [

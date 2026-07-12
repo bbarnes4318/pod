@@ -4,7 +4,7 @@
   "arc": "cold-open fury that deflates into a post-mortem — hot early, analytical late",
   "plan": {
     "version": 1,
-    "plannerVersion": "1.0.0",
+    "plannerVersion": "1.1.0",
     "episodeId": "variety-blowout",
     "scriptId": "variety-script-blowout",
     "style": "full",
@@ -21,7 +21,7 @@
         "gainDb": -2,
         "fadeInMs": 20,
         "fadeOutMs": 900,
-        "reason": "show open (after cold open script beat)"
+        "reason": "show open (after cold open) → arena theme 'Arena Charge (intro theme)'"
       },
       {
         "type": "bed_change",
@@ -33,7 +33,8 @@
         "gainDb": 0,
         "fadeInMs": 1500,
         "fadeOutMs": 2500,
-        "reason": "bed 'Fast Break II (music bed)' under the episode (arc mean 1.30)"
+        "fit": 0.88,
+        "reason": "heated episode (intensity 7) → urgent/driving bed 'Fast Break II (music bed)' (urgent/driving, 140bpm, action/restless), fit 0.88"
       },
       {
         "type": "silence",
@@ -69,7 +70,8 @@
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.76,
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab (stinger)' (impact/aggressive), fit 0.76"
       },
       {
         "type": "silence",
@@ -98,14 +100,15 @@
       {
         "type": "stinger",
         "lineIndex": 12,
-        "assetId": "stinger-horn-fall.mp3",
-        "assetName": "Horn Fall (stinger)",
+        "assetId": "stinger-laser-down.mp3",
+        "assetName": "Laser Sweep Down (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "fit": 0.67,
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Laser Sweep Down (stinger)' (whoosh/dark), fit 0.67"
       },
       {
         "type": "outro",
@@ -117,7 +120,7 @@
         "gainDb": -2,
         "fadeInMs": 900,
         "fadeOutMs": 400,
-        "reason": "show close"
+        "reason": "show close → arena theme 'Final Whistle (outro theme)'"
       }
     ],
     "stats": {
@@ -127,7 +130,9 @@
       "reactionCues": 0,
       "silenceCues": 4,
       "distinctAssetsUsed": 5,
-      "cooldownSuppressions": 0
+      "cooldownSuppressions": 0,
+      "vocalBedsExcluded": 0,
+      "themesExcluded": 0
     }
   },
   "executed": {
@@ -136,14 +141,14 @@
       {
         "lineIndex": 4,
         "asset": "Power Chord Stab (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 22040
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab (stinger)' (impact/aggressive), fit 0.76",
+        "atMs": 20599
       },
       {
         "lineIndex": 12,
-        "asset": "Horn Fall (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 52703
+        "asset": "Laser Sweep Down (stinger)",
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Laser Sweep Down (stinger)' (whoosh/dark), fit 0.67",
+        "atMs": 49417
       }
     ],
     "reactions": [],

@@ -4,7 +4,7 @@
   "arc": "sustained high-energy banter wall to wall — heated, amused, interruptions throughout",
   "plan": {
     "version": 1,
-    "plannerVersion": "1.0.0",
+    "plannerVersion": "1.1.0",
     "episodeId": "variety-rivalry",
     "scriptId": "variety-script-rivalry",
     "style": "full",
@@ -21,19 +21,20 @@
         "gainDb": -2,
         "fadeInMs": 20,
         "fadeOutMs": 900,
-        "reason": "show open"
+        "reason": "show open → arena theme 'Arena Charge (intro theme)'"
       },
       {
         "type": "bed_change",
         "lineIndex": 0,
-        "assetId": "bed-fast-break.mp3",
-        "assetName": "Fast Break (music bed)",
+        "assetId": "bed-victory-lap.mp3",
+        "assetName": "Victory Lap (music bed)",
         "category": null,
         "timing": "under",
         "gainDb": 0,
         "fadeInMs": 1500,
         "fadeOutMs": 2500,
-        "reason": "bed 'Fast Break (music bed)' under the episode (arc mean 2.21)"
+        "fit": 0.9,
+        "reason": "amused episode (intensity 10) → upbeat bed 'Victory Lap (music bed)' (upbeat, 120bpm, happy/bright), fit 0.90"
       },
       {
         "type": "silence",
@@ -50,14 +51,15 @@
       {
         "type": "stinger",
         "lineIndex": 2,
-        "assetId": "stinger-snare-rush.mp3",
-        "assetName": "Snare Rush (stinger)",
+        "assetId": "stinger-sub-drop.mp3",
+        "assetName": "Sub Drop (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.56,
+        "reason": "topic turn into amused/upbeat (intensity 10) → 'Sub Drop (stinger)' (impact/dark), fit 0.56"
       },
       {
         "type": "reaction",
@@ -69,19 +71,21 @@
         "gainDb": -13,
         "fadeInMs": 25,
         "fadeOutMs": 150,
-        "reason": "amused beat"
+        "fit": 0.47,
+        "reason": "amused beat → rimshot 'Rimshot (sfx)', fit 0.47"
       },
       {
         "type": "stinger",
         "lineIndex": 6,
-        "assetId": "stinger-glitch-zap-ii.mp3",
-        "assetName": "Glitch Zap II (stinger)",
+        "assetId": "stinger-power-chord-ii.mp3",
+        "assetName": "Power Chord Stab II (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.76,
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab II (stinger)' (impact/aggressive), fit 0.76"
       },
       {
         "type": "reaction",
@@ -93,7 +97,8 @@
         "gainDb": -13,
         "fadeInMs": 25,
         "fadeOutMs": 150,
-        "reason": "heated peak"
+        "fit": 0.6,
+        "reason": "heated peak → impact 'Big Impact (sfx)', fit 0.60"
       },
       {
         "type": "stinger",
@@ -105,7 +110,8 @@
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.67,
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Slam Riser II (stinger)' (riser/epic), fit 0.67"
       },
       {
         "type": "silence",
@@ -122,14 +128,15 @@
       {
         "type": "stinger",
         "lineIndex": 15,
-        "assetId": "stinger-horn-fall-ii.mp3",
-        "assetName": "Horn Fall II (stinger)",
+        "assetId": "stinger-slam-riser.mp3",
+        "assetName": "Slam Riser (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.72,
+        "reason": "topic turn into hype/urgent/driving (intensity 10) → 'Slam Riser (stinger)' (riser/epic), fit 0.72"
       },
       {
         "type": "outro",
@@ -141,7 +148,7 @@
         "gainDb": -2,
         "fadeInMs": 900,
         "fadeOutMs": 400,
-        "reason": "show close"
+        "reason": "show close → arena theme 'Final Whistle (outro theme)'"
       }
     ],
     "stats": {
@@ -151,49 +158,51 @@
       "reactionCues": 2,
       "silenceCues": 2,
       "distinctAssetsUsed": 9,
-      "cooldownSuppressions": 9
+      "cooldownSuppressions": 9,
+      "vocalBedsExcluded": 0,
+      "themesExcluded": 0
     }
   },
   "executed": {
-    "bedAsset": "Fast Break (music bed)",
+    "bedAsset": "Victory Lap (music bed)",
     "stingers": [
       {
         "lineIndex": 2,
-        "asset": "Snare Rush (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 15316
+        "asset": "Sub Drop (stinger)",
+        "reason": "topic turn into amused/upbeat (intensity 10) → 'Sub Drop (stinger)' (impact/dark), fit 0.56",
+        "atMs": 14400
       },
       {
         "lineIndex": 6,
-        "asset": "Glitch Zap II (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 29951
+        "asset": "Power Chord Stab II (stinger)",
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab II (stinger)' (impact/aggressive), fit 0.76",
+        "atMs": 27275
       },
       {
         "lineIndex": 11,
         "asset": "Slam Riser II (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 46475
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Slam Riser II (stinger)' (riser/epic), fit 0.67",
+        "atMs": 44065
       },
       {
         "lineIndex": 15,
-        "asset": "Horn Fall II (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 61825
+        "asset": "Slam Riser (stinger)",
+        "reason": "topic turn into hype/urgent/driving (intensity 10) → 'Slam Riser (stinger)' (riser/epic), fit 0.72",
+        "atMs": 58436
       }
     ],
     "reactions": [
       {
         "lineIndex": 5,
         "asset": "Rimshot (sfx)",
-        "reason": "amused beat",
-        "atMs": 27173
+        "reason": "amused beat → rimshot 'Rimshot (sfx)', fit 0.47",
+        "atMs": 26157
       },
       {
         "lineIndex": 9,
         "asset": "Big Impact (sfx)",
-        "reason": "heated peak",
-        "atMs": 42533
+        "reason": "heated peak → impact 'Big Impact (sfx)', fit 0.60",
+        "atMs": 40557
       }
     ],
     "silences": [
@@ -209,6 +218,6 @@
   },
   "legacyForComparison": {
     "stingerCount": 4,
-    "reactionCount": 3
+    "reactionCount": 2
   }
 }

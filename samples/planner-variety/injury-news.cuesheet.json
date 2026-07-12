@@ -4,7 +4,7 @@
   "arc": "somber open, one genuinely heated debate segment in the middle, measured landing",
   "plan": {
     "version": 1,
-    "plannerVersion": "1.0.0",
+    "plannerVersion": "1.1.0",
     "episodeId": "variety-injury-news",
     "scriptId": "variety-script-injury-news",
     "style": "full",
@@ -21,43 +21,46 @@
         "gainDb": -2,
         "fadeInMs": 20,
         "fadeOutMs": 900,
-        "reason": "show open"
+        "reason": "show open → arena theme 'Arena Charge (intro theme)'"
       },
       {
         "type": "bed_change",
         "lineIndex": 0,
-        "assetId": "bed-crunch-time-ii.mp3",
-        "assetName": "Crunch Time II (music bed)",
+        "assetId": "bed-film-room-ii.mp3",
+        "assetName": "Film Room II (music bed)",
         "category": null,
         "timing": "under",
         "gainDb": 0,
         "fadeInMs": 1500,
         "fadeOutMs": 2500,
-        "reason": "bed 'Crunch Time II (music bed)' under the episode (arc mean 0.93)"
+        "fit": 0.88,
+        "reason": "analytical episode (intensity 6) → neutral bed 'Film Room II (music bed)' (neutral, 100bpm, analytical/clean), fit 0.88"
       },
       {
         "type": "stinger",
         "lineIndex": 2,
-        "assetId": "stinger-sub-drop-ii.mp3",
-        "assetName": "Sub Drop II (stinger)",
+        "assetId": "stinger-glitch-zap-ii.mp3",
+        "assetName": "Glitch Zap II (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a measured segment"
+        "fit": 0.58,
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Glitch Zap II (stinger)' (glitch/tech), fit 0.58"
       },
       {
         "type": "stinger",
         "lineIndex": 6,
-        "assetId": "stinger-snare-rush-ii.mp3",
-        "assetName": "Snare Rush II (stinger)",
+        "assetId": "stinger-power-chord.mp3",
+        "assetName": "Power Chord Stab (stinger)",
         "category": null,
         "timing": "before",
         "gainDb": -8,
         "fadeInMs": 15,
         "fadeOutMs": 90,
-        "reason": "topic turn into a high-energy segment"
+        "fit": 0.73,
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab (stinger)' (impact/aggressive), fit 0.73"
       },
       {
         "type": "silence",
@@ -117,7 +120,7 @@
         "gainDb": -2,
         "fadeInMs": 900,
         "fadeOutMs": 400,
-        "reason": "show close"
+        "reason": "show close → arena theme 'Final Whistle (outro theme)'"
       }
     ],
     "stats": {
@@ -127,23 +130,25 @@
       "reactionCues": 0,
       "silenceCues": 4,
       "distinctAssetsUsed": 5,
-      "cooldownSuppressions": 34
+      "cooldownSuppressions": 34,
+      "vocalBedsExcluded": 0,
+      "themesExcluded": 0
     }
   },
   "executed": {
-    "bedAsset": "Crunch Time II (music bed)",
+    "bedAsset": "Film Room II (music bed)",
     "stingers": [
       {
         "lineIndex": 2,
-        "asset": "Sub Drop II (stinger)",
-        "reason": "topic turn into a measured segment",
-        "atMs": 15590
+        "asset": "Glitch Zap II (stinger)",
+        "reason": "topic turn into analytical/neutral (intensity 4) → 'Glitch Zap II (stinger)' (glitch/tech), fit 0.58",
+        "atMs": 14753
       },
       {
         "lineIndex": 6,
-        "asset": "Snare Rush II (stinger)",
-        "reason": "topic turn into a high-energy segment",
-        "atMs": 31692
+        "asset": "Power Chord Stab (stinger)",
+        "reason": "topic turn into heated/urgent/driving (intensity 10) → 'Power Chord Stab (stinger)' (impact/aggressive), fit 0.73",
+        "atMs": 29696
       }
     ],
     "reactions": [],

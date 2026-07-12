@@ -204,7 +204,9 @@
         "reactionCues": 0,
         "silenceCues": 4,
         "distinctAssetsUsed": 5,
-        "cooldownSuppressions": 0
+        "cooldownSuppressions": 0,
+        "vocalBedsExcluded": 0,
+        "themesExcluded": 0
       },
       "legacyForComparison": {
         "stingerCount": 4,
@@ -213,7 +215,7 @@
       "assetsUsed": [
         "bed-fast-break-ii.mp3",
         "stinger-power-chord.mp3",
-        "stinger-horn-fall.mp3"
+        "stinger-laser-down.mp3"
       ]
     },
     {
@@ -225,20 +227,22 @@
         "reactionCues": 2,
         "silenceCues": 2,
         "distinctAssetsUsed": 9,
-        "cooldownSuppressions": 9
+        "cooldownSuppressions": 9,
+        "vocalBedsExcluded": 0,
+        "themesExcluded": 0
       },
       "legacyForComparison": {
         "stingerCount": 4,
-        "reactionCount": 3
+        "reactionCount": 2
       },
       "assetsUsed": [
-        "bed-fast-break.mp3",
-        "stinger-snare-rush.mp3",
+        "bed-victory-lap.mp3",
+        "stinger-sub-drop.mp3",
         "sfx-rimshot.mp3",
-        "stinger-glitch-zap-ii.mp3",
+        "stinger-power-chord-ii.mp3",
         "sfx-big-impact.mp3",
         "stinger-slam-riser-ii.mp3",
-        "stinger-horn-fall-ii.mp3"
+        "stinger-slam-riser.mp3"
       ]
     },
     {
@@ -250,7 +254,9 @@
         "reactionCues": 1,
         "silenceCues": 1,
         "distinctAssetsUsed": 8,
-        "cooldownSuppressions": 32
+        "cooldownSuppressions": 32,
+        "vocalBedsExcluded": 0,
+        "themesExcluded": 0
       },
       "legacyForComparison": {
         "stingerCount": 5,
@@ -258,10 +264,10 @@
       },
       "assetsUsed": [
         "bed-film-room.mp3",
-        "stinger-sub-drop.mp3",
+        "stinger-whoosh-cut-ii.mp3",
         "sfx-crowd-surge.mp3",
-        "stinger-slam-riser.mp3",
-        "stinger-drum-hit-ii.mp3",
+        "stinger-drum-hit.mp3",
+        "stinger-whoosh-cut.mp3",
         "stinger-laser-down-ii.mp3"
       ]
     },
@@ -274,16 +280,18 @@
         "reactionCues": 0,
         "silenceCues": 4,
         "distinctAssetsUsed": 5,
-        "cooldownSuppressions": 34
+        "cooldownSuppressions": 34,
+        "vocalBedsExcluded": 0,
+        "themesExcluded": 0
       },
       "legacyForComparison": {
         "stingerCount": 4,
         "reactionCount": 1
       },
       "assetsUsed": [
-        "bed-crunch-time-ii.mp3",
-        "stinger-sub-drop-ii.mp3",
-        "stinger-snare-rush-ii.mp3"
+        "bed-film-room-ii.mp3",
+        "stinger-glitch-zap-ii.mp3",
+        "stinger-power-chord.mp3"
       ]
     }
   ],
@@ -314,5 +322,103 @@
     }
   ],
   "totalCooldownSuppressions": 75,
+  "fitReport": [
+    {
+      "fixture": "blowout",
+      "bed": {
+        "name": "Fast Break II (music bed)",
+        "family": "urgent/driving",
+        "fit": 0.88
+      },
+      "placedCues": 3,
+      "meanFit": 0.77,
+      "stingerFits": [
+        {
+          "name": "Power Chord Stab (stinger)",
+          "fit": 0.76
+        },
+        {
+          "name": "Laser Sweep Down (stinger)",
+          "fit": 0.67
+        }
+      ]
+    },
+    {
+      "fixture": "rivalry",
+      "bed": {
+        "name": "Victory Lap (music bed)",
+        "family": "upbeat",
+        "fit": 0.9
+      },
+      "placedCues": 7,
+      "meanFit": 0.67,
+      "stingerFits": [
+        {
+          "name": "Sub Drop (stinger)",
+          "fit": 0.56
+        },
+        {
+          "name": "Power Chord Stab II (stinger)",
+          "fit": 0.76
+        },
+        {
+          "name": "Slam Riser II (stinger)",
+          "fit": 0.67
+        },
+        {
+          "name": "Slam Riser (stinger)",
+          "fit": 0.72
+        }
+      ]
+    },
+    {
+      "fixture": "betting-line",
+      "bed": {
+        "name": "Film Room (music bed)",
+        "family": "neutral",
+        "fit": 0.87
+      },
+      "placedCues": 6,
+      "meanFit": 0.66,
+      "stingerFits": [
+        {
+          "name": "Whoosh Cut II (stinger)",
+          "fit": 0.61
+        },
+        {
+          "name": "Drum Hit (stinger)",
+          "fit": 0.56
+        },
+        {
+          "name": "Whoosh Cut (stinger)",
+          "fit": 0.61
+        },
+        {
+          "name": "Laser Sweep Down II (stinger)",
+          "fit": 0.67
+        }
+      ]
+    },
+    {
+      "fixture": "injury-news",
+      "bed": {
+        "name": "Film Room II (music bed)",
+        "family": "neutral",
+        "fit": 0.88
+      },
+      "placedCues": 3,
+      "meanFit": 0.73,
+      "stingerFits": [
+        {
+          "name": "Glitch Zap II (stinger)",
+          "fit": 0.58
+        },
+        {
+          "name": "Power Chord Stab (stinger)",
+          "fit": 0.73
+        }
+      ]
+    }
+  ],
   "assertionFailures": []
 }
