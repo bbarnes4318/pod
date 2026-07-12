@@ -49,11 +49,42 @@ export function getNewsProvider(): string {
 }
 
 /**
- * Parses and returns a clean list of valid RSS feed URLs.
+ * Sport-specific default news feeds — every URL below was fetched live and
+ * verified (HTTP 200, valid RSS, team-specific items) before being added.
+ * Major-outlet sources only (ESPN / CBS Sports / Yahoo Sports): this feeds a
+ * fact-checked product, so reliability beats volume. NEWS_RSS_FEEDS still
+ * overrides; this default exists so a runtime with the env var missing (the
+ * worker ran with an empty feed list for weeks) ingests real news instead of
+ * silently writing 0 rows.
+ */
+export const DEFAULT_NEWS_RSS_FEEDS: string[] = [
+  // ESPN per-league
+  "https://www.espn.com/espn/rss/mlb/news",
+  "https://www.espn.com/espn/rss/nba/news",
+  "https://www.espn.com/espn/rss/nfl/news",
+  "https://www.espn.com/espn/rss/nhl/news",
+  "https://www.espn.com/espn/rss/ncf/news",
+  "https://www.espn.com/espn/rss/ncb/news",
+  // CBS Sports per-league
+  "https://www.cbssports.com/rss/headlines/mlb",
+  "https://www.cbssports.com/rss/headlines/nba",
+  "https://www.cbssports.com/rss/headlines/nfl",
+  "https://www.cbssports.com/rss/headlines/nhl",
+  "https://www.cbssports.com/rss/headlines/college-football",
+  // Yahoo Sports per-league
+  "https://sports.yahoo.com/mlb/rss.xml",
+  "https://sports.yahoo.com/nba/rss.xml",
+  "https://sports.yahoo.com/nfl/rss.xml",
+  "https://sports.yahoo.com/nhl/rss.xml",
+];
+
+/**
+ * Parses and returns a clean list of valid RSS feed URLs. Falls back to the
+ * verified sport-specific defaults when no env override is set.
  */
 export function getRssNewsFeeds(): string[] {
   const rawFeeds = process.env.NEWS_RSS_FEEDS || process.env.RSS_NEWS_FEEDS || "";
-  if (!rawFeeds) return [];
+  if (!rawFeeds) return [...DEFAULT_NEWS_RSS_FEEDS];
 
   return rawFeeds
     .split(",")

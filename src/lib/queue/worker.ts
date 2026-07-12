@@ -407,6 +407,13 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
     if (providerType.toLowerCase() === "rss-news") {
       // Ingest News items from RSS feeds
       const newsItems = await provider.getNews(leagueId);
+      // Surface per-feed diagnostics (dead feed, parse failure, EMPTY feed
+      // list) into the job output — the old console-only logging left weeks of
+      // 0-row runs with no visible cause.
+      const feedIssues: string[] = Array.isArray((provider as any).lastRunIssues)
+        ? (provider as any).lastRunIssues
+        : [];
+      for (const issue of feedIssues) skippedRecordsReasonSummary.push(issue);
       for (const item of newsItems) {
         if (!item.url) {
           skippedNewsMissingUrl++;

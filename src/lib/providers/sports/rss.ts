@@ -5,13 +5,26 @@ import { getRssNewsFeeds } from "@/lib/env";
 export class RssNewsProvider implements SportsDataProvider {
   name = "rss-news";
 
+  /** Per-feed diagnostics from the most recent getNews() run — the worker
+   *  copies these into the job output so a dead feed, a parse failure, or an
+   *  empty configured list is visible in the JobLog instead of only in
+   *  container stdout (the old failure mode: weeks of 0-row runs whose cause
+   *  was invisible). */
+  public lastRunIssues: string[] = [];
+
   private getFeedUrls(): string[] {
     return getRssNewsFeeds();
   }
 
   async getNews(league: string): Promise<any[]> {
+    this.lastRunIssues = [];
     const urls = this.getFeedUrls();
-    if (urls.length === 0) return [];
+    if (urls.length === 0) {
+      this.lastRunIssues.push(
+        "RSS feed list is EMPTY on this runtime (NEWS_RSS_FEEDS unset/invalid and no defaults resolved) — no fetch was attempted."
+      );
+      return [];
+    }
 
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -26,6 +39,7 @@ export class RssNewsProvider implements SportsDataProvider {
         const response = await fetch(url);
         if (!response.ok) {
           console.error(`[RSSNewsProvider] Failed to fetch feed ${url}: ${response.statusText}`);
+          this.lastRunIssues.push(`Feed ${url}: HTTP ${response.status} ${response.statusText}`);
           continue;
         }
 
@@ -83,6 +97,7 @@ export class RssNewsProvider implements SportsDataProvider {
         }
       } catch (err: any) {
         console.error(`[RSSNewsProvider] Error parsing feed ${url}:`, err.message);
+        this.lastRunIssues.push(`Feed ${url}: fetch/parse error — ${err.message}`);
       }
     }
 
