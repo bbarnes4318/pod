@@ -893,6 +893,39 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     bedAssetForMix = style === "full" ? assetSet.bed : null;
     } // end legacy placement path
 
+    // GUARD — silent sound-design collapse. A produced style (light/full) that
+    // shipped with ZERO music/SFX because every asset failed to load, or the
+    // asset library is empty, must never be handed out as finished "audio_ready"
+    // audio. That downgrade is exactly how a music-less episode reached a
+    // listener as a completed listen. Fail loudly here (before the render +
+    // upload) so the real cause surfaces in the job log instead of a broken
+    // "ready" link. This does NOT fire when assets loaded fine but there was
+    // simply nothing to place (e.g. a short "light" script with no breaks), nor
+    // for an intentional dialogue-only "clean" render.
+    if (style !== "clean") {
+      const mixedAnySoundDesign =
+        !!introClip ||
+        !!outroClip ||
+        !!bedAssetForMix ||
+        stingerClips.length > 0 ||
+        reactionClips.length > 0 ||
+        highlightClips.length > 0;
+      if (!mixedAnySoundDesign) {
+        const loadFailures = soundWarnings.filter((w) => /failed to load/i.test(w)).length;
+        const activeAssetCount = await db.audioAsset.count({ where: { isActive: true } });
+        if (loadFailures > 0 || activeAssetCount === 0) {
+          throw new Error(
+            `Sound design "${style}" was requested but no music or SFX reached the mix ` +
+              `(${loadFailures} asset(s) failed to load; ${activeAssetCount} active asset(s) in the library). ` +
+              `Refusing to ship a dialogue-only render as finished audio. Likely cause: the sound-design ` +
+              `asset library is missing from storage or was never ingested. Fix the asset library ` +
+              `(re-ingest and confirm the WAVs exist in storage), then re-stitch — or set the production ` +
+              `style to "clean" for an intentional dialogue-only episode.`
+          );
+        }
+      }
+    }
+
     const clips: TimelineClip[] = [
       ...(introClip ? [introClip] : []),
       ...dialogueClips,
