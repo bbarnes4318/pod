@@ -95,8 +95,28 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
       };
     }
 
-    if (episode.status !== "audio_segments_ready" && episode.status !== "audio_ready" && episode.status !== "audio_stitching") {
-      return { eligible: false, reason: `Episode status is '${episode.status}'. Episode must be 'audio_segments_ready'.` };
+    // An already-produced episode (audio_ready or any later stage — content_ready,
+    // publish_ready, published) has all its voices and is eligible for a forced
+    // re-mix, e.g. adding music to a finished episode. Only pre-audio states block.
+    const PRODUCED_OR_LATER = new Set([
+      "audio_ready",
+      "content_generating",
+      "content_ready",
+      "publish_ready",
+      "published",
+    ]);
+    if (
+      episode.status !== "audio_segments_ready" &&
+      episode.status !== "audio_stitching" &&
+      !PRODUCED_OR_LATER.has(episode.status)
+    ) {
+      return {
+        eligible: false,
+        reason: `Episode status is '${episode.status}'. Episode must be 'audio_segments_ready'.`,
+        // Include details so the console shows the true ready count — reaching
+        // this branch means every line is voiced — instead of defaulting to 0/N.
+        details: { missing, failed: notReady, duplicate: 0, totalLines: allLines.length, ready: readyCount },
+      };
     }
 
     return {

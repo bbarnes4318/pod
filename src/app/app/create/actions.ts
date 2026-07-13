@@ -262,6 +262,10 @@ export async function mixEpisode(
   try {
     const job = await queueFinalAudioStitchJob({
       scriptId: gate.scriptId,
+      // A re-mix always re-renders (adds/changes music), even when the episode
+      // already has audio — otherwise the stitch short-circuits and returns the
+      // existing dialogue-only file unchanged.
+      forceRegenerate: true,
       productionStyle: opts?.productionStyle,
       sfxDensity: opts?.sfxDensity,
     });

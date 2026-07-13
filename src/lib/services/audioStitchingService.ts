@@ -300,12 +300,25 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // Accept fact_checked too: the audio-segments_ready flag only flips inside
     // the TTS job, so it can lag even when every line's audio is ready. The
     // per-line readiness check below is the real gate.
+    //
+    // A forced re-mix of an ALREADY-produced episode is also allowed — audio_ready
+    // or any later stage (content_ready, publish_ready, published). This is how
+    // "add music to a finished episode" works. The episode's later status is
+    // preserved after the re-stitch (see finalEpisodeStatus below), so a re-mix
+    // never knocks a published episode back to audio_ready.
+    const PRODUCED_OR_LATER = new Set([
+      "audio_ready",
+      "content_generating",
+      "content_ready",
+      "publish_ready",
+      "published",
+    ]);
     if (
       episode.status !== "audio_segments_ready" &&
       episode.status !== "fact_checked" &&
-      !(episode.status === "audio_ready" && forceRegenerate)
+      !(PRODUCED_OR_LATER.has(episode.status) && forceRegenerate)
     ) {
-      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' (or fact_checked with ready segments).`);
+      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' (or a forced re-mix of an already-produced episode).`);
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({
@@ -1033,11 +1046,19 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 12. Update Database Records inside a transaction. The style/density
     // used for this render are pinned on the episode so re-runs (and the
     // console) stay consistent with what actually shipped.
+    // Preserve a produced episode's later status across a re-mix: adding music
+    // to a finished (or published) episode must not regress it to audio_ready
+    // and out of its content/publish stage. A fresh stitch (from
+    // audio_segments_ready / fact_checked) still lands on audio_ready.
+    const finalEpisodeStatus = PRODUCED_OR_LATER.has(previousStatus)
+      ? previousStatus
+      : "audio_ready";
+
     await db.$transaction([
       db.episode.update({
         where: { id: episode.id },
         data: {
-          status: "audio_ready",
+          status: finalEpisodeStatus,
           audioUrl: uploadResult.url,
           durationSeconds: Math.round(finalDurationSeconds),
           soundDesign: {
