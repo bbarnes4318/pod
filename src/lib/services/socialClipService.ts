@@ -25,8 +25,27 @@ import {
   planConversationTimeline,
   renderTimelineToWav,
   masterToMp3,
+  getFileDurationMs,
   type PlannedLine,
+  type TimelineClip,
 } from "@/lib/audio/assembly";
+import {
+  mixBedUnderForeground,
+  planReactionSfx,
+  pickSfxAsset,
+  type SoundDesignAssetSet,
+  type SfxLineContext,
+  type SfxCategory,
+} from "@/lib/audio/soundDesign";
+import { loadSoundDesignAssetSet } from "@/lib/services/audioStitchingService";
+import {
+  parseEpisodeSoundDesign,
+  isProductionStyle,
+  isSfxDensity,
+  type ProductionStyle,
+  type SfxDensity,
+} from "@/lib/audio/soundDesignShared";
+import { parseProductionPlan } from "@/lib/audio/productionPlan";
 
 const CLIP_MIN_MS = 20_000;
 const CLIP_MAX_MS = 45_000;
@@ -141,6 +160,66 @@ export async function selectHottestRange(
 function ffmpegPath() {
   return process.env.FFMPEG_PATH || "ffmpeg";
 }
+function ffprobePath() {
+  return process.env.FFPROBE_PATH || "ffprobe";
+}
+const CLIP_SAMPLE_RATE = Number(process.env.AUDIO_TARGET_SAMPLE_RATE) || 44100;
+
+/**
+ * Reproduce THIS episode's sound design for the clip so a promo cut carries the
+ * same music + reactions the listener hears in the show — not a dry voice mix.
+ *
+ * Resolution mirrors the stitcher: style/density come from Episode.soundDesign
+ * (falling back to the default SoundDesignConfig). The bed is matched to the
+ * exact asset the episode's own render used — the planner records it on the
+ * stitch JobLog (output.productionPlan bed_change cue); if there's no planner
+ * plan we fall back to the show's configured default bed. The full active SFX
+ * pool is loaded so reaction placement matches the episode. Intro/outro theme
+ * and topic stingers are intentionally NOT loaded: a mid-episode slice has no
+ * topic transitions and shouldn't open/close on the show's theme.
+ *
+ * Returns null for "clean" style (episode is dialogue-only → clip stays so).
+ */
+async function resolveClipSoundDesign(
+  scriptId: string,
+  episodeSoundDesign: unknown,
+  tmp: string,
+  storage: { getObject(i: { url: string }): Promise<{ body: Buffer }> },
+  warnings: string[]
+): Promise<{ style: ProductionStyle; sfxDensity: SfxDensity; assetSet: SoundDesignAssetSet } | null> {
+  const epSound = parseEpisodeSoundDesign(episodeSoundDesign);
+  const sdConfig = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
+  const style: ProductionStyle = epSound.style
+    ?? (sdConfig && isProductionStyle(sdConfig.defaultStyle) ? sdConfig.defaultStyle : "clean");
+  if (style === "clean") return null;
+  const sfxDensity: SfxDensity = epSound.sfxDensity
+    ?? (sdConfig && isSfxDensity(sdConfig.defaultSfxDensity) ? sdConfig.defaultSfxDensity : "subtle");
+
+  // Exact bed the episode's own render used (planner path records the cue);
+  // else the show's configured default bed.
+  let bedAssetId: string | null = sdConfig?.bedAssetId ?? null;
+  const lastStitch = await db.jobLog.findFirst({
+    where: { jobType: "audio:stitch-final", status: "completed", input: { path: ["scriptId"], equals: scriptId } },
+    orderBy: { createdAt: "desc" },
+    select: { output: true },
+  });
+  const plan = lastStitch ? parseProductionPlan((lastStitch.output as any)?.productionPlan) : null;
+  const bedCue = plan?.cues.find((c) => c.type === "bed_change" && c.assetId);
+  if (bedCue?.assetId) bedAssetId = bedCue.assetId;
+
+  const assetSet = await loadSoundDesignAssetSet({
+    style,
+    config: { themeIntroAssetId: null, themeOutroAssetId: null, bedAssetId, stingerAssetIds: [] },
+    highlightAssetIds: [],
+    tempDir: tmp,
+    storageProvider: storage,
+    ffmpegPath: ffmpegPath(),
+    ffprobePath: ffprobePath(),
+    sampleRate: CLIP_SAMPLE_RATE,
+    warnings,
+  });
+  return { style, sfxDensity, assetSet };
+}
 function runFfmpegInDir(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = spawn(ffmpegPath(), args, { cwd });
@@ -253,7 +332,7 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
   try {
     const episode = await db.episode.findUnique({
       where: { id: clip.episodeId },
-      select: { id: true, title: true, hostIds: true },
+      select: { id: true, title: true, hostIds: true, soundDesign: true },
     });
     if (!episode) throw new Error("Episode not found.");
     const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: episode.hostIds });
@@ -289,12 +368,64 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
       });
     }
 
-    // 2. Real stitch path: plan → mix → master. Same functions as the episode.
+    // 2. Real stitch path: plan → (reactions) → mix → (ducked bed) → master.
+    // Same functions the full-episode stitch uses, so the clip carries the
+    // episode's music + reactions instead of a dry voice-only cut.
     const clips = planConversationTimeline(planned, {});
+
+    const sd = await resolveClipSoundDesign(clip.scriptId, episode.soundDesign, tmp, storage, []);
+
+    // Reaction SFX on the clip's hot beats (full style only), placed from the
+    // exact clip-local offsets — same planner + pool as the episode.
+    const reactionClips: TimelineClip[] = [];
+    if (sd && sd.style === "full") {
+      const availableCategories = new Set<SfxCategory>([...sd.assetSet.sfxByCategory.keys()]);
+      const sfxContexts: SfxLineContext[] = planned.map((p, i) => {
+        const ln = range.find((r) => r.lineIndex === p.lineIndex);
+        return {
+          lineIndex: p.lineIndex,
+          tone: ln?.tone ?? undefined,
+          energy: ln?.energy ?? undefined,
+          startMs: clips[i].startMs,
+          durationMs: clips[i].durationMs,
+        };
+      });
+      for (const placement of planReactionSfx(sfxContexts, sd.sfxDensity, { availableCategories })) {
+        const asset = pickSfxAsset(sd.assetSet, placement);
+        if (!asset) continue;
+        reactionClips.push({
+          filePath: asset.filePath,
+          startMs: placement.atMs,
+          durationMs: asset.durationMs,
+          kind: "sfx",
+          pan: 0,
+          fadeInMs: 25,
+          fadeOutMs: 150,
+          gainDb: placement.gainDb,
+        });
+      }
+    }
+
+    const foregroundClips: TimelineClip[] = [...clips, ...reactionClips];
     const mixWav = path.join(tmp, "clip-mix.wav");
-    await renderTimelineToWav(ffmpegPath(), clips, mixWav, {});
+    await renderTimelineToWav(ffmpegPath(), foregroundClips, mixWav, { sampleRate: CLIP_SAMPLE_RATE });
+
+    // Ducked music bed under the whole clip (full style) — the sidechain duck
+    // keeps the voice on top and swells the music in the gaps, exactly like the
+    // episode.
+    let masterInput = mixWav;
+    if (sd && sd.style === "full" && sd.assetSet.bed) {
+      const fgMs = await getFileDurationMs(ffprobePath(), mixWav);
+      const beddedWav = path.join(tmp, "clip-bedded.wav");
+      await mixBedUnderForeground(ffmpegPath(), mixWav, sd.assetSet.bed.filePath, beddedWav, {
+        sampleRate: CLIP_SAMPLE_RATE,
+        totalMs: fgMs,
+      });
+      masterInput = beddedWav;
+    }
+
     const clipMp3 = path.join(tmp, "clip.mp3");
-    await masterToMp3(ffmpegPath(), mixWav, clipMp3, {});
+    await masterToMp3(ffmpegPath(), masterInput, clipMp3, {});
 
     // 3. Caption cues from the EXACT clip offsets the mix used.
     const cues: CaptionCue[] = clips.map((c) => {

@@ -89,7 +89,7 @@ function computeEpisodeScore(scriptQuality: any, qaReport: AudioQaReport | null)
  * episode render. Highlights are rights-gated: only active `highlight`
  * assets with rightsConfirmed=true are ever loaded.
  */
-async function loadSoundDesignAssetSet(opts: {
+export async function loadSoundDesignAssetSet(opts: {
   style: ProductionStyle;
   config: {
     themeIntroAssetId: string | null;
