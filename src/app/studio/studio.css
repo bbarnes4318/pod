@@ -449,6 +449,89 @@
 .epAudio { width: 100%; height: 36px; }
 
 /* ============================================================
+   EPISODE WORKSPACE — the tabbed organizer on /studio/episodes/[id]
+   The player is a fixed anchor above; the many per-episode panels
+   are grouped into one focused tab at a time. Sticky tab bar keeps
+   the controls in reach on long panels.
+   ============================================================ */
+.epWorkspace { margin-top: 0.5rem; }
+
+.epTabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.epTabs::-webkit-scrollbar { display: none; }
+
+.epTab {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.55rem 0.95rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.epTab:hover { color: var(--text); background: var(--surface-2); }
+.epTab.active { color: var(--accent); background: var(--accent-muted); }
+
+.epTabLabel {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.epTabHint {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+.epTab.active .epTabHint { color: var(--accent); opacity: 0.9; }
+
+.epTabPanel { animation: fadeUp 0.25s ease both; }
+
+/* Ops shortcuts fold away by default — power-user affordance, not noise. */
+.epOpsDetails { margin-top: 0.2rem; }
+.epOpsDetails > summary {
+  list-style: none;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 0.35rem 0;
+  transition: color 0.15s ease;
+}
+.epOpsDetails > summary::-webkit-details-marker { display: none; }
+.epOpsDetails > summary::before { content: "▸ "; }
+.epOpsDetails[open] > summary::before { content: "▾ "; }
+.epOpsDetails > summary:hover { color: var(--text); }
+
+@media (max-width: 640px) {
+  .epTab { flex: 1 0 auto; }
+  .epTabHint { display: none; }
+}
+
+/* ============================================================
    THE BOARD — login-gated /studio home
    ============================================================ */
 
