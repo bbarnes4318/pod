@@ -6,6 +6,7 @@ import { qualityOf, fmtDuration, fmtDate, statusChip, nextActionFor } from "../.
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
+import EpisodeWorkspace, { WorkspaceTab } from "./EpisodeWorkspace";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
 import PublishPanel from "../../PublishPanel";
@@ -115,8 +116,117 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const chip = statusChip(episode.status);
   const action = nextActionFor(episode, script?.id);
 
+  // ---- Overview tab: quality breakdown + quick actions (the calm landing) ----
+  const overviewNode = (
+    <div className="grid2">
+      {q ? (
+        <div className="studioCard">
+          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quality breakdown</div>
+          {Object.entries(q.axes).map(([axis, v]) => (
+            <div key={axis} className="axisRow">
+              <span style={{ textTransform: "capitalize" }}>{axis}</span>
+              <div className="scoreBarTrack">
+                <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
+              </div>
+              <strong>{v.score}/{v.max}</strong>
+            </div>
+          ))}
+          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.9rem" }}>
+            Want it higher? Regenerate the script — the gate keeps only stronger output.
+          </div>
+        </div>
+      ) : (
+        <div className="studioCard">
+          <div className="sectionTitle" style={{ marginBottom: "0.6rem" }}>Where this episode stands</div>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
+            This episode is in the <strong style={{ color: "var(--text)" }}>{action.stage.toLowerCase()}</strong> stage.
+            Use the tabs above to edit the transcript, produce the audio, or publish once it&apos;s ready.
+          </p>
+        </div>
+      )}
+
+      <div className="studioCard">
+        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quick actions</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+          {episode.audioUrl && (
+            <a href={episode.audioUrl} download className="btnGhost">⬇ Download MP3</a>
+          )}
+          <Link href="/rss" className="btnGhost">🔗 Public RSS feed</Link>
+          {/* Ops-level shortcuts — kept reachable but visually secondary */}
+          {script && (
+            <details className="epOpsDetails">
+              <summary>Advanced / ops shortcuts</summary>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.7rem" }}>
+                {episode.status !== "published" && (
+                  <Link href={`/admin/rss/${script.id}`} className="btnGhost">📡 Publish to feed (ops)</Link>
+                )}
+                <Link href={`/admin/final-audio/${script.id}`} className="btnGhost">🎛 Remix / regenerate audio</Link>
+                <Link href={`/admin/scripts/${script.id}`} className="btnGhost">📝 Open script in ops</Link>
+              </div>
+            </details>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ---- Assemble tabs, skipping any panel that has no data for this episode ----
+  const tabs: WorkspaceTab[] = [
+    { key: "overview", label: "Overview", hint: "Score & actions", node: overviewNode },
+  ];
+  if (transcriptVm && script) {
+    tabs.push({
+      key: "transcript",
+      label: "Transcript",
+      hint: "Edit & fact-check",
+      node: (
+        <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
+      ),
+    });
+  }
+  if (script) {
+    tabs.push({
+      key: "produce",
+      label: "Produce",
+      hint: "Voices & mix",
+      node: (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+          <AdvancedProducer
+            episodeId={episode.id}
+            canRemix={canRemix}
+            appliedProvider={episode.ttsProvider ?? null}
+            appliedVoices={appliedVoices}
+            appliedStyle={appliedStyle}
+            appliedDensity={appliedDensity}
+          />
+          {mixVm && (
+            <div>
+              <div className="sectionHead" style={{ marginTop: 0 }}>
+                <h2 className="sectionTitle">Mix & timeline</h2>
+              </div>
+              <MixView episodeId={episode.id} initialVm={mixVm} />
+            </div>
+          )}
+        </div>
+      ),
+    });
+    tabs.push({
+      key: "promote",
+      label: "Promote",
+      hint: "Social clip",
+      node: <SocialClipPanel episodeId={episode.id} />,
+    });
+    tabs.push({
+      key: "publish",
+      label: "Publish",
+      hint: "Assets & go live",
+      node: <PublishPanel episodeId={episode.id} />,
+    });
+  }
+
   return (
     <div className="fadeUp">
+      {/* ---- Anchor: identity, score, and the player stay fixed above the tabs ---- */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
         <div style={{ minWidth: 0, maxWidth: 760 }}>
           <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
@@ -153,100 +263,10 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      <div className="grid2" style={{ marginTop: "1.5rem" }}>
-        {/* Quality breakdown */}
-        {q && (
-          <div className="studioCard">
-            <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quality breakdown</div>
-            {Object.entries(q.axes).map(([axis, v]) => (
-              <div key={axis} className="axisRow">
-                <span style={{ textTransform: "capitalize" }}>{axis}</span>
-                <div className="scoreBarTrack">
-                  <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
-                </div>
-                <strong>{v.score}/{v.max}</strong>
-              </div>
-            ))}
-            <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.9rem" }}>
-              Want it higher? Regenerate the script — the gate keeps only stronger output.
-            </div>
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Actions</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-            {episode.audioUrl && (
-              <a href={episode.audioUrl} download className="btnGhost">⬇ Download MP3</a>
-            )}
-            {script && episode.status !== "published" && (
-              <Link href={`/admin/rss/${script.id}`} className="btnGhost">📡 Publish to feed</Link>
-            )}
-            {script && (
-              <Link href={`/admin/final-audio/${script.id}`} className="btnGhost">🎛 Remix / regenerate audio</Link>
-            )}
-            {script && (
-              <Link href={`/admin/scripts/${script.id}`} className="btnGhost">📝 Open script in ops</Link>
-            )}
-            <Link href="/rss" className="btnGhost">🔗 Public RSS feed</Link>
-          </div>
-        </div>
+      {/* ---- Everything else, organized into one focused tab at a time ---- */}
+      <div style={{ marginTop: "1.75rem" }}>
+        <EpisodeWorkspace tabs={tabs} />
       </div>
-
-      {/* Advanced Producer — per-stage control (real re-gen / re-mix) on this same episode */}
-      {script && (
-        <div style={{ marginTop: "1.5rem" }}>
-          <AdvancedProducer
-            episodeId={episode.id}
-            canRemix={canRemix}
-            appliedProvider={episode.ttsProvider ?? null}
-            appliedVoices={appliedVoices}
-            appliedStyle={appliedStyle}
-            appliedDensity={appliedDensity}
-          />
-        </div>
-      )}
-
-      {/* Mix / timeline — per-line audio, music-bed lane, per-line re-voice */}
-      {mixVm && script && (
-        <div style={{ marginTop: "1.75rem" }}>
-          <div className="sectionHead" style={{ marginTop: 0 }}>
-            <h2 className="sectionTitle">Mix & timeline</h2>
-          </div>
-          <MixView episodeId={episode.id} initialVm={mixVm} />
-        </div>
-      )}
-
-      {/* Auto social clip — vertical captioned promo cut from the real audio */}
-      {script && (
-        <div style={{ marginTop: "1.75rem" }}>
-          <div className="sectionHead" style={{ marginTop: 0 }}>
-            <h2 className="sectionTitle">Promote</h2>
-          </div>
-          <SocialClipPanel episodeId={episode.id} />
-        </div>
-      )}
-
-      {/* Editable transcript + inline citations + fact-check + publish gate */}
-      {transcriptVm && script && (
-        <div style={{ marginTop: "1.75rem" }}>
-          <div className="sectionHead" style={{ marginTop: 0 }}>
-            <h2 className="sectionTitle">Transcript & fact check</h2>
-          </div>
-          <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
-        </div>
-      )}
-
-      {/* Publishing — assets, compliance, per-podcast feed, hard publish gate */}
-      {script && (
-        <div style={{ marginTop: "1.75rem" }}>
-          <div className="sectionHead" style={{ marginTop: 0 }}>
-            <h2 className="sectionTitle">Publish</h2>
-          </div>
-          <PublishPanel episodeId={episode.id} />
-        </div>
-      )}
     </div>
   );
 }
