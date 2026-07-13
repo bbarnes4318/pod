@@ -250,11 +250,16 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
 
   return (
     <div className="studioCard" style={{ padding: "1.5rem" }}>
+      {/* NOTE: no crossOrigin on the media element. Setting crossOrigin
+          forces the browser to CORS-validate the audio before playing, and the
+          media bucket doesn't return Access-Control-Allow-Origin — so the play
+          button silently failed. Plain-origin playback needs no CORS. The
+          waveform still attempts a CORS fetch below and falls back to the
+          pseudo-waveform if the bucket has no CORS policy. */}
       <audio
         ref={audioRef}
         src={audioUrl}
         preload="metadata"
-        crossOrigin="anonymous"
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
         onPlay={() => { setPlaying(true); sendPlayBeacon(); }}
         onPause={() => setPlaying(false)}
