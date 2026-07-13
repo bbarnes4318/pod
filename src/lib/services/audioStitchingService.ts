@@ -300,12 +300,25 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // Accept fact_checked too: the audio-segments_ready flag only flips inside
     // the TTS job, so it can lag even when every line's audio is ready. The
     // per-line readiness check below is the real gate.
+    //
+    // A forced re-mix of an ALREADY-produced episode is also allowed — audio_ready
+    // or any later stage (content_ready, publish_ready, published). This is how
+    // "add music to a finished episode" works. The episode's later status is
+    // preserved after the re-stitch (see finalEpisodeStatus below), so a re-mix
+    // never knocks a published episode back to audio_ready.
+    const PRODUCED_OR_LATER = new Set([
+      "audio_ready",
+      "content_generating",
+      "content_ready",
+      "publish_ready",
+      "published",
+    ]);
     if (
       episode.status !== "audio_segments_ready" &&
       episode.status !== "fact_checked" &&
-      !(episode.status === "audio_ready" && forceRegenerate)
+      !(PRODUCED_OR_LATER.has(episode.status) && forceRegenerate)
     ) {
-      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' (or fact_checked with ready segments).`);
+      throw new Error(`Episode status is '${episode.status}'. Stitching requires 'audio_segments_ready' (or a forced re-mix of an already-produced episode).`);
     }
 
     const latestFactCheck = await db.factCheckResult.findFirst({
@@ -893,6 +906,39 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     bedAssetForMix = style === "full" ? assetSet.bed : null;
     } // end legacy placement path
 
+    // GUARD — silent sound-design collapse. A produced style (light/full) that
+    // shipped with ZERO music/SFX because every asset failed to load, or the
+    // asset library is empty, must never be handed out as finished "audio_ready"
+    // audio. That downgrade is exactly how a music-less episode reached a
+    // listener as a completed listen. Fail loudly here (before the render +
+    // upload) so the real cause surfaces in the job log instead of a broken
+    // "ready" link. This does NOT fire when assets loaded fine but there was
+    // simply nothing to place (e.g. a short "light" script with no breaks), nor
+    // for an intentional dialogue-only "clean" render.
+    if (style !== "clean") {
+      const mixedAnySoundDesign =
+        !!introClip ||
+        !!outroClip ||
+        !!bedAssetForMix ||
+        stingerClips.length > 0 ||
+        reactionClips.length > 0 ||
+        highlightClips.length > 0;
+      if (!mixedAnySoundDesign) {
+        const loadFailures = soundWarnings.filter((w) => /failed to load/i.test(w)).length;
+        const activeAssetCount = await db.audioAsset.count({ where: { isActive: true } });
+        if (loadFailures > 0 || activeAssetCount === 0) {
+          throw new Error(
+            `Sound design "${style}" was requested but no music or SFX reached the mix ` +
+              `(${loadFailures} asset(s) failed to load; ${activeAssetCount} active asset(s) in the library). ` +
+              `Refusing to ship a dialogue-only render as finished audio. Likely cause: the sound-design ` +
+              `asset library is missing from storage or was never ingested. Fix the asset library ` +
+              `(re-ingest and confirm the WAVs exist in storage), then re-stitch — or set the production ` +
+              `style to "clean" for an intentional dialogue-only episode.`
+          );
+        }
+      }
+    }
+
     const clips: TimelineClip[] = [
       ...(introClip ? [introClip] : []),
       ...dialogueClips,
@@ -1000,11 +1046,19 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 12. Update Database Records inside a transaction. The style/density
     // used for this render are pinned on the episode so re-runs (and the
     // console) stay consistent with what actually shipped.
+    // Preserve a produced episode's later status across a re-mix: adding music
+    // to a finished (or published) episode must not regress it to audio_ready
+    // and out of its content/publish stage. A fresh stitch (from
+    // audio_segments_ready / fact_checked) still lands on audio_ready.
+    const finalEpisodeStatus = PRODUCED_OR_LATER.has(previousStatus)
+      ? previousStatus
+      : "audio_ready";
+
     await db.$transaction([
       db.episode.update({
         where: { id: episode.id },
         data: {
-          status: "audio_ready",
+          status: finalEpisodeStatus,
           audioUrl: uploadResult.url,
           durationSeconds: Math.round(finalDurationSeconds),
           soundDesign: {

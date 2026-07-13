@@ -52,6 +52,25 @@ async function ownedEpisode(episodeId: string): Promise<OwnedFail | OwnedOk> {
   return { ok: true, user, episode, scriptId: episode.scripts[0]?.id ?? null };
 }
 
+/** The script version whose lines are actually voiced (has ready audio
+ *  segments), newest first. A re-mix must re-splice THOSE voices — not blindly
+ *  the latest script version, since a newer re-generation may have no segments
+ *  yet. Falls back to the given scriptId when nothing is voiced. */
+async function resolveVoicedScriptId(episodeId: string, fallbackScriptId: string): Promise<string> {
+  const scripts = await db.script.findMany({
+    where: { episodeId },
+    orderBy: { version: "desc" },
+    select: { id: true },
+  });
+  for (const s of scripts) {
+    const ready = await db.audioSegment.count({
+      where: { scriptId: s.id, status: "ready", audioUrl: { not: null } },
+    });
+    if (ready > 0) return s.id;
+  }
+  return fallbackScriptId;
+}
+
 /** Shared /app creation guard: returns the standard error shape when the
  *  caller is not signed in. Creation/management requires an account. */
 async function requireSignedIn(): Promise<{ success: false; error: string } | null> {
@@ -260,8 +279,15 @@ export async function mixEpisode(
   if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There's nothing to mix yet." };
   try {
+    // Re-splice the version that actually holds the voices (a later, unvoiced
+    // script re-generation must not divert the re-mix to a segment-less version).
+    const scriptId = await resolveVoicedScriptId(gate.episode.id, gate.scriptId);
     const job = await queueFinalAudioStitchJob({
-      scriptId: gate.scriptId,
+      scriptId,
+      // A re-mix always re-renders (adds/changes music), even when the episode
+      // already has audio — otherwise the stitch short-circuits and returns the
+      // existing dialogue-only file unchanged.
+      forceRegenerate: true,
       productionStyle: opts?.productionStyle,
       sfxDensity: opts?.sfxDensity,
     });

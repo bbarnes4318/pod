@@ -70,7 +70,12 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const appliedVoices: AppliedVoice[] = overrideKeys
     .map((k) => ({ host: nameFor(k), provider: voiceOverrides[k]?.provider ?? "", voiceId: voiceOverrides[k]?.voiceId ?? "" }))
     .filter((v) => v.voiceId);
-  const canRemix = audioSegments.length > 0 && audioSegments.every((s) => (s.durationMs ?? 0) > 0);
+  // A re-mix re-splices already-voiced lines (the stitcher re-measures each
+  // clip's duration itself), so it must NOT require every AudioSegment row to
+  // carry a durationMs — some ready, playable rows legitimately don't. A
+  // finished episode (has audioUrl) is always re-mixable; otherwise any voiced
+  // line for this script version is enough.
+  const canRemix = !!episode.audioUrl || audioSegments.length > 0;
 
   // ---- Build the approximate timeline for chapters + host strip ----
   const chapters: PlayerChapter[] = [];
