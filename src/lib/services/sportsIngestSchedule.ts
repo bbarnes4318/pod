@@ -39,6 +39,20 @@ export function sportsNewsCron(): string {
   return validateCron(process.env.SPORTS_NEWS_CRON, "0 */3 * * *");
 }
 
+/** Daily topic-generation cadence. Runs AFTER the 05:15 structured ingest and
+ *  the early news ticks so the LLM sees fresh evidence. Without this scheduler
+ *  topics were only ever created by a manual admin click — ingest could run
+ *  forever while the takes board silently went stale. Default: 08:00. */
+export function topicsGenerateCron(): string {
+  return validateCron(process.env.TOPICS_GENERATE_CRON, "0 8 * * *");
+}
+
+/** Minimum debate score for scheduler-generated topics (0 = keep all). */
+export function topicsGenerateMinScore(): number {
+  const n = Number(process.env.TOPICS_GENERATE_MIN_SCORE);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /** UTC day bucket (YYYY-MM-DD) for deterministic per-day child job ids. */
 export function ingestDateKey(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10);

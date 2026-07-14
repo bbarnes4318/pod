@@ -68,8 +68,13 @@ export interface TopicGenJobData {
   minScore: number;
 }
 
-export async function queueTopicGenerationJob(data: TopicGenJobData) {
-  return podcastQueue.add("generate:topics", data);
+export async function queueTopicGenerationJob(
+  data: TopicGenJobData,
+  opts?: { jobId?: string }
+) {
+  // A deterministic jobId makes the enqueue idempotent (used by the scheduled
+  // daily topic-generation tick); manual admin triggers pass no jobId.
+  return podcastQueue.add("generate:topics", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
 }
 
 export interface ResearchBriefJobData {
