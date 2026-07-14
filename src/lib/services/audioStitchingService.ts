@@ -977,10 +977,26 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     if (bedUsed) {
       const foregroundMs = await getFileDurationMs(ffprobePath, foregroundWavPath);
       const beddedPath = path.join(tempDir, "final-mix-bedded.wav");
-      console.log(`[Stitcher] Ducking music bed '${bedAssetForMix!.name}' under ${Math.round(foregroundMs / 1000)}s foreground.`);
+      // Duck key = SPEECH (+ themes) only — never the stingers/reactions.
+      // Keying off the full foreground meant every break's riser muted the bed
+      // in the exact gap where the song should swell, so topic turns played as
+      // whoosh-over-silence instead of music. With this key the bed rises to
+      // full level between topics and still drops hard under the voices.
+      const keyClips: TimelineClip[] = [
+        ...(introClip ? [introClip] : []),
+        ...dialogueClips,
+        ...highlightClips,
+        ...(outroClip ? [outroClip] : []),
+      ];
+      const duckKeyPath = path.join(tempDir, "duck-key.wav");
+      await renderTimelineToWav(ffmpegPath, keyClips, duckKeyPath, {
+        sampleRate: targetSampleRate,
+      });
+      console.log(`[Stitcher] Ducking music bed '${bedAssetForMix!.name}' under ${Math.round(foregroundMs / 1000)}s foreground (speech-keyed duck).`);
       await mixBedUnderForeground(ffmpegPath, foregroundWavPath, bedAssetForMix!.filePath, beddedPath, {
         sampleRate: targetSampleRate,
         totalMs: foregroundMs,
+        keyWavPath: duckKeyPath,
       });
       mixWavPath = beddedPath;
     }
