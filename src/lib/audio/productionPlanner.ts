@@ -368,13 +368,10 @@ interface DensityShape {
   allowHype: boolean;
 }
 
-// Reaction gains lifted +3dB across the board (2026-07-14): at the old values
-// reactions sat 13-15dB under the -16 LUFS dialogue and read as silence in the
-// finished master. -10 at medium is punchy-but-supporting.
 const DENSITY_SHAPES: Record<SfxDensity, DensityShape> = {
-  subtle: { minSpacingMs: 45_000, silenceBias: 1.5, gainDb: -12, allowHype: false },
-  medium: { minSpacingMs: 25_000, silenceBias: 1.0, gainDb: -10, allowHype: false },
-  hype: { minSpacingMs: 12_000, silenceBias: 0.5, gainDb: -8, allowHype: true },
+  subtle: { minSpacingMs: 45_000, silenceBias: 1.5, gainDb: -15, allowHype: false },
+  medium: { minSpacingMs: 25_000, silenceBias: 1.0, gainDb: -13, allowHype: false },
+  hype: { minSpacingMs: 12_000, silenceBias: 0.5, gainDb: -11, allowHype: true },
 };
 
 const DENSITY_RANK: Record<SfxDensity, number> = { subtle: 0, medium: 1, hype: 2 };
@@ -736,11 +733,7 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
         assetName: asset.name,
         category: null,
         timing: "before",
-        // -5 (was -8): long risers already spend most of their length fading
-        // in under speech (room-cap overlap), so the audible hit at the break
-        // was landing ~8dB under dialogue — too quiet to register as a
-        // transition in the master.
-        gainDb: -5,
+        gainDb: -8,
         fadeInMs: 15,
         fadeOutMs: 90,
         fit: Number(stingerPick.fit.toFixed(2)),
