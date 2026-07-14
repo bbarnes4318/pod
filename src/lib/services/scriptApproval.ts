@@ -23,6 +23,9 @@ export interface ScriptApprovalResult {
   scriptId?: string;
   error?: string;
   reasons?: string[];
+  /** Non-blocking grounding notes (surfaced in the transcript step; the hard
+   *  publish gate still enforces them before going live). */
+  warnings?: string[];
 }
 
 /** Build the validation context (allowed evidence refs, unsafe claims, the two
@@ -100,19 +103,26 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
   sanitizedContent.safety = summary;
   const plainText = plainTextFromSegments(sanitizedContent.segments);
 
-  // Hard safety gates — the same ones the admin approval enforces. Hosts are
-  // read from the episode's actual cast (no hardcoded names).
+  // Gate policy: "warnings, hard-gate at publish". The owner approving IS the
+  // human review, so grounding gaps (a factual line with no citation, low
+  // evidence coverage, an invalid ref) are recorded as WARNINGS and surfaced in
+  // the transcript step — they no longer hard-block voicing. Genuine SAFETY
+  // (unsafe claims used as fact) and STRUCTURAL/quality problems (invalid host
+  // casting, too-short or unbalanced script, empty transcript) still block. The
+  // hard publish gate blocks going live on unresolved claims.
   const reasons: string[] = [];
-  if (!summary.validationPassed) reasons.push(...(summary.reasons.length ? summary.reasons : ["Basic validation failed."]));
-  if (summary.evidenceCoveragePercent < 90) reasons.push(`Evidence coverage is ${summary.evidenceCoveragePercent}% (needs ≥ 90%).`);
-  if (summary.invalidEvidenceRefCount > 0) reasons.push(`${summary.invalidEvidenceRefCount} invalid evidence reference(s).`);
-  if (summary.unsupportedClaimCount > 0) reasons.push(`${summary.unsupportedClaimCount} unsupported claim(s).`);
   if (summary.unsafeClaimCount > 0) reasons.push(`${summary.unsafeClaimCount} unsafe claim(s) used as fact.`);
+  if (summary.invalidSpeakerCount > 0) reasons.push(`${summary.invalidSpeakerCount} line(s) have invalid host casting.`);
   if (summary.totalLineCount < 40) reasons.push(`Only ${summary.totalLineCount} lines (needs ≥ 40).`);
   const shareA = summary.hostLineShare[hostA.name] ?? 0;
   const shareB = summary.hostLineShare[hostB.name] ?? 0;
   if (shareA < 25 || shareB < 25) reasons.push("Host dialogue split is unbalanced (each needs ≥ 25%).");
   if (!plainText.trim()) reasons.push("Transcript is empty.");
+
+  const warnings: string[] = [];
+  if (summary.evidenceCoveragePercent < 90) warnings.push(`Evidence coverage is ${summary.evidenceCoveragePercent}% — verify claims before publishing.`);
+  if (summary.invalidEvidenceRefCount > 0) warnings.push(`${summary.invalidEvidenceRefCount} invalid evidence reference(s).`);
+  if (summary.unsupportedClaimCount > 0) warnings.push(`${summary.unsupportedClaimCount} unsupported claim(s) — resolve before publishing.`);
 
   if (reasons.length > 0) {
     return { success: false, error: "Script isn't ready to voice yet.", reasons };
@@ -136,10 +146,11 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
           resultingScriptStatus: "approved",
           resultingEpisodeStatus: "script_approved",
           validationSummary: summary,
+          warnings,
         } as any,
       },
     });
   });
 
-  return { success: true, scriptId: script.id };
+  return { success: true, scriptId: script.id, warnings };
 }

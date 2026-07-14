@@ -686,24 +686,26 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   // 7. Resolve Final status mapping
   let finalStatus: "passed" | "failed" | "needs_review" = "passed";
 
-  const hasSemanticFailure =
-    semanticStatus === "failed" ||
-    semanticUnsupportedCount > 0 ||
-    semanticUnsafeClaimCount > 0 ||
-    semanticInvalidEvidenceRefCount > 0;
+  // ---- Fact-check policy: "warnings, hard-gate at publish" ----
+  // Grounding gaps are recorded but no longer fail the check: a factual line
+  // with no citation, sub-100% evidence coverage, an invalid ref, rumor
+  // phrasing, a needs-human-review flag, and the semantic reviewer's
+  // unsupported / misleading / needs-review / invalid-ref verdicts are all
+  // WARNINGS (kept in warningsList + evidenceCoverage metrics, surfaced in the
+  // transcript step). Only genuine SAFETY (a deterministic OR LLM-flagged
+  // unsafe claim) and STRUCTURAL problems (invalid host casting, too-short or
+  // unbalanced script, empty transcript) hard-fail here. The hard publish gate
+  // (validateEpisodeForRss / attemptPublish) remains the compliance stop that
+  // blocks an episode from going live on unresolved claims.
+  const hasUnsafeContent = unsafeClaimCount > 0 || semanticUnsafeClaimCount > 0;
+  const hasStructuralFailure =
+    invalidSpeakerCount > 0 ||
+    totalLineCount < 40 ||
+    hostAShare < 25 ||
+    hostBShare < 25 ||
+    script.plainText.trim().length === 0;
 
-  const hasSemanticReviewNeeded =
-    semanticStatus === "needs_review" ||
-    semanticNeedsReviewCount > 0 ||
-    semanticMisleadingCount > 0;
-
-  if (!deterministicPassed || hasSemanticFailure) {
-    finalStatus = "failed";
-  } else if (hasSemanticReviewNeeded) {
-    finalStatus = "needs_review";
-  } else {
-    finalStatus = "passed";
-  }
+  finalStatus = hasUnsafeContent || hasStructuralFailure ? "failed" : "passed";
 
   const passedBool = finalStatus === "passed";
 
