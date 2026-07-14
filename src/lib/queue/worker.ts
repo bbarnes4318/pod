@@ -66,6 +66,15 @@ const QUEUE_NAME = "podcast-generation";
 
 console.log("--------------------------------------------------");
 console.log("TAKE MACHINE WORKER - INITIALIZING");
+// Build stamp: makes "is the correct code actually deployed?" a one-glance
+// answer. Coolify injects SOURCE_COMMIT on every deploy; compare this line to
+// the merge commit on GitHub's main to confirm the worker is current.
+console.log(
+  `BUILD COMMIT: ${process.env.SOURCE_COMMIT || process.env.GIT_COMMIT_SHA || "unknown"} | ` +
+    `AUDIO_BED_GAIN_DB=${process.env.AUDIO_BED_GAIN_DB ?? "(default)"} ` +
+    `AUDIO_STINGER_MAX_ROOM_MS=${process.env.AUDIO_STINGER_MAX_ROOM_MS ?? "(default)"} ` +
+    `SOUND_DESIGN_PLANNER=${process.env.SOUND_DESIGN_PLANNER ?? "(unset)"}`
+);
 console.log(`Redis Connection: ${process.env.REDIS_URL || "redis://localhost:6379"}`);
 console.log(`Queue Name: ${QUEUE_NAME}`);
 console.log("--------------------------------------------------");
