@@ -47,6 +47,9 @@ export interface EpisodeBuildInput {
   productionStyle?: string;
   /** Reaction-SFX density: "subtle" | "medium" | "hype". */
   sfxDensity?: string;
+  /** AUTHORIZED override for the exclude_podcast reuse policy on pinned topics
+   *  (admin/system callers only). */
+  reuseOverride?: boolean;
 }
 
 export interface EpisodeBuildResult {
@@ -465,98 +468,8 @@ export async function assertHostsCastable(hostIds: string[], ownerId?: string, d
   }
 }
 
-/**
- * LEGACY entry point — preserved for backwards compatibility. Binary mode:
- * explicit `topicIds` (validated, throws on the first invalid) or full
- * auto-selection. Now implemented on the shared primitives above so its
- * behavior stays in lockstep with `createEpisodeDraft`.
- */
-export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<EpisodeBuildResult> {
-  const result: EpisodeBuildResult = {
-    insertedEpisodeCount: 0,
-    selectedTopicCount: 0,
-    skippedTopicCount: 0,
-    invalidTopicCount: 0,
-    missingBriefCount: 0,
-    weakEvidenceCount: 0,
-    statusUpdateCount: 0,
-    selectedTopicIds: [],
-    episodeId: null,
-    reasons: [],
-  };
-
-  let settings;
-  try {
-    settings = normalizeEpisodeSettings(input);
-  } catch (err: any) {
-    result.reasons.push(err.message);
-    throw err;
-  }
-
-  await assertHostsCastable(input.hostIds || [], input.ownerId);
-
-  const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
-  let chosenTopics: TopicWithBrief[] = [];
-
-  if (input.topicIds && input.topicIds.length > 0) {
-    for (const tId of input.topicIds) {
-      const topic = (await db.topicCandidate.findUnique({
-        where: { id: tId },
-        include: { researchBrief: true },
-      })) as unknown as TopicWithBrief | null;
-      const eligibility = evaluateTopicEligibility(topic, tId);
-      if (!eligibility.ok) {
-        tallyRejection(eligibility.category!, result);
-        result.reasons.push(eligibility.reason!);
-        throw new Error(eligibility.reason!);
-      }
-      chosenTopics.push(topic!);
-    }
-  } else {
-    const auto = await selectAutoTopics({
-      targetCount,
-      minDebateScore: input.minDebateScore,
-      leagueId: input.leagueId,
-      leagueIds: input.leagueIds,
-      sport: input.sport,
-      verticals: input.verticals,
-      teamNames: input.teamNames,
-    });
-    chosenTopics = auto.chosen;
-    result.skippedTopicCount += auto.skippedTopicCount;
-    result.missingBriefCount += auto.missingBriefCount;
-    result.weakEvidenceCount += auto.weakEvidenceCount;
-    result.reasons.push(...auto.reasons);
-  }
-
-  if (chosenTopics.length === 0) {
-    const msg = "Fewer than 1 valid topic is available to build the episode.";
-    result.reasons.push(msg);
-    throw new Error(msg);
-  }
-
-  result.selectedTopicCount = chosenTopics.length;
-  result.selectedTopicIds = chosenTopics.map((t) => t.id);
-
-  const episodeId = await createEpisodeRecord(
-    chosenTopics,
-    {
-      title: input.title,
-      description: input.description,
-      podcastId: input.podcastId,
-      ownerId: input.ownerId,
-      hostIds: input.hostIds,
-      ttsProvider: settings.ttsProvider,
-      ttsVoiceOverrides: settings.ttsVoiceOverrides,
-      soundDesign: settings.soundDesign,
-      leagueId: input.leagueId,
-      sport: input.sport,
-    },
-    result.reasons
-  );
-
-  result.insertedEpisodeCount = 1;
-  result.statusUpdateCount = chosenTopics.length;
-  result.episodeId = episodeId;
-  return result;
-}
+// NOTE: `buildEpisodeFromTopics` was moved to episodeCreation.ts as a DEPRECATED
+// adapter that delegates to `createEpisodeDraft`, so there is exactly ONE
+// selection-policy implementation (reuse policy, dedupe, snapshots, scoping).
+// The shared primitives above are the single source of truth both entry points
+// build on.

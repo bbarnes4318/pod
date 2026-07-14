@@ -15,7 +15,7 @@ import { getLLMProvider } from "../providers/llm/factory";
 import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { renderSocialClip } from "../services/socialClipService";
-import { buildEpisodeFromTopics } from "../services/episodeService";
+import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
 import { generateTtsSegments } from "../services/ttsSegmentService";

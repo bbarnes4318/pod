@@ -13,6 +13,8 @@ import { z } from "zod";
 import { db } from "../db";
 import {
   TopicWithBrief,
+  EpisodeBuildInput,
+  EpisodeBuildResult,
   evaluateTopicEligibility,
   selectAutoTopics,
   createEpisodeRecord,
@@ -24,6 +26,7 @@ import {
   getReuseExcludedTopicIds,
   getTopicUsage,
   reuseWarnings,
+  scopedRecentUseCount,
 } from "./topicUsageService";
 
 /** Configurable hard cap on topics per episode (spec: max six). */
@@ -71,6 +74,11 @@ export const CreateEpisodeDraftInputSchema = z
      *  ineligible pins are reported in rejectedTopics and the build proceeds
      *  from the valid ones. Rejections are surfaced either way — never silent. */
     strictSelection: z.boolean().optional(),
+    /** AUTHORIZED override: permit a manually-pinned topic that the
+     *  exclude_podcast policy would otherwise block for recent use. The SERVICE
+     *  honors it; the SURFACE decides who may pass it (admins yes, ordinary
+     *  producers no). Never affects auto-selected topics. */
+    reuseOverride: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
     const deduped = [...new Set(val.selectedTopicIds.map((s) => s.trim()))];
@@ -202,7 +210,12 @@ export async function createEpisodeDraft(
     return fail(mode, err.message);
   }
 
-  // ---- Resolve topics per mode ----
+  // Reuse policy (default: allow). Resolved up-front so it governs BOTH
+  // manually-pinned topics and the auto-fill pool — one policy, applied
+  // consistently.
+  const policy = resolveTopicReusePolicy();
+
+  // ---- Resolve PINNED topics (manual / hybrid) ----
   const rejectedTopics: RejectedTopic[] = [];
   const pinnedTopics: TopicWithBrief[] = [];
   let autoTopics: TopicWithBrief[] = [];
@@ -221,8 +234,36 @@ export async function createEpisodeDraft(
       }
       pinnedTopics.push(topic!);
     }
-    // Strict surfaces (explicit "use exactly these") fail atomically before any
-    // record is written when a pin is ineligible — rejections still surfaced.
+
+    // exclude_podcast applies to MANUAL/HYBRID pins too: a pin the SELECTED
+    // podcast used within the cooldown is BLOCKED (category "recently_used")
+    // unless an authorized caller passed reuseOverride. Scoped strictly to this
+    // podcast; another customer's use never blocks. Never silently dropped.
+    if (policy.mode === "exclude_podcast" && input.podcastId && !input.reuseOverride && pinnedTopics.length > 0) {
+      const pinUsage = await getTopicUsage(
+        pinnedTopics.map((t) => t.id),
+        { podcastId: input.podcastId, cooldownDays: policy.cooldownDays },
+        dbi
+      );
+      const stillPinned: TopicWithBrief[] = [];
+      for (const t of pinnedTopics) {
+        const n = scopedRecentUseCount(pinUsage.get(t.id), { podcastId: input.podcastId });
+        if (n > 0) {
+          rejectedTopics.push({
+            id: t.id,
+            category: "recently_used",
+            reason: `Topic '${t.title}' was used ${n} time(s) by this podcast in the last ${policy.cooldownDays} days (reuseOverride required).`,
+          });
+        } else {
+          stillPinned.push(t);
+        }
+      }
+      pinnedTopics.length = 0;
+      pinnedTopics.push(...stillPinned);
+    }
+
+    // Strict surfaces fail atomically before any record is written when ANY pin
+    // is rejected (ineligible OR policy-blocked) — rejections always surfaced.
     if (input.strictSelection && rejectedTopics.length > 0) {
       return fail(mode, `Some selected topics can't be used: ${rejectedTopics.map((r) => r.reason).join(" ")}`, {
         rejectedTopics,
@@ -231,10 +272,7 @@ export async function createEpisodeDraft(
     }
   }
 
-  // Reuse policy (default: allow). exclude_podcast drops topics this podcast
-  // used within the cooldown window from the auto pool; warn only annotates.
-  const policy = resolveTopicReusePolicy();
-
+  // ---- Auto-fill (automatic / hybrid) ----
   if (mode === "automatic" || mode === "hybrid") {
     const need = mode === "automatic" ? target : Math.max(0, target - pinnedTopics.length);
     if (need > 0) {
@@ -249,7 +287,7 @@ export async function createEpisodeDraft(
           verticals: input.verticals,
           teamNames: input.teams,
           // Never re-pick a pinned topic (exclude_episode is implicit), and honor
-          // the podcast-cooldown policy.
+          // the podcast-cooldown policy for auto-selected topics.
           excludeTopicIds: [...pinnedTopics.map((t) => t.id), ...policyExcluded],
         },
         dbi
@@ -270,6 +308,18 @@ export async function createEpisodeDraft(
 
   if (orderedTopics.length > MAX_TOPICS_PER_EPISODE) {
     orderedTopics.length = MAX_TOPICS_PER_EPISODE;
+  }
+
+  // ---- Reuse warnings computed from PRIOR usage (BEFORE creating the record) ----
+  // The episode does not exist yet, so a first use can NEVER count itself.
+  // Scoped to the selected podcast (if any), else the owner — never global.
+  if (policy.mode === "warn") {
+    const priorUsage = await getTopicUsage(
+      orderedTopics.map((t) => t.id),
+      { ownerId: input.ownerId, podcastId: input.podcastId, cooldownDays: policy.cooldownDays },
+      dbi
+    );
+    reasons.push(...reuseWarnings(policy, priorUsage, orderedTopics.map((t) => t.id), { podcastId: input.podcastId }));
   }
 
   // ---- Create the record via the single shared primitive ----
@@ -296,12 +346,6 @@ export async function createEpisodeDraft(
     return fail(mode, err.message || "Failed to create the episode.", { rejectedTopics, reasons });
   }
 
-  // Non-blocking reuse warnings (warn policy only).
-  if (policy.mode === "warn") {
-    const usage = await getTopicUsage(orderedTopics.map((t) => t.id), { cooldownDays: policy.cooldownDays }, dbi);
-    reasons.push(...reuseWarnings(policy, usage, orderedTopics.map((t) => t.id)));
-  }
-
   const pinnedIdSet = new Set(pinnedTopics.map((t) => t.id));
   return {
     ok: true,
@@ -312,5 +356,68 @@ export async function createEpisodeDraft(
     autoSelectedTopicIds: autoTopics.map((t) => t.id),
     finalOrder: orderedTopics.map((t) => t.id),
     reasons,
+  };
+}
+
+/**
+ * @deprecated Use `createEpisodeDraft` directly. Kept as a thin, queue-safe
+ * adapter so the legacy `EpisodeBuildInput`/`EpisodeBuildResult` shape (BullMQ
+ * job data, JobLog output) keeps working — it now DELEGATES to
+ * `createEpisodeDraft`, so there is exactly ONE selection-policy implementation
+ * (reuse policy, ordered dedupe, snapshots, owner/podcast scoping). It maps
+ * binary `topicIds` presence to manual/automatic mode and throws on failure to
+ * preserve the old error contract.
+ *
+ * `statusUpdateCount` is always 0: creating an episode no longer mutates any
+ * TopicCandidate status (usage is derived from EpisodeTopic).
+ */
+export async function buildEpisodeFromTopics(
+  input: EpisodeBuildInput & { reuseOverride?: boolean },
+  deps?: { db?: any }
+): Promise<EpisodeBuildResult> {
+  const hasExplicit = !!(input.topicIds && input.topicIds.length > 0);
+  const draft = await createEpisodeDraft(
+    {
+      mode: hasExplicit ? "manual" : "automatic",
+      selectedTopicIds: input.topicIds ?? [],
+      // Queue/legacy builds are lenient: surface rejects, build from the valid
+      // ones rather than failing the whole job on a single bad topic.
+      strictSelection: false,
+      reuseOverride: input.reuseOverride,
+      targetTopicCount: input.targetTopicCount,
+      ownerId: input.ownerId,
+      podcastId: input.podcastId,
+      title: input.title,
+      description: input.description,
+      verticals: input.verticals,
+      leagueId: input.leagueId,
+      leagueIds: input.leagueIds,
+      teams: input.teamNames,
+      hostIds: input.hostIds,
+      ttsProvider: input.ttsProvider,
+      ttsVoiceOverrides: input.ttsVoiceOverrides,
+      productionStyle: input.productionStyle,
+      sfxDensity: input.sfxDensity,
+      minDebateScore: input.minDebateScore,
+      sport: input.sport,
+    },
+    deps
+  );
+
+  if (!draft.ok || !draft.episodeId) {
+    throw new Error(draft.error || "Fewer than 1 valid topic is available to build the episode.");
+  }
+
+  return {
+    insertedEpisodeCount: 1,
+    selectedTopicCount: draft.finalOrder.length,
+    skippedTopicCount: 0,
+    invalidTopicCount: draft.rejectedTopics.length,
+    missingBriefCount: 0,
+    weakEvidenceCount: 0,
+    statusUpdateCount: 0, // deprecated: no topic status is ever updated
+    selectedTopicIds: draft.finalOrder,
+    episodeId: draft.episodeId,
+    reasons: draft.reasons,
   };
 }

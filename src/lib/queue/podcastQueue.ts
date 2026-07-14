@@ -106,6 +106,8 @@ export interface EpisodeBuildJobData {
   ttsVoiceOverrides?: TtsVoiceOverrides;
   productionStyle?: string;
   sfxDensity?: string;
+  /** Authorized exclude_podcast reuse override (admin/system enqueuers only). */
+  reuseOverride?: boolean;
 }
 
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData, opts?: { jobId?: string }) {

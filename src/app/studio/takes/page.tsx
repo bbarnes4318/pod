@@ -5,12 +5,13 @@ import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { fmtDate } from "../lib";
 import TakesFilters, { LeagueOption } from "./TakesFilters";
+import type { TopicEditorialStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
 // Editorial-readiness statuses only — "used" is no longer a status; usage is
 // derived from EpisodeTopic and shown as a reuse-friendly count.
-const BOARD_STATUSES = ["pending", "approved"];
+const BOARD_STATUSES: TopicEditorialStatus[] = ["pending", "approved"];
 
 export default async function TakesBoard({
   searchParams,

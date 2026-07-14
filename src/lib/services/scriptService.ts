@@ -19,6 +19,7 @@ import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
+import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface ScriptBuildInput {
@@ -126,60 +127,17 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     throw new Error(msg);
   }
 
-  // 2. Validate topic content quality — from the immutable snapshot when the
-  // episode has one (so a later edit of the source topic can't retroactively
-  // break or change a produced episode), falling back to live data for legacy
-  // rows. Editorial STATUS is intentionally NOT checked here: usage is derived
-  // from EpisodeTopic, not a global "used" flag.
-  for (const et of ep.topics) {
-    const content = resolveEpisodeTopicContent(et as any);
-
-    const facts = Array.isArray(content.facts) ? content.facts : [];
-    const sourceIds = Array.isArray(content.sourceIds) ? content.sourceIds : [];
-    if (facts.length === 0 || sourceIds.length === 0) {
-      const msg = `Topic '${content.title}' has empty facts or sourceIds.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-
-    if (!content.argumentForHostA?.trim() || !content.argumentForHostB?.trim()) {
-      const msg = `Topic '${content.title}' is missing host arguments.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-  }
-
-  // 2b. PRE-GENERATION CONTENT GATE — don't write a mediocre episode on weak
-  // material. Score each topic's source richness; block (default) or warn
-  // below threshold. A perfect pipeline on boring topics is still boring.
-  const gateMode = (process.env.CONTENT_GATE_MODE || "block").toLowerCase();
-  const gateMin = Number(process.env.CONTENT_GATE_MIN) || 50;
-  const talkabilityReports = ep.topics.map((et) => {
-    const report = scoreTopicTalkability({
-      title: et.topic.title,
-      summary: et.topic.summary,
-      createdAt: et.topic.createdAt,
-      brief: et.topic.researchBrief as any,
-    });
-    return { title: et.topic.title, report };
-  });
-  const avgTalkability =
-    talkabilityReports.reduce((a, r) => a + r.report.total, 0) / Math.max(1, talkabilityReports.length);
-  for (const tr of talkabilityReports) {
-    result.reasons.push(
-      `Talkability '${tr.title}': ${tr.report.total}/100 (${Object.entries(tr.report.axes)
-        .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)
-        .join(", ")})`
-    );
-  }
-  if (avgTalkability < gateMin) {
-    const weakest = [...talkabilityReports].sort((a, b) => a.report.total - b.report.total)[0];
-    const msg = `Content gate: source material scores ${Math.round(avgTalkability)}/100 talkability (minimum ${gateMin}). Weakest topic: '${weakest?.title}' at ${weakest?.report.total}. Enrich the research brief (regenerate it with the research provider configured) or pick stronger topics instead of generating a mediocre episode.`;
-    result.reasons.push(msg);
-    if (gateMode !== "warn") {
-      throw new Error(msg);
-    }
-    console.warn(`[ScriptService] ${msg} (CONTENT_GATE_MODE=warn — proceeding)`);
+  // 2 + 2b. Validate topic content + run the pre-generation content gate —
+  // SNAPSHOT-FIRST (validation, talkability, gate all read the frozen snapshot
+  // when present, so a later edit of the live topic can't change or break an
+  // already-created episode). Editorial STATUS is NOT checked (usage is derived
+  // from EpisodeTopic). Legacy rows fall back to live data.
+  const gate = evaluateEpisodeTopicsForScript(ep.topics as any);
+  result.reasons.push(...gate.reasons);
+  if (!gate.ok) throw new Error(gate.blockingError!);
+  if (gate.gateBlocked) throw new Error(gate.gateMessage!);
+  if (gate.gateMessage && !gate.gateBlocked) {
+    console.warn(`[ScriptService] ${gate.gateMessage} (CONTENT_GATE_MODE=warn — proceeding)`);
   }
 
   // 3. Cast the hosts. The episode's saved hostIds (from its podcast config
@@ -844,8 +802,8 @@ Delivery field meanings:
   // plus the source-material talkability that fed it (for regression tracking).
   cleanContent.quality = scoreScriptQuality(cleanContent);
   cleanContent.sourceTalkability = {
-    average: Math.round(avgTalkability),
-    topics: talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
+    average: Math.round(gate.avgTalkability),
+    topics: gate.talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
   };
   result.reasons.push(
     `Quality score: ${cleanContent.quality.total}/100 (${Object.entries(cleanContent.quality.axes)
