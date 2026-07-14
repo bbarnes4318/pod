@@ -48,7 +48,7 @@ import {
   RECURRING_GENERATION_TIME,
   RECURRING_GENERATION_TZ,
 } from "../services/recurringPodcastService";
-import { queueIngestionJob } from "./podcastQueue";
+import { queueIngestionJob, queueTopicGenerationJob } from "./podcastQueue";
 import {
   SPORTS_INGEST_TZ,
   SPORTS_ODDS_DELAY_MS,
@@ -56,6 +56,8 @@ import {
   getSportsIngestSeason,
   sportsIngestCron,
   sportsNewsCron,
+  topicsGenerateCron,
+  topicsGenerateMinScore,
   ingestDateKey,
   ingestHourKey,
 } from "../services/sportsIngestSchedule";
@@ -119,6 +121,19 @@ podcastQueue
   .then(() => console.log(`[Worker] Sports-news scheduler registered: '${sportsNewsCron()}' ${SPORTS_INGEST_TZ}`))
   .catch((err) => console.error(`[Worker] Failed to register sports-news scheduler: ${err.message}`));
 
+// Daily topic generation from the freshest ingested evidence. Without this,
+// topics were only ever created by a manual admin click — the ingest
+// schedulers kept news flowing while the takes board silently went stale
+// (the July-2026 "no new topics since the 11th" failure).
+podcastQueue
+  .upsertJobScheduler(
+    "topics-generate-daily",
+    { pattern: topicsGenerateCron(), tz: SPORTS_INGEST_TZ },
+    { name: "scheduler:topics-generate", data: {} }
+  )
+  .then(() => console.log(`[Worker] Topic-generation scheduler registered: '${topicsGenerateCron()}' ${SPORTS_INGEST_TZ}`))
+  .catch((err) => console.error(`[Worker] Failed to register topic-generation scheduler: ${err.message}`));
+
 // Initialize BullMQ Worker
 const worker = new Worker(
   QUEUE_NAME,
@@ -151,6 +166,8 @@ const worker = new Worker(
       return handleSportsIngestScheduler(job);
     } else if (job.name === "scheduler:sports-news") {
       return handleSportsNewsScheduler(job);
+    } else if (job.name === "scheduler:topics-generate") {
+      return handleTopicsGenerateScheduler(job);
     } else if (job.name === "generate-podcast") {
       return handlePodcastGeneration(job as Job<JobData>);
     } else {
@@ -353,6 +370,33 @@ async function handleSportsNewsScheduler(job: Job) {
   }
 }
 
+// Scheduled daily topic generation: one global run over the freshest evidence
+// (empty leagueId/sport = all leagues; topics carry their own sport metadata,
+// and the generate:topics handler already dedupes against every existing
+// candidate). Deterministic per-day job id keeps re-registration idempotent.
+async function handleTopicsGenerateScheduler(job: Job) {
+  const dateKey = ingestDateKey();
+  const minScore = topicsGenerateMinScore();
+  const jobLog = await db.jobLog.create({
+    data: { jobType: "scheduler:topics-generate", status: "running", input: { dateKey, minScore } as any, output: {} },
+  });
+  try {
+    const gen = await queueTopicGenerationJob(
+      { leagueId: "", sport: "", minScore },
+      { jobId: `topics-gen-${dateKey}` }
+    );
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "completed", output: { message: "Dispatched daily topic generation.", topicJobId: String(gen.id), dateKey, minScore } as any },
+    });
+    console.log(`[Worker] Topic-generation scheduler dispatched daily run for ${dateKey}.`);
+    return { success: true, topicJobId: String(gen.id) };
+  } catch (err: any) {
+    await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "failed", error: err.message || "Topic-generation scheduler failed" } });
+    throw err;
+  }
+}
+
 // 2. Real Sports Data Ingestion Handler
 async function handleSportsIngestion(job: Job<IngestJobData>) {
   const { providerType, leagueId, sport, dateOrRange } = job.data;
@@ -414,6 +458,10 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
         ? (provider as any).lastRunIssues
         : [];
       for (const issue of feedIssues) skippedRecordsReasonSummary.push(issue);
+      // Created-vs-updated split: `newsCount` alone counts upserts, so a feed
+      // re-serving the same old articles reports "N rows, completed" while the
+      // pipeline is actually stale (the July-2026 "no new topics" failure).
+      let newsCreated = 0;
       for (const item of newsItems) {
         if (!item.url) {
           skippedNewsMissingUrl++;
@@ -423,6 +471,8 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
 
         // Unique deterministic ID based on RSS feed link to avoid duplicates
         const idKey = `rss:${item.url}`;
+        const existed = await db.newsItem.findUnique({ where: { id: idKey }, select: { id: true } });
+        if (!existed) newsCreated++;
 
         // Ensure we strip HTML and store a safe summary snippet <= 250 characters
         let summary = null;
@@ -452,6 +502,14 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
           },
         });
         newsCount++;
+      }
+      skippedRecordsReasonSummary.push(
+        `News freshness: ${newsCreated} NEW item(s), ${newsCount - newsCreated} already-known (re-served/updated).`
+      );
+      if (newsCount > 0 && newsCreated === 0) {
+        skippedRecordsReasonSummary.push(
+          "STALE FEEDS: every fetched item already existed — feeds are re-serving old content; expect no new topics from this run."
+        );
       }
     } else if (providerType.toLowerCase() === "sportsdataio") {
       // SportsDataIO Real API Ingestion
