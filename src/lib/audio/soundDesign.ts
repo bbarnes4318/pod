@@ -248,16 +248,22 @@ export async function mixBedUnderForeground(
   const totalSec = (opts.totalMs / 1000).toFixed(3);
   const fadeOutStart = Math.max(0, (opts.totalMs - fadeOutMs) / 1000).toFixed(3);
 
-  // sidechaincompress: [bed][keySignal] — the foreground is the key. Heavy
-  // ratio + slow-ish release = classic radio-bed pumping-free duck. Kept STRONG
-  // on purpose (see gain note): it is what prevents a loud bed from fading the
-  // voices — during speech the bed is crushed, between words it recovers.
+  // sidechaincompress: [bed][keySignal] — the foreground is the key. Measured
+  // and confirmed (2026-07-14): the bed gain passes ~1:1 to the master (a
+  // -12→-6 bed change measured +4.8dB in the voice-free gaps), and mastering is
+  // a LINEAR loudnorm, so the balance is set right here. Defaults kept at the
+  // proven-safe strong duck (no voice fade); the three knobs are env-tunable
+  // live so bed presence vs voice clarity can be dialled by ear without a
+  // deploy. Loosen the ratio / raise the threshold for a more present bed.
+  const duckRatio = Number(process.env.AUDIO_BED_DUCK_RATIO ?? 10);
+  const duckThreshold = Number(process.env.AUDIO_BED_DUCK_THRESHOLD ?? 0.02);
+  const duckRelease = Number(process.env.AUDIO_BED_DUCK_RELEASE_MS ?? 750);
   const filter =
     `[1:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,` +
     `atrim=0:${totalSec},volume=${bedGainDb}dB,` +
     `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];` +
     `[0:a]asplit=2[fg][key];` +
-    `[bed][key]sidechaincompress=threshold=0.02:ratio=10:attack=150:release=750[ducked];` +
+    `[bed][key]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
     `[fg][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
 
   await runFfmpeg(ffmpegPath, [
