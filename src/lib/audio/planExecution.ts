@@ -23,11 +23,19 @@ import type { ProductionCue, ProductionPlan } from "./productionPlan";
  * stays env-free). A stinger longer than the room is still right-aligned
  * (ends 150ms before its line) but starts under the outgoing line's tail,
  * a riser building beneath speech — instead of stretching the gap to its
- * full length. The v12 postmortem: exact-fit gaps for the Epidemic crate's
- * 6-12s risers turned every cued break into a voice-free music interlude
- * over the bed (62s of one episode).
+ * full length.
+ *
+ * Set to 12000 (was 2500) to REOPEN the music gaps at topic/segment breaks:
+ * the whole point of the produced style is that the bed + riser get a beat of
+ * open air at each turn, which is where the music is actually heard (a ducked
+ * bed under wall-to-wall speech is inaudible by design). The v12 "62s of dead
+ * air" postmortem was the OPPOSITE failure — that was every break widened to
+ * fit the longest riser cued ANYWHERE. This is still per-break (each gap only
+ * fits the riser that lands there), just uncapped up to a full ~12s riser.
+ * Dial the gap length live with AUDIO_STINGER_MAX_ROOM_MS (e.g. 4000 for
+ * shorter breaths, 2500 for the near-gapless feel).
  */
-export const DEFAULT_STINGER_ROOM_CAP_MS = 2500;
+export const DEFAULT_STINGER_ROOM_CAP_MS = 12000;
 
 /** Widen break gaps for the stingers the PLAN cues — each break gets room
  *  for exactly the stinger that lands there, capped at roomCapMs. */
