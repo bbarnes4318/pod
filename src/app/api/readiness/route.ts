@@ -126,6 +126,9 @@ export async function GET() {
     {
       ready: passed,
       timestamp: new Date().toISOString(),
+      // Build stamp — compare to the merge commit on GitHub main to confirm
+      // the WEB app is running current code (Coolify injects SOURCE_COMMIT).
+      commit: process.env.SOURCE_COMMIT || process.env.GIT_COMMIT_SHA || "unknown",
       checks,
     },
     {
