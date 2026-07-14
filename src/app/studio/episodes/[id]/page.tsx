@@ -36,6 +36,16 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const q = qualityOf(script);
   const segments: any[] = (script?.content as any)?.segments ?? [];
 
+  // Cache-bust the audio URL with the episode's updatedAt. Every re-mix
+  // OVERWRITES the same deterministic storage key (…/final/…-v1.mp3), so the
+  // URL never changes — and the browser/player happily replays the first
+  // cached copy, which is why a re-mixed episode can sound identical forever
+  // even though the S3 bytes changed. updatedAt advances on every stitch, so
+  // this forces a fresh fetch of exactly the render that just completed.
+  const bustedAudioUrl = episode.audioUrl
+    ? `${episode.audioUrl}${episode.audioUrl.includes("?") ? "&" : "?"}v=${Math.floor(new Date(episode.updatedAt).getTime() / 1000)}`
+    : null;
+
   // Editable transcript + citations + fact-check view-model (real data).
   const transcriptVm = script ? await getEpisodeTranscriptVM(id) : null;
   // Mix / timeline view-model (real per-line audio + sound-design plan).
@@ -153,8 +163,8 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       <div className="studioCard">
         <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quick actions</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {episode.audioUrl && (
-            <a href={episode.audioUrl} download className="btnGhost">⬇ Download MP3</a>
+          {bustedAudioUrl && (
+            <a href={bustedAudioUrl} download className="btnGhost">⬇ Download MP3</a>
           )}
           <Link href="/rss" className="btnGhost">🔗 Public RSS feed</Link>
           {/* Ops-level shortcuts — kept reachable but visually secondary */}
@@ -252,7 +262,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       {episode.audioUrl ? (
         <StudioPlayer
           episodeId={episode.id}
-          audioUrl={episode.audioUrl}
+          audioUrl={bustedAudioUrl!}
           title={episode.title}
           chapters={chaptersFrac}
           hostSpans={hostSpans}
