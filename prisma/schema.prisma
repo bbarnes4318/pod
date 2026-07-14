@@ -272,6 +272,15 @@ model NewsItem {
   @@index([publishedAt])
 }
 
+// Editorial-readiness lifecycle for a topic candidate. Deliberately does NOT
+// include a "used" state: usage is derived from EpisodeTopic.
+enum TopicEditorialStatus {
+  pending
+  approved
+  rejected
+  archived
+}
+
 model TopicCandidate {
   id                    String         @id @default(uuid())
   title                 String
@@ -286,7 +295,9 @@ model TopicCandidate {
   evidenceIds           Json           // Structured logs linking back to Games/Stats/News
   // EDITORIAL READINESS ONLY — never a global usage flag. Usage is derived from
   // EpisodeTopic (a topic can be consumed by many users/podcasts/episodes).
-  status                String         // "pending" | "approved" | "rejected" | "archived"
+  // Enforced at the DB level as an enum so "used"/arbitrary values can't be
+  // written through Prisma.
+  status                TopicEditorialStatus
   createdAt             DateTime       @default(now())
   league                League?        @relation(fields: [leagueId], references: [id])
   researchBrief         ResearchBrief?
