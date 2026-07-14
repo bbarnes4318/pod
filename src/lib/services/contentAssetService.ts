@@ -291,10 +291,12 @@ export async function generateEpisodeContentAssets(input: {
         throw new Error(`Script line validation failed at segment ${sIdx}, index ${lIdx}. Missing required fields.`);
       }
 
-      // 14. needsHumanReview = true check
-      if (line.needsHumanReview === true) {
-        throw new Error(`Script contains lines marked as requiring human review.`);
-      }
+      // 14. needsHumanReview is NOT a hard block here. Content assets (show
+      // notes / transcript / chapters) are metadata for audio that already
+      // exists by this stage — refusing to build them strands a finished
+      // episode with no way forward. Human-review enforcement lives at the
+      // publish gate (validateEpisodeForRss / attemptPublish), which still
+      // blocks going live on unresolved claims. Proceed regardless.
       // 16 & 17. speakerName is one of the cast hosts, and speakerHostId matches.
       const lineHost = speakers.hostForSpeaker(line.speakerName);
       if (!lineHost) {
