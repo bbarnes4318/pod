@@ -67,7 +67,7 @@ export function streamingMessage(status: string | null | undefined, researching 
   }
   switch (status) {
     case "draft":
-      return "Writing the debate…";
+      return "Writing the script…";
     case "script_draft":
       return "Draft is in — give it a read";
     case "script_approved":
