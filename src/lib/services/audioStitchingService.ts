@@ -198,8 +198,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
   const {
     scriptId,
     forceRegenerate = false,
-    includeIntro = false,
-    includeOutro = false,
+    // Default ON: the show theme belongs on every render. Callers that omit
+    // these flags (studio mixEpisode, the auto-pipeline, line-regen re-splice)
+    // were silently shipping theme-less episodes while the admin console —
+    // whose checkboxes default on — produced correct ones. A missing theme
+    // asset/env URL still degrades to a logged skip, so true is safe even on
+    // unconfigured shows.
+    includeIntro = true,
+    includeOutro = true,
     normalizeAudio = true,
     targetLufs = -16,
   } = input;
