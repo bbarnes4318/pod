@@ -101,7 +101,10 @@ export interface PlannerConfig {
 export const DEFAULT_PLANNER_CONFIG: PlannerConfig = {
   cooldownEpisodes: 2,
   sfxCooldownEpisodes: 1,
-  maxStingerUsesPerEpisode: 1,
+  // 3 (was 1): a topic turn should get a music swell even when the fresh pool
+  // is small — reusing a stinger a few times across an episode reads as a show
+  // motif, not repetition, and it stops breaks from starving to silence.
+  maxStingerUsesPerEpisode: 3,
   maxSfxUsesPerEpisode: 2,
 };
 
@@ -682,39 +685,31 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
     const fresh = eligible.filter((s) => episodesAgo(s.id) > config.cooldownEpisodes);
     cooldownSuppressions += eligible.length - fresh.length;
 
-    // Restraint silences (pacing, arc) are deliberate production choices and
-    // always stay on the table. Forced silences exist only for the genuine
-    // dead-ends, each with its own explicit reason.
-    let silenceWeight = 0.4;
+    // Sports-radio break music (operator chose "music that swells between
+    // topics"): a topic turn should almost ALWAYS get a musical swell, so the
+    // pool never starves to silence — prefer fresh assets (anti-repetition),
+    // fall back to eligible, then to the whole stinger set. A repeated sting
+    // beats a dead topic change.
+    const pool = fresh.length > 0 ? fresh : eligible.length > 0 ? eligible : stingers;
+
+    // Silence is now a RARE, deliberate breather — never a fallback for an
+    // exhausted pool.
+    let silenceWeight = 0.15;
     let silenceReason = "boundary held silent — natural pause carries the turn";
-    if (prevBoundaryGotStinger) {
-      silenceWeight += 0.45;
+    if (prevBoundaryGotStinger && line.breakKind !== "topic") {
+      silenceWeight += 0.2;
       silenceReason = "boundary held silent — back-to-back stingers would wear thin";
-    }
-    if (segEnergy < 0.9) {
-      silenceWeight += 0.35;
-      silenceReason = "low-energy segment ahead — let it breathe";
     }
     if (stingers.length === 0) {
       silenceWeight = 1;
       silenceReason = "no stinger assets available";
-    } else if (eligible.length === 0) {
-      silenceWeight = 1;
-      silenceReason = "stinger budget spent — every stinger already used this episode";
-    } else if (fresh.length === 0) {
-      silenceWeight = 1;
-      silenceReason = `stinger pool exhausted — all ${eligible.length} eligible stinger(s) ran within the last ${config.cooldownEpisodes} episodes`;
     }
 
-    // Two-stage decision: WHETHER this boundary gets a stinger is pool-size
-    // independent (deep libraries must not fire more often than shallow
-    // ones); WHICH stinger is a least-recently-used pick over fresh assets.
+    // WHETHER this boundary gets a stinger — strongly favoured, topic turns most.
     const slotWeight =
-      fresh.length === 0
+      stingers.length === 0
         ? 0
-        : 2.5 *
-          (line.breakKind === "topic" ? 1.0 : 0.65) *
-          (0.6 + 0.4 * Math.min(segEnergy / 1.2, 1.5));
+        : 2.5 * (line.breakKind === "topic" ? 1.0 : 0.8) * (0.8 + 0.2 * Math.min(segEnergy / 1.2, 1.5));
     const wantsStinger = weightedPick<"stinger" | typeof SILENCE>(rand, [
       { item: "stinger", weight: slotWeight },
       { item: SILENCE, weight: silenceWeight },
@@ -722,7 +717,7 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
     // WHICH stinger: best MUSICAL FIT to the segment we're transitioning INTO
     // (urgent/driving into a heated segment, dark/tense into a somber one).
     const target = segmentTarget(line.segmentIndex);
-    const stingerPick = wantsStinger === "stinger" ? pickByFit(fresh, target, "stinger") : null;
+    const stingerPick = wantsStinger === "stinger" ? pickByFit(pool, target, "stinger") : null;
     if (stingerPick) {
       const asset = stingerPick.asset;
       bumpUse(asset.id);
