@@ -3,7 +3,8 @@
 import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueEpisodeBuildJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
-import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
+import { EpisodeBuildInput } from "@/lib/services/episodeService";
+import { createEpisodeDraft } from "@/lib/services/episodeCreation";
 import { revalidatePath } from "next/cache";
 
 export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
@@ -44,8 +45,10 @@ export async function createEpisodeFromSelectedTopics(
 ) {
   await requireAdmin();
   try {
-    const res = await buildEpisodeFromTopics({
-      topicIds,
+    const res = await createEpisodeDraft({
+      mode: "manual",
+      selectedTopicIds: topicIds,
+      strictSelection: true,
       title,
       description,
       hostIds,
@@ -54,6 +57,7 @@ export async function createEpisodeFromSelectedTopics(
       productionStyle,
       sfxDensity,
     });
+    if (!res.ok) return { success: false, error: res.error || "Failed to build episode from selected topics." };
 
     revalidatePath("/admin/episodes");
     return { success: true, episodeId: res.episodeId };

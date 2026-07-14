@@ -176,6 +176,13 @@ async function run() {
     assert(r.finalOrder.length === 1 && r.finalOrder[0] === "t1", "kept valid");
     assert(r.rejectedTopics.length === 1 && r.rejectedTopics[0].id === "t2" && r.rejectedTopics[0].category === "not_approved", "rejection surfaced");
   });
+  await check("strictSelection fails atomically (no episode) when a pin is invalid", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1"), goodTopic("t2", { status: "pending" })], hosts: HOSTS });
+    const r = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1", "t2"], strictSelection: true, hostIds: ["host-a", "host-b"] }, { db });
+    assert(!r.ok, "strict must fail on any invalid pin");
+    assert(r.rejectedTopics.length === 1 && r.rejectedTopics[0].id === "t2", "rejection surfaced");
+    assert(db._episodes.length === 0, "no episode created under strict failure");
+  });
   await check("missing topic (all invalid) fails with structured rejection", async () => {
     const db = makeFakeDb({ topics: [], hosts: HOSTS });
     const r = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["ghost"], hostIds: ["host-a", "host-b"] }, { db });

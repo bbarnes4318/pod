@@ -59,6 +59,12 @@ export const CreateEpisodeDraftInputSchema = z
     minDebateScore: z.number().optional(),
     leagueId: z.string().trim().min(1).optional(),
     sport: z.string().trim().min(1).optional(),
+    /** When true, a single ineligible PINNED topic fails the whole request
+     *  before any episode is created (all-or-nothing) — the semantics
+     *  interactive "I picked exactly these" surfaces want. When false (default),
+     *  ineligible pins are reported in rejectedTopics and the build proceeds
+     *  from the valid ones. Rejections are surfaced either way — never silent. */
+    strictSelection: z.boolean().optional(),
   })
   .superRefine((val, ctx) => {
     const deduped = [...new Set(val.selectedTopicIds.map((s) => s.trim()))];
@@ -128,8 +134,8 @@ function fail(
   };
 }
 
-/** Dedupe while preserving first-seen order. */
-function dedupePreserveOrder(ids: string[]): string[] {
+/** Dedupe while preserving first-seen order. Exported for unit testing. */
+export function dedupePreserveOrder(ids: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of ids) {
@@ -147,7 +153,11 @@ function dedupePreserveOrder(ids: string[]): string[] {
  * `ownerId`. Returns a structured result; only throws on unexpected
  * infrastructure errors.
  */
-export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Promise<CreateEpisodeDraftResult> {
+export async function createEpisodeDraft(
+  rawInput: CreateEpisodeDraftInput,
+  deps?: { db?: any }
+): Promise<CreateEpisodeDraftResult> {
+  const dbi = deps?.db ?? db;
   const parsed = CreateEpisodeDraftInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -172,7 +182,7 @@ export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Pro
 
   // ---- Owner / podcast access ----
   if (input.podcastId) {
-    const podcast = await db.podcast.findUnique({ where: { id: input.podcastId }, select: { id: true, ownerId: true } });
+    const podcast = await dbi.podcast.findUnique({ where: { id: input.podcastId }, select: { id: true, ownerId: true } });
     if (!podcast) return fail(mode, "That podcast no longer exists.");
     if (podcast.ownerId && input.ownerId && podcast.ownerId !== input.ownerId) {
       return fail(mode, "That podcast belongs to another account.");
@@ -181,7 +191,7 @@ export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Pro
 
   // ---- Host casting (scoped to the owner + shared hosts) ----
   try {
-    await assertHostsCastable(input.hostIds || [], input.ownerId);
+    await assertHostsCastable(input.hostIds || [], input.ownerId, dbi);
   } catch (err: any) {
     return fail(mode, err.message);
   }
@@ -193,7 +203,7 @@ export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Pro
 
   if (mode === "manual" || mode === "hybrid") {
     for (const id of pinnedIds) {
-      const topic = (await db.topicCandidate.findUnique({
+      const topic = (await dbi.topicCandidate.findUnique({
         where: { id },
         include: { researchBrief: true },
       })) as unknown as TopicWithBrief | null;
@@ -205,21 +215,32 @@ export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Pro
       }
       pinnedTopics.push(topic!);
     }
+    // Strict surfaces (explicit "use exactly these") fail atomically before any
+    // record is written when a pin is ineligible — rejections still surfaced.
+    if (input.strictSelection && rejectedTopics.length > 0) {
+      return fail(mode, `Some selected topics can't be used: ${rejectedTopics.map((r) => r.reason).join(" ")}`, {
+        rejectedTopics,
+        reasons,
+      });
+    }
   }
 
   if (mode === "automatic" || mode === "hybrid") {
     const need = mode === "automatic" ? target : Math.max(0, target - pinnedTopics.length);
     if (need > 0) {
-      const auto = await selectAutoTopics({
-        targetCount: need,
-        minDebateScore: input.minDebateScore,
-        leagueId: input.leagueId,
-        leagueIds: input.leagueIds,
-        sport: input.sport,
-        verticals: input.verticals,
-        teamNames: input.teams,
-        excludeTopicIds: pinnedTopics.map((t) => t.id),
-      });
+      const auto = await selectAutoTopics(
+        {
+          targetCount: need,
+          minDebateScore: input.minDebateScore,
+          leagueId: input.leagueId,
+          leagueIds: input.leagueIds,
+          sport: input.sport,
+          verticals: input.verticals,
+          teamNames: input.teams,
+          excludeTopicIds: pinnedTopics.map((t) => t.id),
+        },
+        dbi
+      );
       autoTopics = auto.chosen;
       reasons.push(...auto.reasons);
     }
@@ -255,7 +276,8 @@ export async function createEpisodeDraft(rawInput: CreateEpisodeDraftInput): Pro
         leagueId: input.leagueId,
         sport: input.sport,
       },
-      reasons
+      reasons,
+      dbi
     );
   } catch (err: any) {
     return fail(mode, err.message || "Failed to create the episode.", { rejectedTopics, reasons });
