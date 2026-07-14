@@ -18,6 +18,7 @@ import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
+import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface ScriptBuildInput {
@@ -125,32 +126,24 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     throw new Error(msg);
   }
 
-  // 2. Validate Topic and ResearchBrief quality
+  // 2. Validate topic content quality — from the immutable snapshot when the
+  // episode has one (so a later edit of the source topic can't retroactively
+  // break or change a produced episode), falling back to live data for legacy
+  // rows. Editorial STATUS is intentionally NOT checked here: usage is derived
+  // from EpisodeTopic, not a global "used" flag.
   for (const et of ep.topics) {
-    const t = et.topic;
-    if (t.status !== "used") {
-      const msg = `Topic candidate '${t.title}' status is not 'used'.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
+    const content = resolveEpisodeTopicContent(et as any);
 
-    const brief = t.researchBrief;
-    if (!brief) {
-      const msg = `Topic candidate '${t.title}' is missing its ResearchBrief.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-
-    const facts = Array.isArray(brief.facts) ? brief.facts : [];
-    const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
+    const facts = Array.isArray(content.facts) ? content.facts : [];
+    const sourceIds = Array.isArray(content.sourceIds) ? content.sourceIds : [];
     if (facts.length === 0 || sourceIds.length === 0) {
-      const msg = `Topic candidate '${t.title}' has empty facts or sourceIds in ResearchBrief.`;
+      const msg = `Topic '${content.title}' has empty facts or sourceIds.`;
       result.reasons.push(msg);
       throw new Error(msg);
     }
 
-    if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) {
-      const msg = `Topic candidate '${t.title}' is missing host arguments in ResearchBrief.`;
+    if (!content.argumentForHostA?.trim() || !content.argumentForHostB?.trim()) {
+      const msg = `Topic '${content.title}' is missing host arguments.`;
       result.reasons.push(msg);
       throw new Error(msg);
     }
@@ -241,13 +234,17 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // The reviewer evidence corpus is built by the SHARED collectReviewerEvidence
   // so the generation-time self-verify reviewer and the fact-check gate reviewer
   // receive byte-identical evidence (see evidenceContext.ts).
+  // Snapshot-first: script generation reads the frozen topic content when the
+  // episode has a snapshot, so a later edit of the source topic/brief cannot
+  // change or break an already-created episode. Legacy rows fall back to live.
   const { evidenceTexts, evidenceByRefId } = collectReviewerEvidence(
-    ep.topics.map((et) => ({ researchBrief: et.topic.researchBrief }))
+    ep.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et as any)) }))
   );
 
   const topicsPrompts = ep.topics.map((et, idx) => {
-    const t = et.topic;
-    const b = t.researchBrief!;
+    const content = resolveEpisodeTopicContent(et as any);
+    const b: any = briefLikeFromContent(content);
+    const t: any = { title: content.title, sport: content.sport, leagueId: content.leagueId, debateScore: content.debateScore };
 
     // Collect allowed sourceRefs
     const sourceIds = Array.isArray(b.sourceIds) ? (b.sourceIds as any[]) : [];

@@ -2,12 +2,15 @@ import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
+import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { fmtDate } from "../lib";
 import TakesFilters, { LeagueOption } from "./TakesFilters";
 
 export const dynamic = "force-dynamic";
 
-const BOARD_STATUSES = ["pending", "approved", "used"];
+// Editorial-readiness statuses only — "used" is no longer a status; usage is
+// derived from EpisodeTopic and shown as a reuse-friendly count.
+const BOARD_STATUSES = ["pending", "approved"];
 
 export default async function TakesBoard({
   searchParams,
@@ -51,6 +54,10 @@ export default async function TakesBoard({
     .map((r) => (r.league ? { id: r.league.id, name: r.league.name } : null))
     .filter((l): l is LeagueOption => l !== null);
   const filtersActive = !!(sp.sport || sp.league);
+
+  // Derived usage (from EpisodeTopic) — every board topic stays selectable;
+  // usage is informational, not a gate.
+  const usage = await getTopicUsage(topics.map((t) => t.id));
 
   const ranked = topics
     .map((t) => ({
@@ -98,7 +105,9 @@ export default async function TakesBoard({
               <div style={{ flex: 1, minWidth: 260 }}>
                 <div className="epMeta" style={{ marginBottom: "0.3rem" }}>
                   <span className="chip">{t.sport}</span>
-                  {t.status === "used" && <span className="chip">Episode made</span>}
+                  {(usage.get(t.id)?.totalUseCount ?? 0) > 0 && (
+                    <span className="chip">Used {usage.get(t.id)!.totalUseCount}×</span>
+                  )}
                   {t.status === "approved" && t.researchBrief && <span className="chip chipSuccess">Ready</span>}
                   {t.status === "pending" && <span className="chip chipAccent">New</span>}
                   <span>{fmtDate(t.createdAt)}</span>
@@ -128,11 +137,9 @@ export default async function TakesBoard({
                 ))}
               </div>
 
-              {t.status !== "used" && (
-                <Link href={`/studio/create?topic=${t.id}`} className="btnPrimary" style={{ flexShrink: 0 }}>
-                  Use it →
-                </Link>
-              )}
+              <Link href={`/studio/create?topic=${t.id}`} className="btnPrimary" style={{ flexShrink: 0 }}>
+                Use it →
+              </Link>
             </div>
           ))}
         </div>

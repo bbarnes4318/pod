@@ -2,6 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
+import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { FINISHED_STATUSES } from "../lib";
 import CreateConsole, { StepperTake, StepperHost, ResumeEpisode } from "./CreateConsole";
 
@@ -16,7 +17,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     // creator sees on the board is pickable here: same statuses, same 40-row
     // window, same recency ordering (re-ranked by talkability below).
     db.topicCandidate.findMany({
-      where: { status: { in: ["pending", "approved", "used"] } },
+      where: { status: { in: ["pending", "approved"] } },
       include: { researchBrief: true },
       orderBy: { createdAt: "desc" },
       take: 40,
@@ -51,6 +52,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       : Promise.resolve(null),
   ]);
 
+  const takeUsage = await getTopicUsage(topics.map((t) => t.id));
   const takes: StepperTake[] = topics
     .map((t) => {
       const talk = scoreTopicTalkability({
@@ -66,6 +68,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         status: t.status,
         hasBrief: !!t.researchBrief,
         heat: talk.total,
+        usedCount: takeUsage.get(t.id)?.totalUseCount ?? 0,
       };
     })
     .sort((a, b) => b.heat - a.heat);

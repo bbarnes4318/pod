@@ -127,34 +127,13 @@ export async function deleteDraftEpisode(episodeId: string) {
       throw new Error(`Only draft episodes can be deleted. Current status: ${ep.status}`);
     }
 
-    // Atomic transaction for deleting and reverting topic candidate statuses
+    // Delete the episode + its topic joins. TopicCandidate EDITORIAL status is
+    // NOT touched: usage is derived from EpisodeTopic, so removing this episode
+    // simply removes its usage record — a topic never gets flipped back to a
+    // different editorial state by a deletion.
     await db.$transaction(async (tx) => {
-      for (const et of ep.topics) {
-        // Revert topic candidate status from used back to approved only if it is not linked to any other episode
-        const linkCount = await tx.episodeTopic.count({
-          where: {
-            topicId: et.topicId,
-            NOT: { episodeId },
-          },
-        });
-
-        if (linkCount === 0) {
-          await tx.topicCandidate.update({
-            where: { id: et.topicId },
-            data: { status: "approved" },
-          });
-        }
-      }
-
-      // Delete EpisodeTopic relations
-      await tx.episodeTopic.deleteMany({
-        where: { episodeId },
-      });
-
-      // Delete Episode
-      await tx.episode.delete({
-        where: { id: episodeId },
-      });
+      await tx.episodeTopic.deleteMany({ where: { episodeId } });
+      await tx.episode.delete({ where: { id: episodeId } });
     });
 
     revalidatePath("/admin/episodes");

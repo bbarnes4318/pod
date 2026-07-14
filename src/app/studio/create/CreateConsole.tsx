@@ -45,6 +45,8 @@ export interface StepperTake {
   status: string;
   hasBrief: boolean;
   heat: number;
+  /** Derived from EpisodeTopic — how many episodes have used this take. */
+  usedCount: number;
 }
 export interface StepperHost {
   id: string;
@@ -600,7 +602,7 @@ function TakePicker({ takes, highlight, onPick }: { takes: StepperTake[]; highli
               <div className="boardCardTop">
                 <span className="chip">{t.sport}</span>
                 {t.hasBrief && <span className="chip chipSuccess">Researched</span>}
-                {t.status === "used" && <span className="chip">Made</span>}
+                {t.usedCount > 0 && <span className="chip">Made</span>}
               </div>
               <span className="epTitle boardCardTitle">{t.title}</span>
               <span className="takeChoiceCta">Use this take →</span>

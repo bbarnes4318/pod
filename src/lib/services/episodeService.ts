@@ -6,6 +6,7 @@ import { isTtsProviderId } from "../providers/tts/providerIds";
 import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 import { resolveEpisodeHosts } from "./hostCasting";
+import { buildTopicSnapshot } from "./topicSnapshot";
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -190,7 +191,7 @@ export interface AutoSelectResult {
  * and return the top `targetCount`. Shared by the legacy auto path and the
  * new hybrid fill — one ranking, one filter chain.
  */
-export async function selectAutoTopics(opts: AutoSelectOptions): Promise<AutoSelectResult> {
+export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): Promise<AutoSelectResult> {
   const result: AutoSelectResult = {
     chosen: [],
     reasons: [],
@@ -204,7 +205,7 @@ export async function selectAutoTopics(opts: AutoSelectOptions): Promise<AutoSel
   const minScore = opts.minDebateScore !== undefined ? Number(opts.minDebateScore) : 70;
   const exclude = new Set(opts.excludeTopicIds || []);
 
-  const rawCandidates = (await db.topicCandidate.findMany({
+  const rawCandidates = (await dbi.topicCandidate.findMany({
     where: { status: "approved" },
     include: { researchBrief: true },
     orderBy: { debateScore: "desc" },
@@ -328,7 +329,8 @@ export interface EpisodeCreationSettings {
 export async function createEpisodeRecord(
   orderedTopics: TopicWithBrief[],
   settings: EpisodeCreationSettings,
-  reasons: string[]
+  reasons: string[],
+  dbi: any = db
 ): Promise<string> {
   let chosenHostIds = [...new Set(settings.hostIds || [])];
 
@@ -363,7 +365,7 @@ export async function createEpisodeRecord(
   const description = settings.description?.trim() || "Draft episode assembled from approved Take Machine topics and research briefs.";
 
   let slug = slugify(title);
-  const existing = await db.episode.findUnique({ where: { slug } });
+  const existing = await dbi.episode.findUnique({ where: { slug } });
   if (existing) slug = `${slug}-${crypto.randomBytes(3).toString("hex")}`;
 
   const rssGuid = crypto.randomUUID();
@@ -372,7 +374,7 @@ export async function createEpisodeRecord(
       ? settings.soundDesign
       : undefined;
 
-  const episode = await db.$transaction(async (tx) => {
+  const episode = await dbi.$transaction(async (tx: any) => {
     const ep = await tx.episode.create({
       data: {
         title,
@@ -394,14 +396,24 @@ export async function createEpisodeRecord(
       },
     });
 
+    const selectedAt = new Date();
     for (let i = 0; i < orderedTopics.length; i++) {
+      const t = orderedTopics[i];
       await tx.episodeTopic.create({
-        data: { episodeId: ep.id, topicId: orderedTopics[i].id, orderIndex: i },
+        data: {
+          episodeId: ep.id,
+          topicId: t.id,
+          orderIndex: i,
+          selectedAt,
+          // Freeze the topic + brief so this episode stays reproducible even
+          // if the source is later edited, re-researched, or archived.
+          snapshot: buildTopicSnapshot(t as any, (t as any).researchBrief ?? null, selectedAt) as any,
+        },
       });
     }
-    for (const topic of orderedTopics) {
-      await tx.topicCandidate.update({ where: { id: topic.id }, data: { status: "used" } });
-    }
+    // TopicCandidate.status is intentionally NOT mutated to "used": usage is
+    // derived from EpisodeTopic, so a topic stays 'approved' and reusable by
+    // other users, other podcasts, and (per policy) the same podcast.
     return ep;
   });
 
@@ -442,12 +454,12 @@ export function normalizeEpisodeSettings(input: {
 /** Verify every id is an active AiHost; throws when any is missing/inactive.
  *  When `ownerId` is given, hosts must also be owned by that user or shared
  *  (ownerId null) — never another user's private characters. */
-export async function assertHostsCastable(hostIds: string[], ownerId?: string): Promise<void> {
+export async function assertHostsCastable(hostIds: string[], ownerId?: string, dbi: any = db): Promise<void> {
   const ids = [...new Set(hostIds)];
   if (ids.length === 0) return;
   const where: any = { id: { in: ids }, isActive: true };
   if (ownerId) where.OR = [{ ownerId }, { ownerId: null }];
-  const activeHosts = await db.aiHost.findMany({ where, select: { id: true } });
+  const activeHosts = await dbi.aiHost.findMany({ where, select: { id: true } });
   if (activeHosts.length !== ids.length) {
     throw new Error("One or more selected hosts are missing, inactive, or not available to this account.");
   }

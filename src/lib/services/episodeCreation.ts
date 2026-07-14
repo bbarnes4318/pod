@@ -19,6 +19,12 @@ import {
   normalizeEpisodeSettings,
   assertHostsCastable,
 } from "./episodeService";
+import {
+  resolveTopicReusePolicy,
+  getReuseExcludedTopicIds,
+  getTopicUsage,
+  reuseWarnings,
+} from "./topicUsageService";
 
 /** Configurable hard cap on topics per episode (spec: max six). */
 export const MAX_TOPICS_PER_EPISODE = (() => {
@@ -225,9 +231,14 @@ export async function createEpisodeDraft(
     }
   }
 
+  // Reuse policy (default: allow). exclude_podcast drops topics this podcast
+  // used within the cooldown window from the auto pool; warn only annotates.
+  const policy = resolveTopicReusePolicy();
+
   if (mode === "automatic" || mode === "hybrid") {
     const need = mode === "automatic" ? target : Math.max(0, target - pinnedTopics.length);
     if (need > 0) {
+      const policyExcluded = await getReuseExcludedTopicIds(policy, { podcastId: input.podcastId }, dbi);
       const auto = await selectAutoTopics(
         {
           targetCount: need,
@@ -237,7 +248,9 @@ export async function createEpisodeDraft(
           sport: input.sport,
           verticals: input.verticals,
           teamNames: input.teams,
-          excludeTopicIds: pinnedTopics.map((t) => t.id),
+          // Never re-pick a pinned topic (exclude_episode is implicit), and honor
+          // the podcast-cooldown policy.
+          excludeTopicIds: [...pinnedTopics.map((t) => t.id), ...policyExcluded],
         },
         dbi
       );
@@ -281,6 +294,12 @@ export async function createEpisodeDraft(
     );
   } catch (err: any) {
     return fail(mode, err.message || "Failed to create the episode.", { rejectedTopics, reasons });
+  }
+
+  // Non-blocking reuse warnings (warn policy only).
+  if (policy.mode === "warn") {
+    const usage = await getTopicUsage(orderedTopics.map((t) => t.id), { cooldownDays: policy.cooldownDays }, dbi);
+    reasons.push(...reuseWarnings(policy, usage, orderedTopics.map((t) => t.id)));
   }
 
   const pinnedIdSet = new Set(pinnedTopics.map((t) => t.id));

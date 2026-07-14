@@ -103,7 +103,7 @@ export async function researchTake(topicId: string, forceRegenerate = false) {
     }
     const topic = await db.topicCandidate.findUnique({ where: { id: topicId } });
     if (!topic) throw new Error("That take no longer exists.");
-    if (topic.status !== "approved" && topic.status !== "used") {
+    if (topic.status !== "approved") {
       throw new Error("Lock in the take before researching it.");
     }
     const job = await queueResearchBriefGenerationJob({ topicId, forceRegenerate });
