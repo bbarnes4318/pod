@@ -3,16 +3,54 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { fmtDate } from "../lib";
+import TakesFilters, { LeagueOption } from "./TakesFilters";
 
 export const dynamic = "force-dynamic";
 
-export default async function TakesBoard() {
-  const topics = await db.topicCandidate.findMany({
-    where: { status: { in: ["pending", "approved", "used"] } },
-    include: { researchBrief: true },
-    orderBy: { createdAt: "desc" },
-    take: 40,
-  });
+const BOARD_STATUSES = ["pending", "approved", "used"];
+
+export default async function TakesBoard({
+  searchParams,
+}: {
+  searchParams: Promise<{ sport?: string; league?: string }>;
+}) {
+  const sp = await searchParams;
+
+  // Server-side Sport / League filtering — applied in the query so the
+  // talkability ranking below runs over the filtered universe, not just the
+  // loaded page.
+  const where: any = { status: { in: BOARD_STATUSES } };
+  if (sp.sport) where.sport = { equals: sp.sport, mode: "insensitive" };
+  if (sp.league) where.leagueId = sp.league;
+
+  const [topics, sportRows, leagueRows] = await Promise.all([
+    db.topicCandidate.findMany({
+      where,
+      include: { researchBrief: true },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    }),
+    // Filter options come from the whole board (unfiltered), so a chosen sport
+    // never removes the other sports from the dropdown.
+    db.topicCandidate.findMany({
+      where: { status: { in: BOARD_STATUSES } },
+      distinct: ["sport"],
+      select: { sport: true },
+      orderBy: { sport: "asc" },
+    }),
+    db.topicCandidate.findMany({
+      where: { status: { in: BOARD_STATUSES }, leagueId: { not: null } },
+      distinct: ["leagueId"],
+      select: { leagueId: true, league: { select: { id: true, name: true } } },
+      orderBy: { leagueId: "asc" },
+    }),
+  ]);
+
+  const sports = sportRows.map((r) => r.sport).filter(Boolean);
+  const leagues: LeagueOption[] = leagueRows
+    .map((r) => (r.league ? { id: r.league.id, name: r.league.name } : null))
+    .filter((l): l is LeagueOption => l !== null);
+  const filtersActive = !!(sp.sport || sp.league);
 
   const ranked = topics
     .map((t) => ({
@@ -34,10 +72,17 @@ export default async function TakesBoard() {
         exactly why each one is hot.
       </p>
 
+      {(sports.length > 0 || leagues.length > 0) && (
+        <TakesFilters sports={sports} leagues={leagues} />
+      )}
+
       {ranked.length === 0 ? (
         <div className="emptyNote">
-          The board is empty. <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>Generate topics</Link> from
-          fresh sports data to fill it.
+          {filtersActive ? (
+            <>No takes match these filters. Clear them, or <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>generate more topics</Link>.</>
+          ) : (
+            <>The board is empty. <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>Generate topics</Link> from fresh sports data to fill it.</>
+          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
