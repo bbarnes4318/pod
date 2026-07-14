@@ -220,6 +220,15 @@ export interface BedMixOptions {
   totalMs: number;
   fadeInMs?: number;
   fadeOutMs?: number;
+  /**
+   * Optional DEDICATED duck key (wav path): typically the dialogue-only
+   * submix (+ themes). Without it the FOREGROUND keys the duck — which
+   * includes the stingers, so every break's riser mutes the bed in the very
+   * gap where the music is supposed to swell (the "10 seconds of silence at a
+   * topic turn" bug). With a dialogue-only key, gaps between topics let the
+   * actual song rise to full level while speech still crushes it.
+   */
+  keyWavPath?: string;
 }
 
 /**
@@ -258,26 +267,38 @@ export async function mixBedUnderForeground(
   const duckRatio = Number(process.env.AUDIO_BED_DUCK_RATIO ?? 10);
   const duckThreshold = Number(process.env.AUDIO_BED_DUCK_THRESHOLD ?? 0.02);
   const duckRelease = Number(process.env.AUDIO_BED_DUCK_RELEASE_MS ?? 750);
-  const filter =
+
+  // With a dedicated key (dialogue-only submix), the bed ducks under SPEECH
+  // but swells to full level in the topic gaps — even while a riser plays
+  // there. Without one, fall back to self-keying off the foreground (legacy).
+  const hasKey = !!opts.keyWavPath;
+  const bedChain =
     `[1:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,` +
     `atrim=0:${totalSec},volume=${bedGainDb}dB,` +
-    `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];` +
-    `[0:a]asplit=2[fg][key];` +
-    `[bed][key]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
-    `[fg][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
+    `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];`;
+  const filter = hasKey
+    ? bedChain +
+      `[bed][2:a]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
+      `[0:a][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`
+    : bedChain +
+      `[0:a]asplit=2[fg][key];` +
+      `[bed][key]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
+      `[fg][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
 
-  await runFfmpeg(ffmpegPath, [
+  const args = [
     "-y",
     "-i", foregroundWav,
     "-stream_loop", "-1",
     "-i", bedSourcePath,
+    ...(hasKey ? ["-i", opts.keyWavPath!] : []),
     "-filter_complex", filter,
     "-map", "[out]",
     "-t", totalSec,
     "-ar", String(sampleRate),
     "-c:a", "pcm_s16le",
     outWav,
-  ]);
+  ];
+  await runFfmpeg(ffmpegPath, args);
   return outWav;
 }
 
