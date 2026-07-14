@@ -248,16 +248,19 @@ async function main() {
     }
   });
 
-  await check("TRUE pool exhaustion (every stinger in-window) falls to explicit silence", () => {
+  await check("pool cooling reuses a stinger for break music — never starves to silence", () => {
+    // B ("music that swells between topics"): even when the whole pool is
+    // cooling, topic turns still get a musical swell. A repeated sting beats a
+    // dead topic change, so exhaustion no longer forces silence.
     const cooldown: CooldownSnapshot = {
       episodes: [{ episodeId: "prev-1", assetIds: ["sting-a", "sting-b", "sting-c"] }],
     };
     const plan = generateProductionPlan(basePlanInput({ cooldown }));
-    assert(plan.stats.stingerCues === 0, "no stinger may play while the whole pool is cooling");
-    const exhaustion = plan.cues.filter(
+    assert(plan.stats.stingerCues > 0, "break music must play even when the pool is cooling");
+    const exhaustionSilence = plan.cues.filter(
       (c) => c.type === "silence" && c.reason.includes("pool exhausted")
     );
-    assert(exhaustion.length > 0, "true exhaustion must be documented as 'pool exhausted'");
+    assert(exhaustionSilence.length === 0, "pool exhaustion must no longer force silence");
   });
 
   await check("cooldown SUBSTITUTES the freshest asset — never starves while alternatives exist", () => {
@@ -295,25 +298,19 @@ async function main() {
     assert(sawStinger, "boundaries must still fill from the fresh pool");
   });
 
-  await check("budget-spent silences are labeled distinctly from cooldown exhaustion", () => {
-    // One stinger, no cooldown: after its single allowed use, later
-    // boundaries must say the BUDGET is spent — not blame the cooldown.
+  await check("a lone stinger is reused across breaks rather than starving to silence", () => {
+    // B: with a single stinger and up to 3 uses/episode, topic turns reuse it
+    // for the swell instead of going silent once a "budget" is spent.
     const oneStinger = makeCatalog().filter((a) => a.kind !== "stinger");
     oneStinger.push({ id: "sting-only", name: "Solo Hit", kind: "stinger", category: null, durationMs: 1200 });
-    for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4", "ep-5", "ep-6", "ep-7", "ep-8"]) {
-      const plan = generateProductionPlan(basePlanInput({ episodeId, assets: oneStinger }));
-      if (plan.stats.stingerCues === 0) continue; // silence-only seeds tell us nothing
-      const budgetSilences = plan.cues.filter(
-        (c) => c.type === "silence" && c.reason.includes("budget spent")
-      );
-      const mislabeled = plan.cues.filter(
-        (c) => c.type === "silence" && c.reason.includes("pool exhausted")
-      );
-      assert(mislabeled.length === 0, "budget exhaustion must never be labeled as cooldown");
-      assert(budgetSilences.length > 0, "spent budget must be documented");
-      return;
-    }
-    throw new Error("no seed produced a stinger use — cannot exercise the budget path");
+    const plan = generateProductionPlan(basePlanInput({ assets: oneStinger }));
+    assert(plan.stats.stingerCues > 0, "the one stinger must carry the break music");
+    const starved = plan.cues.filter(
+      (c) =>
+        c.type === "silence" &&
+        (c.reason.includes("budget spent") || c.reason.includes("pool exhausted"))
+    );
+    assert(starved.length === 0, "breaks must reuse the stinger, not starve to silence");
   });
 
   await check("bed exhaustion reason names the pool, substitution picks a fresh bed", () => {
