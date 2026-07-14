@@ -68,12 +68,10 @@ interface DensityProfile {
   gainDb: number;
 }
 
-// Gains lifted +3dB (2026-07-14) to match the planner's DENSITY_SHAPES — the
-// old values sat reactions 13-15dB under dialogue: inaudible in the master.
 const DENSITY_PROFILES: Record<SfxDensity, DensityProfile> = {
-  subtle: { minSpacingMs: 45_000, probability: 0.4, allowHype: false, gainDb: -12 },
-  medium: { minSpacingMs: 25_000, probability: 0.6, allowHype: false, gainDb: -10 },
-  hype: { minSpacingMs: 12_000, probability: 0.85, allowHype: true, gainDb: -8 },
+  subtle: { minSpacingMs: 45_000, probability: 0.4, allowHype: false, gainDb: -15 },
+  medium: { minSpacingMs: 25_000, probability: 0.6, allowHype: false, gainDb: -13 },
+  hype: { minSpacingMs: 12_000, probability: 0.85, allowHype: true, gainDb: -11 },
 };
 
 // Same deterministic PRNG the timeline planner uses.
@@ -204,8 +202,7 @@ export function planStingers(
       stingerIndex,
       // End ~150ms before the next speaker opens their mouth.
       atMs: Math.max(0, slot.lineStartMs - dur - 150),
-      // -5 (was -8) to match the planner path — see DENSITY gain note above.
-      gainDb: -5,
+      gainDb: -8,
     };
   });
 }
@@ -238,31 +235,20 @@ export async function mixBedUnderForeground(
   opts: BedMixOptions
 ): Promise<string> {
   const sampleRate = opts.sampleRate || 44100;
-  // Bed at FULL level by default (0 dB on a -18 LUFS asset), because the show's
-  // dead-air fix removed the voice-free interludes that used to make the bed
-  // audible — now it only ever plays UNDER wall-to-wall speech, so it must be
-  // loud on its own, not reliant on gaps. Prior -12/-6 defaults + a heavy duck
-  // measured as effectively silent under speech on a real episode. Live-tunable
-  // without a deploy via AUDIO_BED_GAIN_DB (0 = present, -3/-6 = subtle,
-  // +3 = very forward).
-  const bedGainDb = opts.bedGainDb ?? Number(process.env.AUDIO_BED_GAIN_DB ?? 0);
+  const bedGainDb = opts.bedGainDb ?? Number(process.env.AUDIO_BED_GAIN_DB || -12);
   const fadeInMs = opts.fadeInMs ?? 1500;
   const fadeOutMs = opts.fadeOutMs ?? 2500;
   const totalSec = (opts.totalMs / 1000).toFixed(3);
   const fadeOutStart = Math.max(0, (opts.totalMs - fadeOutMs) / 1000).toFixed(3);
 
-  // sidechaincompress: [bed][keySignal] — the foreground is the key. Light-touch
-  // duck (ratio 10 → 2.5, higher threshold, fast release) so the bed only dips a
-  // few dB on speech peaks and springs back BETWEEN words — the difference
-  // between an inaudible bed and a radio-style bed you can actually feel under
-  // the hosts. Duck depth/feel is env-tunable via AUDIO_BED_DUCK_RATIO.
-  const duckRatio = Number(process.env.AUDIO_BED_DUCK_RATIO || 2.5);
+  // sidechaincompress: [bed][keySignal] — the foreground is the key. Heavy
+  // ratio + slow-ish release = classic radio-bed pumping-free duck (~12dB).
   const filter =
     `[1:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,` +
     `atrim=0:${totalSec},volume=${bedGainDb}dB,` +
     `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];` +
     `[0:a]asplit=2[fg][key];` +
-    `[bed][key]sidechaincompress=threshold=0.06:ratio=${duckRatio}:attack=120:release=500[ducked];` +
+    `[bed][key]sidechaincompress=threshold=0.02:ratio=10:attack=150:release=750[ducked];` +
     `[fg][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
 
   await runFfmpeg(ffmpegPath, [
