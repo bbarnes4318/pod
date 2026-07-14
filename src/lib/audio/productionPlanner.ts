@@ -368,10 +368,12 @@ interface DensityShape {
   allowHype: boolean;
 }
 
+// Reaction gains +3dB (2026-07-14): measured that -15/-13/-11 left reactions
+// inaudible under -16 LUFS dialogue. -8 at hype is a punchy-but-supporting accent.
 const DENSITY_SHAPES: Record<SfxDensity, DensityShape> = {
-  subtle: { minSpacingMs: 45_000, silenceBias: 1.5, gainDb: -15, allowHype: false },
-  medium: { minSpacingMs: 25_000, silenceBias: 1.0, gainDb: -13, allowHype: false },
-  hype: { minSpacingMs: 12_000, silenceBias: 0.5, gainDb: -11, allowHype: true },
+  subtle: { minSpacingMs: 45_000, silenceBias: 1.5, gainDb: -12, allowHype: false },
+  medium: { minSpacingMs: 25_000, silenceBias: 1.0, gainDb: -10, allowHype: false },
+  hype: { minSpacingMs: 12_000, silenceBias: 0.5, gainDb: -8, allowHype: true },
 };
 
 const DENSITY_RANK: Record<SfxDensity, number> = { subtle: 0, medium: 1, hype: 2 };
@@ -733,7 +735,9 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
         assetName: asset.name,
         category: null,
         timing: "before",
-        gainDb: -8,
+        // -5 (was -8): the transition hit at each topic turn was too quiet to
+        // register against the dialogue in the master.
+        gainDb: -5,
         fadeInMs: 15,
         fadeOutMs: 90,
         fit: Number(stingerPick.fit.toFixed(2)),

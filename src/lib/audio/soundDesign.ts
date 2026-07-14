@@ -68,10 +68,11 @@ interface DensityProfile {
   gainDb: number;
 }
 
+// +3dB to match the planner's DENSITY_SHAPES — the old values were inaudible.
 const DENSITY_PROFILES: Record<SfxDensity, DensityProfile> = {
-  subtle: { minSpacingMs: 45_000, probability: 0.4, allowHype: false, gainDb: -15 },
-  medium: { minSpacingMs: 25_000, probability: 0.6, allowHype: false, gainDb: -13 },
-  hype: { minSpacingMs: 12_000, probability: 0.85, allowHype: true, gainDb: -11 },
+  subtle: { minSpacingMs: 45_000, probability: 0.4, allowHype: false, gainDb: -12 },
+  medium: { minSpacingMs: 25_000, probability: 0.6, allowHype: false, gainDb: -10 },
+  hype: { minSpacingMs: 12_000, probability: 0.85, allowHype: true, gainDb: -8 },
 };
 
 // Same deterministic PRNG the timeline planner uses.
@@ -202,7 +203,7 @@ export function planStingers(
       stingerIndex,
       // End ~150ms before the next speaker opens their mouth.
       atMs: Math.max(0, slot.lineStartMs - dur - 150),
-      gainDb: -8,
+      gainDb: -5,
     };
   });
 }
@@ -235,14 +236,22 @@ export async function mixBedUnderForeground(
   opts: BedMixOptions
 ): Promise<string> {
   const sampleRate = opts.sampleRate || 44100;
-  const bedGainDb = opts.bedGainDb ?? Number(process.env.AUDIO_BED_GAIN_DB || -12);
+  // -6 dB default (was -12, which was inaudible — measured on a real prod
+  // render: the whole body was flat ~-19dB voices, music buried 11-15dB under).
+  // The STRONG duck below (ratio 10) is what lets the bed be this loud without
+  // fading the voices: speech slams it down, gaps let it swell back audibly.
+  // `??` (not `||`) so AUDIO_BED_GAIN_DB=0 is honoured — this is your live
+  // volume dial: 0 = very present, -3 = present, -6 = default, -10 = subtle.
+  const bedGainDb = opts.bedGainDb ?? Number(process.env.AUDIO_BED_GAIN_DB ?? -6);
   const fadeInMs = opts.fadeInMs ?? 1500;
   const fadeOutMs = opts.fadeOutMs ?? 2500;
   const totalSec = (opts.totalMs / 1000).toFixed(3);
   const fadeOutStart = Math.max(0, (opts.totalMs - fadeOutMs) / 1000).toFixed(3);
 
   // sidechaincompress: [bed][keySignal] — the foreground is the key. Heavy
-  // ratio + slow-ish release = classic radio-bed pumping-free duck (~12dB).
+  // ratio + slow-ish release = classic radio-bed pumping-free duck. Kept STRONG
+  // on purpose (see gain note): it is what prevents a loud bed from fading the
+  // voices — during speech the bed is crushed, between words it recovers.
   const filter =
     `[1:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,` +
     `atrim=0:${totalSec},volume=${bedGainDb}dB,` +
