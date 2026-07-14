@@ -12,11 +12,14 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   const user = await currentUser(); // layout already gates /studio; used here for resume scoping
 
   const [topics, hosts, resume] = await Promise.all([
+    // Same candidate pool as the takes board (/studio/takes) so anything the
+    // creator sees on the board is pickable here: same statuses, same 40-row
+    // window, same recency ordering (re-ranked by talkability below).
     db.topicCandidate.findMany({
-      where: { status: { in: ["pending", "approved"] } },
+      where: { status: { in: ["pending", "approved", "used"] } },
       include: { researchBrief: true },
-      orderBy: { debateScore: "desc" },
-      take: 12,
+      orderBy: { createdAt: "desc" },
+      take: 40,
     }),
     // Ordered newest-first so the stepper's default pair (CreateConsole takes
     // the first two) is the creator's OWN two most-recently-created hosts — not

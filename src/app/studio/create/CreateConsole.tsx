@@ -484,13 +484,13 @@ export default function CreateConsole({
           working={!script?.present}
           onBack={goBack}
           primary={{
-            label: script?.present ? "Review the script →" : "Writing the debate…",
+            label: script?.present ? "Review the script →" : "Writing the script…",
             disabled: busy || !script?.present,
             onClick: () => setStage("preview"),
           }}
         >
           {!script?.present ? (
-            <SkeletonLines label="The hosts are writing the debate…" />
+            <SkeletonLines label="The hosts are writing the script…" />
           ) : (
             <ScriptView lines={scriptLines.slice(0, revealCount)} colorForSpeaker={colorForSpeaker} live />
           )}
@@ -508,7 +508,7 @@ export default function CreateConsole({
             disabled: busy || !script?.present,
             onClick: approveScript,
           }}
-          secondary={{ label: busy ? "…" : "Rewrite the debate", disabled: busy || !script?.present, onClick: rewriteScript }}
+          secondary={{ label: busy ? "…" : "Rewrite the script", disabled: busy || !script?.present, onClick: rewriteScript }}
           checkpointNote="Checkpoint — approving locks the script and starts fact-checking. Voices (the costly step) run only after this."
         >
           {episodeId ? (
@@ -600,6 +600,7 @@ function TakePicker({ takes, highlight, onPick }: { takes: StepperTake[]; highli
               <div className="boardCardTop">
                 <span className="chip">{t.sport}</span>
                 {t.hasBrief && <span className="chip chipSuccess">Researched</span>}
+                {t.status === "used" && <span className="chip">Made</span>}
               </div>
               <span className="epTitle boardCardTitle">{t.title}</span>
               <span className="takeChoiceCta">Use this take →</span>
@@ -654,6 +655,40 @@ function SetupStage({
       </div>
 
       <div className="setupGrid">
+        {/* Hosts — the two voices for this episode. Full-width and first so the
+            cast is an obvious, deliberate choice, not a buried afterthought. */}
+        <div style={{ gridColumn: "1 / -1" }}>
+          <div className="fieldLabel">🎙 Hosts — the two voices for this episode</div>
+          <div className="segRow" style={{ flexWrap: "wrap" }}>
+            {hosts.map((h) => {
+              const on = hostIds.includes(h.id);
+              const chairColor = hostIds[0] === h.id ? "var(--host-max)" : hostIds[1] === h.id ? "var(--host-doc)" : undefined;
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  className={`segBtn hostBtn${on ? " on" : ""}`}
+                  onClick={() => toggleHost(h.id)}
+                  aria-pressed={on}
+                  style={on && chairColor ? { borderColor: chairColor, color: chairColor } : undefined}
+                >
+                  <span className="hostSwatch" style={{ background: chairColor ?? "var(--border-hover)" }} />
+                  {h.name}
+                </button>
+              );
+            })}
+            {hosts.length === 0 && <span className="stageHint">No active hosts configured.</span>}
+          </div>
+          <p className="advNote" style={{ marginTop: "0.5rem" }}>
+            {hosts.length > 2
+              ? "Tap two to cast them — the first is chair A, the second chair B. "
+              : hosts.length === 2
+                ? "These are your two hosts. Want a different pairing? "
+                : ""}
+            <Link href="/studio/hosts" style={{ color: "var(--accent-color)" }}>Manage or add hosts →</Link>
+          </p>
+        </div>
+
         <div>
           <div className="fieldLabel">Format</div>
           <div className="segRow">
@@ -687,29 +722,6 @@ function SetupStage({
           </div>
         </div>
 
-        <div>
-          <div className="fieldLabel">Hosts (pick 2)</div>
-          <div className="segRow" style={{ flexWrap: "wrap" }}>
-            {hosts.map((h) => {
-              const on = hostIds.includes(h.id);
-              const chairColor = hostIds[0] === h.id ? "var(--host-max)" : hostIds[1] === h.id ? "var(--host-doc)" : undefined;
-              return (
-                <button
-                  key={h.id}
-                  type="button"
-                  className={`segBtn hostBtn${on ? " on" : ""}`}
-                  onClick={() => toggleHost(h.id)}
-                  aria-pressed={on}
-                  style={on && chairColor ? { borderColor: chairColor, color: chairColor } : undefined}
-                >
-                  <span className="hostSwatch" style={{ background: chairColor ?? "var(--border-hover)" }} />
-                  {h.name}
-                </button>
-              );
-            })}
-            {hosts.length === 0 && <span className="stageHint">No active hosts configured.</span>}
-          </div>
-        </div>
       </div>
 
       {advanced && (
