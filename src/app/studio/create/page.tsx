@@ -1,96 +1,70 @@
 import React from "react";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
-import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
-import { getTopicUsage } from "@/lib/services/topicUsageService";
-import { FINISHED_STATUSES } from "../lib";
-import CreateConsole, { StepperTake, StepperHost, ResumeEpisode } from "./CreateConsole";
+import { getTopicUsage, resolveTopicReusePolicy } from "@/lib/services/topicUsageService";
+import { buildStudioTopicVMs, type RawPoolTopic } from "@/lib/services/studioTopicPool";
+import { loadStudioDraft } from "@/lib/services/studioDraft";
+import { MAX_TOPICS_PER_EPISODE } from "@/lib/services/episodeCreation";
+import RundownBuilder from "./RundownBuilder";
 
 export const dynamic = "force-dynamic";
 
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
-  const { topic: highlightTopic } = await searchParams;
-  const user = await currentUser(); // layout already gates /studio; used here for resume scoping
+  const { topic: seedTopicId } = await searchParams;
+  const user = await currentUser(); // /studio layout already gates auth
 
-  const [topics, hosts, resume] = await Promise.all([
-    // Same candidate pool as the takes board (/studio/takes) so anything the
-    // creator sees on the board is pickable here: same statuses, same 40-row
-    // window, same recency ordering (re-ranked by talkability below).
+  // Resume state first — it tells us which podcast to scope usage to.
+  const draft = user ? await loadStudioDraft(user.id) : null;
+
+  // Only scope to a podcast the caller actually owns.
+  let scopedPodcastId: string | undefined;
+  if (user && draft?.podcastId) {
+    const pod = await db.podcast.findUnique({ where: { id: draft.podcastId }, select: { ownerId: true } });
+    if (pod && (!pod.ownerId || pod.ownerId === user.id || user.role === "ADMIN")) scopedPodcastId = draft.podcastId;
+  }
+
+  const [rawTopics, podcasts, hostRows] = await Promise.all([
     db.topicCandidate.findMany({
       where: { status: { in: ["pending", "approved"] } },
       include: { researchBrief: true },
       orderBy: { createdAt: "desc" },
-      take: 40,
+      take: 60,
     }),
-    // Ordered newest-first so the stepper's default pair (CreateConsole takes
-    // the first two) is the creator's OWN two most-recently-created hosts — not
-    // a baked-in cartoon duo. Scoped to the user's own hosts + shared (null)
-    // starters, so a picker never shows another account's characters and a new
-    // account still gets a working default pair.
+    db.podcast.findMany({
+      where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
+    }),
     db.aiHost.findMany({
-      where: {
-        isActive: true,
-        isArchived: false,
-        ...(user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null }),
-      },
+      where: { isActive: true, isArchived: false, ...(user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null }) },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, intensityLevel: true },
     }),
-    // The creator's own most-recent unfinished episode — lets the stepper
-    // resume mid-pipeline instead of starting over.
-    user
-      ? db.episode.findFirst({
-          where: { ownerId: user.id, status: { notIn: [...FINISHED_STATUSES, "failed", "published"] } },
-          orderBy: { updatedAt: "desc" },
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            topics: { orderBy: { orderIndex: "asc" }, take: 1, select: { topicId: true } },
-          },
-        })
-      : Promise.resolve(null),
   ]);
 
-  // SCOPED to the signed-in creator — the Create flow is standalone (no podcast
-  // selected here), so usage shown is "used by you" only, never a platform-wide
-  // count that would leak another customer's activity.
-  const takeUsage = user
-    ? await getTopicUsage(topics.map((t) => t.id), { ownerId: user.id })
+  const usage = user
+    ? await getTopicUsage(rawTopics.map((t) => t.id), { ownerId: user.id, podcastId: scopedPodcastId })
     : new Map();
-  const takes: StepperTake[] = topics
-    .map((t) => {
-      const talk = scoreTopicTalkability({
-        title: t.title,
-        summary: t.summary,
-        createdAt: t.createdAt,
-        brief: t.researchBrief as any,
-      });
-      return {
-        id: t.id,
-        title: t.title,
-        sport: t.sport,
-        status: t.status,
-        hasBrief: !!t.researchBrief,
-        heat: talk.total,
-        usedByYouCount: takeUsage.get(t.id)?.currentOwnerUseCount ?? 0,
-      };
-    })
-    .sort((a, b) => b.heat - a.heat);
+  const policy = resolveTopicReusePolicy();
+  const topics = buildStudioTopicVMs(rawTopics as unknown as RawPoolTopic[], { usage, policy, podcastId: scopedPodcastId })
+    .sort((a, b) => b.talkability - a.talkability);
 
-  const hostOptions: StepperHost[] = hosts.map((h) => ({ id: h.id, name: h.name, intensity: h.intensityLevel }));
-
-  const resumeEp: ResumeEpisode | null = resume
-    ? { id: resume.id, title: resume.title, status: resume.status, topicId: resume.topics[0]?.topicId ?? null }
-    : null;
+  const hosts = hostRows.map((h) => ({ id: h.id, name: h.name, intensity: h.intensityLevel }));
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Create</h1>
+      <h1 className="pageTitle">Build a rundown</h1>
       <p className="pageSub">
-        One take in, one episode out — research, script, voices, mix. Review before the studio spends on voices.
+        Line up the takes, set the order, cast the hosts — a full sports-newsroom rundown. Manual, automatic, or a hybrid of both.
       </p>
-      <CreateConsole takes={takes} hosts={hostOptions} highlightTopic={highlightTopic} resume={resumeEp} />
+      <RundownBuilder
+        podcasts={podcasts}
+        initialTopics={topics}
+        hosts={hosts}
+        initialDraft={draft}
+        maxTopics={MAX_TOPICS_PER_EPISODE}
+        seedTopicId={seedTopicId ?? null}
+      />
     </div>
   );
 }
