@@ -50,7 +50,8 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",
-    "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts"
+    "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts",
+    "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

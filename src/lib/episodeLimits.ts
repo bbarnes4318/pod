@@ -10,6 +10,15 @@ export const PLATFORM_MAX_TOPICS = 6;
 /** The generation pipeline is built for exactly two hosts. */
 export const MAX_HOSTS = 2;
 
+/**
+ * AUTOMATIC-SELECTION floors. These gate what the platform will pick on its own
+ * — they must NEVER gate what a producer can see or pick MANUALLY. A topic below
+ * these is still manually selectable (labelled "below the automatic threshold")
+ * as long as the evidence gates pass.
+ */
+export const DEFAULT_MIN_DEBATE_SCORE = 70;
+export const DEFAULT_MIN_TALKABILITY = 35;
+
 /** Title / description limits (mirrored by CreateEpisodeDraftInputSchema). */
 export const MAX_TITLE_LEN = 200;
 export const MAX_DESCRIPTION_LEN = 4000;
