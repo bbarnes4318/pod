@@ -10,6 +10,8 @@
 
 import { z } from "zod";
 import { db } from "../db";
+import { PLATFORM_MAX_TOPICS, MAX_HOSTS, MAX_TITLE_LEN, MAX_DESCRIPTION_LEN, PRODUCTION_STYLES, SFX_DENSITIES } from "../episodeLimits";
+import { dedupeIds } from "../studio/rundownRules";
 
 /** The DB surface the draft helpers touch — satisfied by PrismaClient and the
  *  in-memory test doubles, so no `any` is needed at call sites. */
@@ -24,21 +26,51 @@ export interface StudioDraftDb {
 export const RUNDOWN_STEPS = ["show", "topics", "hosts", "production", "review"] as const;
 export type RundownStep = (typeof RUNDOWN_STEPS)[number];
 
-export const RundownDraftStateSchema = z.object({
-  mode: z.enum(["manual", "automatic", "hybrid"]),
-  selectedTopicIds: z.array(z.string().min(1)).default([]),
-  leadTopicId: z.string().min(1).nullable().optional(),
-  targetTopicCount: z.number().int().min(1).max(24).default(3),
-  podcastId: z.string().min(1).nullable().optional(),
-  hostIds: z.array(z.string().min(1)).default([]),
-  ttsProvider: z.string().min(1).nullable().optional(),
-  ttsVoiceOverrides: z.unknown().optional(),
-  productionStyle: z.string().min(1).nullable().optional(),
-  sfxDensity: z.string().min(1).nullable().optional(),
-  title: z.string().max(200).nullable().optional(),
-  description: z.string().max(4000).nullable().optional(),
-  activeStep: z.enum(RUNDOWN_STEPS).default("show"),
-});
+export const RundownDraftStateSchema = z
+  .object({
+    mode: z.enum(["manual", "automatic", "hybrid"]),
+    // Deduplicated (order-preserving) before any logical check or persistence.
+    selectedTopicIds: z.array(z.string().trim().min(1)).default([]).transform(dedupeIds),
+    leadTopicId: z.string().min(1).nullable().optional(),
+    // Never above the ONE shared platform maximum (0/7/24 all rejected here).
+    targetTopicCount: z.number().int().min(1).max(PLATFORM_MAX_TOPICS).default(3),
+    podcastId: z.string().min(1).nullable().optional(),
+    hostIds: z.array(z.string().min(1)).max(MAX_HOSTS, `The pipeline supports ${MAX_HOSTS} hosts.`).default([]),
+    ttsProvider: z.string().min(1).nullable().optional(),
+    ttsVoiceOverrides: z.unknown().optional(),
+    productionStyle: z.enum(PRODUCTION_STYLES).nullable().optional(),
+    sfxDensity: z.enum(SFX_DENSITIES).nullable().optional(),
+    title: z.string().max(MAX_TITLE_LEN).nullable().optional(),
+    description: z.string().max(MAX_DESCRIPTION_LEN).nullable().optional(),
+    // ---- Automatic/Hybrid backend SELECTION preferences (distinct from the
+    //      picker's board display filters) — these actually steer createEpisodeDraft.
+    verticals: z.array(z.string().min(1)).optional(),
+    leagueIds: z.array(z.string().min(1)).optional(),
+    teams: z.array(z.string().min(1)).optional(),
+    sport: z.string().min(1).nullable().optional(),
+    minDebateScore: z.number().min(0).max(100).nullable().optional(),
+    activeStep: z.enum(RUNDOWN_STEPS).default("show"),
+  })
+  .superRefine((val, ctx) => {
+    const n = val.selectedTopicIds.length;
+    if (val.mode === "manual" && n < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Manual mode needs at least one topic." });
+    }
+    if (val.mode === "automatic") {
+      if (n > 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Automatic mode can't carry hand-picked topics." });
+      if (val.leadTopicId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadTopicId"], message: "Automatic mode has no lead topic." });
+    }
+    if (val.mode === "hybrid") {
+      if (n < 1) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Hybrid mode needs at least one pinned topic." });
+      if (n > val.targetTopicCount) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `Pinned topics (${n}) can't exceed the target count (${val.targetTopicCount}).` });
+    }
+    if (n > PLATFORM_MAX_TOPICS) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `No more than ${PLATFORM_MAX_TOPICS} topics per episode.` });
+    }
+    if (val.leadTopicId && !val.selectedTopicIds.includes(val.leadTopicId)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadTopicId"], message: "The lead topic must be one of the selected topics." });
+    }
+  });
 
 export type RundownDraftState = z.infer<typeof RundownDraftStateSchema>;
 

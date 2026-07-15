@@ -23,10 +23,18 @@ import { selectHottestRange } from "@/lib/services/socialClipService";
 import { assertCanCreateEpisode, assertPremiumVoiceAllowed } from "@/lib/services/entitlementService";
 import { EpisodeBuildInput } from "@/lib/services/episodeService";
 import { createEpisodeDraft } from "@/lib/services/episodeCreation";
-import { getTopicUsage, resolveTopicReusePolicy } from "@/lib/services/topicUsageService";
-import { buildStudioTopicVMs, type RawPoolTopic, type StudioTopicVM } from "@/lib/services/studioTopicPool";
-import { loadStudioDraft, saveStudioDraft, clearStudioDraft, type RundownDraftState } from "@/lib/services/studioDraft";
-import { leadFirst } from "@/lib/studio/rundownRules";
+import {
+  getStudioTopicsFor,
+  getStudioPodcastsFor,
+  createStudioEpisodeFor,
+  loadStudioDraftFor,
+  saveStudioDraftFor,
+  discardStudioDraftFor,
+  type StudioCtx,
+  type StudioEpisodeInput,
+} from "@/lib/services/studioActions";
+import type { PrismaClient } from "@prisma/client";
+import type { RundownDraftState } from "@/lib/services/studioDraft";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
@@ -945,196 +953,55 @@ export async function getSocialClips(episodeId: string) {
 
 /* ============================================================================
  * STUDIO MULTI-TOPIC RUNDOWN BUILDER (manual / automatic / hybrid)
- * All creation routes through the SHARED createEpisodeDraft — no Studio-only
- * build path. Server-side: ownerId is derived from the session (never trusted
- * from the client), podcast ownership is verified, and reuseOverride is NEVER
- * passed (it is Admin-only). Usage + reuse are scoped to the selected podcast
- * (else the owner), never platform-wide.
+ * Thin "use server" wrappers over the testable studioActions logic, which runs
+ * under an authenticated-user seam. ownerId comes from the SESSION (never the
+ * client); podcast ownership is verified; reuseOverride is never sent.
  * ========================================================================== */
 
-/** Verify the caller owns (or may use) a podcast; returns its inheritable
- *  settings, or an error. A user can never target another customer's show. */
-async function resolveOwnedPodcast(podcastId: string, user: { id: string; role: string }) {
-  const pod = await db.podcast.findUnique({
-    where: { id: podcastId },
-    select: { id: true, ownerId: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
-  });
-  if (!pod) return { ok: false as const, error: "That show no longer exists." };
-  if (pod.ownerId && pod.ownerId !== user.id && user.role !== "ADMIN") {
-    return { ok: false as const, error: "That show belongs to another account." };
-  }
-  return { ok: true as const, podcast: pod };
-}
-
-/** The topic pool for the picker, scoped to the signed-in owner and (optionally)
- *  a selected podcast. Podcast ownership is verified before its usage is shown. */
-export async function getStudioTopics(podcastId?: string | null): Promise<
-  { success: true; topics: StudioTopicVM[] } | { success: false; error: string }
-> {
+/** Build the authenticated Studio context, or null when signed out. */
+async function studioCtx(): Promise<StudioCtx | null> {
   const user = await currentUser();
-  if (!user) return { success: false, error: "Please sign in." };
-
-  let scopedPodcastId: string | undefined;
-  if (podcastId) {
-    const owned = await resolveOwnedPodcast(podcastId, user);
-    if (!owned.ok) return { success: false, error: owned.error };
-    scopedPodcastId = podcastId;
-  }
-
-  const topics = (await db.topicCandidate.findMany({
-    where: { status: { in: ["pending", "approved"] } },
-    include: { researchBrief: true },
-    orderBy: { createdAt: "desc" },
-    take: 60,
-  })) as unknown as RawPoolTopic[];
-
-  const usage = await getTopicUsage(
-    topics.map((t) => t.id),
-    { ownerId: user.id, podcastId: scopedPodcastId }
-  );
-  const policy = resolveTopicReusePolicy();
-  const vms = buildStudioTopicVMs(topics, { usage, policy, podcastId: scopedPodcastId });
-  // Rank by talkability (hottest first) — same ordering the board uses.
-  vms.sort((a, b) => b.talkability - a.talkability);
-  return { success: true, topics: vms };
+  if (!user) return null;
+  return { user: { id: user.id, role: user.role }, db: db as unknown as PrismaClient };
 }
 
-/** The signed-in user's own shows (plus legacy null-owner shows), for the Show
- *  step. Never another customer's podcasts. */
+export async function getStudioTopics(podcastId?: string | null) {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return getStudioTopicsFor(ctx, podcastId);
+}
+
 export async function getStudioPodcasts() {
-  const user = await currentUser();
-  if (!user) return { success: false as const, error: "Please sign in." };
-  const podcasts = await db.podcast.findMany({
-    where: { OR: [{ ownerId: user.id }, { ownerId: null }] },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
-  });
-  return { success: true as const, podcasts };
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return getStudioPodcastsFor(ctx);
 }
 
-export interface StudioEpisodeInput {
-  mode: "manual" | "automatic" | "hybrid";
-  selectedTopicIds: string[];
-  targetTopicCount?: number;
-  leadTopicId?: string | null;
-  podcastId?: string | null;
-  hostIds?: string[];
-  ttsProvider?: string;
-  ttsVoiceOverrides?: unknown;
-  productionStyle?: string;
-  sfxDensity?: string;
-  title?: string;
-  description?: string;
-}
-
-/**
- * Create a draft episode from the Studio rundown. Routes through the SHARED
- * createEpisodeDraft. ownerId is the SESSION user (never the client); podcast
- * ownership is verified; reuseOverride is never sent. Returns the backend's
- * finalOrder as the source of truth — the client must not reconstruct it.
- */
 export async function createStudioEpisode(input: StudioEpisodeInput) {
-  const user = await currentUser();
-  if (!user) return { success: false as const, error: "Please sign in to create an episode." };
-
-  // Monetization gates (server-enforced), same as the rest of /app creation.
-  const quota = await assertCanCreateEpisode(user.id);
-  if (!quota.ok) return { success: false as const, error: quota.error, upgrade: true as const };
-  const voiceGate = await assertPremiumVoiceAllowed(user.id, input.ttsProvider);
-  if (!voiceGate.ok) return { success: false as const, error: voiceGate.error, upgrade: true as const };
-
-  // Podcast ownership + inheritance.
-  let verticals: string[] | undefined;
-  let teams: string[] | undefined;
-  let inheritedHostIds: string[] | undefined;
-  if (input.podcastId) {
-    const owned = await resolveOwnedPodcast(input.podcastId, user);
-    if (!owned.ok) return { success: false as const, error: owned.error };
-    verticals = owned.podcast.verticals.length > 0 ? owned.podcast.verticals : undefined;
-    if (owned.podcast.teams.length > 0) {
-      const teamRows = await db.team.findMany({ where: { id: { in: owned.podcast.teams } }, select: { name: true } });
-      teams = teamRows.map((t) => t.name);
-    }
-    inheritedHostIds = owned.podcast.hostIds.length > 0 ? owned.podcast.hostIds : undefined;
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in to create an episode." };
+  const res = await createStudioEpisodeFor(ctx, input);
+  if (res.success) {
+    revalidatePath("/studio/create");
+    revalidatePath("/app/episodes");
   }
-
-  const orderedIds = leadFirst([...input.selectedTopicIds], input.leadTopicId);
-  const hostIds = input.hostIds?.length ? input.hostIds : inheritedHostIds;
-
-  const res = await createEpisodeDraft({
-    mode: input.mode,
-    selectedTopicIds: input.mode === "automatic" ? [] : orderedIds,
-    targetTopicCount: input.targetTopicCount,
-    ownerId: user.id, // derived from the authenticated session — NOT the client
-    podcastId: input.podcastId ?? undefined,
-    hostIds,
-    ttsProvider: input.ttsProvider,
-    ttsVoiceOverrides: input.ttsVoiceOverrides,
-    productionStyle: input.productionStyle,
-    sfxDensity: input.sfxDensity,
-    verticals,
-    teams,
-    title: input.title,
-    description: input.description,
-    // Manual = all-or-nothing on the exact picks; automatic/hybrid are lenient
-    // so a single bad topic doesn't fail the whole build (rejections surfaced).
-    strictSelection: input.mode === "manual",
-    // reuseOverride is intentionally NEVER set here — it is Admin-only.
-  });
-
-  if (!res.ok || !res.episodeId) {
-    return {
-      success: false as const,
-      error: res.error || "Couldn't create the episode.",
-      rejectedTopics: res.rejectedTopics,
-      reasons: res.reasons,
-    };
-  }
-
-  // Creation succeeded — drop the resumable draft so it doesn't linger.
-  await clearStudioDraft(user.id).catch(() => {});
-
-  const requestedCount = input.mode === "manual" ? orderedIds.length : input.targetTopicCount ?? 3;
-  const concurrentlyDropped = res.rejectedTopics.filter((r) => r.category === "recently_used_concurrently");
-
-  revalidatePath("/studio/create");
-  revalidatePath("/app/episodes");
-  return {
-    success: true as const,
-    episodeId: res.episodeId,
-    mode: res.mode,
-    selectedTopics: res.selectedTopics,
-    rejectedTopics: res.rejectedTopics,
-    autoSelectedTopicIds: res.autoSelectedTopicIds,
-    finalOrder: res.finalOrder, // SOURCE OF TRUTH — display this, not the request
-    reasons: res.reasons,
-    requestedCount,
-    concurrentlyDroppedIds: concurrentlyDropped.map((r) => r.id),
-  };
+  return res;
 }
 
-/** Load the signed-in user's saved rundown draft (cross-session resume). */
-export async function loadStudioRundownDraft(): Promise<
-  { success: true; draft: RundownDraftState | null } | { success: false; error: string }
-> {
-  const user = await currentUser();
-  if (!user) return { success: false, error: "Please sign in." };
-  const draft = await loadStudioDraft(user.id);
-  return { success: true, draft };
+export async function loadStudioRundownDraft() {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return loadStudioDraftFor(ctx);
 }
 
-/** Save (upsert) the rundown draft. Validated server-side before persistence. */
 export async function saveStudioRundownDraft(state: RundownDraftState) {
-  const user = await currentUser();
-  if (!user) return { success: false as const, error: "Please sign in." };
-  const res = await saveStudioDraft(user.id, state);
-  return res.ok ? { success: true as const } : { success: false as const, error: res.error };
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return saveStudioDraftFor(ctx, state);
 }
 
-/** Discard the saved rundown draft. */
 export async function discardStudioRundownDraft() {
-  const user = await currentUser();
-  if (!user) return { success: false as const, error: "Please sign in." };
-  await clearStudioDraft(user.id);
-  return { success: true as const };
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return discardStudioDraftFor(ctx);
 }

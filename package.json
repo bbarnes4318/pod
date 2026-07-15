@@ -46,7 +46,9 @@
     "test:topic-concurrency": "tsx src/scripts/testTopicConcurrency.ts",
     "lint:changed": "node scripts/lintChanged.js",
     "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts",
-    "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts"
+    "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
@@ -72,6 +74,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/pg": "^8.20.0",
     "embedded-postgres": "^18.4.0-beta.17",

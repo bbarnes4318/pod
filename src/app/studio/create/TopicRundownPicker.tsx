@@ -79,8 +79,11 @@ export default function TopicRundownPicker({
 
   return (
     <div>
-      {/* -------- Filters -------- */}
-      <div className="rundownFilters" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.9rem" }}>
+      {/* -------- Filters (BOARD DISPLAY ONLY) -------- */}
+      <p className="stageHint" style={{ margin: "0 0 0.4rem" }} data-testid="board-filter-note">
+        These filter what you SEE on the board. In Automatic/Hybrid, backend selection is driven by <strong>Selection preferences</strong> above — not by this search.
+      </p>
+      <div className="rundownFilters">
         <input
           type="search"
           className="input"
@@ -134,6 +137,7 @@ export default function TopicRundownPicker({
                 <div style={{ display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
                   <input
                     type="checkbox"
+                    data-testid={`pick-${t.id}`}
                     checked={selected}
                     disabled={selectionDisabled || !canSelect}
                     onChange={() => handleToggle(t)}

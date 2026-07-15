@@ -57,3 +57,8 @@ _es_payload.json
 
 # local StorageProvider output (dev fallback for S3)
 /public/storage/
+
+# Playwright e2e transient auth state
+tests/e2e/.auth/
+test-results/
+playwright-report/

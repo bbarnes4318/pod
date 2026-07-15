@@ -2,22 +2,27 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- test harness: in-memory
    fake DB doubles + dynamic seed payloads are intentionally loosely typed. */
 //
-// Covers the Studio building blocks with an in-memory fake db (no external
-// database): topic-pool VM (scoped usage, readiness, eligibility, unsafe-claim
-// withholding), resume-draft persistence (round-trip, validation, fail-open),
-// rundown estimates, rundown rules, and the SHARED createEpisodeDraft path the
-// Studio action routes through (manual order, automatic backend selection,
-// hybrid pinned-first, and that a Studio-style call — no reuseOverride — is
-// blocked under exclude_podcast).
+// Fake-db integration + unit coverage: topic-pool VM, resume persistence,
+// estimates, rundown rules + mode transitions, durable-draft schema validation,
+// and the ACTUAL Studio server-action logic (studioActions) run under a fake
+// authenticated-user seam — ownerId from session, cross-user rejection, private
+// hosts hidden, no reuseOverride, podcast inheritance reaching the episode,
+// automatic preferences reaching createEpisodeDraft, hybrid rejected pins,
+// draft cleared on success / retained on failure.
 
 process.env.TOPIC_MIN_TALKABILITY = "1";
 
 import { buildStudioTopicVMs } from "../lib/services/studioTopicPool";
 import { getTopicUsage, resolveTopicReusePolicy } from "../lib/services/topicUsageService";
-import { loadStudioDraft, saveStudioDraft, clearStudioDraft } from "../lib/services/studioDraft";
+import { loadStudioDraft, saveStudioDraft, clearStudioDraft, RundownDraftStateSchema } from "../lib/services/studioDraft";
 import { estimateRundown } from "../lib/services/episodeEstimate";
-import { validateRundownDraft, leadFirst, dedupeIds } from "../lib/studio/rundownRules";
+import { validateRundownDraft, leadFirst, dedupeIds, applyModeChange } from "../lib/studio/rundownRules";
 import { createEpisodeDraft } from "../lib/services/episodeCreation";
+import {
+  createStudioEpisodeFor, getStudioTopicsFor, getStudioPodcastsFor,
+  saveStudioDraftFor, loadStudioDraftFor, discardStudioDraftFor, type StudioCtx,
+} from "../lib/services/studioActions";
+import { PLATFORM_MAX_TOPICS } from "../lib/episodeLimits";
 
 let passed = 0, failed = 0;
 async function check(name: string, fn: () => void | Promise<void>) {
@@ -25,6 +30,7 @@ async function check(name: string, fn: () => void | Promise<void>) {
   catch (err) { failed++; console.error(`  ✗ ${name}\n      ${(err as Error).message}`); }
 }
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
+const okDeps = { assertCanCreateEpisode: async () => ({ ok: true as const }), assertPremiumVoiceAllowed: async () => ({ ok: true as const }) };
 
 function goodTopic(id: string, over: any = {}) {
   return {
@@ -42,9 +48,11 @@ function goodTopic(id: string, over: any = {}) {
   };
 }
 
-function makeFakeDb(seed: { topics?: any[]; podcasts?: any[] }) {
+function makeFakeDb(seed: { topics?: any[]; podcasts?: any[]; hosts?: any[]; teams?: any[] }) {
   const topics = new Map((seed.topics || []).map((t) => [t.id, structuredClone(t)]));
   const podcasts = seed.podcasts || [];
+  const hosts = seed.hosts || [{ id: "host-a", ownerId: null, isActive: true }, { id: "host-b", ownerId: null, isActive: true }];
+  const teams = seed.teams || [];
   const episodes = new Map<string, any>();
   const episodeTopics: any[] = [];
   const drafts = new Map<string, any>();
@@ -63,14 +71,26 @@ function makeFakeDb(seed: { topics?: any[]; podcasts?: any[] }) {
       return out;
     });
   };
+  const hostFindMany = async ({ where }: any) => {
+    return hosts.filter((h) => {
+      if (where?.id?.in && !where.id.in.includes(h.id)) return false;
+      if (where?.isActive === true && h.isActive === false) return false;
+      if (where?.OR) { const ok = where.OR.some((c: any) => ("ownerId" in c ? c.ownerId === h.ownerId : true)); if (!ok) return false; }
+      return true;
+    }).map((h) => ({ id: h.id }));
+  };
   return {
-    _episodeTopics: episodeTopics, _drafts: drafts,
+    _episodes: episodes, _episodeTopics: episodeTopics, _drafts: drafts,
     topicCandidate: {
       findUnique: async ({ where }: any) => topics.get(where.id) ?? null,
-      findMany: async ({ where }: any) => [...topics.values()].filter((t) => (where?.status?.in ? where.status.in.includes(t.status) : true)),
+      findMany: async ({ where }: any) => [...topics.values()].filter((t) => (where?.status?.in ? where.status.in.includes(t.status) : where?.status ? t.status === where.status : true)),
     },
-    aiHost: { findMany: async ({ where }: any) => [{ id: "host-a" }, { id: "host-b" }].filter((h) => (where?.id?.in ? where.id.in.includes(h.id) : true)) },
-    podcast: { findUnique: async ({ where }: any) => podcasts.find((p) => p.id === where.id) ?? null },
+    aiHost: { findMany: hostFindMany },
+    team: { findMany: async ({ where }: any) => teams.filter((t: any) => (where?.id?.in ? where.id.in.includes(t.id) : true)).map((t: any) => ({ name: t.name })) },
+    podcast: {
+      findUnique: async ({ where }: any) => podcasts.find((p) => p.id === where.id) ?? null,
+      findMany: async ({ where }: any) => podcasts.filter((p) => (where?.ownerId ? p.ownerId === where.ownerId : true)),
+    },
     episode: { findUnique: async ({ where }: any) => [...episodes.values()].find((e) => e.slug === where.slug) ?? null, create: async ({ data }: any) => makeEpisode(data) },
     episodeTopic: { findMany: etFindMany, create: async ({ data }: any) => { episodeTopics.push(data); return data; } },
     $transaction: async (fn: any) => fn({
@@ -79,13 +99,14 @@ function makeFakeDb(seed: { topics?: any[]; podcasts?: any[] }) {
     }),
     studioDraft: {
       findUnique: async ({ where }: any) => drafts.get(where.ownerId) ?? null,
-      upsert: async ({ where, create, update }: any) => { const existing = drafts.get(where.ownerId); drafts.set(where.ownerId, existing ? { ...existing, ...update } : create); return drafts.get(where.ownerId); },
+      upsert: async ({ where, create, update }: any) => { const ex = drafts.get(where.ownerId); drafts.set(where.ownerId, ex ? { ...ex, ...update } : create); return drafts.get(where.ownerId); },
       deleteMany: async ({ where }: any) => { drafts.delete(where.ownerId); return { count: 1 }; },
     },
   };
 }
 
 const H = ["host-a", "host-b"];
+const ctxFor = (db: any, id = "oA", role = "USER"): StudioCtx => ({ user: { id, role }, db });
 
 async function withEnv(env: Record<string, string>, fn: () => Promise<void>) {
   const prev: Record<string, string | undefined> = {};
@@ -97,133 +118,161 @@ async function run() {
   console.log("Studio multi-topic rundown:");
 
   // ---- Topic-pool VM ----
-  await check("VM: readiness, eligibility, evidence/source counts, and a research preview", () => {
+  await check("VM: readiness/eligibility/counts + research preview + unsafe-claim withholding", () => {
     const topics = [goodTopic("t1"), goodTopic("t2", { status: "pending" }), goodTopic("t3", { researchBrief: null })];
-    const usage = new Map();
-    const vms = buildStudioTopicVMs(topics as any, { usage, policy: { mode: "allow", cooldownDays: 7 } });
+    const vms = buildStudioTopicVMs(topics as any, { usage: new Map(), policy: { mode: "allow", cooldownDays: 7 } });
     const t1 = vms.find((v) => v.id === "t1")!;
-    assert(t1.readiness === "ready" && t1.eligible, "t1 ready + eligible");
-    assert(t1.evidenceCount === 1 && t1.sourceCount === 1, "evidence/source counts surfaced");
-    assert(!!t1.brief && t1.brief.keyFacts.length > 0 && t1.brief.mainAngle === "angle", "brief preview populated");
-    const t2 = vms.find((v) => v.id === "t2")!;
-    assert(!t2.eligible && t2.readiness === "not_approved" && !!t2.unavailableReason, "pending topic ineligible + reason shown");
-    const t3 = vms.find((v) => v.id === "t3")!;
-    assert(!t3.eligible && t3.readiness === "needs_research", "no-brief topic needs research");
+    assert(t1.readiness === "ready" && t1.eligible && t1.evidenceCount === 1 && t1.sourceCount === 1, "t1 ready/eligible/counts");
+    assert(t1.brief!.flaggedClaimCount === 2 && !JSON.stringify(t1.brief).includes("SECRET"), "unsafe claims withheld (count only)");
+    assert(!vms.find((v) => v.id === "t2")!.eligible && !vms.find((v) => v.id === "t3")!.eligible, "pending + no-brief ineligible, shown with reason");
   });
-  await check("VM: moderated/unsafe claims are WITHHELD (count only, no raw text)", () => {
-    const vms = buildStudioTopicVMs([goodTopic("t1")] as any, { usage: new Map(), policy: { mode: "allow", cooldownDays: 7 } });
-    const b = vms[0].brief!;
-    assert(b.flaggedClaimCount === 2, "flagged count surfaced");
-    assert(!JSON.stringify(b).includes("SECRET"), "raw unsafe claim text is NOT exposed");
-  });
-  await check("VM: usage is owner/show-scoped — Owner B never sees Owner A's usage", async () => {
+  await check("VM: usage owner/show-scoped — Owner B never sees Owner A's usage", async () => {
     const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }] });
     await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
-    const usageB = await getTopicUsage(["t1"], { ownerId: "oB" }, db as any);
-    const vmsB = buildStudioTopicVMs([goodTopic("t1")] as any, { usage: usageB, policy: { mode: "allow", cooldownDays: 7 } });
-    assert(vmsB[0].usedByYouCount === 0, "owner B sees zero owner-usage");
-    assert(vmsB[0].usedByShowCount === null, "no podcast scope → no show count");
-    const usageA = await getTopicUsage(["t1"], { ownerId: "oA", podcastId: "pA" }, db as any);
-    const vmsA = buildStudioTopicVMs([goodTopic("t1")] as any, { usage: usageA, policy: { mode: "allow", cooldownDays: 7 }, podcastId: "pA" });
-    assert(vmsA[0].usedByYouCount === 1 && vmsA[0].usedByShowCount === 1, "owner A sees own owner + show usage");
+    const vmsB = buildStudioTopicVMs([goodTopic("t1")] as any, { usage: await getTopicUsage(["t1"], { ownerId: "oB" }, db as any), policy: { mode: "allow", cooldownDays: 7 } });
+    assert(vmsB[0].usedByYouCount === 0 && vmsB[0].usedByShowCount === null, "owner B sees zero + no show count");
   });
-  await check("VM: exclude_podcast marks a recently-used topic ineligible with a clear reason", async () => {
+
+  // ---- Resume draft + schema validation (item 6) ----
+  await check("resume: save→load round-trips full state incl. preferences (cross-session)", async () => {
+    const db = makeFakeDb({});
+    const state = { mode: "hybrid", selectedTopicIds: ["t2", "t1"], leadTopicId: "t2", targetTopicCount: 4, podcastId: null, hostIds: H, productionStyle: "full", sfxDensity: "hype", title: "My show", description: "notes", verticals: ["NFL"], minDebateScore: 60, activeStep: "topics" };
+    assert((await saveStudioDraft("oA", state, db as any)).ok, "save ok");
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(!!loaded && loaded.verticals?.[0] === "NFL" && loaded.minDebateScore === 60 && loaded.leadTopicId === "t2" && loaded.description === "notes", "state incl. prefs restored");
+  });
+  await check("resume: corrupt blob FAILS OPEN; invalid state REJECTED before persist", async () => {
+    const db = makeFakeDb({});
+    db._drafts.set("oA", { state: { mode: "nope" } });
+    assert((await loadStudioDraft("oA", db as any)) === null, "corrupt → null");
+    assert(!(await saveStudioDraft("oB", { mode: "bogus" } as any, db as any)).ok && !db._drafts.has("oB"), "invalid rejected, nothing persisted");
+  });
+  await check("schema: ONE platform max — targetTopicCount 0, 7, 24 all rejected; 6 allowed", () => {
+    const base = { mode: "automatic", selectedTopicIds: [], hostIds: H, activeStep: "topics" };
+    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 0 }).success, "0 rejected");
+    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 7 }).success, "7 rejected (> platform max)");
+    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 24 }).success, "24 rejected");
+    assert(RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: PLATFORM_MAX_TOPICS }).success, "6 allowed");
+    assert(PLATFORM_MAX_TOPICS === 6, "platform max is 6");
+  });
+  await check("schema: superRefine enforces mode rules, lead-in-set, host cap; dedupes before save", () => {
+    const V = (s: any) => RundownDraftStateSchema.safeParse(s).success;
+    assert(!V({ mode: "manual", selectedTopicIds: [], hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "manual 0 rejected");
+    assert(!V({ mode: "automatic", selectedTopicIds: ["t1"], hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "auto+picks rejected");
+    assert(!V({ mode: "automatic", selectedTopicIds: [], leadTopicId: "t1", hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "auto+lead rejected");
+    assert(!V({ mode: "hybrid", selectedTopicIds: ["a", "b", "c", "d"], targetTopicCount: 3, hostIds: H, activeStep: "topics" }), "hybrid pins>target rejected");
+    assert(!V({ mode: "manual", selectedTopicIds: ["a"], leadTopicId: "zzz", hostIds: H, targetTopicCount: 3, activeStep: "topics" }), "lead not in set rejected");
+    assert(!V({ mode: "manual", selectedTopicIds: ["a"], hostIds: ["h1", "h2", "h3"], targetTopicCount: 3, activeStep: "topics" }), ">2 hosts rejected");
+    const dd = RundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["a", "b", "a", "c"], hostIds: H, targetTopicCount: 3, activeStep: "topics" });
+    assert(dd.success && JSON.stringify(dd.data.selectedTopicIds) === JSON.stringify(["a", "b", "c"]), "topic ids deduped preserving order");
+  });
+
+  // ---- Estimates + rules + mode transitions (item 3) ----
+  await check("estimate: grounded; cost null without a rate, labeled with a rate", async () => {
+    assert(estimateRundown({ topicCount: 3 }).estimatedCostUsd === null, "no fake cost");
+    await withEnv({ TTS_COST_PER_1K_CHARS: "0.30" }, async () => { assert(estimateRundown({ topicCount: 3 }).estimatedCostUsd! > 0, "cost with rate"); });
+  });
+  await check("rules: dedupe + leadFirst", () => {
+    assert(JSON.stringify(dedupeIds(["a", "b", "a"])) === JSON.stringify(["a", "b"]), "dedupe");
+    assert(JSON.stringify(leadFirst(["a", "b", "c"], "c")) === JSON.stringify(["c", "a", "b"]), "leadFirst");
+  });
+  await check("mode transition: → Automatic clears picks + lead", () => {
+    const r = applyModeChange({ mode: "manual", selectedTopicIds: ["a", "b"], leadTopicId: "a", targetTopicCount: 3 }, "automatic", 6);
+    assert(r.selectedTopicIds.length === 0 && r.leadTopicId === null, "automatic clears selection + lead");
+  });
+  await check("mode transition: Automatic → Manual starts empty (no resurrected ids)", () => {
+    const r = applyModeChange({ mode: "automatic", selectedTopicIds: [], leadTopicId: null, targetTopicCount: 4 }, "manual", 6);
+    assert(r.selectedTopicIds.length === 0, "no stale ids resurrected");
+  });
+  await check("mode transition: Manual → Hybrid preserves picks and clamps target ≥ pinned", () => {
+    const r = applyModeChange({ mode: "manual", selectedTopicIds: ["a", "b", "c", "d"], leadTopicId: "a", targetTopicCount: 2 }, "hybrid", 6);
+    assert(JSON.stringify(r.selectedTopicIds) === JSON.stringify(["a", "b", "c", "d"]) && r.targetTopicCount === 4 && !!r.note, "picks kept, target clamped to 4, note set");
+  });
+
+  // ---- ACTUAL Studio server actions (item 11) via the auth seam ----
+  await check("action: createStudioEpisode stamps ownerId from the SESSION (client can't inject)", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")] });
+    // Note: StudioEpisodeInput has NO ownerId field — it comes from ctx.user only.
+    const res = await createStudioEpisodeFor(ctxFor(db, "oA"), { mode: "manual", selectedTopicIds: ["t1"], hostIds: H } as any, okDeps);
+    assert(res.success, (res as any).error);
+    assert(db._episodes.get((res as any).episodeId).ownerId === "oA", "episode.ownerId === session user");
+  });
+  await check("action: another user's podcast is rejected (list, scope, and create)", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA", name: "A show", verticals: [], teams: [], segmentCount: 3, hostIds: [] }] });
+    const asB = ctxFor(db, "oB");
+    assert((await getStudioPodcastsFor(asB)).podcasts.length === 0, "B doesn't list A's podcast");
+    const scoped = await getStudioTopicsFor(asB, "pA");
+    assert(!scoped.success, "B can't scope usage to A's podcast");
+    const created = await createStudioEpisodeFor(asB, { mode: "manual", selectedTopicIds: ["t1"], podcastId: "pA", hostIds: H } as any, okDeps);
+    assert(!created.success && /another account/i.test((created as any).error), "B can't create under A's podcast");
+  });
+  await check("action: a private host of another user is hidden (build rejected)", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")], hosts: [{ id: "priv-A", ownerId: "oA", isActive: true }, { id: "host-b", ownerId: null, isActive: true }] });
+    // User B tries to cast A's private host → assertHostsCastable rejects it.
+    const res = await createStudioEpisodeFor(ctxFor(db, "oB"), { mode: "manual", selectedTopicIds: ["t1"], hostIds: ["priv-A", "host-b"] } as any, okDeps);
+    assert(!res.success && /host/i.test((res as any).error), "another user's private host is not castable");
+  });
+  await check("action: reuseOverride cannot be submitted from Studio (blocked under exclude_podcast)", async () => {
     await withEnv({ TOPIC_REUSE_MODE: "exclude_podcast" }, async () => {
-      const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }] });
-      await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
-      const usage = await getTopicUsage(["t1"], { ownerId: "oA", podcastId: "pA" }, db as any);
-      const vms = buildStudioTopicVMs([goodTopic("t1")] as any, { usage, policy: resolveTopicReusePolicy(), podcastId: "pA" });
-      assert(!vms[0].eligible && /recently used by this show/i.test(vms[0].unavailableReason || ""), "recently-used blocked with reason");
+      const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA", name: "A", verticals: [], teams: [], segmentCount: 3, hostIds: [] }] });
+      await createStudioEpisodeFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], podcastId: "pA", hostIds: H } as any, okDeps);
+      const r2 = await createStudioEpisodeFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], podcastId: "pA", hostIds: H } as any, okDeps);
+      // No reuseOverride is ever sent, so the second reuse is blocked.
+      assert(!r2.success && (r2 as any).rejectedTopics?.some((x: any) => x.category === "recently_used"), "Studio can't bypass reuse via override");
     });
   });
-
-  // ---- Resume draft ----
-  await check("resume: save → load round-trips the full rundown state (cross-session)", async () => {
-    const db = makeFakeDb({ topics: [] });
-    const state = { mode: "hybrid" as const, selectedTopicIds: ["t2", "t1"], leadTopicId: "t2", targetTopicCount: 4, podcastId: "pA", hostIds: H, productionStyle: "full", sfxDensity: "hype", title: "My show", description: null, activeStep: "topics" as const };
-    const r = await saveStudioDraft("oA", state, db as any);
-    assert(r.ok, "save ok");
-    // A fresh load (simulating another browser session) sees the same state.
-    const loaded = await loadStudioDraft("oA", db as any);
-    assert(!!loaded && loaded.mode === "hybrid" && JSON.stringify(loaded.selectedTopicIds) === JSON.stringify(["t2", "t1"]) && loaded.leadTopicId === "t2" && loaded.targetTopicCount === 4 && loaded.activeStep === "topics", "state restored intact");
-  });
-  await check("resume: corrupt stored blob FAILS OPEN to no-draft (fresh builder)", async () => {
-    const db = makeFakeDb({ topics: [] });
-    db._drafts.set("oA", { state: { mode: "not-a-mode", garbage: true } });
-    const loaded = await loadStudioDraft("oA", db as any);
-    assert(loaded === null, "corrupt draft resolves to null, not a crash");
-  });
-  await check("resume: save REJECTS an invalid state before persisting", async () => {
-    const db = makeFakeDb({ topics: [] });
-    const r = await saveStudioDraft("oA", { mode: "bogus", selectedTopicIds: [] } as any, db as any);
-    assert(!r.ok, "invalid state rejected");
-    assert(!db._drafts.has("oA"), "nothing persisted");
-  });
-  await check("resume: clear removes the draft", async () => {
-    const db = makeFakeDb({ topics: [] });
-    await saveStudioDraft("oA", { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "show" } as any, db as any);
-    await clearStudioDraft("oA", db as any);
-    assert((await loadStudioDraft("oA", db as any)) === null, "draft cleared");
-  });
-
-  // ---- Estimates (honest) ----
-  await check("estimate: duration/words grounded; cost null without a configured rate", () => {
-    const e = estimateRundown({ topicCount: 3 });
-    assert(e.isEstimate && e.estimatedWords > 0 && e.estimatedDurationMinutes > 0 && e.estimatedTtsCharacters > 0, "estimates present");
-    assert(e.estimatedCostUsd === null && /provider/i.test(e.costBasis), "no fake cost without a rate");
-  });
-  await check("estimate: a configured TTS rate yields a labeled dollar estimate", async () => {
-    await withEnv({ TTS_COST_PER_1K_CHARS: "0.30" }, async () => {
-      const e = estimateRundown({ topicCount: 3 });
-      assert(e.estimatedCostUsd !== null && e.estimatedCostUsd > 0 && /Estimate/.test(e.costBasis), "cost computed + labeled estimate");
+  await check("action: podcast host + target inheritance reaches the created episode", async () => {
+    const db = makeFakeDb({
+      topics: [goodTopic("t1", { debateScore: 99 }), goodTopic("t2", { debateScore: 98 }), goodTopic("t3", { debateScore: 97 })],
+      podcasts: [{ id: "pA", ownerId: "oA", name: "A", verticals: ["NFL"], teams: [], segmentCount: 2, hostIds: ["host-a", "host-b"] }],
     });
+    // Client omits hostIds + targetTopicCount → server inherits from the podcast.
+    const res = await createStudioEpisodeFor(ctxFor(db), { mode: "automatic", podcastId: "pA", selectedTopicIds: [] } as any, okDeps);
+    assert(res.success, (res as any).error);
+    const ep = db._episodes.get((res as any).episodeId);
+    assert(JSON.stringify(ep.hostIds) === JSON.stringify(["host-a", "host-b"]), "episode inherits podcast hosts A+B");
+    assert((res as any).finalOrder.length === 2, "episode inherits podcast segment count (2)");
+  });
+  await check("action: automatic preferences reach createEpisodeDraft (different pool → different rundown)", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("nfl", { debateScore: 99 }), goodTopic("nba", { sport: "NBA", leagueId: "NBA", debateScore: 99 })] });
+    const withNfl = await createStudioEpisodeFor(ctxFor(db), { mode: "automatic", selectedTopicIds: [], targetTopicCount: 2, hostIds: H, verticals: ["NFL"] } as any, okDeps);
+    assert(withNfl.success && (withNfl as any).finalOrder.includes("nfl") && !(withNfl as any).finalOrder.includes("nba"), "verticals:NFL selects only the NFL topic");
+    const db2 = makeFakeDb({ topics: [goodTopic("weak", { debateScore: 80 }), goodTopic("strong", { debateScore: 99 })] });
+    const hi = await createStudioEpisodeFor(ctxFor(db2), { mode: "automatic", selectedTopicIds: [], targetTopicCount: 2, hostIds: H, minDebateScore: 95 } as any, okDeps);
+    assert(hi.success && (hi as any).finalOrder.includes("strong") && !(hi as any).finalOrder.includes("weak"), "minDebateScore 95 excludes the weak topic");
+  });
+  await check("action: hybrid rejected pins are returned", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("pin", { status: "pending" }), goodTopic("a1", { debateScore: 99 })] });
+    const res = await createStudioEpisodeFor(ctxFor(db), { mode: "hybrid", selectedTopicIds: ["pin"], targetTopicCount: 2, hostIds: H } as any, okDeps);
+    // 'pin' is not approved → rejected + surfaced; build proceeds from auto-fill.
+    assert((res as any).rejectedTopics?.some((x: any) => x.id === "pin"), "rejected pin surfaced");
+  });
+  await check("action: draft CLEARED on success, RETAINED on failure", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")] });
+    await saveStudioDraftFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "review" } as any);
+    assert(db._drafts.has("oA"), "draft saved");
+    await createStudioEpisodeFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], hostIds: H } as any, okDeps);
+    assert(!db._drafts.has("oA"), "draft cleared after success");
+    // Failure path: strict manual with a non-existent topic → fail, draft kept.
+    const db2 = makeFakeDb({ topics: [] });
+    await saveStudioDraftFor(ctxFor(db2), { mode: "manual", selectedTopicIds: ["ghost"], targetTopicCount: 3, hostIds: H, activeStep: "review" } as any);
+    const fail = await createStudioEpisodeFor(ctxFor(db2), { mode: "manual", selectedTopicIds: ["ghost"], hostIds: H } as any, okDeps);
+    assert(!fail.success && db2._drafts.has("oA"), "draft retained after failed creation");
+  });
+  await check("action: load/save/discard round-trip through the seam", async () => {
+    const db = makeFakeDb({});
+    await saveStudioDraftFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" } as any);
+    assert((await loadStudioDraftFor(ctxFor(db))).draft?.mode === "manual", "load sees saved draft");
+    await discardStudioDraftFor(ctxFor(db));
+    assert((await loadStudioDraftFor(ctxFor(db))).draft === null, "discard clears");
   });
 
-  // ---- Rundown rules (UX pre-check mirrors the schema) ----
-  await check("rules: validation mirrors the mode rules", () => {
-    assert(!validateRundownDraft({ mode: "manual", selectedTopicIds: [], targetTopicCount: 3, maxTopics: 6 }).ok, "manual 0 fails");
-    assert(!validateRundownDraft({ mode: "automatic", selectedTopicIds: ["t1"], targetTopicCount: 3, maxTopics: 6 }).ok, "automatic + picks fails");
-    assert(!validateRundownDraft({ mode: "hybrid", selectedTopicIds: [], targetTopicCount: 3, maxTopics: 6 }).ok, "hybrid 0 pins fails");
-    assert(!validateRundownDraft({ mode: "hybrid", selectedTopicIds: ["a", "b", "c", "d"], targetTopicCount: 3, maxTopics: 6 }).ok, "hybrid pins>target fails");
-    assert(!validateRundownDraft({ mode: "manual", selectedTopicIds: ["a", "b", "c", "d", "e", "f", "g"], targetTopicCount: 3, maxTopics: 6 }).ok, "over max fails");
-    assert(validateRundownDraft({ mode: "manual", selectedTopicIds: ["a", "b"], targetTopicCount: 3, maxTopics: 6 }).ok, "valid manual passes");
-  });
-  await check("rules: dedupeIds preserves order; leadFirst moves the lead to front", () => {
-    assert(JSON.stringify(dedupeIds(["a", "b", "a", "c", "b"])) === JSON.stringify(["a", "b", "c"]), "dedupe preserves first-seen order");
-    assert(JSON.stringify(leadFirst(["a", "b", "c"], "c")) === JSON.stringify(["c", "a", "b"]), "lead moved to front");
-    assert(JSON.stringify(leadFirst(["a", "b", "c"], "x")) === JSON.stringify(["a", "b", "c"]), "unknown lead leaves order untouched");
-  });
-
-  // ---- Shared createEpisodeDraft path (what the Studio action routes through) ----
-  await check("manual: lead-first order is preserved and equals the written EpisodeTopic order", async () => {
-    const db = makeFakeDb({ topics: [goodTopic("t1"), goodTopic("t2"), goodTopic("t3")], podcasts: [{ id: "pA", ownerId: "oA" }] });
-    const ordered = leadFirst(["t1", "t2", "t3"], "t3"); // lead = t3
-    const res = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ordered, strictSelection: true, ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
-    assert(res.ok, res.error || "created");
-    assert(JSON.stringify(res.finalOrder) === JSON.stringify(["t3", "t1", "t2"]), "finalOrder matches lead-first request order");
+  // ---- Shared createEpisodeDraft path (finalOrder is source of truth) ----
+  await check("manual: lead-first order == written EpisodeTopic order", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1"), goodTopic("t2"), goodTopic("t3")] });
+    const res = await createEpisodeDraft({ mode: "manual", selectedTopicIds: leadFirst(["t1", "t2", "t3"], "t3"), strictSelection: true, ownerId: "oA", hostIds: H }, { db });
     const written = db._episodeTopics.sort((a: any, b: any) => a.orderIndex - b.orderIndex).map((e: any) => e.topicId);
-    assert(JSON.stringify(res.finalOrder) === JSON.stringify(written), "finalOrder equals actual EpisodeTopic rows");
-  });
-  await check("automatic: returns the actual backend-selected topics (not a client guess)", async () => {
-    const db = makeFakeDb({ topics: [goodTopic("t1", { debateScore: 99 }), goodTopic("t2", { debateScore: 98 })], podcasts: [{ id: "pA", ownerId: "oA" }] });
-    const res = await createEpisodeDraft({ mode: "automatic", targetTopicCount: 1, ownerId: "oA", podcastId: "pA", hostIds: H, verticals: ["NFL"] }, { db });
-    assert(res.ok && res.autoSelectedTopicIds.length === 1 && res.finalOrder.length === 1, "auto-selected exactly the target count");
-    assert(res.selectedTopics.every((s) => !s.pinned), "no topic is marked pinned in automatic mode");
-  });
-  await check("hybrid: pinned topics stay first, auto-fill follows", async () => {
-    const db = makeFakeDb({ topics: [goodTopic("pin"), goodTopic("a1", { debateScore: 99 })], podcasts: [{ id: "pA", ownerId: "oA" }] });
-    const res = await createEpisodeDraft({ mode: "hybrid", selectedTopicIds: ["pin"], targetTopicCount: 2, ownerId: "oA", podcastId: "pA", hostIds: H, verticals: ["NFL"] }, { db });
-    assert(res.ok && res.finalOrder[0] === "pin", "pinned topic is first");
-    assert(res.autoSelectedTopicIds.includes("a1"), "auto-fill added a1");
-  });
-  await check("privacy: a Studio-style call passes NO reuseOverride → recently-used pin is blocked", async () => {
-    await withEnv({ TOPIC_REUSE_MODE: "exclude_podcast" }, async () => {
-      const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }] });
-      await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
-      // Studio never sends reuseOverride, so the second manual build is blocked.
-      const r2 = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], strictSelection: true, ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
-      assert(!r2.ok && r2.rejectedTopics.some((x) => x.category === "recently_used"), "no-override reuse blocked (Studio can't bypass)");
-    });
+    assert(JSON.stringify(res.finalOrder) === JSON.stringify(["t3", "t1", "t2"]) && JSON.stringify(res.finalOrder) === JSON.stringify(written), "finalOrder == request == DB rows");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

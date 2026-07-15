@@ -16,11 +16,12 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
   // Resume state first — it tells us which podcast to scope usage to.
   const draft = user ? await loadStudioDraft(user.id) : null;
 
-  // Only scope to a podcast the caller actually owns.
+  // Only scope to a podcast the caller actually OWNS (a null-owner legacy
+  // podcast is NOT implicitly usable by every customer).
   let scopedPodcastId: string | undefined;
   if (user && draft?.podcastId) {
     const pod = await db.podcast.findUnique({ where: { id: draft.podcastId }, select: { ownerId: true } });
-    if (pod && (!pod.ownerId || pod.ownerId === user.id || user.role === "ADMIN")) scopedPodcastId = draft.podcastId;
+    if (pod && (pod.ownerId === user.id || user.role === "ADMIN")) scopedPodcastId = draft.podcastId;
   }
 
   const [rawTopics, podcasts, hostRows] = await Promise.all([
@@ -31,7 +32,9 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       take: 60,
     }),
     db.podcast.findMany({
-      where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null },
+      // Studio lists ONLY the signed-in user's own shows — never legacy
+      // null-owner podcasts (which are not implicitly shared to everyone).
+      where: user ? { ownerId: user.id } : { id: "__none__" },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
     }),

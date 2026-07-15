@@ -28,6 +28,41 @@ export function leadFirst(ids: string[], leadId?: string | null): string[] {
   return [leadId, ...ids.filter((id) => id !== leadId)];
 }
 
+export interface ModeSelection {
+  selectedTopicIds: string[];
+  leadTopicId: string | null;
+  targetTopicCount: number;
+}
+export interface ModeChangeResult extends ModeSelection {
+  /** Human note when the transition adjusted something (e.g. clamped target). */
+  note?: string;
+}
+
+/**
+ * Pure selection transition when the producer changes mode. Prevents stale
+ * Manual/Hybrid picks from leaking into Automatic (and vice-versa), and clamps
+ * the target so it can never sit below the pinned count.
+ */
+export function applyModeChange(prev: ModeSelection & { mode: RundownMode }, next: RundownMode, maxTopics: number): ModeChangeResult {
+  if (next === prev.mode) return { ...prev };
+  // Entering Automatic: no hand-picked topics or lead may remain.
+  if (next === "automatic") {
+    return { selectedTopicIds: [], leadTopicId: null, targetTopicCount: prev.targetTopicCount };
+  }
+  // Leaving Automatic: start empty — there are no hidden picks to resurrect.
+  if (prev.mode === "automatic") {
+    return { selectedTopicIds: [], leadTopicId: null, targetTopicCount: prev.targetTopicCount };
+  }
+  // Manual ↔ Hybrid: preserve picks; clamp target ≥ pinned count for Hybrid.
+  const selectedTopicIds = prev.selectedTopicIds;
+  const lead = prev.leadTopicId && selectedTopicIds.includes(prev.leadTopicId) ? prev.leadTopicId : null;
+  if (next === "hybrid" && prev.targetTopicCount < selectedTopicIds.length) {
+    const targetTopicCount = Math.min(maxTopics, selectedTopicIds.length);
+    return { selectedTopicIds, leadTopicId: lead, targetTopicCount, note: `Target count raised to ${targetTopicCount} so it isn't below your ${selectedTopicIds.length} pinned topics.` };
+  }
+  return { selectedTopicIds, leadTopicId: lead, targetTopicCount: prev.targetTopicCount };
+}
+
 export interface RundownValidationInput {
   mode: RundownMode;
   selectedTopicIds: string[];
