@@ -1,4 +1,6 @@
 // REAL Postgres migration test. Run: npm run test:topic-migration
+/* eslint-disable @typescript-eslint/no-explicit-any -- test harness: raw pg
+   client rows and seed helpers are dynamically typed. */
 //
 // Boots a throwaway embedded Postgres, builds the PRE-migration schema, seeds
 // representative rows (including a legacy "used" topic and an episode created
@@ -148,12 +150,13 @@ async function main() {
       ok("re-running the migration is safe (snapshot not clobbered)");
     } catch (e) { bad("re-running the migration is safe (snapshot not clobbered)", e); }
   } finally {
-    await client.end();
-    await pg.stop();
+    await client.end().catch(() => {});
+    await pg.stop().catch(() => {});
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);
-  if (failed > 0) process.exit(1);
+  // Embedded Postgres can leave a handle open; exit explicitly.
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 main().catch((e) => { console.error("FATAL", e); process.exit(1); });

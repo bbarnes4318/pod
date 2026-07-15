@@ -1,6 +1,9 @@
 // Topic lifecycle + snapshot + reuse-policy tests. Run: npm run test:topic-lifecycle
 //
 // In-memory fake db via the injectable seam — no external database.
+/* eslint-disable @typescript-eslint/no-explicit-any -- test harness: the
+   in-memory fake DB doubles are intentionally loosely typed to stand in for the
+   Prisma client without pulling in a real database. */
 
 process.env.TOPIC_MIN_TALKABILITY = "1";
 
@@ -8,13 +11,10 @@ import {
   buildTopicSnapshot,
   resolveEpisodeTopicContent,
   parseSnapshot,
-  EPISODE_TOPIC_SNAPSHOT_VERSION,
 } from "../lib/services/topicSnapshot";
 import {
   getTopicUsage,
   getGlobalTopicUsageStatsAdmin,
-  resolveTopicReusePolicy,
-  getReuseExcludedTopicIds,
 } from "../lib/services/topicUsageService";
 import { createEpisodeDraft, buildEpisodeFromTopics } from "../lib/services/episodeCreation";
 import { evaluateEpisodeTopicsForScript } from "../lib/services/scriptTopicGate";
@@ -78,7 +78,6 @@ function makeFakeDb(seed: { topics?: any[]; hosts?: any[]; podcasts?: any[] }) {
     }),
   };
 }
-const HOSTS = [{ id: "host-a", ownerId: null }, { id: "host-b", ownerId: null }];
 const H = ["host-a", "host-b"];
 const warns = (r: any) => (r.reasons as string[]).filter((s) => /was used \d+ time/.test(s));
 
@@ -136,15 +135,28 @@ async function run() {
     assert(db._episodeTopics[0].snapshot?.title === "Topic t1" && db._episodeTopics[0].selectedAt instanceof Date, "snapshot + selectedAt");
   });
 
-  // ---- Scoped usage (item 2) ----
-  await check("usage is scoped per owner + per podcast (no cross-customer leakage)", async () => {
+  // ---- Scoped usage (item 1): Studio shows ONLY the caller's own usage ----
+  await check("Studio usage is scoped per owner + per podcast — Owner B sees ZERO after only Owner A used it", async () => {
     const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }, { id: "pB", ownerId: "oB" }] });
     await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
     const uForB = await getTopicUsage(["t1"], { ownerId: "oB", podcastId: "pB" }, db);
     const uForA = await getTopicUsage(["t1"], { ownerId: "oA", podcastId: "pA" }, db);
     assert(uForA.get("t1")!.currentPodcastUseCount === 1 && uForA.get("t1")!.currentOwnerUseCount === 1, "A sees its own use");
-    assert(uForB.get("t1")!.currentPodcastUseCount === 0 && uForB.get("t1")!.currentOwnerUseCount === 0, "B sees NONE of A's use");
-    assert(uForB.get("t1")!.totalUseCount === 1, "platform total still visible (count only)");
+    // Item 1: Studio for Owner B returns zero — no cross-customer count/date.
+    const b = uForB.get("t1")!;
+    assert(b.currentPodcastUseCount === 0 && b.currentOwnerUseCount === 0 && b.currentOwnerRecentUseCount === 0, "B sees NONE of A's use");
+    assert(b.currentOwnerLastUsedAt === null && b.currentPodcastLastUsedAt === null, "B sees no latest-use date from A");
+    // The scoped shape carries NO platform-wide field at all.
+    assert(!("totalUseCount" in (b as object)) && !("lastUsedAt" in (b as object)), "no platform-wide field leaks to producers");
+  });
+  await check("getTopicUsage REFUSES an unscoped call (fail-closed against accidental global reads)", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")] });
+    let threw = false;
+    try { await getTopicUsage(["t1"], {} as any, db); } catch { threw = true; }
+    assert(threw, "must throw without ownerId/podcastId/system scope");
+    // Explicit system scope is allowed (documented internal caller).
+    const sys = await getTopicUsage(["t1"], { system: true }, db);
+    assert(sys.get("t1")!.currentOwnerUseCount === 0, "system scope returns scoped (all-zero) usage, not a throw");
   });
   await check("admin global stats expose platform-wide totals + distinct counts", async () => {
     const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }, { id: "pB", ownerId: "oB" }] });
@@ -246,6 +258,37 @@ async function run() {
       // adapter throws on failure; on success returns legacy shape.
       assert(res.episodeId && !res.selectedTopicIds.includes("t1"), "recurring auto-fill excluded the podcast's recent topic t1");
       assert(res.statusUpdateCount === 0, "adapter reports statusUpdateCount=0 (no status mutation)");
+    });
+  });
+
+  // ---- Entry-point forwarding (item 7) ----
+  // The worker's build:episode handler calls buildEpisodeFromTopics(job.data);
+  // prove the owner/podcast/order/reuse-scope survive that path into the
+  // created record (not just when createEpisodeDraft is called directly).
+  await check("worker path (buildEpisodeFromTopics) retains ownerId + podcastId and topic ORDER", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1"), goodTopic("t2")], podcasts: [{ id: "pA", ownerId: "oA" }] });
+    const res = await (buildEpisodeFromTopics as any)(
+      { topicIds: ["t2", "t1"], ownerId: "oA", podcastId: "pA", hostIds: H },
+      { db }
+    );
+    const ep = db._episodes.get(res.episodeId);
+    assert(ep.ownerId === "oA" && ep.podcastId === "pA", "episode retains ownerId + podcastId");
+    assert(res.selectedTopicIds[0] === "t2" && res.selectedTopicIds[1] === "t1", "explicit pin ORDER preserved");
+  });
+  await check("worker path honors reuseOverride under exclude_podcast (admin/system enqueue)", async () => {
+    await withEnv({ TOPIC_REUSE_MODE: "exclude_podcast" }, async () => {
+      const db = makeFakeDb({ topics: [goodTopic("t1")], podcasts: [{ id: "pA", ownerId: "oA" }] });
+      await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
+      // Without override the queued build drops the recently-used topic and, with
+      // nothing else to fill from, fails — proving the ordinary path can't reuse.
+      let blocked = false;
+      try {
+        await (buildEpisodeFromTopics as any)({ topicIds: ["t1"], ownerId: "oA", podcastId: "pA", hostIds: H }, { db });
+      } catch { blocked = true; }
+      assert(blocked, "no-override queued reuse is blocked");
+      // With the authorized override it succeeds.
+      const ok = await (buildEpisodeFromTopics as any)({ topicIds: ["t1"], ownerId: "oA", podcastId: "pA", reuseOverride: true, hostIds: H }, { db });
+      assert(ok.episodeId && ok.selectedTopicIds.includes("t1"), "override permits the queued reuse");
     });
   });
 

@@ -4,6 +4,8 @@
 // so the full manual/automatic/hybrid flows run with real logic and zero
 // external database. Pure validation cases also exercise the Zod schema and the
 // exported helpers directly.
+/* eslint-disable @typescript-eslint/no-explicit-any -- test harness: the
+   in-memory fake DB doubles are intentionally loosely typed. */
 
 import {
   createEpisodeDraft,
