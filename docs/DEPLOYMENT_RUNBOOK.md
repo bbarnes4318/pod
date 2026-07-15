@@ -50,7 +50,7 @@ Follow these step-by-step instructions to initialize the application services:
 4. Name this service `take-machine-web`.
 5. Configure the build parameters:
    - **Build Command**: `npm run build`
-   - **Start Command**: `npm run start:web`
+   - **Start Command**: `npm run start:web` (starts the web app only — it does **not** migrate; see [Database Migrations](#database-migrations))
 6. In **Domains**, configure `https://podcast.hopwhistle.com`. Let's Encrypt will automatically provision the SSL certificate.
 
 ### 6. Setup Worker Service
@@ -58,8 +58,9 @@ Follow these step-by-step instructions to initialize the application services:
 2. Name this service `take-machine-worker`.
 3. Configure the build parameters:
    - **Build Command**: `npm run build`
-   - **Start Command**: `npm run start:worker`
+   - **Start Command**: `npm run start:worker` (starts the worker only — it does **not** migrate; see [Database Migrations](#database-migrations))
 4. **Important**: Under this service's settings, do **not** configure any public domains or SSL endpoints. This service runs completely in the background.
+5. **Important**: do **not** add a migration command to this service's start/pre-deploy configuration. The worker must never compete with the web service as a migration owner.
 
 ---
 
@@ -97,9 +98,60 @@ The system uses the configured cover image from `PODCAST_IMAGE_URL`:
 ---
 
 ## Database Migrations
-Prisma migrations must be run before starting the web and worker services.
-- Add/trigger the following deploy command in Coolify's pre-deployment phase:
-  `npm run prisma:migrate:deploy`
+
+> [!CAUTION]
+> **Single migration owner.** Exactly ONE release step runs `prisma migrate deploy`.
+> The **web** and **worker** containers must **never** migrate on startup — `start:web`
+> and `start:worker` deliberately contain no migration command, and nothing may add one
+> back (enforced by `npm run test:deployment-contract`).
+>
+> - **Never** run `prisma migrate deploy` simultaneously from the web and the worker.
+> - **Never** expose the migrated database to old web or worker code.
+> - **Do not** roll back only the code after a coordinated migration.
+> - **Use a forward fix** if the new deployment fails after the migration has run.
+
+The one migration command, run manually by a single designated release process
+(one Coolify terminal/pre-deploy job — not the web service, not the worker service):
+
+```bash
+npm run prisma:migrate:deploy
+```
+
+### A. Normal deployment (no pending migrations)
+1. Build **one** image from **one** commit.
+2. Deploy **web** and **worker** from that same commit/image.
+3. Run the smoke tests in §C.
+
+### B. Deployment WITH pending migrations (coordinated)
+This is the procedure required by
+[`prisma/migrations/20260714120000_topic_lifecycle_and_snapshots/SAFETY_REPORT.md`](../prisma/migrations/20260714120000_topic_lifecycle_and_snapshots/SAFETY_REPORT.md)
+— that report remains the authority on *why*; this section is the operator checklist.
+
+1. **Confirm the exact commit/image** that will be deployed to **both** web and worker.
+2. **Enable maintenance mode** / stop routing write traffic to the current web app.
+3. **Pause and drain** the `podcast-generation` BullMQ queue.
+4. **Disable** recurring/scheduled generation.
+5. **Confirm** no active episode-creation transaction and no in-flight `build:episode` worker remains.
+6. **Back up** the affected tables (`TopicCandidate`, `EpisodeTopic`) — or the full database.
+7. **Run the migration exactly once**, from one designated release job/terminal:
+   ```bash
+   npm run prisma:migrate:deploy
+   ```
+8. **Deploy web and worker** from the same compatible commit/image (§A step 2).
+9. **Run the smoke tests** in §C *before* restoring traffic.
+10. **Resume** the queue and schedulers.
+11. **Disable maintenance mode** and restore traffic.
+
+### C. Smoke tests (before restoring traffic)
+- Application loads.
+- Authentication works.
+- Studio loads.
+- Create a draft episode.
+- Topic selection works.
+- Script generation can begin.
+- The worker connects and processes jobs.
+- `/studio/takes` loads.
+- Logs show no Prisma/schema errors.
 
 ---
 

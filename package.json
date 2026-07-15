@@ -8,8 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "worker": "tsx --conditions=react-server src/lib/queue/worker.ts",
-    "start:web": "prisma migrate deploy && next start",
-    "start:worker": "prisma migrate deploy && tsx --conditions=react-server src/lib/queue/worker.ts",
+    "start:web": "next start",
+    "start:worker": "tsx --conditions=react-server src/lib/queue/worker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts",
@@ -49,7 +49,8 @@
     "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts"
+    "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",
+    "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
