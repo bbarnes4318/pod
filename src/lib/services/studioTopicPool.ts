@@ -15,6 +15,12 @@ import {
   type TopicReusePolicy,
   scopedRecentUseCount,
 } from "./topicUsageService";
+import {
+  evaluateTopicSelection,
+  type EligibilityActor,
+  type EligibilityTopic,
+  type TopicEligibilityResult,
+} from "./topicEligibility";
 
 export type TopicReadiness = "ready" | "needs_research" | "not_approved" | "weak_evidence";
 
@@ -62,6 +68,9 @@ export interface StudioTopicVM {
   eligible: boolean;
   /** Why it can't be added — shown, never hidden. Null when eligible. */
   unavailableReason: string | null;
+  /** The full SHARED eligibility result — structured codes, warnings, and the
+   *  actions this actor may take. Both Studio and Admin read this. */
+  eligibility: TopicEligibilityResult;
   brief: TopicBriefPreview | null;
 }
 
@@ -143,10 +152,17 @@ export interface BuildPoolContext {
   /** Present only when a podcast is selected — enables podcast-scoped usage +
    *  the exclude_podcast block. */
   podcastId?: string;
+  /** WHO is picking. Defaults to an owner actor (Studio); Admin passes its own
+   *  actor to unlock the audited override path. Authority differs — rules don't. */
+  actor?: EligibilityActor;
+  /** Topics already in the rundown (drives the already_selected warning). */
+  selectedTopicIds?: string[];
 }
 
-/** PURE view-model build (no DB) — the unit-testable core. */
+/** PURE view-model build (no DB) — the unit-testable core, now driven by the
+ *  SHARED eligibility contract so Studio and Admin cannot diverge. */
 export function buildStudioTopicVMs(topics: RawPoolTopic[], ctx: BuildPoolContext): StudioTopicVM[] {
+  const actor: EligibilityActor = ctx.actor ?? { kind: "owner", ownerId: "" };
   return topics.map((topic) => {
     const elig = evaluateTopicEligibility(topic, topic.id);
     const talk = scoreTopicTalkability({
@@ -155,17 +171,23 @@ export function buildStudioTopicVMs(topics: RawPoolTopic[], ctx: BuildPoolContex
       createdAt: topic.createdAt,
       brief: topic.researchBrief,
     });
+    const eligibility = evaluateTopicSelection(topic as unknown as EligibilityTopic, {
+      actor,
+      policy: ctx.policy,
+      podcastId: ctx.podcastId,
+      usage: ctx.usage,
+      selectedTopicIds: ctx.selectedTopicIds,
+      talkability: talk.total,
+      topicId: topic.id,
+    });
     const u = ctx.usage.get(topic.id);
     const recentByShow = ctx.podcastId ? scopedRecentUseCount(u, { podcastId: ctx.podcastId }) > 0 : false;
-    // Only exclude_podcast actually BLOCKS a recently-used topic; warn/allow show
-    // the usage but keep it selectable.
-    const blockedByReuse = ctx.policy.mode === "exclude_podcast" && recentByShow;
-    const eligible = elig.ok && !blockedByReuse;
-    const unavailableReason = !elig.ok
-      ? elig.reason ?? "This topic can't be used yet."
-      : blockedByReuse
-        ? "Recently used by this show — pick another or wait for the cooldown."
-        : null;
+    // Selectability now comes from the shared contract. NOTE: the automatic
+    // thresholds deliberately do NOT gate this — a topic the auto-picker would
+    // skip stays manually selectable (surfaced as a below_automatic_threshold
+    // warning), which is exactly the behaviour Admin used to hide in SQL.
+    const eligible = eligibility.manuallySelectable;
+    const unavailableReason = eligibility.blockingReasons[0]?.message ?? null;
 
     const evidenceCount = Array.isArray(topic.evidenceIds) ? topic.evidenceIds.length : 0;
     const sourceCount = Array.isArray(topic.researchBrief?.sourceIds) ? (topic.researchBrief!.sourceIds as unknown[]).length : 0;
@@ -189,6 +211,7 @@ export function buildStudioTopicVMs(topics: RawPoolTopic[], ctx: BuildPoolContex
       lastUsedByShow: ctx.podcastId && u?.currentPodcastLastUsedAt ? new Date(u.currentPodcastLastUsedAt).toISOString() : null,
       eligible,
       unavailableReason,
+      eligibility,
       brief: briefPreview(topic),
     };
   });

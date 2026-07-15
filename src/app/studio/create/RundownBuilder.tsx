@@ -19,8 +19,9 @@ import type { RundownDraftState, RundownStep } from "@/lib/services/studioDraft"
 import { estimateRundown } from "@/lib/services/episodeEstimate";
 import { validateRundownDraft, applyModeChange } from "@/lib/studio/rundownRules";
 import { MAX_DESCRIPTION_LEN } from "@/lib/episodeLimits";
-import TopicRundownPicker from "./TopicRundownPicker";
-import RundownTray from "./RundownTray";
+// Shared rundown core — the SAME picker/tray Admin uses (src/components/rundown).
+import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
+import RundownTray from "@/components/rundown/RundownTray";
 
 type Mode = "manual" | "automatic" | "hybrid";
 export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; }

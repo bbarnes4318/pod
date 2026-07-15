@@ -9,6 +9,8 @@ import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 import { resolveEpisodeHosts } from "./hostCasting";
 import { buildTopicSnapshot } from "./topicSnapshot";
 import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReservation";
+import { evaluateHardGates, type EligibilityTopic } from "./topicEligibility";
+import { DEFAULT_MIN_DEBATE_SCORE, DEFAULT_MIN_TALKABILITY } from "../episodeLimits";
 
 /** In-transaction concurrency guard for the exclude_podcast reuse policy. When
  *  present, `createEpisodeRecord` acquires advisory locks and re-validates
@@ -135,44 +137,35 @@ export interface TopicEligibility {
   reason?: string;
 }
 
+/** Fine-grained shared code -> this path's coarse rejection category. Keeping the
+ *  mapping explicit is what lets one implementation serve both the creation path
+ *  and the editorial pickers without drifting. */
+const COARSE_CATEGORY: Record<string, TopicRejectionCategory> = {
+  not_found: "not_found",
+  pending_approval: "not_approved",
+  rejected: "not_approved",
+  archived: "not_approved",
+  insufficient_evidence: "weak_evidence",
+  missing_sources: "weak_evidence",
+  missing_brief: "missing_brief",
+  missing_facts: "missing_brief",
+  missing_host_arguments: "missing_brief",
+};
+
+/**
+ * DELEGATES to the shared hard gates in topicEligibility.ts — there is exactly
+ * ONE implementation of "can this topic anchor an episode", shared with every
+ * editorial surface. This wrapper preserves the legacy coarse category + message
+ * that the creation path and its tests rely on.
+ */
 export function evaluateTopicEligibility(
   topic: TopicWithBrief | null | undefined,
   idForMessage?: string
 ): TopicEligibility {
-  if (!topic) {
-    return {
-      ok: false,
-      category: "not_found",
-      reason: `Topic candidate ${idForMessage ?? "(unknown id)"} not found in database.`,
-    };
-  }
-  if (topic.status !== "approved") {
-    return {
-      ok: false,
-      category: "not_approved",
-      reason: `Topic candidate '${topic.title}' is not approved (status: ${topic.status}).`,
-    };
-  }
-  const evidenceIds = Array.isArray(topic.evidenceIds) ? topic.evidenceIds : [];
-  if (evidenceIds.length === 0) {
-    return { ok: false, category: "weak_evidence", reason: `Topic candidate '${topic.title}' has empty evidenceIds.` };
-  }
-  const brief = topic.researchBrief;
-  if (!brief) {
-    return { ok: false, category: "missing_brief", reason: `Topic candidate '${topic.title}' is missing its ResearchBrief.` };
-  }
-  const facts = Array.isArray(brief.facts) ? brief.facts : [];
-  if (facts.length === 0) {
-    return { ok: false, category: "missing_brief", reason: `Topic candidate '${topic.title}' has empty facts in ResearchBrief.` };
-  }
-  const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
-  if (sourceIds.length === 0) {
-    return { ok: false, category: "weak_evidence", reason: `Topic candidate '${topic.title}' has empty sourceIds in ResearchBrief.` };
-  }
-  if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) {
-    return { ok: false, category: "missing_brief", reason: `Topic candidate '${topic.title}' has empty host arguments in ResearchBrief.` };
-  }
-  return { ok: true };
+  const reasons = evaluateHardGates(topic as EligibilityTopic | null | undefined, idForMessage);
+  if (reasons.length === 0) return { ok: true };
+  const first = reasons[0];
+  return { ok: false, category: COARSE_CATEGORY[first.code] ?? "missing_brief", reason: first.message };
 }
 
 /** Fold an eligibility rejection into the shared counter shape. */
@@ -235,7 +228,9 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
   const targetCount = Math.max(0, Math.floor(opts.targetCount));
   if (targetCount === 0) return result;
 
-  const minScore = opts.minDebateScore !== undefined ? Number(opts.minDebateScore) : 70;
+  // AUTOMATIC-only floors — shared constants so the pickers and this ranking
+  // can never drift apart (they must never gate MANUAL visibility).
+  const minScore = opts.minDebateScore !== undefined ? Number(opts.minDebateScore) : DEFAULT_MIN_DEBATE_SCORE;
   const exclude = new Set(opts.excludeTopicIds || []);
 
   const rawCandidates = (await dbi.topicCandidate.findMany({
@@ -244,7 +239,7 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
     orderBy: { debateScore: "desc" },
   })) as unknown as TopicWithBrief[];
 
-  const minTalkability = Number(process.env.TOPIC_MIN_TALKABILITY) || 35;
+  const minTalkability = Number(process.env.TOPIC_MIN_TALKABILITY) || DEFAULT_MIN_TALKABILITY;
   const ranked = rawCandidates
     .filter((t) => !exclude.has(t.id))
     .map((t) => {

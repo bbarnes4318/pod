@@ -23,6 +23,17 @@ const READINESS_CLASS: Record<TopicReadiness, string> = {
   weak_evidence: "",
 };
 
+/** Short chip labels for the shared eligibility WARNING codes (non-blocking). */
+const WARNING_LABEL: Record<string, string> = {
+  below_automatic_threshold: "below auto threshold",
+  filter_mismatch: "outside auto filters",
+  recently_used: "recently used",
+  already_selected: "in this rundown",
+  research_queued: "research queued",
+  research_in_progress: "researching",
+  research_failed: "research failed",
+};
+
 export interface TopicRundownPickerProps {
   topics: StudioTopicVM[];
   selectedIds: string[];
@@ -166,10 +177,26 @@ export default function TopicRundownPicker({
                         {t.summary}
                       </div>
                     )}
+                    {/* Blocking reason — the precise one from the shared contract,
+                        never a generic "Unavailable". */}
                     {!t.eligible && t.unavailableReason && (
-                      <p role="note" style={{ margin: "0.4rem 0 0", fontSize: "0.78rem", color: "var(--warning-color, #b45309)" }}>
+                      <p role="note" data-testid={`blocked-${t.id}`} data-code={t.eligibility.blockingReasons[0]?.code}
+                        style={{ margin: "0.4rem 0 0", fontSize: "0.78rem", color: "var(--warning-color, #b45309)" }}>
                         ⚠ {t.unavailableReason}
                       </p>
+                    )}
+                    {/* Non-blocking warnings — notably "below the automatic
+                        threshold", which explains why the auto-picker would skip
+                        this topic WITHOUT preventing a manual pick. */}
+                    {t.eligibility.warnings.length > 0 && (
+                      <div style={{ display: "flex", gap: "0.3rem", flexWrap: "wrap", marginTop: "0.35rem" }}>
+                        {t.eligibility.warnings.map((w, i) => (
+                          <span key={i} className="chip" data-testid={`warn-${t.id}-${w.code}`} title={w.message}
+                            style={{ color: "var(--warning-color, #b45309)" }}>
+                            {WARNING_LABEL[w.code] ?? w.code.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     {t.brief && (
                       <button
