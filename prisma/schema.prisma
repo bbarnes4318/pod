@@ -25,6 +25,7 @@ model User {
   podcasts      Podcast[] // shows this user owns
   episodes      Episode[] // episodes this user created
   aiHosts       AiHost[]  // Character Studio hosts this user owns (null owner = shared)
+  studioDraft   StudioDraft? // in-progress Studio rundown (pre-generation resume state)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -422,6 +423,21 @@ model EpisodeTopic {
   @@index([episodeId])
   @@index([topicId])
   @@index([selectedAt])
+}
+
+// Durable, cross-session resume state for the Studio multi-topic rundown BUILDER
+// (pre-generation: before an Episode exists). Stores the full editor state so a
+// producer can close the tab / switch machines and resume with every topic,
+// ordering, mode, host, and production setting intact. One active draft per
+// user; cleared once the episode is created. NEVER holds a generated episode's
+// immutable topic snapshots — those live on EpisodeTopic.
+model StudioDraft {
+  id        String   @id @default(uuid())
+  ownerId   String   @unique // one resumable Studio rundown per user
+  state     Json     // RundownDraftState (src/lib/services/studioDraft.ts)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ownerUser User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
 model Script {
