@@ -24,6 +24,20 @@ export interface EpisodeReuseReservation {
   pinnedIds: Set<string>;
 }
 
+/** The AUTHORITATIVE outcome of writing an episode: which topics actually got
+ *  EpisodeTopic rows (in written order) and which the in-transaction concurrency
+ *  guard dropped. Callers MUST build their structured result from
+ *  `writtenTopicIds` — never from the pre-transaction selection — so the result
+ *  can never claim a topic that has no matching row. */
+export interface CreatedEpisodeRecord {
+  episodeId: string;
+  /** Topic ids that received an EpisodeTopic row, in orderIndex order. */
+  writtenTopicIds: string[];
+  /** Auto-selected topic ids the concurrency guard dropped (used by another
+   *  build for this podcast between selection and the locked write). */
+  droppedTopicIds: string[];
+}
+
 export interface EpisodeBuildInput {
   title?: string;
   description?: string;
@@ -351,7 +365,7 @@ export async function createEpisodeRecord(
   reasons: string[],
   dbi: any = db,
   reservation?: EpisodeReuseReservation
-): Promise<string> {
+): Promise<CreatedEpisodeRecord> {
   let chosenHostIds = [...new Set(settings.hostIds || [])];
 
   if (chosenHostIds.length === 0) {
@@ -394,7 +408,7 @@ export async function createEpisodeRecord(
       ? settings.soundDesign
       : undefined;
 
-  const episode = await dbi.$transaction(async (tx: any) => {
+  const txResult = await dbi.$transaction(async (tx: any) => {
     // ---- Concurrency guard (exclude_podcast) ----
     // Acquire per-(podcast,topic) advisory locks and RE-VALIDATE recent use
     // inside this transaction, so a topic another build just consumed for the
@@ -402,6 +416,7 @@ export async function createEpisodeRecord(
     // even under two simultaneous requests. Skipped for test doubles that can't
     // take advisory locks; different podcasts never block each other.
     let topicsToWrite = orderedTopics;
+    let droppedTopicIds: string[] = [];
     if (reservation && supportsAdvisoryLocks(tx)) {
       const blocked = await reserveRecentlyUsedTopics(tx, {
         podcastId: reservation.podcastId,
@@ -420,6 +435,9 @@ export async function createEpisodeRecord(
         topicsToWrite = orderedTopics.filter(
           (t) => !blocked.has(t.id) || reservation.pinnedIds.has(t.id)
         );
+        droppedTopicIds = orderedTopics
+          .filter((t) => blocked.has(t.id) && !reservation.pinnedIds.has(t.id))
+          .map((t) => t.id);
         if (topicsToWrite.length === 0) {
           throw new Error("Every candidate topic was just used by this podcast.");
         }
@@ -465,11 +483,15 @@ export async function createEpisodeRecord(
     // TopicCandidate.status is intentionally NOT mutated to "used": usage is
     // derived from EpisodeTopic, so a topic stays 'approved' and reusable by
     // other users, other podcasts, and (per policy) the same podcast.
-    return ep;
+    return { ep, writtenTopicIds: topicsToWrite.map((t) => t.id), droppedTopicIds };
   });
 
-  reasons.push(`Episode created successfully with ID ${episode.id}`);
-  return episode.id;
+  reasons.push(`Episode created successfully with ID ${txResult.ep.id}`);
+  return {
+    episodeId: txResult.ep.id,
+    writtenTopicIds: txResult.writtenTopicIds,
+    droppedTopicIds: txResult.droppedTopicIds,
+  };
 }
 
 /** Validate the TTS / production settings shared by both entry points.

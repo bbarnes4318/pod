@@ -338,9 +338,9 @@ export async function createEpisodeDraft(
         }
       : undefined;
 
-  let episodeId: string;
+  let created;
   try {
-    episodeId = await createEpisodeRecord(
+    created = await createEpisodeRecord(
       orderedTopics,
       {
         title: input.title,
@@ -362,15 +362,47 @@ export async function createEpisodeDraft(
     return fail(mode, err.message || "Failed to create the episode.", { rejectedTopics, reasons });
   }
 
+  // Build the structured result from the ACTUAL written EpisodeTopic rows — never
+  // the pre-transaction selection — so the result can never list a topic that has
+  // no matching row. The in-transaction concurrency guard may have dropped
+  // recently-used auto-selected topics (a pinned drop fails the build above).
+  const episodeId = created.episodeId;
+  const topicById = new Map(orderedTopics.map((t) => [t.id, t]));
+  const writtenSet = new Set(created.writtenTopicIds);
   const pinnedIdSet = new Set(pinnedTopics.map((t) => t.id));
+
+  // Surface every concurrency-dropped topic with a structured rejection so the
+  // caller can never mistake the reduced episode for the full requested one.
+  for (const droppedId of created.droppedTopicIds) {
+    const t = topicById.get(droppedId);
+    rejectedTopics.push({
+      id: droppedId,
+      category: "recently_used_concurrently",
+      reason: `Topic '${t?.title ?? droppedId}' was used by this podcast by a concurrent build during creation and was dropped.`,
+    });
+  }
+  if (created.droppedTopicIds.length > 0) {
+    // Documented behavior: we CREATE THE SHORTER EPISODE and report the reduced
+    // count (rather than failing + retrying). Never silently report the
+    // originally requested count as successful.
+    reasons.push(
+      `Concurrency: ${created.droppedTopicIds.length} topic(s) were used by this podcast during creation and dropped; ` +
+        `episode built with ${created.writtenTopicIds.length} topic(s) (requested ${target}).`
+    );
+  }
+
   return {
     ok: true,
     mode,
     episodeId,
-    selectedTopics: orderedTopics.map((t) => ({ id: t.id, title: t.title, pinned: pinnedIdSet.has(t.id) })),
+    selectedTopics: created.writtenTopicIds.map((id) => ({
+      id,
+      title: topicById.get(id)?.title ?? id,
+      pinned: pinnedIdSet.has(id),
+    })),
     rejectedTopics,
-    autoSelectedTopicIds: autoTopics.map((t) => t.id),
-    finalOrder: orderedTopics.map((t) => t.id),
+    autoSelectedTopicIds: autoTopics.map((t) => t.id).filter((id) => writtenSet.has(id)),
+    finalOrder: [...created.writtenTopicIds],
     reasons,
   };
 }

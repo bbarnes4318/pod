@@ -49,9 +49,11 @@ export async function reserveRecentlyUsedTopics(
 
   for (const topicId of sorted) {
     // Transaction-scoped, auto-released at commit/rollback. hashtextextended
-    // maps the composite key to the bigint pg_advisory_xact_lock expects.
+    // maps the composite key to the bigint pg_advisory_xact_lock expects. The
+    // function returns `void`; wrap it so the driver reads an int column (Prisma
+    // refuses to deserialize a bare `void` result) — the lock is still taken.
     await tx.$queryRawUnsafe(
-      "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+      "SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtextextended($1, 0))) _lock",
       `${opts.podcastId}:${topicId}`
     );
   }
