@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { topicMatchesAnyVertical } from "../verticals";
 import { scoreTopicTalkability } from "./talkabilityService";
@@ -6,6 +7,36 @@ import { isTtsProviderId } from "../providers/tts/providerIds";
 import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 import { resolveEpisodeHosts } from "./hostCasting";
+import { buildTopicSnapshot } from "./topicSnapshot";
+import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReservation";
+
+/** In-transaction concurrency guard for the exclude_podcast reuse policy. When
+ *  present, `createEpisodeRecord` acquires advisory locks and re-validates
+ *  recent use INSIDE the creation transaction, so two concurrent builds for the
+ *  same podcast + topic can never both succeed. */
+export interface EpisodeReuseReservation {
+  podcastId: string;
+  cooldownDays: number;
+  /** Authorized override: keep a recently-used PINNED topic anyway. Never
+   *  applies to auto-selected topics. */
+  reuseOverride: boolean;
+  /** Ids the user explicitly pinned (vs. auto-selected fill). */
+  pinnedIds: Set<string>;
+}
+
+/** The AUTHORITATIVE outcome of writing an episode: which topics actually got
+ *  EpisodeTopic rows (in written order) and which the in-transaction concurrency
+ *  guard dropped. Callers MUST build their structured result from
+ *  `writtenTopicIds` — never from the pre-transaction selection — so the result
+ *  can never claim a topic that has no matching row. */
+export interface CreatedEpisodeRecord {
+  episodeId: string;
+  /** Topic ids that received an EpisodeTopic row, in orderIndex order. */
+  writtenTopicIds: string[];
+  /** Auto-selected topic ids the concurrency guard dropped (used by another
+   *  build for this podcast between selection and the locked write). */
+  droppedTopicIds: string[];
+}
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -46,6 +77,9 @@ export interface EpisodeBuildInput {
   productionStyle?: string;
   /** Reaction-SFX density: "subtle" | "medium" | "hype". */
   sfxDensity?: string;
+  /** AUTHORIZED override for the exclude_podcast reuse policy on pinned topics
+   *  (admin/system callers only). */
+  reuseOverride?: boolean;
 }
 
 export interface EpisodeBuildResult {
@@ -190,7 +224,7 @@ export interface AutoSelectResult {
  * and return the top `targetCount`. Shared by the legacy auto path and the
  * new hybrid fill — one ranking, one filter chain.
  */
-export async function selectAutoTopics(opts: AutoSelectOptions): Promise<AutoSelectResult> {
+export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): Promise<AutoSelectResult> {
   const result: AutoSelectResult = {
     chosen: [],
     reasons: [],
@@ -204,7 +238,7 @@ export async function selectAutoTopics(opts: AutoSelectOptions): Promise<AutoSel
   const minScore = opts.minDebateScore !== undefined ? Number(opts.minDebateScore) : 70;
   const exclude = new Set(opts.excludeTopicIds || []);
 
-  const rawCandidates = (await db.topicCandidate.findMany({
+  const rawCandidates = (await dbi.topicCandidate.findMany({
     where: { status: "approved" },
     include: { researchBrief: true },
     orderBy: { debateScore: "desc" },
@@ -218,7 +252,7 @@ export async function selectAutoTopics(opts: AutoSelectOptions): Promise<AutoSel
         title: t.title,
         summary: t.summary,
         createdAt: t.createdAt,
-        brief: t.researchBrief as any,
+        brief: t.researchBrief,
       });
       const rank = talkability.total * 0.6 + Math.min(100, t.debateScore) * 0.4;
       return { t, talkability, rank };
@@ -328,8 +362,10 @@ export interface EpisodeCreationSettings {
 export async function createEpisodeRecord(
   orderedTopics: TopicWithBrief[],
   settings: EpisodeCreationSettings,
-  reasons: string[]
-): Promise<string> {
+  reasons: string[],
+  dbi: any = db,
+  reservation?: EpisodeReuseReservation
+): Promise<CreatedEpisodeRecord> {
   let chosenHostIds = [...new Set(settings.hostIds || [])];
 
   if (chosenHostIds.length === 0) {
@@ -363,7 +399,7 @@ export async function createEpisodeRecord(
   const description = settings.description?.trim() || "Draft episode assembled from approved Take Machine topics and research briefs.";
 
   let slug = slugify(title);
-  const existing = await db.episode.findUnique({ where: { slug } });
+  const existing = await dbi.episode.findUnique({ where: { slug } });
   if (existing) slug = `${slug}-${crypto.randomBytes(3).toString("hex")}`;
 
   const rssGuid = crypto.randomUUID();
@@ -372,7 +408,42 @@ export async function createEpisodeRecord(
       ? settings.soundDesign
       : undefined;
 
-  const episode = await db.$transaction(async (tx) => {
+  const txResult = await dbi.$transaction(async (tx: any) => {
+    // ---- Concurrency guard (exclude_podcast) ----
+    // Acquire per-(podcast,topic) advisory locks and RE-VALIDATE recent use
+    // inside this transaction, so a topic another build just consumed for the
+    // same podcast is dropped (auto) or fails the build (pinned, no override) —
+    // even under two simultaneous requests. Skipped for test doubles that can't
+    // take advisory locks; different podcasts never block each other.
+    let topicsToWrite = orderedTopics;
+    let droppedTopicIds: string[] = [];
+    if (reservation && supportsAdvisoryLocks(tx)) {
+      const blocked = await reserveRecentlyUsedTopics(tx, {
+        podcastId: reservation.podcastId,
+        topicIds: orderedTopics.map((t) => t.id),
+        cooldownDays: reservation.cooldownDays,
+      });
+      if (blocked.size > 0) {
+        const pinnedBlocked = [...blocked].filter((id) => reservation.pinnedIds.has(id));
+        if (pinnedBlocked.length > 0 && !reservation.reuseOverride) {
+          // Atomic fail: a pinned topic was used by a concurrent build.
+          throw new Error(
+            `This podcast just used topic(s) ${pinnedBlocked.join(", ")} — reuse override required.`
+          );
+        }
+        // Drop blocked AUTO-selected topics; keep pinned ones only under override.
+        topicsToWrite = orderedTopics.filter(
+          (t) => !blocked.has(t.id) || reservation.pinnedIds.has(t.id)
+        );
+        droppedTopicIds = orderedTopics
+          .filter((t) => blocked.has(t.id) && !reservation.pinnedIds.has(t.id))
+          .map((t) => t.id);
+        if (topicsToWrite.length === 0) {
+          throw new Error("Every candidate topic was just used by this podcast.");
+        }
+      }
+    }
+
     const ep = await tx.episode.create({
       data: {
         title,
@@ -386,27 +457,41 @@ export async function createEpisodeRecord(
         transcriptUrl: null,
         publishedAt: null,
         ttsProvider: settings.ttsProvider ?? null,
-        ttsVoiceOverrides: settings.ttsVoiceOverrides ? (settings.ttsVoiceOverrides as any) : undefined,
-        soundDesign: soundDesign ? (soundDesign as any) : undefined,
+        ttsVoiceOverrides: settings.ttsVoiceOverrides ? (settings.ttsVoiceOverrides as unknown as Prisma.InputJsonValue) : undefined,
+        soundDesign: soundDesign ? (soundDesign as unknown as Prisma.InputJsonValue) : undefined,
         podcastId: settings.podcastId || undefined,
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
       },
     });
 
-    for (let i = 0; i < orderedTopics.length; i++) {
+    const selectedAt = new Date();
+    for (let i = 0; i < topicsToWrite.length; i++) {
+      const t = topicsToWrite[i];
       await tx.episodeTopic.create({
-        data: { episodeId: ep.id, topicId: orderedTopics[i].id, orderIndex: i },
+        data: {
+          episodeId: ep.id,
+          topicId: t.id,
+          orderIndex: i,
+          selectedAt,
+          // Freeze the topic + brief so this episode stays reproducible even
+          // if the source is later edited, re-researched, or archived.
+          snapshot: buildTopicSnapshot(t, t.researchBrief ?? null, selectedAt) as unknown as Prisma.InputJsonValue,
+        },
       });
     }
-    for (const topic of orderedTopics) {
-      await tx.topicCandidate.update({ where: { id: topic.id }, data: { status: "used" } });
-    }
-    return ep;
+    // TopicCandidate.status is intentionally NOT mutated to "used": usage is
+    // derived from EpisodeTopic, so a topic stays 'approved' and reusable by
+    // other users, other podcasts, and (per policy) the same podcast.
+    return { ep, writtenTopicIds: topicsToWrite.map((t) => t.id), droppedTopicIds };
   });
 
-  reasons.push(`Episode created successfully with ID ${episode.id}`);
-  return episode.id;
+  reasons.push(`Episode created successfully with ID ${txResult.ep.id}`);
+  return {
+    episodeId: txResult.ep.id,
+    writtenTopicIds: txResult.writtenTopicIds,
+    droppedTopicIds: txResult.droppedTopicIds,
+  };
 }
 
 /** Validate the TTS / production settings shared by both entry points.
@@ -442,109 +527,19 @@ export function normalizeEpisodeSettings(input: {
 /** Verify every id is an active AiHost; throws when any is missing/inactive.
  *  When `ownerId` is given, hosts must also be owned by that user or shared
  *  (ownerId null) — never another user's private characters. */
-export async function assertHostsCastable(hostIds: string[], ownerId?: string): Promise<void> {
+export async function assertHostsCastable(hostIds: string[], ownerId?: string, dbi: any = db): Promise<void> {
   const ids = [...new Set(hostIds)];
   if (ids.length === 0) return;
   const where: any = { id: { in: ids }, isActive: true };
   if (ownerId) where.OR = [{ ownerId }, { ownerId: null }];
-  const activeHosts = await db.aiHost.findMany({ where, select: { id: true } });
+  const activeHosts = await dbi.aiHost.findMany({ where, select: { id: true } });
   if (activeHosts.length !== ids.length) {
     throw new Error("One or more selected hosts are missing, inactive, or not available to this account.");
   }
 }
 
-/**
- * LEGACY entry point — preserved for backwards compatibility. Binary mode:
- * explicit `topicIds` (validated, throws on the first invalid) or full
- * auto-selection. Now implemented on the shared primitives above so its
- * behavior stays in lockstep with `createEpisodeDraft`.
- */
-export async function buildEpisodeFromTopics(input: EpisodeBuildInput): Promise<EpisodeBuildResult> {
-  const result: EpisodeBuildResult = {
-    insertedEpisodeCount: 0,
-    selectedTopicCount: 0,
-    skippedTopicCount: 0,
-    invalidTopicCount: 0,
-    missingBriefCount: 0,
-    weakEvidenceCount: 0,
-    statusUpdateCount: 0,
-    selectedTopicIds: [],
-    episodeId: null,
-    reasons: [],
-  };
-
-  let settings;
-  try {
-    settings = normalizeEpisodeSettings(input);
-  } catch (err: any) {
-    result.reasons.push(err.message);
-    throw err;
-  }
-
-  await assertHostsCastable(input.hostIds || [], input.ownerId);
-
-  const targetCount = input.targetTopicCount !== undefined ? Number(input.targetTopicCount) : 3;
-  let chosenTopics: TopicWithBrief[] = [];
-
-  if (input.topicIds && input.topicIds.length > 0) {
-    for (const tId of input.topicIds) {
-      const topic = (await db.topicCandidate.findUnique({
-        where: { id: tId },
-        include: { researchBrief: true },
-      })) as unknown as TopicWithBrief | null;
-      const eligibility = evaluateTopicEligibility(topic, tId);
-      if (!eligibility.ok) {
-        tallyRejection(eligibility.category!, result);
-        result.reasons.push(eligibility.reason!);
-        throw new Error(eligibility.reason!);
-      }
-      chosenTopics.push(topic!);
-    }
-  } else {
-    const auto = await selectAutoTopics({
-      targetCount,
-      minDebateScore: input.minDebateScore,
-      leagueId: input.leagueId,
-      leagueIds: input.leagueIds,
-      sport: input.sport,
-      verticals: input.verticals,
-      teamNames: input.teamNames,
-    });
-    chosenTopics = auto.chosen;
-    result.skippedTopicCount += auto.skippedTopicCount;
-    result.missingBriefCount += auto.missingBriefCount;
-    result.weakEvidenceCount += auto.weakEvidenceCount;
-    result.reasons.push(...auto.reasons);
-  }
-
-  if (chosenTopics.length === 0) {
-    const msg = "Fewer than 1 valid topic is available to build the episode.";
-    result.reasons.push(msg);
-    throw new Error(msg);
-  }
-
-  result.selectedTopicCount = chosenTopics.length;
-  result.selectedTopicIds = chosenTopics.map((t) => t.id);
-
-  const episodeId = await createEpisodeRecord(
-    chosenTopics,
-    {
-      title: input.title,
-      description: input.description,
-      podcastId: input.podcastId,
-      ownerId: input.ownerId,
-      hostIds: input.hostIds,
-      ttsProvider: settings.ttsProvider,
-      ttsVoiceOverrides: settings.ttsVoiceOverrides,
-      soundDesign: settings.soundDesign,
-      leagueId: input.leagueId,
-      sport: input.sport,
-    },
-    result.reasons
-  );
-
-  result.insertedEpisodeCount = 1;
-  result.statusUpdateCount = chosenTopics.length;
-  result.episodeId = episodeId;
-  return result;
-}
+// NOTE: `buildEpisodeFromTopics` was moved to episodeCreation.ts as a DEPRECATED
+// adapter that delegates to `createEpisodeDraft`, so there is exactly ONE
+// selection-policy implementation (reuse policy, dedupe, snapshots, scoping).
+// The shared primitives above are the single source of truth both entry points
+// build on.

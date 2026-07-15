@@ -18,7 +18,8 @@ import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
-import { scoreTopicTalkability } from "./talkabilityService";
+import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
+import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 
 export interface ScriptBuildInput {
   episodeId: string;
@@ -125,68 +126,17 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     throw new Error(msg);
   }
 
-  // 2. Validate Topic and ResearchBrief quality
-  for (const et of ep.topics) {
-    const t = et.topic;
-    if (t.status !== "used") {
-      const msg = `Topic candidate '${t.title}' status is not 'used'.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-
-    const brief = t.researchBrief;
-    if (!brief) {
-      const msg = `Topic candidate '${t.title}' is missing its ResearchBrief.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-
-    const facts = Array.isArray(brief.facts) ? brief.facts : [];
-    const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
-    if (facts.length === 0 || sourceIds.length === 0) {
-      const msg = `Topic candidate '${t.title}' has empty facts or sourceIds in ResearchBrief.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-
-    if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) {
-      const msg = `Topic candidate '${t.title}' is missing host arguments in ResearchBrief.`;
-      result.reasons.push(msg);
-      throw new Error(msg);
-    }
-  }
-
-  // 2b. PRE-GENERATION CONTENT GATE — don't write a mediocre episode on weak
-  // material. Score each topic's source richness; block (default) or warn
-  // below threshold. A perfect pipeline on boring topics is still boring.
-  const gateMode = (process.env.CONTENT_GATE_MODE || "block").toLowerCase();
-  const gateMin = Number(process.env.CONTENT_GATE_MIN) || 50;
-  const talkabilityReports = ep.topics.map((et) => {
-    const report = scoreTopicTalkability({
-      title: et.topic.title,
-      summary: et.topic.summary,
-      createdAt: et.topic.createdAt,
-      brief: et.topic.researchBrief as any,
-    });
-    return { title: et.topic.title, report };
-  });
-  const avgTalkability =
-    talkabilityReports.reduce((a, r) => a + r.report.total, 0) / Math.max(1, talkabilityReports.length);
-  for (const tr of talkabilityReports) {
-    result.reasons.push(
-      `Talkability '${tr.title}': ${tr.report.total}/100 (${Object.entries(tr.report.axes)
-        .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)
-        .join(", ")})`
-    );
-  }
-  if (avgTalkability < gateMin) {
-    const weakest = [...talkabilityReports].sort((a, b) => a.report.total - b.report.total)[0];
-    const msg = `Content gate: source material scores ${Math.round(avgTalkability)}/100 talkability (minimum ${gateMin}). Weakest topic: '${weakest?.title}' at ${weakest?.report.total}. Enrich the research brief (regenerate it with the research provider configured) or pick stronger topics instead of generating a mediocre episode.`;
-    result.reasons.push(msg);
-    if (gateMode !== "warn") {
-      throw new Error(msg);
-    }
-    console.warn(`[ScriptService] ${msg} (CONTENT_GATE_MODE=warn — proceeding)`);
+  // 2 + 2b. Validate topic content + run the pre-generation content gate —
+  // SNAPSHOT-FIRST (validation, talkability, gate all read the frozen snapshot
+  // when present, so a later edit of the live topic can't change or break an
+  // already-created episode). Editorial STATUS is NOT checked (usage is derived
+  // from EpisodeTopic). Legacy rows fall back to live data.
+  const gate = evaluateEpisodeTopicsForScript(ep.topics as any);
+  result.reasons.push(...gate.reasons);
+  if (!gate.ok) throw new Error(gate.blockingError!);
+  if (gate.gateBlocked) throw new Error(gate.gateMessage!);
+  if (gate.gateMessage && !gate.gateBlocked) {
+    console.warn(`[ScriptService] ${gate.gateMessage} (CONTENT_GATE_MODE=warn — proceeding)`);
   }
 
   // 3. Cast the hosts. The episode's saved hostIds (from its podcast config
@@ -241,13 +191,17 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // The reviewer evidence corpus is built by the SHARED collectReviewerEvidence
   // so the generation-time self-verify reviewer and the fact-check gate reviewer
   // receive byte-identical evidence (see evidenceContext.ts).
+  // Snapshot-first: script generation reads the frozen topic content when the
+  // episode has a snapshot, so a later edit of the source topic/brief cannot
+  // change or break an already-created episode. Legacy rows fall back to live.
   const { evidenceTexts, evidenceByRefId } = collectReviewerEvidence(
-    ep.topics.map((et) => ({ researchBrief: et.topic.researchBrief }))
+    ep.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et)) }))
   );
 
   const topicsPrompts = ep.topics.map((et, idx) => {
-    const t = et.topic;
-    const b = t.researchBrief!;
+    const content = resolveEpisodeTopicContent(et);
+    const b: any = briefLikeFromContent(content);
+    const t = { title: content.title, sport: content.sport, leagueId: content.leagueId, debateScore: content.debateScore };
 
     // Collect allowed sourceRefs
     const sourceIds = Array.isArray(b.sourceIds) ? (b.sourceIds as any[]) : [];
@@ -847,8 +801,8 @@ Delivery field meanings:
   // plus the source-material talkability that fed it (for regression tracking).
   cleanContent.quality = scoreScriptQuality(cleanContent);
   cleanContent.sourceTalkability = {
-    average: Math.round(avgTalkability),
-    topics: talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
+    average: Math.round(gate.avgTalkability),
+    topics: gate.talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
   };
   result.reasons.push(
     `Quality score: ${cleanContent.quality.total}/100 (${Object.entries(cleanContent.quality.axes)

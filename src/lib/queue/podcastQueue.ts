@@ -1,6 +1,7 @@
 import { Queue } from "bullmq";
 import { getRedisClient } from "../redis";
 import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
+import type { EpisodeBuildInput } from "../services/episodeService";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -106,12 +107,56 @@ export interface EpisodeBuildJobData {
   ttsVoiceOverrides?: TtsVoiceOverrides;
   productionStyle?: string;
   sfxDensity?: string;
+  /** Authorized exclude_podcast reuse override (admin/system enqueuers only). */
+  reuseOverride?: boolean;
 }
 
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData, opts?: { jobId?: string }) {
   // A deterministic jobId makes the enqueue idempotent: BullMQ ignores a
   // second add with the same id (used by the recurring scheduler).
   return podcastQueue.add("build:episode", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
+}
+
+/** Every EpisodeBuildInput field a build job carries — the single source of
+ *  truth the mapper and its contract test both check against. */
+export const EPISODE_BUILD_JOB_FIELDS = [
+  "title",
+  "description",
+  "topicIds",
+  "leagueId",
+  "sport",
+  "targetTopicCount",
+  "minDebateScore",
+  "podcastId",
+  "leagueIds",
+  "verticals",
+  "teamNames",
+  "hostIds",
+  "ownerId",
+  "ttsProvider",
+  "ttsVoiceOverrides",
+  "productionStyle",
+  "sfxDensity",
+  "reuseOverride",
+] as const;
+
+/**
+ * Map an accepted `EpisodeBuildInput` to the queue job payload, forwarding
+ * EVERY supported field. Centralizing this stops a queue action from
+ * hand-assembling a partial payload and silently dropping fields like
+ * podcastId / ownerId / leagueIds / verticals / teamNames / reuseOverride.
+ * Undefined values are omitted so a deterministic jobId stays stable.
+ */
+export function toEpisodeBuildJobData(input: EpisodeBuildInput): EpisodeBuildJobData {
+  const data: EpisodeBuildJobData = {};
+  for (const field of EPISODE_BUILD_JOB_FIELDS) {
+    const value = input[field];
+    if (value !== undefined) {
+      // Each field's type lines up 1:1 between the two interfaces.
+      (data as Record<string, unknown>)[field] = value;
+    }
+  }
+  return data;
 }
 
 export interface ScriptGenJobData {

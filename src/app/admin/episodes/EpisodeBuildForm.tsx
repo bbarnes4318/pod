@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { triggerEpisodeBuild, createEpisodeFromSelectedTopics, fetchEligibleTopics, fetchActiveDebateHosts } from "./actions";
 import TtsVoicePicker, { PickerHost, VoicePicks, buildVoiceOverrides } from "../components/TtsVoicePicker";
+import { REUSE_OVERRIDE_CONFIRMATION } from "@/lib/reuseOverride";
 import { TTS_PROVIDER_LABELS } from "@/lib/providers/tts/providerIds";
 import {
   PRODUCTION_STYLES,
@@ -49,6 +50,12 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
   // "default" = studio default (host-profile/env chain, no episode pin).
   const [ttsEngine, setTtsEngine] = useState("default");
   const [voicePicks, setVoicePicks] = useState<VoicePicks>({});
+
+  // Admin-only reuse override: permit a recently-used topic that the
+  // exclude_podcast policy would otherwise block. Gated by a confirmation and
+  // an optional reason; authorization is enforced server-side (requireAdmin).
+  const [reuseOverride, setReuseOverride] = useState(false);
+  const [reuseOverrideReason, setReuseOverrideReason] = useState("");
 
   useEffect(() => {
     fetchActiveDebateHosts().then((res) => {
@@ -136,20 +143,30 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
 
   const handleAutoBuildSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Reuse override is a deliberate, confirmed admin action.
+    if (reuseOverride && !window.confirm(REUSE_OVERRIDE_CONFIRMATION)) {
+      return;
+    }
+
     setSubmitting(true);
     setMessage(null);
 
-    const res = await triggerEpisodeBuild({
-      leagueId: leagueId || undefined,
-      sport: sport || undefined,
-      minDebateScore,
-      targetTopicCount,
-      title: title || undefined,
-      description: description || undefined,
-      hostIds: selectedHostIds.length > 0 ? selectedHostIds : undefined,
-      ...voiceSelection(),
-      ...soundSelection(),
-    });
+    const res = await triggerEpisodeBuild(
+      {
+        leagueId: leagueId || undefined,
+        sport: sport || undefined,
+        minDebateScore,
+        targetTopicCount,
+        title: title || undefined,
+        description: description || undefined,
+        hostIds: selectedHostIds.length > 0 ? selectedHostIds : undefined,
+        reuseOverride: reuseOverride || undefined,
+        ...voiceSelection(),
+        ...soundSelection(),
+      },
+      reuseOverride ? { reuseOverrideReason: reuseOverrideReason.trim() || undefined } : undefined
+    );
 
     if (res.success) {
       setMessage({
@@ -445,6 +462,31 @@ export default function EpisodeBuildForm({ onBuildSuccess, isLlmStub }: FormProp
               disabled={submitting}
               required
             />
+          </div>
+
+          <div className="formGroup">
+            <label className="label" style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <input
+                type="checkbox"
+                checked={reuseOverride}
+                onChange={(e) => setReuseOverride(e.target.checked)}
+                disabled={submitting}
+              />
+              Reuse override (admin) — allow a recently-used topic
+            </label>
+            {reuseOverride && (
+              <>
+                <p className="hint" style={{ color: "var(--warning-color, #b45309)" }}>{REUSE_OVERRIDE_CONFIRMATION}</p>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Reason for override (optional, audit-logged)"
+                  value={reuseOverrideReason}
+                  onChange={(e) => setReuseOverrideReason(e.target.value)}
+                  disabled={submitting}
+                />
+              </>
+            )}
           </div>
 
           <button

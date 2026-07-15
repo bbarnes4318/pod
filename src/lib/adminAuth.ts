@@ -27,3 +27,9 @@ export async function requireAdminPage(): Promise<void> {
     notFound();
   }
 }
+
+/** Identity of the authorized operator (the configured admin account) for
+ *  audit logging. Only meaningful AFTER `requireAdmin()` has passed. */
+export function adminIdentity(): string {
+  return process.env.ADMIN_USERNAME || "admin";
+}

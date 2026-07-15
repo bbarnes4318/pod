@@ -38,7 +38,14 @@
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",
     "ingest:epidemic": "tsx --conditions=react-server src/scripts/ingestEpidemicCrate.ts",
     "demo:sound-variety": "tsx src/scripts/produceLocalSoundDesignDemo.ts --variety",
-    "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts"
+    "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts",
+    "test:topic-lifecycle": "tsx --conditions=react-server src/scripts/testTopicLifecycle.ts",
+    "test:topic-migration": "tsx src/scripts/testTopicMigration.ts",
+    "typecheck": "tsc --noEmit",
+    "test:queue-contract": "tsx --conditions=react-server src/scripts/testEpisodeQueueContract.ts",
+    "test:topic-concurrency": "tsx src/scripts/testTopicConcurrency.ts",
+    "lint:changed": "node scripts/lintChanged.js",
+    "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
@@ -65,8 +72,11 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/pg": "^8.20.0",
+    "embedded-postgres": "^18.4.0-beta.17",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
+    "pg": "^8.22.0",
     "prisma": "^6.1.0"
   },
   "prisma": {

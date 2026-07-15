@@ -4,6 +4,8 @@
 // so the full manual/automatic/hybrid flows run with real logic and zero
 // external database. Pure validation cases also exercise the Zod schema and the
 // exported helpers directly.
+/* eslint-disable @typescript-eslint/no-explicit-any -- test harness: the
+   in-memory fake DB doubles are intentionally loosely typed. */
 
 import {
   createEpisodeDraft,
@@ -154,7 +156,8 @@ async function run() {
     const r = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], ownerId: "user-1", hostIds: ["host-a", "host-b"] }, { db });
     assert(r.ok && r.episodeId !== null, r.error || "should create");
     assert(r.finalOrder.length === 1 && r.finalOrder[0] === "t1", "one topic");
-    assert(db._topics.get("t1")!.status === "used", "topic marked used");
+    assert(db._topics.get("t1")!.status === "approved", "topic status NOT mutated to used");
+    assert(db._episodeTopics[0]?.snapshot?.title === "Topic t1", "snapshot written on the join");
   });
   await check("manual creation with multiple ordered topics (order preserved)", async () => {
     const db = makeFakeDb({ topics: [goodTopic("t1"), goodTopic("t2"), goodTopic("t3")], hosts: HOSTS });

@@ -272,6 +272,15 @@ model NewsItem {
   @@index([publishedAt])
 }
 
+// Editorial-readiness lifecycle for a topic candidate. Deliberately does NOT
+// include a "used" state: usage is derived from EpisodeTopic.
+enum TopicEditorialStatus {
+  pending
+  approved
+  rejected
+  archived
+}
+
 model TopicCandidate {
   id                    String         @id @default(uuid())
   title                 String
@@ -284,7 +293,11 @@ model TopicCandidate {
   recencyScore          Float
   debateScore           Float
   evidenceIds           Json           // Structured logs linking back to Games/Stats/News
-  status                String         // "pending" | "approved" | "rejected" | "used"
+  // EDITORIAL READINESS ONLY — never a global usage flag. Usage is derived from
+  // EpisodeTopic (a topic can be consumed by many users/podcasts/episodes).
+  // Enforced at the DB level as an enum so "used"/arbitrary values can't be
+  // written through Prisma.
+  status                TopicEditorialStatus
   createdAt             DateTime       @default(now())
   league                League?        @relation(fields: [leagueId], references: [id])
   researchBrief         ResearchBrief?
@@ -394,12 +407,21 @@ model EpisodeTopic {
   episodeId  String
   topicId    String
   orderIndex Int
+  // IMMUTABLE snapshot of the topic + research brief AS SELECTED, so an episode
+  // stays reproducible even if the source topic/brief is later edited. Shape:
+  // src/lib/services/topicSnapshot.ts EpisodeTopicSnapshot. Nullable for legacy
+  // rows until the backfill runs; readers fall back to live topic data.
+  snapshot   Json?
+  // When this topic was selected into the episode — also the "used" timestamp
+  // that derived usage + cooldown policies read.
+  selectedAt DateTime       @default(now())
   episode    Episode        @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   topic      TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   @@unique([episodeId, topicId])
   @@index([episodeId])
   @@index([topicId])
+  @@index([selectedAt])
 }
 
 model Script {

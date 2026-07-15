@@ -15,7 +15,7 @@ import { getLLMProvider } from "../providers/llm/factory";
 import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { renderSocialClip } from "../services/socialClipService";
-import { buildEpisodeFromTopics } from "../services/episodeService";
+import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
 import { generateTtsSegments } from "../services/ttsSegmentService";
@@ -1595,13 +1595,11 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       throw new Error(`TopicCandidate with ID ${topicId} not found.`);
     }
 
-    // Allow both freshly-approved topics and already-"used" ones. A "used"
-    // topic already passed approval (an episode was built from it), so
-    // regenerating its research brief is safe and lets operators rebuild
-    // content without re-approving from scratch. The forceRegenerate check
-    // below still governs overwriting an existing brief.
-    if (topic.status !== "approved" && topic.status !== "used") {
-      throw new Error(`TopicCandidate with ID ${topicId} must be 'approved' or 'used' to generate a research brief (current status: ${topic.status}).`);
+    // A research brief may be (re)generated for any approved topic. Usage is
+    // derived from EpisodeTopic and never blocks re-research; the
+    // forceRegenerate check below still governs overwriting an existing brief.
+    if (topic.status !== "approved") {
+      throw new Error(`TopicCandidate with ID ${topicId} must be 'approved' to generate a research brief (current status: ${topic.status}).`);
     }
 
     // 2. Overwrite check

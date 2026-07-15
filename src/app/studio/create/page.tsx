@@ -2,6 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
+import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { FINISHED_STATUSES } from "../lib";
 import CreateConsole, { StepperTake, StepperHost, ResumeEpisode } from "./CreateConsole";
 
@@ -16,7 +17,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     // creator sees on the board is pickable here: same statuses, same 40-row
     // window, same recency ordering (re-ranked by talkability below).
     db.topicCandidate.findMany({
-      where: { status: { in: ["pending", "approved", "used"] } },
+      where: { status: { in: ["pending", "approved"] } },
       include: { researchBrief: true },
       orderBy: { createdAt: "desc" },
       take: 40,
@@ -51,6 +52,12 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       : Promise.resolve(null),
   ]);
 
+  // SCOPED to the signed-in creator — the Create flow is standalone (no podcast
+  // selected here), so usage shown is "used by you" only, never a platform-wide
+  // count that would leak another customer's activity.
+  const takeUsage = user
+    ? await getTopicUsage(topics.map((t) => t.id), { ownerId: user.id })
+    : new Map();
   const takes: StepperTake[] = topics
     .map((t) => {
       const talk = scoreTopicTalkability({
@@ -66,6 +73,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         status: t.status,
         hasBrief: !!t.researchBrief,
         heat: talk.total,
+        usedByYouCount: takeUsage.get(t.id)?.currentOwnerUseCount ?? 0,
       };
     })
     .sort((a, b) => b.heat - a.heat);

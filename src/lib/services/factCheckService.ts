@@ -17,6 +17,7 @@ import {
 } from "./semanticReview";
 import { verifyLineAgainstEvidence } from "./factNumbers";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
+import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 
 const VALID_EVIDENCE_TYPES = [
   "game",
@@ -113,23 +114,18 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     throw new Error("Episode has no linked topics.");
   }
 
-  // Verify all linked topics have research briefs with facts and sourceIds
+  // Verify all linked topics carry facts + sourceIds — from the immutable
+  // snapshot when present (fact-checking must judge the script against the SAME
+  // evidence it was generated from, not a later-edited live brief), else live.
   for (const et of script.episode.topics) {
-    if (!et.topic) {
-      throw new Error(`TopicCandidate is missing for EpisodeTopic ${et.id}.`);
-    }
-    const brief = et.topic.researchBrief;
-    if (!brief) {
-      throw new Error(`ResearchBrief is missing for TopicCandidate ${et.topic.title || et.topic.id}.`);
-    }
-
-    const facts = Array.isArray(brief.facts) ? brief.facts : [];
-    const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
+    const content = resolveEpisodeTopicContent(et);
+    const facts = Array.isArray(content.facts) ? content.facts : [];
+    const sourceIds = Array.isArray(content.sourceIds) ? content.sourceIds : [];
     if (facts.length === 0) {
-      throw new Error(`ResearchBrief for '${et.topic.title}' has empty facts list.`);
+      throw new Error(`Topic '${content.title}' has empty facts list.`);
     }
     if (sourceIds.length === 0) {
-      throw new Error(`ResearchBrief for '${et.topic.title}' has empty sourceIds list.`);
+      throw new Error(`Topic '${content.title}' has empty sourceIds list.`);
     }
   }
 
@@ -151,7 +147,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   const evidencePanelItems: any[] = [];
 
   for (const et of script.episode.topics) {
-    const brief = et.topic.researchBrief!;
+    const content = resolveEpisodeTopicContent(et);
+    const brief = briefLikeFromContent(content);
     const sourceIds = Array.isArray(brief.sourceIds) ? (brief.sourceIds as any[]) : [];
     const facts = Array.isArray(brief.facts) ? (brief.facts as any[]) : [];
     const stats = Array.isArray(brief.stats) ? (brief.stats as any[]) : [];
@@ -174,7 +171,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
         evidencePanelItems.push({
           type: src.type,
           id: src.id,
-          topicTitle: et.topic.title,
+          topicTitle: content.title,
           detailText,
         });
       }
@@ -576,7 +573,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
       // that made it false-flag facts it was never shown). The sourceId-based
       // `evidencePanelItems` above is kept for the deterministic number check.
       const reviewerEvidence = collectReviewerEvidence(
-        script.episode.topics.map((et) => ({ researchBrief: et.topic.researchBrief }))
+        script.episode.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et)) }))
       );
       const reviewerPanel = toEvidencePanel(reviewerEvidence.evidenceTexts);
       reviewerEvidenceFingerprint = evidenceFingerprint(reviewerEvidence.evidenceTexts);
