@@ -13,6 +13,7 @@ import path from "path";
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const EmbeddedPostgres = require("embedded-postgres").default || require("embedded-postgres");
 import { reserveRecentlyUsedTopics } from "../lib/services/topicReservation";
+import { stopEmbeddedPgScoped } from "../../tests/e2e/runtime";
 
 let passed = 0, failed = 0;
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
@@ -117,9 +118,10 @@ async function main() {
     await a.end().catch(() => {});
     await b.end().catch(() => {});
     await setup.end().catch(() => {});
-    // On Windows the data dir can stay briefly locked; a failed cleanup must not
-    // fail the test — the assertions above are what matter.
-    await pg.stop().catch(() => {});
+    // Scoped stop: this instance only, reaping its own leftover child processes
+    // (PG18 io_workers can outlive the shutdown on Windows). A failed cleanup
+    // must not fail the test — the assertions above are what matter.
+    await stopEmbeddedPgScoped(pg, dir).catch(() => {});
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

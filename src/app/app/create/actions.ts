@@ -23,6 +23,19 @@ import { selectHottestRange } from "@/lib/services/socialClipService";
 import { assertCanCreateEpisode, assertPremiumVoiceAllowed } from "@/lib/services/entitlementService";
 import { EpisodeBuildInput } from "@/lib/services/episodeService";
 import { createEpisodeDraft } from "@/lib/services/episodeCreation";
+import {
+  getStudioTopicsFor,
+  getStudioPodcastsFor,
+  createStudioEpisodeFor,
+  loadStudioDraftFor,
+  saveStudioDraftFor,
+  discardStudioDraftFor,
+  type StudioCtx,
+  type StudioEpisodeInput,
+} from "@/lib/services/studioActions";
+import type { PrismaClient } from "@prisma/client";
+import type { RundownDraftState } from "@/lib/services/studioDraft";
+import { shouldFailStartDebate, shouldStubQueue } from "@/lib/e2eSeam";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
@@ -174,13 +187,21 @@ export async function startDebate(
 ) {
   try {
     const gate = await requireSignedIn(); if (gate) return gate;
-    const job = await queueScriptGenerationJob({
-      episodeId,
-      scriptStyle: opts?.scriptStyle,
-      targetDurationMinutes: opts?.targetDurationMinutes,
-      maxWords: opts?.maxWords,
-      forceRegenerate: opts?.forceRegenerate,
-    });
+    // E2E-only fault injection (inert unless E2E_TEST_MODE=1).
+    if (shouldFailStartDebate()) {
+      return { success: false as const, error: "Couldn't start the debate — the job queue rejected it." };
+    }
+    // E2E-only: Redis is an external boundary the harness doesn't run. Only the
+    // enqueue is stubbed; the rest of this action executes for real.
+    const job = shouldStubQueue()
+      ? { id: "e2e-stub-job" }
+      : await queueScriptGenerationJob({
+          episodeId,
+          scriptStyle: opts?.scriptStyle,
+          targetDurationMinutes: opts?.targetDurationMinutes,
+          maxWords: opts?.maxWords,
+          forceRegenerate: opts?.forceRegenerate,
+        });
     revalidatePath(`/app/episodes/${episodeId}`);
     return { success: true as const, jobId: job.id };
   } catch (err: any) {
@@ -937,4 +958,59 @@ export async function getSocialClips(episodeId: string) {
     },
   });
   return { success: true as const, clips };
+}
+
+/* ============================================================================
+ * STUDIO MULTI-TOPIC RUNDOWN BUILDER (manual / automatic / hybrid)
+ * Thin "use server" wrappers over the testable studioActions logic, which runs
+ * under an authenticated-user seam. ownerId comes from the SESSION (never the
+ * client); podcast ownership is verified; reuseOverride is never sent.
+ * ========================================================================== */
+
+/** Build the authenticated Studio context, or null when signed out. */
+async function studioCtx(): Promise<StudioCtx | null> {
+  const user = await currentUser();
+  if (!user) return null;
+  return { user: { id: user.id, role: user.role }, db: db as unknown as PrismaClient };
+}
+
+export async function getStudioTopics(podcastId?: string | null) {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return getStudioTopicsFor(ctx, podcastId);
+}
+
+export async function getStudioPodcasts() {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return getStudioPodcastsFor(ctx);
+}
+
+export async function createStudioEpisode(input: StudioEpisodeInput) {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in to create an episode." };
+  const res = await createStudioEpisodeFor(ctx, input);
+  if (res.success) {
+    revalidatePath("/studio/create");
+    revalidatePath("/app/episodes");
+  }
+  return res;
+}
+
+export async function loadStudioRundownDraft() {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return loadStudioDraftFor(ctx);
+}
+
+export async function saveStudioRundownDraft(state: RundownDraftState) {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return saveStudioDraftFor(ctx, state);
+}
+
+export async function discardStudioRundownDraft() {
+  const ctx = await studioCtx();
+  if (!ctx) return { success: false as const, error: "Please sign in." };
+  return discardStudioDraftFor(ctx);
 }

@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { db } from "../db";
+import { PLATFORM_MAX_TOPICS } from "../episodeLimits";
 import {
   TopicWithBrief,
   EpisodeBuildInput,
@@ -29,10 +30,12 @@ import {
   scopedRecentUseCount,
 } from "./topicUsageService";
 
-/** Configurable hard cap on topics per episode (spec: max six). */
+/** Configurable cap on topics per episode. Env-tunable DOWN, but never above
+ *  the client-safe PLATFORM_MAX_TOPICS — one shared limit, no conflicts. */
 export const MAX_TOPICS_PER_EPISODE = (() => {
   const n = Number(process.env.MAX_TOPICS_PER_EPISODE);
-  return Number.isFinite(n) && n >= 1 && n <= 12 ? Math.floor(n) : 6;
+  if (Number.isFinite(n) && n >= 1) return Math.min(Math.floor(n), PLATFORM_MAX_TOPICS);
+  return PLATFORM_MAX_TOPICS;
 })();
 
 /** Default target when the caller doesn't specify one. */
