@@ -175,7 +175,7 @@ export async function createEpisodeDraft(
   const parsed = CreateEpisodeDraftInputSchema.safeParse(rawInput);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
-    const mode = (rawInput as any)?.mode ?? "manual";
+    const mode = (rawInput as { mode?: EpisodeCreationMode })?.mode ?? "manual";
     return fail(mode, first ? `${first.path.join(".") || "input"}: ${first.message}` : "Invalid input.", {
       reasons: parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`),
     });
@@ -312,8 +312,9 @@ export async function createEpisodeDraft(
 
   // ---- Reuse warnings computed from PRIOR usage (BEFORE creating the record) ----
   // The episode does not exist yet, so a first use can NEVER count itself.
-  // Scoped to the selected podcast (if any), else the owner — never global.
-  if (policy.mode === "warn") {
+  // Scoped to the selected podcast (if any), else the owner — never global. With
+  // neither scope (an owner-less system build) there is nothing to warn about.
+  if (policy.mode === "warn" && (input.ownerId || input.podcastId)) {
     const priorUsage = await getTopicUsage(
       orderedTopics.map((t) => t.id),
       { ownerId: input.ownerId, podcastId: input.podcastId, cooldownDays: policy.cooldownDays },
@@ -323,6 +324,20 @@ export async function createEpisodeDraft(
   }
 
   // ---- Create the record via the single shared primitive ----
+  // Under exclude_podcast, hand the creation primitive a reservation so it can
+  // re-validate recent use under an advisory lock INSIDE the write transaction
+  // (closes the check-then-create race two simultaneous builds would slip
+  // through). Only exclude_podcast needs this exclusivity; allow/warn don't.
+  const reservation =
+    policy.mode === "exclude_podcast" && input.podcastId
+      ? {
+          podcastId: input.podcastId,
+          cooldownDays: policy.cooldownDays,
+          reuseOverride: !!input.reuseOverride,
+          pinnedIds: new Set(pinnedTopics.map((t) => t.id)),
+        }
+      : undefined;
+
   let episodeId: string;
   try {
     episodeId = await createEpisodeRecord(
@@ -340,7 +355,8 @@ export async function createEpisodeDraft(
         sport: input.sport,
       },
       reasons,
-      dbi
+      dbi,
+      reservation
     );
   } catch (err: any) {
     return fail(mode, err.message || "Failed to create the episode.", { rejectedTopics, reasons });

@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { topicMatchesAnyVertical } from "../verticals";
 import { scoreTopicTalkability } from "./talkabilityService";
@@ -7,6 +8,21 @@ import { TtsVoiceOverrides, validateTtsVoiceOverridesInput } from "../providers/
 import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 import { resolveEpisodeHosts } from "./hostCasting";
 import { buildTopicSnapshot } from "./topicSnapshot";
+import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReservation";
+
+/** In-transaction concurrency guard for the exclude_podcast reuse policy. When
+ *  present, `createEpisodeRecord` acquires advisory locks and re-validates
+ *  recent use INSIDE the creation transaction, so two concurrent builds for the
+ *  same podcast + topic can never both succeed. */
+export interface EpisodeReuseReservation {
+  podcastId: string;
+  cooldownDays: number;
+  /** Authorized override: keep a recently-used PINNED topic anyway. Never
+   *  applies to auto-selected topics. */
+  reuseOverride: boolean;
+  /** Ids the user explicitly pinned (vs. auto-selected fill). */
+  pinnedIds: Set<string>;
+}
 
 export interface EpisodeBuildInput {
   title?: string;
@@ -222,7 +238,7 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
         title: t.title,
         summary: t.summary,
         createdAt: t.createdAt,
-        brief: t.researchBrief as any,
+        brief: t.researchBrief,
       });
       const rank = talkability.total * 0.6 + Math.min(100, t.debateScore) * 0.4;
       return { t, talkability, rank };
@@ -333,7 +349,8 @@ export async function createEpisodeRecord(
   orderedTopics: TopicWithBrief[],
   settings: EpisodeCreationSettings,
   reasons: string[],
-  dbi: any = db
+  dbi: any = db,
+  reservation?: EpisodeReuseReservation
 ): Promise<string> {
   let chosenHostIds = [...new Set(settings.hostIds || [])];
 
@@ -378,6 +395,37 @@ export async function createEpisodeRecord(
       : undefined;
 
   const episode = await dbi.$transaction(async (tx: any) => {
+    // ---- Concurrency guard (exclude_podcast) ----
+    // Acquire per-(podcast,topic) advisory locks and RE-VALIDATE recent use
+    // inside this transaction, so a topic another build just consumed for the
+    // same podcast is dropped (auto) or fails the build (pinned, no override) —
+    // even under two simultaneous requests. Skipped for test doubles that can't
+    // take advisory locks; different podcasts never block each other.
+    let topicsToWrite = orderedTopics;
+    if (reservation && supportsAdvisoryLocks(tx)) {
+      const blocked = await reserveRecentlyUsedTopics(tx, {
+        podcastId: reservation.podcastId,
+        topicIds: orderedTopics.map((t) => t.id),
+        cooldownDays: reservation.cooldownDays,
+      });
+      if (blocked.size > 0) {
+        const pinnedBlocked = [...blocked].filter((id) => reservation.pinnedIds.has(id));
+        if (pinnedBlocked.length > 0 && !reservation.reuseOverride) {
+          // Atomic fail: a pinned topic was used by a concurrent build.
+          throw new Error(
+            `This podcast just used topic(s) ${pinnedBlocked.join(", ")} — reuse override required.`
+          );
+        }
+        // Drop blocked AUTO-selected topics; keep pinned ones only under override.
+        topicsToWrite = orderedTopics.filter(
+          (t) => !blocked.has(t.id) || reservation.pinnedIds.has(t.id)
+        );
+        if (topicsToWrite.length === 0) {
+          throw new Error("Every candidate topic was just used by this podcast.");
+        }
+      }
+    }
+
     const ep = await tx.episode.create({
       data: {
         title,
@@ -391,8 +439,8 @@ export async function createEpisodeRecord(
         transcriptUrl: null,
         publishedAt: null,
         ttsProvider: settings.ttsProvider ?? null,
-        ttsVoiceOverrides: settings.ttsVoiceOverrides ? (settings.ttsVoiceOverrides as any) : undefined,
-        soundDesign: soundDesign ? (soundDesign as any) : undefined,
+        ttsVoiceOverrides: settings.ttsVoiceOverrides ? (settings.ttsVoiceOverrides as unknown as Prisma.InputJsonValue) : undefined,
+        soundDesign: soundDesign ? (soundDesign as unknown as Prisma.InputJsonValue) : undefined,
         podcastId: settings.podcastId || undefined,
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
@@ -400,8 +448,8 @@ export async function createEpisodeRecord(
     });
 
     const selectedAt = new Date();
-    for (let i = 0; i < orderedTopics.length; i++) {
-      const t = orderedTopics[i];
+    for (let i = 0; i < topicsToWrite.length; i++) {
+      const t = topicsToWrite[i];
       await tx.episodeTopic.create({
         data: {
           episodeId: ep.id,
@@ -410,7 +458,7 @@ export async function createEpisodeRecord(
           selectedAt,
           // Freeze the topic + brief so this episode stays reproducible even
           // if the source is later edited, re-researched, or archived.
-          snapshot: buildTopicSnapshot(t as any, (t as any).researchBrief ?? null, selectedAt) as any,
+          snapshot: buildTopicSnapshot(t, t.researchBrief ?? null, selectedAt) as unknown as Prisma.InputJsonValue,
         },
       });
     }
