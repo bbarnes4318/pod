@@ -52,7 +52,12 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
       : Promise.resolve(null),
   ]);
 
-  const takeUsage = await getTopicUsage(topics.map((t) => t.id));
+  // SCOPED to the signed-in creator — the Create flow is standalone (no podcast
+  // selected here), so usage shown is "used by you" only, never a platform-wide
+  // count that would leak another customer's activity.
+  const takeUsage = user
+    ? await getTopicUsage(topics.map((t) => t.id), { ownerId: user.id })
+    : new Map();
   const takes: StepperTake[] = topics
     .map((t) => {
       const talk = scoreTopicTalkability({
@@ -68,7 +73,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         status: t.status,
         hasBrief: !!t.researchBrief,
         heat: talk.total,
-        usedCount: takeUsage.get(t.id)?.totalUseCount ?? 0,
+        usedByYouCount: takeUsage.get(t.id)?.currentOwnerUseCount ?? 0,
       };
     })
     .sort((a, b) => b.heat - a.heat);

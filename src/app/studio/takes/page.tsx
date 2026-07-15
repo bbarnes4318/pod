@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { fmtDate } from "../lib";
@@ -57,8 +58,14 @@ export default async function TakesBoard({
   const filtersActive = !!(sp.sport || sp.league);
 
   // Derived usage (from EpisodeTopic) — every board topic stays selectable;
-  // usage is informational, not a gate.
-  const usage = await getTopicUsage(topics.map((t) => t.id));
+  // usage is informational, not a gate. SCOPED to the signed-in owner: the
+  // takes board is not podcast-specific, so we show only "used by you" — never
+  // another customer's aggregate. Signed-out (shouldn't happen; layout gates)
+  // gets no usage rather than a global count.
+  const user = await currentUser();
+  const usage = user
+    ? await getTopicUsage(topics.map((t) => t.id), { ownerId: user.id })
+    : new Map();
 
   const ranked = topics
     .map((t) => ({
@@ -106,8 +113,8 @@ export default async function TakesBoard({
               <div style={{ flex: 1, minWidth: 260 }}>
                 <div className="epMeta" style={{ marginBottom: "0.3rem" }}>
                   <span className="chip">{t.sport}</span>
-                  {(usage.get(t.id)?.totalUseCount ?? 0) > 0 && (
-                    <span className="chip">Used {usage.get(t.id)!.totalUseCount}×</span>
+                  {(usage.get(t.id)?.currentOwnerUseCount ?? 0) > 0 && (
+                    <span className="chip">Used by you {usage.get(t.id)!.currentOwnerUseCount}×</span>
                   )}
                   {t.status === "approved" && t.researchBrief && <span className="chip chipSuccess">Ready</span>}
                   {t.status === "pending" && <span className="chip chipAccent">New</span>}

@@ -1,20 +1,37 @@
 // Derived topic usage + reuse policies.
 //
 // Usage is NEVER stored on TopicCandidate — it is derived from EpisodeTopic.
-// PRIVACY: ordinary producer-facing usage is SCOPED to the caller's own
-// podcast (when a podcastId is given) or their own account. Platform-wide
-// totals are exposed ONLY through the clearly-named admin method — one
-// customer must never be warned or shown usage because a DIFFERENT customer
-// used the same topic.
+// PRIVACY: producer-facing usage is SCOPED to the caller's own podcast (when a
+// podcastId is given) and/or their own account. NO platform-wide total or
+// latest-use date is ever returned here — one customer must never be warned or
+// shown usage because a DIFFERENT customer used the same topic. Platform-wide
+// aggregates live ONLY in `getGlobalTopicUsageStatsAdmin`, which callers must
+// admin-authorize.
 
 import { db } from "../db";
 
-export interface TopicUsage {
+/**
+ * The minimal DB surface these helpers touch. Both the real PrismaClient and
+ * the in-memory test doubles satisfy it, so we never need `any` at call sites.
+ */
+export interface UsageDb {
+  episodeTopic: {
+    findMany: (args: unknown) => Promise<
+      Array<{
+        topicId: string;
+        selectedAt: Date | string | null;
+        episode?: { ownerId: string | null; podcastId: string | null } | null;
+      }>
+    >;
+  };
+}
+
+/** Producer-facing usage — SCOPED ONLY. Deliberately carries no platform-wide
+ *  total or global last-used date, so no surface can accidentally leak another
+ *  customer's aggregate usage. */
+export interface ScopedTopicUsage {
   topicId: string;
-  /** Platform-wide totals (safe to show: counts only, no other-customer detail). */
-  totalUseCount: number;
-  lastUsedAt: Date | null;
-  /** Scoped to the querying OWNER. */
+  /** Scoped to the querying OWNER (all podcasts they own). */
   currentOwnerUseCount: number;
   currentOwnerLastUsedAt: Date | null;
   currentOwnerRecentUseCount: number;
@@ -32,13 +49,16 @@ export interface TopicUsageQuery {
   /** Exclude a specific episode's joins (e.g. the one being created) so a
    *  first use never counts itself. */
   excludeEpisodeId?: string;
+  /** EXPLICIT, documented system scope: an internal/background caller that has
+   *  no owner or podcast context (e.g. a maintenance job). Required to call
+   *  without an ownerId/podcastId so a producer surface can never silently ask
+   *  for unscoped data — the result is still scoped (all-zero unless matched). */
+  system?: boolean;
 }
 
-function emptyUsage(id: string): TopicUsage {
+function emptyUsage(id: string): ScopedTopicUsage {
   return {
     topicId: id,
-    totalUseCount: 0,
-    lastUsedAt: null,
     currentOwnerUseCount: 0,
     currentOwnerLastUsedAt: null,
     currentOwnerRecentUseCount: 0,
@@ -52,25 +72,30 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
   !a ? b : !b ? a : a > b ? a : b;
 
 /**
- * Compute derived usage for a set of topics, scoped for the querying owner +
- * selected podcast. `totalUseCount`/`lastUsedAt` are platform-wide COUNTS only
- * (no other-customer detail); the `currentOwner*` / `currentPodcast*` fields are
- * what producer-facing warnings must use.
+ * Compute derived usage for a set of topics, scoped to the querying owner
+ * and/or selected podcast. NEVER returns platform-wide figures. A scope is
+ * REQUIRED (ownerId, podcastId, or an explicit `system: true`); calling with no
+ * scope throws, so a producer surface can't accidentally request global usage.
  */
 export async function getTopicUsage(
   topicIds: string[],
-  query: TopicUsageQuery = {},
-  dbi: any = db
-): Promise<Map<string, TopicUsage>> {
+  query: TopicUsageQuery,
+  dbi: UsageDb = db as unknown as UsageDb
+): Promise<Map<string, ScopedTopicUsage>> {
+  if (!query || (!query.ownerId && !query.podcastId && !query.system)) {
+    throw new Error(
+      "getTopicUsage requires a scope: pass ownerId, podcastId, or an explicit { system: true }."
+    );
+  }
   const ids = [...new Set(topicIds)];
-  const out = new Map<string, TopicUsage>();
+  const out = new Map<string, ScopedTopicUsage>();
   for (const id of ids) out.set(id, emptyUsage(id));
   if (ids.length === 0) return out;
 
   const cooldownDays = query.cooldownDays ?? 7;
   const cutoff = new Date(Date.now() - cooldownDays * 24 * 60 * 60 * 1000);
 
-  const where: any = { topicId: { in: ids } };
+  const where: Record<string, unknown> = { topicId: { in: ids } };
   if (query.excludeEpisodeId) where.episodeId = { not: query.excludeEpisodeId };
 
   const joins = await dbi.episodeTopic.findMany({
@@ -78,14 +103,11 @@ export async function getTopicUsage(
     select: { topicId: true, selectedAt: true, episode: { select: { ownerId: true, podcastId: true } } },
   });
 
-  for (const j of joins as any[]) {
+  for (const j of joins) {
     const u = out.get(j.topicId);
     if (!u) continue;
     const when: Date | null = j.selectedAt ? new Date(j.selectedAt) : null;
     const recent = !!when && when >= cutoff;
-
-    u.totalUseCount++;
-    u.lastUsedAt = maxDate(u.lastUsedAt, when);
 
     if (query.ownerId && j.episode?.ownerId === query.ownerId) {
       u.currentOwnerUseCount++;
@@ -101,25 +123,38 @@ export async function getTopicUsage(
   return out;
 }
 
+/** Platform-wide aggregate for a single topic (all owners/podcasts). */
+export interface GlobalTopicUsageStat {
+  topicId: string;
+  totalUseCount: number;
+  lastUsedAt: Date | null;
+  recentUseCount: number;
+  distinctOwners: number;
+  distinctPodcasts: number;
+}
+
 /** ADMIN-ONLY platform-wide usage stats (all owners/podcasts). Callers MUST be
  *  admin-authorized; never expose this to a producer surface. */
 export async function getGlobalTopicUsageStatsAdmin(
   topicIds: string[],
   opts: { cooldownDays?: number } = {},
-  dbi: any = db
-): Promise<Map<string, { topicId: string; totalUseCount: number; lastUsedAt: Date | null; recentUseCount: number; distinctOwners: number; distinctPodcasts: number }>> {
+  dbi: UsageDb = db as unknown as UsageDb
+): Promise<Map<string, GlobalTopicUsageStat>> {
   const ids = [...new Set(topicIds)];
-  const out = new Map<string, any>();
-  for (const id of ids) out.set(id, { topicId: id, totalUseCount: 0, lastUsedAt: null, recentUseCount: 0, _owners: new Set(), _podcasts: new Set() });
-  if (ids.length === 0) return out as any;
+  const acc = new Map<string, GlobalTopicUsageStat & { _owners: Set<string>; _podcasts: Set<string> }>();
+  for (const id of ids) {
+    acc.set(id, { topicId: id, totalUseCount: 0, lastUsedAt: null, recentUseCount: 0, distinctOwners: 0, distinctPodcasts: 0, _owners: new Set(), _podcasts: new Set() });
+  }
+  const out = new Map<string, GlobalTopicUsageStat>();
+  if (ids.length === 0) return out;
 
   const cutoff = new Date(Date.now() - (opts.cooldownDays ?? 7) * 24 * 60 * 60 * 1000);
   const joins = await dbi.episodeTopic.findMany({
     where: { topicId: { in: ids } },
     select: { topicId: true, selectedAt: true, episode: { select: { ownerId: true, podcastId: true } } },
   });
-  for (const j of joins as any[]) {
-    const u = out.get(j.topicId);
+  for (const j of joins) {
+    const u = acc.get(j.topicId);
     if (!u) continue;
     const when = j.selectedAt ? new Date(j.selectedAt) : null;
     u.totalUseCount++;
@@ -128,11 +163,9 @@ export async function getGlobalTopicUsageStatsAdmin(
     if (j.episode?.ownerId) u._owners.add(j.episode.ownerId);
     if (j.episode?.podcastId) u._podcasts.add(j.episode.podcastId);
   }
-  for (const u of out.values()) {
-    u.distinctOwners = u._owners.size;
-    u.distinctPodcasts = u._podcasts.size;
-    delete u._owners;
-    delete u._podcasts;
+  for (const u of acc.values()) {
+    const { _owners, _podcasts, ...rest } = u;
+    out.set(u.topicId, { ...rest, distinctOwners: _owners.size, distinctPodcasts: _podcasts.size });
   }
   return out;
 }
@@ -165,7 +198,7 @@ export function resolveTopicReusePolicy(env: Record<string, string | undefined> 
 export async function getReuseExcludedTopicIds(
   policy: TopicReusePolicy,
   ctx: { podcastId?: string },
-  dbi: any = db
+  dbi: UsageDb = db as unknown as UsageDb
 ): Promise<string[]> {
   if (policy.mode !== "exclude_podcast" || !ctx.podcastId) return [];
   const cutoff = new Date(Date.now() - policy.cooldownDays * 24 * 60 * 60 * 1000);
@@ -173,13 +206,13 @@ export async function getReuseExcludedTopicIds(
     where: { selectedAt: { gte: cutoff }, episode: { podcastId: ctx.podcastId } },
     select: { topicId: true },
   });
-  return [...new Set((rows as any[]).map((r) => r.topicId))];
+  return [...new Set(rows.map((r) => r.topicId))];
 }
 
 /** The scoped recent-use count producer warnings/exclusions must use: the
  *  selected podcast's count when a podcastId exists, else the owner's. Never
  *  the platform-wide total. */
-export function scopedRecentUseCount(u: TopicUsage | undefined, ctx: { podcastId?: string }): number {
+export function scopedRecentUseCount(u: ScopedTopicUsage | undefined, ctx: { podcastId?: string }): number {
   if (!u) return 0;
   return ctx.podcastId ? u.currentPodcastRecentUseCount : u.currentOwnerRecentUseCount;
 }
@@ -188,7 +221,7 @@ export function scopedRecentUseCount(u: TopicUsage | undefined, ctx: { podcastId
  *  scoped to the caller (podcast or owner), never global. */
 export function reuseWarnings(
   policy: TopicReusePolicy,
-  usage: Map<string, TopicUsage>,
+  usage: Map<string, ScopedTopicUsage>,
   topicIds: string[],
   ctx: { podcastId?: string }
 ): string[] {
