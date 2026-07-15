@@ -21,7 +21,8 @@ import {
 } from "@/lib/queue/podcastQueue";
 import { selectHottestRange } from "@/lib/services/socialClipService";
 import { assertCanCreateEpisode, assertPremiumVoiceAllowed } from "@/lib/services/entitlementService";
-import { buildEpisodeFromTopics, EpisodeBuildInput } from "@/lib/services/episodeService";
+import { EpisodeBuildInput } from "@/lib/services/episodeService";
+import { createEpisodeDraft } from "@/lib/services/episodeCreation";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
@@ -136,8 +137,11 @@ export async function produceEpisodeFromTopics(
     if (!quota.ok) return { success: false as const, error: quota.error, upgrade: true as const };
     const voiceGate = await assertPremiumVoiceAllowed(owner.id, ttsProvider);
     if (!voiceGate.ok) return { success: false as const, error: voiceGate.error, upgrade: true as const };
-    const res = await buildEpisodeFromTopics({
-      topicIds,
+    // Shared, validated creation service (mode=manual, explicit picks).
+    const res = await createEpisodeDraft({
+      mode: "manual",
+      selectedTopicIds: topicIds,
+      strictSelection: true,
       ttsProvider,
       ttsVoiceOverrides,
       ownerId: owner.id,
@@ -146,6 +150,7 @@ export async function produceEpisodeFromTopics(
       productionStyle: config?.productionStyle,
       sfxDensity: config?.sfxDensity,
     });
+    if (!res.ok) return { success: false as const, error: res.error || "Failed to produce the episode." };
     revalidatePath("/app/create");
     revalidatePath("/app/episodes");
     return { success: true as const, episodeId: res.episodeId };
