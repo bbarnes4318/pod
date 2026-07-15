@@ -45,7 +45,8 @@
     "test:queue-contract": "tsx --conditions=react-server src/scripts/testEpisodeQueueContract.ts",
     "test:topic-concurrency": "tsx src/scripts/testTopicConcurrency.ts",
     "lint:changed": "node scripts/lintChanged.js",
-    "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts"
+    "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts",
+    "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
