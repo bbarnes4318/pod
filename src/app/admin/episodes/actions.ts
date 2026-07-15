@@ -1,35 +1,65 @@
 "use server";
 
-import { requireAdmin } from "@/lib/adminAuth";
+import { requireAdmin, adminIdentity } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
-import { queueEpisodeBuildJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
+import { Prisma } from "@prisma/client";
+import { queueEpisodeBuildJob, toEpisodeBuildJobData, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
 import { EpisodeBuildInput } from "@/lib/services/episodeService";
 import { createEpisodeDraft } from "@/lib/services/episodeCreation";
 import { revalidatePath } from "next/cache";
 
-export async function triggerEpisodeBuild(input: EpisodeBuildInput) {
+/**
+ * Trigger an episode build. ADMIN-ONLY (requireAdmin). Forwards EVERY supported
+ * field through the validated mapper — nothing is hand-dropped. The
+ * `reuseOverride` flag (bypass the exclude_podcast recent-use guard for a
+ * pinned topic) is an ADMIN capability: it is only honored here, behind
+ * requireAdmin, and is audit-logged. Ordinary /app + /studio actions never
+ * accept it, and the service never treats a direct call as authorization.
+ */
+export async function triggerEpisodeBuild(
+  input: EpisodeBuildInput,
+  opts?: { reuseOverrideReason?: string }
+) {
   await requireAdmin();
   try {
-    // Submit the BullMQ building job
-    const job = await queueEpisodeBuildJob({
-      title: input.title,
-      description: input.description,
-      topicIds: input.topicIds,
-      leagueId: input.leagueId,
-      sport: input.sport,
-      targetTopicCount: input.targetTopicCount,
-      minDebateScore: input.minDebateScore,
-      hostIds: input.hostIds,
-      ttsProvider: input.ttsProvider,
-      ttsVoiceOverrides: input.ttsVoiceOverrides,
-      productionStyle: input.productionStyle,
-      sfxDensity: input.sfxDensity,
-    });
+    // Authorization for the override lives HERE (server-side requireAdmin), not
+    // in any client-supplied role/flag. Audit it before enqueuing.
+    if (input.reuseOverride) {
+      await logReuseOverride({
+        admin: adminIdentity(),
+        podcastId: input.podcastId ?? null,
+        topicIds: input.topicIds ?? [],
+        reason: opts?.reuseOverrideReason ?? null,
+      });
+    }
+
+    // Validated mapper forwards podcastId/ownerId/leagueIds/verticals/
+    // teamNames/reuseOverride and every other supported field.
+    const job = await queueEpisodeBuildJob(toEpisodeBuildJobData(input));
 
     revalidatePath("/admin/episodes");
     return { success: true, jobId: job.id };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to trigger episode build." };
+  }
+}
+
+/** Durable audit record for an admin reuse-override, plus a structured log line
+ *  (admin identity, podcast, topic ids, timestamp, optional reason). */
+async function logReuseOverride(entry: {
+  admin: string;
+  podcastId: string | null;
+  topicIds: string[];
+  reason: string | null;
+}): Promise<void> {
+  const record = { ...entry, at: new Date().toISOString() };
+  console.warn("[audit] reuse-override authorized", record);
+  try {
+    await db.jobLog.create({
+      data: { jobType: "admin:reuse-override", status: "completed", input: record as Prisma.InputJsonValue, output: {} },
+    });
+  } catch {
+    // Auditing must never block the build; the console line is the fallback.
   }
 }
 
