@@ -48,7 +48,8 @@
     "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts",
     "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

@@ -1,18 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any -- e2e teardown */
-// Stop the Next app + embedded Postgres started by global-setup.
-import { execSync } from "child_process";
-import fs from "fs";
+// Stop EXACTLY the resources global-setup started.
+//
+// Two layers, both perfectly scoped:
+//  1. In-memory handles (graceful `pg.stop()` + our Next process tree by PID),
+//     used when Playwright happens to share module state with globalSetup.
+//  2. A durable fallback: our Next PID and OUR Postgres data dir's
+//     `postmaster.pid` recorded by setup — because Playwright loads globalSetup
+//     and globalTeardown in separate module registries, so (1) can be empty.
+//
+// Never by image name, never by port owner: an unrelated Postgres or dev server
+// on this machine has a different PID and data dir and is never touched.
 import path from "path";
+import { stopRuntime, stopRuntimeFromFile } from "./runtime";
 
 export default async function globalTeardown() {
-  const pidfile = path.join(process.cwd(), "tests", "e2e", ".auth", "runtime.json");
-  try {
-    const { nextPid } = JSON.parse(fs.readFileSync(pidfile, "utf8"));
-    if (nextPid) {
-      // Kill the dev server process tree.
-      try { execSync(`taskkill /PID ${nextPid} /T /F`, { stdio: "ignore" }); } catch { /* already gone */ }
-    }
-  } catch { /* no pidfile */ }
-  // Embedded Postgres runs as a detached postgres.exe; stop it.
-  try { execSync("taskkill /IM postgres.exe /F", { stdio: "ignore" }); } catch { /* none */ }
+  await stopRuntime();
+  await stopRuntimeFromFile(path.join(process.cwd(), "tests", "e2e", ".auth", "runtime.json"));
 }

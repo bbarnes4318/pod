@@ -50,7 +50,7 @@ export default function RundownTray({
             const expanded = expandedId === t.id;
             const panelId = `tray-panel-${t.id}`;
             return (
-              <li key={t.id} data-testid={`tray-${t.id}`} className="studioCard" draggable
+              <li key={t.id} data-testid={`tray-${t.id}`} data-tray-topic={t.id} className="studioCard" draggable
                 onDragStart={() => { dragFrom.current = i; }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => { e.preventDefault(); if (dragFrom.current !== null && dragFrom.current !== i) onReorder(dragFrom.current, i); dragFrom.current = null; }}

@@ -15,6 +15,7 @@ import path from "path";
 // embedded-postgres is CJS-only; ESM import fails at runtime, so require() here.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const EmbeddedPostgres = require("embedded-postgres").default || require("embedded-postgres");
+import { stopEmbeddedPgScoped } from "../../tests/e2e/runtime";
 
 const MIGRATION = path.join(
   process.cwd(),
@@ -151,7 +152,8 @@ async function main() {
     } catch (e) { bad("re-running the migration is safe (snapshot not clobbered)", e); }
   } finally {
     await client.end().catch(() => {});
-    await pg.stop().catch(() => {});
+    // Scoped stop: this instance only, reaping its own leftover children.
+    await stopEmbeddedPgScoped(pg, dir).catch(() => {});
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

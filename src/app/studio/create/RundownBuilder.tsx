@@ -23,7 +23,7 @@ import TopicRundownPicker from "./TopicRundownPicker";
 import RundownTray from "./RundownTray";
 
 type Mode = "manual" | "automatic" | "hybrid";
-export interface BuilderPodcast { id: string; name: string; verticals: string[]; teams: string[]; segmentCount: number; hostIds: string[]; }
+export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; }
 export interface BuilderHost { id: string; name: string; intensity: number; }
 
 const STEPS: { key: RundownStep; label: string }[] = [
@@ -131,20 +131,36 @@ export default function RundownBuilder({
     finally { setLoadingTopics(false); }
   }, []);
 
-  // ---- Podcast selection + inheritance with dirty-state (item 4) ----
+  // ---- Podcast selection + inheritance with dirty-state ----
+  // A NON-dirty field always takes the newly selected show's value — INCLUDING an
+  // empty one — so nothing stale survives a switch. Standalone resets non-dirty
+  // fields to studio defaults. Dirty fields (explicit episode overrides, incl.
+  // those restored from a draft) are always kept and called out.
   const onSelectPodcast = (pid: string | null) => {
     setPodcastId(pid);
-    setInheritNote(null);
-    if (pid) {
-      const pod = podcasts.find((p) => p.id === pid);
-      if (pod) {
-        const applied: string[] = [];
-        if (!hostSelectionDirty && pod.hostIds.length) { setHostIds(pod.hostIds.slice(0, 2)); applied.push("hosts"); }
-        if (!targetCountDirty && pod.segmentCount) { setTargetTopicCount(Math.min(maxTopics, Math.max(1, pod.segmentCount))); applied.push("target count"); }
-        if (!prefsDirty && pod.verticals.length) { setVerticals(pod.verticals); applied.push("verticals"); }
-        if (applied.length) setInheritNote(`Inherited ${applied.join(", ")} from “${pod.name}”. Change any to override; overrides are kept if you switch shows.`);
-      }
+    const pod = pid ? podcasts.find((p) => p.id === pid) ?? null : null;
+    const applied: string[] = [];
+    const kept: string[] = [];
+
+    if (hostSelectionDirty) kept.push("hosts");
+    else { setHostIds(pod ? pod.hostIds.slice(0, 2) : hosts.slice(0, 2).map((h) => h.id)); if (pod) applied.push("hosts"); }
+
+    if (targetCountDirty) kept.push("target count");
+    else { setTargetTopicCount(pod?.segmentCount ? Math.min(maxTopics, Math.max(1, pod.segmentCount)) : 3); if (pod) applied.push("target count"); }
+
+    if (prefsDirty) kept.push("verticals/teams");
+    else {
+      setVerticals(pod?.verticals ?? []);
+      setTeams(pod?.teamNames ?? []); // resolved NAMES — never raw Team ids
+      if (pod) applied.push("verticals, teams");
     }
+
+    const where = pod ? `“${pod.name}”` : "Standalone";
+    const parts: string[] = [];
+    if (applied.length) parts.push(`Inherited ${applied.join(", ")} from ${where}.`);
+    else if (!pod) parts.push("Standalone — cleared show-inherited settings.");
+    if (kept.length) parts.push(`Kept your override${kept.length > 1 ? "s" : ""}: ${kept.join(", ")}.`);
+    setInheritNote(parts.length ? parts.join(" ") : null);
     void refreshTopics(pid);
   };
 

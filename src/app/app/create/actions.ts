@@ -35,6 +35,7 @@ import {
 } from "@/lib/services/studioActions";
 import type { PrismaClient } from "@prisma/client";
 import type { RundownDraftState } from "@/lib/services/studioDraft";
+import { shouldFailStartDebate, shouldStubQueue } from "@/lib/e2eSeam";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
@@ -186,13 +187,21 @@ export async function startDebate(
 ) {
   try {
     const gate = await requireSignedIn(); if (gate) return gate;
-    const job = await queueScriptGenerationJob({
-      episodeId,
-      scriptStyle: opts?.scriptStyle,
-      targetDurationMinutes: opts?.targetDurationMinutes,
-      maxWords: opts?.maxWords,
-      forceRegenerate: opts?.forceRegenerate,
-    });
+    // E2E-only fault injection (inert unless E2E_TEST_MODE=1).
+    if (shouldFailStartDebate()) {
+      return { success: false as const, error: "Couldn't start the debate — the job queue rejected it." };
+    }
+    // E2E-only: Redis is an external boundary the harness doesn't run. Only the
+    // enqueue is stubbed; the rest of this action executes for real.
+    const job = shouldStubQueue()
+      ? { id: "e2e-stub-job" }
+      : await queueScriptGenerationJob({
+          episodeId,
+          scriptStyle: opts?.scriptStyle,
+          targetDurationMinutes: opts?.targetDurationMinutes,
+          maxWords: opts?.maxWords,
+          forceRegenerate: opts?.forceRegenerate,
+        });
     revalidatePath(`/app/episodes/${episodeId}`);
     return { success: true as const, jobId: job.id };
   } catch (err: any) {

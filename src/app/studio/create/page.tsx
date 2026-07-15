@@ -4,7 +4,9 @@ import { currentUser } from "@/lib/currentUser";
 import { getTopicUsage, resolveTopicReusePolicy } from "@/lib/services/topicUsageService";
 import { buildStudioTopicVMs, type RawPoolTopic } from "@/lib/services/studioTopicPool";
 import { loadStudioDraft } from "@/lib/services/studioDraft";
+import { getStudioPodcastsFor, type StudioCtx } from "@/lib/services/studioActions";
 import { MAX_TOPICS_PER_EPISODE } from "@/lib/services/episodeCreation";
+import type { PrismaClient } from "@prisma/client";
 import RundownBuilder from "./RundownBuilder";
 
 export const dynamic = "force-dynamic";
@@ -24,19 +26,19 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
     if (pod && (pod.ownerId === user.id || user.role === "ADMIN")) scopedPodcastId = draft.podcastId;
   }
 
-  const [rawTopics, podcasts, hostRows] = await Promise.all([
+  // Studio lists ONLY the signed-in user's own shows (never legacy null-owner
+  // podcasts), with Team IDs resolved to names — same VM the action returns.
+  const podcastsRes = user
+    ? await getStudioPodcastsFor({ user: { id: user.id, role: user.role }, db: db as unknown as PrismaClient } as StudioCtx)
+    : { podcasts: [] };
+  const podcasts = podcastsRes.podcasts;
+
+  const [rawTopics, hostRows] = await Promise.all([
     db.topicCandidate.findMany({
       where: { status: { in: ["pending", "approved"] } },
       include: { researchBrief: true },
       orderBy: { createdAt: "desc" },
       take: 60,
-    }),
-    db.podcast.findMany({
-      // Studio lists ONLY the signed-in user's own shows — never legacy
-      // null-owner podcasts (which are not implicitly shared to everyone).
-      where: user ? { ownerId: user.id } : { id: "__none__" },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
     }),
     db.aiHost.findMany({
       where: { isActive: true, isArchived: false, ...(user ? { OR: [{ ownerId: user.id }, { ownerId: null }] } : { ownerId: null }) },

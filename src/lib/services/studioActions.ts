@@ -90,16 +90,41 @@ export async function getStudioTopicsFor(
   return { success: true, topics: vms };
 }
 
-export interface StudioPodcast { id: string; name: string; verticals: string[]; teams: string[]; segmentCount: number; hostIds: string[]; }
+/** Studio's podcast view-model. `Podcast.teams` holds Team IDs, but the
+ *  auto-selection service matches on team NAMES — so we resolve them here and
+ *  expose both. The UI must never show raw ids as if they were names. */
+export interface StudioPodcast {
+  id: string;
+  name: string;
+  verticals: string[];
+  teamIds: string[];
+  teamNames: string[];
+  segmentCount: number;
+  hostIds: string[];
+}
 
-/** The signed-in user's OWN saved shows only (never legacy null-owner podcasts). */
+/** The signed-in user's OWN saved shows only (never legacy null-owner podcasts),
+ *  with Team IDs resolved to display/selection names. */
 export async function getStudioPodcastsFor(ctx: StudioCtx): Promise<{ success: true; podcasts: StudioPodcast[] }> {
-  const podcasts = await ctx.db.podcast.findMany({
+  const rows = await ctx.db.podcast.findMany({
     where: { ownerId: ctx.user.id },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
   });
-  return { success: true, podcasts };
+  const allTeamIds = [...new Set(rows.flatMap((p) => p.teams))];
+  const teamRows = allTeamIds.length
+    ? await ctx.db.team.findMany({ where: { id: { in: allTeamIds } }, select: { id: true, name: true } })
+    : [];
+  const nameById = new Map(teamRows.map((t) => [t.id, t.name]));
+  return {
+    success: true,
+    podcasts: rows.map((p) => ({
+      id: p.id, name: p.name, verticals: p.verticals, segmentCount: p.segmentCount, hostIds: p.hostIds,
+      teamIds: p.teams,
+      // Unresolved ids are dropped rather than shown as fake names.
+      teamNames: p.teams.map((id) => nameById.get(id)).filter((n): n is string => !!n),
+    })),
+  };
 }
 
 export type CreateStudioEpisodeResult =

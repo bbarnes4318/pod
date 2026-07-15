@@ -11,10 +11,18 @@ import type { PrismaClient } from "@prisma/client";
 export const E2E = {
   userA: { id: "e2e-user-a", email: "e2e@studio.test", password: "test1234" },
   userB: { id: "e2e-user-b", email: "e2e-b@studio.test", password: "test1234" },
+  /** Podcast A: full defaults (NFL vertical, 2 teams, 2 hosts, 4 segments). */
   podcastId: "e2e-pod",
+  /** Podcast B: deliberately EMPTY verticals/teams/hosts + different count. */
+  podcastBId: "e2e-pod-b",
   hostAce: "e2e-host-ace",
   hostBlaze: "e2e-host-blaze",
+  hostCoach: "e2e-host-coach",
   hostPrivB: "e2e-host-privb",
+  teamChiefsId: "E2EKC",
+  teamChiefsName: "Kansas City Chiefs",
+  teamEaglesId: "E2EPHI",
+  teamEaglesName: "Philadelphia Eagles",
   topics: { lead: "e2e-t-lead", two: "e2e-t-two", three: "e2e-t-three", four: "e2e-t-four", nba: "e2e-t-nba", pending: "e2e-t-pending" },
 };
 
@@ -63,12 +71,28 @@ export async function seed(prisma: PrismaClient, bcrypt: { hashSync: (s: string,
   });
   await prisma.aiHost.create({ data: mkHost(E2E.hostAce, "Ace", E2E.userA.id) as any });
   await prisma.aiHost.create({ data: mkHost(E2E.hostBlaze, "Blaze", E2E.userA.id) as any });
+  await prisma.aiHost.create({ data: mkHost(E2E.hostCoach, "Coach", E2E.userA.id) as any });
   await prisma.aiHost.create({ data: mkHost(E2E.hostPrivB, "Zed (B private)", E2E.userB.id) as any });
 
+  // League + Teams so Podcast.teams (IDs) can resolve to real NAMES.
+  await prisma.league.create({ data: { id: "E2ENFL", name: "E2E Football", sport: "NFL", slug: "e2e-nfl" } as any });
+  await prisma.team.create({ data: { id: E2E.teamChiefsId, leagueId: "E2ENFL", name: E2E.teamChiefsName, city: "Kansas City", abbreviation: "KC", slug: "e2e-kc" } as any });
+  await prisma.team.create({ data: { id: E2E.teamEaglesId, leagueId: "E2ENFL", name: E2E.teamEaglesName, city: "Philadelphia", abbreviation: "PHI", slug: "e2e-phi" } as any });
+
+  // Podcast A — full defaults.
   await prisma.podcast.create({
     data: {
       id: E2E.podcastId, name: "The Overtime Show", cadence: "recurring", ownerId: E2E.userA.id,
-      verticals: ["NFL"], teams: [], segmentCount: 4, hostIds: [E2E.hostAce, E2E.hostBlaze],
+      verticals: ["NFL"], teams: [E2E.teamChiefsId, E2E.teamEaglesId], segmentCount: 4,
+      hostIds: [E2E.hostAce, E2E.hostBlaze],
+    } as any,
+  });
+  // Podcast B — deliberately EMPTY verticals/teams/hosts, different count. Used
+  // to prove a switch clears stale inherited values.
+  await prisma.podcast.create({
+    data: {
+      id: E2E.podcastBId, name: "Bare Bones Pod", cadence: "one_time", ownerId: E2E.userA.id,
+      verticals: [], teams: [], segmentCount: 2, hostIds: [],
     } as any,
   });
 

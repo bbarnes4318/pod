@@ -12,6 +12,10 @@ import { z } from "zod";
 import { db } from "../db";
 import { PLATFORM_MAX_TOPICS, MAX_HOSTS, MAX_TITLE_LEN, MAX_DESCRIPTION_LEN, PRODUCTION_STYLES, SFX_DENSITIES } from "../episodeLimits";
 import { dedupeIds } from "../studio/rundownRules";
+// Reuse the EXISTING provider/voice validation architecture — no duplicated
+// provider definitions here.
+import { isTtsProviderId } from "../providers/tts/providerIds";
+import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 
 /** The DB surface the draft helpers touch — satisfied by PrismaClient and the
  *  in-memory test doubles, so no `any` is needed at call sites. */
@@ -36,7 +40,9 @@ export const RundownDraftStateSchema = z
     targetTopicCount: z.number().int().min(1).max(PLATFORM_MAX_TOPICS).default(3),
     podcastId: z.string().min(1).nullable().optional(),
     hostIds: z.array(z.string().min(1)).max(MAX_HOSTS, `The pipeline supports ${MAX_HOSTS} hosts.`).default([]),
-    ttsProvider: z.string().min(1).nullable().optional(),
+    // Normalized to the canonical provider id; validated in superRefine against
+    // the shared supported-provider list.
+    ttsProvider: z.string().trim().min(1).transform((s) => s.toLowerCase()).nullable().optional(),
     ttsVoiceOverrides: z.unknown().optional(),
     productionStyle: z.enum(PRODUCTION_STYLES).nullable().optional(),
     sfxDensity: z.enum(SFX_DENSITIES).nullable().optional(),
@@ -69,6 +75,18 @@ export const RundownDraftStateSchema = z
     }
     if (val.leadTopicId && !val.selectedTopicIds.includes(val.leadTopicId)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadTopicId"], message: "The lead topic must be one of the selected topics." });
+    }
+    // TTS: validate against the SHARED provider list + override validator, so a
+    // malformed engine/voice can never be persisted and silently restored.
+    if (val.ttsProvider && !isTtsProviderId(val.ttsProvider)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsProvider"], message: `Unknown TTS provider '${val.ttsProvider}'.` });
+    }
+    if (val.ttsVoiceOverrides !== undefined && val.ttsVoiceOverrides !== null) {
+      try {
+        validateTtsVoiceOverridesInput(val.ttsVoiceOverrides);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsVoiceOverrides"], message: (err as Error).message });
+      }
     }
   });
 

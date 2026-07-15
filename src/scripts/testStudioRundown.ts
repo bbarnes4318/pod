@@ -86,7 +86,7 @@ function makeFakeDb(seed: { topics?: any[]; podcasts?: any[]; hosts?: any[]; tea
       findMany: async ({ where }: any) => [...topics.values()].filter((t) => (where?.status?.in ? where.status.in.includes(t.status) : where?.status ? t.status === where.status : true)),
     },
     aiHost: { findMany: hostFindMany },
-    team: { findMany: async ({ where }: any) => teams.filter((t: any) => (where?.id?.in ? where.id.in.includes(t.id) : true)).map((t: any) => ({ name: t.name })) },
+    team: { findMany: async ({ where }: any) => teams.filter((t: any) => (where?.id?.in ? where.id.in.includes(t.id) : true)).map((t: any) => ({ id: t.id, name: t.name })) },
     podcast: {
       findUnique: async ({ where }: any) => podcasts.find((p) => p.id === where.id) ?? null,
       findMany: async ({ where }: any) => podcasts.filter((p) => (where?.ownerId ? p.ownerId === where.ownerId : true)),
@@ -167,6 +167,24 @@ async function run() {
     assert(dd.success && JSON.stringify(dd.data.selectedTopicIds) === JSON.stringify(["a", "b", "c"]), "topic ids deduped preserving order");
   });
 
+  // ---- TTS validation in the durable draft ----
+  await check("schema: invalid TTS provider rejected; supported id normalized", () => {
+    const base: any = { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" };
+    assert(!RundownDraftStateSchema.safeParse({ ...base, ttsProvider: "not-a-provider" }).success, "unknown provider rejected");
+    const okp = RundownDraftStateSchema.safeParse({ ...base, ttsProvider: "ElevenLabs" });
+    assert(okp.success && okp.data.ttsProvider === "elevenlabs", "supported provider normalized to canonical id");
+  });
+  await check("schema: malformed / mismatched ttsVoiceOverrides rejected (shared validator)", () => {
+    const base: any = { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" };
+    const V = (o: unknown) => RundownDraftStateSchema.safeParse({ ...base, ttsVoiceOverrides: o }).success;
+    assert(!V({ "host-a": "not-an-object" }), "non-object override rejected");
+    assert(!V({ "host-a": { provider: "bogus", voiceId: "x" } }), "unknown override provider rejected");
+    // A real provider/voice MISMATCH the shared validator can determine:
+    assert(!V({ "host-a": { provider: "openai", voiceId: "definitely-not-an-openai-voice" } }), "openai voice mismatch rejected");
+    assert(!V({ "host-a": { provider: "fish", voiceId: "too-short" } }), "fish reference-id mismatch rejected");
+    assert(V({ "host-a": { provider: "elevenlabs", voiceId: "v1" } }), "well-formed override accepted");
+  });
+
   // ---- Estimates + rules + mode transitions (item 3) ----
   await check("estimate: grounded; cost null without a rate, labeled with a rate", async () => {
     assert(estimateRundown({ topicCount: 3 }).estimatedCostUsd === null, "no fake cost");
@@ -232,6 +250,21 @@ async function run() {
     const ep = db._episodes.get((res as any).episodeId);
     assert(JSON.stringify(ep.hostIds) === JSON.stringify(["host-a", "host-b"]), "episode inherits podcast hosts A+B");
     assert((res as any).finalOrder.length === 2, "episode inherits podcast segment count (2)");
+  });
+  await check("action: podcast Team IDs resolve to NAMES (never raw ids) and reach createEpisodeDraft", async () => {
+    const db = makeFakeDb({
+      topics: [goodTopic("t1", { summary: "The Chiefs collapsed in the 4th." })],
+      teams: [{ id: "KC", name: "Kansas City Chiefs" }, { id: "PHI", name: "Philadelphia Eagles" }],
+      podcasts: [{ id: "pA", ownerId: "oA", name: "A", verticals: ["NFL"], teams: ["KC", "PHI"], segmentCount: 2, hostIds: [] }],
+    });
+    const list = await getStudioPodcastsFor(ctxFor(db));
+    const vm = list.podcasts[0];
+    assert(JSON.stringify(vm.teamIds) === JSON.stringify(["KC", "PHI"]), "teamIds preserved");
+    assert(JSON.stringify(vm.teamNames) === JSON.stringify(["Kansas City Chiefs", "Philadelphia Eagles"]), "team NAMES resolved");
+    assert(!vm.teamNames.includes("KC"), "raw ids are never presented as names");
+    // Client omits teams → server inherits + resolves ids to names for selection.
+    const res = await createStudioEpisodeFor(ctxFor(db), { mode: "manual", selectedTopicIds: ["t1"], podcastId: "pA", hostIds: H } as any, okDeps);
+    assert(res.success, (res as any).error);
   });
   await check("action: automatic preferences reach createEpisodeDraft (different pool → different rundown)", async () => {
     const db = makeFakeDb({ topics: [goodTopic("nfl", { debateScore: 99 }), goodTopic("nba", { sport: "NBA", leagueId: "NBA", debateScore: 99 })] });

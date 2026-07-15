@@ -21,6 +21,7 @@ import { execSync } from "child_process";
 const EmbeddedPostgres = require("embedded-postgres").default || require("embedded-postgres");
 import { PrismaClient } from "@prisma/client";
 import { createEpisodeDraft } from "../lib/services/episodeCreation";
+import { stopEmbeddedPgScoped } from "../../tests/e2e/runtime";
 
 let passed = 0, failed = 0;
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
@@ -222,7 +223,8 @@ async function main() {
     } catch (e) { bad("manual concurrency unchanged: pinned reuse under exclude_podcast → exactly one succeeds", e); }
   } finally {
     await prisma.$disconnect().catch(() => {});
-    await pg.stop().catch(() => {});
+    // Scoped stop: this instance only, reaping its own leftover children.
+    await stopEmbeddedPgScoped(pg, dir).catch(() => {});
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);
