@@ -63,29 +63,48 @@ this change. Any claim otherwise (including in the first report) was wrong.
 
 ---
 
-## 3. Safe coordinated-deploy strategy
+## 3. Safe coordinated-deploy strategy (maintenance-mode order)
 
-Deploy web + worker + DB **together** in a single maintenance step. Both the
-web app and the BullMQ worker read topic status and snapshots, so they must ship
-the same code at the same time (see [[coolify-deploy]] — always deploy web +
-worker together).
+Deploy web + worker + DB **together**. Both the web app and the BullMQ worker
+read topic status and snapshots, so they must ship the same code at the same
+time (see [[coolify-deploy]] — always deploy web + worker together). The
+critical rule: **the migrated database must never be exposed to the OLD web
+code** (which writes `status:"used"` and requires `status==="used"` — both fatal
+under the new enum). That means the interactive web writers must be stopped
+*before* the migration, not merely the queue.
 
-**Recommended (brief drain, no data loss):**
+**Migration ownership:** exactly ONE release job runs `prisma migrate deploy`
+(the deploy/release step, step 6 below). The web and worker **containers must
+NOT run migrations on boot** — do not let both race `migrate deploy` on startup.
+Confirm neither the web nor the worker image runs `prisma migrate deploy` in its
+entrypoint; only the release job does.
 
-1. **Quiesce writers.** Pause the episode-creation queue and stop scheduled/
-   recurring generation so nothing writes `status` during the switch. In-flight
-   jobs finish or are left queued (they are not lost).
-2. **Back up** `TopicCandidate` and `EpisodeTopic` (a plain `pg_dump` of those
-   tables is enough for a forward-fix path — see §4).
-3. **Apply the migration** (`prisma migrate deploy`). It is transactional per
-   statement group and aborts loudly on unexpected data.
-4. **Deploy the new web + worker images together** (new code expects the enum,
-   the snapshot column, and derived usage).
-5. **Un-pause** the queue and recurring generation.
+**Order:**
+
+1. **Enable maintenance mode** — stop routing write traffic to the CURRENT web
+   app (maintenance page / drain the load balancer). This is what closes the
+   "old web code on new schema" window; do not skip it.
+2. **Pause and drain** the BullMQ `podcast-generation` queue (episode-creation
+   jobs). Let in-flight jobs finish or leave them queued (not lost).
+3. **Disable recurring + scheduled generation** (the daily scheduler tick) so no
+   new build is enqueued mid-switch.
+4. **Confirm no active episode-creation transaction remains** — check for
+   in-flight `build:episode` workers and open transactions before proceeding.
+5. **Back up** `TopicCandidate` and `EpisodeTopic` (`pg_dump` of those tables is
+   enough for the forward-fix path — see §4).
+6. **Run the migration ONCE** via the single release job (`prisma migrate
+   deploy`). It is transactional and aborts loudly on unexpected data.
+7. **Deploy compatible web + worker images together** (new code expects the
+   enum, the snapshot column, and derived usage).
+8. **Run smoke tests** — create a draft episode, generate a script for an
+   existing topic, load `/studio/takes` — before taking any traffic.
+9. **Resume worker queues + schedulers** (un-pause step 2/3).
+10. **Disable maintenance mode** — route traffic back to the new web app.
 
 Expected impact: a short window (seconds-to-minutes) where episode creation is
 paused. Reads (RSS, playback, analytics) are unaffected — none of those columns
-change shape destructively.
+change shape destructively — but write traffic is intentionally held during the
+switch.
 
 **Do not** roll only one of {code, schema} forward or back.
 
@@ -104,8 +123,25 @@ Because a data rollback is not clean, prefer **forward fixes**:
   reversal** first — add `"used"` back as an allowed value (retype the column to
   text, or add the enum label), then re-derive which topics were "used" from
   `EpisodeTopic` join rows, then set them back to `"used"`. This is a
-  deliberate, scripted operation from the §3.2 backup — not an automatic
+  deliberate, scripted operation from the §3 step-5 backup — not an automatic
   `migrate down`. Budget for it explicitly; do not assume it is instant.
+
+### Failed-deployment recovery path
+
+If step 7 (new images) or step 8 (smoke tests) fails, **keep maintenance mode
+ON** (do not run step 10). The database is already migrated and valid, so the
+fix is *forward*, not backward:
+
+1. Leave maintenance mode enabled and queues paused — no old code ever touches
+   the migrated DB.
+2. Build and deploy a corrected web + worker image (forward fix).
+3. Re-run smoke tests (step 8).
+4. Only once green, resume queues/schedulers (step 9) and disable maintenance
+   mode (step 10).
+
+Reverting to the pre-migration images is NOT a valid recovery here: they are
+incompatible with the migrated schema (see §2). Reach for the §4 manual data
+reversal only if a forward fix is genuinely impossible.
 
 ---
 

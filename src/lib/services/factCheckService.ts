@@ -118,7 +118,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   // snapshot when present (fact-checking must judge the script against the SAME
   // evidence it was generated from, not a later-edited live brief), else live.
   for (const et of script.episode.topics) {
-    const content = resolveEpisodeTopicContent(et as any);
+    const content = resolveEpisodeTopicContent(et);
     const facts = Array.isArray(content.facts) ? content.facts : [];
     const sourceIds = Array.isArray(content.sourceIds) ? content.sourceIds : [];
     if (facts.length === 0) {
@@ -147,8 +147,8 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   const evidencePanelItems: any[] = [];
 
   for (const et of script.episode.topics) {
-    const content = resolveEpisodeTopicContent(et as any);
-    const brief: any = briefLikeFromContent(content);
+    const content = resolveEpisodeTopicContent(et);
+    const brief = briefLikeFromContent(content);
     const sourceIds = Array.isArray(brief.sourceIds) ? (brief.sourceIds as any[]) : [];
     const facts = Array.isArray(brief.facts) ? (brief.facts as any[]) : [];
     const stats = Array.isArray(brief.stats) ? (brief.stats as any[]) : [];
@@ -573,7 +573,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
       // that made it false-flag facts it was never shown). The sourceId-based
       // `evidencePanelItems` above is kept for the deterministic number check.
       const reviewerEvidence = collectReviewerEvidence(
-        script.episode.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et as any)) }))
+        script.episode.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et)) }))
       );
       const reviewerPanel = toEvidencePanel(reviewerEvidence.evidenceTexts);
       reviewerEvidenceFingerprint = evidenceFingerprint(reviewerEvidence.evidenceTexts);

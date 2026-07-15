@@ -6,8 +6,15 @@
 // live TopicCandidate/ResearchBrief cannot change or break an already-created
 // episode's gate result. Legacy rows (no snapshot) fall back to live data.
 
-import { scoreTopicTalkability } from "./talkabilityService";
+import { scoreTopicTalkability, TalkabilityReport, TalkabilityAxis } from "./talkabilityService";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
+
+/** A talkability report as the gate consumes it: always a total, and the full
+ *  axis breakdown when computed live (snapshot reports carry only `total`). */
+type GateTalkReport = { total: number; axes?: TalkabilityReport["axes"] };
+
+/** One EpisodeTopic as accepted by the resolver — snapshot + optional live topic. */
+type EpisodeTopicLike = Parameters<typeof resolveEpisodeTopicContent>[0];
 
 export interface TopicGateOptions {
   /** "block" (default) | "warn". */
@@ -24,7 +31,7 @@ export interface TopicGateResult {
   gateBlocked: boolean;
   gateMessage?: string;
   avgTalkability: number;
-  talkabilityReports: { title: string; report: { total: number; axes?: any } }[];
+  talkabilityReports: { title: string; report: GateTalkReport }[];
   reasons: string[];
   /** True when EVERY topic's content came from a valid snapshot. */
   allFromSnapshot: boolean;
@@ -35,18 +42,18 @@ export interface TopicGateResult {
  * synchronous — the caller applies throws for `blockingError` / `gateBlocked`.
  */
 export function evaluateEpisodeTopicsForScript(
-  episodeTopics: Array<{ snapshot?: unknown; topic?: any }>,
+  episodeTopics: Array<EpisodeTopicLike>,
   opts: TopicGateOptions = {}
 ): TopicGateResult {
   const gateMode = (opts.gateMode ?? process.env.CONTENT_GATE_MODE ?? "block").toLowerCase();
   const gateMin = opts.gateMin ?? (Number(process.env.CONTENT_GATE_MIN) || 50);
 
   const reasons: string[] = [];
-  const talkabilityReports: { title: string; report: { total: number; axes?: any } }[] = [];
+  const talkabilityReports: { title: string; report: GateTalkReport }[] = [];
   let allFromSnapshot = true;
 
   for (const et of episodeTopics) {
-    const content = resolveEpisodeTopicContent(et as any);
+    const content = resolveEpisodeTopicContent(et);
     if (!content.fromSnapshot) allFromSnapshot = false;
     if (content.snapshotStatus === "corrupt" || content.snapshotStatus === "unsupported_version") {
       reasons.push(`Topic '${content.title}': snapshot ${content.snapshotStatus} — fell back to live content.`);
@@ -65,13 +72,13 @@ export function evaluateEpisodeTopicsForScript(
     // Talkability: use the FROZEN selection-time report when the snapshot has
     // one; otherwise compute from resolved content + the snapshot's creation
     // timestamp (never the live topic).
-    let report = content.talkability as { total: number; axes?: any } | null | undefined;
+    let report: GateTalkReport | null | undefined = content.talkability;
     if (!report || typeof report.total !== "number") {
       report = scoreTopicTalkability({
         title: content.title,
         summary: content.summary,
-        createdAt: (content.topicCreatedAt ? new Date(content.topicCreatedAt) : new Date()) as any,
-        brief: briefLikeFromContent(content) as any,
+        createdAt: content.topicCreatedAt ? new Date(content.topicCreatedAt) : new Date(),
+        brief: briefLikeFromContent(content),
       });
     }
     talkabilityReports.push({ title: content.title, report });
@@ -82,7 +89,7 @@ export function evaluateEpisodeTopicsForScript(
 
   for (const tr of talkabilityReports) {
     const axes = tr.report.axes
-      ? Object.entries(tr.report.axes).map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`).join(", ")
+      ? Object.entries(tr.report.axes).map(([k, v]: [string, TalkabilityAxis]) => `${k} ${v.score}/${v.max}`).join(", ")
       : "";
     reasons.push(`Talkability '${tr.title}': ${tr.report.total}/100${axes ? ` (${axes})` : ""}`);
   }

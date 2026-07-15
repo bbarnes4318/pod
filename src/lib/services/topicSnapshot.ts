@@ -88,7 +88,7 @@ export interface SnapshotParse {
 export function parseSnapshot(raw: unknown): SnapshotParse {
   if (raw === null || raw === undefined) return { status: "missing" };
   if (typeof raw !== "object") return { status: "corrupt", reason: "snapshot is not an object" };
-  const version = (raw as any).version;
+  const version = (raw as { version?: unknown }).version;
   if (version !== undefined && version !== EPISODE_TOPIC_SNAPSHOT_VERSION) {
     return { status: "unsupported_version", reason: `snapshot version ${String(version)} is not supported` };
   }
@@ -157,8 +157,8 @@ export function buildTopicSnapshot(
   const talk = scoreTopicTalkability({
     title: topic.title,
     summary: topic.summary ?? null,
-    createdAt: (topic.createdAt instanceof Date ? topic.createdAt : new Date()) as any,
-    brief: brief as any,
+    createdAt: topic.createdAt instanceof Date ? topic.createdAt : new Date(),
+    brief,
   });
   return {
     version: EPISODE_TOPIC_SNAPSHOT_VERSION,
@@ -187,7 +187,7 @@ export function buildTopicSnapshot(
     oddsContext: brief?.oddsContext ?? null,
     topicCreatedAt: toIso(topic.createdAt ?? new Date()),
     selectionTimestamp: toIso(selectionTimestamp),
-    talkability: talk as any,
+    talkability: talk as unknown as EpisodeTopicSnapshot["talkability"],
     evidenceFingerprint: evidenceFingerprintSha256(brief?.facts, brief?.sourceIds, topic.evidenceIds),
     fingerprintAlgo: "sha256",
   } as EpisodeTopicSnapshot;
@@ -269,7 +269,7 @@ export function resolveEpisodeTopicContent(et: {
       oddsContext: s.oddsContext ?? null,
       topicCreatedAt: s.topicCreatedAt ?? null,
       selectionTimestamp: s.selectionTimestamp ?? null,
-      talkability: (s.talkability as any) ?? null,
+      talkability: s.talkability ?? null,
     };
   }
 

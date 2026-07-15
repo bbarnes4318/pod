@@ -20,7 +20,6 @@ import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptO
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
-import { scoreTopicTalkability } from "./talkabilityService";
 
 export interface ScriptBuildInput {
   episodeId: string;
@@ -196,13 +195,13 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // episode has a snapshot, so a later edit of the source topic/brief cannot
   // change or break an already-created episode. Legacy rows fall back to live.
   const { evidenceTexts, evidenceByRefId } = collectReviewerEvidence(
-    ep.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et as any)) }))
+    ep.topics.map((et) => ({ researchBrief: briefLikeFromContent(resolveEpisodeTopicContent(et)) }))
   );
 
   const topicsPrompts = ep.topics.map((et, idx) => {
-    const content = resolveEpisodeTopicContent(et as any);
+    const content = resolveEpisodeTopicContent(et);
     const b: any = briefLikeFromContent(content);
-    const t: any = { title: content.title, sport: content.sport, leagueId: content.leagueId, debateScore: content.debateScore };
+    const t = { title: content.title, sport: content.sport, leagueId: content.leagueId, debateScore: content.debateScore };
 
     // Collect allowed sourceRefs
     const sourceIds = Array.isArray(b.sourceIds) ? (b.sourceIds as any[]) : [];
