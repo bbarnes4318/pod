@@ -167,6 +167,38 @@ async function run() {
     assert(dd.success && JSON.stringify(dd.data.selectedTopicIds) === JSON.stringify(["a", "b", "c"]), "topic ids deduped preserving order");
   });
 
+  // ---- Inheritance provenance in the durable draft ----
+  await check("provenance: overrides parse, persist, and restore", async () => {
+    const db = makeFakeDb({});
+    const state = {
+      mode: "automatic", selectedTopicIds: [], targetTopicCount: 4, hostIds: H, activeStep: "topics",
+      verticals: ["NFL"], teams: ["Kansas City Chiefs"],
+      overrides: { hosts: false, targetTopicCount: true, selectionPreferences: false },
+    };
+    assert((await saveStudioDraft("oA", state, db as any)).ok, "save ok");
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(!!loaded, "draft restored");
+    assert(loaded!.overrides.targetTopicCount === true, "explicit override restored as explicit");
+    assert(loaded!.overrides.hosts === false && loaded!.overrides.selectionPreferences === false, "inherited values restored as inherited");
+  });
+  await check("provenance: a LEGACY draft without overrides gets safe defaults (nothing is an override)", async () => {
+    const db = makeFakeDb({});
+    // Simulate a draft persisted before provenance existed.
+    db._drafts.set("oA", { state: { mode: "automatic", selectedTopicIds: [], targetTopicCount: 4, hostIds: H, activeStep: "topics", verticals: ["NFL"] } });
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(!!loaded, "legacy draft still loads (backwards compatible)");
+    assert(loaded!.overrides.hosts === false && loaded!.overrides.targetTopicCount === false && loaded!.overrides.selectionPreferences === false,
+      "legacy values default to INHERITED, so a newly selected podcast can replace them");
+  });
+  await check("provenance: a non-empty inherited value is NOT inferred to be an override", async () => {
+    const db = makeFakeDb({});
+    // Inherited hosts/verticals are non-empty — provenance must still say "not an override".
+    const state = { mode: "automatic", selectedTopicIds: [], targetTopicCount: 4, hostIds: H, verticals: ["NFL"], teams: ["Chiefs"], activeStep: "topics", overrides: { hosts: false, targetTopicCount: false, selectionPreferences: false } };
+    await saveStudioDraft("oA", state, db as any);
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(loaded!.hostIds.length === 2 && loaded!.overrides.hosts === false, "values persist but remain inherited");
+  });
+
   // ---- TTS validation in the durable draft ----
   await check("schema: invalid TTS provider rejected; supported id normalized", () => {
     const base: any = { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" };

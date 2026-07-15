@@ -55,6 +55,20 @@ export const RundownDraftStateSchema = z
     teams: z.array(z.string().min(1)).optional(),
     sport: z.string().min(1).nullable().optional(),
     minDebateScore: z.number().min(0).max(100).nullable().optional(),
+    // ---- PROVENANCE ----
+    // Whether each setting is an EXPLICIT producer override (true) or merely an
+    // inherited/default value (false). Without this, a restored draft can't tell
+    // "Podcast A gave me these hosts" from "the producer chose these hosts", and
+    // inherited values wrongly survive a switch to another podcast.
+    // Legacy drafts have no `overrides` key → safe default: nothing is an
+    // override, so every value stays replaceable by the next selected podcast.
+    overrides: z
+      .object({
+        hosts: z.boolean(),
+        targetTopicCount: z.boolean(),
+        selectionPreferences: z.boolean(),
+      })
+      .default({ hosts: false, targetTopicCount: false, selectionPreferences: false }),
     activeStep: z.enum(RUNDOWN_STEPS).default("show"),
   })
   .superRefine((val, ctx) => {

@@ -99,7 +99,15 @@ export default async function globalSetup(_config: FullConfig) {
       stdio: ["ignore", logFd, logFd],
     });
     trackNext(next);
-    persistRuntimeInfo(RUNTIME_FILE, { nextPid: next.pid, pgDataDir: dataDir, tmpRoot: path.dirname(dataDir) });
+    // Record whether nextPid leads its own POSIX process group, so the durable
+    // fallback can signal the GROUP (killing npx/node/next descendants) rather
+    // than only the spawned shell.
+    persistRuntimeInfo(RUNTIME_FILE, {
+      nextPid: next.pid,
+      nextProcessGroup: process.platform !== "win32",
+      pgDataDir: dataDir,
+      tmpRoot: path.dirname(dataDir),
+    });
 
     await waitForHttp(`${APP_URL}/app/login`, 180000);
     await waitForHttp(`${APP_URL}/api/auth/csrf`, 120000);

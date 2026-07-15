@@ -73,11 +73,15 @@ export default function RundownBuilder({
   const [sport, setSport] = useState<string>(d?.sport ?? "");
   const [minDebateScore, setMinDebateScore] = useState<number | null>(d?.minDebateScore ?? null);
 
-  // Dirty-state tracking so podcast inheritance never clobbers explicit choices.
-  // A RESTORED draft's non-empty values are treated as explicit overrides.
-  const [hostSelectionDirty, setHostSelectionDirty] = useState<boolean>(!!d?.hostIds?.length);
-  const [targetCountDirty, setTargetCountDirty] = useState<boolean>(!!d);
-  const [prefsDirty, setPrefsDirty] = useState<boolean>(!!(d?.verticals?.length || d?.teams?.length || d?.leagueIds?.length || d?.sport || d?.minDebateScore != null));
+  // ---- Inheritance PROVENANCE ----
+  // Restored from the draft's explicit `overrides` record — NOT inferred from
+  // "the value is non-empty" (an inherited host list is non-empty too) or from
+  // "a draft exists" (autosaving a default must never make it an override).
+  // Legacy drafts without `overrides` default to false ⇒ values stay inherited
+  // and remain replaceable by the next podcast.
+  const [hostSelectionDirty, setHostSelectionDirty] = useState<boolean>(d?.overrides?.hosts ?? false);
+  const [targetCountDirty, setTargetCountDirty] = useState<boolean>(d?.overrides?.targetTopicCount ?? false);
+  const [prefsDirty, setPrefsDirty] = useState<boolean>(d?.overrides?.selectionPreferences ?? false);
 
   const [topics, setTopics] = useState<StudioTopicVM[]>(initialTopics);
   const [loadingTopics, setLoadingTopics] = useState(false);
@@ -99,8 +103,11 @@ export default function RundownBuilder({
       productionStyle: (productionStyle || null) as RundownDraftState["productionStyle"], sfxDensity: (sfxDensity || null) as RundownDraftState["sfxDensity"], title: title || null, description: description || null,
       verticals: verticals.length ? verticals : undefined, leagueIds: leagueIds.length ? leagueIds : undefined,
       teams: teams.length ? teams : undefined, sport: sport || null, minDebateScore, activeStep: step,
+      // Persist WHY each value holds what it holds, so a reload can still tell an
+      // inherited value from a deliberate override.
+      overrides: { hosts: hostSelectionDirty, targetTopicCount: targetCountDirty, selectionPreferences: prefsDirty },
     }),
-    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step]
+    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step, hostSelectionDirty, targetCountDirty, prefsDirty]
   );
 
   // ---- Autosave (debounced, cross-session resume) ----

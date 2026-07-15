@@ -159,51 +159,87 @@ test.describe("Studio rundown — full flows", () => {
     expect(dbOrder).toHaveLength(1);
   });
 
-  test("podcast inheritance: A → B (empty defaults) → Standalone, overrides retained", async ({ page }) => {
+  // FLOW A — inherited values must stay REPLACEABLE across a reload.
+  test("inheritance flow A: Podcast A inherited values survive reload but are replaced by Podcast B", async ({ page }) => {
     await gotoCreate(page);
-    // ---- Podcast A: full defaults inherit and are VISIBLE ----
     await page.getByTestId(`podcast-${E2E.podcastId}`).click();
     await expect(page.getByTestId("inherit-note")).toContainText("Inherited");
-    // Hosts: A's two saved hosts selected, in chair order A then B.
+
+    // A's two saved hosts are visibly selected, in chair order A then B.
     await page.getByTestId("step-hosts").click();
     await expect(page.getByTestId(`host-${E2E.hostAce}`)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`host-${E2E.hostBlaze}`)).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId(`host-${E2E.hostAce}`)).toContainText("A");
     await expect(page.getByTestId(`host-${E2E.hostBlaze}`)).toContainText("B");
-    // Target count + verticals + TEAM NAMES (not ids) inherited.
+
+    // Count + verticals + TEAM NAMES (never raw ids) inherited.
     await page.getByTestId("step-show").click();
     await page.getByTestId("mode-automatic").click();
     await page.getByTestId("step-topics").click();
     await expect(page.getByTestId("target-count")).toHaveText("4");
-    await expect(page.getByTestId(`pref-vertical-NFL`)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("pref-vertical-NFL")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("pref-teams")).toHaveValue(new RegExp(E2E.teamChiefsName));
     await expect(page.getByTestId("pref-teams")).not.toHaveValue(new RegExp(E2E.teamChiefsId));
 
-    // ---- Switch to Podcast B (empty verticals/teams/hosts, count 2) ----
+    // The autosaved draft records these as INHERITED, not overrides.
+    const saved = await waitForDraft(E2E.userA.id, (s) => s.targetTopicCount === 4 && !!s.overrides);
+    expect(saved.overrides).toEqual({ hosts: false, targetTopicCount: false, selectionPreferences: false });
+    expect(saved.teams).toEqual([E2E.teamChiefsName, E2E.teamEaglesName]);
+
+    // Reload — values restore, still as inherited.
+    await page.reload();
+    await page.getByTestId("step-topics").click();
+    await expect(page.getByTestId("target-count")).toHaveText("4");
+    await expect(page.getByTestId("pref-vertical-NFL")).toHaveAttribute("aria-pressed", "true");
+
+    // Switch to Podcast B (empty verticals/teams/hosts, count 2) — A's inherited
+    // values must be REPLACED/CLEARED even though the draft held non-empty ones.
     await page.getByTestId("step-show").click();
     await page.getByTestId(`podcast-${E2E.podcastBId}`).click();
+    // Nothing was producer-edited, so no "Kept your override" may appear.
+    await expect(page.getByTestId("inherit-note")).not.toContainText("Kept your override");
     await page.getByTestId("step-topics").click();
-    // Stale values from A must be GONE.
     await expect(page.getByTestId("target-count")).toHaveText("2");
     await expect(page.getByTestId("pref-teams")).toHaveValue("");
-    await expect(page.getByTestId(`pref-vertical-NFL`)).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("pref-vertical-NFL")).toHaveAttribute("aria-pressed", "false");
+    // A's hosts are gone (B has none → studio defaults; Ace is not among them).
+    await page.getByTestId("step-hosts").click();
+    await expect(page.getByTestId(`host-${E2E.hostAce}`)).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("discard-draft").click();
+  });
 
-    // ---- Override the target, then switch to Standalone: override retained ----
+  // FLOW B — real overrides must SURVIVE reload and a podcast switch.
+  test("inheritance flow B: explicit overrides survive reload and switching to Podcast B", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId(`podcast-${E2E.podcastId}`).click();
+    await page.getByTestId("mode-automatic").click();
+    await page.getByTestId("step-topics").click();
+    await expect(page.getByTestId("target-count")).toHaveText("4"); // inherited
+
+    // Producer explicitly overrides target count AND selection preferences.
     await page.locator("#targetCount").fill("5");
+    await page.getByTestId("pref-vertical-NBA").click(); // add NBA → prefs overridden
+    const saved = await waitForDraft(E2E.userA.id, (s) => s.overrides?.targetTopicCount === true && s.overrides?.selectionPreferences === true);
+    expect(saved.overrides.hosts).toBe(false); // hosts were never edited
+    expect(saved.targetTopicCount).toBe(5);
+
+    // Reload — explicit overrides restore as overrides.
+    await page.reload();
+    await page.getByTestId("step-topics").click();
+    await expect(page.getByTestId("target-count")).toHaveText("5");
+    await expect(page.getByTestId("pref-vertical-NBA")).toHaveAttribute("aria-pressed", "true");
+
+    // Switch to Podcast B: ONLY the explicitly-changed settings survive.
     await page.getByTestId("step-show").click();
-    await page.getByTestId("podcast-standalone").click();
+    await page.getByTestId(`podcast-${E2E.podcastBId}`).click();
     await expect(page.getByTestId("inherit-note")).toContainText("Kept your override");
     await page.getByTestId("step-topics").click();
-    await expect(page.getByTestId("target-count")).toHaveText("5");
-
-    // Override survives a reload — wait for the row to actually persist rather
-    // than racing the debounce.
-    await waitForDraft(E2E.userA.id, (s) => s.mode === "automatic" && s.targetTopicCount === 5);
-    await page.reload();
-    await page.getByTestId("step-show").click();
-    await expect(page.getByTestId("mode-automatic")).toHaveAttribute("aria-checked", "true");
-    await page.getByTestId("step-topics").click();
-    await expect(page.getByTestId("target-count")).toHaveText("5");
+    await expect(page.getByTestId("target-count")).toHaveText("5");                          // override kept
+    await expect(page.getByTestId("pref-vertical-NBA")).toHaveAttribute("aria-pressed", "true"); // override kept
+    await expect(page.getByTestId("pref-vertical-NFL")).toHaveAttribute("aria-pressed", "true"); // part of the same overridden prefs
+    // Hosts were NOT overridden → they follow Podcast B (which has none).
+    await page.getByTestId("step-hosts").click();
+    await expect(page.getByTestId(`host-${E2E.hostAce}`)).toHaveAttribute("aria-pressed", "false");
     await page.getByTestId("discard-draft").click();
   });
 

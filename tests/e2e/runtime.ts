@@ -43,20 +43,12 @@ export async function stopEmbeddedPgScoped(pg: { stop: () => Promise<void> }, da
   await stopPostgresScoped(dataDir, pg);
 }
 
-/** Kill exactly one process tree, cross-platform, BY PID (never by name). */
-export function killTree(proc: ChildProcess): void {
-  const pid = proc.pid;
-  if (!pid) return;
-  if (process.platform === "win32") {
-    // /T = this PID's tree only. Scoped to our spawned shell + next child.
-    try { execSync(`taskkill /PID ${pid} /T /F`, { stdio: "ignore" }); } catch { /* already exited */ }
-  } else {
-    // We spawn detached on POSIX, so the child leads its own process group;
-    // negative pid signals that group only.
-    try { process.kill(-pid, "SIGTERM"); } catch {
-      try { process.kill(pid, "SIGTERM"); } catch { /* already exited */ }
-    }
-  }
+/** Kill exactly one process tree, cross-platform, BY PID (never by name).
+ *  Delegates to the same scoped shutdown the durable fallback uses. */
+export async function killTree(proc: ChildProcess): Promise<void> {
+  if (!proc.pid) return;
+  // We spawn Next detached on POSIX, so it leads its own process group.
+  await stopProcessTreeScoped(proc.pid, process.platform !== "win32");
 }
 
 /** Direct child PIDs of a given PID — used to reap OUR postgres cluster's own
@@ -118,7 +110,11 @@ async function stopPostgresScoped(dataDir: string | null, pgObj?: { stop: () => 
 async function reapChildrenOfDeadParent(pm: number): Promise<void> {
   if (process.platform !== "win32") return; // POSIX reparents; graceful stop suffices
   const ourBin = path.join(process.cwd(), "node_modules", "@embedded-postgres").replace(/\\/g, "/");
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // Postgres can spawn a replacement child slightly AFTER an earlier pass looks
+  // clean, so require two consecutive clean passes rather than stopping at the
+  // first empty one.
+  let cleanPasses = 0;
+  for (let attempt = 0; attempt < 6 && cleanPasses < 2; attempt++) {
     await new Promise((r) => setTimeout(r, 400));
     let rows: Array<{ ProcessId: number; CommandLine?: string }> = [];
     try {
@@ -126,10 +122,11 @@ async function reapChildrenOfDeadParent(pm: number): Promise<void> {
         `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter 'ParentProcessId=${pm}' | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress"`,
         { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
       ).trim();
-      if (!out) return; // nothing left
-      const parsed = JSON.parse(out);
-      rows = Array.isArray(parsed) ? parsed : [parsed];
-    } catch { return; }
+      if (out) {
+        const parsed = JSON.parse(out);
+        rows = Array.isArray(parsed) ? parsed : [parsed];
+      }
+    } catch { /* treat as an empty pass */ }
     let killedAny = false;
     for (const r of rows) {
       // Double-scoped: our postmaster's child AND our own embedded binary.
@@ -138,7 +135,7 @@ async function reapChildrenOfDeadParent(pm: number): Promise<void> {
         killedAny = true;
       }
     }
-    if (!killedAny) return;
+    cleanPasses = killedAny ? 0 : cleanPasses + 1;
   }
 }
 
@@ -152,7 +149,47 @@ function killPid(pid: number): void {
   }
 }
 
-export interface RuntimeInfo { nextPid?: number; pgDataDir?: string; tmpRoot?: string }
+/** Is this PID (or POSIX process group, when negative) still alive? */
+function targetAlive(target: number): boolean {
+  try { process.kill(target, 0); return true; } catch (err) {
+    // EPERM means it exists but we may not signal it — still "alive".
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/**
+ * Terminate EXACTLY one recorded process tree, cross-platform, and nothing else.
+ *
+ * Windows: `taskkill /PID <pid> /T /F` — that PID's tree only, never by image name.
+ * POSIX:   when the recorded process leads its own process group (we spawn Next
+ *          detached), signal ONLY that group via the negative PID: SIGTERM,
+ *          brief grace, then SIGKILL to the SAME negative PID if it survives.
+ *          Killing the bare PID would leave npx/node/next descendants alive.
+ * Idempotent; an already-dead target counts as success.
+ */
+export async function stopProcessTreeScoped(pid: number, isProcessGroup: boolean): Promise<void> {
+  if (!pid || Number.isNaN(pid)) return;
+  if (process.platform === "win32") {
+    killPid(pid); // /T tree kill, scoped to this PID
+    return;
+  }
+  // POSIX: prefer the process group so descendants go too.
+  const target = isProcessGroup ? -pid : pid;
+  try { process.kill(target, "SIGTERM"); } catch { return; /* already gone */ }
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    if (!targetAlive(target)) return;
+  }
+  try { process.kill(target, "SIGKILL"); } catch { /* raced to exit */ }
+}
+
+export interface RuntimeInfo {
+  nextPid?: number;
+  /** True when nextPid leads its own POSIX process group (spawned detached). */
+  nextProcessGroup?: boolean;
+  pgDataDir?: string;
+  tmpRoot?: string;
+}
 
 /** Record what we started so teardown can stop it even if module state is not
  *  shared between Playwright's globalSetup and globalTeardown (it loads them in
@@ -183,7 +220,9 @@ function pgCtlPath(): string | null {
 export async function stopRuntimeFromFile(file: string): Promise<void> {
   let info: RuntimeInfo;
   try { info = JSON.parse(fs.readFileSync(file, "utf8")); } catch { return; }
-  if (info.nextPid) killPid(info.nextPid);
+  // Scoped tree shutdown: on POSIX this signals only OUR process group, so the
+  // npx/node/next descendants of the spawned shell die with it.
+  if (info.nextPid) await stopProcessTreeScoped(info.nextPid, !!info.nextProcessGroup);
 
   if (info.pgDataDir && fs.existsSync(info.pgDataDir)) {
     await stopPostgresScoped(info.pgDataDir, null, pgCtlPath());
@@ -201,7 +240,7 @@ export async function stopRuntimeFromFile(file: string): Promise<void> {
  *  stopRuntimeFromFile covers the case where it doesn't. */
 export async function stopRuntime(): Promise<void> {
   if (runtime.nextProc) {
-    killTree(runtime.nextProc);
+    await killTree(runtime.nextProc);
     runtime.nextProc = null;
   }
   if (runtime.pg) {
