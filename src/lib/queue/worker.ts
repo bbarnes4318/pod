@@ -8,6 +8,7 @@ import {
   sourceRulesBlock, PROMPT_EVIDENCE_TYPES, type PacketTopicSource,
 } from "../services/researchBriefService";
 import { dedupeRefs, sortRefs, type EvidenceReference } from "../services/evidenceRefs";
+import { e2eResearchResult } from "../research/e2eResearchStub";
 
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
@@ -1959,13 +1960,20 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let providerError = null;
 
     try {
-      llmResult = await withLlmStage("topics:research-brief", () =>
+      // E2E ONLY: replace the MODEL'S OUTPUT and nothing else. Everything below
+      // — validation, source promotion, persistence — runs for real against the
+      // real database, which is the whole point: a stub that also short-circuited
+      // the validator would prove nothing about grounding. Inert in production
+      // (e2eResearchResult re-checks E2E_TEST_MODE and returns null).
+      const stubbed = e2eResearchResult(topicId, usableSources.map((s) => s.id), briefHostA.name, briefHostB.name);
+      llmResult = stubbed ?? await withLlmStage("topics:research-brief", () =>
         llm.generateStructuredOutput<any>({
           prompt,
           systemPrompt,
           temperature: 0.2,
         })
       );
+      if (stubbed) console.warn(`[Worker] E2E research stub supplied the brief for topic=${topicId} (no LLM call).`);
     } catch (err: any) {
       providerError = err.message;
       parseErrorCount = 1;

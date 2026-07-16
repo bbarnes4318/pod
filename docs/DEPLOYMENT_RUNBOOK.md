@@ -99,6 +99,89 @@ The system uses the configured cover image from `PODCAST_IMAGE_URL`:
 
 ## Database Migrations
 
+### Baseline and migration history
+
+The migration history starts with **`20260704000000_baseline`**, which creates the
+schema as it existed on 2026-07-05 (20 tables, no enums). Every other migration
+assumes those tables exist.
+
+**Why it exists.** This project's database was originally created with
+`prisma db push`, so the migrations folder began mid-history: the first
+incremental migration `ALTER`s `Episode`, a table no migration ever created.
+Against an empty database `prisma migrate deploy` therefore failed with
+`relation "Episode" does not exist` — the repository could not rebuild its own
+schema. That is invisible until the day it matters: **disaster recovery**, a new
+**staging** environment, or auditing whether the history actually describes the
+database. The E2E harness hid it by using `db push`.
+
+The two tools are not interchangeable:
+
+| | `prisma db push` | `prisma migrate deploy` |
+|---|---|---|
+| Records history in `_prisma_migrations` | **No** | Yes |
+| Runs data backfills / seeds | **No** | Yes |
+| Appropriate for | local throwaway dev only | **production, staging, recovery** |
+
+> [!CAUTION]
+> **Never run `prisma db push` against production or staging.** It syncs the
+> shape and silently skips every data step (the legacy-status conversion, the
+> `selectedAt` and snapshot backfills, the league seeds). You get a database
+> that looks right and never had that work done. `test:deployment-contract`
+> fails if any non-test script or the Dockerfile uses it.
+
+**Rebuilding a database from nothing** (recovery, new staging):
+
+```bash
+# Against a genuinely EMPTY database:
+npx prisma migrate deploy      # baseline + every incremental migration, in order
+npx prisma migrate status      # expect: no pending, no failed
+```
+
+`npm run test:migration-baseline` proves this end-to-end on a throwaway
+Postgres every CI run: empty database -> `migrate deploy` -> current schema with
+**zero drift**, verified with `prisma migrate diff --exit-code`.
+
+### Adopting an existing database (created by `db push`)
+
+An environment built with `db push` has the tables but an **empty or partial
+`_prisma_migrations`**. Prisma will complain. Do **not** silence it.
+
+> [!CAUTION]
+> **Never run `migrate resolve --applied` just to clear an error.** `resolve`
+> records a *claim* that a migration ran. Some migrations do work no schema
+> comparison can see — `20260714120000` converts the legacy `used` status and
+> backfills `EpisodeTopic.selectedAt` and snapshots. A database can match the
+> schema perfectly and still have none of that done. Marking it applied freezes
+> the corruption and certifies it as fine.
+
+Run the **read-only** auditor first. It never writes, never resolves, never
+deploys, and never prints the connection string:
+
+```bash
+npm run audit:migration-adoption
+```
+
+It reports the sanitized target, whether `_prisma_migrations` exists, which
+migrations are applied/missing/failed/rolled-back, schema drift, which known
+checkpoint the schema matches, the **data invariants**, and a verdict:
+
+| Verdict | Meaning |
+|---|---|
+| `READY FOR MIGRATE DEPLOY` | History is consistent. Run the normal release step. |
+| `ADOPTION POSSIBLE` | A plan is printed, **PROPOSED ONLY — NOT EXECUTED**. |
+| `ADOPTION BLOCKED` | Schema may match, but a data invariant fails. Fix the data. |
+| `MANUAL DATABASE REVIEW REQUIRED` | Failed record, unknown migration, or unknown drift. Stop. |
+
+Before executing **any** proposed plan: **take a verified backup**, enter
+**maintenance mode**, **pause the queue workers and schedulers**, and confirm the
+**single migration owner**. Then run the commands one at a time and re-run the
+auditor to verify.
+
+**Stop conditions** — halt immediately and escalate if: the backup is unverified,
+any command errors, drift appears where the audit reported none, an invariant
+flips to failing, the auditor reports a migration this repo does not contain, or
+a migration is recorded as failed/rolled-back.
+
 > [!CAUTION]
 > **Single migration owner.** Exactly ONE release step runs `prisma migrate deploy`.
 > The **web** and **worker** containers must **never** migrate on startup — `start:web`
