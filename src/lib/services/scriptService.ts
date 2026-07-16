@@ -1,3 +1,4 @@
+import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "../db";
 import { getScriptLLMProvider, getVerifyLLMProvider } from "../providers/llm/factory";
 import { withLlmStage } from "../providers/llm/costLedger";
@@ -60,15 +61,10 @@ import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./c
 import { resolveEpisodeHosts } from "./hostCasting";
 import type { AiHost } from "@prisma/client";
 
-const VALID_EVIDENCE_TYPES = [
-  "game",
-  "newsItem",
-  "injury",
-  "oddsSnapshot",
-  "teamStat",
-  "playerStat",
-  "research",
-];
+// The SHARED list — this was three identical copies, which is precisely how
+// `topicSource` would have been added to the pipeline and silently stripped
+// here. One definition, in src/lib/services/evidenceRefs.ts.
+const VALID_EVIDENCE_TYPES: readonly string[] = EVIDENCE_TYPES;
 
 export async function generateScriptForEpisode(input: ScriptBuildInput): Promise<ScriptBuildResult> {
   const result: ScriptBuildResult = {

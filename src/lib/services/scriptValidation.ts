@@ -17,18 +17,14 @@ export interface ValidationSummary {
   reasons: string[];
 }
 
+import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { stripAudioTags } from "../audio/speechText";
 import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
 
-const VALID_EVIDENCE_TYPES = [
-  "game",
-  "newsItem",
-  "injury",
-  "oddsSnapshot",
-  "teamStat",
-  "playerStat",
-  "research",
-];
+// The SHARED list — this was three identical copies, which is precisely how
+// `topicSource` would have been added to the pipeline and silently stripped
+// here. One definition, in src/lib/services/evidenceRefs.ts.
+const VALID_EVIDENCE_TYPES: readonly string[] = EVIDENCE_TYPES;
 
 export function validateScriptContent(
   content: any,

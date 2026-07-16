@@ -50,9 +50,9 @@ function goodTopic(id: string, over: Partial<Topic> = {}): Topic {
   return {
     id, title: `Topic ${id}`, status: "approved", sport: "NFL", leagueId: "NFL",
     summary: "A hot debate about last night's game and what it means.",
-    debateScore: 90, bettingRelevanceScore: 40, evidenceIds: [{ type: "news", id: "n1" }],
+    debateScore: 90, bettingRelevanceScore: 40, evidenceIds: [{ type: "newsItem", id: "n1" }],
     createdAt: new Date("2026-07-10T00:00:00Z"),
-    researchBrief: { facts: [{ f: "x" }], sourceIds: [{ type: "news", id: "n1" }], argumentForHostA: "A side", argumentForHostB: "B side" },
+    researchBrief: { facts: [{ f: "x" }], sourceIds: [{ type: "newsItem", id: "n1" }], argumentForHostA: "A side", argumentForHostB: "B side" },
     ...over,
   };
 }

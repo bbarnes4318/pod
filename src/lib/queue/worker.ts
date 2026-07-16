@@ -3,6 +3,11 @@ import "dotenv/config";
 import { assertProductionEnv, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
 import { runResearchRouting } from "../research/source-router";
 import { fetchArticleExcerpts } from "../research/articleText";
+import {
+  selectUsableSources, serializeSourceForPacket, promoteCitedSources,
+  sourceRulesBlock, PROMPT_EVIDENCE_TYPES, type PacketTopicSource,
+} from "../services/researchBriefService";
+import { dedupeRefs, sortRefs, type EvidenceReference } from "../services/evidenceRefs";
 
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
@@ -23,7 +28,7 @@ import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
-import type { AiHost } from "@prisma/client";
+import type { AiHost, Prisma } from "@prisma/client";
 import { podcastQueue } from "./podcastQueue";
 
 /** Persona block for LLM prompts, built from a host's own profile record —
@@ -1780,10 +1785,22 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       resolvedGamesCount: resolvedGames.length,
     });
 
-    // Dynamically insert Exa research results into topicEvidenceMap as valid "research" refs
+    // Dynamically insert Exa research results into topicEvidenceMap as valid "research" refs.
+    // These are TRANSIENT: nothing stores them, so a persisted `research-3`
+    // resolves to nothing once this job ends. They may inform the brief, but
+    // validateBriefResult strips them from sourceIds, and the eligibility gate
+    // refuses to count them as durable evidence.
     for (let idx = 0; idx < researchResults.length; idx++) {
       topicEvidenceMap.set(`research-${idx + 1}`, "research");
     }
+
+    // Operator-imported sources for THIS topic. selectUsableSources drops
+    // failed/incomplete imports and anything belonging to another topic — a
+    // fetched URL is not automatically usable material.
+    const sourceRows = await db.topicSource.findMany({ where: { topicId } });
+    const usableSources = selectUsableSources(sourceRows as unknown as PacketTopicSource[], topicId);
+    for (const s of usableSources) topicEvidenceMap.set(s.id, "topicSource");
+    console.log(`[Worker] Topic sources: ${usableSources.length}/${sourceRows.length} usable for topic=${topicId}`);
 
     const isBettingTopic = classification === "betting_market" || 
       `${topic.title} ${topic.summary}`.toLowerCase().match(/\b(odds|spread|total|moneyline|betting|wager)\b/i);
@@ -1851,6 +1868,12 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
           ...resolvedTeamStats.map((ts) => ({ id: ts.id, teamId: ts.teamId, type: ts.statType, value: ts.value })),
           ...resolvedPlayerStats.map((ps) => ({ id: ps.id, playerId: ps.playerId, type: ps.statType, value: ps.value })),
         ],
+        // Articles an editor imported FOR THIS TOPIC. Without these a custom
+        // topic had nothing real to stand on, which is why one could never
+        // become episode-eligible. Already-sanitized plain text — the stored
+        // extraction is reused rather than refetched, since re-fetching a page
+        // we already have costs a request and can return something different.
+        topicSources: usableSources.map(serializeSourceForPacket),
       },
     };
 
@@ -1865,6 +1888,8 @@ ${sourcePriorityGuideline}
 ${hostPersonaBlock(briefHostA)}
 
 ${hostPersonaBlock(briefHostB)}
+
+${sourceRulesBlock()}
 
 Rules:
 - Do not invent facts, stats, injuries, odds, quotes, or rumors.
@@ -1888,28 +1913,28 @@ Schema:
   "keyFactsContext": [
     {
       "text": "Fact/context statement (e.g. team has won 4 games in a row)",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
+      "evidenceRefs": [ { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" } ],
       "confidence": "high" | "medium" | "low"
     }
   ],
   "onAirTalkingPoints": [
     {
       "text": "Talking point / stat comparison for the hosts to highlight on air",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ]
+      "evidenceRefs": [ { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" } ]
     }
   ],
   "contrarianAngle": "A contrarian view or hot take that goes against the consensus.",
   "strongestDebateQuestion": "The ultimate debate question that drives the show segment.",
   "suggestedHostTake": "A recommended landing point or take for the main host.",
   "argumentForHostA": "The argument ${briefHostA.name} will make from their worldview, grounded in evidence.",
-  "argumentForHostAEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
+  "argumentForHostAEvidenceRefs": [ { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" } ],
   "argumentForHostB": "The argument ${briefHostB.name} will make from their worldview, grounded in evidence.",
-  "argumentForHostBEvidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ],
+  "argumentForHostBEvidenceRefs": [ { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" } ],
   "counterArguments": [
     {
       "host": "${briefHostA.name}" | "${briefHostB.name}",
       "claim": "Counterpoint or argument",
-      "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" } ]
+      "evidenceRefs": [ { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" } ]
     }
   ],
   "unsafeClaims": [
@@ -1919,7 +1944,7 @@ Schema:
     }
   ],
   "sourceIds": [
-    { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "research", "id": "matching-uuid-or-id" }
+    { "type": ${PROMPT_EVIDENCE_TYPES}, "id": "matching-uuid-or-id" }
   ]
 }`;
 
@@ -1994,7 +2019,18 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     }
 
     const rumorKeywords = /\b(reported|rumored|sources say|likely|expected|could be|might be|insider|unnamed source)\b/i;
-    const hasEvidence = topicEvidenceMap.size > 0;
+
+    // An EMPTY packet used to set hasEvidence=false, which SKIPPED every ref
+    // check below and accepted each claim with `evidenceRefs: []`. That is how
+    // an ungrounded brief got written: with nothing supplied, every "fact" is
+    // invention by definition, so there is nothing to validate against and no
+    // honest way to accept anything. Refuse the run instead.
+    if (topicEvidenceMap.size === 0) {
+      throw new Error(
+        "Brief generation failed: no evidence was available for this topic (no resolved evidence records and no usable imported sources). Import a source or run topic generation first."
+      );
+    }
+    const hasEvidence = true;
 
     const filterClaims = (list: any[], target: any[]) => {
       for (const item of list) {
@@ -2202,15 +2238,30 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       allRefsMap.set(`${ref.type}:${ref.id}`, ref);
     }
 
-    let finalSourceIds = Array.from(allRefsMap.values());
-    if (finalSourceIds.length === 0) {
-      // Fallback for unmatched topics
-      finalSourceIds = [{ type: "topic", id: topicId }];
-    }
+    // REMOVED: the `[{ type: "topic", id: topicId }]` fallback that used to sit
+    // here. When nothing matched, it manufactured a citation out of the very
+    // thing being cited — and because the eligibility gate only measured array
+    // LENGTH, a topic sourced entirely to itself passed as "sourced". That is
+    // the single line that made ungrounded briefs indistinguishable from
+    // grounded ones. A brief with no real source is now a FAILURE, which is the
+    // honest outcome: we could not source this, so it does not go to air.
+    //
+    // Transient research is also dropped here: `research-N` ids resolve to
+    // nothing once this job ends, so they may inform the brief but can never BE
+    // its durable sourcing.
+    const allDurableRefs = Array.from(allRefsMap.values()).filter(
+      (r) => r && r.type !== "research" && r.id !== topicId
+    );
+    const finalSourceIds = sortRefs(dedupeRefs(allDurableRefs as EvidenceReference[]));
 
     // 8. Reject Weak Briefs
     if (validFacts.length === 0) {
       throw new Error("Brief generation failed: No valid facts remained after validation check.");
+    }
+    if (finalSourceIds.length === 0) {
+      throw new Error(
+        "Brief generation failed: no durable source survived validation. The brief was not grounded in any verifiable record, so it was not saved."
+      );
     }
 
     // Nullify injury and odds context if no injury/odds snapshots exist
@@ -2244,21 +2295,49 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       sourceNotesUsed,
     };
 
-    // Save ResearchBrief linked to the TopicCandidate
-    if (existingBrief) {
-      await db.researchBrief.update({
+    // Save the brief AND promote the sources it actually cited, in ONE
+    // transaction: a brief that is grounded but whose topic never gained the
+    // evidence (or the reverse) is a half-state nothing downstream could read
+    // correctly.
+    //
+    // PROMOTION IS EARNED, NOT GRANTED. Only topicSource refs that a VALIDATED
+    // claim cited get promoted, and they are re-checked against the database
+    // here rather than trusted from the in-memory pass. An imported source that
+    // research never used stays exactly where it was: a source, not evidence.
+    // This is also why import does not write evidenceIds — fetching a URL
+    // proves the URL resolved, not that it supports anything.
+    const citedTopicSourceRefs = sortRefs(dedupeRefs(
+      (finalSourceIds as EvidenceReference[]).filter((r) => r.type === "topicSource")
+    ));
+
+    const promotion = await promoteCitedSources(
+      { db: db as never },
+      topicId,
+      citedTopicSourceRefs,
+      topic.evidenceIds
+    );
+
+    await db.$transaction(async (tx) => {
+      await tx.researchBrief.upsert({
         where: { topicId },
-        data: briefData,
+        create: { topicId, ...briefData },
+        update: briefData,
       });
-      updatedCount = 1;
-    } else {
-      await db.researchBrief.create({
-        data: {
-          topicId,
-          ...briefData,
-        },
-      });
-      insertedCount = 1;
+      if (promotion.promoted.length > 0) {
+        await tx.topicCandidate.update({
+          where: { id: topicId },
+          data: { evidenceIds: promotion.evidenceIds as unknown as Prisma.InputJsonValue },
+        });
+      }
+    });
+    if (existingBrief) updatedCount = 1;
+    else insertedCount = 1;
+
+    if (promotion.promoted.length > 0) {
+      console.log(`[Worker] Promoted ${promotion.promoted.length} cited source(s) into evidence for topic=${topicId}`);
+    }
+    for (const d of promotion.dropped) {
+      console.warn(`[Worker] Source not promoted (${d.reason}) topic=${topicId} ref=${d.ref.type}:${d.ref.id}`);
     }
 
     // 8. Complete JobLog

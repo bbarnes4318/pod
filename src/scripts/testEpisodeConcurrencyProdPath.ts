@@ -45,7 +45,7 @@ function topicData(over: Partial<any> = {}) {
     bettingRelevanceScore: 40,
     recencyScore: 80,
     debateScore: 90,
-    evidenceIds: [{ type: "news", id: "n1" }],
+    evidenceIds: [{ type: "newsItem", id: "n1" }],
     status: "approved" as const,
     researchBrief: {
       create: {
@@ -55,7 +55,7 @@ function topicData(over: Partial<any> = {}) {
         argumentForHostB: "B side",
         counterArguments: [],
         unsafeClaims: [],
-        sourceIds: [{ type: "news", id: "n1" }],
+        sourceIds: [{ type: "newsItem", id: "n1" }],
         mainAngle: "angle",
         contrarianAngle: "contra",
         onAirTalkingPoints: ["p1"],

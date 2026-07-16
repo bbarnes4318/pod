@@ -44,7 +44,7 @@ function brief(over: any = {}) {
   return {
     facts: [{ text: "A grounded, sourced fact about the matchup." }],
     stats: [{ text: "42% conversion on 3rd down." }],
-    sourceIds: [{ type: "news", id: "n1" }],
+    sourceIds: [{ type: "newsItem", id: "n1" }],
     argumentForHostA: "The offense carried the day.",
     argumentForHostB: "No — the defense won it.",
     counterArguments: [], unsafeClaims: [],
@@ -67,7 +67,7 @@ async function topic(prisma: PrismaClient, id: string, title: string, over: any 
       summary: over.summary ?? "A genuinely argue-worthy debate from last night's game.",
       controversyScore: 80, starPowerScore: 70, bettingRelevanceScore: 40, recencyScore: 85,
       debateScore: over.debateScore ?? 90,
-      evidenceIds: over.evidenceIds ?? [{ type: "news", id: "n1" }],
+      evidenceIds: over.evidenceIds ?? [{ type: "newsItem", id: "n1" }],
       status: over.status ?? "approved",
       ...(withBrief ? { researchBrief: { create: brief(over.brief) } } : {}),
     } as any,

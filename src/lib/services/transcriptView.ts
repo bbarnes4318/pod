@@ -138,6 +138,17 @@ async function resolveCitations(refs: { type: string; id: string }[]): Promise<M
       : null,
   ]);
 
+  // TopicSource — an operator-imported article. Like NewsItem it carries a real
+  // canonical URL, so a promoted source becomes a citation a reader can
+  // actually click and check, rather than a blank chip.
+  if (idsOf("topicSource").length) {
+    const rows = await db.topicSource.findMany({
+      where: { id: { in: idsOf("topicSource") } },
+      select: { id: true, canonicalUrl: true, title: true, publisher: true },
+    });
+    for (const s of rows) put("topicSource", s.id, s.publisher || s.title || "Imported source", s.canonicalUrl || null);
+  }
+
   // `research` refs are web-research notes with no DB row and no stored URL —
   // surface them honestly as a labelled chip, never a fake link.
   for (const id of idsOf("research")) put("research", id, "Web research", null);

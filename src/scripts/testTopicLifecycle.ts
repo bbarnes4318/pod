@@ -30,9 +30,9 @@ function goodTopic(id: string, over: any = {}) {
   return {
     id, title: `Topic ${id}`, status: "approved", sport: "NFL", leagueId: "NFL",
     summary: "A genuinely hot debate about last night's game and what it means for the season.",
-    debateScore: 90, bettingRelevanceScore: 40, evidenceIds: [{ type: "news", id: "n1" }],
+    debateScore: 90, bettingRelevanceScore: 40, evidenceIds: [{ type: "newsItem", id: "n1" }],
     createdAt: new Date("2026-07-10T00:00:00Z"),
-    researchBrief: { facts: [{ text: "A real grounded fact.", evidenceRefs: [{ id: "n1" }] }], sourceIds: [{ type: "news", id: "n1" }], stats: [], argumentForHostA: "A side", argumentForHostB: "B side", mainAngle: "angle", contrarianAngle: "contra", onAirTalkingPoints: ["p1"] },
+    researchBrief: { facts: [{ text: "A real grounded fact.", evidenceRefs: [{ id: "n1" }] }], sourceIds: [{ type: "newsItem", id: "n1" }], stats: [], argumentForHostA: "A side", argumentForHostB: "B side", mainAngle: "angle", contrarianAngle: "contra", onAirTalkingPoints: ["p1"] },
     ...over,
   };
 }
