@@ -1,3 +1,4 @@
+import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "@/lib/db";
 import { getVerifyLLMProvider, resolveVerifyLLMConfig } from "@/lib/providers/llm/factory";
 import { withLlmStage } from "@/lib/providers/llm/costLedger";
@@ -19,15 +20,10 @@ import { verifyLineAgainstEvidence } from "./factNumbers";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 
-const VALID_EVIDENCE_TYPES = [
-  "game",
-  "newsItem",
-  "injury",
-  "oddsSnapshot",
-  "teamStat",
-  "playerStat",
-  "research",
-];
+// The SHARED list — this was three identical copies, which is precisely how
+// `topicSource` would have been added to the pipeline and silently stripped
+// here. One definition, in src/lib/services/evidenceRefs.ts.
+const VALID_EVIDENCE_TYPES: readonly string[] = EVIDENCE_TYPES;
 
 interface FactCheckInput {
   scriptId: string;
@@ -659,7 +655,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           factualByIndex,
           allowedSourceRefs,
           originalFlatLines,
-          validEvidenceTypes: VALID_EVIDENCE_TYPES,
+          validEvidenceTypes: [...VALID_EVIDENCE_TYPES],
         });
         errorsList.push(...lineOutput.errors);
         warningsList.push(...lineOutput.warnings);

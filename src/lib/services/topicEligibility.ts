@@ -22,6 +22,8 @@ import { scopedRecentUseCount } from "./topicUsageService";
 /** Which kind of pick is being evaluated. */
 export type SelectionContext = "manual" | "automatic" | "hybrid_pin";
 
+import { parseEvidenceRefList, resolveEvidenceRefs, RESEARCH_IS_TRANSIENT, type EvidenceDb } from "./evidenceRefs";
+
 export type EligibilityCode =
   // --- hard gates (block every context) ---
   | "not_found"
@@ -33,6 +35,15 @@ export type EligibilityCode =
   | "missing_sources"
   | "missing_host_arguments"
   | "insufficient_evidence"
+  // --- INTEGRITY gates (refs are present, but they don't hold up) ---
+  // Deliberately distinct from the "missing_*" codes above: "you have none" and
+  // "the ones you have aren't real" are different problems with different
+  // fixes, and collapsing them is exactly what let a topic citing ITSELF look
+  // properly sourced to a length check.
+  | "invalid_evidence"
+  | "invalid_sources"
+  | "cross_topic_source"
+  | "research_not_grounded"
   // --- live research state (only when a surface supplies it) ---
   | "research_queued"
   | "research_in_progress"
@@ -148,9 +159,32 @@ export function evaluateHardGates(
       topic.status === "rejected" ? "rejected" : topic.status === "archived" ? "archived" : "pending_approval";
     return [{ code, message: `Topic candidate '${topic.title}' is not approved (status: ${topic.status}).`, field: "status" }];
   }
+  // ---- Evidence: PRESENT, then STRUCTURALLY SOUND ----
+  // The second half is new and load-bearing. This gate used to ask only
+  // `length === 0`, so `[null]`, `["garbage"]`, and — the one that actually
+  // happened — `[{ type: "topic", id: <this topic> }]` all counted as evidence.
+  // Cardinality is not integrity.
   const evidenceIds = Array.isArray(topic.evidenceIds) ? topic.evidenceIds : [];
   if (evidenceIds.length === 0) {
     return [{ code: "insufficient_evidence", message: `Topic candidate '${topic.title}' has empty evidenceIds.`, field: "evidenceIds" }];
+  }
+  const evidence = parseEvidenceRefList(evidenceIds);
+  const selfCited = evidence.refs.some((r) => r.id === topic.id);
+  if (evidence.errors.some((e) => e.code === "topic_self") || selfCited) {
+    return [{ code: "invalid_evidence", message: `Topic candidate '${topic.title}' cites itself as evidence, which is not evidence.`, field: "evidenceIds" }];
+  }
+  // Durable evidence only: a transient `research-N` id resolves to nothing once
+  // its job ends, so it can inform a brief but can never be what makes a topic
+  // eligible.
+  const durableEvidence = evidence.refs.filter((r) => !(r.type === "research" && RESEARCH_IS_TRANSIENT));
+  if (durableEvidence.length === 0) {
+    return [{
+      code: "invalid_evidence",
+      message: evidence.refs.length > 0
+        ? `Topic candidate '${topic.title}' has no durable evidence — only transient research references.`
+        : `Topic candidate '${topic.title}' has no usable evidence references (${evidence.errors[0]?.message ?? "malformed"}).`,
+      field: "evidenceIds",
+    }];
   }
   const brief = topic.researchBrief;
   if (!brief) {
@@ -160,12 +194,87 @@ export function evaluateHardGates(
   if (facts.length === 0) {
     return [{ code: "missing_facts", message: `Topic candidate '${topic.title}' has empty facts in ResearchBrief.`, field: "facts" }];
   }
+  // ---- Sources: PRESENT, then STRUCTURALLY SOUND ----
   const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
   if (sourceIds.length === 0) {
     return [{ code: "missing_sources", message: `Topic candidate '${topic.title}' has empty sourceIds in ResearchBrief.`, field: "sourceIds" }];
   }
+  const sources = parseEvidenceRefList(sourceIds);
+  if (sources.errors.some((e) => e.code === "topic_self") || sources.refs.some((r) => r.id === topic.id)) {
+    return [{ code: "invalid_sources", message: `Topic candidate '${topic.title}' lists itself as its own source, which is not sourcing.`, field: "sourceIds" }];
+  }
+  const durableSources = sources.refs.filter((r) => !(r.type === "research" && RESEARCH_IS_TRANSIENT));
+  if (durableSources.length === 0) {
+    return [{
+      code: "invalid_sources",
+      message: sources.refs.length > 0
+        ? `Topic candidate '${topic.title}' is sourced only to transient research, which cannot be verified later.`
+        : `Topic candidate '${topic.title}' has no usable source references (${sources.errors[0]?.message ?? "malformed"}).`,
+      field: "sourceIds",
+    }];
+  }
   if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) {
     return [{ code: "missing_host_arguments", message: `Topic candidate '${topic.title}' has empty host arguments in ResearchBrief.`, field: "argumentForHostA" }];
+  }
+  return [];
+}
+
+/**
+ * The DB-backed half of the evidence gates: do the references actually RESOLVE?
+ *
+ * evaluateHardGates above is synchronous — it runs per card on a board and
+ * cannot issue queries — so it can only catch what is knowable from the shape
+ * (self-citation, malformed refs, transient-only evidence). This one closes the
+ * remaining hole: a well-formed ref to a row that was deleted, or to another
+ * topic's imported source, is indistinguishable from real evidence until you
+ * look. It runs where the answer decides something irreversible — creating an
+ * episode — rather than on every card render.
+ *
+ * Returns [] when the evidence holds up.
+ */
+export async function evaluateEvidenceIntegrity(
+  topic: EligibilityTopic,
+  ctx: { db: EvidenceDb }
+): Promise<EligibilityReason[]> {
+  const evidence = parseEvidenceRefList(topic.evidenceIds);
+  const durable = evidence.refs.filter((r) => !(r.type === "research" && RESEARCH_IS_TRANSIENT));
+  if (durable.length === 0) return []; // the sync gate already reported this
+
+  const resolved = await resolveEvidenceRefs(durable, { db: ctx.db, topicId: topic.id });
+  if (resolved.valid.length === 0) {
+    const first = resolved.invalid[0]?.error;
+    const code: EligibilityCode = first?.code === "cross_topic" ? "cross_topic_source" : "invalid_evidence";
+    return [{
+      code,
+      message: `Topic candidate '${topic.title}' has no evidence that resolves: ${first?.message ?? "every reference is invalid"}`,
+      field: "evidenceIds",
+    }];
+  }
+  // A cross-topic source is never merely "one bad ref among many" — it means
+  // this topic is claiming another topic's research as its own.
+  const crossTopic = resolved.invalid.find((i) => i.error.code === "cross_topic");
+  if (crossTopic) {
+    return [{
+      code: "cross_topic_source",
+      message: `Topic candidate '${topic.title}' references a source that belongs to a different topic.`,
+      field: "evidenceIds",
+    }];
+  }
+
+  const brief = topic.researchBrief;
+  if (brief) {
+    const sources = parseEvidenceRefList((brief as { sourceIds?: unknown }).sourceIds);
+    const durableSources = sources.refs.filter((r) => !(r.type === "research" && RESEARCH_IS_TRANSIENT));
+    if (durableSources.length > 0) {
+      const rs = await resolveEvidenceRefs(durableSources, { db: ctx.db, topicId: topic.id });
+      if (rs.valid.length === 0) {
+        return [{
+          code: "invalid_sources",
+          message: `Topic candidate '${topic.title}' has no source that resolves: ${rs.invalid[0]?.error.message ?? "every source is invalid"}`,
+          field: "sourceIds",
+        }];
+      }
+    }
   }
   return [];
 }

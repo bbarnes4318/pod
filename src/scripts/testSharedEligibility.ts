@@ -44,9 +44,9 @@ function topic(id: string, over: any = {}): EligibilityTopic & Record<string, an
     id, title: `Topic ${id}`, status: "approved", sport: "NFL", leagueId: "NFL",
     summary: "A genuinely hot debate about last night's game and what it means.",
     debateScore: 90, controversyScore: 80, starPowerScore: 70, bettingRelevanceScore: 40, recencyScore: 80,
-    evidenceIds: [{ type: "news", id: "n1" }], createdAt: new Date("2026-07-10T00:00:00Z"),
+    evidenceIds: [{ type: "newsItem", id: "n1" }], createdAt: new Date("2026-07-10T00:00:00Z"),
     researchBrief: {
-      facts: [{ text: "A real grounded fact." }], sourceIds: [{ type: "news", id: "n1" }], stats: [],
+      facts: [{ text: "A real grounded fact." }], sourceIds: [{ type: "newsItem", id: "n1" }], stats: [],
       argumentForHostA: "A side", argumentForHostB: "B side", mainAngle: "angle", contrarianAngle: "contra",
     },
     ...over,
