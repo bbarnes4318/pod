@@ -328,8 +328,9 @@ test.describe("Admin rundown — full flows", () => {
     await page.keyboard.press("Enter");
     expect(await trayOrder(page)).toEqual([T.two, T.lead]);
 
-    // Screen-reader announcements are made.
-    await expect(page.locator("[aria-live=polite]")).toContainText(/moved to position|added to the rundown/);
+    // Screen-reader announcements are made. Target the BUILDER's region
+    // explicitly — the custom-topic panel owns its own.
+    await expect(page.getByTestId("live-region")).toContainText(/moved to position|added to the rundown/);
     // Mode radios expose real state.
     await expect(page.getByTestId("mode-manual")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("mode-automatic")).toHaveAttribute("aria-checked", "false");

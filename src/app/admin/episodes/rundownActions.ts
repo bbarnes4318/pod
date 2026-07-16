@@ -26,6 +26,8 @@ import {
   type AdminRundownInput,
 } from "@/lib/services/adminRundown";
 import { queueResearchBriefGenerationJob } from "@/lib/queue/podcastQueue";
+import { consumeRateLimit, rateLimitMessage } from "@/lib/rateLimit";
+import { shouldStubQueue } from "@/lib/e2eSeam";
 import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 
 /** Build the audited admin context. Only callable after requireAdmin() has passed. */
@@ -165,6 +167,11 @@ export async function approveTopicFromRundown(topicId: string): Promise<
 export async function requestResearchFromRundown(topicId: string, forceRegenerate = false) {
   await requireAdmin();
   try {
+    const gate = await consumeRateLimit("researchEnqueue", adminIdentity());
+    if (!gate.allowed) {
+      return { success: false as const, error: rateLimitMessage("researchEnqueue", gate.retryAfterSeconds) };
+    }
+
     const topic = await db.topicCandidate.findUnique({
       where: { id: topicId },
       select: { id: true, status: true, title: true, researchBrief: { select: { id: true } } },
@@ -184,7 +191,13 @@ export async function requestResearchFromRundown(topicId: string, forceRegenerat
     if (forceRegenerate) {
       await audit("research-regenerate", { topicId, title: topic.title });
     }
-    const job = await queueResearchBriefGenerationJob({ topicId, forceRegenerate });
+    // Idempotent id: a double-click cannot queue the same expensive LLM run
+    // twice. Regeneration carries its own id so it isn't swallowed by the
+    // record of a prior first run.
+    const jobId = `research:${topicId}:${forceRegenerate ? "regen" : "initial"}`;
+    const job = shouldStubQueue()
+      ? { id: `e2e-stub-${jobId}` } // Redis is an EXTERNAL boundary; the harness runs without it.
+      : await queueResearchBriefGenerationJob({ topicId, forceRegenerate }, { jobId });
     revalidatePath("/admin/episodes");
     return { success: true as const, jobId: job.id };
   } catch (err) {

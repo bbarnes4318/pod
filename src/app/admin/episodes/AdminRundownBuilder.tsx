@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopicRundownPicker, { type TopicCardAction } from "@/components/rundown/TopicRundownPicker";
 import RundownTray from "@/components/rundown/RundownTray";
+import CustomTopicPanel from "./CustomTopicPanel";
 import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 import { PLATFORM_MAX_TOPICS } from "@/lib/episodeLimits";
 import { applyModeChange, validateRundownDraft, dedupeIds, type RundownMode } from "@/lib/studio/rundownRules";
@@ -321,7 +322,10 @@ export default function AdminRundownBuilder({ onCreated }: { onCreated?: () => v
 
   return (
     <div data-testid="admin-rundown">
-      <div aria-live="polite" className="srOnly" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+      {/* The BUILDER's announcements (selection, ordering, actions). The custom
+          topic panel owns a separate region for its own outcomes — two widgets,
+          two live regions, so an announcement from one never clobbers the other. */}
+      <div aria-live="polite" data-testid="live-region" className="srOnly" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
         {live}
       </div>
 
@@ -373,6 +377,17 @@ export default function AdminRundownBuilder({ onCreated }: { onCreated?: () => v
           </ul>
         </div>
       )}
+
+      {/* Custom topic + URL ingestion. A created topic lands on the board via
+          the SAME shared eligibility contract as everything else — it is never
+          auto-selected, and it shows its real blocking reason. */}
+      <CustomTopicPanel
+        onCreated={async () => {
+          await reloadTopics(selectedIds);
+          setNote("Custom topic created — pending approval. Find it on the board below.");
+          setLive("Custom topic created and pending approval.");
+        }}
+      />
 
       {note && <p className="stageHint" role="note" data-testid="builder-note">{note}</p>}
       {error && <p role="alert" data-testid="builder-error" style={{ color: "var(--error-color, #b91c1c)" }}>{error}</p>}
