@@ -97,6 +97,10 @@ model AiHost {
   // mutations are owner-gated; the resolver stays owner-agnostic.
   ownerId          String?
   ownerUser        User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  // Declared so the schema matches what 20260707150000_add_aihost_owner actually
+  // built. The pickers filter hosts by owner, so this index is wanted — it was
+  // simply never written down here, which showed up as drift the moment a
+  // database was rebuilt from migrations. See 20260715170000_reconcile_aihost_owner.
   // Documented voice provenance — the legal-safety fields (cf. Greene v. Google).
   // voiceSource: "owned" | "licensed" | "synthetic" | "cloned" (free-text for now).
   // voiceProvenanceNote: license id / consent record / source documentation.
@@ -106,6 +110,8 @@ model AiHost {
   voiceProvenanceNote String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([ownerId])
 }
 
 model SportsDataSource {

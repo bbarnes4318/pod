@@ -146,6 +146,112 @@ function run() {
     ok("Docker image build does not run migrations (prisma generate is fine)");
   } catch (e) { bad("Docker image build does not run migrations (prisma generate is fine)", e); }
 
+  // =====================================================================
+  // MIGRATION HISTORY INTEGRITY
+  //
+  // The repository must be able to rebuild its own database. It could not:
+  // the history began by ALTERing "Episode", a table no migration created, so
+  // `migrate deploy` against an empty database failed outright. These guard
+  // the baseline that fixed it.
+  // =====================================================================
+
+  const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
+  const migrationDirs = fs.readdirSync(migrationsDir).filter((d) => fs.statSync(path.join(migrationsDir, d)).isDirectory()).sort();
+
+  try {
+    assert(migrationDirs.length > 0, "no migrations found");
+    assert(migrationDirs[0] === "20260704000000_baseline",
+      `the baseline must sort FIRST — every later migration assumes its tables exist. Earliest is "${migrationDirs[0]}".`);
+    ok("exactly one baseline sorts before every incremental migration");
+  } catch (e) { bad("exactly one baseline sorts before every incremental migration", e); }
+
+  try {
+    // A second "baseline" would be ambiguous: which one does a fresh database
+    // start from, and which does an adoption plan mark applied?
+    const baselines = migrationDirs.filter((d) => /baseline/i.test(d));
+    assert(baselines.length === 1, `expected exactly 1 baseline migration, found ${baselines.length}: ${baselines.join(", ")}`);
+    ok("there is exactly one baseline migration");
+  } catch (e) { bad("there is exactly one baseline migration", e); }
+
+  try {
+    // The baseline must be the PRE-first-migration schema, not a snapshot of
+    // today's. If it were the latter, every later migration would try to
+    // re-create what already exists and a fresh deploy would fail on
+    // duplicates instead of missing relations.
+    const sql = fs.readFileSync(path.join(migrationsDir, "20260704000000_baseline", "migration.sql"), "utf8");
+    assert(!/CREATE TABLE "Podcast"/.test(sql), 'the baseline must NOT create "Podcast" — 20260706150000 does');
+    assert(!/CREATE TABLE "TopicSource"/.test(sql), 'the baseline must NOT create "TopicSource" — 20260715160000 does');
+    assert(!/CREATE TABLE "AdminDraft"/.test(sql), 'the baseline must NOT create "AdminDraft" — 20260715140000 does');
+    assert(!/CREATE TYPE "TopicEditorialStatus"/.test(sql), "the baseline must NOT create the status enum — 20260714120000 does");
+    assert(/CREATE TABLE "Episode"/.test(sql), 'the baseline MUST create "Episode" — that missing table is the whole bug');
+    ok("the baseline is the pre-first-migration schema, not a copy of the current one");
+  } catch (e) { bad("the baseline is the pre-first-migration schema, not a copy of the current one", e); }
+
+  try {
+    // A migration.sql must be encodable in the CLIENT ENCODING, or the whole
+    // migration fails to apply — not on the SQL, on a comment. Postgres clients
+    // on Windows negotiate WIN1252, where a character like "->" (U+2192) has no
+    // representation and produces:
+    //   ERROR: character with byte sequence 0xe2 0x86 0x92 in encoding "UTF8"
+    //          has no equivalent in encoding "WIN1252"
+    //
+    // The rule is representability, not plain ASCII: an em-dash (U+2014) IS in
+    // WIN1252 at 0x97 and applies fine, and one of the existing migrations
+    // legitimately uses one. Checking for ASCII would fail that file for no
+    // reason and tempt someone to edit a migration that already shipped.
+    const WIN1252_EXTRA = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
+    const encodable = (c: string) => {
+      const cp = c.codePointAt(0)!;
+      if (cp <= 0x7f) return true;                    // ASCII
+      if (cp >= 0xa0 && cp <= 0xff) return true;      // Latin-1 supplement
+      return WIN1252_EXTRA.includes(c);               // the 0x80-0x9F specials
+    };
+    for (const d of migrationDirs) {
+      const p = path.join(migrationsDir, d, "migration.sql");
+      if (!fs.existsSync(p)) continue;
+      const bad = [...fs.readFileSync(p, "utf8")].filter((c) => !encodable(c));
+      assert(bad.length === 0,
+        `${d}/migration.sql contains ${JSON.stringify([...new Set(bad)].slice(0, 3))}, which cannot be encoded in a WIN1252 client and will make the migration fail to apply`);
+    }
+    ok("every migration.sql is encodable in the client encoding (applies on any platform)");
+  } catch (e) { bad("every migration.sql is encodable in the client encoding (applies on any platform)", e); }
+
+  try {
+    // db push syncs a schema WITHOUT recording history — it is what left this
+    // project unable to rebuild itself. It is a local convenience only.
+    const offenders = Object.entries(scripts).filter(([name, cmd]) =>
+      /prisma\s+db\s+push/.test(String(cmd)) && !/^test:|^e2e|^dev/.test(name));
+    assert(offenders.length === 0,
+      `these non-test scripts use \`db push\`, which must never touch production/staging: ${offenders.map(([n]) => n).join(", ")}`);
+    const df = fs.readFileSync(dockerfilePath, "utf8");
+    assert(!/db\s+push/.test(df), "the Dockerfile must never run `prisma db push`");
+    ok("no production script or image uses `prisma db push`");
+  } catch (e) { bad("no production script or image uses `prisma db push`", e); }
+
+  try {
+    // `migrate resolve` records a CLAIM that a migration ran. Automating it in
+    // a deploy path would let a release silently certify work that never
+    // happened — exactly what the adoption auditor exists to prevent.
+    const autoResolve = Object.entries(scripts).filter(([name, cmd]) =>
+      /migrate\s+resolve/.test(String(cmd)) && !/^test:|^audit:/.test(name));
+    assert(autoResolve.length === 0,
+      `these scripts run \`migrate resolve\`, which silently marks migrations applied: ${autoResolve.map(([n]) => n).join(", ")}`);
+    const df = fs.readFileSync(dockerfilePath, "utf8");
+    assert(!/migrate\s+resolve/.test(df), "the Dockerfile must never run `migrate resolve`");
+    ok("no deployment command silently marks a migration applied");
+  } catch (e) { bad("no deployment command silently marks a migration applied", e); }
+
+  try {
+    // The auditor runs against databases nobody trusts yet. It must be inert.
+    const src = fs.readFileSync(path.join(process.cwd(), "src", "scripts", "auditMigrationAdoption.ts"), "utf8");
+    assert(!/execSync\([^)]*migrate\s+resolve/.test(src), "the auditor must never EXECUTE migrate resolve (printing it in a plan is fine)");
+    assert(!/execSync\([^)]*migrate\s+deploy/.test(src), "the auditor must never EXECUTE migrate deploy");
+    assert(!/execSync\([^)]*db\s+push/.test(src), "the auditor must never EXECUTE db push");
+    assert(!/\$executeRaw/.test(src), "the auditor must never run a write query");
+    assert(/PROPOSED ONLY -- NOT EXECUTED/.test(src), "the auditor's plan must be labelled as proposed only");
+    ok("the migration-adoption auditor is read-only");
+  } catch (e) { bad("the migration-adoption auditor is read-only", e); }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) {
     console.error(`\nDEPLOYMENT CONTRACT VIOLATED.\n      ${RULE}`);
