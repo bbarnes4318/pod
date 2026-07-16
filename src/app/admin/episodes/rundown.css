@@ -1,0 +1,145 @@
+/* Presentation for the SHARED rundown components (src/components/rundown) on
+ * the /admin surface.
+ *
+ * The shared components style themselves with two groups of classes:
+ *   1. App-global ones (.studioCard, .chip, .btnPrimary, .input, .scoreBadge…)
+ *      defined in src/app/globals.css — already available on every route.
+ *   2. Component-level ones that today only exist in src/app/studio/studio.css.
+ *
+ * This file supplies group 2 for /admin. It deliberately does NOT import
+ * studio.css: per the Next docs (01-app/01-getting-started/11-css.md), global
+ * stylesheets are not removed as you navigate between routes, so pulling the
+ * whole Studio sheet into /admin risks cross-surface conflicts. Values are kept
+ * identical to studio.css so a topic card looks the same on both surfaces.
+ *
+ * Known follow-up (not this task's scope): these rules and their studio.css
+ * counterparts should be hoisted into one component stylesheet both surfaces
+ * import, once the Studio classes they share with other /studio pages
+ * (.stageHint, .advLink, .sectionTitle …) can be moved without touching them.
+ */
+
+.stageHint { color: var(--text-muted); font-size: 0.85rem; line-height: 1.5; }
+
+.emptyNote {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.epTitle {
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.epMeta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.briefBlock { display: flex; flex-direction: column; gap: 0.9rem; }
+
+.briefTag {
+  display: inline-block;
+  font-size: 0.64rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.05rem 0.35rem; margin-right: 0.5rem; vertical-align: 1px;
+}
+
+.briefPoints { margin: 0; padding-left: 1.1rem; color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; }
+
+.advLink {
+  display: inline-block; background: none; border: none; padding: 0;
+  color: var(--accent); font-size: 0.74rem; font-weight: 600; cursor: pointer; text-decoration: underline;
+}
+.advLink:disabled { opacity: 0.55; cursor: default; }
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+.fieldLabel {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.rundownFilters { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+
+.trayControls { display: flex; gap: 0.25rem; flex-shrink: 0; flex-wrap: wrap; }
+
+/* ---- Admin page layout ---- */
+
+.episodesStack { display: flex; flex-direction: column; gap: 1.75rem; }
+
+/* Board on the left, rundown tray on the right — the tray tracks the board on
+ * desktop so the ordered rundown stays visible while picking. */
+.adminRundownLayout {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+/* Grid/flex children default to min-width:auto, meaning they refuse to shrink
+ * below their content and push the whole page into a horizontal scroll. The
+ * /admin shell has a FIXED 248px sidebar and no mobile breakpoint, so on a
+ * phone this column is genuinely narrow — it must be allowed to shrink. */
+.adminRundownLayout,
+.adminRundownLayout > *,
+.episodesStack,
+.episodesStack > * {
+  min-width: 0;
+}
+
+/* Long unbroken strings (ids, urls in a brief) must wrap rather than widen the page. */
+.adminRundownLayout .epTitle,
+.adminRundownLayout .briefBlock {
+  overflow-wrap: anywhere;
+}
+
+/* Tablet + mobile: one column, tray flows below the board and stays fully
+ * usable — every control (reorder, lead, remove) is a real button, so nothing
+ * here depends on drag-and-drop or a pointer. */
+@media (max-width: 1024px) {
+  .adminRundownLayout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .rundownFilters { flex-direction: column; }
+  .rundownFilters .input,
+  .rundownFilters select { width: 100%; }
+}
+
+/* Visible focus for keyboard operators, on top of the app default. */
+.adminRundownLayout :is(button, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

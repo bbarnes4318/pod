@@ -21,6 +21,10 @@ import { trackPg, trackNext, stopRuntime, freePort, portInUse, persistRuntimeInf
 const APP_PORT = Number(process.env.E2E_APP_PORT) || 3311;
 const APP_URL = `http://localhost:${APP_PORT}`;
 const AUTH_SECRET = "e2e-playwright-secret-000000000000000000";
+
+/** Throwaway /admin Basic-Auth credentials for the disposable E2E server.
+ *  Shared with the admin spec, which sends them via httpCredentials. */
+export const E2E_ADMIN = { username: "e2e-admin", password: "e2e-admin-password-000" };
 export const STATE_DIR = path.join(process.cwd(), "tests", "e2e", ".auth");
 const STATE_FILE = path.join(STATE_DIR, "state.json");
 const DB_FILE = path.join(STATE_DIR, "db.json");
@@ -35,6 +39,14 @@ function childEnv(dbUrl: string): NodeJS.ProcessEnv {
     NODE_ENV: "development",
     E2E_TEST_MODE: "1",
     TOPIC_MIN_TALKABILITY: "1",
+    // /admin uses HTTP Basic Auth against these env vars and FAILS CLOSED when
+    // ADMIN_PASSWORD is unset (src/lib/adminBasicAuth.ts), so without them every
+    // admin request 401s and no admin spec could run. These are throwaway
+    // credentials for this disposable server only — the admin spec sends the
+    // same pair via httpCredentials. They deliberately OVERRIDE any developer
+    // value so the run is hermetic.
+    ADMIN_USERNAME: E2E_ADMIN.username,
+    ADMIN_PASSWORD: E2E_ADMIN.password,
   };
 }
 

@@ -47,6 +47,7 @@
     "lint:changed": "node scripts/lintChanged.js",
     "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts",
     "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts",
+    "test:admin-rundown": "tsx --conditions=react-server src/scripts/testAdminRundown.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",

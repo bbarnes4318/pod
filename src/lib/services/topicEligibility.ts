@@ -217,9 +217,12 @@ export function evaluateTopicSelection(
   if (isAdmin) {
     if (topic.status === "pending") actions.push("approve");
     if (!topic.researchBrief) actions.push("research");
-    else if (hard.some((r) => r.code === "missing_facts" || r.code === "missing_sources" || r.code === "missing_host_arguments")) {
-      actions.push("regenerate_research");
-    }
+    // An admin may refresh ANY existing brief, not only a visibly broken one:
+    // research goes stale (facts move on) long before it fails a hard gate, and
+    // the underlying workflow accepts forceRegenerate for any approved topic.
+    // This is an AUTHORITY difference, not a rule change — an owner is still
+    // offered nothing here, and every regeneration is audited.
+    else actions.push("regenerate_research");
   }
 
   // ---- 3. Live research state, when the surface supplies it ----

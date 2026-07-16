@@ -8,21 +8,44 @@ import SidebarNav from "./SidebarNav";
 
 export const dynamic = "force-dynamic";
 
+/** How long the header's infrastructure probes may take before the answer is
+ *  simply "OFFLINE". Long enough for a healthy local/prod round-trip, short
+ *  enough that a dead dependency can never hold up an operator's page. */
+const REDIS_PROBE_TIMEOUT_MS = 1500;
+
+/** Resolve to null if `p` hasn't settled within `ms` — never leave a hung
+ *  dependency holding the render. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout>;
+  const bail = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  return Promise.race([p, bail]).finally(() => clearTimeout(timer)) as Promise<T | null>;
+}
+
 async function checkInfrastructureStatus() {
   let dbConnected = false;
   let redisConnected = false;
 
   try {
     // Query database with a raw query to check connection status
-    await db.$queryRaw`SELECT 1`;
-    dbConnected = true;
+    await withTimeout(db.$queryRaw`SELECT 1`, REDIS_PROBE_TIMEOUT_MS).then((r) => {
+      if (r !== null) dbConnected = true;
+    });
   } catch (e) {
     // Suppress console output
   }
 
   try {
     const redis = getRedisClient();
-    const pong = await redis.ping();
+    // BOUND THIS PROBE. The shared client is built with
+    // `maxRetriesPerRequest: null` because BullMQ requires it — which means a
+    // command issued while Redis is unreachable is queued and retried FOREVER:
+    // it never resolves and never rejects, so the catch below can't fire.
+    // Unbounded, this status check hangs EVERY /admin render indefinitely
+    // instead of reporting OFFLINE (invisible in prod, where Redis is up).
+    // A probe that can't answer quickly IS the offline answer.
+    const pong = await withTimeout(redis.ping(), REDIS_PROBE_TIMEOUT_MS);
     if (pong === "PONG") {
       redisConnected = true;
     }

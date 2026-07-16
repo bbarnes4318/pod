@@ -440,6 +440,24 @@ model StudioDraft {
   ownerUser User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 }
 
+// Resumable ADMIN rundown. Deliberately NOT a StudioDraft row and deliberately
+// WITHOUT a User relation: /admin authenticates via HTTP Basic Auth against
+// env vars (src/lib/adminAuth.ts adminIdentity()), so an admin operator has no
+// User row to foreign-key against. StudioDraft.ownerId is a REQUIRED FK to
+// User(id), so reusing it for an admin identity would fail at insert. This
+// follows the JobLog precedent: operator-authored state keyed by the audited
+// admin identity string, carrying the SAME RundownDraftState JSON blob Studio
+// persists (src/lib/services/studioDraft.ts) so the two surfaces cannot drift.
+model AdminDraft {
+  id        String   @id @default(uuid())
+  adminId   String   @unique // adminIdentity() — one resumable rundown per operator
+  state     Json     // RundownDraftState (same schema as StudioDraft.state)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
 model Script {
   id               String            @id @default(uuid())
   episodeId        String

@@ -19,6 +19,11 @@ export const MAX_HOSTS = 2;
 export const DEFAULT_MIN_DEBATE_SCORE = 70;
 export const DEFAULT_MIN_TALKABILITY = 35;
 
+/** Topics an automatic/hybrid rundown targets when nothing else specifies one
+ *  (no explicit count, no podcast segmentCount). Shared so the creation service
+ *  and the surfaces that report "requested N" can never disagree. */
+export const DEFAULT_TARGET_TOPIC_COUNT = 3;
+
 /** Title / description limits (mirrored by CreateEpisodeDraftInputSchema). */
 export const MAX_TITLE_LEN = 200;
 export const MAX_DESCRIPTION_LEN = 4000;
