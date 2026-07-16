@@ -36,3 +36,20 @@ export function shouldFailStartDebate(): boolean {
 export function shouldStubQueue(): boolean {
   return e2eEnabled();
 }
+
+/**
+ * Stub OUTBOUND ARTICLE FETCHES in E2E only.
+ *
+ * The public internet is an external boundary the harness must never cross: a
+ * test that really fetched a URL would be slow, flaky, and would make live
+ * requests from CI. Everything up to the network still runs for real —
+ * validation, destination classification, redirect policy — so the SSRF rules
+ * are exercised by the E2E surface; only the socket is replaced. The
+ * exhaustive connection-level proofs (pinning, DNS rebinding, redirects,
+ * limits) live in test:url-security, which drives the transport directly.
+ *
+ * Inert in production: every call re-checks E2E_TEST_MODE.
+ */
+export function shouldStubOutboundFetch(): boolean {
+  return e2eEnabled();
+}

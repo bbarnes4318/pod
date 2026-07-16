@@ -7,6 +7,8 @@
 // Brief/script prompts require paraphrasing and cap quotes at ~20 words with
 // attribution — we never reproduce article passages into published scripts.
 
+import { safeFetch } from "../net/safeFetch";
+
 const BLOCK_TAGS = /<(script|style|noscript|svg|iframe|form|nav|footer|header|aside)[\s\S]*?<\/\1>/gi;
 
 function extractReadableText(html: string, maxChars: number): string {
@@ -44,40 +46,38 @@ export interface ArticleExcerpt {
 /**
  * Fetch readable excerpts for up to `maxArticles` URLs, tolerant of any
  * failure (timeouts, paywalls, non-HTML). Never throws.
+ *
+ * SECURITY: these URLs come out of third-party RSS feeds, so they are NOT
+ * trusted input — a compromised or hostile feed could point us at
+ * http://169.254.169.254/ or http://127.0.0.1:6379. This now goes through the
+ * shared safeFetch, which is the single hardened outbound path: destination
+ * validation, a socket pinned to a validated public address (so DNS rebinding
+ * can't move it), manual per-hop redirect revalidation, and streamed size
+ * caps. Previously this used `fetch(url, { redirect: "follow" })` with no
+ * destination checks and buffered the whole body before truncating it.
+ *
+ * `timeoutMs` is gone: timeouts are centralized in FETCH_LIMITS so every
+ * caller gets the same audited budget.
  */
 export async function fetchArticleExcerpts(
   urls: string[],
-  opts: { maxArticles?: number; maxCharsPerArticle?: number; timeoutMs?: number } = {}
+  opts: { maxArticles?: number; maxCharsPerArticle?: number } = {}
 ): Promise<ArticleExcerpt[]> {
   const maxArticles = opts.maxArticles ?? 4;
   const maxChars = opts.maxCharsPerArticle ?? 2200;
-  const timeoutMs = opts.timeoutMs ?? 8000;
 
-  const targets = urls.filter((u) => /^https?:\/\//i.test(u)).slice(0, maxArticles);
+  // De-dupe before spending a request, and cap the fan-out.
+  const targets = [...new Set(urls.filter((u) => typeof u === "string" && u.trim()))].slice(0, maxArticles);
 
   const results = await Promise.all(
     targets.map(async (url): Promise<ArticleExcerpt> => {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        const res = await fetch(url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "TakeMachineResearch/1.0 (podcast research; contact: owner)",
-            Accept: "text/html,application/xhtml+xml",
-          },
-          redirect: "follow",
-        });
-        clearTimeout(timer);
-        if (!res.ok || !(res.headers.get("content-type") || "").includes("html")) {
-          return { url, excerpt: "", ok: false };
-        }
-        const html = await res.text();
-        const excerpt = extractReadableText(html.slice(0, 500_000), maxChars);
-        return { url, excerpt, ok: excerpt.length > 100 };
-      } catch {
-        return { url, excerpt: "", ok: false };
-      }
+      // safeFetch never throws — it validates the destination, pins the socket
+      // to a validated public address, revalidates every redirect, and bounds
+      // the body. It returns a structured result either way.
+      const res = await safeFetch(url);
+      if (!res.ok) return { url, excerpt: "", ok: false };
+      const excerpt = extractReadableText(res.body, maxChars);
+      return { url, excerpt, ok: excerpt.length > 100 };
     })
   );
 

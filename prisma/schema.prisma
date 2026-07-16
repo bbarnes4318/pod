@@ -303,10 +303,55 @@ model TopicCandidate {
   league                League?        @relation(fields: [leagueId], references: [id])
   researchBrief         ResearchBrief?
   episodeTopics         EpisodeTopic[]
+  sources               TopicSource[]  // operator-imported articles (editorial input, NOT evidence)
 
   @@index([leagueId])
   @@index([status])
   @@index([createdAt])
+}
+
+// An article an operator imported by URL as editorial STARTING MATERIAL for a
+// topic. Deliberately NOT evidence: nothing here is verified, so importing a
+// source never touches TopicCandidate.evidenceIds (which the pipeline writes
+// only after existence-checking each ref) and never satisfies a research gate.
+// A topic with sources but no research still reports missing evidence/brief.
+//
+// WHY A NEW MODEL: NewsItem is the RSS ingest artifact — it has no topic
+// relation, no content hash, no fetch outcome, no canonical URL, no importing
+// operator, and is read by topic generation. Writing operator imports into it
+// would both lose the fields below and quietly feed the automatic topic
+// generator. Injury.sourceUrl is the only other URL column and is unrelated.
+model TopicSource {
+  id           String    @id @default(uuid())
+  topicId      String
+  // As pasted (minus any credentials, which are rejected before we get here).
+  originalUrl  String
+  // Post-redirect, normalized. The duplicate-detection key.
+  canonicalUrl String
+  title        String?
+  publisher    String?
+  author       String?
+  publishedAt  DateTime?
+  // Sanitized PLAIN TEXT only. Raw HTML is never stored: it has no consumer,
+  // and storing it would keep an XSS payload alive in the database.
+  excerpt      String?
+  // sha256 of the fetched body — cheap change detection without keeping it.
+  contentHash  String?
+  // "imported" | one of the FetchErrorCategory values.
+  fetchStatus  String
+  fetchErrorCategory String?
+  retrievedAt  DateTime?
+  // adminIdentity() — an audit label, NOT a User FK (admins have no User row).
+  createdByAdminIdentity String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  topic TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  // The same article can't be imported onto the same topic twice.
+  @@unique([topicId, canonicalUrl])
+  @@index([topicId])
+  @@index([canonicalUrl])
 }
 
 model ResearchBrief {
