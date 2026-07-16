@@ -34,6 +34,16 @@ const WARNING_LABEL: Record<string, string> = {
   research_failed: "research failed",
 };
 
+/** An authorized action a card may offer (Admin supplies these; Studio doesn't).
+ *  The picker renders them but knows nothing about who may run them — the
+ *  server re-checks authorization on every call. */
+export interface TopicCardAction {
+  /** Matches an EligibilityAction code from the shared contract. */
+  code: string;
+  label: string;
+  run: (topicId: string) => void | Promise<void>;
+}
+
 export interface TopicRundownPickerProps {
   topics: StudioTopicVM[];
   selectedIds: string[];
@@ -45,6 +55,16 @@ export interface TopicRundownPickerProps {
   podcastScoped?: boolean;
   /** Announce to screen readers (added/blocked). */
   announce?: (msg: string) => void;
+  /**
+   * EXTENSION POINT for authorized surfaces. Given a topic, return the actions
+   * to offer. Only actions the SHARED contract already lists in
+   * `t.eligibility.actions` are rendered, so a surface cannot invent authority
+   * the eligibility service didn't grant. Studio passes nothing and is
+   * unchanged.
+   */
+  cardActions?: (t: StudioTopicVM) => TopicCardAction[];
+  /** Ids with an action currently in flight — renders a busy/disabled state. */
+  pendingActionIds?: string[];
 }
 
 export default function TopicRundownPicker({
@@ -54,6 +74,8 @@ export default function TopicRundownPicker({
   selectionDisabled,
   podcastScoped,
   announce,
+  cardActions,
+  pendingActionIds,
 }: TopicRundownPickerProps) {
   const [query, setQuery] = useState("");
   const [sport, setSport] = useState("");
@@ -78,6 +100,15 @@ export default function TopicRundownPicker({
   }, [topics, query, sport, league, status, readiness]);
 
   const selectedSet = new Set(selectedIds);
+  const pending = new Set(pendingActionIds ?? []);
+
+  /** Offer only actions the SHARED contract granted this actor for this topic.
+   *  A surface can't widen authority by supplying extra buttons. */
+  const actionsFor = (t: StudioTopicVM): TopicCardAction[] => {
+    if (!cardActions) return [];
+    const granted = new Set(t.eligibility.actions);
+    return cardActions(t).filter((a) => granted.has(a.code as never));
+  };
 
   const handleToggle = (t: StudioTopicVM) => {
     if (selectionDisabled) return;
@@ -102,7 +133,10 @@ export default function TopicRundownPicker({
           aria-label="Search topics by title or summary"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ flex: "1 1 220px", minWidth: 200 }}
+          // flex-basis still asks for 220px, but min-width:0 lets it shrink
+          // rather than force the page to scroll sideways in a narrow column
+          // (e.g. beside /admin's fixed 248px sidebar on a phone).
+          style={{ flex: "1 1 220px", minWidth: 0 }}
         />
         <select className="input" aria-label="Filter by sport" value={sport} onChange={(e) => setSport(e.target.value)}>
           <option value="">All sports</option>
@@ -198,17 +232,39 @@ export default function TopicRundownPicker({
                         ))}
                       </div>
                     )}
-                    {t.brief && (
-                      <button
-                        type="button"
-                        className="advLink"
-                        aria-expanded={expanded}
-                        onClick={() => setExpandedId(expanded ? null : t.id)}
-                        style={{ marginTop: "0.4rem" }}
-                      >
-                        {expanded ? "Hide research" : "Review research"}
-                      </button>
-                    )}
+                    <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center", marginTop: "0.4rem" }}>
+                      {t.brief && (
+                        <button
+                          type="button"
+                          className="advLink"
+                          data-testid={`preview-${t.id}`}
+                          aria-expanded={expanded}
+                          onClick={() => setExpandedId(expanded ? null : t.id)}
+                        >
+                          {expanded ? "Hide research" : "Review research"}
+                        </button>
+                      )}
+                      {/* Authorized actions (Admin). Only actions the SHARED
+                          eligibility contract granted for THIS topic are
+                          offered — no surface-invented buttons, and nothing
+                          that does nothing. */}
+                      {actionsFor(t).map((a) => {
+                        const busy = pending.has(t.id);
+                        return (
+                          <button
+                            key={a.code}
+                            type="button"
+                            className="advLink"
+                            data-testid={`action-${a.code}-${t.id}`}
+                            disabled={busy}
+                            aria-busy={busy}
+                            onClick={() => void a.run(t.id)}
+                          >
+                            {busy ? "Working…" : a.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
                 {expanded && t.brief && <ResearchPreview brief={t.brief} />}

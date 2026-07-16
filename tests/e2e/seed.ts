@@ -23,7 +23,21 @@ export const E2E = {
   teamChiefsName: "Kansas City Chiefs",
   teamEaglesId: "E2EPHI",
   teamEaglesName: "Philadelphia Eagles",
-  topics: { lead: "e2e-t-lead", two: "e2e-t-two", three: "e2e-t-three", four: "e2e-t-four", nba: "e2e-t-nba", pending: "e2e-t-pending" },
+  topics: {
+    lead: "e2e-t-lead", two: "e2e-t-two", three: "e2e-t-three", four: "e2e-t-four",
+    nba: "e2e-t-nba", pending: "e2e-t-pending",
+    /** Approved + fully researched, but scored BELOW the automatic debate floor.
+     *  The auto-picker skips it; a producer must still SEE and be able to pick
+     *  it manually. Scored under the floor on purpose so it can never enter
+     *  automatic selection and perturb the automatic/hybrid expectations. */
+    lowScore: "e2e-t-lowscore",
+    /** Approved with a brief but NO evidence — must be blocked with the precise
+     *  evidence reason, never a vague or score-shaped one. */
+    noEvidence: "e2e-t-noevidence",
+    /** Approved, awaiting research (no brief) — the admin "start research" path. */
+    needsResearch: "e2e-t-needsresearch",
+  },
+  admin: { username: "e2e-admin", password: "e2e-admin-password-000" },
 };
 
 function brief(over: any = {}) {
@@ -52,7 +66,8 @@ async function topic(prisma: PrismaClient, id: string, title: string, over: any 
       id, title, sport: over.sport ?? "NFL", leagueId: null,
       summary: over.summary ?? "A genuinely argue-worthy debate from last night's game.",
       controversyScore: 80, starPowerScore: 70, bettingRelevanceScore: 40, recencyScore: 85,
-      debateScore: over.debateScore ?? 90, evidenceIds: [{ type: "news", id: "n1" }],
+      debateScore: over.debateScore ?? 90,
+      evidenceIds: over.evidenceIds ?? [{ type: "news", id: "n1" }],
       status: over.status ?? "approved",
       ...(withBrief ? { researchBrief: { create: brief(over.brief) } } : {}),
     } as any,
@@ -102,6 +117,14 @@ export async function seed(prisma: PrismaClient, bcrypt: { hashSync: (s: string,
   await topic(prisma, E2E.topics.four, "Rookie of the year: lock or upset?", { debateScore: 88 });
   await topic(prisma, E2E.topics.nba, "NBA: superteam or bust?", { sport: "NBA", debateScore: 96 });
   await topic(prisma, E2E.topics.pending, "Unvetted rumor (pending review)", { status: "pending" });
+
+  // ---- Admin-board fixtures --------------------------------------------------
+  // Both are scored BELOW the automatic debate floor (70) on purpose: the
+  // automatic picker can never choose them, so they cannot disturb the existing
+  // automatic/hybrid expectations, while still proving what Admin must show.
+  await topic(prisma, E2E.topics.lowScore, "Low-scoring but genuinely worth arguing", { debateScore: 40 });
+  await topic(prisma, E2E.topics.noEvidence, "Hot take with nothing behind it", { debateScore: 45, evidenceIds: [] });
+  await topic(prisma, E2E.topics.needsResearch, "Approved, not yet researched", { debateScore: 42, withBrief: false });
 
   // One prior use by the podcast so "used by this show" surfaces on a card.
   const ep = await prisma.episode.create({ data: { title: "Prior show", slug: "e2e-prior", status: "published", rssGuid: "e2e-guid", ownerId: E2E.userA.id, podcastId: E2E.podcastId, hostIds: [E2E.hostAce, E2E.hostBlaze] } as any });

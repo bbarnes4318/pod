@@ -1,100 +1,9 @@
 "use server";
 
-import { requireAdmin, adminIdentity } from "@/lib/adminAuth";
+import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
-import { Prisma } from "@prisma/client";
-import { queueEpisodeBuildJob, toEpisodeBuildJobData, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
-import { EpisodeBuildInput } from "@/lib/services/episodeService";
-import { createEpisodeDraft } from "@/lib/services/episodeCreation";
+import { queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
 import { revalidatePath } from "next/cache";
-
-/**
- * Trigger an episode build. ADMIN-ONLY (requireAdmin). Forwards EVERY supported
- * field through the validated mapper — nothing is hand-dropped. The
- * `reuseOverride` flag (bypass the exclude_podcast recent-use guard for a
- * pinned topic) is an ADMIN capability: it is only honored here, behind
- * requireAdmin, and is audit-logged. Ordinary /app + /studio actions never
- * accept it, and the service never treats a direct call as authorization.
- */
-export async function triggerEpisodeBuild(
-  input: EpisodeBuildInput,
-  opts?: { reuseOverrideReason?: string }
-) {
-  await requireAdmin();
-  try {
-    // Authorization for the override lives HERE (server-side requireAdmin), not
-    // in any client-supplied role/flag. Audit it before enqueuing.
-    if (input.reuseOverride) {
-      await logReuseOverride({
-        admin: adminIdentity(),
-        podcastId: input.podcastId ?? null,
-        topicIds: input.topicIds ?? [],
-        reason: opts?.reuseOverrideReason ?? null,
-      });
-    }
-
-    // Validated mapper forwards podcastId/ownerId/leagueIds/verticals/
-    // teamNames/reuseOverride and every other supported field.
-    const job = await queueEpisodeBuildJob(toEpisodeBuildJobData(input));
-
-    revalidatePath("/admin/episodes");
-    return { success: true, jobId: job.id };
-  } catch (err: any) {
-    return { success: false, error: err.message || "Failed to trigger episode build." };
-  }
-}
-
-/** Durable audit record for an admin reuse-override, plus a structured log line
- *  (admin identity, podcast, topic ids, timestamp, optional reason). */
-async function logReuseOverride(entry: {
-  admin: string;
-  podcastId: string | null;
-  topicIds: string[];
-  reason: string | null;
-}): Promise<void> {
-  const record = { ...entry, at: new Date().toISOString() };
-  console.warn("[audit] reuse-override authorized", record);
-  try {
-    await db.jobLog.create({
-      data: { jobType: "admin:reuse-override", status: "completed", input: record as Prisma.InputJsonValue, output: {} },
-    });
-  } catch {
-    // Auditing must never block the build; the console line is the fallback.
-  }
-}
-
-export async function createEpisodeFromSelectedTopics(
-  topicIds: string[],
-  title?: string,
-  description?: string,
-  ttsProvider?: string,
-  ttsVoiceOverrides?: EpisodeBuildInput["ttsVoiceOverrides"],
-  productionStyle?: string,
-  sfxDensity?: string,
-  hostIds?: string[]
-) {
-  await requireAdmin();
-  try {
-    const res = await createEpisodeDraft({
-      mode: "manual",
-      selectedTopicIds: topicIds,
-      strictSelection: true,
-      title,
-      description,
-      hostIds,
-      ttsProvider,
-      ttsVoiceOverrides,
-      productionStyle,
-      sfxDensity,
-    });
-    if (!res.ok) return { success: false, error: res.error || "Failed to build episode from selected topics." };
-
-    revalidatePath("/admin/episodes");
-    return { success: true, episodeId: res.episodeId };
-  } catch (err: any) {
-    return { success: false, error: err.message || "Failed to build episode from selected topics." };
-  }
-}
 
 /** Every ACTIVE host, for the episode host picker + voice pickers. No name
  *  filter — whoever the operator has activated on /admin/personalities is
@@ -173,64 +82,32 @@ export async function deleteDraftEpisode(episodeId: string) {
   }
 }
 
-export async function fetchEligibleTopics(filters: {
-  leagueId?: string;
-  sport?: string;
-  minDebateScore?: number;
-}) {
-  await requireAdmin();
-  try {
-    const minScore = filters.minDebateScore !== undefined ? Number(filters.minDebateScore) : 70;
-    const where: any = {
-      status: "approved",
-      debateScore: { gte: minScore },
-      researchBrief: { isNot: null },
-    };
-
-    if (filters.leagueId) {
-      where.leagueId = filters.leagueId.toUpperCase();
-    }
-    if (filters.sport) {
-      where.sport = { equals: filters.sport, mode: "insensitive" };
-    }
-
-    const topics = await db.topicCandidate.findMany({
-      where,
-      include: { researchBrief: true },
-      orderBy: { debateScore: "desc" },
-    });
-
-    // Enforce strict ResearchBrief validations on facts, sourceIds, host arguments
-    const qualified = topics.filter((t) => {
-      const brief = t.researchBrief;
-      if (!brief) return false;
-      
-      const facts = Array.isArray(brief.facts) ? brief.facts : [];
-      if (facts.length === 0) return false;
-
-      const sourceIds = Array.isArray(brief.sourceIds) ? brief.sourceIds : [];
-      if (sourceIds.length === 0) return false;
-
-      if (!brief.argumentForHostA?.trim() || !brief.argumentForHostB?.trim()) return false;
-
-      return true;
-    });
-
-    return {
-      success: true,
-      topics: qualified.map((t) => ({
-        id: t.id,
-        title: t.title,
-        sport: t.sport,
-        leagueId: t.leagueId,
-        debateScore: t.debateScore,
-        evidenceCount: Array.isArray(t.evidenceIds) ? t.evidenceIds.length : 0,
-      })),
-    };
-  } catch (err: any) {
-    return { success: false, error: err.message || "Failed to fetch eligible topics." };
-  }
-}
+// REMOVED: `fetchEligibleTopics`.
+//
+// It was the Admin surface's own, hidden eligibility engine — a SQL WHERE of
+// `status: "approved"` + `debateScore: { gte: minScore /* 70 */ }` +
+// `researchBrief: { isNot: null }`, followed by a silent `.filter()` on facts /
+// sourceIds / host arguments. Three problems, all now fixed by deleting it:
+//
+//   1. The automatic debate-score floor gated MANUAL visibility. A topic
+//      scoring 69 was unpickable and, worse, invisible — with no reason given.
+//   2. Rejected/archived/pending topics vanished rather than explaining
+//      themselves, so "not researched yet" and "scored low" looked identical.
+//   3. It never checked `evidenceIds`, so it advertised topics that
+//      createEpisodeDraft would then refuse — the filter and the creation
+//      service disagreed about what "eligible" meant.
+//
+// The Admin board now loads the authorized global catalog through
+// `fetchAdminRundownTopics` (./rundownActions), which evaluates every topic with
+// the SHARED contract in src/lib/services/topicEligibility.ts — the same one
+// Studio uses — and returns blocking reasons and warnings instead of silence.
+//
+// REMOVED: `triggerEpisodeBuild` and `createEpisodeFromSelectedTopics`.
+// Both were Admin-only creation entry points superseded by
+// `createAdminRundownEpisode` (./rundownActions), which routes Manual, Automatic
+// and Hybrid through the SHARED createRundownEpisode → createEpisodeDraft core.
+// The queued `episode:build` job itself is untouched and still serves the
+// recurring scheduler and /app/create.
 
 export async function triggerScriptGeneration(episodeId: string, forceRegenerate?: boolean) {
   await requireAdmin();

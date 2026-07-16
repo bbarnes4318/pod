@@ -104,6 +104,63 @@ async function stopPostgresScoped(dataDir: string | null, pgObj?: { stop: () => 
   // after the parent exits, and we additionally require the process to be THIS
   // repo's embedded-postgres binary — so nothing else can ever match.
   if (postmasterPid) await reapChildrenOfDeadParent(postmasterPid);
+
+  // Final sweep for ORPHANS the parent-keyed pass can't see (see below).
+  await reapOrphanedEmbeddedPostgres();
+}
+
+/** True if the pid exists. EPERM means it exists but isn't ours to signal. */
+function pidExists(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (err) { return (err as NodeJS.ErrnoException)?.code === "EPERM"; }
+}
+
+/**
+ * Kill ORPHANED embedded-postgres processes: ones running THIS repo's binary
+ * whose parent process no longer exists.
+ *
+ * Why this is needed on top of the parent-keyed reap: Postgres can fork a
+ * worker (e.g. an io_worker) DURING shutdown — after the parent-keyed pass has
+ * already seen two clean passes — and that worker's recorded parent is gone by
+ * the time anyone looks. It is unmistakably ours and it still holds our data
+ * dir open, so leaving it behind breaks the "teardown owns what it started"
+ * contract.
+ *
+ * Still double-scoped, and never by name alone:
+ *   1. the command line must be THIS repo's node_modules/@embedded-postgres, and
+ *   2. its parent must be genuinely dead.
+ * A concurrent run from this same repo is therefore untouched: its postmaster
+ * has a live parent (node), and its workers have a live postmaster — so neither
+ * is ever an orphan. Any other Postgres on the machine fails check 1.
+ */
+async function reapOrphanedEmbeddedPostgres(): Promise<void> {
+  if (process.platform !== "win32") return; // POSIX reparents to init; graceful stop suffices
+  const ourBin = path.join(process.cwd(), "node_modules", "@embedded-postgres").replace(/\\/g, "/");
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await new Promise((r) => setTimeout(r, 400));
+    let rows: Array<{ ProcessId: number; ParentProcessId: number; CommandLine?: string }> = [];
+    try {
+      const out = execSync(
+        `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'postgres.exe' } | Select-Object ProcessId,ParentProcessId,CommandLine | ConvertTo-Json -Compress"`,
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }
+      ).trim();
+      if (out) {
+        const parsed = JSON.parse(out);
+        rows = Array.isArray(parsed) ? parsed : [parsed];
+      }
+    } catch { return; /* can't enumerate — never guess */ }
+
+    let killedAny = false;
+    for (const r of rows) {
+      if (!r?.ProcessId) continue;
+      const cmd = (r.CommandLine || "").replace(/\\/g, "/");
+      if (!cmd.includes(ourBin)) continue;                       // not ours
+      if (r.ParentProcessId && pidExists(r.ParentProcessId)) continue; // still owned by a live run
+      killPid(r.ProcessId);
+      killedAny = true;
+    }
+    if (!killedAny) return;
+  }
 }
 
 /** Kill leftover embedded-postgres processes whose recorded parent is `pm`. */

@@ -19,6 +19,7 @@ import {
   evaluateTopicSelection,
   type EligibilityActor,
   type EligibilityTopic,
+  type ResearchState,
   type TopicEligibilityResult,
 } from "./topicEligibility";
 
@@ -157,6 +158,9 @@ export interface BuildPoolContext {
   actor?: EligibilityActor;
   /** Topics already in the rundown (drives the already_selected warning). */
   selectedTopicIds?: string[];
+  /** Live research state per topic, derived from real job history. Absent
+   *  entries simply produce no research warning. */
+  researchStates?: Map<string, ResearchState>;
 }
 
 /** PURE view-model build (no DB) — the unit-testable core, now driven by the
@@ -179,6 +183,7 @@ export function buildStudioTopicVMs(topics: RawPoolTopic[], ctx: BuildPoolContex
       selectedTopicIds: ctx.selectedTopicIds,
       talkability: talk.total,
       topicId: topic.id,
+      researchState: ctx.researchStates?.get(topic.id),
     });
     const u = ctx.usage.get(topic.id);
     const recentByShow = ctx.podcastId ? scopedRecentUseCount(u, { podcastId: ctx.podcastId }) > 0 : false;

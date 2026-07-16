@@ -5,12 +5,12 @@
 // the client. reuseOverride is NEVER sent (Admin-only).
 
 import type { PrismaClient } from "@prisma/client";
-import { createEpisodeDraft, type CreateEpisodeDraftResult } from "./episodeCreation";
+import { type CreateEpisodeDraftResult } from "./episodeCreation";
+import { createRundownEpisode } from "./rundownCreation";
 import { getTopicUsage, resolveTopicReusePolicy, type UsageDb } from "./topicUsageService";
 import { buildStudioTopicVMs, type RawPoolTopic, type StudioTopicVM } from "./studioTopicPool";
 import { loadStudioDraft, saveStudioDraft, clearStudioDraft, type RundownDraftState, type StudioDraftDb } from "./studioDraft";
 import { assertCanCreateEpisode as realAssertCanCreateEpisode, assertPremiumVoiceAllowed as realAssertPremiumVoiceAllowed } from "./entitlementService";
-import { leadFirst } from "../studio/rundownRules";
 
 /** The authenticated context every Studio action runs under. */
 export interface StudioCtx {
@@ -86,7 +86,15 @@ export async function getStudioTopicsFor(
 
   const usage = await getTopicUsage(topics.map((t) => t.id), { ownerId: ctx.user.id, podcastId: scopedPodcastId }, ctx.db as unknown as UsageDb);
   const policy = resolveTopicReusePolicy();
-  const vms = buildStudioTopicVMs(topics, { usage, policy, podcastId: scopedPodcastId }).sort((a, b) => b.talkability - a.talkability);
+  const vms = buildStudioTopicVMs(topics, {
+    usage,
+    policy,
+    podcastId: scopedPodcastId,
+    // The real owner actor. Only `kind` changes any decision (an admin actor
+    // unlocks the audited reuse override) — this stays an owner either way, so
+    // Studio's behaviour is unchanged; it just stops relying on the default.
+    actor: { kind: "owner", ownerId: ctx.user.id },
+  }).sort((a, b) => b.talkability - a.talkability);
   return { success: true, topics: vms };
 }
 
@@ -145,10 +153,15 @@ export type CreateStudioEpisodeResult =
 
 /**
  * Create a draft episode from a Studio rundown, through the SHARED
- * createEpisodeDraft. ownerId is ctx.user.id (session). Podcast ownership is
- * verified; podcast settings are inherited for values the client omits; the
- * automatic/hybrid selection preferences are forwarded; reuseOverride is never
- * sent. Returns the backend finalOrder as the source of truth.
+ * createRundownEpisode core (which calls the SHARED createEpisodeDraft) — the
+ * exact same code path /admin uses. ownerId is ctx.user.id (session). Podcast
+ * ownership is verified; podcast settings are inherited for values the client
+ * omits; the automatic/hybrid selection preferences are forwarded.
+ * reuseOverride is never sent, and the core would strip it for an owner actor
+ * anyway. Returns the backend finalOrder as the source of truth.
+ *
+ * What stays HERE rather than in the shared core is only what is genuinely
+ * Studio's: the plan/entitlement gates and the StudioDraft resume cleanup.
  */
 export async function createStudioEpisodeFor(
   ctx: StudioCtx,
@@ -163,54 +176,37 @@ export async function createStudioEpisodeFor(
   const voiceGate = await assertPremiumVoiceAllowed(ctx.user.id, input.ttsProvider);
   if (!voiceGate.ok) return { success: false, error: voiceGate.error, upgrade: true };
 
-  // Podcast ownership + safe inheritance for omitted values.
-  let verticals = input.verticals;
-  let teams = input.teams;
-  let hostIds = input.hostIds?.length ? input.hostIds : undefined;
-  let targetTopicCount = input.targetTopicCount;
-  if (input.podcastId) {
-    const owned = await resolveOwnedPodcast(ctx, input.podcastId);
-    if (!owned.ok) return { success: false, error: owned.error };
-    if (verticals === undefined && owned.podcast.verticals.length > 0) verticals = owned.podcast.verticals;
-    if (teams === undefined && owned.podcast.teams.length > 0) {
-      const teamRows = await ctx.db.team.findMany({ where: { id: { in: owned.podcast.teams } }, select: { name: true } });
-      teams = teamRows.map((t) => t.name);
-    }
-    if (!hostIds && owned.podcast.hostIds.length > 0) hostIds = owned.podcast.hostIds.slice(0, 2);
-    if (targetTopicCount === undefined && owned.podcast.segmentCount) targetTopicCount = owned.podcast.segmentCount;
-  }
-
-  const orderedIds = leadFirst([...input.selectedTopicIds], input.leadTopicId);
-
-  const res = await createEpisodeDraft(
+  const res = await createRundownEpisode(
+    {
+      db: ctx.db,
+      authority: { kind: "owner", ownerId: ctx.user.id }, // SESSION user — never the client
+      canUsePodcast: (pod) => ownsPodcast(pod, ctx.user),
+    },
     {
       mode: input.mode,
-      selectedTopicIds: input.mode === "automatic" ? [] : orderedIds,
-      targetTopicCount,
-      ownerId: ctx.user.id, // SESSION user — never the client
-      podcastId: input.podcastId ?? undefined,
-      hostIds,
+      selectedTopicIds: input.selectedTopicIds,
+      targetTopicCount: input.targetTopicCount,
+      leadTopicId: input.leadTopicId,
+      podcastId: input.podcastId,
+      hostIds: input.hostIds,
       ttsProvider: input.ttsProvider,
       ttsVoiceOverrides: input.ttsVoiceOverrides,
       productionStyle: input.productionStyle,
       sfxDensity: input.sfxDensity,
-      // Selection preferences actually reach the backend (auto/hybrid).
-      verticals,
-      teams,
+      verticals: input.verticals,
+      teams: input.teams,
       leagueIds: input.leagueIds,
       sport: input.sport,
       minDebateScore: input.minDebateScore,
       title: input.title,
       description: input.description,
-      strictSelection: input.mode === "manual",
       // reuseOverride intentionally omitted — Admin-only.
-    },
-    { db: ctx.db }
+    }
   );
 
-  if (!res.ok || !res.episodeId) {
+  if (!res.success) {
     // Failed creation: the resume draft is RETAINED so the producer keeps their work.
-    return { success: false, error: res.error || "Couldn't create the episode.", rejectedTopics: res.rejectedTopics, reasons: res.reasons };
+    return { success: false, error: res.error, rejectedTopics: res.rejectedTopics, reasons: res.reasons };
   }
 
   // Success → clear the resume draft. A cleanup failure is NON-fatal but SURFACED
@@ -223,8 +219,6 @@ export async function createStudioEpisodeFor(
     console.error(`[studio] draft cleanup failed for user=${ctx.user.id} episode=${res.episodeId}:`, (err as Error).message);
   }
 
-  const requestedCount = input.mode === "manual" ? orderedIds.length : targetTopicCount ?? 3;
-  const concurrentlyDropped = res.rejectedTopics.filter((r) => r.category === "recently_used_concurrently");
   return {
     success: true,
     episodeId: res.episodeId,
@@ -234,8 +228,8 @@ export async function createStudioEpisodeFor(
     autoSelectedTopicIds: res.autoSelectedTopicIds,
     finalOrder: res.finalOrder,
     reasons: res.reasons,
-    requestedCount,
-    concurrentlyDroppedIds: concurrentlyDropped.map((r) => r.id),
+    requestedCount: res.requestedCount,
+    concurrentlyDroppedIds: res.concurrentlyDroppedIds,
     draftCleanupWarning,
   };
 }

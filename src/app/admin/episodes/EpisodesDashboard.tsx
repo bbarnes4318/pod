@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import EpisodeBuildForm from "./EpisodeBuildForm";
+import { useRouter } from "next/navigation";
+import AdminRundownBuilder from "./AdminRundownBuilder";
 import { deleteDraftEpisode } from "./actions";
 import Link from "next/link";
 
@@ -27,11 +28,26 @@ interface DashboardProps {
 }
 
 export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: DashboardProps) {
-  const [episodes, setEpisodes] = useState<EpisodeInfo[]>(initialEpisodes);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Ids removed in THIS session, hidden optimistically until the server list
+  // catches up. Deriving the list from props instead of copying it into state
+  // keeps the directory in step with every revalidate — a useState copy would
+  // pin the first render's list forever.
+  const [deletedIds, setDeletedIds] = useState<string[]>([]);
+  const router = useRouter();
 
+  const episodes = initialEpisodes.filter((ep) => !deletedIds.includes(ep.id));
+
+  /**
+   * SOFT refresh — deliberately not window.location.reload().
+   * The builder reports the backend's final rundown (order, auto-fill labels, a
+   * reduced-rundown notice, the audited override) in client state. A hard reload
+   * tears the page down and destroys that report the instant it appears, so the
+   * operator would never see the outcome of what they just did. router.refresh()
+   * re-fetches the server data and leaves client state intact.
+   */
   const refreshDashboard = () => {
-    window.location.reload();
+    router.refresh();
   };
 
   const handleDelete = async (episodeId: string) => {
@@ -43,7 +59,8 @@ export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: Dashbo
     const res = await deleteDraftEpisode(episodeId);
 
     if (res.success) {
-      setEpisodes((prev) => prev.filter((ep) => ep.id !== episodeId));
+      setDeletedIds((prev) => [...prev, episodeId]);
+      router.refresh();
     } else {
       alert(res.error || "Failed to delete episode.");
     }
@@ -51,11 +68,18 @@ export default function EpisodesDashboard({ initialEpisodes, isLlmStub }: Dashbo
   };
 
   return (
-    <div className="episodesLayout">
-      {/* Left side: Build Controls */}
-      <EpisodeBuildForm onBuildSuccess={refreshDashboard} isLlmStub={isLlmStub} />
+    <div className="episodesStack">
+      {isLlmStub && (
+        <p className="stageHint" role="note" data-testid="llm-stub-note">
+          LLM_PROVIDER is set to <strong>stub</strong> — generated content will be placeholder text.
+        </p>
+      )}
 
-      {/* Right side: Existing Episodes List */}
+      {/* The rundown builder: Manual / Automatic / Hybrid, on the SAME shared
+          picker, tray, ordering rules and eligibility contract as Studio. */}
+      <AdminRundownBuilder onCreated={refreshDashboard} />
+
+      {/* Existing Episodes List */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
           <h3 style={{ color: "var(--text-primary)", fontSize: "1rem", fontWeight: 700, margin: 0 }}>Episodes Directory</h3>

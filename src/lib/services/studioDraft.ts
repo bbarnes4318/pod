@@ -30,8 +30,10 @@ export interface StudioDraftDb {
 export const RUNDOWN_STEPS = ["show", "topics", "hosts", "production", "review"] as const;
 export type RundownStep = (typeof RUNDOWN_STEPS)[number];
 
-export const RundownDraftStateSchema = z
-  .object({
+/** The raw draft SHAPE, exported so the /admin draft schema can compose the
+ *  SAME fields + the SAME refinement (src/lib/services/adminDraft.ts) instead of
+ *  forking a second, drifting copy of the rundown rules. */
+export const RundownDraftShape = {
     mode: z.enum(["manual", "automatic", "hybrid"]),
     // Deduplicated (order-preserving) before any logical check or persistence.
     selectedTopicIds: z.array(z.string().trim().min(1)).default([]).transform(dedupeIds),
@@ -70,8 +72,22 @@ export const RundownDraftStateSchema = z
       })
       .default({ hosts: false, targetTopicCount: false, selectionPreferences: false }),
     activeStep: z.enum(RUNDOWN_STEPS).default("show"),
-  })
-  .superRefine((val, ctx) => {
+} as const;
+
+/** The rundown-draft RULES (mode/lead/count/TTS coherence). Shared verbatim by
+ *  the Studio and Admin draft schemas — it reads only the common fields above,
+ *  so neither surface can quietly validate a rundown differently. */
+export function refineRundownDraft(
+  val: {
+    mode: "manual" | "automatic" | "hybrid";
+    selectedTopicIds: string[];
+    leadTopicId?: string | null;
+    targetTopicCount: number;
+    ttsProvider?: string | null;
+    ttsVoiceOverrides?: unknown;
+  },
+  ctx: z.RefinementCtx
+): void {
     const n = val.selectedTopicIds.length;
     if (val.mode === "manual" && n < 1) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Manual mode needs at least one topic." });
@@ -102,7 +118,9 @@ export const RundownDraftStateSchema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsVoiceOverrides"], message: (err as Error).message });
       }
     }
-  });
+}
+
+export const RundownDraftStateSchema = z.object(RundownDraftShape).superRefine(refineRundownDraft);
 
 export type RundownDraftState = z.infer<typeof RundownDraftStateSchema>;
 

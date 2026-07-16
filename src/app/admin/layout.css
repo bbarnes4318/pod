@@ -104,6 +104,26 @@ body:has(.adminLayout) {
   height: 100vh;
 }
 
+/* The console was built desktop-only: a non-shrinking 248px rail beside the
+ * content leaves ~140px for it on a phone, so every /admin page is forced into
+ * a horizontal scroll and the content is unusable. Below 900px the rail becomes
+ * an ordinary full-width block above the content and the page reflows normally.
+ * Desktop layout is untouched. */
+@media (max-width: 900px) {
+  .adminLayout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem;
+  }
+}
+
 .brand {
   display: flex;
   align-items: center;

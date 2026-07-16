@@ -11,7 +11,7 @@
 
 import { z } from "zod";
 import { db } from "../db";
-import { PLATFORM_MAX_TOPICS } from "../episodeLimits";
+import { PLATFORM_MAX_TOPICS, DEFAULT_TARGET_TOPIC_COUNT } from "../episodeLimits";
 import {
   TopicWithBrief,
   EpisodeBuildInput,
@@ -37,9 +37,6 @@ export const MAX_TOPICS_PER_EPISODE = (() => {
   if (Number.isFinite(n) && n >= 1) return Math.min(Math.floor(n), PLATFORM_MAX_TOPICS);
   return PLATFORM_MAX_TOPICS;
 })();
-
-/** Default target when the caller doesn't specify one. */
-const DEFAULT_TARGET_TOPIC_COUNT = 3;
 
 export type EpisodeCreationMode = "manual" | "automatic" | "hybrid";
 
