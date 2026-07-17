@@ -29,6 +29,43 @@ import {
   reuseWarnings,
   scopedRecentUseCount,
 } from "./topicUsageService";
+import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
+import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+
+/**
+ * Fallback configuration snapshot for creation paths that did not pre-resolve
+ * one at the surface (the queue / recurring / legacy adapters). A podcast
+ * episode resolves ENTIRELY from the show — those paths derive every field from
+ * the podcast, so "podcast" provenance is accurate. A standalone episode
+ * resolves from the settings actually applied. Studio/Admin pass their own
+ * precise snapshot via deps and never reach here.
+ */
+async function computeCreationSnapshot(
+  dbi: Parameters<typeof loadPodcastConfiguration>[0],
+  input: { podcastId?: string; verticals?: string[]; hostIds?: string[]; targetTopicCount?: number; minDebateScore?: number },
+  settings: { ttsProvider: string | null; ttsVoiceOverrides?: unknown; soundDesign?: { style?: string; sfxDensity?: string } }
+): Promise<EpisodeSnapshotColumns | undefined> {
+  const podcast = input.podcastId ? await loadPodcastConfiguration(dbi, input.podcastId) : null;
+  const resolved = resolveEpisodeConfiguration({
+    podcast,
+    // A podcast episode inherits from the show (no episode overrides here).
+    // A standalone episode captures the settings that were actually applied.
+    overrides: podcast
+      ? {}
+      : {
+          verticals: input.verticals,
+          hostIds: input.hostIds,
+          segmentCount: input.targetTopicCount,
+          minDebateScore: input.minDebateScore ?? undefined,
+          ttsProvider: settings.ttsProvider ?? undefined,
+          ttsVoiceOverrides: settings.ttsVoiceOverrides,
+          productionStyle: settings.soundDesign?.style,
+          sfxDensity: settings.soundDesign?.sfxDensity,
+        },
+  });
+  if (!resolved.ok) return undefined;
+  return buildEpisodeConfigurationSnapshot(resolved.resolved, new Date());
+}
 
 /** Configurable cap on topics per episode. Env-tunable DOWN, but never above
  *  the client-safe PLATFORM_MAX_TOPICS — one shared limit, no conflicts. */
@@ -169,7 +206,7 @@ export function dedupePreserveOrder(ids: string[]): string[] {
  */
 export async function createEpisodeDraft(
   rawInput: CreateEpisodeDraftInput,
-  deps?: { db?: any }
+  deps?: { db?: any; configuration?: EpisodeSnapshotColumns }
 ): Promise<CreateEpisodeDraftResult> {
   const dbi = deps?.db ?? db;
   const parsed = CreateEpisodeDraftInputSchema.safeParse(rawInput);
@@ -338,6 +375,23 @@ export async function createEpisodeDraft(
         }
       : undefined;
 
+  // ---- Freeze the configuration snapshot (Prompt 5) ----
+  // Prefer a snapshot the canonical resolver already computed at the surface
+  // (Studio/Admin know exactly what the actor overrode vs inherited, so their
+  // provenance is precise). Absent that — the queue / recurring / legacy-adapter
+  // paths — compute one here: a podcast episode resolves entirely from the show
+  // (all values carry "podcast" provenance, which is accurate for those paths),
+  // a standalone episode resolves from the applied settings.
+  let configuration = deps?.configuration;
+  if (!configuration) {
+    try {
+      configuration = await computeCreationSnapshot(dbi, input, settings);
+    } catch {
+      // A snapshot must never break creation; the column default keeps it honest.
+      configuration = undefined;
+    }
+  }
+
   let created;
   try {
     created = await createEpisodeRecord(
@@ -353,6 +407,7 @@ export async function createEpisodeDraft(
         soundDesign: settings.soundDesign,
         leagueId: input.leagueId,
         sport: input.sport,
+        configuration,
       },
       reasons,
       dbi,

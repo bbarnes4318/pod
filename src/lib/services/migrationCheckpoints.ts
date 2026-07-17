@@ -78,6 +78,21 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
   { name: "20260715140000_add_admin_draft", hasDataTransform: false, schemaEqualitySufficient: true, invariants: ["admin_draft_present"] },
   { name: "20260715160000_add_topic_source", hasDataTransform: false, schemaEqualitySufficient: true, invariants: ["topic_source_present"] },
   { name: "20260715170000_reconcile_aihost_owner", hasDataTransform: false, schemaEqualitySufficient: true, invariants: ["aihost_owner_fk"] },
+  {
+    name: "20260716000000_add_podcast_configuration",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "podcast_config_tables_present",
+      "every_podcast_has_editorial_config",
+      "every_podcast_has_production_config",
+      "every_podcast_has_publishing_config",
+      "every_podcast_has_unique_slug",
+      "podcast_config_no_orphans",
+      "episodes_have_configuration_source",
+    ],
+    note: "Prompt 5. BACKFILLS a slug + one editorial/production/publishing row for EVERY Podcast, mirroring the legacy verticals/teams/segmentCount/hostIds columns. A matching schema does NOT prove the backfill ran: a Podcast could exist with no config rows and a NULL slug while the tables are present.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -202,6 +217,63 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   else add("studio_draft_owner_fk", false, "StudioDraft does not exist", true);
   if (await tableExists(db, "AiHost")) await fk("aihost_owner_fk", "AiHost_ownerId_fkey", "AiHost");
   else add("aihost_owner_fk", false, "AiHost does not exist", true);
+
+  // --- 20260716000000: Podcast configuration backfill ---------------------
+  // Schema equality is deliberately NOT sufficient here: the three config
+  // tables can all exist while a Podcast has no rows in them and a NULL slug.
+  const cfgTables = ["PodcastEditorialConfig", "PodcastProductionConfig", "PodcastPublishingConfig"];
+  const cfgTablesPresent = (await Promise.all(cfgTables.map((t) => tableExists(db, t)))).every(Boolean);
+  add("podcast_config_tables_present", cfgTablesPresent,
+    cfgTablesPresent ? "all three podcast config tables exist" : "a podcast config table is missing — the migration did not run");
+
+  if (await tableExists(db, "Podcast") && cfgTablesPresent) {
+    const totalPods = await one(db, `SELECT COUNT(*)::int AS n FROM "Podcast"`);
+    for (const [name, table] of [
+      ["every_podcast_has_editorial_config", "PodcastEditorialConfig"],
+      ["every_podcast_has_production_config", "PodcastProductionConfig"],
+      ["every_podcast_has_publishing_config", "PodcastPublishingConfig"],
+    ] as const) {
+      const missing = await one(db, `SELECT COUNT(*)::int AS n FROM "Podcast" p WHERE NOT EXISTS (SELECT 1 FROM "${table}" c WHERE c."podcastId" = p."id")`);
+      add(name, missing === 0,
+        totalPods === 0 ? "no podcasts to back-fill"
+        : missing > 0 ? `${missing}/${totalPods} podcast(s) have no ${table} row — the backfill did not complete`
+        : `all ${totalPods} podcast(s) have a ${table} row`);
+      // Orphan check: a config row whose podcast is gone (the FK is ON DELETE
+      // CASCADE, so this must be zero).
+      const orphans = await one(db, `SELECT COUNT(*)::int AS n FROM "${table}" c WHERE NOT EXISTS (SELECT 1 FROM "Podcast" p WHERE p."id" = c."podcastId")`);
+      if (orphans > 0) add("podcast_config_no_orphans", false, `${orphans} orphaned ${table} row(s)`);
+    }
+    // If none of the three reported an orphan, record the pass once.
+    if (!out.some((r) => r.name === "podcast_config_no_orphans")) {
+      add("podcast_config_no_orphans", true, "no orphaned podcast config rows");
+    }
+
+    const nullSlugs = await one(db, `SELECT COUNT(*)::int AS n FROM "Podcast" WHERE "slug" IS NULL`);
+    const dupeSlugs = await one(db, `SELECT COUNT(*)::int AS n FROM (SELECT "slug" FROM "Podcast" WHERE "slug" IS NOT NULL GROUP BY "slug" HAVING COUNT(*) > 1) d`);
+    add("every_podcast_has_unique_slug", nullSlugs === 0 && dupeSlugs === 0,
+      totalPods === 0 ? "no podcasts"
+      : nullSlugs > 0 ? `${nullSlugs} podcast(s) still have a NULL slug — the backfill did not complete`
+      : dupeSlugs > 0 ? `${dupeSlugs} slug value(s) are duplicated`
+      : `all ${totalPods} podcast(s) have a unique, non-null slug`);
+  } else {
+    for (const name of ["every_podcast_has_editorial_config", "every_podcast_has_production_config", "every_podcast_has_publishing_config", "every_podcast_has_unique_slug", "podcast_config_no_orphans"]) {
+      add(name, false, "Podcast or a config table is missing", true);
+    }
+  }
+
+  // Episode.configurationSource must exist and never be NULL (it has a default).
+  if (await tableExists(db, "Episode")) {
+    const hasCol = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='Episode' AND column_name='configurationSource'`);
+    if (hasCol === 0) {
+      add("episodes_have_configuration_source", false, "Episode.configurationSource does not exist — the migration never ran", true);
+    } else {
+      const nulls = await one(db, `SELECT COUNT(*)::int AS n FROM "Episode" WHERE "configurationSource" IS NULL`);
+      add("episodes_have_configuration_source", nulls === 0,
+        nulls > 0 ? `${nulls} episode(s) have a NULL configurationSource` : "every episode has a configurationSource (legacy episodes correctly read 'legacy')");
+    }
+  } else {
+    add("episodes_have_configuration_source", false, "Episode does not exist", true);
+  }
 
   return out;
 }

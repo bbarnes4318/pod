@@ -18,6 +18,29 @@ import type { PrismaClient } from "@prisma/client";
 import { createEpisodeDraft, type CreateEpisodeDraftResult } from "./episodeCreation";
 import { leadFirst } from "../studio/rundownRules";
 import { DEFAULT_TARGET_TOPIC_COUNT } from "../episodeLimits";
+import {
+  loadPodcastConfiguration,
+  resolveEpisodeConfiguration,
+  type LoadedPodcastConfiguration,
+  type PodcastConfigurationError,
+} from "./podcastConfiguration";
+import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+
+/** Turn a structured resolver error into the user-facing message the surfaces
+ *  already expect. Kept here so both surfaces render identical copy. */
+function resolverErrorMessage(err: PodcastConfigurationError): string {
+  switch (err.code) {
+    case "podcast_not_found": return "That show no longer exists.";
+    case "podcast_forbidden": return "That show belongs to another account.";
+    case "unsupported_format": return `The "${err.format}" format is not supported yet.`;
+    case "unknown_tts_provider": return `Unknown TTS provider '${err.provider}'.`;
+    case "invalid_production_style": return `Unknown production style '${err.style}'.`;
+    case "invalid_sfx_density": return `Unknown SFX density '${err.density}'.`;
+    case "too_many_hosts": return `A show supports at most two hosts (got ${err.count}).`;
+    case "invalid_tts_voice_overrides": return err.message;
+    default: return "That show's configuration could not be resolved.";
+  }
+}
 
 /** WHO is creating, and with what authority. Never derived from client input. */
 export interface RundownAuthority {
@@ -92,34 +115,106 @@ export type RundownCreationOutcome =
       reasons?: string[];
     };
 
+/** The fully-resolved inputs to a creation call: the selection/casting draft
+ *  (behaviour-identical to the legacy inheritance), the Episode.ownerId to
+ *  stamp (owner-corrected for admin-created podcast episodes), the resolved
+ *  production settings, and the immutable snapshot to freeze. */
+interface ResolvedRundownConfiguration {
+  draft: { verticals?: string[]; teams?: string[]; hostIds?: string[]; targetTopicCount?: number };
+  ownerId: string | null;
+  production: { ttsProvider?: string; ttsVoiceOverrides?: unknown; productionStyle?: string; sfxDensity?: string; minDebateScore?: number };
+  configuration: EpisodeSnapshotColumns;
+}
+
 /**
- * Resolve a podcast the actor is allowed to use, and inherit the show settings
- * the caller omitted. IDENTICAL for Studio and Admin — only `canUsePodcast`
- * (the access scope) differs.
+ * Resolve a podcast the actor may use through the ONE canonical resolver, then
+ * derive: (a) the selection draft — inheriting the settings the caller omitted
+ * with EXACTLY the legacy precedence so the created episode is byte-identical;
+ * (b) the corrected owner; (c) the immutable configuration snapshot with
+ * accurate provenance. IDENTICAL rules for Studio and Admin — only
+ * `canUsePodcast` (the access scope) differs.
  */
-async function resolveAndInherit(
+async function resolveRundownConfiguration(
   ctx: RundownCreationCtx,
-  input: RundownEpisodeInput,
-  draft: { verticals?: string[]; teams?: string[]; hostIds?: string[]; targetTopicCount?: number }
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!input.podcastId) return { ok: true };
-
-  const pod = await ctx.db.podcast.findUnique({
-    where: { id: input.podcastId },
-    select: { id: true, ownerId: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
-  });
-  if (!pod) return { ok: false, error: "That show no longer exists." };
-  if (!ctx.canUsePodcast(pod)) return { ok: false, error: "That show belongs to another account." };
-
-  if (draft.verticals === undefined && pod.verticals.length > 0) draft.verticals = pod.verticals;
-  if (draft.teams === undefined && pod.teams.length > 0) {
-    // Podcast.teams holds Team IDs, but auto-selection matches on team NAMES.
-    const teamRows = await ctx.db.team.findMany({ where: { id: { in: pod.teams } }, select: { name: true } });
-    draft.teams = teamRows.map((t: { name: string }) => t.name);
+  input: RundownEpisodeInput
+): Promise<{ ok: true; resolved: ResolvedRundownConfiguration } | { ok: false; error: string }> {
+  let podcast: LoadedPodcastConfiguration | null = null;
+  if (input.podcastId) {
+    podcast = await loadPodcastConfiguration(ctx.db, input.podcastId);
+    if (!podcast) return { ok: false, error: "That show no longer exists." };
+    if (!ctx.canUsePodcast({ id: podcast.id, ownerId: podcast.ownerId })) {
+      return { ok: false, error: "That show belongs to another account." };
+    }
   }
-  if (!draft.hostIds && pod.hostIds.length > 0) draft.hostIds = pod.hostIds.slice(0, 2);
-  if (draft.targetTopicCount === undefined && pod.segmentCount) draft.targetTopicCount = pod.segmentCount;
-  return { ok: true };
+
+  // Resolve with the RAW actor overrides so provenance is accurate.
+  const resolvedCfg = resolveEpisodeConfiguration({
+    podcast,
+    overrides: {
+      verticals: input.verticals,
+      teams: input.teams,
+      hostIds: input.hostIds?.length ? input.hostIds : undefined,
+      segmentCount: input.targetTopicCount,
+      minDebateScore: input.minDebateScore,
+      ttsProvider: input.ttsProvider,
+      ttsVoiceOverrides: input.ttsVoiceOverrides,
+      productionStyle: input.productionStyle,
+      sfxDensity: input.sfxDensity,
+    },
+  });
+  if (!resolvedCfg.ok) return { ok: false, error: resolverErrorMessage(resolvedCfg.error) };
+
+  // ---- Selection draft: replicate the legacy inheritance EXACTLY ----
+  // (Only apply a show value when the caller omitted the field AND the show has
+  //  a non-empty one — the precise guards the previous code used, so no existing
+  //  episode changes shape.)
+  const draft: ResolvedRundownConfiguration["draft"] = {
+    verticals: input.verticals,
+    teams: input.teams,
+    hostIds: input.hostIds?.length ? input.hostIds : undefined,
+    targetTopicCount: input.targetTopicCount,
+  };
+  if (podcast) {
+    if (draft.verticals === undefined && podcast.editorial.verticals.length > 0) {
+      draft.verticals = podcast.editorial.verticals;
+    }
+    if (draft.teams === undefined && podcast.editorial.teams.length > 0) {
+      // Podcast teams are Team IDs, but auto-selection matches on team NAMES.
+      const teamRows = await ctx.db.team.findMany({ where: { id: { in: podcast.editorial.teams } }, select: { name: true } });
+      draft.teams = teamRows.map((t: { name: string }) => t.name);
+    }
+    if (!draft.hostIds && podcast.production.hostIds.length > 0) {
+      draft.hostIds = podcast.production.hostIds.slice(0, 2);
+    }
+    if (draft.targetTopicCount === undefined && podcast.editorial.segmentCount) {
+      draft.targetTopicCount = podcast.editorial.segmentCount;
+    }
+  }
+
+  // ---- Owner correction ----
+  // Admin creates episodes with no session user (ownerId = null). For a PODCAST
+  // episode that would orphan it from its show's owner, so an admin-created
+  // podcast episode is stamped with the SHOW's owner. Standalone admin episodes
+  // stay ownerless, exactly as before. Owner surfaces already pass their own id.
+  let ownerId = ctx.authority.ownerId;
+  if (ownerId == null && podcast?.ownerId) ownerId = podcast.ownerId;
+
+  const r = resolvedCfg.resolved;
+  return {
+    ok: true,
+    resolved: {
+      draft,
+      ownerId,
+      production: {
+        ttsProvider: r.production.ttsProvider.value ?? undefined,
+        ttsVoiceOverrides: r.production.ttsVoiceOverrides.value ?? undefined,
+        productionStyle: r.production.productionStyle.value ?? undefined,
+        sfxDensity: r.production.sfxDensity.value ?? undefined,
+        minDebateScore: r.editorial.minDebateScore.value ?? undefined,
+      },
+      configuration: buildEpisodeConfigurationSnapshot(r, new Date()),
+    },
+  };
 }
 
 /**
@@ -131,15 +226,9 @@ export async function createRundownEpisode(
   ctx: RundownCreationCtx,
   input: RundownEpisodeInput
 ): Promise<RundownCreationOutcome> {
-  const draft = {
-    verticals: input.verticals,
-    teams: input.teams,
-    hostIds: input.hostIds?.length ? input.hostIds : undefined,
-    targetTopicCount: input.targetTopicCount,
-  };
-
-  const resolved = await resolveAndInherit(ctx, input, draft);
-  if (!resolved.ok) return { success: false, error: resolved.error };
+  const resolution = await resolveRundownConfiguration(ctx, input);
+  if (!resolution.ok) return { success: false, error: resolution.error };
+  const { draft, ownerId, production, configuration } = resolution.resolved;
 
   // AUTHORIZATION, enforced server-side at the single choke point: only an
   // admin actor may carry the override. An owner surface cannot pass it, and a
@@ -153,26 +242,32 @@ export async function createRundownEpisode(
       mode: input.mode,
       selectedTopicIds: input.mode === "automatic" ? [] : orderedIds,
       targetTopicCount: draft.targetTopicCount,
-      // Never the client. Studio → session user; Admin → null (no User row).
-      ownerId: ctx.authority.ownerId ?? undefined,
+      // Never the client. Studio → session user; Admin → null, except an
+      // admin-created PODCAST episode inherits the show's owner (owner
+      // correction) so it is not orphaned from its show.
+      ownerId: ownerId ?? undefined,
       podcastId: input.podcastId ?? undefined,
       hostIds: draft.hostIds,
-      ttsProvider: input.ttsProvider,
-      ttsVoiceOverrides: input.ttsVoiceOverrides,
-      productionStyle: input.productionStyle,
-      sfxDensity: input.sfxDensity,
+      // Resolved production values (episode override > show > default). For
+      // today's data these equal the raw episode inputs, so nothing changes.
+      ttsProvider: production.ttsProvider,
+      ttsVoiceOverrides: production.ttsVoiceOverrides,
+      productionStyle: production.productionStyle,
+      sfxDensity: production.sfxDensity,
       // Selection preferences actually reach the backend (auto/hybrid).
       verticals: draft.verticals,
       teams: draft.teams,
       leagueIds: input.leagueIds,
       sport: input.sport,
-      minDebateScore: input.minDebateScore,
+      minDebateScore: production.minDebateScore,
       title: input.title,
       description: input.description,
       strictSelection: input.mode === "manual",
       reuseOverride: reuseOverrideApplied || undefined,
     },
-    { db: ctx.db }
+    // Pass the precise, provenance-accurate snapshot so createEpisodeDraft
+    // persists it rather than recomputing a coarser one.
+    { db: ctx.db, configuration },
   );
 
   if (!res.ok || !res.episodeId) {

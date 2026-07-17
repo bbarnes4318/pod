@@ -1,0 +1,83 @@
+# Podcast configuration — the canonical show source of truth
+
+A **show** (`Podcast`) is a saved, versioned configuration. This document is the
+contract for how that configuration is stored, resolved, and frozen into every
+episode. It reflects the foundation delivered by the
+`feat/podcast-as-show-source-of-truth` branch; UI, full recurring integration,
+per-show reuse policy, private feeds, and per-show schedule times are explicitly
+**out of scope here** and tracked as follow-ups.
+
+## Data model
+
+Identity lives on `Podcast`; settings live in three 1-1 config tables keyed by
+`podcastId` (`onDelete: Cascade`):
+
+| Table | Holds |
+|-------|-------|
+| `Podcast` (identity) | `name`, `slug` (unique, normalized, reserved-name-rejecting), `description`, `author`, `ownerName`, `ownerEmail` (**sensitive**), `websiteUrl`, `language`, `category`/`subcategory`, `explicit`, `copyright`, `coverImageUrl`, `visibility`, `configVersion` |
+| `PodcastEditorialConfig` | `verticals`, `teams` (Team IDs), `segmentCount`, `format` (only `two_host_debate`), `minDebateScore`, `scriptStyle`, `maxWords` |
+| `PodcastProductionConfig` | `hostIds` (≤2), `ttsProvider`, `ttsVoiceOverrides`, `productionStyle`, `sfxDensity` |
+| `PodcastPublishingConfig` | `autoGenerateChapters`/`ShowNotes`/`Cover`, `includeTranscript`, `downloadsEnabled` |
+
+The legacy `Podcast.verticals/teams/segmentCount/hostIds` columns are **kept**.
+`loadPodcastConfiguration` is the single sanctioned reader of them: it prefers a
+config-table row and falls back to the legacy column only when a row is missing
+(flagging `usedLegacyFallback`). A contract test asserts the creation path never
+reads those columns directly.
+
+## Resolution: one resolver, precedence + provenance
+
+`src/lib/services/podcastConfiguration.ts` is the ONE resolver used by Studio,
+Admin, and the creation path. Authority (who may touch a show) differs by
+surface; the business rules do not.
+
+- **Podcast episode:** `episode_override > podcast > system_default`
+- **Standalone episode:** `episode_override > system_default` — a standalone
+  episode **never** inherits any Podcast's values.
+
+Every resolved setting carries a `provenance` label describing *where* the value
+came from — derived from the source, never inferred from whether the value looks
+"empty". The final resolved values (inherited or overridden alike) are validated:
+unsupported format, unknown TTS provider, invalid production style/density, and
+>2 hosts are structured errors.
+
+## Versioning + optimistic concurrency
+
+`configVersion` starts at 1 and is bumped **exactly once** per accepted edit.
+`savePodcastConfiguration` is a transactional compare-and-swap on the expected
+version: a mismatch returns a structured `podcast_configuration_changed` conflict
+and writes nothing (no partial saves). `fingerprintPodcastConfiguration` is a
+deterministic, key-order-independent sha256 that **excludes** `ownerEmail`.
+
+## Episode snapshot
+
+`src/lib/services/episodeConfigurationSnapshot.ts` freezes the resolved config
+onto the Episode at creation (`configurationSource`, `podcastConfigurationVersion`,
+`configurationSnapshot`, `configurationFingerprint`), inside the SAME transaction
+as the Episode + EpisodeTopic rows. Guarantees:
+
+1. **No secrets** — `ownerEmail`/`ownerName` never enter a snapshot.
+2. **No fabrication** — pre-snapshot episodes are `configurationSource = 'legacy'`
+   with no stored snapshot; `reconstructLegacySnapshot` builds an explicitly
+   `incomplete: true` view for display only.
+3. **Deterministic** — the fingerprint covers the configuration material only
+   (never `capturedAt`), so the same config always fingerprints the same way.
+
+Sound-design *asset IDs* are not frozen: they are chosen by the production planner
+at mix time from the shared, non-owned crate. The snapshot records the real
+per-show inputs (`productionStyle`, `sfxDensity`).
+
+## Migration + backfill
+
+`prisma/migrations/20260716000000_add_podcast_configuration` is additive and
+non-destructive. It backfills every existing Podcast with a deterministic unique
+slug and one editorial/production/publishing row mirroring the legacy columns;
+owner-less podcasts stay owner-less; existing Episodes are honestly marked
+`legacy`. `migrationCheckpoints.ts` declares this migration data-bearing and adds
+invariants (every podcast has each config row, unique non-null slugs, no orphans,
+episodes carry a `configurationSource`).
+
+## Tests
+
+- `npm run test:podcast-configuration` — resolver/save/snapshot (pure + embedded Postgres)
+- `npm run test:podcast-configuration-migration` — the backfill against embedded Postgres
