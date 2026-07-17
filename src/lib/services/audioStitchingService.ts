@@ -1255,7 +1255,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       ? `episodes/${episode.id}/scripts/${scriptId}/final/take-machine-${episodeSlug}-v${versionStr}.mp3`
       : `episodes/${episode.id}/scripts/${scriptId}/final/final.mp3`;
 
-    console.log(`[Stitcher] Uploading final stitched audio to: ${storageKey}`);
+    console.log(`[Stitcher] Uploading final stitched audio for episode ${episode.id}.`);
     const uploadResult = await storageProvider.putObject({
       key: storageKey,
       body: fs.readFileSync(finalOutputPath),

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getFileDurationMs } from "@/lib/audio/assembly";
 import { seedStarterSoundPackCore } from "@/lib/services/soundDesignSeedService";
-import { archiveAudioAsset, createAudioAsset } from "@/lib/services/audioAssetAccess";
+import { archiveAudioAsset, createAudioAsset, classifyLegacyAudioAssetAdmin } from "@/lib/services/audioAssetAccess";
 import {
   ASSET_KINDS,
   PRODUCTION_STYLES,
@@ -24,6 +24,8 @@ function serializeAsset(a: {
   id: string; name: string; kind: string; category: string | null; tags: unknown;
   audioUrl: string; durationMs: number | null; license: string; licenseNote: string | null;
   rightsConfirmed: boolean; isActive: boolean; source: string; createdAt: Date;
+  scope: string; legacyScopeReviewRequired: boolean; isArchived: boolean;
+  licenseStatus: string; rightsStatus: string;
 }) {
   return {
     id: a.id,
@@ -31,13 +33,20 @@ function serializeAsset(a: {
     kind: a.kind,
     category: a.category,
     tags: Array.isArray(a.tags) ? (a.tags as string[]) : [],
-    audioUrl: a.audioUrl,
+    // Prompt 6: previews go through the AUTHORIZED route; the raw storage URL
+    // stays server-side.
+    audioUrl: `/api/audio-assets/${a.id}/preview`,
     durationMs: a.durationMs,
     license: a.license,
     licenseNote: a.licenseNote,
     rightsConfirmed: a.rightsConfirmed,
     isActive: a.isActive,
     source: a.source,
+    scope: a.scope,
+    legacyScopeReviewRequired: a.legacyScopeReviewRequired,
+    isArchived: a.isArchived,
+    licenseStatus: a.licenseStatus,
+    rightsStatus: a.rightsStatus,
     createdAt: a.createdAt.toISOString(),
   };
 }
@@ -46,7 +55,13 @@ export async function fetchSoundDesignData() {
   await requireAdmin();
   try {
     const [assets, config] = await Promise.all([
-      db.audioAsset.findMany({ orderBy: [{ kind: "asc" }, { createdAt: "desc" }] }),
+      // SYSTEM-SIDE ONLY (Prompt 6): the admin console manages the shared
+      // library + legacy-review queue. Users' private libraries are never
+      // listed here.
+      db.audioAsset.findMany({
+        where: { scope: { in: ["shared_system", "legacy_global"] } },
+        orderBy: [{ kind: "asc" }, { createdAt: "desc" }],
+      }),
       db.soundDesignConfig.findUnique({ where: { id: "default" } }),
     ]);
     return {
@@ -245,6 +260,26 @@ export async function updateSoundDesignConfig(input: {
  * update the existing seed rows instead of duplicating them. The worker also
  * auto-seeds on boot when the library is empty (soundDesignSeedService).
  */
+/**
+ * Classify a pre-Prompt-6 legacy_global asset. The admin supplies the
+ * EVIDENCED target; ownership is never guessed, and podcast targets derive
+ * their owner from the podcast itself.
+ */
+export async function classifyLegacyAsset(
+  assetId: string,
+  target: { scope: "shared_system" } | { scope: "owner_private"; ownerId: string } | { scope: "podcast_private"; podcastId: string }
+) {
+  await requireAdmin();
+  try {
+    const res = await classifyLegacyAudioAssetAdmin(db, { kind: "admin", adminIdentity: adminIdentity() }, assetId, target);
+    if (!res.ok) return { success: false, error: `Classification failed (${res.error.code}).` };
+    revalidatePath("/admin/sound-design");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message || "Classification failed." };
+  }
+}
+
 export async function seedStarterSoundPack() {
   await requireAdmin();
   try {
