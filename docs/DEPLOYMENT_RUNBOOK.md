@@ -246,3 +246,17 @@ This is the procedure required by
    - **Readiness check**: [https://podcast.hopwhistle.com/api/readiness](https://podcast.hopwhistle.com/api/readiness)
    - **Public feed**: [https://podcast.hopwhistle.com/rss](https://podcast.hopwhistle.com/rss)
    - **Preview feed**: [https://podcast.hopwhistle.com/rss/preview?token=invalid](https://podcast.hopwhistle.com/rss/preview?token=invalid) (Must return 401).
+
+## Prompt 6 migrations (22 + 23)
+
+`20260717000000_add_audio_asset_ownership` and
+`20260717120000_add_podcast_sound_profiles` are additive `migrate deploy`
+migrations with pure-SQL backfills (no fetches/ffprobe/hashing inside the
+migration). After adoption, run `npm run audit:audio-assets` (read-only) to
+review legacy classification; fill missing legacy technical metadata with
+`npm run repair:audio-asset-metadata -- --apply` (explicit, bounded, never
+automatic). Rollback limitation: like all prior migrations these are
+forward-fix only — the backfills are idempotent and safe to re-run. Worker
+boot seeding only repairs MISSING starter assets; rolling out changed seed
+bytes is an explicit admin action (new content-versioned assets; old bytes
+preserved for historical renders).

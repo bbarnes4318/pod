@@ -3,12 +3,11 @@
 // admin for system/legacy assets) may fetch them, always as an ATTACHMENT —
 // never rendered inline, never as executable content.
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/currentUser";
-import { isAdminRequest, adminIdentity } from "@/lib/adminAuth";
-import { getAccessibleAudioAsset, type AudioAssetActor } from "@/lib/services/audioAssetAccess";
+import { getAccessibleAudioAsset } from "@/lib/services/audioAssetAccess";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
+import { resolveRequestActor } from "../preview/route";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +17,9 @@ const SAFE_DOC_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg",
 };
 
-export async function GET(_req: Request, { params }: { params: Promise<{ assetId: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ assetId: string }> }) {
   const { assetId } = await params;
-  let actor: AudioAssetActor | null = null;
-  const user = await currentUser();
-  if (user) actor = { kind: "user", userId: user.id };
-  else if (await isAdminRequest()) actor = { kind: "admin", adminIdentity: adminIdentity() };
+  const actor = await resolveRequestActor(req);
   if (!actor) return new NextResponse(null, { status: 401 });
   if (!/^[a-zA-Z0-9-]{10,64}$/.test(assetId)) return new NextResponse(null, { status: 404 });
 
@@ -33,7 +29,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ assetId
   const mayRead =
     asset &&
     asset.rightsDocumentStorageKey &&
-    (actor.kind === "admin" ? asset.scope !== "owner_private" && asset.scope !== "podcast_private" : asset.ownerId === actor.userId);
+    (actor.kind === "admin"
+      ? asset.scope !== "owner_private" && asset.scope !== "podcast_private"
+      : actor.kind === "user" && asset.ownerId === actor.userId);
   if (!mayRead) return new NextResponse(null, { status: 404 });
 
   let body: Buffer;

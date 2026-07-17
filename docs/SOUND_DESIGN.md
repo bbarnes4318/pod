@@ -122,3 +122,29 @@ with a cooldown ledger threaded across the run, writes cue sheets +
 `variety-report.json` + mp3 renders to `samples/planner-variety/`, and
 asserts the cue sheets measurably differ, cooldown suppressed repeats, hot
 scripts out-cue calm ones, and plans replay deterministically.
+
+## Prompt 6 addendum — ownership, frozen profiles, and render isolation
+
+The sections above describe the mix engine. Ownership and selection now follow
+`docs/AUDIO_ASSET_ARCHITECTURE.md`:
+
+- `AudioAsset` is scoped (`shared_system` / `owner_private` / `podcast_private`
+  / `legacy_global`) and immutable once ready; the singleton
+  `SoundDesignConfig` is ONLY the shared **system default profile**, not a
+  per-show configuration.
+- A show's sound lives on `PodcastProductionConfig` (+ normalized
+  `PodcastSoundAssignment` rows) and is FROZEN into each Episode's
+  configuration snapshot (v2) at creation. The planner catalog and the
+  renderer's asset set are exactly that frozen pool — reaction SFX included.
+  Legacy episodes (no v2 snapshot) use a scope-guarded system-side pool.
+- Cue cooldown is podcast-scoped by default (`cooldownScope = "owner"`
+  widens to one owner's shows); another customer's usage never affects a
+  show's rotation.
+- Every render records an `EpisodeAudioRender` version with the executed plan
+  plus per-asset `SoundCueUsage` rows (owner/podcast scope, content hash,
+  gain/fades, selection source). Re-render modes: `remix_episode_profile`
+  (default), `remix_current_podcast` (explicit), `reproduce` (stored plan,
+  hash-verified).
+- Asset downloads are bounded and sha256-verified; env `AUDIO_INTRO_URL` /
+  `AUDIO_OUTRO_URL` fallbacks apply to LEGACY episodes only and are never
+  logged as URLs.

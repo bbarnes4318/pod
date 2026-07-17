@@ -81,3 +81,15 @@ episodes carry a `configurationSource`).
 
 - `npm run test:podcast-configuration` — resolver/save/snapshot (pure + embedded Postgres)
 - `npm run test:podcast-configuration-migration` — the backfill against embedded Postgres
+
+## Prompt 6 addendum — the sound profile is part of the configuration
+
+`PodcastProductionConfig` now carries the show's sound profile
+(`soundProfileMode`, loudness, cooldown scope/windows, intro/outro flags) plus
+normalized `PodcastSoundAssignment` rows. Sound-profile saves go through
+`savePodcastSoundProfile` under the SAME optimistic-concurrency contract:
+transactional, no partial saves, exactly ONE `configVersion` increment per
+accepted save, structured `podcast_configuration_changed` on staleness. The
+configuration fingerprint covers the sound profile, and Episode snapshots are
+version 2 (frozen sound profile embedded; v1 snapshots stay readable and
+byte-stable). See `docs/AUDIO_ASSET_ARCHITECTURE.md`.
