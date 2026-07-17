@@ -8,24 +8,36 @@
 // proxy rather than pretend.
 
 import { NextRequest, NextResponse } from "next/server";
+import { getToken } from "next-auth/jwt";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/currentUser";
-import { isAdminRequest, adminIdentity } from "@/lib/adminAuth";
+import { adminIdentity } from "@/lib/adminAuth";
+import { verifyAdminAuthHeader } from "@/lib/adminBasicAuth";
 import { getAccessibleAudioAsset, type AudioAssetActor } from "@/lib/services/audioAssetAccess";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 
 export const dynamic = "force-dynamic";
 
-async function resolveActor(): Promise<AudioAssetActor | null> {
-  const user = await currentUser();
-  if (user) return { kind: "user", userId: user.id };
-  if (await isAdminRequest()) return { kind: "admin", adminIdentity: adminIdentity() };
+/** Resolve the actor STRICTLY from the incoming request — the session JWT is
+ *  read from THIS request's cookies and admin Basic auth from THIS request's
+ *  headers. No ambient request state: a cookieless request can never inherit
+ *  another request's session. */
+export async function resolveRequestActor(req: NextRequest): Promise<AudioAssetActor | null> {
+  const token = await getToken({
+    req,
+    secret: process.env.AUTH_SECRET,
+    secureCookie: process.env.NODE_ENV === "production" && (process.env.NEXTAUTH_URL ?? "").startsWith("https"),
+  }).catch(() => null);
+  const userId = (token as { id?: string } | null)?.id ?? (token?.sub as string | undefined);
+  if (userId) return { kind: "user", userId };
+  if (verifyAdminAuthHeader(req.headers.get("authorization"))) {
+    return { kind: "admin", adminIdentity: adminIdentity() };
+  }
   return null;
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ assetId: string }> }) {
   const { assetId } = await params;
-  const actor = await resolveActor();
+  const actor = await resolveRequestActor(req);
   if (!actor) return new NextResponse(null, { status: 401 });
 
   // UUID shape only — never a path, never a URL.

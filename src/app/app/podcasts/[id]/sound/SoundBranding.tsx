@@ -104,21 +104,25 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
     }
     setStatus("Saving…");
     startTransition(async () => {
-      const res = await savePodcastSound({
-        podcastId,
-        expectedVersion: version,
-        soundProfileMode: mode as never,
-        cooldownScope: cooldownScope as never,
-        targetLoudnessLufs: loudness === "" ? null : Number(loudness),
-        assignments,
-      });
-      if (res.success) {
-        setVersion(res.configVersion!);
-        setConflict(false);
-        setStatus("Saved. New episodes will use this profile; existing episodes keep the sound they were made with.");
-      } else {
-        setConflict(!!res.conflict);
-        setStatus(res.error ?? "Save failed.");
+      try {
+        const res = await savePodcastSound({
+          podcastId,
+          expectedVersion: version,
+          soundProfileMode: mode as never,
+          cooldownScope: cooldownScope as never,
+          targetLoudnessLufs: loudness === "" ? null : Number(loudness),
+          assignments,
+        });
+        if (res.success) {
+          setVersion(res.configVersion!);
+          setConflict(false);
+          setStatus("Saved. New episodes will use this profile; existing episodes keep the sound they were made with.");
+        } else {
+          setConflict(!!res.conflict);
+          setStatus(res.error ?? "Save failed.");
+        }
+      } catch {
+        setStatus("Save failed — try again.");
       }
     });
   };
