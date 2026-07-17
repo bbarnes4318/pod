@@ -1,10 +1,11 @@
 "use server";
 
-import { requireAdmin } from "@/lib/adminAuth";
+import { requireAdmin, adminIdentity } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getFileDurationMs } from "@/lib/audio/assembly";
 import { seedStarterSoundPackCore } from "@/lib/services/soundDesignSeedService";
+import { archiveAudioAsset, createAudioAsset } from "@/lib/services/audioAssetAccess";
 import {
   ASSET_KINDS,
   PRODUCTION_STYLES,
@@ -126,24 +127,33 @@ export async function uploadAudioAsset(formData: FormData) {
       contentType: file.type || "audio/mpeg",
     });
 
-    const asset = await db.audioAsset.create({
-      data: {
-        name,
-        kind,
-        category: kind === "sfx" ? category : kind === "highlight" ? category : null,
-        tags: tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [],
-        audioUrl: uploaded.url,
-        storageKey,
-        durationMs,
-        license,
-        licenseNote,
-        rightsConfirmed,
-        source: "upload",
-      },
+    // Admin uploads land in the SHARED SYSTEM library through the canonical
+    // access service: scoped, content-hashed, structured license/rights,
+    // audit-trailed. (Legacy license/rightsConfirmed columns stay filled for
+    // old readers.)
+    const created = await createAudioAsset(db, { kind: "admin", adminIdentity: adminIdentity() }, {
+      name,
+      kind,
+      category: kind === "sfx" ? category : kind === "highlight" ? category : null,
+      tags: tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : [],
+      scope: "shared_system",
+      audioUrl: uploaded.url,
+      storageKey,
+      contentHash: crypto.createHash("sha256").update(buffer).digest("hex"),
+      mimeType: file.type || "audio/mpeg",
+      fileSizeBytes: buffer.length,
+      durationMs,
+      originalFilename: file.name.slice(0, 200),
+      licenseStatus: "licensed",
+      licenseName: license,
+      rightsStatus: rightsConfirmed ? "confirmed" : kind === "highlight" ? "pending" : "not_required",
+      rightsNotes: licenseNote,
+      allowedUse: "podcast_production",
     });
+    if (!created.ok) throw new Error(`Could not create the asset (${created.error.code}).`);
 
     revalidatePath("/admin/sound-design");
-    return { success: true, assetId: asset.id };
+    return { success: true, assetId: created.assetId };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to upload asset." };
   }
@@ -160,10 +170,16 @@ export async function setAssetActive(assetId: string, isActive: boolean) {
   }
 }
 
+/**
+ * ARCHIVES the asset (Prompt 6): an asset with historical render usage or
+ * Episode snapshot references must never be hard-deleted — archive removes it
+ * from every new selector and planner catalog while history stays auditable
+ * and the storage object stays reproducible.
+ */
 export async function deleteAudioAsset(assetId: string) {
   await requireAdmin();
   try {
-    // Unhook from the show config first so we never point at a dead id.
+    // Unhook from the show config first so we never point at a retired id.
     const config = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
     if (config) {
       const stingers = Array.isArray(config.stingerAssetIds) ? (config.stingerAssetIds as string[]) : [];
@@ -177,11 +193,12 @@ export async function deleteAudioAsset(assetId: string) {
         },
       });
     }
-    await db.audioAsset.delete({ where: { id: assetId } });
+    const archived = await archiveAudioAsset(db, { kind: "admin", adminIdentity: adminIdentity() }, assetId, "Removed from the system library by admin.");
+    if (!archived.ok) throw new Error(`Could not archive the asset (${archived.error.code}).`);
     revalidatePath("/admin/sound-design");
     return { success: true };
   } catch (err: any) {
-    return { success: false, error: err.message || "Failed to delete asset." };
+    return { success: false, error: err.message || "Failed to archive asset." };
   }
 }
 
@@ -231,7 +248,7 @@ export async function updateSoundDesignConfig(input: {
 export async function seedStarterSoundPack() {
   await requireAdmin();
   try {
-    const res = await seedStarterSoundPackCore();
+    const res = await seedStarterSoundPackCore({ adminIdentity: adminIdentity() });
     revalidatePath("/admin/sound-design");
     return { success: true, seededCount: res.seededCount };
   } catch (err: any) {

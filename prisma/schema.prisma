@@ -25,6 +25,7 @@ model User {
   podcasts      Podcast[] // shows this user owns
   episodes      Episode[] // episodes this user created
   aiHosts       AiHost[]  // Character Studio hosts this user owns (null owner = shared)
+  audioAssets   AudioAsset[] @relation("OwnedAudioAssets") // private sound library
   studioDraft   StudioDraft? // in-progress Studio rundown (pre-generation resume state)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -432,6 +433,7 @@ model Podcast {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   episodes      Episode[]
+  audioAssets   AudioAsset[] // podcast-private sound assets
 
   @@index([cadence])
   @@index([ownerId])
@@ -658,19 +660,100 @@ model AudioAsset {
   kind            String   // "theme_intro" | "theme_outro" | "stinger" | "bed" | "sfx" | "highlight"
   category        String?  // sfx flavor: "laugh" | "crowd" | "airhorn" | "buzzer" | "rimshot" | "whoosh" | "impact"
   tags            Json     // string[]
-  audioUrl        String
+  audioUrl        String   // LEGACY compat read path; new code resolves via storageKey + provider
   storageKey      String?
   durationMs      Int?
-  license         String   // e.g. "Original (generated in-house), CC0" | "Licensed — see note"
+  license         String   // LEGACY free-text; superseded by licenseStatus/licenseName below
   licenseNote     String?
-  rightsConfirmed Boolean  @default(false) // must be true for kind "highlight" to be usable
+  rightsConfirmed Boolean  @default(false) // LEGACY boolean; superseded by rightsStatus below
   isActive        Boolean  @default(true)
   source          String   @default("upload") // "seed" | "upload"
+
+  // --- Ownership scope (Prompt 6) ----------------------------------------
+  // "shared_system"   admin-managed library, usable by everyone (ownerId/podcastId null)
+  // "owner_private"   belongs to one User (ownerId set, podcastId null)
+  // "podcast_private" belongs to one owned Podcast (ownerId + podcastId set, owners must match)
+  // "legacy_global"   pre-Prompt-6 asset of ambiguous ownership: admin-only,
+  //                   blocked from NEW selection until classified. The column
+  //                   default is deliberately this fail-closed value so an
+  //                   insert that forgets scope can never widen access.
+  // NOTE: a "workspace" scope belongs to Prompt 13 (Workspaces) — do NOT add
+  // it here; until then assets are user-owned, podcast-associated, or shared.
+  scope                    String  @default("legacy_global")
+  ownerId                  String? // User.id — required for owner_private/podcast_private
+  ownerUser                User?    @relation("OwnedAudioAssets", fields: [ownerId], references: [id], onDelete: SetNull)
+  podcastId                String? // Podcast.id — required for podcast_private only
+  podcast                  Podcast? @relation(fields: [podcastId], references: [id], onDelete: SetNull)
+  uploadedByUserId         String? // audit: who performed the upload (plain id, not authority)
+  createdByAdminIdentity   String? // audit: admin identity for shared_system assets
+  legacyScopeReviewRequired Boolean @default(false) // true = admin must classify before new use
+
+  // --- Immutable media content (Prompt 6) ---------------------------------
+  // Once processingStatus = "ready", contentHash/storageKey/bytes are frozen
+  // (a DB trigger enforces this): replacing audio creates a NEW asset that
+  // supersedes this one, so historical snapshots and renders stay auditable.
+  contentHash        String? // sha256 of the media bytes; null only for unrepaired legacy rows
+  originalFilename   String? // display-only; NEVER used as a storage path
+  mimeType           String?
+  fileSizeBytes      Int?
+  sampleRate         Int?
+  channelCount       Int?
+  bitrateKbps        Int?
+  processingStatus   String  @default("ready") // "uploading" | "processing" | "ready" | "failed"
+  processingError    String? // safe category only — never commands/paths/URLs
+  supersededByAssetId String?
+  supersededByAsset  AudioAsset?  @relation("AudioAssetSupersession", fields: [supersededByAssetId], references: [id], onDelete: SetNull)
+  supersedes         AudioAsset[] @relation("AudioAssetSupersession")
+
+  // --- Archive (never hard-delete an asset with history) ------------------
+  isArchived    Boolean   @default(false)
+  archivedAt    DateTime?
+  archiveReason String?
+
+  // --- License + rights (Prompt 6; structured, replaces the loose strings) --
+  licenseStatus              String    @default("unknown") // "original" | "licensed" | "public_domain" | "cc0" | "unknown" | "restricted" | "expired" | "revoked"
+  licenseName                String?
+  licenseReference           String?
+  rightsStatus               String    @default("not_required") // "not_required" | "pending" | "confirmed" | "rejected" | "expired" | "revoked"
+  rightsNotes                String?
+  allowedUse                 String?   // e.g. "podcast_production"; enforced for restricted assets
+  rightsConfirmedAt          DateTime?
+  rightsConfirmedByUserId    String?
+  rightsConfirmedByAdminIdentity String?
+  rightsExpiresAt            DateTime?
+  rightsDocumentStorageKey   String?   // PRIVATE — never in DTOs/logs; served only via an authorized route
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  auditEvents     AudioAssetAuditEvent[]
 
   @@index([kind])
   @@index([isActive])
+  @@index([scope])
+  @@index([ownerId])
+  @@index([podcastId])
+  @@index([contentHash])
+}
+
+// Immutable per-asset audit trail (Prompt 6). Append-only: nothing in the
+// application updates or deletes rows here; hard-deleting an asset (allowed
+// only for failed/unreferenced uploads) cascades its events away with it.
+model AudioAssetAuditEvent {
+  id            String   @id @default(uuid())
+  assetId       String
+  asset         AudioAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  event         String   // created | upload_completed | metadata_extracted | metadata_failed |
+                         // license_updated | rights_confirmed | rights_revoked | assigned_to_podcast |
+                         // removed_from_podcast | archived | restored | superseded | classified | rendered
+  actorType     String   // "user" | "admin" | "system"
+  userId        String?
+  adminIdentity String?
+  podcastId     String?
+  metadata      Json?    // SAFE fields only — never secrets/URLs/storage keys/rights docs
+  createdAt     DateTime @default(now())
+
+  @@index([assetId, createdAt])
+  @@index([event])
 }
 
 // Singleton (id = "default"): which assets voice the show's produced sound,

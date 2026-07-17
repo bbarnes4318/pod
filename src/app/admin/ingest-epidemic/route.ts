@@ -55,13 +55,26 @@ export async function POST(req: NextRequest) {
       if (a.kind === "sfx" && !(SFX_CATEGORIES as readonly string[]).includes(a.category || "")) {
         throw new Error(`sfx needs a valid category (got '${a.category}')`);
       }
-      const data = {
+      // Admin-ingested licensed crate assets are SHARED SYSTEM library entries
+      // (Prompt 6): scoped, structured license/rights, no fabricated owner.
+      const canonical = {
+        scope: "shared_system",
+        ownerId: null,
+        podcastId: null,
+        licenseStatus: "licensed" as const,
+        licenseName: a.license,
+        rightsStatus: "confirmed" as const,
+        rightsConfirmedAt: new Date(),
+        rightsConfirmedByAdminIdentity: "admin:ingest-epidemic",
+        allowedUse: "podcast_production",
+        legacyScopeReviewRequired: false,
+        processingStatus: "ready",
+      };
+      const metadata = {
         name: a.name,
         kind: a.kind,
         category: a.kind === "sfx" ? a.category : null,
         tags: a.tags ?? [],
-        audioUrl: a.audioUrl,
-        storageKey: a.storageKey ?? null,
         durationMs: a.durationMs ?? null,
         license: a.license,
         licenseNote: a.licenseNote ?? null,
@@ -70,9 +83,34 @@ export async function POST(req: NextRequest) {
         source: "upload",
       };
       const existing = await db.audioAsset.findFirst({ where: { name: a.name } });
-      const row = existing
-        ? await db.audioAsset.update({ where: { id: existing.id }, data })
-        : await db.audioAsset.create({ data });
+      let row;
+      if (existing) {
+        // Media content is IMMUTABLE on a ready asset: a re-ingest may refresh
+        // metadata/licensing, but never swap the bytes another render used.
+        // Same-URL re-ingests are no-ops on content; changed-URL re-ingests
+        // must supersede via a NEW asset.
+        if (existing.audioUrl === a.audioUrl) {
+          row = await db.audioAsset.update({ where: { id: existing.id }, data: { ...metadata, ...canonical } });
+        } else {
+          row = await db.audioAsset.create({
+            data: { ...metadata, ...canonical, audioUrl: a.audioUrl, storageKey: a.storageKey ?? null },
+          });
+          await db.audioAsset.update({
+            where: { id: existing.id },
+            data: {
+              supersededByAssetId: row.id,
+              isArchived: true,
+              archivedAt: new Date(),
+              archiveReason: "Superseded by re-ingested crate version.",
+              isActive: false,
+            },
+          });
+        }
+      } else {
+        row = await db.audioAsset.create({
+          data: { ...metadata, ...canonical, audioUrl: a.audioUrl, storageKey: a.storageKey ?? null },
+        });
+      }
       (existing ? updated : created).push({ name: a.name, id: row.id, kind: a.kind });
     } catch (e: any) {
       failed.push({ name: a?.name || "(unknown)", error: e?.message || String(e) });

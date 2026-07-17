@@ -93,6 +93,21 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Prompt 5. BACKFILLS a slug + one editorial/production/publishing row for EVERY Podcast, mirroring the legacy verticals/teams/segmentCount/hostIds columns. A matching schema does NOT prove the backfill ran: a Podcast could exist with no config rows and a NULL slug while the tables are present.",
   },
+  {
+    name: "20260717000000_add_audio_asset_ownership",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "audio_asset_scopes_valid",
+      "shared_system_assets_unowned",
+      "owner_private_assets_owned",
+      "podcast_private_assets_consistent",
+      "seed_assets_shared_system",
+      "seed_assets_rights_confirmed",
+      "legacy_assets_flagged_for_review",
+    ],
+    note: "Prompt 6 PR1. BACKFILLS ownership scope onto every AudioAsset (seed -> shared_system with confirmed rights; everything else -> legacy_global with review required), adds the media-immutability trigger + scope CHECK constraints. A matching schema does NOT prove the classification ran: an asset could sit at the fail-closed default with the tables intact.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -258,6 +273,58 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   } else {
     for (const name of ["every_podcast_has_editorial_config", "every_podcast_has_production_config", "every_podcast_has_publishing_config", "every_podcast_has_unique_slug", "podcast_config_no_orphans"]) {
       add(name, false, "Podcast or a config table is missing", true);
+    }
+  }
+
+  // --- 20260717000000: audio-asset ownership backfill ----------------------
+  // Schema equality is NOT sufficient: every asset could sit unclassified at
+  // the fail-closed default while the columns exist.
+  if (await tableExists(db, "AudioAsset")) {
+    const hasScope = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='AudioAsset' AND column_name='scope'`);
+    if (hasScope === 0) {
+      for (const name of ["audio_asset_scopes_valid", "shared_system_assets_unowned", "owner_private_assets_owned", "podcast_private_assets_consistent", "seed_assets_shared_system", "seed_assets_rights_confirmed", "legacy_assets_flagged_for_review"]) {
+        add(name, false, "AudioAsset.scope does not exist — the migration never ran", true);
+      }
+    } else {
+      const total = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset"`);
+      const badScope = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "scope" NOT IN ('shared_system','owner_private','podcast_private','legacy_global')`);
+      add("audio_asset_scopes_valid", badScope === 0,
+        badScope > 0 ? `${badScope} asset(s) carry an invalid scope` : `all ${total} asset scopes valid`);
+
+      const ownedShared = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "scope"='shared_system' AND ("ownerId" IS NOT NULL OR "podcastId" IS NOT NULL)`);
+      add("shared_system_assets_unowned", ownedShared === 0,
+        ownedShared > 0 ? `${ownedShared} shared_system asset(s) carry an owner/podcast` : "every shared_system asset is unowned");
+
+      const orphanOwner = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "scope"='owner_private' AND "ownerId" IS NULL`);
+      add("owner_private_assets_owned", orphanOwner === 0,
+        orphanOwner > 0 ? `${orphanOwner} owner_private asset(s) have no owner (orphaned by user deletion — fail-closed, needs admin review)` : "every owner_private asset has an owner");
+
+      const badPodcastPrivate = await one(db, `
+        SELECT COUNT(*)::int AS n FROM "AudioAsset" a
+        WHERE a."scope"='podcast_private' AND (
+          a."ownerId" IS NULL OR a."podcastId" IS NULL
+          OR EXISTS (SELECT 1 FROM "Podcast" p WHERE p."id" = a."podcastId" AND p."ownerId" IS DISTINCT FROM a."ownerId")
+        )`);
+      add("podcast_private_assets_consistent", badPodcastPrivate === 0,
+        badPodcastPrivate > 0 ? `${badPodcastPrivate} podcast_private asset(s) violate owner/podcast consistency` : "every podcast_private asset matches its podcast's owner");
+
+      // CURRENT (non-superseded) seed assets must be shared_system + confirmed.
+      const hasSuperseded = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='AudioAsset' AND column_name='supersededByAssetId'`);
+      const supersededClause = hasSuperseded > 0 ? `AND "supersededByAssetId" IS NULL` : "";
+      const badSeeds = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "source"='seed' ${supersededClause} AND "scope" <> 'shared_system'`);
+      add("seed_assets_shared_system", badSeeds === 0,
+        badSeeds > 0 ? `${badSeeds} current seed asset(s) are not shared_system` : "every current seed asset is shared_system");
+      const seedRights = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "source"='seed' ${supersededClause} AND "rightsStatus" <> 'confirmed'`);
+      add("seed_assets_rights_confirmed", seedRights === 0,
+        seedRights > 0 ? `${seedRights} current seed asset(s) lack confirmed rights` : "every current seed asset has confirmed rights");
+
+      const unflaggedLegacy = await one(db, `SELECT COUNT(*)::int AS n FROM "AudioAsset" WHERE "scope"='legacy_global' AND "legacyScopeReviewRequired" = false`);
+      add("legacy_assets_flagged_for_review", unflaggedLegacy === 0,
+        unflaggedLegacy > 0 ? `${unflaggedLegacy} legacy_global asset(s) are not flagged for ownership review` : "every legacy_global asset is flagged for review");
+    }
+  } else {
+    for (const name of ["audio_asset_scopes_valid", "shared_system_assets_unowned", "owner_private_assets_owned", "podcast_private_assets_consistent", "seed_assets_shared_system", "seed_assets_rights_confirmed", "legacy_assets_flagged_for_review"]) {
+      add(name, false, "AudioAsset does not exist", true);
     }
   }
 
