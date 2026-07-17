@@ -31,6 +31,7 @@ import {
 } from "./topicUsageService";
 import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
 import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 
 /**
  * Fallback configuration snapshot for creation paths that did not pre-resolve
@@ -64,7 +65,13 @@ async function computeCreationSnapshot(
         },
   });
   if (!resolved.ok) return undefined;
-  return buildEpisodeConfigurationSnapshot(resolved.resolved, new Date());
+  // Freeze the sound profile (Prompt 6): a podcast episode freezes the show's
+  // profile; a standalone episode freezes the shared system default. The
+  // planner may only pick from this frozen pool.
+  const soundProfile = podcast
+    ? await resolvePodcastSoundProfile(dbi, { id: podcast.id, ownerId: podcast.ownerId }, podcast.production)
+    : await resolveStandaloneSoundProfile(dbi);
+  return buildEpisodeConfigurationSnapshot(resolved.resolved, new Date(), soundProfile);
 }
 
 /** Configurable cap on topics per episode. Env-tunable DOWN, but never above

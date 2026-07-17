@@ -108,6 +108,18 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Prompt 6 PR1. BACKFILLS ownership scope onto every AudioAsset (seed -> shared_system with confirmed rights; everything else -> legacy_global with review required), adds the media-immutability trigger + scope CHECK constraints. A matching schema does NOT prove the classification ran: an asset could sit at the fail-closed default with the tables intact.",
   },
+  {
+    name: "20260717120000_add_podcast_sound_profiles",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "cue_usage_scoped_to_episode_owner",
+      "sound_assignment_roles_valid",
+      "sound_assignment_no_cross_owner",
+      "one_active_singleton_assignment_per_role",
+    ],
+    note: "Prompt 6 PR2. Adds Podcast sound profiles + normalized assignments + render versions, and BACKFILLS SoundCueUsage.ownerId/podcastId from each row's Episode. A matching schema does NOT prove the usage backfill ran.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -325,6 +337,54 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   } else {
     for (const name of ["audio_asset_scopes_valid", "shared_system_assets_unowned", "owner_private_assets_owned", "podcast_private_assets_consistent", "seed_assets_shared_system", "seed_assets_rights_confirmed", "legacy_assets_flagged_for_review"]) {
       add(name, false, "AudioAsset does not exist", true);
+    }
+  }
+
+  // --- 20260717120000: sound profiles + scoped cue usage --------------------
+  if (await tableExists(db, "SoundCueUsage")) {
+    const hasOwnerCol = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='SoundCueUsage' AND column_name='ownerId'`);
+    if (hasOwnerCol === 0) {
+      add("cue_usage_scoped_to_episode_owner", false, "SoundCueUsage.ownerId does not exist — the migration never ran", true);
+    } else {
+      // Every usage row whose episode has an owner/podcast must carry it.
+      const unscoped = await one(db, `
+        SELECT COUNT(*)::int AS n FROM "SoundCueUsage" u
+        JOIN "Episode" e ON e."id" = u."episodeId"
+        WHERE (e."ownerId" IS NOT NULL AND u."ownerId" IS NULL)
+           OR (e."podcastId" IS NOT NULL AND u."podcastId" IS NULL)`);
+      add("cue_usage_scoped_to_episode_owner", unscoped === 0,
+        unscoped > 0 ? `${unscoped} usage row(s) missing their episode's owner/podcast scope — the backfill did not complete` : "every usage row carries its episode's scope");
+    }
+  } else {
+    add("cue_usage_scoped_to_episode_owner", false, "SoundCueUsage does not exist", true);
+  }
+
+  if (await tableExists(db, "PodcastSoundAssignment")) {
+    const badRole = await one(db, `SELECT COUNT(*)::int AS n FROM "PodcastSoundAssignment" WHERE "role" NOT IN ('intro','outro','bed','stinger','reaction')`);
+    add("sound_assignment_roles_valid", badRole === 0, badRole > 0 ? `${badRole} assignment(s) carry an invalid role` : "all assignment roles valid");
+
+    // No assignment may reference an asset the podcast cannot access.
+    const crossOwner = await one(db, `
+      SELECT COUNT(*)::int AS n FROM "PodcastSoundAssignment" s
+      JOIN "AudioAsset" a ON a."id" = s."assetId"
+      JOIN "Podcast" p ON p."id" = s."podcastId"
+      WHERE a."scope" NOT IN ('shared_system')
+        AND NOT (a."scope" = 'owner_private' AND a."ownerId" = p."ownerId")
+        AND NOT (a."scope" = 'podcast_private' AND a."podcastId" = p."id")`);
+    add("sound_assignment_no_cross_owner", crossOwner === 0,
+      crossOwner > 0 ? `${crossOwner} assignment(s) reference an asset their podcast cannot access` : "no cross-owner assignment exists");
+
+    const dupSingleton = await one(db, `
+      SELECT COUNT(*)::int AS n FROM (
+        SELECT "podcastId", "role" FROM "PodcastSoundAssignment"
+        WHERE "enabled" = true AND "role" IN ('intro','outro','bed')
+        GROUP BY "podcastId", "role" HAVING COUNT(*) > 1
+      ) d`);
+    add("one_active_singleton_assignment_per_role", dupSingleton === 0,
+      dupSingleton > 0 ? `${dupSingleton} podcast/role pair(s) have multiple active singleton assignments` : "singleton roles unique per podcast");
+  } else {
+    for (const name of ["sound_assignment_roles_valid", "sound_assignment_no_cross_owner", "one_active_singleton_assignment_per_role"]) {
+      add(name, false, "PodcastSoundAssignment does not exist", true);
     }
   }
 

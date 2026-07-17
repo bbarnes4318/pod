@@ -18,12 +18,18 @@
 
 import crypto from "node:crypto";
 import { canonicalJson, type ResolvedEpisodeConfiguration, type Provenance } from "./podcastConfiguration";
+import type { FrozenSoundProfile } from "./podcastSoundProfile";
 
-export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 1 as const;
+// Version 2 (Prompt 6) adds the FROZEN SOUND PROFILE: the exact permitted
+// intro/outro/bed/stinger/reaction assets (ids + content hashes + rights state
+// at capture). Version-1 snapshots (Prompt 5 era) remain readable and are
+// NEVER rewritten; their sound behavior resolves through the legacy
+// compatibility path.
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 2 as const;
 
 /** The persisted shape (stored in Episode.configurationSnapshot as JSON). */
 export interface EpisodeConfigurationSnapshot {
-  version: 1;
+  version: 1 | 2;
   source: "podcast" | "standalone" | "legacy";
   /** ISO-8601 capture time. Present for provenance; EXCLUDED from the fingerprint. */
   capturedAt: string;
@@ -65,10 +71,11 @@ export interface EpisodeConfigurationSnapshot {
     productionStyle: string | null;
     sfxDensity: string | null;
     provenance: Record<string, Provenance>;
-    // Concrete sound-design asset IDs are NOT frozen here: they are chosen by
-    // the production planner at mix time from the shared, non-owned crate.
-    // Recording the style + density (the actual per-show inputs) is honest;
-    // inventing asset IDs the show never selected would not be.
+    /** Version 2+: the exact permitted sound assets, frozen at creation —
+     *  ids, content hashes, roles, gains/fades, and rights/license state at
+     *  capture. The planner may only pick from THIS pool. Never contains
+     *  storage keys or URLs. Absent on version-1 snapshots. */
+    soundProfile?: FrozenSoundProfile;
   };
 }
 
@@ -103,6 +110,11 @@ function editorialMaterial(s: EpisodeConfigurationSnapshot) {
       ttsVoiceOverrides: s.production.ttsVoiceOverrides,
       productionStyle: s.production.productionStyle,
       sfxDensity: s.production.sfxDensity,
+      // v2: the frozen sound profile is part of the fingerprint — a sound
+      // change is a configuration change. The key is added ONLY when present
+      // so re-fingerprinting a stored v1 snapshot still reproduces its
+      // original hash byte-for-byte.
+      ...(s.production.soundProfile !== undefined ? { soundProfile: s.production.soundProfile } : {}),
     },
   };
 }
@@ -120,7 +132,11 @@ const provenanceOf = (f: { provenance: Provenance }): Provenance => f.provenance
  */
 export function buildEpisodeConfigurationSnapshot(
   resolved: ResolvedEpisodeConfiguration,
-  capturedAt: Date
+  capturedAt: Date,
+  /** The frozen sound profile (Prompt 6). Callers on the creation path always
+   *  pass one; version-2 snapshots carry it, and the planner may only pick
+   *  from it. */
+  soundProfile?: FrozenSoundProfile
 ): EpisodeSnapshotColumns {
   const snapshot: EpisodeConfigurationSnapshot = {
     version: EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
@@ -170,6 +186,7 @@ export function buildEpisodeConfigurationSnapshot(
       ttsVoiceOverrides: resolved.production.ttsVoiceOverrides.value,
       productionStyle: resolved.production.productionStyle.value,
       sfxDensity: resolved.production.sfxDensity.value,
+      ...(soundProfile ? { soundProfile } : {}),
       provenance: {
         hostIds: provenanceOf(resolved.production.hostIds),
         ttsProvider: provenanceOf(resolved.production.ttsProvider),

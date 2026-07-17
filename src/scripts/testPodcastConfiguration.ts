@@ -51,7 +51,12 @@ function baseConfig(over: Partial<LoadedPodcastConfiguration> = {}): LoadedPodca
       explicit: false, copyright: "(c) 2026", coverImageUrl: "https://example.test/cover.png", visibility: "public",
     },
     editorial: { verticals: ["NFL"], teams: ["team-1"], segmentCount: 5, format: "two_host_debate", minDebateScore: 60, scriptStyle: "punchy", maxWords: 4000 },
-    production: { hostIds: ["host-a", "host-b"], ttsProvider: "elevenlabs", ttsVoiceOverrides: null, productionStyle: "full", sfxDensity: "medium" },
+    production: {
+      hostIds: ["host-a", "host-b"], ttsProvider: "elevenlabs", ttsVoiceOverrides: null, productionStyle: "full", sfxDensity: "medium",
+      soundProfileMode: "system_default", targetLoudnessLufs: null, cooldownScope: "podcast",
+      stingerCooldownEpisodes: null, reactionCooldownEpisodes: null, defaultIntroEnabled: true, defaultOutroEnabled: true,
+      soundAssignments: [],
+    },
     publishing: { autoGenerateChapters: true, autoGenerateShowNotes: true, autoGenerateCover: true, includeTranscript: true, downloadsEnabled: true },
     usedLegacyFallback: false,
     ...over,

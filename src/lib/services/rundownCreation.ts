@@ -25,6 +25,7 @@ import {
   type PodcastConfigurationError,
 } from "./podcastConfiguration";
 import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 
 /** Turn a structured resolver error into the user-facing message the surfaces
  *  already expect. Kept here so both surfaces render identical copy. */
@@ -200,6 +201,19 @@ async function resolveRundownConfiguration(
   if (ownerId == null && podcast?.ownerId) ownerId = podcast.ownerId;
 
   const r = resolvedCfg.resolved;
+  // Freeze the sound profile (Prompt 6): podcast episodes freeze the show's
+  // profile; standalone episodes freeze the shared system default and never
+  // inherit any Podcast's private assets. Same rule as the snapshot itself:
+  // a profile-freeze failure must never break creation — the snapshot simply
+  // omits the profile and the render uses the legacy compatibility path.
+  let soundProfile;
+  try {
+    soundProfile = podcast
+      ? await resolvePodcastSoundProfile(ctx.db, { id: podcast.id, ownerId: podcast.ownerId }, podcast.production)
+      : await resolveStandaloneSoundProfile(ctx.db);
+  } catch {
+    soundProfile = undefined;
+  }
   return {
     ok: true,
     resolved: {
@@ -212,7 +226,7 @@ async function resolveRundownConfiguration(
         sfxDensity: r.production.sfxDensity.value ?? undefined,
         minDebateScore: r.editorial.minDebateScore.value ?? undefined,
       },
-      configuration: buildEpisodeConfigurationSnapshot(r, new Date()),
+      configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile),
     },
   };
 }
