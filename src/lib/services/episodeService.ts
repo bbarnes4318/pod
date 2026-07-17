@@ -11,6 +11,7 @@ import { buildTopicSnapshot } from "./topicSnapshot";
 import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReservation";
 import { evaluateHardGates, type EligibilityTopic } from "./topicEligibility";
 import { DEFAULT_MIN_DEBATE_SCORE, DEFAULT_MIN_TALKABILITY } from "../episodeLimits";
+import type { EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 
 /** In-transaction concurrency guard for the exclude_podcast reuse policy. When
  *  present, `createEpisodeRecord` acquires advisory locks and re-validates
@@ -346,6 +347,10 @@ export interface EpisodeCreationSettings {
   /** Used only to derive a default title when none is given. */
   leagueId?: string;
   sport?: string;
+  /** The immutable configuration snapshot to freeze onto the Episode, computed
+   *  by the canonical resolver. Written in the SAME transaction as the Episode
+   *  and its EpisodeTopic rows, so a failed snapshot means no partial episode. */
+  configuration?: EpisodeSnapshotColumns;
 }
 
 /**
@@ -457,6 +462,17 @@ export async function createEpisodeRecord(
         podcastId: settings.podcastId || undefined,
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
+        // Freeze the resolved configuration atomically with the episode. When a
+        // caller supplies none (a legacy/direct path), the column defaults leave
+        // configurationSource = 'legacy' rather than fabricating a snapshot.
+        ...(settings.configuration
+          ? {
+              configurationSource: settings.configuration.configurationSource,
+              podcastConfigurationVersion: settings.configuration.podcastConfigurationVersion ?? undefined,
+              configurationSnapshot: settings.configuration.configurationSnapshot as unknown as Prisma.InputJsonValue,
+              configurationFingerprint: settings.configuration.configurationFingerprint,
+            }
+          : {}),
       },
     });
 

@@ -56,6 +56,8 @@
     "test:migration-baseline": "tsx --conditions=react-server src/scripts/testMigrationBaseline.ts",
     "audit:migration-adoption": "tsx --conditions=react-server src/scripts/auditMigrationAdoption.ts",
     "test:migration-adoption": "tsx --conditions=react-server src/scripts/testMigrationAdoption.ts",
+    "test:podcast-configuration": "tsx --conditions=react-server src/scripts/testPodcastConfiguration.ts",
+    "test:podcast-configuration-migration": "tsx --conditions=react-server src/scripts/testPodcastConfigurationMigration.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",
