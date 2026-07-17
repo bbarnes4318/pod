@@ -468,8 +468,81 @@ model PodcastProductionConfig {
   ttsVoiceOverrides Json?    // per-host voice picks, same shape as Episode.ttsVoiceOverrides
   productionStyle   String?  // sound design style: "clean" | "light" | "full"
   sfxDensity        String?  // sound design sfx density
+
+  // --- Sound profile (Prompt 6) ------------------------------------------
+  // "system_default": the shared system profile, FROZEN into each Episode's
+  //   snapshot at creation (a later system edit never changes that Episode).
+  // "custom": this Podcast's explicit PodcastSoundAssignment rows.
+  // "clean": dialogue only — no intro/outro/bed/stingers/reactions.
+  soundProfileMode          String  @default("system_default")
+  targetLoudnessLufs        Float?  // master loudness target; null = pipeline default (-16)
+  // Cue anti-repetition scope: "podcast" (default — only THIS show's prior
+  // usage counts) or "owner" (all of this owner's shows). NEVER global:
+  // another customer's usage must not influence this show's rotation.
+  cooldownScope             String  @default("podcast")
+  stingerCooldownEpisodes   Int?    // null = pipeline default
+  reactionCooldownEpisodes  Int?    // null = pipeline default
+  defaultIntroEnabled       Boolean @default(true)
+  defaultOutroEnabled       Boolean @default(true)
+
+  soundAssignments PodcastSoundAssignment[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+// Normalized Podcast sound assignment (Prompt 6): which asset voices which
+// role for a show. Singleton roles (intro/outro/bed) are enforced by a
+// partial unique index (one ENABLED row per role per podcast); pool roles
+// (stinger/reaction) are ordered and deduplicated per (podcast, role, asset).
+model PodcastSoundAssignment {
+  id           String  @id @default(uuid())
+  productionConfigId String
+  productionConfig   PodcastProductionConfig @relation(fields: [productionConfigId], references: [id], onDelete: Cascade)
+  podcastId    String  // denormalized for direct scoping queries + constraints
+  assetId      String
+  asset        AudioAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  role         String  // "intro" | "outro" | "bed" | "stinger" | "reaction"
+  orderIndex   Int     @default(0) // deterministic pool ordering
+  enabled      Boolean @default(true)
+  gainDb       Float?  // bounded trim; null = neutral
+  fadeInMs     Int?
+  fadeOutMs    Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([podcastId, role, assetId]) // no duplicate pool entries
+  @@index([podcastId, role])
+  @@index([assetId])
+}
+
+// One row per audio RENDER of an episode (Prompt 6): initial mix, reproduce,
+// or remix. The Podcast configuration snapshot says what was PERMITTED; this
+// record (plus its SoundCueUsage rows) says what actually HAPPENED — and a
+// later asset/profile edit can never rewrite it.
+model EpisodeAudioRender {
+  id                       String    @id @default(uuid())
+  episodeId                String
+  episode                  Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  scriptId                 String?
+  renderVersion            Int       // 1, 2, ... per episode
+  status                   String    // "running" | "succeeded" | "failed"
+  renderMode               String    // "initial" | "reproduce" | "remix_episode_profile" | "remix_current_podcast" | "legacy"
+  plannerSeed              Int?
+  productionStyle          String?
+  sfxDensity               String?
+  targetLoudnessLufs       Float?
+  configurationFingerprint String?   // Episode configuration fingerprint at render time
+  plan                     Json?     // the exact ProductionPlan executed — the reproduce-mode source of truth
+  outputAudioUrl           String?   // final master reference (existing Episode.audioUrl value)
+  failureReason            String?   // safe category only — never URLs/keys/commands
+  startedAt                DateTime  @default(now())
+  completedAt              DateTime?
+  createdAt                DateTime  @default(now())
+  usages                   SoundCueUsage[]
+
+  @@unique([episodeId, renderVersion])
+  @@index([episodeId])
+  @@index([status])
 }
 
 // One-to-one publishing policy: which auto-assets are produced and whether
@@ -530,6 +603,7 @@ model Episode {
   scripts            Script[]
   audioSegments      AudioSegment[]
   socialClips        SocialClip[]
+  audioRenders       EpisodeAudioRender[]
   playEvents         PlayEvent[]
 
   @@index([status])
@@ -726,6 +800,7 @@ model AudioAsset {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   auditEvents     AudioAssetAuditEvent[]
+  soundAssignments PodcastSoundAssignment[]
 
   @@index([kind])
   @@index([isActive])
@@ -779,12 +854,36 @@ model SoundCueUsage {
   scriptId  String?
   assetId   String
   assetName String?
-  cueType   String   // "stinger" | "bed_change" | "reaction"
+  cueType   String   // "stinger" | "bed_change" | "reaction" | "theme_intro" | "theme_outro" | "highlight"
   usedAt    DateTime @default(now())
+
+  // --- Ownership + render provenance (Prompt 6) ---------------------------
+  // Cooldown reads are scoped by podcastId (default) or ownerId — NEVER
+  // global — and every row snapshots the asset facts at use time so a later
+  // asset edit/archive cannot rewrite render history. Legacy rows (before
+  // this migration) carry selectionSource "legacy" and nulls where the truth
+  // is unknown; the backfill fills owner/podcast from the Episode only.
+  renderId          String?
+  render            EpisodeAudioRender? @relation(fields: [renderId], references: [id], onDelete: SetNull)
+  ownerId           String?
+  podcastId         String?
+  assetKind         String?
+  assetScope        String?
+  assetContentHash  String?
+  lineIndex         Int?
+  timelinePositionMs Int?
+  orderIndex        Int?
+  gainDb            Float?
+  fadeInMs          Int?
+  fadeOutMs         Int?
+  selectionSource   String  @default("legacy") // "podcast_assignment" | "system_default" | "production_planner" | "episode_highlight" | "historical_reproduction" | "legacy"
 
   @@index([assetId, usedAt])
   @@index([episodeId])
   @@index([usedAt])
+  @@index([podcastId, usedAt])
+  @@index([ownerId, usedAt])
+  @@index([renderId])
 }
 
 model JobLog {

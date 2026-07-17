@@ -62,6 +62,8 @@
     "repair:audio-asset-metadata": "tsx --conditions=react-server src/scripts/repairAudioAssetMetadata.ts",
     "test:audio-asset-isolation": "tsx --conditions=react-server src/scripts/testAudioAssetIsolation.ts",
     "test:audio-asset-migration": "tsx --conditions=react-server src/scripts/testAudioAssetMigration.ts",
+    "test:sound-profile": "tsx --conditions=react-server src/scripts/testPodcastSoundProfile.ts",
+    "test:sound-render": "tsx --conditions=react-server src/scripts/testSoundRender.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",

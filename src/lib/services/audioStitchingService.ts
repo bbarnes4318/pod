@@ -50,8 +50,21 @@ import {
   plannedStingerDurations,
   resolveIntroFromPlan,
 } from "@/lib/audio/planExecution";
-import { readCooldownSnapshot, recordPlanUsage } from "@/lib/services/cueCooldownService";
+import { readCooldownSnapshot, recordPlanUsage, type CooldownScopeFilter } from "@/lib/services/cueCooldownService";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
+import { resolvePodcastSoundProfile, type FrozenSoundProfile } from "@/lib/services/podcastSoundProfile";
+import { rightsUsableForNewUse } from "@/lib/services/audioAssetAccess";
+import type { EpisodeConfigurationSnapshot } from "@/lib/services/episodeConfigurationSnapshot";
+import crypto from "crypto";
+
+/** The frozen sound profile from a version-2 Episode configuration snapshot;
+ *  null for legacy / v1 episodes (they use the compatibility path). */
+function frozenProfileFromEpisode(episode: { configurationSnapshot: unknown }): FrozenSoundProfile | null {
+  const snap = episode.configurationSnapshot as EpisodeConfigurationSnapshot | null;
+  if (!snap || typeof snap !== "object") return null;
+  if (snap.version !== 2 || !snap.production?.soundProfile) return null;
+  return snap.production.soundProfile;
+}
 
 interface StitchInput {
   scriptId: string;
@@ -65,6 +78,16 @@ interface StitchInput {
   productionStyle?: string;
   /** "subtle" | "medium" | "hype" — reaction-SFX density (full style only). */
   sfxDensity?: string;
+  /** Prompt 6 render semantics. Default (unset): a fresh render is "initial";
+   *  a forced re-render of a snapshot-v2 episode uses the episode's FROZEN
+   *  profile ("remix_episode_profile" — the safest backward-compatible
+   *  choice); legacy episodes keep their legacy behavior.
+   *    "reproduce"              re-execute the reference render's EXACT plan,
+   *                             verifying every asset's content hash;
+   *    "remix_episode_profile"  new deterministic plan from the frozen pool;
+   *    "remix_current_podcast"  EXPLICIT producer action: re-resolve the
+   *                             CURRENT podcast profile (sound may differ). */
+  renderMode?: "reproduce" | "remix_episode_profile" | "remix_current_podcast";
 }
 
 /** Script rubric (70%) + audio human-ness checks (30%) → 0-100. */
@@ -101,6 +124,11 @@ export async function loadSoundDesignAssetSet(opts: {
   /** Additional asset ids to download (planner-selected stingers/beds that
    *  may not be in the show config). */
   extraAssetIds?: string[];
+  /** Prompt 6: the episode's FROZEN sound profile. When present, the loader is
+   *  ISOLATED to it — slots/stingers come from the profile, the reaction pool
+   *  is ONLY the frozen reaction list (never the whole active library), and
+   *  every downloaded asset is verified against its frozen content hash. */
+  frozenProfile?: FrozenSoundProfile | null;
   tempDir: string;
   storageProvider: { getObject(i: { url: string }): Promise<{ body: Buffer }> };
   ffmpegPath: string;
@@ -109,7 +137,15 @@ export async function loadSoundDesignAssetSet(opts: {
   warnings: string[];
 }): Promise<SoundDesignAssetSet> {
   const set = emptyAssetSet();
-  const cfg = opts.config;
+  const frozen = opts.frozenProfile ?? null;
+  const cfg = frozen
+    ? {
+        themeIntroAssetId: frozen.intro?.assetId ?? null,
+        themeOutroAssetId: frozen.outro?.assetId ?? null,
+        bedAssetId: frozen.bed?.assetId ?? null,
+        stingerAssetIds: frozen.stingers.map((s) => s.assetId),
+      }
+    : opts.config;
   const stingerIds: string[] = Array.isArray(cfg?.stingerAssetIds)
     ? (cfg!.stingerAssetIds as unknown[]).filter((s): s is string => typeof s === "string")
     : [];
@@ -119,19 +155,36 @@ export async function loadSoundDesignAssetSet(opts: {
     cfg?.themeOutroAssetId,
     cfg?.bedAssetId,
     ...stingerIds,
+    ...(frozen ? frozen.reactions.map((r) => r.assetId) : []),
     ...opts.highlightAssetIds,
     ...(opts.extraAssetIds ?? []),
   ].filter((id): id is string => !!id);
 
+  // Expected content hashes from the frozen profile — a downloaded object
+  // that does not match is a media-integrity failure and is never mixed.
+  const expectedHash = new Map<string, string>();
+  if (frozen) {
+    for (const ref of [frozen.intro, frozen.outro, frozen.bed, ...frozen.stingers, ...frozen.reactions]) {
+      if (ref?.contentHash) expectedHash.set(ref.assetId, ref.contentHash);
+    }
+  }
+
   const rows = await db.audioAsset.findMany({
-    where: {
-      isActive: true,
-      OR: [
-        { id: { in: configuredIds.length > 0 ? configuredIds : ["-"] } },
-        // Reaction SFX are picked by category, so load the whole active pool.
-        { kind: "sfx" },
-      ],
-    },
+    where: frozen
+      ? // ISOLATED: exactly the frozen profile + explicit highlights — nothing
+        // outside the episode's permitted pool is even fetched from the DB.
+        { id: { in: configuredIds.length > 0 ? configuredIds : ["-"] } }
+      : {
+          isActive: true,
+          OR: [
+            { id: { in: configuredIds.length > 0 ? configuredIds : ["-"] } },
+            // LEGACY episodes (no frozen profile): reactions were historically
+            // "the whole active pool". That pool is now scope-guarded — only
+            // system-side assets qualify; another owner's private SFX can
+            // never leak into a legacy render.
+            { kind: "sfx", scope: { in: ["shared_system", "legacy_global"] }, isArchived: false },
+          ],
+        },
   });
 
   // Per-kind loudness targets: themes near speech, bed/SFX prepared for
@@ -152,9 +205,42 @@ export async function loadSoundDesignAssetSet(opts: {
       opts.warnings.push(`Highlight asset '${row.name}' skipped: rights not confirmed.`);
       continue;
     }
+    // Render-time rights revalidation (Prompt 6): rights revoked/expired/
+    // rejected SINCE the episode froze its profile block the asset now — it is
+    // skipped with a warning, never silently substituted. (Archive status is
+    // deliberately NOT re-checked here: an archived-but-rights-valid asset may
+    // still voice a render of an episode whose snapshot references it.)
+    {
+      const rights = rightsUsableForNewUse(row);
+      if (!rights.ok) {
+        opts.warnings.push(`Sound asset '${row.name}' skipped: rights invalid (${rights.error.code}).`);
+        continue;
+      }
+    }
     try {
       const rawPath = path.join(opts.tempDir, `asset-${row.id}-raw`);
       const res = await opts.storageProvider.getObject({ url: row.audioUrl });
+      // Bounded download: an asset object larger than the platform cap is
+      // refused rather than buffered into the mix.
+      const maxBytes = Number(process.env.AUDIO_ASSET_MAX_BYTES) || 200 * 1024 * 1024;
+      if (res.body.length === 0 || res.body.length > maxBytes) {
+        throw new Error(`asset object size ${res.body.length} outside bounds`);
+      }
+      // Media integrity: when the episode froze a content hash for this asset,
+      // the downloaded bytes MUST match — a mismatch is never mixed and never
+      // silently substituted. (The safe message carries no URL.)
+      const wantHash = expectedHash.get(row.id) ?? row.contentHash ?? null;
+      if (wantHash) {
+        const gotHash = crypto.createHash("sha256").update(res.body).digest("hex");
+        if (gotHash !== wantHash) {
+          try {
+            await db.audioAssetAuditEvent.create({
+              data: { assetId: row.id, event: "metadata_failed", actorType: "system", metadata: { reason: "content_hash_mismatch_at_render" } },
+            });
+          } catch { /* audit is best-effort */ }
+          throw new Error("content hash mismatch (media integrity) — flagged for review");
+        }
+      }
       fs.writeFileSync(rawPath, res.body);
       const wavPath = path.join(opts.tempDir, `asset-${row.id}.wav`);
       await standardizeClipToWav(opts.ffmpegPath, rawPath, wavPath, {
@@ -234,6 +320,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
   let previousStatus = "audio_segments_ready";
   let scriptRecord: any = null;
+  let renderRecordId: string | null = null;
 
   try {
     // 1. Script & Episode Existence
@@ -463,15 +550,73 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     const storageProvider = getStorageProvider();
 
+    // 3a-bis. Prompt 6 render semantics: resolve the episode's PERMITTED sound
+    // pool and the render mode, and open the immutable render-version record.
+    let frozenProfile = frozenProfileFromEpisode(episode);
+    const renderMode: string = input.renderMode
+      ? input.renderMode
+      : frozenProfile
+        ? forceRegenerate
+          ? "remix_episode_profile" // safest backward-compatible re-render default
+          : "initial"
+        : "legacy";
+
+    if (renderMode === "remix_current_podcast") {
+      // EXPLICIT producer action only: re-resolve the CURRENT podcast profile.
+      // The episode's stored snapshot is NOT rewritten — this render's record
+      // carries what was used.
+      if (episode.podcastId) {
+        const pod = await db.podcast.findUnique({
+          where: { id: episode.podcastId },
+          select: { id: true, ownerId: true, productionConfig: true },
+        });
+        if (pod) frozenProfile = await resolvePodcastSoundProfile(db, { id: pod.id, ownerId: pod.ownerId }, pod.productionConfig);
+      }
+    }
+
+    // Reproduce: load the reference render's EXACT stored plan. No reference
+    // plan -> a clear failure, never a silent re-pick.
+    let reproducePlan: ProductionPlan | null = null;
+    if (renderMode === "reproduce") {
+      const reference = await db.episodeAudioRender.findFirst({
+        where: { episodeId: episode.id, status: "succeeded" },
+        orderBy: { renderVersion: "desc" },
+      });
+      if (!reference?.plan) {
+        throw new Error("Reproduce requested but no prior render with a stored plan exists for this episode.");
+      }
+      reproducePlan = reference.plan as unknown as ProductionPlan;
+    }
+
+    const priorVersion = await db.episodeAudioRender.aggregate({
+      where: { episodeId: episode.id },
+      _max: { renderVersion: true },
+    });
+    const renderRecord = await db.episodeAudioRender.create({
+      data: {
+        episodeId: episode.id,
+        scriptId,
+        renderVersion: (priorVersion._max.renderVersion ?? 0) + 1,
+        status: "running",
+        renderMode,
+        configurationFingerprint: episode.configurationFingerprint ?? null,
+        targetLoudnessLufs: frozenProfile?.targetLoudnessLufs ?? null,
+      },
+    });
+    renderRecordId = renderRecord.id;
+
     // 3b. Sound design resolution: trigger option > episode setting > show
     // config default > "clean" (legacy dialogue-only render). See
     // docs/SOUND_DESIGN.md for the full production model.
     const episodeSound = parseEpisodeSoundDesign(episode.soundDesign);
     const sdConfig = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
-    const style: ProductionStyle = isProductionStyle(input.productionStyle)
+    let style: ProductionStyle = isProductionStyle(input.productionStyle)
       ? input.productionStyle
       : episodeSound.style ??
         (sdConfig && isProductionStyle(sdConfig.defaultStyle) ? sdConfig.defaultStyle : "clean");
+    // A frozen CLEAN profile is dialogue-only by definition — no style input
+    // can add sound the episode's configuration forbids.
+    if (frozenProfile?.mode === "clean") style = "clean";
     const sfxDensity: SfxDensity = isSfxDensity(input.sfxDensity)
       ? input.sfxDensity
       : episodeSound.sfxDensity ??
@@ -488,22 +633,69 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // unchanged.
     const plannerEnabled = isSoundDesignPlannerEnabled() && style !== "clean";
     let productionPlan: ProductionPlan | null = null;
-    if (plannerEnabled) {
+    if (plannerEnabled && reproducePlan) {
+      // REPRODUCE: execute the reference render's exact stored plan. The
+      // planner is not consulted, current assignments are not consulted, and
+      // every plan asset's bytes are hash-verified at load time below.
+      productionPlan = reproducePlan;
+      console.log(`[Stitcher] Reproducing stored plan: ${productionPlan.cues.length} cues (seed=${productionPlan.seed})`);
+    } else if (plannerEnabled) {
       const plannerConfig = resolvePlannerConfig();
-      const catalogRows = await db.audioAsset.findMany({
-        where: { isActive: true, kind: { in: ["theme_intro", "theme_outro", "stinger", "bed", "sfx"] } },
-      });
-      const catalog: PlannerAsset[] = catalogRows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        kind: r.kind,
-        category: r.category,
-        durationMs: r.durationMs ?? undefined,
-        // Metadata-aware selection reads bpm:/energy:/mood tags + the ES title.
-        tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
-      }));
+      // Frozen-profile cooldown overrides (per-show settings beat env).
+      if (frozenProfile?.stingerCooldownEpisodes != null) plannerConfig.cooldownEpisodes = frozenProfile.stingerCooldownEpisodes;
+      if (frozenProfile?.reactionCooldownEpisodes != null) plannerConfig.sfxCooldownEpisodes = frozenProfile.reactionCooldownEpisodes;
+
+      // CATALOG ISOLATION (Prompt 6): a snapshot-v2 episode's planner sees
+      // ONLY its frozen pool. Legacy episodes fall back to the system-side
+      // library (scope-guarded — never another owner's private assets).
+      let catalog: PlannerAsset[];
+      if (frozenProfile) {
+        const refs = [
+          frozenProfile.intro, frozenProfile.outro, frozenProfile.bed,
+          ...frozenProfile.stingers, ...frozenProfile.reactions,
+        ].filter((r): r is NonNullable<typeof r> => !!r);
+        catalog = refs.map((r) => ({
+          id: r.assetId,
+          name: r.name,
+          kind: r.kind,
+          category: r.category,
+          durationMs: r.durationMs ?? undefined,
+          tags: r.tags,
+        }));
+      } else {
+        const catalogRows = await db.audioAsset.findMany({
+          where: {
+            isActive: true,
+            isArchived: false,
+            kind: { in: ["theme_intro", "theme_outro", "stinger", "bed", "sfx"] },
+            scope: { in: ["shared_system", "legacy_global"] },
+          },
+        });
+        catalog = catalogRows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          kind: r.kind,
+          category: r.category,
+          durationMs: r.durationMs ?? undefined,
+          // Metadata-aware selection reads bpm:/energy:/mood tags + the ES title.
+          tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
+        }));
+      }
+
+      // COOLDOWN ISOLATION (Prompt 6): scoped to the podcast (default) or the
+      // owner — never global. Ownerless internal episodes use the explicit
+      // system scope. Another customer's usage cannot reach this query.
+      const cooldownScope: CooldownScopeFilter =
+        frozenProfile?.cooldownScope === "owner" && episode.ownerId
+          ? { kind: "owner", ownerId: episode.ownerId }
+          : episode.podcastId
+            ? { kind: "podcast", podcastId: episode.podcastId }
+            : episode.ownerId
+              ? { kind: "owner", ownerId: episode.ownerId }
+              : { kind: "system" };
       const cooldown = await readCooldownSnapshot({
         episodeCount: Math.max(plannerConfig.cooldownEpisodes, plannerConfig.sfxCooldownEpisodes),
+        scope: cooldownScope,
         excludeEpisodeId: episode.id,
       });
       productionPlan = generateProductionPlan({
@@ -515,12 +707,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         assets: catalog,
         cooldown,
         config: plannerConfig,
-        includeIntro,
-        includeOutro,
-        introAssetId: sdConfig?.themeIntroAssetId ?? null,
-        outroAssetId: sdConfig?.themeOutroAssetId ?? null,
-        envIntroFallback: !!process.env.AUDIO_INTRO_URL,
-        envOutroFallback: !!process.env.AUDIO_OUTRO_URL,
+        includeIntro: includeIntro && (frozenProfile ? frozenProfile.intro !== null : true),
+        includeOutro: includeOutro && (frozenProfile ? frozenProfile.outro !== null : true),
+        introAssetId: frozenProfile ? (frozenProfile.intro?.assetId ?? null) : (sdConfig?.themeIntroAssetId ?? null),
+        outroAssetId: frozenProfile ? (frozenProfile.outro?.assetId ?? null) : (sdConfig?.themeOutroAssetId ?? null),
+        // v2 episodes never fall back to env URLs the snapshot did not capture.
+        envIntroFallback: !frozenProfile && !!process.env.AUDIO_INTRO_URL,
+        envOutroFallback: !frozenProfile && !!process.env.AUDIO_OUTRO_URL,
         highlights: highlightPlacements,
       });
       console.log(
@@ -537,6 +730,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       assetSet = await loadSoundDesignAssetSet({
         style,
         config: sdConfig,
+        frozenProfile,
         highlightAssetIds: highlightPlacements.map((h) => h.assetId),
         extraAssetIds: productionPlan
           ? productionPlan.cues.map((c) => c.assetId).filter((id): id is string => !!id)
@@ -562,11 +756,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 4. Intro: configured theme asset wins; AUDIO_INTRO_URL env is the
     // legacy fallback. `includeIntro` still gates both.
     let introFile: string | null = null;
-    if (includeIntro && !assetSet.intro) {
+    if (includeIntro && !assetSet.intro && !frozenProfile) {
+      // Env fallback is LEGACY-ONLY: a snapshot-v2 episode may never use an
+      // intro its configuration did not capture. The URL is never logged.
       const introUrl = process.env.AUDIO_INTRO_URL;
       if (introUrl) {
         introFile = path.join(tempDir, "intro-raw.mp3");
-        console.log(`[Stitcher] Downloading intro from: ${introUrl}`);
+        console.log("[Stitcher] Loading legacy env intro clip (AUDIO_INTRO_URL).");
         const res = await storageProvider.getObject({ url: introUrl });
         fs.writeFileSync(introFile, res.body);
       } else {
@@ -576,11 +772,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     // 5. Outro: same precedence as the intro.
     let outroFile: string | null = null;
-    if (includeOutro && !assetSet.outro) {
+    if (includeOutro && !assetSet.outro && !frozenProfile) {
+      // Env fallback is LEGACY-ONLY (see intro note). URL never logged.
       const outroUrl = process.env.AUDIO_OUTRO_URL;
       if (outroUrl) {
         outroFile = path.join(tempDir, "outro-raw.mp3");
-        console.log(`[Stitcher] Downloading outro from: ${outroUrl}`);
+        console.log("[Stitcher] Loading legacy env outro clip (AUDIO_OUTRO_URL).");
         const res = await storageProvider.getObject({ url: outroUrl });
         fs.writeFileSync(outroFile, res.body);
       } else {
@@ -593,7 +790,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     for (const segment of validatedSegments) {
       const line = allLines.find((l) => l.lineIndex === segment.lineIndex);
       const destFile = path.join(tempDir, `line-${segment.lineIndex}-raw.mp3`);
-      console.log(`[Stitcher] Downloading dialogue segment for line #${segment.lineIndex} from: ${segment.audioUrl}`);
+      console.log(`[Stitcher] Loading dialogue segment for line #${segment.lineIndex}.`);
       const res = await storageProvider.getObject({ url: segment.audioUrl! });
       fs.writeFileSync(destFile, res.body);
 
@@ -1149,12 +1346,51 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       },
     });
 
+    // Close the immutable render-version record: what mode ran, which plan
+    // was executed, and where the master landed.
+    try {
+      await db.episodeAudioRender.update({
+        where: { id: renderRecord.id },
+        data: {
+          status: "succeeded",
+          completedAt: new Date(),
+          plannerSeed: productionPlan?.seed ?? null,
+          productionStyle: style,
+          sfxDensity,
+          plan: productionPlan ? (productionPlan as unknown as object) : undefined,
+          outputAudioUrl: uploadResult.url,
+        },
+      });
+    } catch (renderErr: unknown) {
+      console.warn(`[Stitcher] Failed to close the render record: ${renderErr instanceof Error ? renderErr.message : String(renderErr)}`);
+    }
+
     // Feed the cooldown ledger AFTER the render shipped — a failed render
     // must never cool assets down. Best-effort: a ledger hiccup is a warning,
-    // not a failed episode.
+    // not a failed episode. Usage rows carry the render id, owner/podcast
+    // scope, and the frozen asset facts (kind/scope/hash/gain/fades).
     if (plannerEnabled && productionPlan) {
       try {
-        await recordPlanUsage(productionPlan);
+        const assetFacts = new Map<string, { kind: string; scope: string; contentHash: string | null; gainDb: number | null; fadeInMs: number | null; fadeOutMs: number | null }>();
+        if (frozenProfile) {
+          for (const ref of [frozenProfile.intro, frozenProfile.outro, frozenProfile.bed, ...frozenProfile.stingers, ...frozenProfile.reactions]) {
+            if (ref) assetFacts.set(ref.assetId, { kind: ref.kind, scope: ref.scope, contentHash: ref.contentHash, gainDb: ref.gainDb, fadeInMs: ref.fadeInMs, fadeOutMs: ref.fadeOutMs });
+          }
+        }
+        await recordPlanUsage(productionPlan, {
+          renderId: renderRecord.id,
+          ownerId: episode.ownerId ?? null,
+          podcastId: episode.podcastId ?? null,
+          selectionSource:
+            renderMode === "reproduce"
+              ? "historical_reproduction"
+              : frozenProfile
+                ? frozenProfile.mode === "custom"
+                  ? "podcast_assignment"
+                  : "system_default"
+                : "production_planner",
+          assetFacts,
+        });
       } catch (usageErr: unknown) {
         const msg = usageErr instanceof Error ? usageErr.message : String(usageErr);
         console.warn(`[Stitcher] Failed to record sound-cue usage: ${msg}`);
@@ -1171,6 +1407,22 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     return successOutput;
   } catch (err: any) {
     console.error("[Stitcher] Stitching failed:", err.message);
+
+    // Close the render record as failed with a SAFE reason (no URLs/keys).
+    // The episode's previous final audio is untouched — a failed remix never
+    // costs a published master.
+    if (renderRecordId) {
+      try {
+        await db.episodeAudioRender.update({
+          where: { id: renderRecordId },
+          data: {
+            status: "failed",
+            completedAt: new Date(),
+            failureReason: String(err?.message || "unknown").slice(0, 500),
+          },
+        });
+      } catch { /* best effort */ }
+    }
 
     // Restore previous status of the episode
     if (scriptRecord?.episode) {

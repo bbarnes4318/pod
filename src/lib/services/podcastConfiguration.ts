@@ -179,6 +179,19 @@ export interface LoadedPodcastConfiguration {
     ttsVoiceOverrides: unknown | null;
     productionStyle: string | null;
     sfxDensity: string | null;
+    // --- Sound profile (Prompt 6) — part of the canonical configuration and
+    // its fingerprint; a sound change is a configuration change.
+    soundProfileMode: string;
+    targetLoudnessLufs: number | null;
+    cooldownScope: string;
+    stingerCooldownEpisodes: number | null;
+    reactionCooldownEpisodes: number | null;
+    defaultIntroEnabled: boolean;
+    defaultOutroEnabled: boolean;
+    soundAssignments: Array<{
+      assetId: string; role: string; orderIndex: number; enabled: boolean;
+      gainDb: number | null; fadeInMs: number | null; fadeOutMs: number | null;
+    }>;
   };
   publishing: {
     autoGenerateChapters: boolean;
@@ -206,7 +219,11 @@ export async function loadPodcastConfiguration(
 ): Promise<LoadedPodcastConfiguration | null> {
   const pod = await db.podcast.findUnique({
     where: { id: podcastId },
-    include: { editorialConfig: true, productionConfig: true, publishingConfig: true },
+    include: {
+      editorialConfig: true,
+      productionConfig: { include: { soundAssignments: { orderBy: [{ role: "asc" }, { orderIndex: "asc" }] } } },
+      publishingConfig: true,
+    },
   });
   if (!pod) return null;
 
@@ -254,6 +271,17 @@ export async function loadPodcastConfiguration(
       ttsVoiceOverrides: (pr?.ttsVoiceOverrides ?? null) as unknown | null,
       productionStyle: pr?.productionStyle ?? null,
       sfxDensity: pr?.sfxDensity ?? null,
+      soundProfileMode: pr?.soundProfileMode ?? "system_default",
+      targetLoudnessLufs: pr?.targetLoudnessLufs ?? null,
+      cooldownScope: pr?.cooldownScope ?? "podcast",
+      stingerCooldownEpisodes: pr?.stingerCooldownEpisodes ?? null,
+      reactionCooldownEpisodes: pr?.reactionCooldownEpisodes ?? null,
+      defaultIntroEnabled: pr?.defaultIntroEnabled ?? true,
+      defaultOutroEnabled: pr?.defaultOutroEnabled ?? true,
+      soundAssignments: (pr?.soundAssignments ?? []).map((a) => ({
+        assetId: a.assetId, role: a.role, orderIndex: a.orderIndex, enabled: a.enabled,
+        gainDb: a.gainDb, fadeInMs: a.fadeInMs, fadeOutMs: a.fadeOutMs,
+      })),
     },
     publishing: {
       autoGenerateChapters: pu?.autoGenerateChapters ?? true,
