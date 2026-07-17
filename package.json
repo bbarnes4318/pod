@@ -64,6 +64,7 @@
     "test:audio-asset-migration": "tsx --conditions=react-server src/scripts/testAudioAssetMigration.ts",
     "test:sound-profile": "tsx --conditions=react-server src/scripts/testPodcastSoundProfile.ts",
     "test:sound-render": "tsx --conditions=react-server src/scripts/testSoundRender.ts",
+    "test:audio-upload-security": "tsx --conditions=react-server src/scripts/testAudioUploadSecurity.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",

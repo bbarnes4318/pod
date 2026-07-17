@@ -7,6 +7,7 @@
 
 import React, { useState } from "react";
 import {
+  classifyLegacyAsset,
   deleteAudioAsset,
   fetchSoundDesignData,
   seedStarterSoundPack,
@@ -32,13 +33,18 @@ interface Asset {
   kind: string;
   category: string | null;
   tags: string[];
-  audioUrl: string;
+  audioUrl: string; // the AUTHORIZED preview route, not a storage URL
   durationMs: number | null;
   license: string;
   licenseNote: string | null;
   rightsConfirmed: boolean;
   isActive: boolean;
   source: string;
+  scope: string;
+  legacyScopeReviewRequired: boolean;
+  isArchived: boolean;
+  licenseStatus: string;
+  rightsStatus: string;
   createdAt: string;
 }
 
@@ -240,6 +246,12 @@ export default function SoundDesignConsole({
                               {a.rightsConfirmed ? "rights confirmed" : "rights NOT confirmed"}
                             </span>
                           )}
+                          {a.scope === "legacy_global" && (
+                            <span className="badge badgeFailed" style={{ marginLeft: "0.4rem", fontSize: "0.6rem" }} data-testid={`legacy-${a.id}`}>
+                              ownership review required
+                            </span>
+                          )}
+                          {a.isArchived && <span className="badge badgeFailed" style={{ marginLeft: "0.4rem", fontSize: "0.6rem" }}>archived</span>}
                         </div>
                         <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }} title={a.licenseNote || undefined}>
                           {a.durationMs ? `${(a.durationMs / 1000).toFixed(1)}s · ` : ""}
@@ -251,8 +263,26 @@ export default function SoundDesignConsole({
                         {a.isActive ? "Deactivate" : "Activate"}
                       </button>
                       <button className="btnReset" style={{ fontSize: "0.7rem", color: "var(--error-color)" }} onClick={() => handleDelete(a)} disabled={busy}>
-                        Delete
+                        Archive
                       </button>
+                      {a.scope === "legacy_global" && (
+                        <button
+                          className="editButton"
+                          style={{ fontSize: "0.7rem" }}
+                          disabled={busy}
+                          data-testid={`classify-${a.id}`}
+                          onClick={async () => {
+                            if (!confirm(`Classify "${a.name}" as a SHARED SYSTEM asset? Only do this if it is provably platform content.`)) return;
+                            setBusy(true);
+                            const res = await classifyLegacyAsset(a.id, { scope: "shared_system" });
+                            if (!res.success) alert(res.error);
+                            await refresh();
+                            setBusy(false);
+                          }}
+                        >
+                          Classify as system
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
