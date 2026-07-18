@@ -54,7 +54,7 @@ async function main() {
     for (const f of formats) {
       assert(f.speakerMin >= 1 && f.speakerMax <= PLATFORM_MAX_SPEAKERS, `${f.id} within platform bounds`);
       assert(f.roles.length >= f.speakerMax, `${f.id} declares a role per seat`);
-      if (f.id !== "two_host_debate") assert(!f.generationReady, `${f.id} honestly NOT generation-ready yet`);
+      assert(f.generationReady, `${f.id} is generation-ready (the full pipeline landed in PRs 2-3)`);
     }
     assert(getShowFormat("solo_briefing")!.speakerMin === 1, "solo = 1 voice");
     assert(getShowFormat("roundtable")!.speakerMax === 4, "roundtable up to 4");
@@ -172,16 +172,21 @@ async function main() {
       await db.aiHost.updateMany({ where: { id: { in: [h2.id, h3.id] } }, data: { isActive: true } });
     });
 
-    await check("CORE: NEW config saves reject registered-but-not-ready formats", async () => {
+    await check("CORE: NEW config saves accept every generation-ready format; unregistered rejected", async () => {
       const owner = await db.user.create({ data: { email: "o@x.test", passwordHash: "x" } });
       const pod = await db.podcast.create({ data: { name: "S", cadence: "one_time", slug: "s-show", ownerId: owner.id, editorialConfig: { create: {} }, productionConfig: { create: {} }, publishingConfig: { create: {} } } });
-      const notReady = await savePodcastConfiguration({
+      const round = await savePodcastConfiguration({
         db, podcastId: pod.id, expectedVersion: 1, canEdit: () => true,
-        input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "roundtable" } },
+        input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "roundtable" }, production: { hostIds: [] } },
       });
-      assert(!notReady.ok && notReady.error.code === "unsupported_format", "roundtable not selectable until the pipeline supports it");
+      assert(round.ok, `roundtable now selectable (pipeline complete): ${JSON.stringify(round)}`);
+      const fake = await savePodcastConfiguration({
+        db, podcastId: pod.id, expectedVersion: 2, canEdit: () => true,
+        input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "game_show" } },
+      });
+      assert(!fake.ok && fake.error.code === "unsupported_format", "unregistered still rejected");
       const ready = await savePodcastConfiguration({
-        db, podcastId: pod.id, expectedVersion: 1, canEdit: () => true,
+        db, podcastId: pod.id, expectedVersion: 2, canEdit: () => true,
         input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "two_host_debate" } },
       });
       assert(ready.ok, `debate still saves: ${JSON.stringify(ready)}`);

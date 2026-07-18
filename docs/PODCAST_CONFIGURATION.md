@@ -93,3 +93,11 @@ accepted save, structured `podcast_configuration_changed` on staleness. The
 configuration fingerprint covers the sound profile, and Episode snapshots are
 version 2 (frozen sound profile embedded; v1 snapshots stay readable and
 byte-stable). See `docs/AUDIO_ASSET_ARCHITECTURE.md`.
+
+## Prompt 7 addendum — the show format is part of the configuration
+
+`PodcastEditorialConfig.format` now accepts any REGISTERED, GENERATION-READY
+format from the show-format registry (no longer only `two_host_debate`), and
+the host cap is the format's `speakerMax` (1-4) instead of a global 2.
+Episode snapshots are version 3 (frozen format + pinned cast; v1/v2 stay
+byte-stable). See `docs/SHOW_FORMATS.md`.
