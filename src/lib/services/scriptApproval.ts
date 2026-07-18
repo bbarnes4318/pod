@@ -16,7 +16,9 @@
 
 import { db } from "@/lib/db";
 import { validateScriptContent, sanitizeScriptContent } from "@/lib/services/scriptValidation";
-import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
+import { resolveEpisodeCast } from "@/lib/services/hostCasting";
+import { getShowFormat } from "@/lib/formats/showFormatRegistry";
+import { approvalFloorPct } from "@/lib/formats/formatScriptValidation";
 
 export interface ScriptApprovalResult {
   success: boolean;
@@ -37,7 +39,13 @@ async function contextForEpisode(episodeId: string) {
   });
   if (!ep) throw new Error("Episode not found.");
 
-  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: ep.hostIds });
+  // Prompt 7: resolve the FULL format-driven cast (two_host_debate delegates
+  // to the legacy pair resolver, so existing episodes cast identically).
+  const resolvedCast = await resolveEpisodeCast({ hostIds: ep.hostIds, formatId: (ep as { formatId?: string }).formatId });
+  const cast = resolvedCast.members.map((m) => ({ id: m.host.id, name: m.host.name }));
+  const format = getShowFormat(resolvedCast.formatId);
+  const hostA = cast[0];
+  const hostB = cast[1] ?? cast[0];
 
   const allowedSourceRefs = new Set<string>();
   const unsafeClaims: string[] = [];
@@ -51,7 +59,7 @@ async function contextForEpisode(episodeId: string) {
     const unsafe = Array.isArray(brief.unsafeClaims) ? (brief.unsafeClaims as any[]) : [];
     for (const uc of unsafe) if (uc && uc.claim) unsafeClaims.push(uc.claim);
   }
-  return { episode: ep, hostA, hostB, allowedSourceRefs, unsafeClaims };
+  return { episode: ep, hostA, hostB, cast, format, allowedSourceRefs, unsafeClaims };
 }
 
 function plainTextFromSegments(segments: any[]): string {
@@ -82,14 +90,13 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
     return { success: false, error: `This script can't be approved from status "${script.status}".` };
   }
 
-  const { episode, hostA, hostB, allowedSourceRefs, unsafeClaims } = await contextForEpisode(episodeId);
+  const { episode, cast, format, allowedSourceRefs, unsafeClaims } = await contextForEpisode(episodeId);
 
   // Sanitize evidence refs, then clear needsHumanReview flags (approval IS the
   // human review) so accepted lines flow through TTS.
   const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(script.content, {
     allowedSourceRefs,
-    hostA,
-    hostB,
+    cast,
   });
   if (Array.isArray(sanitizedContent.segments)) {
     for (const seg of sanitizedContent.segments) {
@@ -98,7 +105,7 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
     }
   }
 
-  const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+  const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, cast, format, unsafeClaims });
   summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
   sanitizedContent.safety = summary;
   const plainText = plainTextFromSegments(sanitizedContent.segments);
@@ -114,9 +121,13 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
   if (summary.unsafeClaimCount > 0) reasons.push(`${summary.unsafeClaimCount} unsafe claim(s) used as fact.`);
   if (summary.invalidSpeakerCount > 0) reasons.push(`${summary.invalidSpeakerCount} line(s) have invalid host casting.`);
   if (summary.totalLineCount < 40) reasons.push(`Only ${summary.totalLineCount} lines (needs ≥ 40).`);
-  const shareA = summary.hostLineShare[hostA.name] ?? 0;
-  const shareB = summary.hostLineShare[hostB.name] ?? 0;
-  if (shareA < 25 || shareB < 25) reasons.push("Host dialogue split is unbalanced (each needs ≥ 25%).");
+  // Per-chair approval floors from the show format (debate: 25% each — the
+  // legacy policy, unchanged).
+  const underFloor = cast.filter((h, seat) => {
+    const floor = format ? approvalFloorPct(format, seat) : 25;
+    return (summary.hostLineShare[h.name] ?? 0) < floor;
+  });
+  if (underFloor.length > 0) reasons.push("Host dialogue split is unbalanced for this show format.");
   if (!plainText.trim()) reasons.push("Transcript is empty.");
 
   const warnings: string[] = [];

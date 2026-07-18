@@ -29,6 +29,10 @@ export interface ShowFormatRole {
   /** Required roles must be filled before generation; optional chairs may be
    *  left empty when the cast is smaller than speakerMax. */
   required: boolean;
+  /** Approval-time minimum line share (percent) for this chair. The script
+   *  GENERATION gate uses 0.8x this floor (the debate's historical 25%/20%
+   *  pair). 0 = no floor (solo anchor, optional chairs). */
+  minLineSharePct: number;
 }
 
 export interface ShowFormat {
@@ -55,8 +59,8 @@ const FORMATS: ShowFormat[] = [
     speakerMin: 2,
     speakerMax: 2,
     roles: [
-      { id: "chair_a", name: "Chair A", direction: "Higher-intensity, emotional drive; opens segments and pushes the take.", required: true },
-      { id: "chair_b", name: "Chair B", direction: "Analytical counterweight; challenges with evidence and reframes.", required: true },
+      { id: "chair_a", name: "Chair A", direction: "Higher-intensity, emotional drive; opens segments and pushes the take.", required: true, minLineSharePct: 25 },
+      { id: "chair_b", name: "Chair B", direction: "Analytical counterweight; challenges with evidence and reframes.", required: true, minLineSharePct: 25 },
     ],
     // The complete existing pipeline IS this format.
     generationReady: true,
@@ -69,7 +73,7 @@ const FORMATS: ShowFormat[] = [
     speakerMin: 1,
     speakerMax: 1,
     roles: [
-      { id: "anchor", name: "Anchor", direction: "Carries the whole episode alone; addresses the listener directly.", required: true },
+      { id: "anchor", name: "Anchor", direction: "Carries the whole episode alone; addresses the listener directly.", required: true, minLineSharePct: 0 },
     ],
     generationReady: false, // flipped on when script/TTS/stitch support 1 voice
   },
@@ -81,8 +85,8 @@ const FORMATS: ShowFormat[] = [
     speakerMin: 2,
     speakerMax: 2,
     roles: [
-      { id: "interviewer", name: "Interviewer", direction: "Drives structure, asks and follows up; hands the floor to the guest.", required: true },
-      { id: "guest", name: "Guest", direction: "Carries the substance; longer answers, personal angles.", required: true },
+      { id: "interviewer", name: "Interviewer", direction: "Drives structure, asks and follows up; hands the floor to the guest.", required: true, minLineSharePct: 15 },
+      { id: "guest", name: "Guest", direction: "Carries the substance; longer answers, personal angles.", required: true, minLineSharePct: 30 },
     ],
     generationReady: false,
   },
@@ -94,10 +98,10 @@ const FORMATS: ShowFormat[] = [
     speakerMin: 3,
     speakerMax: 4,
     roles: [
-      { id: "moderator", name: "Moderator", direction: "Steers topics, arbitrates, hands the floor around the table.", required: true },
-      { id: "panelist_1", name: "Panelist 1", direction: "First take on each topic; strong opinions.", required: true },
-      { id: "panelist_2", name: "Panelist 2", direction: "Counter-angle; pushes back on the first take.", required: true },
-      { id: "panelist_3", name: "Panelist 3", direction: "Wildcard chair; optional fourth voice.", required: false },
+      { id: "moderator", name: "Moderator", direction: "Steers topics, arbitrates, hands the floor around the table.", required: true, minLineSharePct: 10 },
+      { id: "panelist_1", name: "Panelist 1", direction: "First take on each topic; strong opinions.", required: true, minLineSharePct: 12 },
+      { id: "panelist_2", name: "Panelist 2", direction: "Counter-angle; pushes back on the first take.", required: true, minLineSharePct: 12 },
+      { id: "panelist_3", name: "Panelist 3", direction: "Wildcard chair; optional fourth voice.", required: false, minLineSharePct: 0 },
     ],
     generationReady: false,
   },

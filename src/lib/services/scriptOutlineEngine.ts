@@ -32,7 +32,7 @@ export interface OutlineDrivenArgs {
   version: number;
   temperature: number;
   maxTokens: number;
-  /** The two cast host names — the only valid speakerName values. */
+  /** The cast host names in seat order (1-4) — the only valid speakerName values. */
   speakerNames: string[];
   log: (msg: string) => void;
 }
@@ -332,14 +332,29 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     lastExchange,
     ``,
     `Write about ${args.linesTarget} dialogue lines covering ONLY your beats, in order.`,
-    `FORWARD MOTION is about the ARGUMENT advancing — NOT every line carrying a new fact. Reactions, pushback, short fragments, and building lines move the argument without introducing a new claim, and they are REQUIRED for the show to sound like two people talking, not two essays traded back and forth.`,
-    ``,
-    `WRITE A CONVERSATION, NOT ALTERNATING SPEECHES:`,
-    `- Give one speaker TWO or THREE lines in a row when they're building, self-correcting, or piling on ("And another thing—"). Do NOT hand the mic back after every single line — strict ping-pong is the #1 robotic tell.`,
-    `- Jam short reactive FRAGMENTS from the other host between the longer turns: "Oh, come on.", "That's not—", "Wait.", "Hold on.", plus overlapping agreement "Yeah, and—", "Right, right—".`,
-    `- REAL INTERRUPTIONS: when a host can't take it, they cut the other off. The interrupting line sets "isInterruption": true AND the line immediately BEFORE it MUST end mid-sentence with a "—" (em dash) — no "—" on the previous line means the audio overlap mis-fires, so never set isInterruption without it. BOTH hosts interrupt, as often as the heat warrants — there is no quota.`,
-    `- Both hosts DRIVE: each pushes their own worldview and can get heated, incredulous, or exasperated. Neither is the calm foil who only deflates — if a host's core belief is attacked, that host escalates.`,
-    ``,
+    // Conversation mechanics are per-speaker-count (Prompt 7): multi-voice
+    // acts get the interruption/fragment machinery; a solo act gets
+    // monologue mechanics (there is no other voice to overlap).
+    ...(args.speakerNames.length >= 2
+      ? [
+          `FORWARD MOTION is about the ARGUMENT advancing — NOT every line carrying a new fact. Reactions, pushback, short fragments, and building lines move the argument without introducing a new claim, and they are REQUIRED for the show to sound like real people talking, not essays traded back and forth.`,
+          ``,
+          `WRITE A CONVERSATION, NOT ALTERNATING SPEECHES:`,
+          `- Give one speaker TWO or THREE lines in a row when they're building, self-correcting, or piling on ("And another thing—"). Do NOT hand the mic back after every single line — strict ping-pong is the #1 robotic tell.`,
+          `- Jam short reactive FRAGMENTS from another speaker between the longer turns: "Oh, come on.", "That's not—", "Wait.", "Hold on.", plus overlapping agreement "Yeah, and—", "Right, right—".`,
+          `- REAL INTERRUPTIONS: when a speaker can't take it, they cut the current speaker off. The interrupting line sets "isInterruption": true AND the line immediately BEFORE it MUST end mid-sentence with a "—" (em dash) — no "—" on the previous line means the audio overlap mis-fires, so never set isInterruption without it. EVERY speaker interrupts, as often as the heat warrants — there is no quota.`,
+          `- Every speaker DRIVES: each pushes their own worldview and can get heated, incredulous, or exasperated. No one is the calm foil who only deflates — if a speaker's core belief is attacked, that speaker escalates.`,
+          ``,
+        ]
+      : [
+          `FORWARD MOTION is about the ARGUMENT advancing — NOT every line carrying a new fact. Self-questions, pivots, and building lines move the argument without introducing a new claim.`,
+          ``,
+          `WRITE A MONOLOGUE THAT BREATHES, NOT AN ESSAY:`,
+          `- This act has EXACTLY ONE speaker. "isInterruption" is false on every line — there is no second voice.`,
+          `- Self-interruption replaces host interruption: false starts, "wait, actually—", rhetorical questions answered immediately.`,
+          `- Talk TO the listener ("you", "look", "here's the thing") and argue with the listener's doubts out loud.`,
+          ``,
+        ]),
     `DELIVERY & PERFORMANCE (set these per line — they drive the voice acting AND the pacing; do not leave them flat):`,
     `- "energy": VARY it across the act. An all-"high" run is exhausting and fake — drop to "low"/"medium" for setups, analysis, and concessions; spike "high" on the clashes. Both hosts range across energies; neither sits on one.`,
     `- "pauseBefore": VARY the pacing — do NOT default everything to "none"/"beat". "none" = a genuine jump-in (reaction or interruption) ONLY; "beat" = normal turn-taking (~0.3s); "breath" = a thought pivot (~0.7s); "long" = a dramatic beat (~1.2s). Use "long" on the single heaviest moment of your section — across the whole episode there should be at least 2-3 "long" pauses; a script with zero "long" pauses reads like a metronome.`,
@@ -368,7 +383,7 @@ async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any
     `      "lines": [`,
     `        {`,
     `          "lineIndex": 0,`,
-    `          "speakerName": ${(args.speakerNames.length ? args.speakerNames : ["Host A", "Host B"]).map((n) => JSON.stringify(n)).join(" | ")},`,
+    `          "speakerName": ${(args.speakerNames.length ? args.speakerNames : ["Host 1"]).map((n) => JSON.stringify(n)).join(" | ")},`,
     `          "text": "spoken text, optionally with inline audio tags like [laughs]",`,
     `          "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",`,
     `          "energy": "low" | "medium" | "high",`,
