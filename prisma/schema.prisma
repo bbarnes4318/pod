@@ -111,8 +111,28 @@ model AiHost {
   voiceProvenanceNote String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  castMemberships  EpisodeCastMember[]
 
   @@index([ownerId])
+}
+
+// Normalized episode cast (Prompt 7): WHICH host sits in WHICH chair of the
+// episode's show format. Replaces the bare two-slot Episode.hostIds pair
+// assumption (that column stays as a legacy mirror in seat order). Seat 0..3;
+// role ids come from the format registry (chair_a, anchor, moderator, ...).
+model EpisodeCastMember {
+  id         String   @id @default(uuid())
+  episodeId  String
+  episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  hostId     String
+  host       AiHost   @relation(fields: [hostId], references: [id], onDelete: Restrict)
+  role       String   // ShowFormatRole.id from the registry
+  orderIndex Int      // seat order: drives speaking order, seating, colors
+  createdAt  DateTime @default(now())
+
+  @@unique([episodeId, orderIndex])
+  @@unique([episodeId, hostId])
+  @@index([hostId])
 }
 
 model SportsDataSource {
@@ -587,7 +607,12 @@ model Episode {
   soundDesign        Json?          // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
   podcastId          String?        // Nullable — pre-existing episodes have no podcast
   ownerId            String?        // User.id of the creator; null for legacy/pre-auth episodes
-  hostIds            String[]       @default([]) // AiHost.id pair cast at build time; empty = default duo (Max Voltage / Dr. Linebreak)
+  hostIds            String[]       @default([]) // LEGACY compat: AiHost.id list in seat order; canonical cast = castMembers (Prompt 7)
+  // --- Show format (Prompt 7) --------------------------------------------
+  // Which registered format built this episode. two_host_debate is the
+  // backfilled value for every pre-format episode — that IS what built them.
+  formatId           String         @default("two_host_debate")
+  castMembers        EpisodeCastMember[]
   // --- Immutable configuration snapshot (Prompt 5) -----------------------
   // Frozen at creation so a later edit to the Podcast can never rewrite how a
   // finished episode was built. See src/lib/services/episodeConfigurationSnapshot.ts.
@@ -604,6 +629,7 @@ model Episode {
   audioSegments      AudioSegment[]
   socialClips        SocialClip[]
   audioRenders       EpisodeAudioRender[]
+
   playEvents         PlayEvent[]
 
   @@index([status])

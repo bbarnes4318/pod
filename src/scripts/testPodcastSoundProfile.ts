@@ -210,7 +210,7 @@ async function main() {
       const profile = await resolvePodcastSoundProfile(db, { id: pod.id, ownerId: alice.id }, production);
       const s1 = buildEpisodeConfigurationSnapshot(resolved.resolved, new Date("2026-01-01T00:00:00Z"), profile);
       const s2 = buildEpisodeConfigurationSnapshot(resolved.resolved, new Date("2027-01-01T00:00:00Z"), profile);
-      assert(s1.configurationSnapshot.version === 2, "version 2");
+      assert(s1.configurationSnapshot.version >= 2, "sound-bearing snapshot version (v2+; v3 since the format engine)");
       assert(s1.configurationSnapshot.production.soundProfile?.intro?.assetId === sysIntro.id, "profile embedded");
       assert(s1.configurationFingerprint === s2.configurationFingerprint, "capturedAt not in fingerprint");
       const s3 = buildEpisodeConfigurationSnapshot(resolved.resolved, new Date("2026-01-01T00:00:00Z"), { ...profile, stingers: [] });

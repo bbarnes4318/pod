@@ -270,6 +270,34 @@ export function selectBestPair(
 /** Do this episode's stored/generated speaker names/ids match the given cast?
  *  Used by validators to accept whatever two hosts the episode was cast with,
  *  never a hardcoded pair. */
+/** N-speaker generalization (Prompt 7): matchers over an ORDERED cast of 1-4
+ *  hosts. The two-host `makeSpeakerMatchers` below delegates here, so every
+ *  existing validator transparently gains multi-speaker support when its
+ *  caller starts passing a larger cast. */
+export function makeCastMatchers<T extends CastHost>(cast: T[]) {
+  const byLowerName = new Map<string, T>(cast.map((h) => [h.name.toLowerCase(), h]));
+  return {
+    /** The cast host whose chair this speakerName occupies, or null. */
+    hostForSpeaker(speakerName: unknown): T | null {
+      if (typeof speakerName !== "string") return null;
+      return byLowerName.get(speakerName.trim().toLowerCase()) ?? null;
+    },
+    isValidSpeaker(speakerName: unknown): boolean {
+      return this.hostForSpeaker(speakerName) !== null;
+    },
+    /** hostId that should be attached to a line spoken by speakerName. */
+    expectedHostId(speakerName: unknown): string | null {
+      return this.hostForSpeaker(speakerName)?.id ?? null;
+    },
+    /** Seat index of a host id (0-based), or -1. Drives seating/colors. */
+    seatOf(hostId: string): number {
+      return cast.findIndex((h) => h.id === hostId);
+    },
+    hostNames: cast.map((h) => h.name),
+    cast,
+  };
+}
+
 export function makeSpeakerMatchers<T extends CastHost>({ hostA, hostB }: { hostA: T; hostB: T }) {
   const byLowerName = new Map<string, T>([
     [hostA.name.toLowerCase(), hostA],

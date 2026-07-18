@@ -29,14 +29,26 @@ import { isProductionStyle, isSfxDensity } from "../audio/soundDesignShared";
 import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 
 // ---------------------------------------------------------------------------
-// The one supported format (Prompt 7 is deferred; do not fabricate others).
+// Show formats (Prompt 7): validation is REGISTRY-driven. two_host_debate is
+// registered format #1; a format becomes selectable for new saves only once
+// the whole pipeline supports it (generationReady).
 // ---------------------------------------------------------------------------
-export const SUPPORTED_FORMATS = ["two_host_debate"] as const;
-export type PodcastFormat = (typeof SUPPORTED_FORMATS)[number];
-export const DEFAULT_FORMAT: PodcastFormat = "two_host_debate";
+import {
+  DEFAULT_FORMAT_ID,
+  PLATFORM_MAX_SPEAKERS,
+  getShowFormat,
+  isGenerationReadyFormat,
+  isRegisteredFormat,
+} from "../formats/showFormatRegistry";
 
-// Generation supports at most a two-host duo (Prompt 7 keeps this limit).
-export const MAX_PODCAST_HOSTS = 2;
+/** @deprecated registry-driven now; kept for legacy imports. */
+export const SUPPORTED_FORMATS = ["two_host_debate"] as const;
+export type PodcastFormat = string;
+export const DEFAULT_FORMAT: string = DEFAULT_FORMAT_ID;
+
+/** @deprecated the cap is per-format (ShowFormat.speakerMax); this remains the
+ *  platform-wide absolute for legacy imports. */
+export const MAX_PODCAST_HOSTS = PLATFORM_MAX_SPEAKERS;
 
 export const VISIBILITIES = ["private", "unlisted", "public"] as const;
 export type PodcastVisibility = (typeof VISIBILITIES)[number];
@@ -109,14 +121,14 @@ export const EditorialInputSchema = z.object({
   verticals: z.array(trimmedString).optional(),
   teams: z.array(trimmedString).optional(),
   segmentCount: z.number().int().min(1).max(12).optional(),
-  format: z.enum(SUPPORTED_FORMATS).optional(),
+  format: trimmedString.optional(), // validated against the registry below
   minDebateScore: z.number().int().min(0).max(100).optional().nullable(),
   scriptStyle: trimmedString.max(60).optional().nullable(),
   maxWords: z.number().int().min(50).max(20000).optional().nullable(),
 });
 
 export const ProductionInputSchema = z.object({
-  hostIds: z.array(trimmedString).max(MAX_PODCAST_HOSTS, `A show supports at most ${MAX_PODCAST_HOSTS} hosts.`).optional(),
+  hostIds: z.array(trimmedString).max(PLATFORM_MAX_SPEAKERS, `A show supports at most ${PLATFORM_MAX_SPEAKERS} hosts.`).optional(),
   ttsProvider: trimmedString.optional().nullable(),
   ttsVoiceOverrides: z.unknown().optional(),
   productionStyle: trimmedString.optional().nullable(),
@@ -502,10 +514,13 @@ export function resolveEpisodeConfiguration(
   );
 
   // --- validate the FINAL resolved values (inherited or overridden alike) ---
-  if (!(SUPPORTED_FORMATS as readonly string[]).includes(format.value)) {
+  // Registry-driven (Prompt 7): the format must be registered, and the pinned
+  // cast must fit ITS speaker bounds — two_host_debate keeps its cap of 2.
+  const resolvedFormat = getShowFormat(format.value);
+  if (!resolvedFormat) {
     return { ok: false, error: { code: "unsupported_format", format: format.value } };
   }
-  if (hostIds.value.length > MAX_PODCAST_HOSTS) {
+  if (hostIds.value.length > resolvedFormat.speakerMax) {
     return { ok: false, error: { code: "too_many_hosts", count: hostIds.value.length } };
   }
   if (ttsProvider.value && !isTtsProviderId(ttsProvider.value)) {
@@ -574,11 +589,19 @@ export async function savePodcastConfiguration(
   }
   const input = parsed.data;
 
-  // Format guard (schema already narrows, but keep the structured error).
-  if (input.editorial?.format && !(SUPPORTED_FORMATS as readonly string[]).includes(input.editorial.format)) {
-    return { ok: false, error: { code: "unsupported_format", format: input.editorial.format } };
+  // Format guard (Prompt 7): NEW saves may only pick a format the WHOLE
+  // pipeline can produce (generation-ready) — registered-but-not-ready formats
+  // are rejected honestly rather than appearing functional. Loading/resolving
+  // an existing config only requires registration (legacy safety).
+  const savedFormat = input.editorial?.format ?? DEFAULT_FORMAT_ID;
+  if (!isRegisteredFormat(savedFormat)) {
+    return { ok: false, error: { code: "unsupported_format", format: savedFormat } };
   }
-  if (input.production?.hostIds && input.production.hostIds.length > MAX_PODCAST_HOSTS) {
+  if (!isGenerationReadyFormat(savedFormat)) {
+    return { ok: false, error: { code: "unsupported_format", format: savedFormat } };
+  }
+  const savedFormatDef = getShowFormat(savedFormat)!;
+  if (input.production?.hostIds && input.production.hostIds.length > savedFormatDef.speakerMax) {
     return { ok: false, error: { code: "too_many_hosts", count: input.production.hostIds.length } };
   }
   if (input.production?.ttsProvider && !isTtsProviderId(input.production.ttsProvider)) {

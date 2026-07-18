@@ -12,6 +12,7 @@ import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReserva
 import { evaluateHardGates, type EligibilityTopic } from "./topicEligibility";
 import { DEFAULT_MIN_DEBATE_SCORE, DEFAULT_MIN_TALKABILITY } from "../episodeLimits";
 import type { EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
 
 /** In-transaction concurrency guard for the exclude_podcast reuse policy. When
  *  present, `createEpisodeRecord` acquires advisory locks and re-validates
@@ -403,6 +404,10 @@ export async function createEpisodeRecord(
   if (existing) slug = `${slug}-${crypto.randomBytes(3).toString("hex")}`;
 
   const rssGuid = crypto.randomUUID();
+  // The show format this episode is created under (Prompt 7): from the frozen
+  // configuration snapshot when present, else the default two-host debate.
+  const episodeFormatId =
+    settings.configuration?.configurationSnapshot?.cast?.formatId ?? DEFAULT_FORMAT_ID;
   const soundDesign =
     settings.soundDesign && (settings.soundDesign.style || settings.soundDesign.sfxDensity)
       ? settings.soundDesign
@@ -462,6 +467,7 @@ export async function createEpisodeRecord(
         podcastId: settings.podcastId || undefined,
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
+        formatId: episodeFormatId,
         // Freeze the resolved configuration atomically with the episode. When a
         // caller supplies none (a legacy/direct path), the column defaults leave
         // configurationSource = 'legacy' rather than fabricating a snapshot.
@@ -475,6 +481,23 @@ export async function createEpisodeRecord(
           : {}),
       },
     });
+
+    // Normalized cast rows (Prompt 7): the ACTUAL seated hosts in seat order,
+    // written atomically with the episode. Legacy Episode.hostIds mirrors them.
+    const castFormat = getShowFormat(episodeFormatId);
+    // (Guarded for injected test doubles that don't model the cast table.)
+    if (castFormat && typeof (tx as { episodeCastMember?: { create?: unknown } }).episodeCastMember?.create === "function") {
+      for (let seat = 0; seat < Math.min(chosenHostIds.length, castFormat.speakerMax); seat++) {
+        await tx.episodeCastMember.create({
+          data: {
+            episodeId: ep.id,
+            hostId: chosenHostIds[seat],
+            role: roleForSeat(castFormat, seat).id,
+            orderIndex: seat,
+          },
+        });
+      }
+    }
 
     const selectedAt = new Date();
     for (let i = 0; i < topicsToWrite.length; i++) {

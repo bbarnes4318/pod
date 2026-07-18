@@ -24,7 +24,8 @@ import {
   type LoadedPodcastConfiguration,
   type PodcastConfigurationError,
 } from "./podcastConfiguration";
-import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { getShowFormat } from "../formats/showFormatRegistry";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 
 /** Turn a structured resolver error into the user-facing message the surfaces
@@ -185,7 +186,11 @@ async function resolveRundownConfiguration(
       draft.teams = teamRows.map((t: { name: string }) => t.name);
     }
     if (!draft.hostIds && podcast.production.hostIds.length > 0) {
-      draft.hostIds = podcast.production.hostIds.slice(0, 2);
+      // Seat cap comes from the show's FORMAT (two_host_debate keeps 2).
+      draft.hostIds = podcast.production.hostIds.slice(
+        0,
+        getShowFormat(podcast.editorial.format)?.speakerMax ?? 2
+      );
     }
     if (draft.targetTopicCount === undefined && podcast.editorial.segmentCount) {
       draft.targetTopicCount = podcast.editorial.segmentCount;
@@ -226,7 +231,7 @@ async function resolveRundownConfiguration(
         sfxDensity: r.production.sfxDensity.value ?? undefined,
         minDebateScore: r.editorial.minDebateScore.value ?? undefined,
       },
-      configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile),
+      configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile, snapshotCastFor(r.editorial.format.value, draft.hostIds ?? [])),
     },
   };
 }

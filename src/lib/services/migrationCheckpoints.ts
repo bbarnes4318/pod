@@ -120,6 +120,17 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Prompt 6 PR2. Adds Podcast sound profiles + normalized assignments + render versions, and BACKFILLS SoundCueUsage.ownerId/podcastId from each row's Episode. A matching schema does NOT prove the usage backfill ran.",
   },
+  {
+    name: "20260718000000_add_show_format_cast",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "episodes_have_format",
+      "cast_rows_mirror_pinned_hostids",
+      "cast_seat_order_consistent",
+    ],
+    note: "Prompt 7 PR1. Adds Episode.formatId (default two_host_debate — exactly what built every existing episode) + normalized EpisodeCastMember rows BACKFILLED from pinned Episode.hostIds in seat order. A matching schema does NOT prove the cast backfill ran.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -385,6 +396,36 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   } else {
     for (const name of ["sound_assignment_roles_valid", "sound_assignment_no_cross_owner", "one_active_singleton_assignment_per_role"]) {
       add(name, false, "PodcastSoundAssignment does not exist", true);
+    }
+  }
+
+  // --- 20260718000000: show format + cast backfill --------------------------
+  if (await tableExists(db, "EpisodeCastMember")) {
+    const hasFormat = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='Episode' AND column_name='formatId'`);
+    if (hasFormat === 0) {
+      add("episodes_have_format", false, "Episode.formatId does not exist — the migration never ran", true);
+    } else {
+      const nulls = await one(db, `SELECT COUNT(*)::int AS n FROM "Episode" WHERE "formatId" IS NULL OR "formatId" = ''`);
+      add("episodes_have_format", nulls === 0,
+        nulls > 0 ? `${nulls} episode(s) lack a formatId` : "every episode carries a show format");
+    }
+    // Every episode with a pinned legacy cast (still-existing hosts) has
+    // matching normalized rows.
+    const unmirrored = await one(db, `
+      SELECT COUNT(*)::int AS n FROM "Episode" e
+      WHERE cardinality(e."hostIds") > 0
+        AND EXISTS (SELECT 1 FROM "AiHost" h WHERE h."id" = ANY(e."hostIds"))
+        AND NOT EXISTS (SELECT 1 FROM "EpisodeCastMember" c WHERE c."episodeId" = e."id")`);
+    add("cast_rows_mirror_pinned_hostids", unmirrored === 0,
+      unmirrored > 0 ? `${unmirrored} episode(s) have a pinned cast but no normalized rows — the backfill did not complete` : "every pinned cast is mirrored into normalized rows");
+    // Bounds-only: seat indexes 0..3. Gaps are LEGAL history (a backfilled
+    // seat whose host later vanished keeps its true index).
+    const badSeats = await one(db, `SELECT COUNT(*)::int AS n FROM "EpisodeCastMember" WHERE "orderIndex" < 0 OR "orderIndex" > 3`);
+    add("cast_seat_order_consistent", badSeats === 0,
+      badSeats > 0 ? `${badSeats} cast row(s) sit outside seats 0-3` : "every cast row sits in seats 0-3");
+  } else {
+    for (const name of ["episodes_have_format", "cast_rows_mirror_pinned_hostids", "cast_seat_order_consistent"]) {
+      add(name, false, "EpisodeCastMember does not exist", true);
     }
   }
 
