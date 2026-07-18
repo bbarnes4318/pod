@@ -61,7 +61,7 @@ import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./c
 import { resolveEpisodeCast, makeCastMatchers } from "./hostCasting";
 import { getShowFormat } from "../formats/showFormatRegistry";
 import { formatPromptPieces, castPersonaBlocks } from "../formats/formatScriptPrompts";
-import { castBalanceGateMessage } from "../formats/formatScriptValidation";
+import { castBalanceGateMessage, checkFormatStructure } from "../formats/formatScriptValidation";
 import type { AiHost } from "@prisma/client";
 
 // The SHARED list — this was three identical copies, which is precisely how
@@ -758,6 +758,18 @@ Delivery field meanings:
   if (balanceMsg) {
     result.reasons.push(balanceMsg);
     throw new Error(balanceMsg);
+  }
+
+  // STRUCTURAL format rules (Prompt 7 completion): word caps, mandatory
+  // opening/closing chairs, and expert-carries-more — enforced, not suggested.
+  {
+    const flat: Array<{ speakerHostId?: string; text: string }> = [];
+    for (const seg of finalSegments) for (const l of seg.lines) flat.push(l);
+    const structureMsg = checkFormatStructure(format, flat, cast.map((h) => ({ id: h.id, name: h.name })));
+    if (structureMsg) {
+      result.reasons.push(structureMsg);
+      throw new Error(structureMsg);
+    }
   }
 
   if (result.factualLineCount > 0) {

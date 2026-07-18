@@ -36,6 +36,7 @@ import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution
 import {
   DEFAULT_FORMAT_ID,
   PLATFORM_MAX_SPEAKERS,
+  canonicalFormatId,
   getShowFormat,
   isGenerationReadyFormat,
   isRegisteredFormat,
@@ -593,7 +594,10 @@ export async function savePodcastConfiguration(
   // pipeline can produce (generation-ready) — registered-but-not-ready formats
   // are rejected honestly rather than appearing functional. Loading/resolving
   // an existing config only requires registration (legacy safety).
-  const savedFormat = input.editorial?.format ?? DEFAULT_FORMAT_ID;
+  // Saves always STORE the canonical id: a deprecated alias arriving from an
+  // old client/draft is canonicalized here (historical reads stay untouched).
+  const savedFormat = canonicalFormatId(input.editorial?.format ?? DEFAULT_FORMAT_ID);
+  if (input.editorial?.format) input.editorial.format = savedFormat;
   if (!isRegisteredFormat(savedFormat)) {
     return { ok: false, error: { code: "unsupported_format", format: savedFormat } };
   }

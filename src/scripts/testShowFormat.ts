@@ -56,8 +56,10 @@ async function main() {
       assert(f.roles.length >= f.speakerMax, `${f.id} declares a role per seat`);
       assert(f.generationReady, `${f.id} is generation-ready (the full pipeline landed in PRs 2-3)`);
     }
-    assert(getShowFormat("solo_briefing")!.speakerMin === 1, "solo = 1 voice");
-    assert(getShowFormat("roundtable")!.speakerMax === 4, "roundtable up to 4");
+    assert(getShowFormat("solo_briefing")!.id === "solo_commentary", "solo_briefing alias resolves to solo_commentary");
+    assert(getShowFormat("solo_commentary")!.speakerMin === 1, "solo = 1 voice");
+    assert(getShowFormat("roundtable")!.id === "three_person_panel", "roundtable alias resolves to the canonical panel");
+    assert(getShowFormat("three_person_panel")!.speakerMax === 3, "panel = exactly 3");
     assert(!isRegisteredFormat("game_show"), "unknown format not registered");
   });
 
@@ -65,7 +67,9 @@ async function main() {
     assert(validatePinnedCast("two_host_debate", ["a", "b"]).ok, "2 ok for debate");
     const over = validatePinnedCast("two_host_debate", ["a", "b", "c"]);
     assert(!over.ok && over.error.code === "too_many_speakers", "3 rejected for debate");
-    assert(validatePinnedCast("roundtable", ["a", "b", "c", "d"]).ok, "4 ok for roundtable");
+    assert(validatePinnedCast("rapid_fire", ["a", "b", "c", "d"]).ok, "4 ok for rapid_fire");
+    const overPanel = validatePinnedCast("three_person_panel", ["a", "b", "c", "d"]);
+    assert(!overPanel.ok, "4 rejected for the 3-person panel");
     const dup = validatePinnedCast("roundtable", ["a", "a"]);
     assert(!dup.ok && dup.error.code === "duplicate_host", "duplicate rejected");
     assert(validatePinnedCast("two_host_debate", []).ok, "empty pin legal (auto-cast at build)");
@@ -158,8 +162,8 @@ async function main() {
       const auto = await resolveEpisodeCast({ hostIds: [], formatId: "solo_briefing" });
       assert(auto.members.length === 1 && auto.members[0].host.id === h1.id, "solo auto-cast = most intense");
       const round = await resolveEpisodeCast({ hostIds: [], formatId: "roundtable" });
-      assert(round.members.length === 3, "roundtable fills its 3 REQUIRED seats from the roster");
-      assert(round.members.map((m) => m.role).join(",") === "moderator,panelist_1,panelist_2", "roles by seat");
+      assert(round.members.length === 3, "panel fills its 3 REQUIRED seats from the roster");
+      assert(round.members.map((m) => m.role).join(",") === "moderator,panelist_one,panelist_two", "roles by seat");
       assert(new Set(round.members.map((m) => m.host.id)).size === 3, "distinct hosts");
     });
 
