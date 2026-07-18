@@ -148,3 +148,35 @@ The sections above describe the mix engine. Ownership and selection now follow
 - Asset downloads are bounded and sha256-verified; env `AUDIO_INTRO_URL` /
   `AUDIO_OUTRO_URL` fallbacks apply to LEGACY episodes only and are never
   logged as URLs.
+
+## Prompt 7.5 (PR 1) — snapshot compatibility, audible bookends, diagnostics
+
+Three correctness guarantees sit on top of the mix engine:
+
+- **Canonical frozen-profile resolver.** `resolveSnapshotSoundProfile()` in
+  `src/lib/services/episodeConfigurationSnapshot.ts` is the ONE place that reads
+  a frozen sound profile off an episode snapshot. It keys on the SHAPE of
+  `production.soundProfile`, never on the version number, so every
+  profile-bearing version (v2, v3, and any future version) resolves identically
+  — v1 and profile-less snapshots return "none" (legacy path), and a snapshot
+  that carries a *structurally invalid* profile returns "corrupt" so the render
+  fails honestly instead of silently falling back to the legacy global pool.
+  (This replaced a `snap.version !== 2` check that dropped every post-Prompt-7
+  v3 episode's identity.) The resolver is read-only — snapshot bytes and
+  fingerprints for v1/v2/v3 are unchanged.
+- **Post-render bookend verification.** `verifyBookends()`
+  (`src/lib/audio/bookendQa.ts`) measures the finished master with ffmpeg. When
+  a non-clean episode had an intro/outro enabled AND a bookend clip was actually
+  placed, the master must contain an audible head/tail and must not be truncated
+  before the outro completes. An enabled+placed outro that is silent, missing,
+  or clipped in the rendered waveform FAILS the render (safe reason recorded,
+  prior master preserved) — it is never shipped as a "successful" render. An
+  intentionally clean/disabled/no-asset bookend is skipped, not failed.
+- **Safe render diagnostics.** `buildRenderDiagnostics()`
+  (`src/lib/audio/renderDiagnostics.ts`) writes a safe cue-sheet report to
+  `EpisodeAudioRender.diagnostics` (additive nullable column) on both success
+  and failure: snapshot version, sound-profile mode, seed, per-cue selection
+  reasons + musical fit, executed placement, cooldown result, skipped cues with
+  safe reasons, speech-end / master-duration / outro-tail, and the bookend
+  result. Names and asset ids only — every free-text field is scrubbed of
+  URLs/keys/tokens as defense in depth.

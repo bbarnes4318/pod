@@ -248,6 +248,99 @@ export function buildEpisodeConfigurationSnapshot(
  * DISPLAY ONLY and is never written back — the whole point is to be honest that
  * we do not know how a legacy episode was configured, rather than fabricate it.
  */
+// ---------------------------------------------------------------------------
+// Canonical frozen-sound-profile resolver.
+//
+// A snapshot carries the episode's PERMITTED sound pool under
+// production.soundProfile. Every version from v2 onward that legitimately has
+// one stores it in the SAME place — the key was added conditionally so v1
+// bytes stay stable, NOT because the shape changes per version. So this
+// resolver keys on the PRESENCE + SHAPE of the profile, never on the version
+// number. That is the whole point: a version bump (v2 -> v3, or any future
+// version) must never silently drop a compatible frozen profile and let the
+// episode fall back to the legacy global pool. (That exact
+// `snap.version !== 2` bug made every post-Prompt-7 episode lose its identity.)
+//
+// A snapshot that CLAIMS a profile but whose profile is structurally invalid
+// is reported as "corrupt" — the caller must fail honestly rather than render
+// with the wrong sound pool. Absence of a profile (v1, or a v2+ snapshot built
+// without one) is "none", which is legitimate and NOT corruption.
+// ---------------------------------------------------------------------------
+
+const FROZEN_SOUND_PROFILE_MODES = new Set(["system_default", "custom", "clean"]);
+
+/** Structural validator for a frozen asset ref: the load-bearing fields the
+ *  render/loader actually read must be the right primitive types. Optional
+ *  mix/rights fields are tolerated (older captures may omit some). */
+function isFrozenSoundAssetRef(x: unknown): boolean {
+  if (!x || typeof x !== "object") return false;
+  const r = x as Record<string, unknown>;
+  return (
+    typeof r.assetId === "string" &&
+    typeof r.kind === "string" &&
+    typeof r.role === "string" &&
+    Array.isArray(r.tags)
+  );
+}
+
+/** True when `x` is a structurally valid FrozenSoundProfile. Tolerant of
+ *  optional fields, strict on the fields the renderer depends on. */
+export function isFrozenSoundProfile(x: unknown): x is FrozenSoundProfile {
+  if (!x || typeof x !== "object") return false;
+  const p = x as Record<string, unknown>;
+  if (typeof p.mode !== "string" || !FROZEN_SOUND_PROFILE_MODES.has(p.mode)) return false;
+  const slotOk = (v: unknown) => v === null || v === undefined || isFrozenSoundAssetRef(v);
+  if (!slotOk(p.intro) || !slotOk(p.outro) || !slotOk(p.bed)) return false;
+  if (!Array.isArray(p.stingers) || !p.stingers.every(isFrozenSoundAssetRef)) return false;
+  if (!Array.isArray(p.reactions) || !p.reactions.every(isFrozenSoundAssetRef)) return false;
+  return true;
+}
+
+export type SnapshotSoundProfileStatus = "none" | "v1_legacy" | "frozen" | "corrupt";
+
+export interface SnapshotSoundProfileResolution {
+  profile: FrozenSoundProfile | null;
+  status: SnapshotSoundProfileStatus;
+}
+
+/**
+ * Resolve the frozen sound profile from an Episode.configurationSnapshot value
+ * (as stored — `unknown`). This is the ONE place that decides whether an
+ * episode has a usable frozen pool. Keyed on shape, not version number.
+ *
+ *   none       no snapshot, or a snapshot that legitimately carries no profile
+ *              (v1, or a v2+ snapshot built without one) -> legacy behavior.
+ *   v1_legacy  an explicit version-1 snapshot -> no frozen profile (legacy).
+ *   frozen     production.soundProfile present and structurally valid, on ANY
+ *              version >= 2 (v2, v3, and any future version) -> use it.
+ *   corrupt    production.soundProfile present but structurally invalid ->
+ *              the caller must fail honestly, never degrade to the global pool.
+ */
+export function resolveSnapshotSoundProfile(snapshot: unknown): SnapshotSoundProfileResolution {
+  if (!snapshot || typeof snapshot !== "object") return { profile: null, status: "none" };
+  const snap = snapshot as Partial<EpisodeConfigurationSnapshot> & { production?: { soundProfile?: unknown } };
+
+  const raw = snap.production?.soundProfile;
+  const hasProfileKey = snap.production != null && "soundProfile" in (snap.production as object) && raw != null;
+
+  // Version 1 never carried a frozen profile. If somehow a soundProfile is
+  // present on a v1 snapshot, honor it only when structurally valid (defensive)
+  // — but the documented v1 contract is: no frozen profile, legacy path.
+  if (snap.version === 1 && !hasProfileKey) return { profile: null, status: "v1_legacy" };
+
+  if (!hasProfileKey) {
+    // No profile captured. Legitimate for v1 and for profile-less v2+ snapshots.
+    return { profile: null, status: snap.version === 1 ? "v1_legacy" : "none" };
+  }
+
+  if (isFrozenSoundProfile(raw)) return { profile: raw, status: "frozen" };
+
+  // A profile was captured but its shape is broken. Do NOT silently fall back
+  // to the legacy global pool — that is exactly how an episode ends up sounding
+  // like an unrelated show. Report corruption so the caller can fail safely.
+  return { profile: null, status: "corrupt" };
+}
+
 export function reconstructLegacySnapshot(episode: {
   hostIds: string[];
   ttsProvider: string | null;

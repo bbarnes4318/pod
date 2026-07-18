@@ -15,6 +15,8 @@ import {
   standardizeClipToWav,
 } from "@/lib/audio/assembly";
 import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
+import { verifyBookends, type BookendVerification } from "@/lib/audio/bookendQa";
+import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import {
   LoadedAsset,
   ProductionStyle,
@@ -54,16 +56,23 @@ import { readCooldownSnapshot, recordPlanUsage, type CooldownScopeFilter } from 
 import { resolveEpisodeCast, makeCastMatchers } from "@/lib/services/hostCasting";
 import { resolvePodcastSoundProfile, type FrozenSoundProfile } from "@/lib/services/podcastSoundProfile";
 import { rightsUsableForNewUse } from "@/lib/services/audioAssetAccess";
-import type { EpisodeConfigurationSnapshot } from "@/lib/services/episodeConfigurationSnapshot";
+import { resolveSnapshotSoundProfile } from "@/lib/services/episodeConfigurationSnapshot";
 import crypto from "crypto";
 
-/** The frozen sound profile from a version-2 Episode configuration snapshot;
- *  null for legacy / v1 episodes (they use the compatibility path). */
+/** The frozen sound profile from an Episode configuration snapshot, via the
+ *  ONE canonical resolver (shape-keyed, every profile-bearing version — v2, v3,
+ *  and beyond). null for legacy / v1 / profile-less snapshots (compatibility
+ *  path). A snapshot that CLAIMS a profile but whose profile is structurally
+ *  invalid throws — we refuse to render with the wrong (legacy global) pool
+ *  rather than silently degrade an episode's sound identity. */
 function frozenProfileFromEpisode(episode: { configurationSnapshot: unknown }): FrozenSoundProfile | null {
-  const snap = episode.configurationSnapshot as EpisodeConfigurationSnapshot | null;
-  if (!snap || typeof snap !== "object") return null;
-  if (snap.version !== 2 || !snap.production?.soundProfile) return null;
-  return snap.production.soundProfile;
+  const { profile, status } = resolveSnapshotSoundProfile(episode.configurationSnapshot);
+  if (status === "corrupt") {
+    throw new Error(
+      "Episode configuration snapshot has a structurally invalid frozen sound profile - refusing to render with the wrong sound pool."
+    );
+  }
+  return profile;
 }
 
 interface StitchInput {
@@ -1148,6 +1157,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       }
     }
 
+    // The last spoken word (dialogue + inserted highlights). The outro tail is
+    // measured against this after the master is rendered (post-render bookend
+    // verification below).
+    const speechEndMs = dialogueClips.length
+      ? Math.max(...[...dialogueClips, ...highlightClips].map((c) => c.startMs + c.durationMs))
+      : dialogueStartMs;
+
     const clips: TimelineClip[] = [
       ...(introClip ? [introClip] : []),
       ...dialogueClips,
@@ -1254,6 +1270,44 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const finalFileSizeBytes = fs.statSync(finalOutputPath).size;
     const finalDurationSeconds = (await getFileDurationMs(ffprobePath, finalOutputPath)) / 1000;
 
+    // 10c. POST-RENDER BOOKEND VERIFICATION. A cue row is not proof: verify the
+    // actual mastered waveform. When a non-clean episode had intro/outro enabled
+    // AND a bookend clip was placed, the master must contain audible, complete
+    // bookends. An enabled+placed outro that is silent, missing, or clipped in
+    // the rendered file FAILS the render with an explicit safe reason (the throw
+    // lands in the catch below, the prior master is preserved) — never shipped
+    // as a "successful" render. An intentionally clean/disabled/no-asset bookend
+    // is skipped, not failed.
+    const introEnabledForQa = style !== "clean" && includeIntro;
+    const outroEnabledForQa = style !== "clean" && includeOutro;
+    let bookendResult: BookendVerification | null = null;
+    try {
+      bookendResult = await verifyBookends(ffmpegPath, ffprobePath, finalOutputPath, {
+        introEnabled: introEnabledForQa,
+        introPlaced: !!introClip,
+        introDurationMs: introClip?.durationMs ?? null,
+        outroEnabled: outroEnabledForQa,
+        outroPlaced: !!outroClip,
+        outroStartMs: outroClip?.startMs ?? null,
+        outroDurationMs: outroClip?.durationMs ?? null,
+        speechEndMs,
+      });
+      for (const c of bookendResult.checks) {
+        console.log(`[Stitcher][Bookend] ${c.status.toUpperCase()} - ${c.name}: ${c.detail}`);
+      }
+    } catch (bookendErr: unknown) {
+      // A measurement failure (ffmpeg hiccup) must not mask a good render, but
+      // it also must not silently pass a bookend gate — record and continue;
+      // the enabled-bookend gate below only fires on a definitive verification.
+      const msg = bookendErr instanceof Error ? bookendErr.message : String(bookendErr);
+      console.warn(`[Stitcher][Bookend] verification could not run: ${msg}`);
+    }
+    if (bookendResult && !bookendResult.ok) {
+      throw new Error(
+        `Post-render bookend verification failed: ${bookendResult.failures.join(" ")}`
+      );
+    }
+
     // 11. Upload final MP3
     const episodeSlug = episode.slug || "";
     const versionStr = script.version.toString();
@@ -1295,6 +1349,59 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       }),
     ]);
 
+    // What the sound-design stage actually mixed in — the proof layer (hoisted
+    // so both the job log and the render diagnostics reuse one source of truth).
+    const soundDesignSummary: SoundDesignSummary = {
+      style,
+      sfxDensity,
+      introAsset: introClip ? (assetSet.intro?.name ?? "env intro clip") : null,
+      outroAsset: outroClip ? (assetSet.outro?.name ?? "env outro clip") : null,
+      bedAsset: bedUsed ? bedAssetForMix!.name : null,
+      bedDucking: bedUsed,
+      stingerCount: stingerClips.length,
+      reactionCount: reactionClips.length,
+      reactions: reactionSummary,
+      highlightCount: highlightClips.length,
+      highlights: highlightSummary,
+      ...(plannerEnabled && productionPlan
+        ? {
+            planner: true,
+            plannerVersion: productionPlan.plannerVersion,
+            stingers: plannerStingerSummary,
+            silences: plannerSilenceSummary,
+          }
+        : {}),
+    };
+
+    // Safe, durable render diagnostics for the render record (and job log).
+    const renderDiagnostics = buildRenderDiagnostics({
+      renderId: renderRecord.id,
+      renderVersion: renderRecord.renderVersion,
+      renderMode,
+      snapshotVersion: (episode.configurationSnapshot as { version?: number } | null)?.version ?? null,
+      soundProfileMode: frozenProfile?.mode ?? null,
+      plannerSeed: productionPlan?.seed ?? null,
+      plannerVersion: productionPlan?.plannerVersion ?? null,
+      style,
+      sfxDensity,
+      targetLoudnessLufs: frozenProfile?.targetLoudnessLufs ?? null,
+      cooldownScope:
+        frozenProfile?.cooldownScope === "owner"
+          ? "owner"
+          : episode.podcastId
+            ? "podcast"
+            : episode.ownerId
+              ? "owner"
+              : "system",
+      frozenProfile,
+      productionPlan,
+      summary: soundDesignSummary,
+      bookend: bookendResult,
+      speechEndMs,
+      masterDurationMs: Math.round(finalDurationSeconds * 1000),
+      skippedWarnings: soundWarnings,
+    });
+
     // 13. Write Success JobLog
     const successOutput = {
       episodeId: episode.id,
@@ -1318,27 +1425,11 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       // Combined episode score: script rubric (70%) + audio human-ness (30%).
       episodeScore: computeEpisodeScore((script.content as any)?.quality, qaReport),
       // What the sound-design stage actually mixed in — the proof layer.
-      soundDesign: {
-        style,
-        sfxDensity,
-        introAsset: introClip ? (assetSet.intro?.name ?? "env intro clip") : null,
-        outroAsset: outroClip ? (assetSet.outro?.name ?? "env outro clip") : null,
-        bedAsset: bedUsed ? bedAssetForMix!.name : null,
-        bedDucking: bedUsed,
-        stingerCount: stingerClips.length,
-        reactionCount: reactionClips.length,
-        reactions: reactionSummary,
-        highlightCount: highlightClips.length,
-        highlights: highlightSummary,
-        ...(plannerEnabled && productionPlan
-          ? {
-              planner: true,
-              plannerVersion: productionPlan.plannerVersion,
-              stingers: plannerStingerSummary,
-              silences: plannerSilenceSummary,
-            }
-          : {}),
-      } satisfies SoundDesignSummary,
+      soundDesign: soundDesignSummary,
+      // Post-render bookend verification of the actual waveform.
+      bookend: bookendResult,
+      // Safe per-render cue-sheet diagnostics (also persisted on the render record).
+      renderDiagnostics,
       // The full cue sheet this render executed — reproducible from inputs.
       ...(plannerEnabled && productionPlan ? { productionPlan } : {}),
       reasons: ["Final audio stitched and uploaded successfully.", ...soundWarnings],
@@ -1364,6 +1455,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           productionStyle: style,
           sfxDensity,
           plan: productionPlan ? (productionPlan as unknown as object) : undefined,
+          diagnostics: renderDiagnostics as unknown as object,
           outputAudioUrl: uploadResult.url,
         },
       });
@@ -1419,12 +1511,21 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // costs a published master.
     if (renderRecordId) {
       try {
+        const safeFailure = scrubSafeText(String(err?.message || "unknown")).slice(0, 500);
         await db.episodeAudioRender.update({
           where: { id: renderRecordId },
           data: {
             status: "failed",
             completedAt: new Date(),
-            failureReason: String(err?.message || "unknown").slice(0, 500),
+            failureReason: safeFailure,
+            // Minimal safe diagnostics on the failure path too: a failed render
+            // still explains itself (e.g. a bookend gate rejection) without a
+            // successful cue sheet to attach.
+            diagnostics: {
+              version: RENDER_DIAGNOSTICS_VERSION,
+              status: "failed",
+              failureReason: safeFailure,
+            } as unknown as object,
           },
         });
       } catch { /* best effort */ }
