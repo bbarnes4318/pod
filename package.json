@@ -69,6 +69,7 @@
     "test:show-format-migration": "tsx --conditions=react-server src/scripts/testShowFormatMigration.ts",
     "test:format-script": "tsx --conditions=react-server src/scripts/testFormatScript.ts",
     "test:format-audio": "tsx --conditions=react-server src/scripts/testFormatAudio.ts",
+    "test:show-format-completion": "tsx --conditions=react-server src/scripts/testShowFormatCompletion.ts",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",

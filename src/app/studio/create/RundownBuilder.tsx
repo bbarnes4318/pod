@@ -383,7 +383,9 @@ export default function RundownBuilder({
             ))}
           </div>
           <p className="stageHint">
-            {format.roles.slice(0, format.speakerMax).map((r, i) => `Seat ${i + 1}: ${r.name}`).join(" · ")}. Only your own and shared hosts appear here.
+            <strong>{format.description}</strong>{" "}
+            Pacing: {format.pacing} Best for: {format.useCase}{" "}
+            {format.roles.slice(0, format.speakerMax).map((r, i) => `Seat ${i + 1}: ${r.name}${r.required ? "" : " (optional)"}`).join(" · ")}. Only your own and shared hosts appear here.
           </p>
           <div className="segRow" style={{ flexWrap: "wrap" }}>
             {hosts.map((h) => {

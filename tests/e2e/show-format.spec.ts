@@ -37,10 +37,13 @@ test.describe("Show-format engine in the browser", () => {
 
     // Format & hosts step: every ready format is offered; pick SOLO.
     await page.getByTestId("step-hosts").click();
-    for (const f of ["two_host_debate", "solo_briefing", "interview", "roundtable"]) {
+    for (const f of ["solo_commentary", "two_host_debate", "sports_radio", "news_roundup", "host_and_expert", "three_person_panel", "interview", "documentary", "betting_desk", "rapid_fire"]) {
       await expect(page.getByTestId(`format-${f}`)).toBeVisible();
     }
-    await page.getByTestId("format-solo_briefing").click();
+    await page.getByTestId("format-solo_commentary").click();
+    // Deprecated aliases never appear as separate options:
+    await expect(page.getByTestId("format-solo_briefing")).toHaveCount(0);
+    await expect(page.getByTestId("format-roundtable")).toHaveCount(0);
 
     // The picker caps at ONE seat for solo: picking a second replaces seat 1.
     const hostButtons = page.locator('[data-testid^="host-"]');
@@ -62,14 +65,14 @@ test.describe("Show-format engine in the browser", () => {
     // Newest episode for user A carries the solo format end to end.
     const ep = await db.episode.findFirst({ where: { ownerId: E2E.userA.id }, orderBy: { createdAt: "desc" }, include: { castMembers: true } });
     expect(ep, "episode created").toBeTruthy();
-    expect(ep!.formatId).toBe("solo_briefing");
+    expect(ep!.formatId).toBe("solo_commentary");
     expect(ep!.hostIds).toEqual([soloHostId]);
     expect(ep!.castMembers.length).toBe(1);
     expect(ep!.castMembers[0].role).toBe("anchor");
     expect(ep!.castMembers[0].orderIndex).toBe(0);
     const snap = ep!.configurationSnapshot as { version?: number; cast?: { formatId: string; members: Array<{ role: string }> } } | null;
     expect(snap?.version).toBe(3);
-    expect(snap?.cast?.formatId).toBe("solo_briefing");
+    expect(snap?.cast?.formatId).toBe("solo_commentary");
     expect(snap?.cast?.members?.[0]?.role).toBe("anchor");
   });
 
