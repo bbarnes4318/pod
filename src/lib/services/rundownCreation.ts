@@ -79,6 +79,10 @@ export interface RundownEpisodeInput {
   teams?: string[];
   sport?: string;
   minDebateScore?: number;
+  /** Prompt 7: show-format override (standalone episodes; a podcast episode
+   *  inherits the show's format unless explicitly overridden). Must be a
+   *  registered, generation-ready format. */
+  format?: string;
   /** ADMIN-ONLY. Ignored (stripped) for owner actors — see the header note. */
   reuseOverride?: boolean;
 }
@@ -158,6 +162,7 @@ async function resolveRundownConfiguration(
       hostIds: input.hostIds?.length ? input.hostIds : undefined,
       segmentCount: input.targetTopicCount,
       minDebateScore: input.minDebateScore,
+      format: input.format,
       ttsProvider: input.ttsProvider,
       ttsVoiceOverrides: input.ttsVoiceOverrides,
       productionStyle: input.productionStyle,

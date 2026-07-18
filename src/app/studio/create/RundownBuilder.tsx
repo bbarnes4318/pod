@@ -18,6 +18,7 @@ import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 import type { RundownDraftState, RundownStep } from "@/lib/services/studioDraft";
 import { estimateRundown } from "@/lib/services/episodeEstimate";
 import { validateRundownDraft, applyModeChange } from "@/lib/studio/rundownRules";
+import { getShowFormat, listShowFormats, isGenerationReadyFormat } from "@/lib/formats/showFormatRegistry";
 import { MAX_DESCRIPTION_LEN } from "@/lib/episodeLimits";
 // Shared rundown core — the SAME picker/tray Admin uses (src/components/rundown).
 import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
@@ -58,6 +59,8 @@ export default function RundownBuilder({
   const [leadTopicId, setLeadTopicId] = useState<string | null>(d?.leadTopicId ?? null);
   const [targetTopicCount, setTargetTopicCount] = useState<number>(d?.targetTopicCount ?? 3);
   const [podcastId, setPodcastId] = useState<string | null>(d?.podcastId ?? null);
+  const [formatId, setFormatId] = useState<string>((d as { formatId?: string })?.formatId ?? "two_host_debate");
+  const format = getShowFormat(formatId) ?? getShowFormat("two_host_debate")!;
   const [hostIds, setHostIds] = useState<string[]>(d?.hostIds?.length ? d.hostIds : hosts.slice(0, 2).map((h) => h.id));
   const [ttsProvider, setTtsProvider] = useState<string>(d?.ttsProvider ?? "");
   const [voicePicks, setVoicePicks] = useState<Record<string, string>>(() => voicePicksFromOverrides(d?.ttsVoiceOverrides));
@@ -210,9 +213,11 @@ export default function RundownBuilder({
   const validation = useMemo(() => {
     const base = validateRundownDraft({ mode, selectedTopicIds: selectedIds, targetTopicCount, maxTopics });
     if (!base.ok) return base;
-    if (hostIds.length < 2) return { ok: false as const, error: "Pick two hosts." };
+    if (hostIds.length < format.speakerMin) {
+      return { ok: false as const, error: `The ${format.displayName} format needs at least ${format.speakerMin} host${format.speakerMin === 1 ? "" : "s"}.` };
+    }
     return { ok: true as const };
-  }, [mode, selectedIds, targetTopicCount, maxTopics, hostIds]);
+  }, [mode, selectedIds, targetTopicCount, maxTopics, hostIds, format]);
 
   const estimate = useMemo(
     () => estimateRundown({ topicCount: mode === "automatic" ? targetTopicCount : mode === "hybrid" ? Math.max(selectedIds.length, targetTopicCount) : selectedIds.length }),
@@ -236,6 +241,9 @@ export default function RundownBuilder({
         leadTopicId,
         podcastId,
         hostIds,
+        // Standalone episodes carry the picked format; a podcast episode
+        // inherits the show's format server-side unless it differs.
+        format: podcastId ? undefined : formatId,
         ttsProvider: ttsProvider || undefined,
         ttsVoiceOverrides: buildVoiceOverrides(voicePicks, ttsProvider),
         productionStyle,
@@ -364,22 +372,40 @@ export default function RundownBuilder({
       {/* ---------------- HOSTS ---------------- */}
       {step === "hosts" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎙 Hosts</h2>
-          <p className="stageHint">Two voices front the episode (chair A + chair B). Only your own and shared hosts appear here.</p>
+          <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎙 Format &amp; Hosts</h2>
+          <div className="segRow" style={{ flexWrap: "wrap", marginBottom: 8 }} role="radiogroup" aria-label="Show format">
+            {listShowFormats().filter((f) => isGenerationReadyFormat(f.id)).map((f) => (
+              <button key={f.id} type="button" data-testid={`format-${f.id}`} className={`segBtn${formatId === f.id ? " on" : ""}`} aria-pressed={formatId === f.id}
+                title={f.description}
+                onClick={() => { setFormatId(f.id); setHostIds((prev) => prev.slice(0, f.speakerMax)); }}>
+                {f.displayName} ({f.speakerMin === f.speakerMax ? f.speakerMin : `${f.speakerMin}-${f.speakerMax}`} voice{f.speakerMax === 1 ? "" : "s"})
+              </button>
+            ))}
+          </div>
+          <p className="stageHint">
+            {format.roles.slice(0, format.speakerMax).map((r, i) => `Seat ${i + 1}: ${r.name}`).join(" · ")}. Only your own and shared hosts appear here.
+          </p>
           <div className="segRow" style={{ flexWrap: "wrap" }}>
             {hosts.map((h) => {
-              const on = hostIds.includes(h.id);
-              const chair = hostIds[0] === h.id ? "A" : hostIds[1] === h.id ? "B" : null;
+              const seat = hostIds.indexOf(h.id);
+              const on = seat >= 0;
               return (
                 <button key={h.id} type="button" data-testid={`host-${h.id}`} className={`segBtn${on ? " on" : ""}`} aria-pressed={on}
-                  onClick={() => { setHostSelectionDirty(true); setHostIds((prev) => prev.includes(h.id) ? (prev.length <= 1 ? prev : prev.filter((x) => x !== h.id)) : prev.length < 2 ? [...prev, h.id] : [prev[0], h.id]); }}>
-                  {chair && <strong style={{ marginRight: 4 }}>{chair}</strong>}{h.name}
+                  onClick={() => {
+                    setHostSelectionDirty(true);
+                    setHostIds((prev) => prev.includes(h.id)
+                      ? (prev.length <= 1 ? prev : prev.filter((x) => x !== h.id))
+                      : prev.length < format.speakerMax
+                        ? [...prev, h.id]
+                        : [...prev.slice(0, format.speakerMax - 1), h.id]);
+                  }}>
+                  {on && <strong style={{ marginRight: 4 }}>{seat + 1}</strong>}{h.name}
                 </button>
               );
             })}
             {hosts.length === 0 && <span className="stageHint">No active hosts — <Link href="/studio/hosts">add one →</Link></span>}
           </div>
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < 2} />
+          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < format.speakerMin} />
         </div>
       )}
 

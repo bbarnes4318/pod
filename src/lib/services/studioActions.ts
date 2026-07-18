@@ -43,6 +43,8 @@ export interface StudioEpisodeInput {
   teams?: string[];
   sport?: string;
   minDebateScore?: number;
+  /** Prompt 7: standalone show-format pick (registered + generation-ready). */
+  format?: string;
 }
 
 /**
@@ -198,6 +200,7 @@ export async function createStudioEpisodeFor(
       leagueIds: input.leagueIds,
       sport: input.sport,
       minDebateScore: input.minDebateScore,
+      format: input.format,
       title: input.title,
       description: input.description,
       // reuseOverride intentionally omitted — Admin-only.

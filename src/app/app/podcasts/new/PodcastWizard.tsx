@@ -311,7 +311,7 @@ export default function PodcastWizard({
         return (
           <div>
             <h2 className="uWizQuestion">Who's in the booth?</h2>
-            <p className="uWizHint">Pick two for the debate — pick one and we pair them with a sparring partner.</p>
+            <p className="uWizHint">Pick up to two for the debate — pick one and we pair them with a sparring partner. (More formats are available in show settings after creation.)</p>
             {hosts.length === 0 ? (
               <p className="uWizHint" style={{ color: "var(--u-ink-2)" }}>No hosts are available right now — you can still finish and pick hosts later.</p>
             ) : (
@@ -322,7 +322,14 @@ export default function PodcastWizard({
                     type="button"
                     className={`uWizCard ${hostIds.includes(h.id) ? "sel" : ""}`}
                     aria-pressed={hostIds.includes(h.id)}
-                    onClick={() => { toggle(hostIds, setHostIds, h.id); setError(null); }}
+                    onClick={() => {
+                      // Cap at the debate format's two seats (Prompt 7 fixed
+                      // the unbounded picker that the server then rejected).
+                      setHostIds((prev) => prev.includes(h.id)
+                        ? prev.filter((x) => x !== h.id)
+                        : prev.length < 2 ? [...prev, h.id] : [prev[0], h.id]);
+                      setError(null);
+                    }}
                   >
                     <span className="uWizCardEmoji">🎙️</span>
                     <span className="uWizCardTitle">{h.name}</span>

@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyAdminAuthHeader } from "@/lib/adminBasicAuth";
 import { isVoiceIdValidForProvider } from "@/lib/providers/tts/voiceResolution";
+import { validatePinnedCast } from "@/lib/formats/showFormatRegistry";
 import { isTtsProviderId } from "@/lib/providers/tts/providerIds";
 import { getTTSProvider } from "@/lib/providers/tts/factory";
 
@@ -123,8 +124,14 @@ export async function POST(req: NextRequest) {
     if (found.length !== hostIds.length) {
       return NextResponse.json({ success: false, error: "One or more hostIds are missing or inactive." }, { status: 400 });
     }
-    const ep = await db.episode.findUnique({ where: { id: targetEpisodeId }, select: { id: true, hostIds: true } });
+    const ep = await db.episode.findUnique({ where: { id: targetEpisodeId }, select: { id: true, hostIds: true, formatId: true } });
     if (!ep) return NextResponse.json({ success: false, error: "Episode not found." }, { status: 404 });
+    // Prompt 7: the cast must fit the episode's SHOW FORMAT (previously this
+    // route had no upper bound and could write a cast the pipeline rejected).
+    const castCheck = validatePinnedCast(ep.formatId || "two_host_debate", hostIds);
+    if (!castCheck.ok) {
+      return NextResponse.json({ success: false, error: `Cast invalid for this episode's format (${castCheck.error.code}).` }, { status: 400 });
+    }
     await db.episode.update({ where: { id: targetEpisodeId }, data: { hostIds } });
     // Preserve the operator's chosen order for the returned names.
     const byId = new Map(found.map((h) => [h.id, h.name]));

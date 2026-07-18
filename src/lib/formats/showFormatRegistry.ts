@@ -75,7 +75,7 @@ const FORMATS: ShowFormat[] = [
     roles: [
       { id: "anchor", name: "Anchor", direction: "Carries the whole episode alone; addresses the listener directly.", required: true, minLineSharePct: 0 },
     ],
-    generationReady: false, // flipped on when script/TTS/stitch support 1 voice
+    generationReady: true,
   },
   {
     id: "interview",
@@ -88,7 +88,7 @@ const FORMATS: ShowFormat[] = [
       { id: "interviewer", name: "Interviewer", direction: "Drives structure, asks and follows up; hands the floor to the guest.", required: true, minLineSharePct: 15 },
       { id: "guest", name: "Guest", direction: "Carries the substance; longer answers, personal angles.", required: true, minLineSharePct: 30 },
     ],
-    generationReady: false,
+    generationReady: true,
   },
   {
     id: "roundtable",
@@ -103,7 +103,7 @@ const FORMATS: ShowFormat[] = [
       { id: "panelist_2", name: "Panelist 2", direction: "Counter-angle; pushes back on the first take.", required: true, minLineSharePct: 12 },
       { id: "panelist_3", name: "Panelist 3", direction: "Wildcard chair; optional fourth voice.", required: false, minLineSharePct: 0 },
     ],
-    generationReady: false,
+    generationReady: true,
   },
 ];
 
