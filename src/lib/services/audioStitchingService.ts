@@ -51,7 +51,7 @@ import {
   resolveIntroFromPlan,
 } from "@/lib/audio/planExecution";
 import { readCooldownSnapshot, recordPlanUsage, type CooldownScopeFilter } from "@/lib/services/cueCooldownService";
-import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
+import { resolveEpisodeCast, makeCastMatchers } from "@/lib/services/hostCasting";
 import { resolvePodcastSoundProfile, type FrozenSoundProfile } from "@/lib/services/podcastSoundProfile";
 import { rightsUsableForNewUse } from "@/lib/services/audioAssetAccess";
 import type { EpisodeConfigurationSnapshot } from "@/lib/services/episodeConfigurationSnapshot";
@@ -443,8 +443,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     }
 
     // Resolve the two hosts this episode was cast with (no hardcoded names).
-    const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: episode.hostIds });
-    const speakers = makeSpeakerMatchers({ hostA, hostB });
+    // FORMAT-driven cast (1-4 voices; the debate delegates to the legacy pair
+    // resolver so existing episodes stitch identically).
+    const resolvedEpisodeCast = await resolveEpisodeCast({
+      hostIds: episode.hostIds,
+      formatId: (episode as { formatId?: string }).formatId,
+    });
+    const stitchCast = resolvedEpisodeCast.members.map((m) => m.host);
+    const speakers = makeCastMatchers(stitchCast);
 
     // Flatten script lines
     const allLines: any[] = [];
@@ -478,7 +484,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
         const lineHost = speakers.hostForSpeaker(line.speakerName);
         if (!lineHost) {
-          throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only ${hostA.name} and ${hostB.name} are allowed for this episode.`);
+          throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Allowed for this episode: ${stitchCast.map((h) => h.name).join(", ")}.`);
         }
         if (line.speakerHostId !== lineHost.id) {
           throw new Error(`Line ${line.lineIndex} host ID does not match the cast profile for ${lineHost.name}.`);
@@ -833,7 +839,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         filePath: wavPath,
         durationMs,
         lineIndex: curr.line.lineIndex,
-        hostSlot: curr.line.speakerHostId === hostA.id ? 0 : 1,
+        hostSlot: Math.max(0, speakers.seatOf(curr.line.speakerHostId)),
         pauseBefore: curr.line.pauseBefore,
         isInterruption: curr.line.isInterruption === true,
         segmentBreak,

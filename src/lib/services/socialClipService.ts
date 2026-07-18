@@ -19,7 +19,7 @@ import os from "node:os";
 import path from "node:path";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
-import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
+import { resolveEpisodeCast } from "@/lib/services/hostCasting";
 import {
   standardizeClipToWav,
   planConversationTimeline,
@@ -49,8 +49,9 @@ import { parseProductionPlan } from "@/lib/audio/productionPlan";
 
 const CLIP_MIN_MS = 20_000;
 const CLIP_MAX_MS = 45_000;
-// Host slot colours mirror the Step 1 tokens (--host-max / --host-doc).
-const SLOT_HEX = ["#FF5A1F", "#4C8DFF"] as const; // slot 0 orange, slot 1 blue
+// Seat colours (Prompt 7): seats 0-3 mirror the UI tokens --host-max /
+// --host-doc / --host-3 / --host-4. Two-host clips keep the classic pair.
+const SLOT_HEX = ["#FF5A1F", "#4C8DFF", "#2EC27E", "#B78AF7"] as const;
 
 interface FlatLine {
   lineIndex: number;
@@ -262,7 +263,7 @@ interface CaptionCue {
   endMs: number;
   text: string;
   speaker: string;
-  slot: 0 | 1;
+  slot: number; // seat index 0-3
 }
 
 function buildAss(cues: CaptionCue[], title: string): string {
@@ -288,7 +289,7 @@ function buildAss(cues: CaptionCue[], title: string): string {
   // Persistent branding header across the whole clip.
   events.push(`Dialogue: 0,${assTime(0)},${assTime(end)},Title,,0,0,0,,${assEscape(title).slice(0, 60)}`);
   for (const c of cues) {
-    const color = hexToAss(SLOT_HEX[c.slot]);
+    const color = hexToAss(SLOT_HEX[Math.max(0, Math.min(SLOT_HEX.length - 1, c.slot))]);
     const speaker = assEscape(c.speaker).toUpperCase();
     const body = assEscape(c.text);
     events.push(
@@ -335,7 +336,16 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
       select: { id: true, title: true, hostIds: true, soundDesign: true },
     });
     if (!episode) throw new Error("Episode not found.");
-    const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: episode.hostIds });
+    // FORMAT-driven cast (Prompt 7): captions colour and label 1-4 seats.
+    const clipCastResolved = await resolveEpisodeCast({
+      hostIds: episode.hostIds,
+      formatId: (episode as { formatId?: string }).formatId,
+    });
+    const clipCast = clipCastResolved.members.map((m) => m.host);
+    const seatOfHost = (hostId: unknown): number => {
+      const i = clipCast.findIndex((h) => h.id === hostId);
+      return i >= 0 ? i : 0;
+    };
 
     const all = await flattenLines(clip.scriptId);
     const range = all.filter(
@@ -347,7 +357,7 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
 
     // 1. Download + standardize each line's real audio.
     const planned: PlannedLine[] = [];
-    const slotByLine = new Map<number, 0 | 1>();
+    const slotByLine = new Map<number, number>();
     for (let i = 0; i < range.length; i++) {
       const ln = range[i];
       const dl = await storage.getObject({ url: ln.audioUrl! });
@@ -355,7 +365,7 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
       fs.writeFileSync(rawPath, dl.body);
       const wavPath = path.join(tmp, `line-${ln.lineIndex}.wav`);
       await standardizeClipToWav(ffmpegPath(), rawPath, wavPath, {});
-      const slot: 0 | 1 = ln.speakerHostId && ln.speakerHostId === hostA.id ? 0 : ln.speakerHostId === hostB.id ? 1 : 0;
+      const slot: number = seatOfHost(ln.speakerHostId);
       slotByLine.set(ln.lineIndex, slot);
       planned.push({
         filePath: wavPath,
@@ -431,7 +441,7 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
     const cues: CaptionCue[] = clips.map((c) => {
       const ln = range.find((r) => r.lineIndex === planned.find((p) => p.filePath === c.filePath)?.lineIndex);
       const slot = slotByLine.get(ln?.lineIndex ?? -1) ?? 0;
-      const speaker = slot === 0 ? hostA.name : hostB.name;
+      const speaker = clipCast[Math.min(slot, clipCast.length - 1)]?.name ?? "";
       return { startMs: c.startMs, endMs: c.startMs + c.durationMs, text: ln?.text || "", speaker, slot };
     });
     const durationMs = clips.length ? Math.max(...clips.map((c) => c.startMs + c.durationMs)) : 0;

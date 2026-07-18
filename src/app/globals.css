@@ -55,6 +55,10 @@
   /* Host identity */
   --host-max: #FF5A1F;
   --host-doc: #4C8DFF;
+  /* Prompt 7: seats 3 + 4 for multi-voice formats (seat 0 = --host-max,
+     seat 1 = --host-doc). */
+  --host-3: #2EC27E;
+  --host-4: #B78AF7;
 
   /* ------------------------------------------------------------
      Legacy aliases — load-bearing: every existing page consumes

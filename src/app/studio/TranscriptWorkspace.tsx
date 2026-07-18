@@ -74,11 +74,12 @@ export default function TranscriptWorkspace({
     return <div className="emptyNote">The script isn&apos;t written yet — it appears here once the debate is generated.</div>;
   }
 
+  // Seat-indexed colours (Prompt 7): seats 0-3 -> the four host tokens.
+  const SEAT_COLORS = ["var(--host-max)", "var(--host-doc)", "var(--host-3)", "var(--host-4)"];
   const colorFor = (speaker: string) => {
     const s = speaker.trim().toLowerCase();
-    if (s === vm.hostA.name.toLowerCase()) return "var(--host-max)";
-    if (s === vm.hostB.name.toLowerCase()) return "var(--host-doc)";
-    return "var(--text-muted)";
+    const seat = vm.cast.findIndex((h) => h.name.toLowerCase() === s);
+    return seat >= 0 ? SEAT_COLORS[Math.min(seat, SEAT_COLORS.length - 1)] : "var(--text-muted)";
   };
 
   return (

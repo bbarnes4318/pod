@@ -143,8 +143,10 @@ export interface PlannedLine {
   filePath: string;
   durationMs: number;
   lineIndex: number;
-  /** 0 = host A, 1 = host B — used for stereo seating. */
-  hostSlot: 0 | 1;
+  /** Seat index (0-3) — used for stereo seating. The two-host debate keeps
+   *  its classic left/right pair; 1-4 voices spread across the field via
+   *  seatPan(). */
+  hostSlot: number;
   pauseBefore?: "none" | "beat" | "breath" | "long";
   isInterruption?: boolean;
   /** Does a new script segment start at this line? */
@@ -188,7 +190,25 @@ export interface TimelinePlanOptions {
   jitterFraction?: number;
   /** 0..1 — stereo seating amount (0 = both centered). */
   stereoSpread?: number;
+  /** Number of cast seats (1-4). Drives seatPan(); default 2 keeps the
+   *  classic two-host left/right seating. */
+  castSize?: number;
   startAtMs?: number;
+}
+
+/**
+ * Stereo position for a seat (Prompt 7): 1 voice sits center; 2 keep the
+ * classic left/right pair; 3 sit left/center/right; 4 spread evenly across
+ * the field. Deterministic, and for castSize=2 EXACTLY the legacy pan values.
+ */
+export function seatPan(seatIndex: number, castSize: number, stereoSpread: number): number {
+  const n = Math.max(1, Math.min(4, Math.floor(castSize) || 2));
+  if (n === 1) return 0;
+  const seat = Math.max(0, Math.min(n - 1, seatIndex));
+  // Evenly spaced positions from -1 to +1: 2 -> [-1,+1]; 3 -> [-1,0,+1];
+  // 4 -> [-1,-1/3,+1/3,+1]. Scaled by the spread amount.
+  const position = -1 + (2 * seat) / (n - 1);
+  return position * stereoSpread;
 }
 
 // Deterministic PRNG so the same script always renders the same timing
@@ -224,6 +244,10 @@ export function planConversationTimeline(
   const interruptOverlap = opts.interruptOverlapMs ?? envNum("AUDIO_INTERRUPT_OVERLAP_MS", 320);
   const jitterFraction = opts.jitterFraction ?? envNum("AUDIO_GAP_JITTER", 0.35);
   const stereoSpread = opts.stereoSpread ?? envNum("AUDIO_STEREO_SPREAD", 0.14);
+  // Seat count for pan positions: explicit option wins, else the largest seat
+  // index seen in the lines (legacy callers pass none and two-seat lines ->
+  // castSize 2, the classic seating).
+  const castSize = opts.castSize ?? Math.max(2, ...lines.map((l) => l.hostSlot + 1));
 
   const clips: TimelineClip[] = [];
   let cursorMs = opts.startAtMs ?? 0;
@@ -282,7 +306,7 @@ export function planConversationTimeline(
       startMs,
       durationMs: line.durationMs,
       kind: "speech",
-      pan: line.hostSlot === 0 ? -stereoSpread : stereoSpread,
+      pan: seatPan(line.hostSlot, castSize, stereoSpread),
       fadeInMs: 4,
       fadeOutMs: 8,
       gainDb: 0,
