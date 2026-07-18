@@ -48,6 +48,8 @@ export interface MixVM {
   totalMs: number;
   hostA: { id: string | null; name: string };
   hostB: { id: string | null; name: string };
+  /** Prompt 7: the FULL cast in seat order (1-4); hostA/hostB = first seats. */
+  cast: Array<{ id: string | null; name: string }>;
   segments: MixSegmentVM[];
   bed: { present: boolean; style: string | null; sfxDensity: string | null };
   cues: MixCueVM[];
@@ -72,6 +74,7 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
     totalMs: 1,
     hostA: { id: null, name: "Host 1" },
     hostB: { id: null, name: "Host 2" },
+    cast: [{ id: null, name: "Host 1" }, { id: null, name: "Host 2" }],
     segments: [],
     bed: { present: false, style: null, sfxDensity: null },
     cues: [],
@@ -111,6 +114,11 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
   const sorted = [...hostRows].sort((a, b) => b.intensityLevel - a.intensityLevel);
   if (sorted[0]) base.hostA = { id: sorted[0].id, name: sorted[0].name };
   if (sorted[1]) base.hostB = { id: sorted[1].id, name: sorted[1].name };
+  const castSeats = (episode.hostIds?.length
+    ? episode.hostIds.map((id) => hostRows.find((h) => h.id === id)).filter((h): h is NonNullable<typeof h> => !!h)
+    : sorted
+  ).map((h) => ({ id: h.id as string | null, name: h.name }));
+  if (castSeats.length > 0) base.cast = castSeats;
 
   if (!script) return base;
   const content = (script.content as any) || {};

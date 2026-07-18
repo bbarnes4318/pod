@@ -9,7 +9,7 @@ import {
   resolveTtsProviderAndVoice,
 } from "@/lib/providers/tts/voiceResolution";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
-import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
+import { resolveEpisodeCast, makeCastMatchers } from "@/lib/services/hostCasting";
 
 // Episode statuses in which (re)generating audio segments is allowed: from
 // the moment the episode passes fact check all the way through published.
@@ -122,12 +122,17 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     (script.content as any).segments = segments;
   }
 
-  // Resolve the two hosts this episode was cast with (no hardcoded names).
-  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: script.episode.hostIds });
-  const speakers = makeSpeakerMatchers({ hostA, hostB });
+  // Resolve the FORMAT-driven cast (1-4 voices; the two-host debate delegates
+  // to the legacy pair resolver, so existing episodes cast identically).
+  const resolvedCast = await resolveEpisodeCast({
+    hostIds: script.episode.hostIds,
+    formatId: (script.episode as { formatId?: string }).formatId,
+  });
+  const cast = resolvedCast.members.map((m) => m.host);
+  const speakers = makeCastMatchers(cast);
 
-  if (hostId && hostId !== hostA.id && hostId !== hostB.id) {
-    throw new Error(`Invalid hostId '${hostId}'. Host filter must match one of this episode's cast host IDs (${hostA.name}, ${hostB.name}).`);
+  if (hostId && !cast.some((h) => h.id === hostId)) {
+    throw new Error(`Invalid hostId '${hostId}'. Host filter must match one of this episode's cast host IDs (${cast.map((h) => h.name).join(", ")}).`);
   }
 
   // 2. Flatten and validate dialogue lines
@@ -155,7 +160,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
 
       const lineHost = speakers.hostForSpeaker(line.speakerName);
       if (!lineHost) {
-        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Only ${hostA.name} and ${hostB.name} are allowed for this episode.`);
+        throw new Error(`Line ${line.lineIndex} has invalid speakerName '${line.speakerName}'. Allowed for this episode: ${cast.map((h) => h.name).join(", ")}.`);
       }
 
       // Note: a per-line needsHumanReview flag is NOT a hard block here. TTS
@@ -256,7 +261,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   // provider safe default. Guarantees a voice id never crosses engines.
   const episodeVoiceOverrides = (script.episode.ttsVoiceOverrides as TtsVoiceOverrides | null) || null;
   const resolvedByHostId = new Map<string, ResolvedTtsVoice>();
-  for (const host of [hostA, hostB]) {
+  for (const host of cast) {
     if (!selectedLines.some((line) => line.speakerHostId === host.id)) continue;
     const resolved = resolveTtsProviderAndVoice({
       providerOverride,

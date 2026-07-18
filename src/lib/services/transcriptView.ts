@@ -56,6 +56,9 @@ export interface TranscriptVM {
   episodeTitle: string;
   hostA: { id: string | null; name: string };
   hostB: { id: string | null; name: string };
+  /** Prompt 7: the FULL cast in seat order (1-4). hostA/hostB remain the
+   *  first two seats for legacy consumers. */
+  cast: Array<{ id: string | null; name: string }>;
   segments: TranscriptSegmentVM[];
   claims: ClaimVM[];
   factCheck: {
@@ -176,6 +179,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
     episodeTitle: "",
     hostA: { id: null, name: "Host 1" },
     hostB: { id: null, name: "Host 2" },
+    cast: [{ id: null, name: "Host 1" }, { id: null, name: "Host 2" }],
     segments: [],
     claims: [],
     factCheck: { present: false, status: null, checkedAt: null, coveragePercent: null },
@@ -203,6 +207,13 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
   const sorted = [...hostRows].sort((a, b) => b.intensityLevel - a.intensityLevel);
   const hostA = sorted[0] ? { id: sorted[0].id, name: sorted[0].name } : { id: null, name: "Host 1" };
   const hostB = sorted[1] ? { id: sorted[1].id, name: sorted[1].name } : { id: null, name: "Host 2" };
+  // Seat order for colouring: the pinned order when a cast is pinned,
+  // intensity order otherwise (matching hostA/hostB).
+  const castSeats = (episode.hostIds?.length
+    ? episode.hostIds.map((id) => hostRows.find((h) => h.id === id)).filter((h): h is NonNullable<typeof h> => !!h)
+    : sorted
+  ).map((h) => ({ id: h.id as string | null, name: h.name }));
+  if (castSeats.length === 0) castSeats.push(hostA, hostB);
 
   const base = empty();
   base.scriptId = script?.id ?? null;
@@ -211,6 +222,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
   base.episodeTitle = episode.title;
   base.hostA = hostA;
   base.hostB = hostB;
+  base.cast = castSeats;
   if (!script) {
     base.gate.reasons = ["No script yet."];
     return base;
