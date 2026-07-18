@@ -22,27 +22,136 @@ import { getFileDurationMs, runFfmpeg } from "./assembly";
 
 /** What the render intended for the bookends, plus the measured speech end. */
 export interface BookendExpectation {
-  introEnabled: boolean;
+  /** The render REQUIRES an audible intro (enabled, non-clean, and the resolved
+   *  configuration intended one). A required intro that is not placed OR not
+   *  audible FAILS. */
+  introRequired: boolean;
   /** An intro clip was actually placed on the timeline. */
   introPlaced: boolean;
   introDurationMs: number | null;
-  outroEnabled: boolean;
+  /** Stage-specific safe reason to report if a REQUIRED intro was never placed
+   *  (resolution/genre/load/execute drop). */
+  introAbsenceReason?: string;
+  /** The render REQUIRES an audible outro (see introRequired). */
+  outroRequired: boolean;
   /** An outro clip was actually placed on the timeline. */
   outroPlaced: boolean;
   /** outroClip.startMs (where the outro begins, usually just under the sign-off). */
   outroStartMs: number | null;
   outroDurationMs: number | null;
+  /** Stage-specific safe reason to report if a REQUIRED outro was never placed. */
+  outroAbsenceReason?: string;
   /** Max end (ms) of the dialogue (+highlight) clips — the last spoken word. */
   speechEndMs: number;
   /** RMS (dB) above which a window counts as real audio, not the room-tone
    *  floor. The foreground carries continuous pink-noise room tone near
    *  -58 dB; a real mastered bookend sits far above this. Default -45. */
   silenceThresholdDb?: number;
-  /** Minimum tail (ms) beyond the last spoken word an enabled+placed outro must
+  /** Minimum tail (ms) beyond the last spoken word a required+placed outro must
    *  add. Default 300. */
   minOutroTailMs?: number;
   /** Slack (ms) for the truncation check. Default 300. */
   truncationToleranceMs?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Requirement resolution: is a bookend REQUIRED for this render, independent of
+// whether one survived to a placed clip? This is what turns "an enabled outro
+// silently vanished during resolution / genre gate / loading / execution" into
+// a hard failure instead of a passing "honest skip". The frozen profile is the
+// source of truth for a snapshot episode; the legacy/system path uses the
+// configured theme id / env fallback, and treats "enabled but nothing
+// configured" as required (a misconfiguration that must fail, not ship mute).
+// ---------------------------------------------------------------------------
+
+export type BookendKind = "intro" | "outro";
+
+export interface BookendRequirementInput {
+  kind: BookendKind;
+  /** style === "clean". */
+  clean: boolean;
+  /** includeIntro / includeOutro (the render-level enable toggle). */
+  enabled: boolean;
+  hasFrozenProfile: boolean;
+  /** frozenProfile.intro?.assetId ?? null (or outro). */
+  frozenRefAssetId: string | null;
+  /** frozenProfile.excluded entry reason for this role, or null. A present
+   *  reason means the bookend was configured/enabled but dropped at profile
+   *  resolution (rights/missing/kind) — still required, and must fail. */
+  frozenExcludedReason: string | null;
+  /** Legacy/system path: the configured SoundDesignConfig theme id, or null. */
+  legacyConfiguredAssetId: string | null;
+  /** Legacy/system path: an AUDIO_INTRO_URL / AUDIO_OUTRO_URL env fallback set. */
+  legacyEnvConfigured: boolean;
+}
+
+export interface BookendRequirement {
+  required: boolean;
+  assetId: string | null;
+  code:
+    | "clean"
+    | "disabled"
+    | "profile_no_bookend"
+    | "frozen_asset"
+    | "excluded_at_resolution"
+    | "legacy_configured"
+    | "legacy_unconfigured";
+  excludedReason: string | null;
+}
+
+export function resolveBookendRequirement(i: BookendRequirementInput): BookendRequirement {
+  if (i.clean) return { required: false, assetId: null, code: "clean", excludedReason: null };
+  if (!i.enabled) return { required: false, assetId: null, code: "disabled", excludedReason: null };
+  if (i.hasFrozenProfile) {
+    // The frozen profile is authoritative for a snapshot episode.
+    if (i.frozenRefAssetId) return { required: true, assetId: i.frozenRefAssetId, code: "frozen_asset", excludedReason: null };
+    if (i.frozenExcludedReason) return { required: true, assetId: null, code: "excluded_at_resolution", excludedReason: i.frozenExcludedReason };
+    // The profile resolved to no such bookend and recorded no exclusion — the
+    // episode was permitted none (disabled/unassigned). Not required.
+    return { required: false, assetId: null, code: "profile_no_bookend", excludedReason: null };
+  }
+  // Legacy / system default path.
+  if (i.legacyConfiguredAssetId || i.legacyEnvConfigured) {
+    return { required: true, assetId: i.legacyConfiguredAssetId, code: "legacy_configured", excludedReason: null };
+  }
+  // Enabled + non-clean + nothing configured anywhere = a misconfiguration; a
+  // non-clean render that was asked for a bookend must not ship without one.
+  return { required: true, assetId: null, code: "legacy_unconfigured", excludedReason: null };
+}
+
+export interface BookendAbsenceContext {
+  req: BookendRequirement;
+  /** Planner path: the plan carries a cue of this kind (asset or env). null on
+   *  the legacy (no-plan) path. false means the planner emitted no such cue —
+   *  the strongest signal of a theme-genre-gate rejection. */
+  planHasCue: boolean | null;
+  /** The intended asset id is in the loaded asset set. null when unknown. */
+  assetLoaded: boolean | null;
+  /** A safe warning naming this asset (load/rights/hash), already scrubbed. */
+  loadWarning: string | null;
+  /** How many themes the planner genre-excluded this render. */
+  themesExcluded: number;
+}
+
+/** A safe, stage-specific reason a REQUIRED bookend never became a clip. */
+export function describeBookendAbsence(kind: BookendKind, ctx: BookendAbsenceContext): string {
+  const { req } = ctx;
+  if (req.code === "excluded_at_resolution") {
+    return `${kind} was configured but excluded at profile resolution: ${req.excludedReason ?? "rights/compatibility"}`;
+  }
+  if (req.code === "legacy_unconfigured") {
+    return `${kind} is enabled for a non-clean render but no ${kind} asset is configured`;
+  }
+  if (ctx.planHasCue === false) {
+    const extra = ctx.themesExcluded > 0 ? ` (${ctx.themesExcluded} theme(s) genre-excluded)` : "";
+    return `${kind} produced no cue - excluded by the theme genre gate or not planned${extra}`;
+  }
+  if (req.assetId && ctx.assetLoaded === false) {
+    return ctx.loadWarning
+      ? `${kind} asset failed to load: ${ctx.loadWarning}`
+      : `${kind} asset was not loaded (missing object / decode / hash mismatch)`;
+  }
+  return `${kind} was resolved but not placed on the final timeline (execution/mix drop)`;
 }
 
 export interface BookendCheck {
@@ -117,12 +226,15 @@ export async function verifyBookends(
   let outroVerified = false;
 
   // --- Intro ---------------------------------------------------------------
-  if (!exp.introEnabled) {
-    checks.push({ name: "intro", status: "skip", detail: "intro not enabled" });
+  if (!exp.introRequired) {
+    checks.push({ name: "intro", status: "skip", detail: "intro not required (disabled / clean / profile has none)" });
   } else if (!exp.introPlaced || !exp.introDurationMs) {
-    // Enabled but no asset resolved onto the timeline: an honest skip that the
-    // stitcher already warned about — not a rendered-waveform failure.
-    checks.push({ name: "intro", status: "skip", detail: "intro enabled but no asset was placed (honest skip)" });
+    // REQUIRED but never became a clip — it was dropped at resolution, the genre
+    // gate, loading, or execution. That must FAIL the render (not "honest skip"),
+    // so a non-clean episode can never ship missing an intro it was meant to have.
+    const reason = exp.introAbsenceReason || "Required intro is missing from the render (resolution/genre/load/execute drop).";
+    failures.push(reason);
+    checks.push({ name: "intro", status: "fail", detail: reason });
   } else {
     // The first ~1.5s is intro-only (dialogue starts under the intro's fade
     // tail). Measure that head window.
@@ -139,10 +251,15 @@ export async function verifyBookends(
   }
 
   // --- Outro ---------------------------------------------------------------
-  if (!exp.outroEnabled) {
-    checks.push({ name: "outro", status: "skip", detail: "outro not enabled" });
+  if (!exp.outroRequired) {
+    checks.push({ name: "outro", status: "skip", detail: "outro not required (disabled / clean / profile has none)" });
   } else if (!exp.outroPlaced || !exp.outroDurationMs) {
-    checks.push({ name: "outro", status: "skip", detail: "outro enabled but no asset was placed (honest skip)" });
+    // REQUIRED but never became a clip (unconfigured / genre-rejected / rights-
+    // excluded / missing from plan / not loaded / not executed). FAIL — this is
+    // the "some finished episodes have no audible outro" defect.
+    const reason = exp.outroAbsenceReason || "Required outro is missing from the render (resolution/genre/load/execute drop).";
+    failures.push(reason);
+    checks.push({ name: "outro", status: "fail", detail: reason });
   } else {
     // 1. Not truncated: the master must reach the planned end of the outro clip.
     const plannedOutroEndMs = (exp.outroStartMs ?? speechEndMs) + exp.outroDurationMs;

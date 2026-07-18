@@ -165,13 +165,20 @@ Three correctness guarantees sit on top of the mix engine:
   v3 episode's identity.) The resolver is read-only — snapshot bytes and
   fingerprints for v1/v2/v3 are unchanged.
 - **Post-render bookend verification.** `verifyBookends()`
-  (`src/lib/audio/bookendQa.ts`) measures the finished master with ffmpeg. When
-  a non-clean episode had an intro/outro enabled AND a bookend clip was actually
-  placed, the master must contain an audible head/tail and must not be truncated
-  before the outro completes. An enabled+placed outro that is silent, missing,
-  or clipped in the rendered waveform FAILS the render (safe reason recorded,
-  prior master preserved) — it is never shipped as a "successful" render. An
-  intentionally clean/disabled/no-asset bookend is skipped, not failed.
+  (`src/lib/audio/bookendQa.ts`) measures the finished master with ffmpeg. For a
+  non-clean episode, an intro/outro that the resolved configuration REQUIRES
+  must be resolved, planned, loaded, executed, AND measurably audible. A
+  required bookend that vanished at ANY stage — profile resolution, the theme
+  genre gate, plan creation, asset loading, timeline execution, or mastering
+  (silent/clipped/truncated) — FAILS the render with a stage-specific safe
+  reason (recorded on the render record, prior master preserved, no failed
+  output promoted, no failed cue recorded as usage). "Required" is decided by
+  `resolveBookendRequirement()`: the frozen profile is authoritative for a
+  snapshot episode (an asset ref OR an `excluded` entry means required; a
+  profile that resolved to none is not); the legacy/system path treats an
+  enabled non-clean bookend with nothing configured as required (a
+  misconfiguration that must fail, not ship mute). Disabled and clean bookends
+  are skipped, not failed.
 - **Safe render diagnostics.** `buildRenderDiagnostics()`
   (`src/lib/audio/renderDiagnostics.ts`) writes a safe cue-sheet report to
   `EpisodeAudioRender.diagnostics` (additive nullable column) on both success

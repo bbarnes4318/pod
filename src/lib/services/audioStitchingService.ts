@@ -15,7 +15,7 @@ import {
   standardizeClipToWav,
 } from "@/lib/audio/assembly";
 import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
-import { verifyBookends, type BookendVerification } from "@/lib/audio/bookendQa";
+import { verifyBookends, resolveBookendRequirement, describeBookendAbsence, type BookendVerification, type BookendKind } from "@/lib/audio/bookendQa";
 import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import {
   LoadedAsset,
@@ -1271,25 +1271,64 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const finalDurationSeconds = (await getFileDurationMs(ffprobePath, finalOutputPath)) / 1000;
 
     // 10c. POST-RENDER BOOKEND VERIFICATION. A cue row is not proof: verify the
-    // actual mastered waveform. When a non-clean episode had intro/outro enabled
-    // AND a bookend clip was placed, the master must contain audible, complete
-    // bookends. An enabled+placed outro that is silent, missing, or clipped in
-    // the rendered file FAILS the render with an explicit safe reason (the throw
-    // lands in the catch below, the prior master is preserved) — never shipped
-    // as a "successful" render. An intentionally clean/disabled/no-asset bookend
-    // is skipped, not failed.
-    const introEnabledForQa = style !== "clean" && includeIntro;
-    const outroEnabledForQa = style !== "clean" && includeOutro;
+    // actual mastered waveform. For a non-clean episode, an intro/outro that the
+    // resolved configuration REQUIRES must be resolved, planned, loaded,
+    // executed, AND measurably audible. A required bookend that vanished at ANY
+    // stage — profile resolution, the theme genre gate, plan creation, asset
+    // loading, timeline execution, or mastering (silent/clipped) — FAILS the
+    // render with an explicit, stage-specific safe reason. The throw lands in the
+    // catch below (before upload / success-close / usage recording), so the prior
+    // master stays active, no failed output is promoted, and no failed cue is
+    // recorded as usage. A disabled/clean/profile-has-none bookend is skipped.
+    const bookendRequirement = (kind: BookendKind) =>
+      resolveBookendRequirement({
+        kind,
+        clean: style === "clean",
+        enabled: kind === "intro" ? includeIntro : includeOutro,
+        hasFrozenProfile: !!frozenProfile,
+        frozenRefAssetId: (kind === "intro" ? frozenProfile?.intro : frozenProfile?.outro)?.assetId ?? null,
+        frozenExcludedReason: frozenProfile?.excluded.find((e) => e.role === kind)?.reason ?? null,
+        legacyConfiguredAssetId: frozenProfile
+          ? null
+          : (kind === "intro" ? sdConfig?.themeIntroAssetId : sdConfig?.themeOutroAssetId) ?? null,
+        legacyEnvConfigured:
+          !frozenProfile && !!(kind === "intro" ? process.env.AUDIO_INTRO_URL : process.env.AUDIO_OUTRO_URL),
+      });
+    const introReq = bookendRequirement("intro");
+    const outroReq = bookendRequirement("outro");
+
+    // Stage-specific absence reason (only used when required && not placed).
+    const safeWarningFor = (name: string | null): string | null => {
+      if (!name) return null;
+      const w = soundWarnings.find(
+        (msg) => /failed to load|hash mismatch|rights invalid|skipped/i.test(msg) && msg.includes(name)
+      );
+      return w ? scrubSafeText(w) : null;
+    };
+    const absenceReason = (kind: BookendKind, req: ReturnType<typeof resolveBookendRequirement>): string => {
+      const frozenName = (kind === "intro" ? frozenProfile?.intro : frozenProfile?.outro)?.name ?? null;
+      const planName = productionPlan?.cues.find((c) => c.type === kind)?.assetName ?? null;
+      return describeBookendAbsence(kind, {
+        req,
+        planHasCue: productionPlan ? productionPlan.cues.some((c) => c.type === kind) : null,
+        assetLoaded: req.assetId ? assetSet.byId.has(req.assetId) : null,
+        loadWarning: safeWarningFor(frozenName ?? planName),
+        themesExcluded: (productionPlan?.stats as { themesExcluded?: number } | undefined)?.themesExcluded ?? 0,
+      });
+    };
+
     let bookendResult: BookendVerification | null = null;
     try {
       bookendResult = await verifyBookends(ffmpegPath, ffprobePath, finalOutputPath, {
-        introEnabled: introEnabledForQa,
+        introRequired: introReq.required,
         introPlaced: !!introClip,
         introDurationMs: introClip?.durationMs ?? null,
-        outroEnabled: outroEnabledForQa,
+        introAbsenceReason: absenceReason("intro", introReq),
+        outroRequired: outroReq.required,
         outroPlaced: !!outroClip,
         outroStartMs: outroClip?.startMs ?? null,
         outroDurationMs: outroClip?.durationMs ?? null,
+        outroAbsenceReason: absenceReason("outro", outroReq),
         speechEndMs,
       });
       for (const c of bookendResult.checks) {
