@@ -4,7 +4,9 @@ import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { validateScriptContent, sanitizeScriptContent, ValidationSummary } from "@/lib/services/scriptValidation";
-import { resolveEpisodeHosts } from "@/lib/services/hostCasting";
+import { resolveEpisodeCast } from "@/lib/services/hostCasting";
+import { getShowFormat } from "@/lib/formats/showFormatRegistry";
+import { approvalFloorPct } from "@/lib/formats/formatScriptValidation";
 
 // Helper to compile episode context
 async function getEpisodeContextForScript(script: any) {
@@ -27,9 +29,13 @@ async function getEpisodeContextForScript(script: any) {
     throw new Error(`Episode not found for script ID ${script.id}.`);
   }
 
-  // Resolve whichever two hosts this episode was cast with (falls back to the
-  // two most-intense active hosts). No hardcoded names.
-  const { hostA, hostB } = await resolveEpisodeHosts({ hostIds: ep.hostIds });
+  // Resolve the FULL format-driven cast (Prompt 7). two_host_debate delegates
+  // to the legacy pair resolver — existing episodes cast identically.
+  const resolvedCast = await resolveEpisodeCast({ hostIds: ep.hostIds, formatId: (ep as { formatId?: string }).formatId });
+  const cast = resolvedCast.members.map((m) => ({ id: m.host.id, name: m.host.name }));
+  const format = getShowFormat(resolvedCast.formatId);
+  const hostA = cast[0];
+  const hostB = cast[1] ?? cast[0];
 
   const allowedSourceRefs = new Set<string>();
   const unsafeClaims: string[] = [];
@@ -52,7 +58,7 @@ async function getEpisodeContextForScript(script: any) {
     }
   }
 
-  return { allowedSourceRefs, hostA, hostB, unsafeClaims, episode: ep };
+  return { allowedSourceRefs, hostA, hostB, cast, format, unsafeClaims, episode: ep };
 }
 
 // Helper to determine Episode status (checks for another approved script version)
@@ -147,7 +153,7 @@ export async function fetchScriptForReview(scriptId: string) {
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
-    const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
+    const { allowedSourceRefs, hostA, hostB, cast, format, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
     // Group allowed source refs for the evidence panel
     const evidencePanelItems: any[] = [];
@@ -222,17 +228,13 @@ export async function saveScriptEdits(scriptId: string, updatedContent: any) {
       throw new Error("Edits cannot be saved directly to approved or rejected scripts. Use Save as New Version instead.");
     }
 
-    const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
+    const { allowedSourceRefs, hostA, hostB, cast, format, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
     // Sanitize script content (remove invalid refs, normalize indices, speakerHostId alignment)
-    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, {
-      allowedSourceRefs,
-      hostA,
-      hostB,
-    });
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, { allowedSourceRefs, cast });
 
     // Validate sanitized content
-    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, cast, format, unsafeClaims });
 
     // Store cleaned counts
     summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
@@ -296,7 +298,7 @@ export async function saveScriptAsNewVersion(scriptId: string, updatedContent: a
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
-    const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
+    const { allowedSourceRefs, hostA, hostB, cast, format, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
     // Find the latest version number
     const maxScript = await db.script.findFirst({
@@ -306,14 +308,10 @@ export async function saveScriptAsNewVersion(scriptId: string, updatedContent: a
     const nextVersion = maxScript ? maxScript.version + 1 : 1;
 
     // Sanitize script content
-    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, {
-      allowedSourceRefs,
-      hostA,
-      hostB,
-    });
+    const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(updatedContent, { allowedSourceRefs, cast });
 
     // Validate sanitized content
-    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, cast, format, unsafeClaims });
 
     summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
     sanitizedContent.safety = summary;
@@ -379,17 +377,16 @@ export async function validateScript(scriptId: string, optionalContent?: any) {
       throw new Error(`Script with ID ${scriptId} not found.`);
     }
 
-    const { allowedSourceRefs, hostA, hostB, unsafeClaims } = await getEpisodeContextForScript(script);
+    const { allowedSourceRefs, cast, format, unsafeClaims } = await getEpisodeContextForScript(script);
     const rawContent = optionalContent || script.content;
 
     // Sanitize first
     const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(rawContent, {
       allowedSourceRefs,
-      hostA,
-      hostB,
+      cast,
     });
 
-    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, cast, format, unsafeClaims });
     summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
 
     // Write JobLog
@@ -435,13 +432,12 @@ export async function approveScript(scriptId: string) {
       throw new Error(`Only draft or needs_revision scripts can be approved. Current status: ${script.status}`);
     }
 
-    const { allowedSourceRefs, hostA, hostB, unsafeClaims, episode } = await getEpisodeContextForScript(script);
+    const { allowedSourceRefs, hostA, hostB, cast, format, unsafeClaims, episode } = await getEpisodeContextForScript(script);
 
     // Sanitize script content prior to approval validations
     const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent(script.content, {
       allowedSourceRefs,
-      hostA,
-      hostB,
+      cast,
     });
 
     // Approving a script IS the human review. Clear any per-line
@@ -462,7 +458,7 @@ export async function approveScript(scriptId: string) {
     }
 
     // Validate sanitized content
-    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, hostA, hostB, unsafeClaims });
+    const summary = validateScriptContent(sanitizedContent, { allowedSourceRefs, cast, format, unsafeClaims });
     summary.cleanedEvidenceRefCount = cleanedEvidenceRefCount;
     sanitizedContent.safety = summary;
 
@@ -498,11 +494,22 @@ export async function approveScript(scriptId: string) {
       throw new Error(`Cannot approve script: total lines count is ${summary.totalLineCount}, which is under the minimum of 40.`);
     }
 
-    // hostLineShare is keyed by the episode's real host names — check every
-    // cast host generically rather than assuming specific names.
-    const lineShares = Object.values(summary.hostLineShare ?? {});
-    if (lineShares.length < 2 || lineShares.some((v) => v < 25)) {
-      throw new Error("Cannot approve script: dialogue host split is unbalanced. Each must have >= 25% line share.");
+    // hostLineShare is keyed by the episode's real host names. Per-chair
+    // approval floors come from the SHOW FORMAT (Prompt 7): the two-host
+    // debate keeps its historical 25% per chair; a solo briefing has one
+    // voice and no split to balance.
+    {
+      const minSeats = format?.speakerMin ?? 2;
+      const shares = cast.map((h, seat) => ({
+        name: h.name,
+        pct: summary.hostLineShare[h.name] ?? 0,
+        floor: format ? approvalFloorPct(format, seat) : 25,
+      }));
+      if (shares.length < minSeats || shares.some((s) => s.pct < s.floor)) {
+        throw new Error(
+          `Cannot approve script: dialogue split is unbalanced for this show format (${shares.map((s) => `${s.name} ${s.pct}% [floor ${s.floor}%]`).join(", ")}).`
+        );
+      }
     }
 
     if (!plainText || !plainText.trim()) {

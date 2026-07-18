@@ -58,7 +58,10 @@ export interface ScriptBuildResult {
 }
 
 import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./claimLanguage";
-import { resolveEpisodeHosts } from "./hostCasting";
+import { resolveEpisodeCast, makeCastMatchers } from "./hostCasting";
+import { getShowFormat } from "../formats/showFormatRegistry";
+import { formatPromptPieces, castPersonaBlocks } from "../formats/formatScriptPrompts";
+import { castBalanceGateMessage } from "../formats/formatScriptValidation";
 import type { AiHost } from "@prisma/client";
 
 // The SHARED list — this was three identical copies, which is precisely how
@@ -135,24 +138,29 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     console.warn(`[ScriptService] ${gate.gateMessage} (CONTENT_GATE_MODE=warn — proceeding)`);
   }
 
-  // 3. Cast the hosts. The episode's saved hostIds (from its podcast config
-  // or standalone build) win; the classic duo is the fallback. A debate
-  // needs exactly two voices — a single selected host gets paired with the
-  // best available sparring partner.
+  // 3. Cast via the FORMAT engine (Prompt 7). The episode's saved hostIds
+  // (seat order) win; the roster fills required chairs. two_host_debate
+  // delegates to the legacy pair resolver, so existing shows cast identically.
   const savedHostIds: string[] = Array.isArray((ep as any).hostIds) ? ((ep as any).hostIds as string[]) : [];
-  if (savedHostIds.length > 2) {
-    result.reasons.push(`Host casting: ${savedHostIds.length} hosts pinned; the debate format uses the first two.`);
+  const episodeFormatId: string = (ep as { formatId?: string }).formatId || "two_host_debate";
+  const format = getShowFormat(episodeFormatId) ?? getShowFormat("two_host_debate")!;
+  if (savedHostIds.length > format.speakerMax) {
+    result.reasons.push(`Host casting: ${savedHostIds.length} hosts pinned; the ${format.displayName} format uses the first ${format.speakerMax}.`);
   }
-  let hostA: AiHost;
-  let hostB: AiHost;
+  let cast: AiHost[];
   try {
-    ({ hostA, hostB } = await resolveEpisodeHosts({ hostIds: savedHostIds }));
+    const resolvedCast = await resolveEpisodeCast({ hostIds: savedHostIds, formatId: format.id });
+    cast = resolvedCast.members.map((m) => m.host);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Two active host profiles are required to generate a debate script.";
+    const msg = e instanceof Error ? e.message : "Active host profiles are required to generate a script.";
     result.reasons.push(msg);
     throw new Error(msg);
   }
-  result.reasons.push(`Host casting: ${hostA.name} vs ${hostB.name}${savedHostIds.length > 0 ? " (episode cast)" : " (default: most-intense active pair)"}.`);
+  const speakers = makeCastMatchers(cast);
+  // Legacy aliases: the debate prompt/stance sections address the two chairs.
+  const hostA: AiHost = cast[0];
+  const hostB: AiHost = cast[1] ?? cast[0];
+  result.reasons.push(`Host casting (${format.displayName}): ${cast.map((h) => h.name).join(" / ")}${savedHostIds.length > 0 ? " (episode cast)" : " (auto-cast from the active roster)"}.`);
 
   // Every host speaks through its own profile fields (worldview, speakingStyle,
   // catchphrases, argument patterns) — pulled dynamically from the AiHost record
@@ -231,9 +239,13 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     if (richBrief.strongestDebateQuestion) richLines.push(`Strongest Debate Question: ${richBrief.strongestDebateQuestion}`);
     if (richBrief.contrarianAngle) richLines.push(`Contrarian Angle (use it): ${richBrief.contrarianAngle}`);
     if (richBrief.suggestedHostTake) richLines.push(`Suggested Host Take: ${richBrief.suggestedHostTake}`);
+    // The research brief's two prepared stances are DEBATE material. For the
+    // debate format they bind to the two chairs exactly as before; every other
+    // format receives them as unbound pro/con ammunition.
     richLines.push(
-      `${hostA.name} Debate Stance: ${b.argumentForHostA}`,
-      `${hostB.name} Debate Stance: ${b.argumentForHostB}`,
+      ...(format.id === "two_host_debate"
+        ? [`${hostA.name} Debate Stance: ${b.argumentForHostA}`, `${hostB.name} Debate Stance: ${b.argumentForHostB}`]
+        : [`Case FOR the take: ${b.argumentForHostA}`, `Case AGAINST the take: ${b.argumentForHostB}`]),
       `Key Grounded Facts: ${JSON.stringify(
         Array.isArray(richBrief.keyFactsContext) && richBrief.keyFactsContext.length > 0
           ? richBrief.keyFactsContext
@@ -266,30 +278,14 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     samples: evidenceTexts.slice(0, 80),
   };
 
-  // 7. Formulate system and user prompts
-  const systemPrompt = `You are the head writer for Take Machine, a two-host sports debate podcast. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
+  // 7. Formulate system and user prompts. Assembled from FORMAT pieces
+  // (Prompt 7): for two_host_debate every piece is the exact legacy text, so
+  // the assembled prompt is unchanged; other formats supply their own
+  // descriptor, persona blocks, and dynamics contract.
+  const pieces = formatPromptPieces(format, cast);
+  const systemPrompt = `You are the head writer for Take Machine, ${pieces.showDescriptor}. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
 
-Host 1: ${hostA.name} (ID: ${hostA.id})
-- Role: ${hostA.role}
-- Worldview: ${hostA.worldview}
-- Speaking Style: ${hostA.speakingStyle}
-- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(hostA.catchphrases)}
-- Likes: ${JSON.stringify(hostA.likes)}
-- Dislikes: ${JSON.stringify(hostA.dislikes)}
-- Argument Patterns: ${JSON.stringify(hostA.argumentPatterns)}
-- Banned Phrases: ${JSON.stringify(hostA.bannedPhrases)}
-- Intensity Level: ${hostA.intensityLevel}/10
-
-Host 2: ${hostB.name} (ID: ${hostB.id})
-- Role: ${hostB.role}
-- Worldview: ${hostB.worldview}
-- Speaking Style: ${hostB.speakingStyle}
-- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(hostB.catchphrases)}
-- Likes: ${JSON.stringify(hostB.likes)}
-- Dislikes: ${JSON.stringify(hostB.dislikes)}
-- Argument Patterns: ${JSON.stringify(hostB.argumentPatterns)}
-- Banned Phrases: ${JSON.stringify(hostB.bannedPhrases)}
-- Intensity Level: ${hostB.intensityLevel}/10
+${castPersonaBlocks(format, cast)}
 
 HOW REAL PODCAST SPEECH WORKS — follow all of these:
 1. Contractions always: "he's", "don't", "that's", "would've". Nobody says "he is not clutch" out loud.
@@ -314,12 +310,7 @@ EPISODE SHAPE:
 - transition: one or two lines, conversational ("Alright, next thing. And this one's gonna make you mad.").
 - closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
 
-CHEMISTRY CONTRACT (the engine of the show):
-- BOTH hosts are true believers with their OWN agenda, and they collide. Each argues from their own Worldview and Argument Patterns above, each trying to WIN — neither is the straight man, neither merely reacts. ${hostB.name} drives just as hard as ${hostA.name}: he presses attacks, goes on the offensive, overreaches, and gets heated when his worldview is insulted — he can be wrong, and he does NOT just absorb ${hostA.name}'s swings and calmly deflate them. Give ${hostB.name} a stake he defends and pushes, drawn from his own worldview (a "the public is late, emotional, and wrong" markets host ATTACKS the emotional take on its own terms — he doesn't merely fact-check it from the sidelines).
-- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates — heated, incredulous, raising their voice, pressing the attack. Both hosts spend time in the high-energy tones, not just one.
-- Concessions are earned, not scheduled: a host concedes only when genuinely cornered, grudgingly, and the other pounces — but no one is required to concede, and stubbornly refusing to give up an obvious point is itself in character.
-- They know each other. Reference shared history when it lands ("You did this exact thing during the playoffs").
-- HUMOR IS ATTITUDE, NOT MATERIAL. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny is the delivery and the disdain, not a bit you insert on cue.
+${pieces.dynamicsContract}${pieces.extraSpeechRules}
 
 GROUNDING — THE ONE UNBREAKABLE RULE (this outranks every "be specific" instruction below):
 - Every number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come from the supplied evidence. If it is not in the evidence, it does not exist: do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.
@@ -354,7 +345,7 @@ Unsafe claims (DO NOT USE AS FACTS OR TRUTHS):
 ${unsafeClaimsList.map((c) => `- "${c}"`).join("\n")}
 `;
 
-  const prompt = `Write a complete debate script for the episode: "${ep.title}"
+  const prompt = `Write a complete ${pieces.scriptNoun} for the episode: "${ep.title}"
 Style: ${scriptStyle}
 Target Duration: ${targetDuration} minutes
 Max Word Count: ${maxWords} words
@@ -383,7 +374,7 @@ You MUST return valid JSON matching this schema:
       "lines": [
         {
           "lineIndex": 0,
-          "speakerName": "${hostA.name}" | "${hostB.name}",
+          "speakerName": ${cast.map((h) => `"${h.name}"`).join(" | ")},
           "text": "spoken text here, optionally with inline audio tags like [laughs]",
           "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",
           "energy": "low" | "medium" | "high",
@@ -430,7 +421,7 @@ Delivery field meanings:
       version: nextVersion,
       temperature,
       maxTokens,
-      speakerNames: [hostA.name, hostB.name],
+      speakerNames: speakers.hostNames,
       log: (msg) => result.reasons.push(msg),
     });
   } catch (outlineErr: any) {
@@ -484,7 +475,7 @@ Delivery field meanings:
     const sv = await selfVerifyAndCorrect(llmResult.segments, {
       evidenceByRefId,
       fullEvidenceText: evidenceTexts.join("  "),
-      hostNames: [hostA.name, hostB.name],
+      hostNames: speakers.hostNames,
       maxAttempts: Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3,
       // ONE batched rewrite call per round for ALL flagged lines.
       rewrite: (items) => rewriteLinesForGrounding(verifyLlm, items, systemPrompt),
@@ -520,8 +511,7 @@ Delivery field meanings:
 
   const cleanSegments: any[] = [];
   let totalLinesCount = 0;
-  let maxVoltageLinesCount = 0;
-  let drLinebreakLinesCount = 0;
+  const linesByHostId = new Map<string, number>(cast.map((h) => [h.id, 0]));
 
   const unsupportedClaimsRemoved: string[] = [];
   const unsafeClaimsAvoided: string[] = [];
@@ -550,8 +540,8 @@ Delivery field meanings:
         throw new Error(`Line is missing required fields (speakerName, text, lineIndex, tone, isFactualClaim, or evidenceRefs).`);
       }
 
-      // Check speakerName
-      if (line.speakerName !== hostA.name && line.speakerName !== hostB.name) {
+      // Check speakerName against the FULL cast (format-driven, 1-4 voices).
+      if (!speakers.isValidSpeaker(line.speakerName)) {
         result.invalidSpeakerCount++;
         result.rejectedLineCount++;
         continue; // Reject line
@@ -636,8 +626,8 @@ Delivery field meanings:
         }
       }
 
-      // Attach speakerHostId
-      const speakerHostId = line.speakerName === hostA.name ? hostA.id : hostB.id;
+      // Attach speakerHostId via the cast matchers (never positional).
+      const speakerHostId = speakers.expectedHostId(line.speakerName)!;
 
       const delivery = normalizeDelivery(line);
 
@@ -656,9 +646,8 @@ Delivery field meanings:
         needsHumanReview: line.needsHumanReview || false,
       });
 
-      // Track distribution
-      if (line.speakerName === hostA.name) maxVoltageLinesCount++;
-      else drLinebreakLinesCount++;
+      // Track distribution per cast member
+      linesByHostId.set(speakerHostId, (linesByHostId.get(speakerHostId) ?? 0) + 1);
       totalLinesCount++;
     }
 
@@ -689,12 +678,11 @@ Delivery field meanings:
 
   // Recompute counts from the deduplicated script
   totalLinesCount = 0;
-  maxVoltageLinesCount = 0;
-  drLinebreakLinesCount = 0;
+  for (const id of linesByHostId.keys()) linesByHostId.set(id, 0);
   for (const seg of finalSegments) {
     for (const line of seg.lines) {
-      if (line.speakerName === hostA.name) maxVoltageLinesCount++;
-      else drLinebreakLinesCount++;
+      const id = speakers.expectedHostId(line.speakerName);
+      if (id) linesByHostId.set(id, (linesByHostId.get(id) ?? 0) + 1);
       totalLinesCount++;
     }
   }
@@ -759,15 +747,17 @@ Delivery field meanings:
     throw new Error(msg);
   }
 
-  const hostADistribution = maxVoltageLinesCount / totalLinesCount;
-  const hostBDistribution = drLinebreakLinesCount / totalLinesCount;
-  // Loosened from 25% to 20% so natural runs (a host holding the floor for two
-  // or three consecutive lines) don't trip the balance gate — a two-hander can
-  // legitimately run 80/20 across an episode without one host disappearing.
-  if (hostADistribution < 0.2 || hostBDistribution < 0.2) {
-    const msg = `Validation failed: Hosts line distribution is unbalanced. ${hostA.name}: ${Math.round(hostADistribution * 100)}%, ${hostB.name}: ${Math.round(hostBDistribution * 100)}%. Must be >= 20% for each.`;
-    result.reasons.push(msg);
-    throw new Error(msg);
+  // FORMAT-driven balance gate (Prompt 7): each chair's floor comes from the
+  // registry at 0.8x its approval floor — for two_host_debate that is the
+  // engine's historical 20% per chair, unchanged.
+  const balanceMsg = castBalanceGateMessage(
+    format,
+    cast.map((h, i) => ({ hostId: h.id, hostName: h.name, seatIndex: i, lineCount: linesByHostId.get(h.id) ?? 0 })),
+    totalLinesCount
+  );
+  if (balanceMsg) {
+    result.reasons.push(balanceMsg);
+    throw new Error(balanceMsg);
   }
 
   if (result.factualLineCount > 0) {

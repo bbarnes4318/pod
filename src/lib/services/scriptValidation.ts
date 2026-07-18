@@ -30,16 +30,26 @@ export function validateScriptContent(
   content: any,
   episodeContext: {
     allowedSourceRefs: Set<string>;
-    hostA: { id: string; name: string };
-    hostB: { id: string; name: string };
+    /** Legacy two-host context (still accepted). */
+    hostA?: { id: string; name: string };
+    hostB?: { id: string; name: string };
+    /** Prompt 7: the FULL episode cast in seat order (1-4). Supersedes
+     *  hostA/hostB when present. */
+    cast?: Array<{ id: string; name: string }>;
+    /** The episode's show format — supplies per-chair approval floors.
+     *  Absent = the two-host debate policy (25% each), the legacy behavior. */
+    format?: import("../formats/showFormatRegistry").ShowFormat | null;
     unsafeClaims: string[];
   }
 ): ValidationSummary {
-  // Whichever two hosts this episode was cast with — no hardcoded names.
-  const castByName = new Map<string, { id: string; name: string }>([
-    [episodeContext.hostA.name.toLowerCase(), episodeContext.hostA],
-    [episodeContext.hostB.name.toLowerCase(), episodeContext.hostB],
-  ]);
+  // Whichever hosts this episode was cast with — no hardcoded names.
+  const castList: Array<{ id: string; name: string }> =
+    episodeContext.cast && episodeContext.cast.length > 0
+      ? episodeContext.cast
+      : [episodeContext.hostA!, episodeContext.hostB!].filter(Boolean);
+  const castByName = new Map<string, { id: string; name: string }>(
+    castList.map((h) => [h.name.toLowerCase(), h])
+  );
   const hostForSpeaker = (speakerName: unknown) =>
     typeof speakerName === "string" ? castByName.get(speakerName.trim().toLowerCase()) : undefined;
 
@@ -56,7 +66,7 @@ export function validateScriptContent(
     cleanedEvidenceRefCount: content?.safety?.cleanedEvidenceRefCount || 0,
     invalidSpeakerCount: 0,
     totalLineCount: 0,
-    hostLineShare: { [episodeContext.hostA.name]: 0, [episodeContext.hostB.name]: 0 },
+    hostLineShare: Object.fromEntries(castList.map((h) => [h.name, 0])),
     lastValidatedAt: new Date().toISOString(),
     validationPassed: false,
     reasons: [],
@@ -73,10 +83,7 @@ export function validateScriptContent(
       return summary;
     }
 
-    const lineCountByHostId = new Map<string, number>([
-      [episodeContext.hostA.id, 0],
-      [episodeContext.hostB.id, 0],
-    ]);
+    const lineCountByHostId = new Map<string, number>(castList.map((h) => [h.id, 0]));
 
     for (let sIdx = 0; sIdx < content.segments.length; sIdx++) {
       const seg = content.segments[sIdx];
@@ -119,7 +126,7 @@ export function validateScriptContent(
         if (!speakerHost) {
           summary.invalidSpeakerCount++;
           summary.reasons.push(
-            `Line ${summary.totalLineCount}: Invalid speakerName '${line.speakerName}'. Only '${episodeContext.hostA.name}' and '${episodeContext.hostB.name}' allowed.`
+            `Line ${summary.totalLineCount}: Invalid speakerName '${line.speakerName}'. Allowed: ${castList.map((h) => `'${h.name}'`).join(", ")}.`
           );
           continue;
         }
@@ -225,11 +232,10 @@ export function validateScriptContent(
       summary.evidenceCoveragePercent = 100;
     }
 
-    const shareA = episodeContext.hostA.name;
-    const shareB = episodeContext.hostB.name;
     if (summary.totalLineCount > 0) {
-      summary.hostLineShare[shareA] = Math.round(((lineCountByHostId.get(episodeContext.hostA.id) ?? 0) / summary.totalLineCount) * 100);
-      summary.hostLineShare[shareB] = Math.round(((lineCountByHostId.get(episodeContext.hostB.id) ?? 0) / summary.totalLineCount) * 100);
+      for (const h of castList) {
+        summary.hostLineShare[h.name] = Math.round(((lineCountByHostId.get(h.id) ?? 0) / summary.totalLineCount) * 100);
+      }
     }
 
     // Strict validation assertions
@@ -237,8 +243,23 @@ export function validateScriptContent(
       summary.reasons.push(`Total lines count is ${summary.totalLineCount}, which is under the minimum of 40 lines.`);
     }
 
-    if (summary.hostLineShare[shareA] < 25 || summary.hostLineShare[shareB] < 25) {
-      summary.reasons.push(`Dialogue split is unbalanced. ${shareA} has ${summary.hostLineShare[shareA]}%, ${shareB} has ${summary.hostLineShare[shareB]}%. Each must have at least 25%.`);
+    // Per-chair approval floors from the show format (Prompt 7). Without a
+    // format the legacy two-host debate policy applies: 25% per chair.
+    {
+      const floors = castList.map((h, seat) => ({
+        name: h.name,
+        pct: summary.hostLineShare[h.name] ?? 0,
+        floor: episodeContext.format
+          ? episodeContext.format.roles[Math.min(seat, episodeContext.format.roles.length - 1)].minLineSharePct
+          : 25,
+      }));
+      const under = floors.filter((f) => f.pct < f.floor);
+      if (under.length > 0) {
+        summary.reasons.push(
+          `Dialogue split is unbalanced. ${floors.map((f) => `${f.name} has ${f.pct}%`).join(", ")}. ` +
+            under.map((f) => `${f.name} must have at least ${f.floor}%`).join("; ") + "."
+        );
+      }
     }
 
     if (summary.evidenceCoveragePercent < 90) {
@@ -257,14 +278,17 @@ export function sanitizeScriptContent(
   content: any,
   episodeContext: {
     allowedSourceRefs: Set<string>;
-    hostA: { id: string; name: string };
-    hostB: { id: string; name: string };
+    hostA?: { id: string; name: string };
+    hostB?: { id: string; name: string };
+    /** Prompt 7: the FULL cast (supersedes hostA/hostB when present). */
+    cast?: Array<{ id: string; name: string }>;
   }
 ): { sanitizedContent: any; cleanedEvidenceRefCount: number } {
-  const hostIdByName = new Map<string, string>([
-    [episodeContext.hostA.name.toLowerCase(), episodeContext.hostA.id],
-    [episodeContext.hostB.name.toLowerCase(), episodeContext.hostB.id],
-  ]);
+  const castList: Array<{ id: string; name: string }> =
+    episodeContext.cast && episodeContext.cast.length > 0
+      ? episodeContext.cast
+      : [episodeContext.hostA!, episodeContext.hostB!].filter(Boolean);
+  const hostIdByName = new Map<string, string>(castList.map((h) => [h.name.toLowerCase(), h.id]));
   let cleanedCount = 0;
 
   if (!content || typeof content !== "object") {

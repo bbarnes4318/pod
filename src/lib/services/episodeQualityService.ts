@@ -134,27 +134,44 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     byHost.set(l.speakerName, list);
   }
   const hosts = [...byHost.keys()].filter(Boolean);
+  // Prompt 7: distinctness runs over EVERY speaker pair (averaged), so a
+  // 3-4 voice script scores all its voices, not just the first two. A solo
+  // script has no pair to contrast — it earns a fixed solid score for the
+  // axis rather than an impossible one.
   let divergence = 0;
   let lengthContrast = 0;
+  let personalityScore: number;
+  let personalityDetail: string;
   if (hosts.length >= 2) {
-    const [a, b] = hosts;
-    const setA = new Set(byHost.get(a));
-    const setB = new Set(byHost.get(b));
-    let inter = 0;
-    for (const w of setA) if (setB.has(w)) inter++;
-    const union = setA.size + setB.size - inter;
-    divergence = union === 0 ? 0 : 1 - inter / union; // 1 = totally distinct vocab
     const avgLen = (host: string) => {
       const hostLines = lines.filter((l) => l.speakerName === host);
       return hostLines.reduce((x, l) => x + l.spoken.length, 0) / Math.max(1, hostLines.length);
     };
-    lengthContrast = Math.min(1, Math.abs(avgLen(a) - avgLen(b)) / 60);
+    let pairs = 0;
+    for (let i = 0; i < hosts.length; i++) {
+      for (let j = i + 1; j < hosts.length; j++) {
+        const setA = new Set(byHost.get(hosts[i]));
+        const setB = new Set(byHost.get(hosts[j]));
+        let inter = 0;
+        for (const w of setA) if (setB.has(w)) inter++;
+        const union = setA.size + setB.size - inter;
+        divergence += union === 0 ? 0 : 1 - inter / union;
+        lengthContrast += Math.min(1, Math.abs(avgLen(hosts[i]) - avgLen(hosts[j])) / 60);
+        pairs++;
+      }
+    }
+    divergence /= Math.max(1, pairs);
+    lengthContrast /= Math.max(1, pairs);
+    personalityScore = Math.round(Math.min(15, divergence * 14 + lengthContrast * 4));
+    personalityDetail = `vocab divergence ${(divergence * 100).toFixed(0)}%, line-length contrast ${(lengthContrast * 100).toFixed(0)}% (avg over ${pairs} pair${pairs === 1 ? "" : "s"})`;
+  } else {
+    personalityScore = 11; // solo: axis not applicable; a fair fixed grade
+    personalityDetail = "solo format — pairwise distinctness not applicable";
   }
-  const personalityScore = Math.round(Math.min(15, divergence * 14 + lengthContrast * 4));
   const personality: QualityAxis = {
     score: personalityScore,
     max: 15,
-    detail: `vocab divergence ${(divergence * 100).toFixed(0)}%, line-length contrast ${(lengthContrast * 100).toFixed(0)}%`,
+    detail: personalityDetail,
   };
 
   // ---- flow (15) ----
