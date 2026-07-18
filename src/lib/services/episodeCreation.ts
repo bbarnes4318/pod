@@ -30,7 +30,7 @@ import {
   scopedRecentUseCount,
 } from "./topicUsageService";
 import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
-import { buildEpisodeConfigurationSnapshot, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
+import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 
 /**
@@ -71,7 +71,12 @@ async function computeCreationSnapshot(
   const soundProfile = podcast
     ? await resolvePodcastSoundProfile(dbi, { id: podcast.id, ownerId: podcast.ownerId }, podcast.production)
     : await resolveStandaloneSoundProfile(dbi);
-  return buildEpisodeConfigurationSnapshot(resolved.resolved, new Date(), soundProfile);
+  return buildEpisodeConfigurationSnapshot(
+    resolved.resolved,
+    new Date(),
+    soundProfile,
+    snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? [])
+  );
 }
 
 /** Configurable cap on topics per episode. Env-tunable DOWN, but never above

@@ -19,17 +19,48 @@
 import crypto from "node:crypto";
 import { canonicalJson, type ResolvedEpisodeConfiguration, type Provenance } from "./podcastConfiguration";
 import type { FrozenSoundProfile } from "./podcastSoundProfile";
+import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
 
 // Version 2 (Prompt 6) adds the FROZEN SOUND PROFILE: the exact permitted
 // intro/outro/bed/stinger/reaction assets (ids + content hashes + rights state
 // at capture). Version-1 snapshots (Prompt 5 era) remain readable and are
 // NEVER rewritten; their sound behavior resolves through the legacy
 // compatibility path.
-export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 2 as const;
+// Version 3 (Prompt 7) adds the SHOW FORMAT + pinned cast: which registered
+// format (id + registry version) the episode was created under and which
+// hosts were pinned into which seats. An empty pinned cast is honest — the
+// remaining chairs are auto-cast at build time and recorded on the Script.
+// v1/v2 snapshots stay readable and byte-stable (keys added only when present).
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 3 as const;
+
+export interface SnapshotCast {
+  formatId: string;
+  formatVersion: number;
+  /** Pinned seats at creation time (may be empty = auto-cast at build). */
+  members: Array<{ hostId: string; role: string; orderIndex: number }>;
+}
+
+/** Build the v3 cast section from a format id + the pinned seat order. An
+ *  unknown format degrades to the default (defensive; the resolver already
+ *  rejected it upstream). */
+export function snapshotCastFor(formatId: string, pinnedHostIds: string[]): SnapshotCast {
+  const format = getShowFormat(formatId) ?? getShowFormat(DEFAULT_FORMAT_ID)!;
+  return {
+    formatId: format.id,
+    formatVersion: format.version,
+    members: pinnedHostIds.slice(0, format.speakerMax).map((hostId, i) => ({
+      hostId,
+      role: roleForSeat(format, i).id,
+      orderIndex: i,
+    })),
+  };
+}
 
 /** The persisted shape (stored in Episode.configurationSnapshot as JSON). */
 export interface EpisodeConfigurationSnapshot {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
+  /** Version 3+: the frozen show format + pinned cast. Absent on v1/v2. */
+  cast?: SnapshotCast;
   source: "podcast" | "standalone" | "legacy";
   /** ISO-8601 capture time. Present for provenance; EXCLUDED from the fingerprint. */
   capturedAt: string;
@@ -95,6 +126,9 @@ function editorialMaterial(s: EpisodeConfigurationSnapshot) {
     version: s.version,
     source: s.source,
     podcast: s.podcast,
+    // v3: the format + pinned cast is configuration material. Key added only
+    // when present so stored v1/v2 fingerprints stay byte-stable.
+    ...(s.cast !== undefined ? { cast: s.cast } : {}),
     editorial: {
       verticals: s.editorial.verticals,
       teams: s.editorial.teams,
@@ -136,10 +170,13 @@ export function buildEpisodeConfigurationSnapshot(
   /** The frozen sound profile (Prompt 6). Callers on the creation path always
    *  pass one; version-2 snapshots carry it, and the planner may only pick
    *  from it. */
-  soundProfile?: FrozenSoundProfile
+  soundProfile?: FrozenSoundProfile,
+  /** The frozen show format + pinned cast (Prompt 7, snapshot v3). */
+  cast?: SnapshotCast
 ): EpisodeSnapshotColumns {
   const snapshot: EpisodeConfigurationSnapshot = {
     version: EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
+    ...(cast ? { cast } : {}),
     source: resolved.source,
     capturedAt: capturedAt.toISOString(),
     podcast: resolved.identity
