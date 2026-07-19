@@ -20,6 +20,8 @@ import type { ActualDialogueTimeline } from "@/lib/audio/dialogueTimeline";
 import { type DetectedAudioGap, gapAllowsReaction, gapAllowsTransition } from "@/lib/audio/waveformAnalysis";
 import { buildProtectedRegions, cueCollidesWithProtected, type ProtectedAudioRegion, type ProtectedLineInput } from "@/lib/audio/protectedRegions";
 import { getFormatSoundPolicy, type FormatSoundPolicy, type IntroTimingStyle, type OutroTimingStyle } from "@/lib/audio/formatSoundPolicy";
+import type { SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
+import { selectDiverseCue, recordCuePlacement, newWithinEpisodeCueState, type WithinEpisodeCueState, type CrossEpisodeCueHistory, type CueDiversityDecision } from "@/lib/audio/soundCueDiversity";
 
 // v2 (PR 3 review): intro/outro treatments now carry explicit, timeline-aware
 // gain SEGMENTS that the executor renders verbatim (cold-open ducking, spoken
@@ -132,6 +134,10 @@ export interface PostTtsSoundDirectionPlan {
   failure: SoundDirectionFailure | null;
   warnings: SoundDirectionWarning[];
   decisions: SoundDirectionDecision[];
+  /** PR 4: per-cue diversity decisions (which asset, why). Diagnostic only —
+   *  EXCLUDED from the fingerprint (the chosen assets already live in
+   *  cuePlacements). Empty when the diversity engine was not active. */
+  cueDiversityDecisions?: CueDiversityDecision[];
   fingerprint: string;
 }
 
@@ -163,6 +169,15 @@ export interface PostTtsDirectorInput {
   includeIntro: boolean;
   includeOutro: boolean;
   protectedSpeechPaddingMs: number;
+  /** PR 4: when present (and mode soft/enforce), WHICH eligible cue asset is
+   *  placed becomes diversity-aware (within-episode + recent-catalog). Absent =
+   *  exact PR 3 behavior (weighted pick). Reproduce never sets this. */
+  diversity?: {
+    policy: SoundDiversityPolicy;
+    mode: "soft" | "enforce";
+    transitionHistory: CrossEpisodeCueHistory;
+    reactionHistory: CrossEpisodeCueHistory;
+  };
 }
 
 const REACTION_TONES = new Set(["amused", "heated", "surprised", "hype", "dismissive"]);
@@ -213,13 +228,25 @@ export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDir
   let transitions = 0, reactions = 0;
   const rand = mulberry32(fnv1a(input.seed + ":cues"));
 
+  // PR 4: within-episode cue state + per-cue diversity decisions (fresh renders
+  // only; `input.diversity` is unset on reproduce and in PR 3 tests).
+  const withinTransition = newWithinEpisodeCueState();
+  const withinReaction = newWithinEpisodeCueState();
+  const cueDiversityDecisions: CueDiversityDecision[] = [];
+  const divFor = (kind: "transition" | "reaction"): CueDiversityContext | undefined => input.diversity && {
+    policy: input.diversity.policy, mode: input.diversity.mode, seed: input.seed,
+    within: kind === "transition" ? withinTransition : withinReaction,
+    history: kind === "transition" ? input.diversity.transitionHistory : input.diversity.reactionHistory,
+    sink: cueDiversityDecisions,
+  };
+
   for (const gap of input.timeline.gaps) {
     const beforeLine = lineById.get(gap.lineIndex - 1);  // the line JUST SPOKEN (reaction subject)
     // TRANSITION: only at a real structural boundary (the new topic at gap.lineIndex),
     // with a transition-sized gap.
     const structural = gap.boundary === "segment" || gap.boundary === "topic";
     if (structural && gapAllowsTransition(gap.classification) && transitions < policy.maxTransitionsPerEpisode) {
-      const placed = placeCue("transition", input.frozenProfile.stingers, gap, gap.lineIndex, policy, identity, protectedRegions, rand, decisions);
+      const placed = placeCue("transition", input.frozenProfile.stingers, gap, gap.lineIndex, policy, identity, protectedRegions, rand, decisions, divFor("transition"));
       if (placed) { cuePlacements.push(placed); transitions++; }
     }
     // REACTION: reacts to the PRECEDING line; needs a semantic trigger (tone/
@@ -232,7 +259,7 @@ export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDir
       if (gap.overlapMs > 0 && !policy.allowReactionsDuringOverlap) {
         decisions.push({ subject: `reaction@line${subject}`, decision: "rejected", reason: "no reactions during overlap", lineIndex: subject });
       } else {
-        const placed = placeCue("reaction", input.frozenProfile.reactions, gap, subject, policy, identity, protectedRegions, rand, decisions);
+        const placed = placeCue("reaction", input.frozenProfile.reactions, gap, subject, policy, identity, protectedRegions, rand, decisions, divFor("reaction"));
         if (placed) { cuePlacements.push(placed); reactions++; }
       }
     }
@@ -246,7 +273,7 @@ export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDir
     formatId: input.formatId, directorVersion: POST_TTS_DIRECTOR_VERSION,
     dialogueDurationMs: input.timeline.dialogueDurationMs,
     protectedRegions, detectedGaps: input.timeline.gaps, cuePlacements, bookendPlan, bedPlan,
-    failure, warnings, decisions, fingerprint: "",
+    failure, warnings, decisions, ...(cueDiversityDecisions.length ? { cueDiversityDecisions } : {}), fingerprint: "",
   };
   plan.fingerprint = fingerprintDirectionPlan(plan);
   return plan;
@@ -267,6 +294,9 @@ function freeWindow(gap: DetectedAudioGap, regions: ProtectedAudioRegion[]): { s
 const MIN_FREE_TRANSITION_MS = 700;
 const MIN_FREE_REACTION_MS = 300;
 
+/** PR 4 within-episode cue-diversity context threaded into placeCue. */
+interface CueDiversityContext { policy: SoundDiversityPolicy; mode: "soft" | "enforce"; seed: string; within: WithinEpisodeCueState; history: CrossEpisodeCueHistory; sink: CueDiversityDecision[] }
+
 function placeCue(
   kind: "transition" | "reaction",
   pool: FrozenSoundAssetRef[],
@@ -276,7 +306,8 @@ function placeCue(
   identity: SonicIdentity,
   protectedRegions: ProtectedAudioRegion[],
   rand: () => number,
-  decisions: SoundDirectionDecision[]
+  decisions: SoundDirectionDecision[],
+  div?: CueDiversityContext
 ): DirectedCuePlacement | null {
   const tag = `${kind}@line${subjectLineIndex}`;
   const eligible = pool.filter((r) => familyPermitted(r.cueFamily ?? null, policy, identity).ok);
@@ -290,7 +321,20 @@ function placeCue(
   if (cueCollidesWithProtected(protectedRegions, win.startMs, win.endMs, "hard")) {
     decisions.push({ subject: tag, decision: "rejected", reason: "would collide with protected speech", lineIndex: subjectLineIndex }); return null;
   }
-  const asset = pickWeighted(rand, eligible);
+  // PR 4: diversity-aware pick among the eligible cues (within-episode + recent
+  // catalog). Absent `div` = exact PR 3 weighted pick. The eligible set is the
+  // SAME (family/format/identity already applied) — diversity only reorders it,
+  // never admits an incompatible family. A cue opportunity may be left empty.
+  let asset: FrozenSoundAssetRef | null;
+  if (div) {
+    const res = selectDiverseCue({ role: kind, lineIndex: subjectLineIndex, candidates: eligible, policy: div.policy, mode: div.mode, seed: div.seed, within: div.within, history: div.history });
+    div.sink.push(res.decision);
+    asset = res.selected;
+    if (!asset) { decisions.push({ subject: tag, decision: "held", reason: `diversity left the ${kind} empty (all options capped/cooled)`, lineIndex: subjectLineIndex }); return null; }
+    recordCuePlacement(div.within, asset.assetId, asset.cueFamily ?? null);
+  } else {
+    asset = pickWeighted(rand, eligible);
+  }
   if (!asset) { decisions.push({ subject: tag, decision: "rejected", reason: "no weighted candidate", lineIndex: subjectLineIndex }); return null; }
   decisions.push({ subject: tag, decision: "accepted", reason: `${asset.cueFamily ?? "cue"} in ${gap.classification} gap`, lineIndex: subjectLineIndex });
   return {
