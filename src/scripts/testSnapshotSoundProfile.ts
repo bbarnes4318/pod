@@ -196,7 +196,7 @@ async function main() {
     const v5b = snapshot(5, v4Profile({ selectionSeed: "seed-1" } as never));
     assert(fingerprintEpisodeSnapshot(v5a) === fingerprintEpisodeSnapshot(v5b), "v5 deterministic given identical material");
     assert(fingerprintEpisodeSnapshot(v5a) !== fingerprintEpisodeSnapshot(a), "v5 distinct from v4");
-    assert(EPISODE_CONFIGURATION_SNAPSHOT_VERSION === 5, "current snapshot version is 5");
+    assert(EPISODE_CONFIGURATION_SNAPSHOT_VERSION === 6, "current snapshot version is 6 (PR 4 diversity context)");
   });
 
   await check("Test 17: editing the podcast after creation does not alter the v4 episode's bookend requirements", () => {

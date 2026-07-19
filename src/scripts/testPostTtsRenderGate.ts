@@ -200,6 +200,29 @@ async function main() {
       assert(engine === "legacy_planner", `legacy engine (${engine})`);
       process.env.POST_TTS_SOUND_DIRECTION_ENABLED = "true";
     });
+
+    await check("PR4 v6: a FROZEN diversity context steers the render even with the ENGINE FLAG OFF (env cannot alter a frozen episode)", async () => {
+      const { buildFrozenDiversityContext } = await import("../lib/audio/soundDiversity");
+      const { resolveSoundDiversityPolicy } = await import("../lib/audio/soundDiversityPolicy");
+      const ep = await db.episode.findUnique({ where: { id: episode.id } });
+      const snap = ep!.configurationSnapshot as unknown as { production: { soundProfile: Parameters<typeof buildFrozenDiversityContext>[0] } };
+      const policy = resolveSoundDiversityPolicy();
+      const emptyHist = { scope: "podcast" as const, windowRequested: 6, windowUsed: 0, episodes: [], warnings: [], truncated: false };
+      // Freeze an ENFORCE context into the episode's v6 snapshot.
+      const built = buildFrozenDiversityContext(snap.production.soundProfile, { policy, mode: "enforce", history: emptyHist, seed: "frozen-seed", formatId: "solo_commentary", identity: snap.production.soundProfile.sonicIdentity });
+      const v6snap = { ...snap, version: 6, production: { ...snap.production, diversityContext: built.context } };
+      await db.episode.update({ where: { id: episode.id }, data: { configurationSnapshot: v6snap as object } });
+      // Turn the engine flag OFF — the frozen context must still win.
+      delete process.env.SOUND_DIVERSITY_ENGINE_ENABLED;
+      delete process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE;
+      const r = await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" });
+      assert(r.finalStatus === "completed", `frozen-context render completes (${r.finalStatus})`);
+      const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const div = (rr?.diagnostics as { postTts?: { diversity?: { renderMode?: string; contextSource?: string; diversityFingerprint?: string } } } | null)?.postTts?.diversity;
+      assert(div?.contextSource === "frozen", `used the FROZEN context (${div?.contextSource})`);
+      assert(div?.renderMode === "enforce", `frozen enforce mode wins over env-off (${div?.renderMode})`);
+      assert(div?.diversityFingerprint === built.context.fingerprint, "frozen diversity fingerprint carried through");
+    });
   } finally {
     await db.$disconnect().catch(() => {});
     await pg.stop().catch(() => {});

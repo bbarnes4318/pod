@@ -59,7 +59,11 @@ async function resolveCreationDiversity(
     : { kind: "system" };
   try {
     const history = await readDiversityHistory({ db: dbi, scope, windowEpisodes: policy.historyWindowEpisodes, systemHistoryEnabled: rollout.systemHistoryEnabled });
-    return { policy, mode: rollout.mode, history };
+    // Opt-in shared-system cross-podcast history (safe, shared-assets only).
+    const systemHistory = rollout.systemHistoryEnabled
+      ? await readDiversityHistory({ db: dbi, scope: { kind: "system" }, windowEpisodes: policy.historyWindowEpisodes, systemHistoryEnabled: true }).catch(() => undefined)
+      : undefined;
+    return { policy, mode: rollout.mode, history, systemHistory };
   } catch {
     // History unavailable -> record it, keep the plain selection (observe).
     return { policy, mode: "observe", history: { scope: scope.kind, windowRequested: policy.historyWindowEpisodes, windowUsed: 0, episodes: [], warnings: ["diversity_history_unavailable"], truncated: false } };

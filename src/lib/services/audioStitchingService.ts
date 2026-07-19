@@ -21,6 +21,7 @@ import { decidePlanningEngine } from "@/lib/audio/postTtsFlag";
 import { runPostTtsDirection, runPostTtsReproduce, type PostTtsBridgeInput } from "@/lib/audio/postTtsStitchBridge";
 import { resolveDiversityRollout } from "@/lib/audio/soundDiversityFlags";
 import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, type DiversityMode } from "@/lib/audio/soundDiversityPolicy";
+import type { FrozenDiversityContext } from "@/lib/audio/soundDiversity";
 import { readDiversityHistory, type DiversityHistoryDb } from "@/lib/services/diversityHistory";
 import { buildReproduceEnvelope, isStoredPostTtsPlan, validateStoredPlanForReproduce, type StoredPostTtsPlan, type ReproduceDialogueLine } from "@/lib/audio/postTtsReproduce";
 import type { PostTtsSoundDirectionPlan } from "@/lib/audio/postTtsSoundDirector";
@@ -683,6 +684,10 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // "stored_plan_reproduce" for a verbatim replay) + the plan to persist.
     let postTtsEngineLabel: string | null = null;
     let postTtsDiversityMode: DiversityMode = "off";
+    // Where the render's diversity context came from: "frozen" (the v6 snapshot),
+    // "current" (remix_current_podcast re-resolved), "frozen_absent" (engine on
+    // but no v6 context — legacy episode), or "none".
+    let postTtsDiversitySource: "frozen" | "current" | "frozen_absent" | "none" = "none";
     let postTtsStoredPlan: StoredPostTtsPlan | null = null;
     let postTtsExecutionSummary: { cueCount: number; rejectedCueCount: number; introTreatment: string | null; outroTreatment: string | null; bedPolicy: string | null; warnings: string[]; fallback: string } | null = null;
     let productionPlan: ProductionPlan | null = null;
@@ -1053,13 +1058,24 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       }
 
       // PR 4: within-episode cue diversity for a FRESH render. REPRODUCE ignores
-      // the rollout flags entirely (it replays the stored plan). Best-effort: a
-      // history read failure degrades to no cue diversity, never sinks the render.
+      // diversity entirely (it replays the stored plan). An INITIAL /
+      // remix_episode_profile render uses the FROZEN context from the snapshot
+      // (deterministic regardless of later env/history/policy). ONLY
+      // remix_current_podcast re-resolves the CURRENT config, recorded explicitly.
       let cueDiversity: PostTtsBridgeInput["diversity"];
+      const frozenCtx = (episode.configurationSnapshot as { production?: { diversityContext?: FrozenDiversityContext } } | null)?.production?.diversityContext ?? null;
       if (!reproducePostTts) {
+        const useCurrentConfig = renderMode === "remix_current_podcast";
+        if (frozenCtx && !useCurrentConfig && (frozenCtx.rolloutMode === "soft" || frozenCtx.rolloutMode === "enforce")) {
+          // FROZEN context — env/history/policy changes cannot alter this render.
+          postTtsDiversityMode = frozenCtx.rolloutMode;
+          postTtsDiversitySource = "frozen";
+          cueDiversity = { policy: frozenCtx.policy, mode: frozenCtx.rolloutMode, transitionHistory: frozenCtx.transitionHistory, reactionHistory: frozenCtx.reactionHistory };
+        } else {
         const rollout = resolveDiversityRollout();
         postTtsDiversityMode = rollout.mode;
         if (rollout.mode === "soft" || rollout.mode === "enforce") {
+          postTtsDiversitySource = useCurrentConfig ? "current" : "frozen_absent";
           const dpolicy = resolveSoundDiversityPolicy({ identity: frozenProfile.sonicIdentity, overrides: { ...diversityPolicyOverridesFromEnv(), systemCrossPodcastDiversityEnabled: rollout.systemHistoryEnabled } });
           // Same scoping rule as cooldown: podcast (default) / owner / system.
           const dscope: CooldownScopeFilter =
@@ -1075,6 +1091,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
               reactionHistory: { recentAssetIds: dhist.episodes.flatMap((e) => e.reactionAssetIds), recentFamilies: dhist.episodes.flatMap((e) => e.reactionFamilySequence) },
             };
           } catch { /* history unavailable -> proceed without cue diversity */ }
+        }
         }
       }
 
@@ -1611,10 +1628,10 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     // Safe post-TTS sound-direction diagnostics (Part 13): the engine decision +
     // plan structure. Names/counts/reasons only — never URLs/keys/paths.
-    // Safe frozen pre-snapshot diversity decision (intro/outro/bed) — a summary
-    // for operator visibility; the full decision lives on the snapshot. Names/
-    // counts/reasons only.
-    const frozenDiversity = ((episode.configurationSnapshot as { production?: { diversityDecision?: { policyVersion?: number; mode?: string; selectedIntro?: { selectedAssetId?: string | null; reason?: string }; selectedOutro?: { selectedAssetId?: string | null; reason?: string }; selectedBed?: { selectedAssetId?: string | null; reason?: string }; motifDecision?: { action?: string; recentRate?: number }; relaxations?: string[]; fingerprint?: string } } } | null)?.production?.diversityDecision) ?? null;
+    // Safe frozen diversity context (v6) — a summary for operator visibility; the
+    // full decision lives on the snapshot. Names/counts/reasons only.
+    const frozenCtxDiag = ((episode.configurationSnapshot as { production?: { diversityContext?: FrozenDiversityContext } } | null)?.production?.diversityContext) ?? null;
+    const frozenDecision = frozenCtxDiag?.decision ?? null;
     const postTtsDiagnostics = {
       planningEngine: postTtsEngineLabel ?? engineDecision.engine,
       planningVersion: postTtsPlan?.directorVersion ?? null,
@@ -1622,17 +1639,21 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       fallback: engineDecision.reason,
       diversity: {
         renderMode: postTtsDiversityMode,
+        // Whether the render used the FROZEN v6 context or re-resolved CURRENT config.
+        contextSource: postTtsDiversitySource,
         cueDiversityDecisions: (postTtsPlan as { cueDiversityDecisions?: unknown[] } | null)?.cueDiversityDecisions?.length ?? 0,
-        ...(frozenDiversity ? {
-          policyVersion: frozenDiversity.policyVersion ?? null,
-          selectionMode: frozenDiversity.mode ?? null,
-          introReason: frozenDiversity.selectedIntro?.reason ?? null,
-          outroReason: frozenDiversity.selectedOutro?.reason ?? null,
-          bedReason: frozenDiversity.selectedBed?.reason ?? null,
-          motifAction: frozenDiversity.motifDecision?.action ?? null,
-          motifRate: frozenDiversity.motifDecision?.recentRate ?? null,
-          relaxations: frozenDiversity.relaxations ?? [],
-          diversityFingerprint: frozenDiversity.fingerprint ?? null,
+        ...(frozenCtxDiag ? {
+          contextVersion: frozenCtxDiag.version,
+          policyVersion: frozenCtxDiag.policyVersion,
+          selectionMode: frozenCtxDiag.rolloutMode,
+          introReason: frozenDecision?.selectedIntro?.reason ?? null,
+          outroReason: frozenDecision?.selectedOutro?.reason ?? null,
+          bedReason: frozenDecision?.selectedBed?.reason ?? null,
+          motifAction: frozenDecision?.motifDecision?.action ?? null,
+          motifRate: frozenDecision?.motifDecision?.recentRate ?? null,
+          relaxations: frozenDecision?.relaxations ?? [],
+          decisionFingerprint: frozenDecision?.fingerprint ?? null,
+          diversityFingerprint: frozenCtxDiag.fingerprint,
         } : {}),
       },
       ...(postTtsPlan ? {

@@ -20,7 +20,7 @@ import crypto from "node:crypto";
 import { canonicalJson, type ResolvedEpisodeConfiguration, type Provenance } from "./podcastConfiguration";
 import type { FrozenSoundProfile } from "./podcastSoundProfile";
 import { selectEpisodeSoundVariants } from "../audio/variantSelection";
-import { selectDiverseBookends, type SoundDiversityDecision } from "../audio/soundDiversity";
+import { buildFrozenDiversityContext, type FrozenDiversityContext } from "../audio/soundDiversity";
 import type { SoundDiversityPolicy, DiversityMode } from "../audio/soundDiversityPolicy";
 import type { DiversityHistory } from "./diversityHistory";
 import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
@@ -50,7 +50,19 @@ import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFo
 // Rendering reads this frozen selection; a later podcast sound edit never
 // changes a v5 episode. v1-v4 stay readable and BYTE/FINGERPRINT stable (the
 // new fields live only inside newly frozen v5 profiles).
-export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 5 as const;
+// Version 6 (PR 4) freezes the full render-influencing DIVERSITY context — the
+// resolved bounded policy, the rollout mode chosen at creation, the bounded
+// podcast (+ optional shared-system) cue history, the intro/outro/bed + motif
+// decision, and a fingerprint — so a DELAYED or INITIAL render is deterministic
+// regardless of later history / env / policy / system changes. A v6 snapshot is
+// produced ONLY when the diversity engine was active at creation; otherwise the
+// snapshot stays v5 and is byte/fingerprint identical to before. v1-v5 stay
+// readable and BYTE/FINGERPRINT stable (the diversityContext key lives only
+// inside newly frozen v6 snapshots). The diversityContext IS fingerprinted (it
+// influences the render); reproduce still replays the stored plan verbatim.
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 6 as const;
+/** The version stamped when NO diversity context is frozen (unchanged v5). */
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION_BASE = 5 as const;
 
 export interface SnapshotCast {
   formatId: string;
@@ -77,7 +89,7 @@ export function snapshotCastFor(formatId: string, pinnedHostIds: string[]): Snap
 
 /** The persisted shape (stored in Episode.configurationSnapshot as JSON). */
 export interface EpisodeConfigurationSnapshot {
-  version: 1 | 2 | 3 | 4 | 5;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
   /** Version 3+: the frozen show format + pinned cast. Absent on v1/v2. */
   cast?: SnapshotCast;
   source: "podcast" | "standalone" | "legacy";
@@ -126,11 +138,13 @@ export interface EpisodeConfigurationSnapshot {
      *  capture. The planner may only pick from THIS pool. Never contains
      *  storage keys or URLs. Absent on version-1 snapshots. */
     soundProfile?: FrozenSoundProfile;
-    /** PR 4: the safe pre-snapshot diversity DECISION (why this intro/outro/bed
-     *  was chosen). DELIBERATELY EXCLUDED from the fingerprint (see
-     *  editorialMaterial) — the *selection* it produced already lives in
-     *  soundProfile and is fingerprinted; this is the explanatory trace. */
-    diversityDecision?: SoundDiversityDecision;
+    /** PR 4 (snapshot v6): the FROZEN render-influencing diversity context —
+     *  resolved bounded policy, rollout mode, bounded podcast (+ optional
+     *  shared-system) cue history, the intro/outro/bed + motif decision, and a
+     *  fingerprint. INCLUDED in the snapshot fingerprint (it steers the render),
+     *  so a delayed/initial render is deterministic regardless of later history/
+     *  env/policy changes. Present only on v6 snapshots. */
+    diversityContext?: FrozenDiversityContext;
   };
 }
 
@@ -173,6 +187,10 @@ function editorialMaterial(s: EpisodeConfigurationSnapshot) {
       // so re-fingerprinting a stored v1 snapshot still reproduces its
       // original hash byte-for-byte.
       ...(s.production.soundProfile !== undefined ? { soundProfile: s.production.soundProfile } : {}),
+      // v6: the FROZEN diversity context steers the render, so it IS part of the
+      // fingerprint. Added only when present — v1-v5 snapshots (no context) keep
+      // their exact hashes.
+      ...(s.production.diversityContext !== undefined ? { diversityContext: s.production.diversityContext } : {}),
     },
   };
 }
@@ -202,31 +220,32 @@ export function buildEpisodeConfigurationSnapshot(
    *  frozen; absent = the pool's first variant is frozen (deterministic, no
    *  cross-episode variety — used by legacy callers/tests). */
   soundSeed?: string,
-  /** PR 4: when provided AND mode !== "off", the intro/outro/bed selection is
-   *  diversity-aware (avoids recent repeats using podcast history). observe
-   *  records the decision but keeps the plain (v5) selection; soft/enforce apply
-   *  the diverse picks. Absent = exact v5 behavior (fingerprint-identical). */
-  diversity?: { policy: SoundDiversityPolicy; mode: DiversityMode; history: DiversityHistory }
+  /** PR 4 (v6): when provided AND mode !== "off", the intro/outro/bed selection
+   *  is diversity-aware and the FULL render-influencing context is FROZEN into
+   *  the snapshot (observe records but keeps the plain v5 selection; soft/enforce
+   *  apply the diverse picks). Absent / off = exact v5 behavior. */
+  diversity?: { policy: SoundDiversityPolicy; mode: DiversityMode; history: DiversityHistory; systemHistory?: DiversityHistory }
 ): EpisodeSnapshotColumns {
   // v5: deterministically select this episode's variants from the permitted
   // pools BEFORE freezing. Pure given (soundProfile, soundSeed, formatId).
-  let diversityDecision: SoundDiversityDecision | undefined;
+  let diversityContext: FrozenDiversityContext | undefined;
   if (soundProfile && soundSeed) {
     const formatId = cast?.formatId ?? resolved.editorial.format.value ?? DEFAULT_FORMAT_ID;
     // Always compute the plain v5 selection first (pools, identity, reasons).
     soundProfile = selectEpisodeSoundVariants(soundProfile, { seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
-    // PR 4: diversity-aware selection layered on top.
+    // PR 4: freeze the diversity context (v6) + layer the diverse selection.
     if (diversity && diversity.mode !== "off") {
-      const div = selectDiverseBookends(soundProfile, { policy: diversity.policy, mode: diversity.mode, history: diversity.history, seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
-      diversityDecision = div.decision;
+      const built = buildFrozenDiversityContext(soundProfile, { policy: diversity.policy, mode: diversity.mode, history: diversity.history, systemHistory: diversity.systemHistory, seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
+      diversityContext = built.context;
       // observe: keep the plain v5 picks (record only). soft/enforce: APPLY.
       if (diversity.mode === "soft" || diversity.mode === "enforce") {
-        soundProfile = { ...soundProfile, intro: div.intro, outro: div.outro, bed: div.bed };
+        soundProfile = { ...soundProfile, intro: built.intro, outro: built.outro, bed: built.bed };
       }
     }
   }
   const snapshot: EpisodeConfigurationSnapshot = {
-    version: EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
+    // v6 ONLY when a diversity context is frozen; otherwise stay v5 (byte-identical).
+    version: diversityContext ? EPISODE_CONFIGURATION_SNAPSHOT_VERSION : EPISODE_CONFIGURATION_SNAPSHOT_VERSION_BASE,
     ...(cast ? { cast } : {}),
     source: resolved.source,
     capturedAt: capturedAt.toISOString(),
@@ -275,7 +294,7 @@ export function buildEpisodeConfigurationSnapshot(
       productionStyle: resolved.production.productionStyle.value,
       sfxDensity: resolved.production.sfxDensity.value,
       ...(soundProfile ? { soundProfile } : {}),
-      ...(diversityDecision ? { diversityDecision } : {}),
+      ...(diversityContext ? { diversityContext } : {}),
       provenance: {
         hostIds: provenanceOf(resolved.production.hostIds),
         ttsProvider: provenanceOf(resolved.production.ttsProvider),

@@ -17,6 +17,10 @@ import type { SoundDiversityPolicy, DiversityMode, DiversityRelaxationCode } fro
 import type { DiversityHistory } from "@/lib/services/diversityHistory";
 
 export const SOUND_DIVERSITY_DECISION_VERSION = 1 as const;
+/** Snapshot v6 freezes the full render-influencing diversity context. */
+export const FROZEN_DIVERSITY_CONTEXT_VERSION = 1 as const;
+/** Ceiling on frozen cue-history entries (bounded, deterministic). */
+const FROZEN_CUE_HISTORY_CAP = 64;
 
 /** A branded-motif rate decision (fully computed in the motif module, PR4 C4). */
 export interface MotifContinuityDecision {
@@ -62,6 +66,73 @@ export interface DiverseBookendResult {
   outro: FrozenSoundAssetRef | null;
   bed: FrozenSoundAssetRef | null;
   decision: SoundDiversityDecision;
+}
+
+/** Bounded per-role cue history, newest first. */
+export interface FrozenCueHistory { recentAssetIds: string[]; recentFamilies: string[] }
+
+/** Everything a FRESH render needs to reproduce this episode's diversity
+ *  deterministically — frozen at creation so a delayed / initial render never
+ *  drifts when later history, env, policy, or system state changes. Safe:
+ *  ids/families/counts/reasons only, never another podcast's identity. */
+export interface FrozenDiversityContext {
+  version: number;
+  policyVersion: number;
+  policy: SoundDiversityPolicy;
+  rolloutMode: DiversityMode;
+  historyWindow: number;
+  historyFingerprint: string;
+  transitionHistory: FrozenCueHistory;
+  reactionHistory: FrozenCueHistory;
+  /** Shared-system cross-podcast cue history (only when system diversity on). */
+  systemTransitionHistory: FrozenCueHistory | null;
+  systemReactionHistory: FrozenCueHistory | null;
+  decision: SoundDiversityDecision;
+  fingerprint: string;
+}
+
+const cap = <T>(a: T[]) => a.slice(0, FROZEN_CUE_HISTORY_CAP);
+const cueHistoryOf = (h: DiversityHistory | undefined, kind: "transition" | "reaction"): FrozenCueHistory => ({
+  recentAssetIds: cap((h?.episodes ?? []).flatMap((e) => (kind === "transition" ? e.transitionAssetIds : e.reactionAssetIds))),
+  recentFamilies: cap((h?.episodes ?? []).flatMap((e) => (kind === "transition" ? e.transitionFamilySequence : e.reactionFamilySequence))),
+});
+
+function fingerprintHistory(h: DiversityHistory): string {
+  const canonical = h.episodes.map((e) => [e.episodeId, e.introAssetId, e.outroAssetId, e.bedAssetId, e.transitionAssetIds, e.reactionAssetIds, e.introIsMotif, e.outroIsMotif]);
+  return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+/** Build the frozen diversity context (v6) + the applied intro/outro/bed. Pure
+ *  given (profile, policy, mode, history, systemHistory, seed, format, identity). */
+export function buildFrozenDiversityContext(profile: FrozenSoundProfile, ctx: DiverseBookendContext): { intro: FrozenSoundAssetRef | null; outro: FrozenSoundAssetRef | null; bed: FrozenSoundAssetRef | null; context: FrozenDiversityContext } {
+  const div = selectDiverseBookends(profile, ctx);
+  const context: FrozenDiversityContext = {
+    version: FROZEN_DIVERSITY_CONTEXT_VERSION,
+    policyVersion: ctx.policy.version,
+    policy: ctx.policy,
+    rolloutMode: ctx.mode,
+    historyWindow: ctx.history.windowUsed,
+    historyFingerprint: fingerprintHistory(ctx.history),
+    transitionHistory: cueHistoryOf(ctx.history, "transition"),
+    reactionHistory: cueHistoryOf(ctx.history, "reaction"),
+    systemTransitionHistory: ctx.systemHistory && ctx.policy.systemCrossPodcastDiversityEnabled ? cueHistoryOf(ctx.systemHistory, "transition") : null,
+    systemReactionHistory: ctx.systemHistory && ctx.policy.systemCrossPodcastDiversityEnabled ? cueHistoryOf(ctx.systemHistory, "reaction") : null,
+    decision: div.decision,
+    fingerprint: "",
+  };
+  context.fingerprint = fingerprintFrozenDiversityContext(context);
+  return { intro: div.intro, outro: div.outro, bed: div.bed, context };
+}
+
+/** Deterministic fingerprint of the frozen context (excludes its own
+ *  fingerprint). Every render-influencing field is included. */
+export function fingerprintFrozenDiversityContext(c: FrozenDiversityContext): string {
+  const canonical = {
+    v: c.version, pv: c.policyVersion, policy: c.policy, mode: c.rolloutMode, hw: c.historyWindow, hfp: c.historyFingerprint,
+    th: c.transitionHistory, rh: c.reactionHistory, sth: c.systemTransitionHistory, srh: c.systemReactionHistory,
+    dfp: c.decision.fingerprint,
+  };
+  return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 const roleHistory = (history: DiversityHistory, pick: (e: DiversityHistory["episodes"][number]) => { assetId: string | null; family: string | null }): RoleHistoryView => {
