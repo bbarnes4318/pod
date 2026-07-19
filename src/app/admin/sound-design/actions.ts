@@ -1,7 +1,9 @@
 "use server";
 
+import type { Prisma } from "@prisma/client";
 import { requireAdmin, adminIdentity } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
+import { validateCueMetadata, isMetadataState } from "@/lib/audio/cueMetadata";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getFileDurationMs } from "@/lib/audio/assembly";
 import { seedStarterSoundPackCore } from "@/lib/services/soundDesignSeedService";
@@ -288,5 +290,41 @@ export async function seedStarterSoundPack() {
     return { success: true, seededCount: res.seededCount };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to seed starter pack." };
+  }
+}
+
+/**
+ * ADMIN cue-metadata review (PR 2, Part 9). Set an asset's reviewed cue
+ * metadata + its verification state. Only "verified" metadata is authoritative
+ * for hard compatibility decisions; nothing is fabricated. Admin-only.
+ */
+export async function updateAssetCueMetadata(input: {
+  assetId: string;
+  cueMetadata: unknown;
+  metadataState: string;
+}) {
+  await requireAdmin();
+  if (!isMetadataState(input.metadataState)) {
+    return { success: false, error: "Invalid metadata state." };
+  }
+  const v = validateCueMetadata(input.cueMetadata ?? {});
+  if (!v.ok) return { success: false, error: `Invalid cue metadata (${v.error.code}${"field" in v.error ? `: ${v.error.field}` : ""}).` };
+  try {
+    const asset = await db.audioAsset.findUnique({ where: { id: input.assetId }, select: { id: true } });
+    if (!asset) return { success: false, error: "Asset not found." };
+    await db.audioAsset.update({
+      where: { id: input.assetId },
+      data: {
+        cueMetadata: v.metadata as unknown as Prisma.InputJsonValue,
+        metadataState: input.metadataState,
+      },
+    });
+    await db.audioAssetAuditEvent.create({
+      data: { assetId: input.assetId, event: "classified", actorType: "admin", adminIdentity: adminIdentity(), metadata: { metadataState: input.metadataState } },
+    }).catch(() => {});
+    revalidatePath("/admin/sound-design");
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message || "Metadata update failed." };
   }
 }

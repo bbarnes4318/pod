@@ -17,7 +17,7 @@ function check(name: string, fn: () => void) {
 }
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
 
-const ref = (id: string, role: string, over: Partial<FrozenSoundAssetRef> = {}): FrozenSoundAssetRef => ({
+const ref = (id: string, role: FrozenSoundAssetRef["role"], over: Partial<FrozenSoundAssetRef> = {}): FrozenSoundAssetRef => ({
   assetId: id, kind: role === "intro" ? "theme_intro" : role === "outro" ? "theme_outro" : role === "bed" ? "bed" : role === "stinger" ? "stinger" : "sfx",
   category: null, name: `Asset ${id}`, contentHash: `h-${id}`, scope: "shared_system", role,
   orderIndex: 0, gainDb: null, fadeInMs: null, fadeOutMs: null, durationMs: 3000, tags: [],
