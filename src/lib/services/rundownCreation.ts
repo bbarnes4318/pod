@@ -14,6 +14,7 @@
 // or a client that hand-crafts the field — can never self-authorize. The rule
 // itself (what the override does) is identical for both surfaces.
 
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { createEpisodeDraft, type CreateEpisodeDraftResult } from "./episodeCreation";
 import { leadFirst } from "../studio/rundownRules";
@@ -236,7 +237,9 @@ async function resolveRundownConfiguration(
         sfxDensity: r.production.sfxDensity.value ?? undefined,
         minDebateScore: r.editorial.minDebateScore.value ?? undefined,
       },
-      configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile, snapshotCastFor(r.editorial.format.value, draft.hostIds ?? [])),
+      // randomUUID() is the stable per-episode selection seed (snapshot v5):
+      // deterministic selection frozen into the snapshot, distinct per episode.
+      configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile, snapshotCastFor(r.editorial.format.value, draft.hostIds ?? []), randomUUID()),
     },
   };
 }

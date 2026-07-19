@@ -9,6 +9,7 @@
 // (with per-topic reasons), auto-selected, and final order — so no
 // user-selected topic is ever silently discarded.
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { PLATFORM_MAX_TOPICS, DEFAULT_TARGET_TOPIC_COUNT } from "../episodeLimits";
@@ -75,7 +76,12 @@ async function computeCreationSnapshot(
     resolved.resolved,
     new Date(),
     soundProfile,
-    snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? [])
+    snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? []),
+    // Stable per-episode selection seed (snapshot v5). CSPRNG, not Math.random:
+    // the SELECTION is deterministic given this seed, which is frozen into the
+    // snapshot so the choice is reproducible; distinct episodes -> distinct
+    // seeds -> coherent cross-episode variety.
+    randomUUID()
   );
 }
 

@@ -164,33 +164,39 @@ async function main() {
     v1: "ae7a536d80dbdd255f98a30f7ee230d65cd1801893427830d40b80c4fa5c6599",
     v2: "ad246f918c199bdcd8391814b4b12097d8b5e21b237f4cda5b5e050733228bed",
     v3: "04fc4d655414d51c21f2642af5ba058051f720f9059a1664747610ce5e999126",
+    v4: "f2bb91409885e2ce2281aa96a889397fc24d124b92096e2160948845410006f2",
   };
-  await check("Tests 13/14/15: v1/v2/v3 fingerprints are byte-stable (golden regression anchors)", () => {
+  await check("Tests 13/14/15 + PR2 test 10: v1/v2/v3/v4 fingerprints are byte-stable (golden anchors)", () => {
     const f = {
       v1: fingerprintEpisodeSnapshot(snapshot(1)),
       v2: fingerprintEpisodeSnapshot(snapshot(2, validProfile())),
       v3: fingerprintEpisodeSnapshot(snapshot(3, validProfile())),
+      v4: fingerprintEpisodeSnapshot(snapshot(4, v4Profile())),
     };
-    console.log(`      [golden] v1=${f.v1}\n               v2=${f.v2}\n               v3=${f.v3}`);
+    console.log(`      [golden] v1=${f.v1}\n               v2=${f.v2}\n               v3=${f.v3}\n               v4=${f.v4}`);
     assert(f.v1 === GOLDEN.v1, `v1 fingerprint drifted -> ${f.v1}`);
     assert(f.v2 === GOLDEN.v2, `v2 fingerprint drifted -> ${f.v2}`);
     assert(f.v3 === GOLDEN.v3, `v3 fingerprint drifted -> ${f.v3}`);
-    // The v4 bookend flags must NOT retroactively affect a flag-less v2/v3 hash.
-    assert(fingerprintEpisodeSnapshot(snapshot(2, validProfile())) === f.v2, "v2 unaffected by v4 flags' existence");
+    assert(f.v4 === GOLDEN.v4, `v4 fingerprint drifted -> ${f.v4}`);
+    // Newer-version fields must NOT retroactively affect an older flag-less hash.
+    assert(fingerprintEpisodeSnapshot(snapshot(2, validProfile())) === f.v2, "v2 unaffected by later fields");
   });
 
-  await check("Test 16: v4 fingerprint is deterministic and distinct from v3", () => {
+  await check("Test 16 + PR2 test 11: v5 fingerprint is deterministic and distinct from v4", () => {
     const a = snapshot(4, v4Profile());
     const b = snapshot(4, v4Profile());
     assert(fingerprintEpisodeSnapshot(a) === fingerprintEpisodeSnapshot(b), "v4 deterministic");
-    // Same assets, but explicit bookend intent + version 4 => a distinct hash.
     assert(fingerprintEpisodeSnapshot(a) !== fingerprintEpisodeSnapshot(snapshot(3, validProfile())), "v4 distinct from v3");
-    // Bookend intent is fingerprint material: flipping outroEnabled moves the hash.
     assert(
       fingerprintEpisodeSnapshot(snapshot(4, v4Profile({ outroEnabled: false }))) !== fingerprintEpisodeSnapshot(a),
       "outroEnabled is part of the fingerprint",
     );
-    assert(EPISODE_CONFIGURATION_SNAPSHOT_VERSION === 4, "current snapshot version is 4");
+    // v5 determinism: same v5 material (selected variant + identity) -> same hash.
+    const v5a = snapshot(5, v4Profile({ selectionSeed: "seed-1", sonicIdentity: undefined } as never));
+    const v5b = snapshot(5, v4Profile({ selectionSeed: "seed-1" } as never));
+    assert(fingerprintEpisodeSnapshot(v5a) === fingerprintEpisodeSnapshot(v5b), "v5 deterministic given identical material");
+    assert(fingerprintEpisodeSnapshot(v5a) !== fingerprintEpisodeSnapshot(a), "v5 distinct from v4");
+    assert(EPISODE_CONFIGURATION_SNAPSHOT_VERSION === 5, "current snapshot version is 5");
   });
 
   await check("Test 17: editing the podcast after creation does not alter the v4 episode's bookend requirements", () => {

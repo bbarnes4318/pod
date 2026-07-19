@@ -244,14 +244,20 @@ async function main() {
       assert(before !== after, "fingerprint moved");
     });
 
-    await check("the singleton partial unique index blocks a second ENABLED intro at the DB level", async () => {
+    await check("PR2: intro is a POOL - two enabled intro VARIANTS coexist; the composite unique still blocks exact duplicates", async () => {
       const production = (await db.podcastProductionConfig.findUnique({ where: { podcastId: pod.id } }))!;
-      await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysIntro.id, role: "intro", enabled: true } });
-      let rejected = false;
+      await db.podcastSoundAssignment.deleteMany({ where: { podcastId: pod.id } });
+      // Two DIFFERENT intro assets, both enabled -> allowed (singleton index dropped).
+      await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysIntro.id, role: "intro", enabled: true, weight: 1 } });
+      await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysOutro.id, role: "intro", enabled: true, weight: 2, cueFamily: "brand_short" } });
+      const introCount = await db.podcastSoundAssignment.count({ where: { podcastId: pod.id, role: "intro", enabled: true } });
+      assert(introCount === 2, `two enabled intro variants coexist (got ${introCount})`);
+      // The SAME asset in the SAME role is still a duplicate.
+      let dupRejected = false;
       try {
-        await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysOutro.id, role: "intro", enabled: true } });
-      } catch { rejected = true; }
-      assert(rejected, "second enabled intro must violate the partial unique index");
+        await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysIntro.id, role: "intro", enabled: true } });
+      } catch { dupRejected = true; }
+      assert(dupRejected, "exact (role, asset) duplicate still rejected by the composite unique");
     });
 
     // Placed LAST: these saves replace the podcast's assignment set, so they run
@@ -274,6 +280,52 @@ async function main() {
       res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
         profile: { soundProfileMode: "custom", defaultOutroEnabled: false, assignments: [{ assetId: sysIntro.id, role: "intro" }, { assetId: sysSting.id, role: "stinger" }] } });
       assert(res.ok, `4: disabled outro needs no assignment: ${JSON.stringify(res)}`);
+    });
+
+    await check("PR2 CG2: variant-pool + identity validation (weight/cue-family/format/identity) + persistence", async () => {
+      const v = () => db.podcast.findUnique({ where: { id: pod.id } }).then((p) => p!.configVersion);
+      const base = { soundProfileMode: "custom" as const, defaultIntroEnabled: false, defaultOutroEnabled: false };
+      // invalid weight
+      let res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { ...base, assignments: [{ assetId: sysSting.id, role: "stinger", weight: 101 }] } });
+      assert(!res.ok && res.error.code === "invalid_weight", `weight: ${JSON.stringify(res)}`);
+      // cue family invalid for role (intro family on a stinger)
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { ...base, assignments: [{ assetId: sysSting.id, role: "stinger", cueFamily: "brand_main" }] } });
+      assert(!res.ok && res.error.code === "invalid_cue_family", `cue-family-role: ${JSON.stringify(res)}`);
+      // cue family prohibited by identity
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { ...base, sonicIdentity: { prohibitedCueFamilies: ["hard_hit"] }, assignments: [{ assetId: sysSting.id, role: "stinger", cueFamily: "hard_hit" }] } });
+      assert(!res.ok && res.error.code === "cue_family_prohibited", `identity-prohibit: ${JSON.stringify(res)}`);
+      // invalid format id
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { ...base, assignments: [{ assetId: sysSting.id, role: "stinger", allowedFormatIds: ["not_a_format"] }] } });
+      assert(!res.ok && res.error.code === "invalid_format_id", `format: ${JSON.stringify(res)}`);
+      // invalid sonic identity
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { ...base, sonicIdentity: { pace: "hyperspeed" }, assignments: [{ assetId: sysSting.id, role: "stinger" }] } });
+      assert(!res.ok && res.error.code === "invalid_sonic_identity", `identity: ${JSON.stringify(res)}`);
+      // all-disabled intro pool while intro ENABLED -> fails (tests 17/18)
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { soundProfileMode: "custom", defaultOutroEnabled: false, assignments: [{ assetId: sysIntro.id, role: "intro", enabled: false }, { assetId: sysSting.id, role: "stinger" }] } });
+      assert(!res.ok && res.error.code === "bookend_enabled_without_asset", `all-disabled pool: ${JSON.stringify(res)}`);
+      // A VALID save with variant fields persists them + the sonic identity.
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: {
+          soundProfileMode: "custom", defaultOutroEnabled: false,
+          sonicIdentity: { broadcastStyle: "sports_radio", pace: "fast", prohibitedCueFamilies: ["comedy_button"] },
+          assignments: [
+            { assetId: sysIntro.id, role: "intro", cueFamily: "brand_high_energy", weight: 3, isBrandedMotif: true, allowedFormatIds: ["two_host_debate"] },
+            { assetId: sysSting.id, role: "stinger", cueFamily: "score_update", weight: 5, maxUsesPerEpisode: 2 },
+          ],
+        } });
+      assert(res.ok, `valid variant save: ${JSON.stringify(res)}`);
+      const rows = await db.podcastSoundAssignment.findMany({ where: { podcastId: pod.id }, orderBy: { role: "asc" } });
+      const introRow = rows.find((r) => r.role === "intro")!;
+      assert(introRow.cueFamily === "brand_high_energy" && introRow.weight === 3 && introRow.isBrandedMotif === true && introRow.allowedFormatIds[0] === "two_host_debate", `persisted variant fields: ${JSON.stringify(introRow)}`);
+      const cfg = await db.podcastProductionConfig.findUnique({ where: { podcastId: pod.id } });
+      const sid = cfg?.sonicIdentity as { broadcastStyle?: string; version?: number } | null;
+      assert(sid?.broadcastStyle === "sports_radio" && sid?.version === 1, `persisted identity: ${JSON.stringify(sid)}`);
     });
 
   } finally {

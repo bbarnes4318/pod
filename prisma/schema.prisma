@@ -505,15 +505,27 @@ model PodcastProductionConfig {
   defaultIntroEnabled       Boolean @default(true)
   defaultOutroEnabled       Boolean @default(true)
 
+  // --- Sonic identity (PR 2) ---------------------------------------------
+  // The producer's declared, versioned creative identity for THIS show
+  // (validated JSON: genre/moods/pace/intensity/broadcastStyle, allowed &
+  // prohibited cue families, format restrictions, bed & voice-over-music
+  // policy, music-gap bounds). null = the permissive default (unchanged
+  // behavior). See src/lib/audio/sonicIdentity.ts.
+  sonicIdentity             Json?
+
   soundAssignments PodcastSoundAssignment[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
 
-// Normalized Podcast sound assignment (Prompt 6): which asset voices which
-// role for a show. Singleton roles (intro/outro/bed) are enforced by a
-// partial unique index (one ENABLED row per role per podcast); pool roles
-// (stinger/reaction) are ordered and deduplicated per (podcast, role, asset).
+// Normalized Podcast sound assignment (Prompt 6; VARIANT POOLS in PR 2): which
+// asset voices which role for a show. As of PR 2 EVERY role (intro/outro/bed/
+// stinger/reaction) is a POOL of weighted, ordered VARIANTS — the old
+// one-enabled-intro/outro/bed singleton index is dropped so a show can rotate
+// among a coherent brand family. Entries are still deduped per
+// (podcast, role, asset). A variant carries a cue family, a bounded weight, an
+// optional branded-motif flag, per-episode use/cooldown limits, and optional
+// per-assignment format allow/deny lists.
 model PodcastSoundAssignment {
   id           String  @id @default(uuid())
   productionConfigId String
@@ -527,11 +539,20 @@ model PodcastSoundAssignment {
   gainDb       Float?  // bounded trim; null = neutral
   fadeInMs     Int?
   fadeOutMs    Int?
+  // --- Variant pool metadata (PR 2) --------------------------------------
+  cueFamily          String?  // creative purpose (see sonicIdentity.ts); must be valid for role
+  weight             Float    @default(1) // bounded [0,100]; deterministic selection weight
+  isBrandedMotif     Boolean  @default(false)
+  maxUsesPerEpisode  Int?     // null = pipeline default
+  minEpisodeCooldown Int?     // null = pipeline default
+  allowedFormatIds   String[] @default([]) // empty = all formats
+  prohibitedFormatIds String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   @@unique([podcastId, role, assetId]) // no duplicate pool entries
   @@index([podcastId, role])
+  @@index([podcastId, role, enabled])
   @@index([assetId])
 }
 
@@ -824,10 +845,21 @@ model AudioAsset {
   rightsExpiresAt            DateTime?
   rightsDocumentStorageKey   String?   // PRIVATE — never in DTOs/logs; served only via an authorized route
 
+  // --- Cue metadata (PR 2) -----------------------------------------------
+  // Admin-reviewed creative metadata (cue family, genre, mood, energy,
+  // instrumentation, and per-slot suitability). Structured JSON so no new
+  // musical facts are fabricated: `metadataState` gates authority —
+  // "unclassified" (none), "suggested" (proposed, NOT authoritative), or
+  // "verified" (admin-confirmed, usable for HARD compatibility decisions).
+  // See src/lib/audio/cueMetadata.ts.
+  cueMetadata     Json?
+  metadataState   String   @default("unclassified") // "unclassified" | "suggested" | "verified"
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   auditEvents     AudioAssetAuditEvent[]
   soundAssignments PodcastSoundAssignment[]
+  systemAssignments SystemSoundAssignment[] @relation("SystemSoundAssignmentAsset")
 
   @@index([kind])
   @@index([isActive])
@@ -835,6 +867,7 @@ model AudioAsset {
   @@index([ownerId])
   @@index([podcastId])
   @@index([contentHash])
+  @@index([metadataState])
 }
 
 // Immutable per-asset audit trail (Prompt 6). Append-only: nothing in the
@@ -862,13 +895,53 @@ model AudioAssetAuditEvent {
 // plus the default production style / SFX density for new episodes.
 model SoundDesignConfig {
   id                String   @id @default("default")
+  // LEGACY singleton slots (PR 2 compatibility inputs): when no
+  // SystemSoundAssignment rows exist for a role, the resolver falls back to
+  // these as a one-item pool so existing installs keep their sound.
   themeIntroAssetId String?
   themeOutroAssetId String?
   bedAssetId        String?
   stingerAssetIds   Json?    // string[] — rotated deterministically between breaks
   defaultStyle      String   @default("full")   // "clean" | "light" | "full"
   defaultSfxDensity String   @default("subtle") // "subtle" | "medium" | "hype"
+  // Optimistic-concurrency version for the admin system-pool editor (PR 2).
+  configVersion     Int      @default(1)
+  systemAssignments SystemSoundAssignment[]
   updatedAt         DateTime @updatedAt
+}
+
+// System-default VARIANT POOLS (PR 2). The shared system profile is no longer
+// one intro/outro/bed: an administrator configures weighted, ordered variant
+// pools per role here, mirroring PodcastSoundAssignment but scoped to the
+// singleton SoundDesignConfig. Only shared_system (or documented legacy_global
+// compatibility) assets belong here — a private asset must never become a
+// global system assignment. Empty pools fall back to the legacy singleton slots.
+model SystemSoundAssignment {
+  id           String  @id @default(uuid())
+  configId     String  @default("default")
+  config       SoundDesignConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  assetId      String
+  asset        AudioAsset @relation("SystemSoundAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  role         String  // "intro" | "outro" | "bed" | "stinger" | "reaction"
+  orderIndex   Int     @default(0)
+  enabled      Boolean @default(true)
+  gainDb       Float?
+  fadeInMs     Int?
+  fadeOutMs    Int?
+  cueFamily          String?
+  weight             Float    @default(1) // bounded [0,100]
+  isBrandedMotif     Boolean  @default(false)
+  maxUsesPerEpisode  Int?
+  minEpisodeCooldown Int?
+  allowedFormatIds   String[] @default([])
+  prohibitedFormatIds String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([configId, role, assetId])
+  @@index([configId, role])
+  @@index([configId, role, enabled])
+  @@index([assetId])
 }
 
 // One row per sound asset a rendered episode consumed (stingers, beds,
