@@ -33,6 +33,38 @@ import {
 import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
 import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
+import { resolveDiversityRollout } from "../audio/soundDiversityFlags";
+import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv } from "../audio/soundDiversityPolicy";
+import { readDiversityHistory, type DiversityHistoryDb } from "./diversityHistory";
+import type { CooldownScopeFilter } from "./cueCooldownService";
+
+/** Resolve the diversity context (policy + mode + podcast-scoped history) for a
+ *  creation snapshot, honoring the rollout flags. Returns undefined when the
+ *  engine is off / clean profile — then buildEpisodeConfigurationSnapshot behaves
+ *  exactly as v5. Best-effort: a history read failure degrades to observe with a
+ *  warning rather than sinking episode creation. */
+async function resolveCreationDiversity(
+  dbi: DiversityHistoryDb,
+  soundProfile: Awaited<ReturnType<typeof resolveStandaloneSoundProfile>> | undefined,
+  podcast: { id: string; ownerId?: string | null } | null
+): Promise<Parameters<typeof buildEpisodeConfigurationSnapshot>[5] | undefined> {
+  const rollout = resolveDiversityRollout();
+  if (rollout.mode === "off" || !soundProfile || soundProfile.mode === "clean") return undefined;
+  const policy = resolveSoundDiversityPolicy({
+    identity: soundProfile.sonicIdentity,
+    overrides: { ...diversityPolicyOverridesFromEnv(), systemCrossPodcastDiversityEnabled: rollout.systemHistoryEnabled },
+  });
+  const scope: CooldownScopeFilter = podcast
+    ? (soundProfile.cooldownScope === "owner" && podcast.ownerId ? { kind: "owner", ownerId: podcast.ownerId } : { kind: "podcast", podcastId: podcast.id })
+    : { kind: "system" };
+  try {
+    const history = await readDiversityHistory({ db: dbi, scope, windowEpisodes: policy.historyWindowEpisodes, systemHistoryEnabled: rollout.systemHistoryEnabled });
+    return { policy, mode: rollout.mode, history };
+  } catch {
+    // History unavailable -> record it, keep the plain selection (observe).
+    return { policy, mode: "observe", history: { scope: scope.kind, windowRequested: policy.historyWindowEpisodes, windowUsed: 0, episodes: [], warnings: ["diversity_history_unavailable"], truncated: false } };
+  }
+}
 
 /**
  * Fallback configuration snapshot for creation paths that did not pre-resolve
@@ -72,6 +104,8 @@ async function computeCreationSnapshot(
   const soundProfile = podcast
     ? await resolvePodcastSoundProfile(dbi, { id: podcast.id, ownerId: podcast.ownerId }, podcast.production)
     : await resolveStandaloneSoundProfile(dbi);
+  // PR 4: diversity-aware selection layered on the v5 selection (flag-gated).
+  const diversity = await resolveCreationDiversity(dbi as unknown as DiversityHistoryDb, soundProfile, podcast ? { id: podcast.id, ownerId: podcast.ownerId } : null);
   return buildEpisodeConfigurationSnapshot(
     resolved.resolved,
     new Date(),
@@ -81,7 +115,8 @@ async function computeCreationSnapshot(
     // the SELECTION is deterministic given this seed, which is frozen into the
     // snapshot so the choice is reproducible; distinct episodes -> distinct
     // seeds -> coherent cross-episode variety.
-    randomUUID()
+    randomUUID(),
+    diversity
   );
 }
 

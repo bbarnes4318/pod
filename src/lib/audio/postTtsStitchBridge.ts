@@ -9,7 +9,7 @@ import path from "path";
 import { runFfmpeg, standardizeClipToWav, getFileDurationMs, type TimelineClip } from "@/lib/audio/assembly";
 import { analyzeSegmentSilence, resolveWaveformConfig, type GapBoundary } from "@/lib/audio/waveformAnalysis";
 import { buildActualDialogueTimeline, type ActualTimelineLineInput } from "@/lib/audio/dialogueTimeline";
-import { directPostTtsSound, type DirectorScriptLine, type PostTtsSoundDirectionPlan } from "@/lib/audio/postTtsSoundDirector";
+import { directPostTtsSound, type DirectorScriptLine, type PostTtsSoundDirectionPlan, type PostTtsDirectorInput } from "@/lib/audio/postTtsSoundDirector";
 import { executeDirectedPlan, type LoadedAssetLite, type DirectedExecution } from "@/lib/audio/postTtsExecution";
 import type { FrozenSoundProfile } from "@/lib/services/podcastSoundProfile";
 
@@ -42,6 +42,9 @@ export interface PostTtsBridgeInput {
   loadedById: Map<string, { filePath: string; durationMs: number; assetId: string }>;
   includeIntro: boolean;
   includeOutro: boolean;
+  /** PR 4: within-episode cue diversity (fresh renders only). Passed straight to
+   *  the director; absent = PR 3 weighted cue pick. Reproduce never sets this. */
+  diversity?: PostTtsDirectorInput["diversity"];
 }
 
 export interface PostTtsBridgeResult {
@@ -96,6 +99,7 @@ export async function runPostTtsDirection(input: PostTtsBridgeInput): Promise<Po
     introAssetDurationMs: input.frozenProfile.intro ? input.loadedById.get(input.frozenProfile.intro.assetId)?.durationMs ?? null : null,
     outroAssetDurationMs: input.frozenProfile.outro ? input.loadedById.get(input.frozenProfile.outro.assetId)?.durationMs ?? null : null,
     includeIntro: input.includeIntro, includeOutro: input.includeOutro, protectedSpeechPaddingMs: wcfg.protectedSpeechPaddingMs,
+    ...(input.diversity ? { diversity: input.diversity } : {}),
   });
 
   const frozenAssetIds = new Set<string>();

@@ -18,7 +18,10 @@ import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
 import { verifyBookends, resolveBookendRequirement, describeBookendAbsence, type BookendVerification, type BookendKind } from "@/lib/audio/bookendQa";
 import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import { decidePlanningEngine } from "@/lib/audio/postTtsFlag";
-import { runPostTtsDirection, runPostTtsReproduce } from "@/lib/audio/postTtsStitchBridge";
+import { runPostTtsDirection, runPostTtsReproduce, type PostTtsBridgeInput } from "@/lib/audio/postTtsStitchBridge";
+import { resolveDiversityRollout } from "@/lib/audio/soundDiversityFlags";
+import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, type DiversityMode } from "@/lib/audio/soundDiversityPolicy";
+import { readDiversityHistory, type DiversityHistoryDb } from "@/lib/services/diversityHistory";
 import { buildReproduceEnvelope, isStoredPostTtsPlan, validateStoredPlanForReproduce, type StoredPostTtsPlan, type ReproduceDialogueLine } from "@/lib/audio/postTtsReproduce";
 import type { PostTtsSoundDirectionPlan } from "@/lib/audio/postTtsSoundDirector";
 import { resolveIntroDialogueStartMs, type DirectorScriptLine } from "@/lib/audio/postTtsSoundDirector";
@@ -679,6 +682,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // The engine actually used ("post_tts" for a fresh direction, or
     // "stored_plan_reproduce" for a verbatim replay) + the plan to persist.
     let postTtsEngineLabel: string | null = null;
+    let postTtsDiversityMode: DiversityMode = "off";
     let postTtsStoredPlan: StoredPostTtsPlan | null = null;
     let postTtsExecutionSummary: { cueCount: number; rejectedCueCount: number; introTreatment: string | null; outroTreatment: string | null; bedPolicy: string | null; warnings: string[]; fallback: string } | null = null;
     let productionPlan: ProductionPlan | null = null;
@@ -1048,6 +1052,32 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         if (r) frozenAssetHashById.set(r.assetId, r.contentHash ?? null);
       }
 
+      // PR 4: within-episode cue diversity for a FRESH render. REPRODUCE ignores
+      // the rollout flags entirely (it replays the stored plan). Best-effort: a
+      // history read failure degrades to no cue diversity, never sinks the render.
+      let cueDiversity: PostTtsBridgeInput["diversity"];
+      if (!reproducePostTts) {
+        const rollout = resolveDiversityRollout();
+        postTtsDiversityMode = rollout.mode;
+        if (rollout.mode === "soft" || rollout.mode === "enforce") {
+          const dpolicy = resolveSoundDiversityPolicy({ identity: frozenProfile.sonicIdentity, overrides: { ...diversityPolicyOverridesFromEnv(), systemCrossPodcastDiversityEnabled: rollout.systemHistoryEnabled } });
+          // Same scoping rule as cooldown: podcast (default) / owner / system.
+          const dscope: CooldownScopeFilter =
+            frozenProfile.cooldownScope === "owner" && episode.ownerId ? { kind: "owner", ownerId: episode.ownerId }
+            : episode.podcastId ? { kind: "podcast", podcastId: episode.podcastId }
+            : episode.ownerId ? { kind: "owner", ownerId: episode.ownerId }
+            : { kind: "system" };
+          try {
+            const dhist = await readDiversityHistory({ db: db as unknown as DiversityHistoryDb, scope: dscope, windowEpisodes: dpolicy.historyWindowEpisodes, systemHistoryEnabled: rollout.systemHistoryEnabled, excludeEpisodeId: episode.id });
+            cueDiversity = {
+              policy: dpolicy, mode: rollout.mode,
+              transitionHistory: { recentAssetIds: dhist.episodes.flatMap((e) => e.transitionAssetIds), recentFamilies: dhist.episodes.flatMap((e) => e.transitionFamilySequence) },
+              reactionHistory: { recentAssetIds: dhist.episodes.flatMap((e) => e.reactionAssetIds), recentFamilies: dhist.episodes.flatMap((e) => e.reactionFamilySequence) },
+            };
+          } catch { /* history unavailable -> proceed without cue diversity */ }
+        }
+      }
+
       let bridge: Awaited<ReturnType<typeof runPostTtsDirection>>;
       if (reproducePostTts && storedPostTtsPlan) {
         // VERBATIM REPRODUCE. Validate the stored plan is compatible with the
@@ -1063,7 +1093,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         postTtsEngineLabel = "stored_plan_reproduce";
         postTtsStoredPlan = storedPostTtsPlan;
       } else {
-        bridge = await runPostTtsDirection(bridgeInput);
+        bridge = await runPostTtsDirection({ ...bridgeInput, ...(cueDiversity ? { diversity: cueDiversity } : {}) });
         postTtsEngineLabel = "post_tts";
         // Persist the FULL execution plan + reproduce envelope so a later
         // reproduce replays these exact placements without the director.
@@ -1581,11 +1611,30 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
 
     // Safe post-TTS sound-direction diagnostics (Part 13): the engine decision +
     // plan structure. Names/counts/reasons only — never URLs/keys/paths.
+    // Safe frozen pre-snapshot diversity decision (intro/outro/bed) — a summary
+    // for operator visibility; the full decision lives on the snapshot. Names/
+    // counts/reasons only.
+    const frozenDiversity = ((episode.configurationSnapshot as { production?: { diversityDecision?: { policyVersion?: number; mode?: string; selectedIntro?: { selectedAssetId?: string | null; reason?: string }; selectedOutro?: { selectedAssetId?: string | null; reason?: string }; selectedBed?: { selectedAssetId?: string | null; reason?: string }; motifDecision?: { action?: string; recentRate?: number }; relaxations?: string[]; fingerprint?: string } } } | null)?.production?.diversityDecision) ?? null;
     const postTtsDiagnostics = {
       planningEngine: postTtsEngineLabel ?? engineDecision.engine,
       planningVersion: postTtsPlan?.directorVersion ?? null,
       flagEnabled: engineDecision.flagEnabled,
       fallback: engineDecision.reason,
+      diversity: {
+        renderMode: postTtsDiversityMode,
+        cueDiversityDecisions: (postTtsPlan as { cueDiversityDecisions?: unknown[] } | null)?.cueDiversityDecisions?.length ?? 0,
+        ...(frozenDiversity ? {
+          policyVersion: frozenDiversity.policyVersion ?? null,
+          selectionMode: frozenDiversity.mode ?? null,
+          introReason: frozenDiversity.selectedIntro?.reason ?? null,
+          outroReason: frozenDiversity.selectedOutro?.reason ?? null,
+          bedReason: frozenDiversity.selectedBed?.reason ?? null,
+          motifAction: frozenDiversity.motifDecision?.action ?? null,
+          motifRate: frozenDiversity.motifDecision?.recentRate ?? null,
+          relaxations: frozenDiversity.relaxations ?? [],
+          diversityFingerprint: frozenDiversity.fingerprint ?? null,
+        } : {}),
+      },
       ...(postTtsPlan ? {
         formatPolicy: postTtsPlan.formatId,
         dialogueDurationMs: postTtsPlan.dialogueDurationMs,
