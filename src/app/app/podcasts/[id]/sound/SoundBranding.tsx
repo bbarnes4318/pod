@@ -33,7 +33,7 @@ const ROLES: Array<{ role: string; label: string; kinds: string[]; testid: strin
 const csv = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 export default function SoundBranding({ podcastId, data }: { podcastId: string; data: PodcastSoundData }) {
-  const assets = data.assets ?? [];
+  const assets = useMemo(() => data.assets ?? [], [data.assets]);
   const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
   const initial = data.assignments ?? [];
   const toRow = (a: (typeof initial)[number]): Row => ({

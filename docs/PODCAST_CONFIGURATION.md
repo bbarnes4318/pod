@@ -101,3 +101,13 @@ format from the show-format registry (no longer only `two_host_debate`), and
 the host cap is the format's `speakerMax` (1-4) instead of a global 2.
 Episode snapshots are version 3 (frozen format + pinned cast; v1/v2 stay
 byte-stable). See `docs/SHOW_FORMATS.md`.
+
+## PR 2 — sonic identity + variant pools
+
+`PodcastProductionConfig.sonicIdentity` (validated JSON) holds the show's
+versioned sonic identity, and `PodcastSoundAssignment` becomes a VARIANT POOL per
+role (cueFamily, weight, isBrandedMotif, per-episode use/cooldown limits, format
+allow/deny). The old singleton intro/outro/bed constraint is dropped. The
+episode configuration snapshot advances to **v5**, freezing the deterministically
+selected intro/outro/bed variant + the permitted pools + the identity; v1–v4 stay
+readable and fingerprint-stable. Full detail: docs/SOUND_DESIGN.md ("PR 2").

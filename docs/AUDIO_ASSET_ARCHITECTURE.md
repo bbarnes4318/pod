@@ -134,3 +134,17 @@ user ownership + optional podcast association + shared system).
 `tests/e2e/audio-asset-isolation.spec.ts` (browser), plus the migration
 baseline/adoption safeguards (`migrationCheckpoints.ts` invariants for
 migrations 22 + 23).
+
+## PR 2 — cue metadata + verification state
+
+`AudioAsset` gains two additive fields for admin-reviewed creative metadata:
+
+- `cueMetadata` (JSON) — cue family, genre, mood, energy, bpm, instrumentation,
+  and per-slot suitability (broadcast/format/under-speech/intro/outro/bed/
+  transition/reaction). Validated by `src/lib/audio/cueMetadata.ts`; nothing is
+  fabricated.
+- `metadataState` — `unclassified` | `suggested` | `verified` (DB CHECK).
+  Metadata is authoritative for HARD compatibility decisions ONLY when
+  `verified` (`verifiedCueMetadata`); `suggested` may be shown but is never
+  silently trusted. Set via the admin `updateAssetCueMetadata` action. See
+  docs/SOUND_DESIGN.md ("PR 2") for how selection consumes it.

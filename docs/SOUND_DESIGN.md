@@ -203,3 +203,72 @@ Three correctness guarantees sit on top of the mix engine:
   safe reasons, speech-end / master-duration / outro-tail, and the bookend
   result. Names and asset ids only — every free-text field is scrubbed of
   URLs/keys/tokens as defense in depth.
+
+## PR 2 — sonic identity, cue families, variant pools, deterministic selection
+
+Different shows must not draw from one house identity. PR 2 gives each podcast a
+coherent, recognizable sonic identity with controlled creative variation, frozen
+per episode.
+
+- **Sonic identity** (`src/lib/audio/sonicIdentity.ts`, stored as validated JSON
+  on `PodcastProductionConfig.sonicIdentity`). A versioned, producer-declared
+  identity: `primaryGenre`/`secondaryGenres`/`moods`, `pace`, `intensity`,
+  `broadcastStyle`, allowed & prohibited **cue families**, allowed & prohibited
+  **format ids**, humor/crowd/under-speech toggles, `transitionFrequency`,
+  `maximumEffectsIntensity`, `bedPolicy`, `voiceOverMusicPolicy`, and min/max
+  music-gap bounds. Validated enums + bounded values (never free-text-only). The
+  permissive `DEFAULT_SONIC_IDENTITY` means an existing show behaves exactly as
+  before. This is the producer's declared creative intent for THEIR show — it
+  never fabricates facts about third-party assets.
+- **Cue families** are a creative PURPOSE, not an asset kind: intro
+  (`brand_main`…`brand_minimal`), outro (`close_main`…`close_documentary`),
+  transition (`hard_hit`, `score_update`, `comedy_button`, …), reaction
+  (`crowd_positive`, `ticker`, `comedy`, …), bed (`sports_drive`,
+  `newsroom_clean`, …). A family is valid only for a compatible role
+  (`isCueFamilyValidForRole`); the identity may prohibit families
+  (`cueFamilyAllowedByIdentity`) — e.g. a news identity forbids comedy/arena, a
+  documentary forbids `hard_hit`/`score_update`/`crowd_positive`.
+- **Variant pools** replace singleton bookends. Every role (intro/outro/bed/
+  transition/reaction) is a POOL of weighted, ordered `PodcastSoundAssignment`
+  variants — each with a cue family, bounded `weight` [0,100], `isBrandedMotif`,
+  `maxUsesPerEpisode`, `minEpisodeCooldown`, and optional per-assignment format
+  allow/deny lists. The old "one enabled intro/outro/bed per podcast" index is
+  dropped. Backward compatible: an existing single intro/outro/bed becomes a
+  one-item pool; existing stinger/reaction pools keep order at default weight 1.
+- **Deterministic selection** (`src/lib/audio/variantSelection.ts`).
+  `selectEpisodeSoundVariants(permitted, {seed, formatId, identity})` chooses the
+  EXACT intro/outro/bed for an episode from the permitted pools using a seeded
+  mulberry32 stream (FNV-1a seed — the same PRNG family as the production
+  planner): format + identity compatible, weight-biased, the outro prefers the
+  intro's matching brand family and avoids the same file, `bedPolicy: none`
+  yields no bed. No `Math.random`, no wall-clock. Identical inputs → identical
+  selection; distinct seeds → coherent variety. It records `selectionSeed`,
+  per-slot `selectionReasons`, and any format/identity `excluded` entries. Weight
+  and identity/format/rights/scope/archive/readiness/role are all respected —
+  weight never bypasses a gate.
+- **Snapshot v5** freezes the selection. `buildEpisodeConfigurationSnapshot`
+  takes an optional `soundSeed`; when present it selects + freezes the exact
+  intro/outro/bed variant plus the permitted variant pools, the sonic identity,
+  and selection reasons into the episode snapshot. Creation paths pass a CSPRNG
+  `randomUUID()` seed (frozen into the snapshot ⇒ reproducible; distinct per
+  episode). Rendering reads the frozen selection; a later podcast sound edit
+  never changes a v5 episode. **v1–v4 remain readable and byte/fingerprint
+  stable** — the new fields live only inside newly frozen v5 profiles (golden
+  hashes v1 `ae7a53…`, v2 `ad246f…`, v3 `04fc4d…`, v4 `f2bb91…`).
+- **Sound & Branding UI** (`/app/podcasts/[id]/sound`): configure the identity;
+  build/reorder/weight variant pools per role with cue families, branded-motif,
+  and format restrictions; blocking validation errors; and a deterministic
+  **Preview Resolution** (owner-gated) that shows three example future-episode
+  resolutions — selected intro/outro/bed, permitted families, exclusions, reasons
+  — WITHOUT creating episodes or generating audio. No storage URLs/keys reach the
+  page (previews use the authorized route).
+- **Asset cue metadata** (`src/lib/audio/cueMetadata.ts`; `AudioAsset.cueMetadata`
+  + `metadataState`). Admin-reviewed cue metadata is authoritative for HARD
+  compatibility decisions ONLY when `metadataState === "verified"`; `suggested`
+  is displayed but never silently trusted; `unclassified` carries none. No
+  automated musical-analysis infrastructure is built here — a human verifies.
+
+**Deferred:** the post-TTS actual-speech timing engine and final cue placement
+rewrite are **PR 3**; the full within/cross-episode anti-repetition + diversity
+engine and the listening acceptance suite are **PR 4**. PR 2 provides the data
+model + deterministic frozen-pool foundation those consume.
