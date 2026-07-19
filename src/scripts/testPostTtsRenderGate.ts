@@ -130,6 +130,40 @@ async function main() {
       assert((rr?.plan as { mode?: string } | null)?.mode === "post_tts", "post_tts plan stored");
     });
 
+    await check("reproduce replays the STORED plan verbatim (engine=stored_plan_reproduce; flag + thresholds ignored)", async () => {
+      const before = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const storedFp = (before?.plan as { fingerprint?: string; reproduce?: unknown } | null)?.fingerprint;
+      assert(!!storedFp && !!(before?.plan as { reproduce?: unknown } | null)?.reproduce, "a stored post-TTS plan with a reproduce envelope exists");
+      // Flag OFF + a transition-gap threshold that WOULD suppress cues if a fresh
+      // director ran: verbatim reproduce must ignore BOTH and replay the plan.
+      process.env.POST_TTS_SOUND_DIRECTION_ENABLED = "false";
+      process.env.POST_TTS_MIN_TRANSITION_GAP_MS = "99999";
+      const r = await stitchFinalEpisodeAudio({ scriptId: script.id, renderMode: "reproduce", forceRegenerate: true, productionStyle: "full" });
+      process.env.POST_TTS_SOUND_DIRECTION_ENABLED = "true";
+      delete process.env.POST_TTS_MIN_TRANSITION_GAP_MS;
+      assert(r.finalStatus === "completed", `reproduce completes (${r.finalStatus})`);
+      const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const engine = (rr?.diagnostics as { postTts?: { planningEngine?: string } } | null)?.postTts?.planningEngine;
+      assert(engine === "stored_plan_reproduce", `engine stored_plan_reproduce (${engine})`);
+      assert((rr?.plan as { fingerprint?: string } | null)?.fingerprint === storedFp, "reproduced plan fingerprint == stored");
+    });
+
+    await check("a stored plan missing its reproduce envelope FAILS reproduce (no silent re-plan; prior master preserved)", async () => {
+      const latest = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const priorAudioUrl = (await db.episode.findUnique({ where: { id: episode.id } }))?.audioUrl;
+      const corrupt = { ...(latest!.plan as object) }; delete (corrupt as { reproduce?: unknown }).reproduce;
+      await db.episodeAudioRender.update({ where: { id: latest!.id }, data: { plan: corrupt as object } });
+      // A corrupt/enveloped-less stored plan fails clearly (early throw, like the
+      // "no prior plan" guard) OR returns a non-completed status — never silently
+      // re-plans. Either way the prior master must be preserved.
+      let failed = false;
+      try { const r = await stitchFinalEpisodeAudio({ scriptId: script.id, renderMode: "reproduce", forceRegenerate: true, productionStyle: "full" }); failed = r.finalStatus !== "completed"; }
+      catch (e) { failed = /reproduce envelope|missing/i.test((e as Error).message); }
+      assert(failed, "reproduce fails on a corrupt stored plan (no silent re-plan)");
+      const after = (await db.episode.findUnique({ where: { id: episode.id } }))?.audioUrl;
+      assert(after === priorAudioUrl, "prior master preserved on reproduce failure");
+    });
+
     await check("flag OFF: the same episode renders via the LEGACY engine (no silent switch)", async () => {
       process.env.POST_TTS_SOUND_DIRECTION_ENABLED = "false";
       const r = await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" });

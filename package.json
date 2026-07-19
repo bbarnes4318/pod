@@ -38,6 +38,7 @@
     "test:post-tts-director": "tsx --conditions=react-server src/scripts/testPostTtsDirector.ts",
     "test:cue-fitting": "tsx src/scripts/testCueFitting.ts",
     "test:post-tts-execution": "tsx --conditions=react-server src/scripts/testPostTtsExecution.ts",
+    "test:post-tts-reproduce": "tsx --conditions=react-server src/scripts/testPostTtsReproduce.ts",
     "test:post-tts-render-gate": "tsx --conditions=react-server src/scripts/testPostTtsRenderGate.ts",
     "demo:post-tts-sound-direction": "tsx --conditions=react-server src/scripts/produceLocalPostTtsDemo.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",

@@ -343,25 +343,45 @@ It is deterministic, fingerprinted, and gated by `POST_TTS_SOUND_DIRECTION_ENABL
   / reject, env-bounded (`POST_TTS_MAX_TIME_STRETCH_PERCENT`,
   `_MIN_CUE_AUDIBLE_MS`, `_MIN_FADE_MS`, `_MAX_FADE_MS`). Never an abrupt edge,
   never a 2s cue in a 500ms gap, never aggressive stretching.
+- **Executed bookend treatments** (director + `postTtsExecution.ts`). Each intro/
+  outro treatment is EXECUTED on the real timeline as explicit gain SEGMENTS, not
+  merely recorded: `full_before` (theme entirely before the opening words),
+  `short_sting_then_clean` (bounded sting → clean speech), `cold_open_ducked`
+  (full lead, then the theme DUCKS under the host a hair before the protected
+  open), `spoken_cold_open_then_theme` (dialogue leads; the theme enters ducked
+  AFTER the first line); and `clean_then_outro`, `rise_under_final` (ducked under
+  the final sentence, rising to full only after the protected close),
+  `reflective_gap_then_outro` (a measured gap from the last audible word — never
+  double-counting trailing silence), `hard_branded_close` (a short bounded
+  close). The dialogue offset comes from the intro's speech-entry
+  (`resolveIntroDialogueStartMs`), so the intro never overlaps the opening words.
 - **Execution + validation** (`postTtsExecution.ts`) — placed, fitted clips +
   Part-15 pre-render validation: every clip is a frozen-profile, loaded asset;
-  bounds/gains/fades valid; no cue covers a hard-protected region; required
-  bookends represented. Missing OPTIONAL cues skip with a reason; missing
-  REQUIRED bookends fail.
-- **Feature flag + render modes** (`postTtsFlag.ts`). OFF by default. Enabling it
-  later does NOT change published episodes (they reproduce their deterministic
-  plan). Reproduce of a post-TTS episode RE-RUNS the director (pure function of
-  frozen inputs -> identical plan + fingerprint). No silent fallback: a failure
-  fails the render (prior master preserved, no cue usage recorded); legacy is an
-  explicit mode.
+  bounds/gains/fades valid; no cue AND no UNDUCKED bookend segment covers a
+  hard-protected region (a ducked `under_speech` segment may); required bookends
+  represented. Missing OPTIONAL cues skip with a reason; missing REQUIRED
+  bookends, or an unsupported/unsafe treatment, fail the render.
+- **Feature flag + render modes** (`postTtsFlag.ts`, `postTtsReproduce.ts`). OFF
+  by default. Enabling it later does NOT change published episodes. A successful
+  post-TTS render stores its FULL execution plan (every placement, bookend
+  segment, bed interval, gain/fade/source-window) plus a versioned reproduce
+  ENVELOPE (plan/source/frozen-profile fingerprints + referenced asset hashes).
+  **Reproduce EXECUTES that stored plan VERBATIM** — the director, format-policy
+  selection, and cue selector are never invoked (`stored_plan_reproduce`), so
+  later changes to director code, policies, thresholds, ffmpeg, or the flag do
+  not alter a reproduced render. A missing/corrupt/unsupported-version plan, or a
+  frozen-profile / dialogue-source / asset-hash mismatch, fails clearly (prior
+  master preserved, no cue usage) — never a silent re-plan or legacy fallback.
 - **Diagnostics** (job log + `EpisodeAudioRender.diagnostics.postTts`) —
-  planning engine + version, format policy, dialogue duration, gap/protected/cue
-  counts, rejection reasons, intro/outro treatment, bed policy, plan fingerprint,
-  warnings, fallback reason. Names/counts/reasons only — never URLs/keys/paths.
+  planning engine (`post_tts` / `stored_plan_reproduce` / `legacy_planner`) +
+  version, format policy, dialogue duration, gap/protected/cue counts, rejection
+  reasons, intro/outro treatment, bed policy, plan fingerprint, warnings,
+  fallback reason. Names/counts/reasons only — never URLs/keys/paths.
 
 **Deferred to PR 4:** cross-episode repetition prevention, within-episode
 cue-family diversity scoring, cue-sequence similarity, long-horizon cooldown, and
-the multi-episode listening acceptance matrix. **Known limitation:** intro/outro
-TREATMENTS are chosen + recorded and the bookends are placed and QA-verified
-audible via the existing path; deep treatment execution (e.g. host-over-ducked-
-intro-tail) is recorded but bounded by the current intro placement.
+the multi-episode listening acceptance matrix. **Known limitation:** bookend
+audibility QA stays RMS-threshold based (presence + non-truncation), and the
+`demo:post-tts-sound-direction` harness proves treatments acoustically via
+single-tone band-pass fixtures — production assets are full-spectrum, so the
+same measurements are indicative, not a substitute for a listen.

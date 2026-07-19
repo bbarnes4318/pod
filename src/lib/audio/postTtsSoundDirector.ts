@@ -21,7 +21,32 @@ import { type DetectedAudioGap, gapAllowsReaction, gapAllowsTransition } from "@
 import { buildProtectedRegions, cueCollidesWithProtected, type ProtectedAudioRegion, type ProtectedLineInput } from "@/lib/audio/protectedRegions";
 import { getFormatSoundPolicy, type FormatSoundPolicy, type IntroTimingStyle, type OutroTimingStyle } from "@/lib/audio/formatSoundPolicy";
 
-export const POST_TTS_DIRECTOR_VERSION = 1 as const;
+// v2 (PR 3 review): intro/outro treatments now carry explicit, timeline-aware
+// gain SEGMENTS that the executor renders verbatim (cold-open ducking, spoken
+// cold open before theme, rise-under-final, reflective gap, hard close) — the
+// treatment is executed on the real timeline, not merely recorded.
+export const POST_TTS_DIRECTOR_VERSION = 2 as const;
+
+/** Baseline bookend gains. A "clean"/"lead"/"tail"/"sting" segment plays at full
+ *  bookend level; an "under_speech" segment is DUCKED so speech stays intelligible
+ *  (and, being ducked, may legally overlap a hard-protected region). */
+export const BOOKEND_FULL_GAIN_DB = -2;
+export const BOOKEND_DUCK_GAIN_DB = -12;
+
+export type BookendSegmentRole = "lead" | "under_speech" | "tail" | "clean" | "sting";
+/** One rendered slice of a bookend asset with its own timeline position + gain.
+ *  A treatment is one or more of these (e.g. cold_open_ducked = lead + ducked
+ *  under_speech). Executed verbatim by the executor; stored for reproduce. */
+export interface DirectedBookendSegment {
+  role: BookendSegmentRole;
+  sourceStartMs: number;    // excerpt start within the asset
+  sourceEndMs: number;      // excerpt end within the asset
+  timelineStartMs: number;  // where the slice sits on the master timeline
+  gainDb: number;
+  fadeInMs: number;
+  fadeOutMs: number;
+  ducked: boolean;          // true => may overlap a hard-protected region
+}
 
 // --- Plan shapes -----------------------------------------------------------
 export interface DirectedCuePlacement {
@@ -43,11 +68,12 @@ export interface DirectedIntroPlan {
   treatment: IntroTimingStyle | "none";
   introStartMs: number;
   introDurationMs: number;
-  speechEntryMs: number;     // when dialogue enters
+  speechEntryMs: number;     // when dialogue enters (== dialogue offset)
   duckStartMs: number | null;
   duckGainDb: number | null;
   fadeMs: number;
   continuesUnderSpeech: boolean;
+  segments: DirectedBookendSegment[];  // executed verbatim
   reason: string;
 }
 export interface DirectedOutroPlan {
@@ -59,6 +85,8 @@ export interface DirectedOutroPlan {
   outroDurationMs: number;
   fadeInMs: number;
   fadeOutMs: number;
+  reflectiveGapMs: number;   // intentional gap before the outro (0 unless reflective)
+  segments: DirectedBookendSegment[];  // executed verbatim
   reason: string;
 }
 export interface DirectedBookendPlan { intro: DirectedIntroPlan | null; outro: DirectedOutroPlan | null; }
@@ -272,6 +300,31 @@ function placeCue(
   };
 }
 
+const INTRO_FALLBACK_ORDER: IntroTimingStyle[] = ["short_sting_then_clean", "full_before", "minimal"];
+
+/** Select the intro treatment for an asset of `dur` ms under `policy`, falling
+ *  back to a shorter TREATMENT (never another asset) when the asset is too short
+ *  for the preferred one. Pure + timeline-independent for the treatment choice;
+ *  `timeline` only positions the spoken-cold-open theme. */
+function selectIntroTreatment(dur: number, policy: FormatSoundPolicy, timeline: ActualDialogueTimeline | null): { treatment: IntroTimingStyle; timings: IntroTimings } | null {
+  for (const treatment of [policy.introStyle, ...INTRO_FALLBACK_ORDER]) {
+    const timings = introTreatmentTimings(treatment, dur, policy, timeline);
+    if (timings) return { treatment, timings };
+  }
+  return null;
+}
+
+/** Dialogue offset (ms) the intro treatment imposes — the point at which the
+ *  first spoken word enters. Used by the stitcher to place the dialogue timeline
+ *  BEFORE the director runs; the director then reproduces the identical value.
+ *  0 when there is no intro (clean/disabled/no asset) or a spoken cold open. */
+export function resolveIntroDialogueStartMs(profile: FrozenSoundProfile, formatId: string, includeIntro: boolean, introDurationMs: number | null): number {
+  if (profile.mode === "clean" || !includeIntro || profile.introEnabled === false) return 0;
+  if (!profile.intro || !introDurationMs) return 0;
+  const sel = selectIntroTreatment(introDurationMs, getFormatSoundPolicy(formatId), null);
+  return sel ? Math.max(0, sel.timings.speechEntryMs) : 0;
+}
+
 function directIntro(input: PostTtsDirectorInput, policy: FormatSoundPolicy, decisions: SoundDirectionDecision[], warnings: SoundDirectionWarning[], fail: (f: SoundDirectionFailure) => void): DirectedIntroPlan | null {
   const clean = input.frozenProfile.mode === "clean";
   const enabled = !clean && input.includeIntro && input.frozenProfile.introEnabled !== false;
@@ -281,43 +334,74 @@ function directIntro(input: PostTtsDirectorInput, policy: FormatSoundPolicy, dec
     // Required (frozen intent enabled) but no usable asset -> PR1 render gate + here.
     fail("required_intro_no_safe_treatment");
     warnings.push({ code: "intro_missing", detail: "intro enabled but no usable asset/duration" });
-    return { required: true, assetId: asset?.assetId ?? null, treatment: "none", introStartMs: 0, introDurationMs: 0, speechEntryMs: 0, duckStartMs: null, duckGainDb: null, fadeMs: 0, continuesUnderSpeech: false, reason: "required intro has no usable asset" };
+    return { required: true, assetId: asset?.assetId ?? null, treatment: "none", introStartMs: 0, introDurationMs: 0, speechEntryMs: 0, duckStartMs: null, duckGainDb: null, fadeMs: 0, continuesUnderSpeech: false, segments: [], reason: "required intro has no usable asset" };
   }
   const dur = input.introAssetDurationMs;
-  // Choose a treatment permitted by the format; if the asset is too short for
-  // the preferred treatment, fall back to another TREATMENT (never another asset).
-  const order: IntroTimingStyle[] = [policy.introStyle, "short_sting_then_clean", "full_before", "minimal"];
-  for (const treatment of order) {
-    const t = introTreatmentTimings(treatment, dur);
-    if (t) {
-      decisions.push({ subject: "intro", decision: "treated", reason: `${treatment} (asset ${dur}ms)` });
-      return { required: true, assetId: asset.assetId, treatment, introDurationMs: dur, ...t, reason: `${treatment} intro` };
-    }
+  const sel = selectIntroTreatment(dur, policy, input.timeline);
+  if (sel) {
+    decisions.push({ subject: "intro", decision: "treated", reason: `${sel.treatment} (asset ${dur}ms)` });
+    return { required: true, assetId: asset.assetId, treatment: sel.treatment, introDurationMs: dur, ...sel.timings, reason: `${sel.treatment} intro` };
   }
   fail("required_intro_no_safe_treatment");
-  return { required: true, assetId: asset.assetId, treatment: "none", introStartMs: 0, introDurationMs: dur, speechEntryMs: 0, duckStartMs: null, duckGainDb: null, fadeMs: 0, continuesUnderSpeech: false, reason: "no safe intro treatment for this asset length" };
+  return { required: true, assetId: asset.assetId, treatment: "none", introStartMs: 0, introDurationMs: dur, speechEntryMs: 0, duckStartMs: null, duckGainDb: null, fadeMs: 0, continuesUnderSpeech: false, segments: [], reason: "no safe intro treatment for this asset length" };
 }
 
-function introTreatmentTimings(treatment: IntroTimingStyle, dur: number): Omit<DirectedIntroPlan, "required" | "assetId" | "treatment" | "introDurationMs" | "reason"> | null {
+type IntroTimings = Omit<DirectedIntroPlan, "required" | "assetId" | "treatment" | "introDurationMs" | "reason">;
+
+function introTreatmentTimings(treatment: IntroTimingStyle, dur: number, policy: FormatSoundPolicy, timeline: ActualDialogueTimeline | null): IntroTimings | null {
   const fadeMs = Math.min(900, Math.max(200, Math.round(dur * 0.25)));
+  const openPad = policy.protectedOpeningPaddingMs;
+  const full = BOOKEND_FULL_GAIN_DB, duck = BOOKEND_DUCK_GAIN_DB;
   switch (treatment) {
-    case "full_before":
+    case "full_before": {
       if (dur < 1200) return null;
-      return { introStartMs: 0, speechEntryMs: Math.max(0, dur - fadeMs), duckStartMs: null, duckGainDb: null, fadeMs, continuesUnderSpeech: false };
-    case "cold_open_ducked":
-      if (dur < 1500) return null;
-      return { introStartMs: 0, speechEntryMs: Math.round(dur * 0.35), duckStartMs: Math.round(dur * 0.35), duckGainDb: -12, fadeMs, continuesUnderSpeech: true };
-    case "short_sting_then_clean":
+      // The whole theme plays, fades out, THEN speech enters after the opening
+      // pad — the intro is entirely before the protected first words.
+      const speechEntryMs = dur + openPad;
+      return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs, continuesUnderSpeech: false,
+        segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: dur, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: fadeMs, ducked: false }] };
+    }
+    case "short_sting_then_clean": {
       if (dur < 300) return null;
-      return { introStartMs: 0, speechEntryMs: Math.min(dur, 2500), duckStartMs: null, duckGainDb: null, fadeMs: Math.min(fadeMs, 400), continuesUnderSpeech: false };
-    case "spoken_cold_open_then_theme":
+      const stingMs = Math.min(dur, 2500);
+      const cleanFade = Math.min(fadeMs, 400);
+      const speechEntryMs = stingMs + openPad;
+      return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs: cleanFade, continuesUnderSpeech: false,
+        segments: [{ role: "sting", sourceStartMs: 0, sourceEndMs: stingMs, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: cleanFade, ducked: false }] };
+    }
+    case "cold_open_ducked": {
+      if (dur < 1500) return null;
+      // Theme opens at full; the host enters at ~35%. The theme DUCKS a hair
+      // BEFORE the host so it is already ducked when the opening protected region
+      // begins (speech-entry minus the opening pad) — the full-gain lead never
+      // covers protected words, and measurable ducked theme sits under the open.
+      const entry = Math.round(dur * 0.35);
+      const duckPoint = Math.max(1, entry - openPad);
+      return { introStartMs: 0, speechEntryMs: entry, duckStartMs: duckPoint, duckGainDb: duck, fadeMs, continuesUnderSpeech: true,
+        segments: [
+          { role: "lead", sourceStartMs: 0, sourceEndMs: duckPoint, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: 0, ducked: false },
+          { role: "under_speech", sourceStartMs: duckPoint, sourceEndMs: dur, timelineStartMs: duckPoint, gainDb: duck, fadeInMs: 0, fadeOutMs: fadeMs, ducked: true },
+        ] };
+    }
+    case "spoken_cold_open_then_theme": {
       if (dur < 800) return null;
-      // A spoken cold open: dialogue first, theme after ~1.2s of speech. Executor
-      // shifts the intro later; here speechEntry is 0 (dialogue leads).
-      return { introStartMs: 1200, speechEntryMs: 0, duckStartMs: null, duckGainDb: null, fadeMs, continuesUnderSpeech: false };
-    case "minimal":
+      // Dialogue LEADS (speechEntry 0); the theme enters ducked only AFTER the
+      // first spoken line, using the real timeline. It is ducked, so it may sit
+      // under the following speech without covering protected words unducked.
+      const coldOpenEndMs = timeline && timeline.lines.length ? timeline.lines[0].speechEndMs : 1500;
+      const cross = Math.min(700, fadeMs);
+      return { introStartMs: coldOpenEndMs, speechEntryMs: 0, duckStartMs: coldOpenEndMs, duckGainDb: duck, fadeMs, continuesUnderSpeech: true,
+        segments: [
+          { role: "under_speech", sourceStartMs: 0, sourceEndMs: dur, timelineStartMs: coldOpenEndMs, gainDb: duck, fadeInMs: cross, fadeOutMs: fadeMs, ducked: true },
+        ] };
+    }
+    case "minimal": {
       if (dur < 150) return null;
-      return { introStartMs: 0, speechEntryMs: Math.min(dur, 1200), duckStartMs: null, duckGainDb: null, fadeMs: 150, continuesUnderSpeech: false };
+      const cleanMs = Math.min(dur, 1200);
+      const speechEntryMs = cleanMs + openPad;
+      return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs: 150, continuesUnderSpeech: false,
+        segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: cleanMs, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: 150, ducked: false }] };
+    }
   }
 }
 
@@ -330,7 +414,7 @@ function directOutro(input: PostTtsDirectorInput, policy: FormatSoundPolicy, dec
   if (!asset || !input.outroAssetDurationMs) {
     fail("required_outro_no_safe_treatment");
     warnings.push({ code: "outro_missing", detail: "outro enabled but no usable asset/duration" });
-    return { required: true, assetId: asset?.assetId ?? null, treatment: "none", speechEndMs, outroStartMs: speechEndMs, outroDurationMs: 0, fadeInMs: 0, fadeOutMs: 0, reason: "required outro has no usable asset" };
+    return { required: true, assetId: asset?.assetId ?? null, treatment: "none", speechEndMs, outroStartMs: speechEndMs, outroDurationMs: 0, fadeInMs: 0, fadeOutMs: 0, reflectiveGapMs: 0, segments: [], reason: "required outro has no usable asset" };
   }
   const dur = input.outroAssetDurationMs;
   const lastLine = input.timeline.lines[input.timeline.lines.length - 1];
@@ -339,20 +423,54 @@ function directOutro(input: PostTtsDirectorInput, policy: FormatSoundPolicy, dec
   // after the last audible word for those.
   let treatment = policy.outroStyle;
   if (unresolvedOverlap && treatment === "rise_under_final") { treatment = "clean_then_outro"; decisions.push({ subject: "outro", decision: "treated", reason: "unresolved overlap -> clean close" }); }
-  const timings = outroTreatmentTimings(treatment, dur, speechEndMs);
+  const timings = outroTreatmentTimings(treatment, dur, input.timeline, policy);
   decisions.push({ subject: "outro", decision: "treated", reason: `${treatment} (asset ${dur}ms)` });
   return { required: true, assetId: asset.assetId, treatment, speechEndMs, outroDurationMs: dur, ...timings, reason: `${treatment} outro` };
 }
 
-function outroTreatmentTimings(treatment: OutroTimingStyle, dur: number, speechEndMs: number): Pick<DirectedOutroPlan, "outroStartMs" | "fadeInMs" | "fadeOutMs"> {
+type OutroTimings = Pick<DirectedOutroPlan, "outroStartMs" | "fadeInMs" | "fadeOutMs" | "reflectiveGapMs" | "segments">;
+
+function outroTreatmentTimings(treatment: OutroTimingStyle, dur: number, timeline: ActualDialogueTimeline, policy: FormatSoundPolicy): OutroTimings {
+  const speechEndMs = timeline.speechEndMs;
+  const closePad = policy.protectedClosingPaddingMs;
   const cross = Math.min(900, Math.round(dur * 0.25));
+  const full = BOOKEND_FULL_GAIN_DB, duck = BOOKEND_DUCK_GAIN_DB;
+  // A single full-level clean segment beginning `gapMs` after the last audible
+  // word (never inside the protected closing region). speechEndMs already
+  // excludes trailing silence, so `gapMs` is a genuine gap (no double-count).
+  const cleanAfter = (gapMs: number, fadeInMs: number, fadeOutMs: number): OutroTimings => {
+    const start = speechEndMs + Math.max(gapMs, closePad);
+    return { outroStartMs: start, fadeInMs, fadeOutMs, reflectiveGapMs: start - speechEndMs,
+      segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: dur, timelineStartMs: start, gainDb: full, fadeInMs, fadeOutMs, ducked: false }] };
+  };
   switch (treatment) {
-    case "rise_under_final": return { outroStartMs: Math.max(0, speechEndMs - 1200), fadeInMs: cross, fadeOutMs: 400 };
-    case "short_pause_then_outro": return { outroStartMs: speechEndMs + 400, fadeInMs: Math.min(cross, 500), fadeOutMs: 400 };
-    case "reflective_gap_then_outro": return { outroStartMs: speechEndMs + 900, fadeInMs: Math.min(cross, 700), fadeOutMs: 500 };
-    case "hard_branded_close": return { outroStartMs: speechEndMs + 120, fadeInMs: 60, fadeOutMs: 300 };
+    case "rise_under_final": {
+      // Ducked outro rises UNDER the final sentence, then swells to full only
+      // AFTER the protected closing region ends (speechEndMs + closePad).
+      const lastLine = timeline.lines[timeline.lines.length - 1];
+      const lastSpeechStart = lastLine ? lastLine.speechStartMs : speechEndMs;
+      const riseUnderMs = Math.max(0, Math.min(1200, Math.round(dur * 0.4), speechEndMs - lastSpeechStart));
+      const duckedMs = riseUnderMs + closePad;                 // ducked span (final sentence + closing pad)
+      const outroStartMs = Math.max(0, speechEndMs - riseUnderMs);
+      const tailStart = speechEndMs + closePad;
+      const segments: DirectedBookendSegment[] = [];
+      if (duckedMs > 0 && duckedMs < dur) segments.push({ role: "under_speech", sourceStartMs: 0, sourceEndMs: duckedMs, timelineStartMs: outroStartMs, gainDb: duck, fadeInMs: cross, fadeOutMs: 0, ducked: true });
+      const tailSourceStart = segments.length ? duckedMs : 0;
+      segments.push({ role: "tail", sourceStartMs: tailSourceStart, sourceEndMs: dur, timelineStartMs: tailStart, gainDb: full, fadeInMs: segments.length ? 0 : cross, fadeOutMs: 400, ducked: false });
+      return { outroStartMs, fadeInMs: cross, fadeOutMs: 400, reflectiveGapMs: 0, segments };
+    }
+    case "short_pause_then_outro": return cleanAfter(400, Math.min(cross, 500), 400);
+    case "reflective_gap_then_outro": return cleanAfter(900, Math.min(cross, 700), 500);
+    case "hard_branded_close": {
+      // A short, bounded, punchy close (sports/rapid). Bounded excerpt so a long
+      // theme cannot run past a hard close; no abrupt edge (fades on both ends).
+      const closeMs = Math.min(dur, 2500);
+      const start = speechEndMs + Math.max(120, closePad);
+      return { outroStartMs: start, fadeInMs: 60, fadeOutMs: 300, reflectiveGapMs: 0,
+        segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: closeMs, timelineStartMs: start, gainDb: full, fadeInMs: 60, fadeOutMs: 300, ducked: false }] };
+    }
     case "clean_then_outro":
-    default: return { outroStartMs: speechEndMs + 200, fadeInMs: Math.min(cross, 600), fadeOutMs: 400 };
+    default: return cleanAfter(200, Math.min(cross, 600), 400);
   }
 }
 
@@ -392,6 +510,11 @@ function directBed(input: PostTtsDirectorInput, policy: FormatSoundPolicy, ident
   };
 }
 
+/** Compact, order-stable encoding of a bookend's executed segments. */
+function segFp(segs: DirectedBookendSegment[]): Array<Array<number | string | boolean>> {
+  return segs.map((s) => [s.role, s.sourceStartMs, s.sourceEndMs, s.timelineStartMs, s.gainDb, s.fadeInMs, s.fadeOutMs, s.ducked]);
+}
+
 /** Deterministic fingerprint of the plan's decision content (excludes the
  *  fingerprint field itself). Same inputs -> same hash. */
 export function fingerprintDirectionPlan(plan: PostTtsSoundDirectionPlan): string {
@@ -399,8 +522,8 @@ export function fingerprintDirectionPlan(plan: PostTtsSoundDirectionPlan): strin
     v: plan.version, dv: plan.directorVersion, ep: plan.episodeId, sc: plan.scriptId, seed: plan.seed, fmt: plan.formatId,
     dur: plan.dialogueDurationMs,
     cues: plan.cuePlacements.map((c) => [c.kind, c.assetId, c.cueFamily, c.lineIndex, c.targetStartMs, c.gainDb]),
-    intro: plan.bookendPlan.intro && [plan.bookendPlan.intro.treatment, plan.bookendPlan.intro.assetId, plan.bookendPlan.intro.speechEntryMs, plan.bookendPlan.intro.duckStartMs],
-    outro: plan.bookendPlan.outro && [plan.bookendPlan.outro.treatment, plan.bookendPlan.outro.assetId, plan.bookendPlan.outro.outroStartMs],
+    intro: plan.bookendPlan.intro && [plan.bookendPlan.intro.treatment, plan.bookendPlan.intro.assetId, plan.bookendPlan.intro.speechEntryMs, plan.bookendPlan.intro.duckStartMs, segFp(plan.bookendPlan.intro.segments)],
+    outro: plan.bookendPlan.outro && [plan.bookendPlan.outro.treatment, plan.bookendPlan.outro.assetId, plan.bookendPlan.outro.outroStartMs, plan.bookendPlan.outro.reflectiveGapMs, segFp(plan.bookendPlan.outro.segments)],
     bed: plan.bedPlan && [plan.bedPlan.assetId, plan.bedPlan.policy, plan.bedPlan.segments.map((s) => [s.startMs, s.endMs])],
     fail: plan.failure,
   };

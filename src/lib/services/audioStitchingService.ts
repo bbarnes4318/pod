@@ -18,9 +18,10 @@ import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
 import { verifyBookends, resolveBookendRequirement, describeBookendAbsence, type BookendVerification, type BookendKind } from "@/lib/audio/bookendQa";
 import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import { decidePlanningEngine } from "@/lib/audio/postTtsFlag";
-import { runPostTtsDirection } from "@/lib/audio/postTtsStitchBridge";
+import { runPostTtsDirection, runPostTtsReproduce } from "@/lib/audio/postTtsStitchBridge";
+import { buildReproduceEnvelope, isStoredPostTtsPlan, validateStoredPlanForReproduce, type StoredPostTtsPlan, type ReproduceDialogueLine } from "@/lib/audio/postTtsReproduce";
 import type { PostTtsSoundDirectionPlan } from "@/lib/audio/postTtsSoundDirector";
-import type { DirectorScriptLine } from "@/lib/audio/postTtsSoundDirector";
+import { resolveIntroDialogueStartMs, type DirectorScriptLine } from "@/lib/audio/postTtsSoundDirector";
 import {
   LoadedAsset,
   ProductionStyle,
@@ -600,6 +601,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // the director: it is a pure function of the frozen inputs, so the plan (and
     // its fingerprint) are identical. We do not replay a planner cue sheet.
     let reproducePostTts = false;
+    let storedPostTtsPlan: StoredPostTtsPlan | null = null;
     if (renderMode === "reproduce") {
       const reference = await db.episodeAudioRender.findFirst({
         where: { episodeId: episode.id, status: "succeeded" },
@@ -609,7 +611,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         throw new Error("Reproduce requested but no prior render with a stored plan exists for this episode.");
       }
       if ((reference.plan as { mode?: string }).mode === "post_tts") {
-        reproducePostTts = true; // deterministic re-run of the post-TTS director
+        // Verbatim reproduce: execute the STORED post-TTS execution plan. The
+        // director is never re-run. A stored plan without a reproduce envelope
+        // (corrupt or a pre-verbatim render) fails clearly, never silently.
+        if (!isStoredPostTtsPlan(reference.plan)) {
+          throw new Error("Reproduce requested but the stored post-TTS plan is missing its reproduce envelope (corrupt or unsupported plan).");
+        }
+        reproducePostTts = true;
+        storedPostTtsPlan = reference.plan as StoredPostTtsPlan;
       } else {
         reproducePlan = reference.plan as unknown as ProductionPlan;
       }
@@ -664,8 +673,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // a FROZEN profile; reproduce/legacy never use it. No silent fallback — a
     // director/validation failure fails the render (prior master preserved).
     const engineDecision = decidePlanningEngine({ renderMode, env: process.env });
+    const postTtsFormatId = (episode as { formatId?: string }).formatId ?? "two_host_debate";
     const usePostTts = (engineDecision.engine === "post_tts" || reproducePostTts) && style !== "clean" && !!frozenProfile;
     let postTtsPlan: PostTtsSoundDirectionPlan | null = null;
+    // The engine actually used ("post_tts" for a fresh direction, or
+    // "stored_plan_reproduce" for a verbatim replay) + the plan to persist.
+    let postTtsEngineLabel: string | null = null;
+    let postTtsStoredPlan: StoredPostTtsPlan | null = null;
     let postTtsExecutionSummary: { cueCount: number; rejectedCueCount: number; introTreatment: string | null; outroTreatment: string | null; bedPolicy: string | null; warnings: string[]; fallback: string } | null = null;
     let productionPlan: ProductionPlan | null = null;
     if (plannerEnabled && reproducePlan) {
@@ -911,8 +925,18 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     }
 
     let introClip: TimelineClip | null = null;
+    // Post-TTS bookend segments (arrays: a treatment may be several gain-slices).
+    let postTtsIntroClips: TimelineClip[] = [];
+    let postTtsOutroClips: TimelineClip[] = [];
     let dialogueStartMs = 0;
-    if (plannerEnabled && productionPlan) {
+    if (usePostTts && frozenProfile) {
+      // Post-TTS: the DIRECTOR's intro treatment sets where the first spoken word
+      // enters (the dialogue offset). The intro audio itself is produced as
+      // gain-segments by the director/executor below — no legacy intro placement.
+      dialogueStartMs = resolveIntroDialogueStartMs(
+        frozenProfile, postTtsFormatId, includeIntro && frozenProfile.intro !== null, introStd?.durationMs ?? null
+      );
+    } else if (plannerEnabled && productionPlan) {
       // Planner path: the plan's intro cue (or its absence) is the call.
       const resolved = resolveIntroFromPlan({
         plan: productionPlan,
@@ -1007,15 +1031,46 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       const loadedById = new Map<string, { filePath: string; durationMs: number; assetId: string }>();
       for (const a of assetSet.byId.values()) loadedById.set(a.id, { filePath: a.filePath, durationMs: a.durationMs, assetId: a.id });
 
-      const bridge = await runPostTtsDirection({
+      const bridgeInput = {
         ffmpegPath, ffprobePath, tempDir, sampleRate: targetSampleRate,
-        episodeId: episode.id, scriptId, formatId: (episode as { formatId?: string }).formatId ?? "two_host_debate",
+        episodeId: episode.id, scriptId, formatId: postTtsFormatId,
         seed: `${episode.id}:${scriptId}`, frozenProfile,
         plannedLines: plannedLines.map((l) => ({ filePath: l.filePath, durationMs: l.durationMs, lineIndex: l.lineIndex, hostSlot: l.hostSlot, pauseBefore: (l as { pauseBefore?: number }).pauseBefore, isInterruption: l.isInterruption, segmentBreak: l.segmentBreak, leadSilenceMs: l.leadSilenceMs, tailSilenceMs: l.tailSilenceMs })),
         dialogueClips: dialogueClips.map((c) => ({ startMs: c.startMs, durationMs: c.durationMs })),
         scriptLines: scriptDirectorLines, loadedById,
         includeIntro: includeIntro && frozenProfile.intro !== null, includeOutro: includeOutro && frozenProfile.outro !== null,
-      });
+      };
+      // Inputs used both to VALIDATE a verbatim reproduce and to BUILD the
+      // reproduce envelope stored with a fresh plan.
+      const reproduceDialogueLines: ReproduceDialogueLine[] = plannedLines.map((l) => ({ lineIndex: l.lineIndex, hostSlot: l.hostSlot, durationMs: l.durationMs }));
+      const frozenAssetHashById = new Map<string, string | null>();
+      for (const r of [frozenProfile.intro, frozenProfile.outro, frozenProfile.bed, ...frozenProfile.stingers, ...frozenProfile.reactions]) {
+        if (r) frozenAssetHashById.set(r.assetId, r.contentHash ?? null);
+      }
+
+      let bridge: Awaited<ReturnType<typeof runPostTtsDirection>>;
+      if (reproducePostTts && storedPostTtsPlan) {
+        // VERBATIM REPRODUCE. Validate the stored plan is compatible with the
+        // current inputs, then EXECUTE it — the director, format policy, and cue
+        // selector are never invoked. Any incompatibility fails clearly.
+        const check = validateStoredPlanForReproduce({
+          stored: storedPostTtsPlan, frozenProfile,
+          dialogueLines: reproduceDialogueLines, dialogueStartMs,
+          assetHashById: frozenAssetHashById, loadedAssetIds: new Set(loadedById.keys()),
+        });
+        if (!check.ok) throw new Error(`Post-TTS reproduce failed: ${check.reason}`);
+        bridge = await runPostTtsReproduce(bridgeInput, storedPostTtsPlan);
+        postTtsEngineLabel = "stored_plan_reproduce";
+        postTtsStoredPlan = storedPostTtsPlan;
+      } else {
+        bridge = await runPostTtsDirection(bridgeInput);
+        postTtsEngineLabel = "post_tts";
+        // Persist the FULL execution plan + reproduce envelope so a later
+        // reproduce replays these exact placements without the director.
+        postTtsStoredPlan = { ...bridge.plan, reproduce: buildReproduceEnvelope({
+          plan: bridge.plan, dialogueLines: reproduceDialogueLines, dialogueStartMs, frozenProfile, assetHashById: frozenAssetHashById,
+        }) };
+      }
       postTtsPlan = bridge.plan;
       postTtsExecutionSummary = {
         cueCount: bridge.cueClips.length, rejectedCueCount: bridge.execution.skippedCues.length,
@@ -1027,14 +1082,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       }
       stingerClips = bridge.cueClips;
       reactionClips = [];
+      // EXECUTE the director's intro/outro TREATMENTS on the real timeline: the
+      // pre-trimmed gain-segments (cold-open lead + ducked tail, rise-under-final,
+      // reflective gap, hard close, …) are the actual bookend audio — not a legacy
+      // crossfade placement. The dialogue offset already came from the same intro.
+      postTtsIntroClips = bridge.introClips;
+      postTtsOutroClips = bridge.outroClips;
       plannerStingerSummary = bridge.plan.cuePlacements.filter((c) => c.kind === "transition").map((c) => ({ lineIndex: c.lineIndex, asset: assetSet.byId.get(c.assetId)?.name ?? c.assetId, reason: c.reason, atMs: c.targetStartMs }));
       reactionSummary = bridge.plan.cuePlacements.filter((c) => c.kind === "reaction").map((c) => ({ lineIndex: c.lineIndex, asset: assetSet.byId.get(c.assetId)?.name ?? c.assetId, reason: c.reason, atMs: c.targetStartMs }));
-      // Intro/outro placement + bookend audibility reuse the existing (PR1-QA'd)
-      // path below; the director's chosen treatment is recorded in diagnostics.
-      const dialogueEndMs = dialogueClips.length ? Math.max(...dialogueClips.map((c) => c.startMs + c.durationMs)) : dialogueStartMs;
-      if (outroStd) {
-        outroClip = { filePath: outroStd.filePath, startMs: Math.max(0, dialogueEndMs - Math.round(musicCrossfadeMs / 2)), durationMs: outroStd.durationMs, kind: "music", pan: 0, fadeInMs: musicCrossfadeMs, fadeOutMs: 400, gainDb: -2 };
-      }
       // Honor the director's bed decision (identity/format policy).
       bedAssetForMix = bridge.bedRequested && style === "full" ? assetSet.bed : null;
     } else if (plannerEnabled && productionPlan) {
@@ -1189,6 +1244,11 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     bedAssetForMix = style === "full" ? assetSet.bed : null;
     } // end legacy placement path
 
+    // Bookend clips for the mix: post-TTS uses the director's executed treatment
+    // segments; every other path uses the single placed intro/outro clip.
+    const introClipsForMix: TimelineClip[] = usePostTts ? postTtsIntroClips : (introClip ? [introClip] : []);
+    const outroClipsForMix: TimelineClip[] = usePostTts ? postTtsOutroClips : (outroClip ? [outroClip] : []);
+
     // GUARD — silent sound-design collapse. A produced style (light/full) that
     // shipped with ZERO music/SFX because every asset failed to load, or the
     // asset library is empty, must never be handed out as finished "audio_ready"
@@ -1200,8 +1260,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // for an intentional dialogue-only "clean" render.
     if (style !== "clean") {
       const mixedAnySoundDesign =
-        !!introClip ||
-        !!outroClip ||
+        introClipsForMix.length > 0 ||
+        outroClipsForMix.length > 0 ||
         !!bedAssetForMix ||
         stingerClips.length > 0 ||
         reactionClips.length > 0 ||
@@ -1230,12 +1290,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       : dialogueStartMs;
 
     const clips: TimelineClip[] = [
-      ...(introClip ? [introClip] : []),
+      ...introClipsForMix,
       ...dialogueClips,
       ...highlightClips,
       ...stingerClips,
       ...reactionClips,
-      ...(outroClip ? [outroClip] : []),
+      ...outroClipsForMix,
     ];
 
     const totalInputDurationMs = clips.length
@@ -1267,10 +1327,10 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       // whoosh-over-silence instead of music. With this key the bed rises to
       // full level between topics and still drops hard under the voices.
       const keyClips: TimelineClip[] = [
-        ...(introClip ? [introClip] : []),
+        ...introClipsForMix,
         ...dialogueClips,
         ...highlightClips,
-        ...(outroClip ? [outroClip] : []),
+        ...outroClipsForMix,
       ];
       const duckKeyPath = path.join(tempDir, "duck-key.wav");
       await renderTimelineToWav(ffmpegPath, keyClips, duckKeyPath, {
@@ -1384,19 +1444,30 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       });
     };
 
+    // Bookend spans for post-render QA. Post-TTS treatments are several gain
+    // segments, so measure the whole intro/outro span (its earliest start to its
+    // latest end) rather than a single clip. For post-TTS, the outro tail window
+    // is measured from the director's AUDIBLE speech-end (trailing silence
+    // excluded), matching where the reflective gap / rise was actually placed.
+    const spanOf = (cs: TimelineClip[]) =>
+      cs.length ? { start: Math.min(...cs.map((c) => c.startMs)), end: Math.max(...cs.map((c) => c.startMs + c.durationMs)) } : null;
+    const introSpan = spanOf(introClipsForMix);
+    const outroSpan = spanOf(outroClipsForMix);
+    const bookendSpeechEndMs = usePostTts && postTtsPlan?.bookendPlan.outro ? postTtsPlan.bookendPlan.outro.speechEndMs : speechEndMs;
+
     let bookendResult: BookendVerification | null = null;
     try {
       bookendResult = await verifyBookends(ffmpegPath, ffprobePath, finalOutputPath, {
         introRequired: introReq.required,
-        introPlaced: !!introClip,
-        introDurationMs: introClip?.durationMs ?? null,
+        introPlaced: !!introSpan,
+        introDurationMs: introSpan ? introSpan.end : null,
         introAbsenceReason: absenceReason("intro", introReq),
         outroRequired: outroReq.required,
-        outroPlaced: !!outroClip,
-        outroStartMs: outroClip?.startMs ?? null,
-        outroDurationMs: outroClip?.durationMs ?? null,
+        outroPlaced: !!outroSpan,
+        outroStartMs: outroSpan?.start ?? null,
+        outroDurationMs: outroSpan ? outroSpan.end - outroSpan.start : null,
         outroAbsenceReason: absenceReason("outro", outroReq),
-        speechEndMs,
+        speechEndMs: bookendSpeechEndMs,
       });
       for (const c of bookendResult.checks) {
         console.log(`[Stitcher][Bookend] ${c.status.toUpperCase()} - ${c.name}: ${c.detail}`);
@@ -1460,8 +1531,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const soundDesignSummary: SoundDesignSummary = {
       style,
       sfxDensity,
-      introAsset: introClip ? (assetSet.intro?.name ?? "env intro clip") : null,
-      outroAsset: outroClip ? (assetSet.outro?.name ?? "env outro clip") : null,
+      introAsset: introClipsForMix.length ? (assetSet.intro?.name ?? "env intro clip") : null,
+      outroAsset: outroClipsForMix.length ? (assetSet.outro?.name ?? "env outro clip") : null,
       bedAsset: bedUsed ? bedAssetForMix!.name : null,
       bedDucking: bedUsed,
       stingerCount: stingerClips.length,
@@ -1511,7 +1582,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // Safe post-TTS sound-direction diagnostics (Part 13): the engine decision +
     // plan structure. Names/counts/reasons only — never URLs/keys/paths.
     const postTtsDiagnostics = {
-      planningEngine: engineDecision.engine,
+      planningEngine: postTtsEngineLabel ?? engineDecision.engine,
       planningVersion: postTtsPlan?.directorVersion ?? null,
       flagEnabled: engineDecision.flagEnabled,
       fallback: engineDecision.reason,
@@ -1588,7 +1659,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           plannerSeed: productionPlan?.seed ?? null,
           productionStyle: style,
           sfxDensity,
-          plan: postTtsPlan ? (postTtsPlan as unknown as object) : productionPlan ? (productionPlan as unknown as object) : undefined,
+          plan: postTtsStoredPlan ? (postTtsStoredPlan as unknown as object) : postTtsPlan ? (postTtsPlan as unknown as object) : productionPlan ? (productionPlan as unknown as object) : undefined,
           diagnostics: { ...renderDiagnostics, postTts: postTtsDiagnostics } as unknown as object,
           outputAudioUrl: uploadResult.url,
         },

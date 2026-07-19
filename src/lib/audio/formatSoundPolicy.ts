@@ -72,7 +72,7 @@ export const FORMAT_SOUND_POLICIES: Record<string, FormatSoundPolicy> = {
     protectedOpeningPaddingMs: 300, protectedClosingPaddingMs: 300,
   }),
   two_host_debate: base({
-    formatId: "two_host_debate", introStyle: "full_before", outroStyle: "clean_then_outro",
+    formatId: "two_host_debate", introStyle: "full_before", outroStyle: "rise_under_final",
     maxTransitionsPerEpisode: 5, maxReactionsPerEpisode: 4, minTransitionGapMs: 1300,
     allowHardHits: true, allowComedy: true, allowReactionsDuringOverlap: false,
     preferredCueFamilies: ["topic_reset", "quick_sweep", "disagreement", "agreement"],

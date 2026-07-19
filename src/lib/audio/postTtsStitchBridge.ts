@@ -51,6 +51,12 @@ export interface PostTtsBridgeResult {
   execution: DirectedExecution;
   /** Render-ready cue clips (transitions + reactions), excerpts pre-trimmed. */
   cueClips: TimelineClip[];
+  /** Render-ready intro treatment segments (lead / ducked-under-speech / …). */
+  introClips: TimelineClip[];
+  /** Render-ready outro treatment segments (ducked-under-final / tail / …). */
+  outroClips: TimelineClip[];
+  /** The dialogue offset the intro treatment imposes (speech-entry point). */
+  dialogueStartMs: number;
   /** True when the director's bed plan says a bed should play. */
   bedRequested: boolean;
 }
@@ -106,22 +112,57 @@ export async function runPostTtsDirection(input: PostTtsBridgeInput): Promise<Po
   if (plan.failure) return failResult(plan, execution, `post-TTS director failed: ${plan.failure}`);
   if (!execution.validation.ok) return failResult(plan, execution, `post-TTS render plan invalid: ${execution.validation.errors.join("; ")}`);
 
-  // Excerpted cues are pre-trimmed from the source so the mix is never abrupt.
-  const cueClips: TimelineClip[] = [];
-  for (const c of execution.cueClips) {
-    let filePath = c.filePath;
-    if (c.sourceEndMs < (input.loadedById.get(c.assetId)?.durationMs ?? c.sourceEndMs) - 1 || c.sourceStartMs > 0) {
-      const trimmed = path.join(input.tempDir, `posttts-cue-${c.assetId}-${Math.round(c.startMs)}.wav`);
-      await runFfmpeg(input.ffmpegPath, ["-y", "-i", c.filePath, "-af", `atrim=${(c.sourceStartMs / 1000).toFixed(3)}:${(c.sourceEndMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`, "-ar", String(input.sampleRate), "-c:a", "pcm_s16le", trimmed]);
-      filePath = trimmed;
-      void standardizeClipToWav; void getFileDurationMs;
-    }
-    cueClips.push({ filePath, startMs: c.startMs, durationMs: c.durationMs, kind: c.kind, pan: c.pan, fadeInMs: c.fadeInMs, fadeOutMs: c.fadeOutMs, gainDb: c.gainDb });
-  }
+  return await materializeExecution(input, plan, execution);
+}
 
-  return { ok: true, failureReason: null, plan, execution, cueClips, bedRequested: !!execution.bed };
+/** Pre-trim any excerpted clip (cue OR bookend segment) from its source so the
+ *  mix is never abrupt. A ducked/rise/lead segment is an excerpt of the SAME
+ *  frozen asset, so the same atrim path applies. Shared by direction + reproduce. */
+async function materializeExecution(input: PostTtsBridgeInput, plan: PostTtsSoundDirectionPlan, execution: DirectedExecution): Promise<PostTtsBridgeResult> {
+  if (plan.failure) return failResult(plan, execution, `post-TTS director failed: ${plan.failure}`);
+  if (!execution.validation.ok) return failResult(plan, execution, `post-TTS render plan invalid: ${execution.validation.errors.join("; ")}`);
+
+  const materialize = async (clips: typeof execution.cueClips, tag: string): Promise<TimelineClip[]> => {
+    const out: TimelineClip[] = [];
+    let i = 0;
+    for (const c of clips) {
+      let filePath = c.filePath;
+      const assetDur = input.loadedById.get(c.assetId)?.durationMs ?? c.sourceEndMs;
+      if (c.sourceEndMs < assetDur - 1 || c.sourceStartMs > 0) {
+        const trimmed = path.join(input.tempDir, `posttts-${tag}-${c.assetId}-${i}-${Math.round(c.startMs)}.wav`);
+        await runFfmpeg(input.ffmpegPath, ["-y", "-i", c.filePath, "-af", `atrim=${(c.sourceStartMs / 1000).toFixed(3)}:${(c.sourceEndMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`, "-ar", String(input.sampleRate), "-c:a", "pcm_s16le", trimmed]);
+        filePath = trimmed;
+        void standardizeClipToWav; void getFileDurationMs;
+      }
+      out.push({ filePath, startMs: c.startMs, durationMs: c.durationMs, kind: c.kind, pan: c.pan, fadeInMs: c.fadeInMs, fadeOutMs: c.fadeOutMs, gainDb: c.gainDb });
+      i++;
+    }
+    return out;
+  };
+
+  const cueClips = await materialize(execution.cueClips, "cue");
+  const introClips = await materialize(execution.introClips, "intro");
+  const outroClips = await materialize(execution.outroClips, "outro");
+
+  return { ok: true, failureReason: null, plan, execution, cueClips, introClips, outroClips, dialogueStartMs: execution.dialogueStartMs, bedRequested: !!execution.bed };
+}
+
+/** Reproduce: execute a STORED post-TTS plan VERBATIM. The director, format
+ *  policy, and cue selector are NEVER consulted — the stored plan's placements,
+ *  bookend segments, bed, and protected regions ARE the render. Validation of
+ *  version / frozen-profile / asset-hash / dialogue-source compatibility is done
+ *  by the caller (postTtsReproduce.validateStoredPlanForReproduce) BEFORE this. */
+export async function runPostTtsReproduce(input: PostTtsBridgeInput, storedPlan: PostTtsSoundDirectionPlan): Promise<PostTtsBridgeResult> {
+  const frozenAssetIds = new Set<string>();
+  for (const r of [input.frozenProfile.intro, input.frozenProfile.outro, input.frozenProfile.bed, ...input.frozenProfile.stingers, ...input.frozenProfile.reactions]) {
+    if (r) frozenAssetIds.add(r.assetId);
+  }
+  const loaded = new Map<string, LoadedAssetLite>();
+  for (const [id, a] of input.loadedById) loaded.set(id, { assetId: id, filePath: a.filePath, durationMs: a.durationMs });
+  const execution = executeDirectedPlan(storedPlan, loaded, { frozenAssetIds, protectedRegions: storedPlan.protectedRegions });
+  return await materializeExecution(input, storedPlan, execution);
 }
 
 function failResult(plan: PostTtsSoundDirectionPlan, execution: DirectedExecution, reason: string): PostTtsBridgeResult {
-  return { ok: false, failureReason: reason, plan, execution, cueClips: [], bedRequested: false };
+  return { ok: false, failureReason: reason, plan, execution, cueClips: [], introClips: [], outroClips: [], dialogueStartMs: execution.dialogueStartMs, bedRequested: false };
 }

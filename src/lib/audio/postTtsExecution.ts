@@ -12,7 +12,7 @@
 import type { TimelineClip } from "@/lib/audio/assembly";
 import { fitCue, resolveCueFitConfig, type CueFitConfig } from "@/lib/audio/cueFitting";
 import { cueCollidesWithProtected, type ProtectedAudioRegion } from "@/lib/audio/protectedRegions";
-import type { PostTtsSoundDirectionPlan } from "@/lib/audio/postTtsSoundDirector";
+import type { PostTtsSoundDirectionPlan, DirectedBookendSegment } from "@/lib/audio/postTtsSoundDirector";
 
 const GAIN_MIN = -24, GAIN_MAX = 6, FADE_MAX = 10_000;
 
@@ -35,8 +35,12 @@ export interface DirectedBedDirective {
 }
 
 export interface DirectedExecution {
-  introClip: DirectedRenderClip | null;
-  outroClip: DirectedRenderClip | null;
+  /** Intro treatment rendered as one or more gain-segments (e.g. cold_open_ducked
+   *  = full lead + ducked under-speech). Empty when there is no intro. */
+  introClips: DirectedRenderClip[];
+  /** Outro treatment rendered as gain-segments (e.g. rise_under_final = ducked
+   *  under the final sentence + full tail). Empty when there is no outro. */
+  outroClips: DirectedRenderClip[];
   cueClips: DirectedRenderClip[];
   bed: DirectedBedDirective | null;
   dialogueStartMs: number;
@@ -62,7 +66,6 @@ export function executeDirectedPlan(
   opts: ExecuteDirectedOptions
 ): DirectedExecution {
   const cfg = opts.cueFitConfig ?? resolveCueFitConfig();
-  const musicGain = opts.musicGainDb ?? -2;
   const errors: string[] = [];
   const fittings: DirectedExecution["fittings"] = [];
   const skippedCues: DirectedExecution["skippedCues"] = [];
@@ -70,8 +73,26 @@ export function executeDirectedPlan(
   const asset = (id: string | null | undefined): LoadedAssetLite | null => (id ? loaded.get(id) ?? null : null);
   const frozen = (id: string) => opts.frozenAssetIds.has(id);
 
+  // Turn a bookend treatment's gain-SEGMENTS into render clips (each an excerpt
+  // of the SAME frozen asset at its directed timeline position + gain). A segment
+  // whose source window exceeds the loaded asset is clamped and flagged.
+  const buildBookendClips = (assetId: string, segs: DirectedBookendSegment[], a: LoadedAssetLite, label: string): DirectedRenderClip[] => {
+    const out: DirectedRenderClip[] = [];
+    for (const s of segs) {
+      const srcStart = Math.max(0, s.sourceStartMs);
+      const srcEnd = Math.min(a.durationMs, s.sourceEndMs);
+      if (srcEnd - srcStart < 1) { errors.push(`${label} segment ${s.role} has an empty/out-of-range source window (${s.sourceStartMs}-${s.sourceEndMs} of ${a.durationMs}ms)`); continue; }
+      out.push({
+        assetId, filePath: a.filePath, startMs: Math.max(0, Math.round(s.timelineStartMs)), durationMs: Math.round(srcEnd - srcStart),
+        kind: "music", pan: 0, fadeInMs: clampFade(s.fadeInMs), fadeOutMs: clampFade(s.fadeOutMs), gainDb: s.gainDb,
+        sourceStartMs: srcStart, sourceEndMs: srcEnd, stretchPercent: 0, fitStrategy: s.role,
+      });
+    }
+    return out;
+  };
+
   // --- Intro ---------------------------------------------------------------
-  let introClip: DirectedRenderClip | null = null;
+  let introClips: DirectedRenderClip[] = [];
   let dialogueStartMs = 0;
   const intro = plan.bookendPlan.intro;
   if (intro && intro.assetId && intro.treatment !== "none") {
@@ -79,11 +100,7 @@ export function executeDirectedPlan(
     if (!frozen(intro.assetId)) errors.push(`intro asset ${intro.assetId} is not in the frozen profile`);
     else if (!a) errors.push(`intro asset ${intro.assetId} was not loaded`);
     else {
-      introClip = {
-        assetId: intro.assetId, filePath: a.filePath, startMs: Math.max(0, intro.introStartMs), durationMs: a.durationMs,
-        kind: "music", pan: 0, fadeInMs: clampFade(20), fadeOutMs: clampFade(intro.fadeMs), gainDb: musicGain,
-        sourceStartMs: 0, sourceEndMs: a.durationMs, stretchPercent: 0, fitStrategy: "full",
-      };
+      introClips = buildBookendClips(intro.assetId, intro.segments, a, "intro");
       dialogueStartMs = Math.max(0, intro.speechEntryMs);
     }
   } else if (intro && intro.required && intro.treatment === "none") {
@@ -114,18 +131,14 @@ export function executeDirectedPlan(
   }
 
   // --- Outro ---------------------------------------------------------------
-  let outroClip: DirectedRenderClip | null = null;
+  let outroClips: DirectedRenderClip[] = [];
   const outro = plan.bookendPlan.outro;
   if (outro && outro.assetId && outro.treatment !== "none") {
     const a = asset(outro.assetId);
     if (!frozen(outro.assetId)) errors.push(`outro asset ${outro.assetId} is not in the frozen profile`);
     else if (!a) errors.push(`outro asset ${outro.assetId} was not loaded`);
     else {
-      outroClip = {
-        assetId: outro.assetId, filePath: a.filePath, startMs: Math.max(0, outro.outroStartMs), durationMs: a.durationMs,
-        kind: "music", pan: 0, fadeInMs: clampFade(outro.fadeInMs), fadeOutMs: clampFade(outro.fadeOutMs), gainDb: musicGain,
-        sourceStartMs: 0, sourceEndMs: a.durationMs, stretchPercent: 0, fitStrategy: "full",
-      };
+      outroClips = buildBookendClips(outro.assetId, outro.segments, a, "outro");
     }
   } else if (outro && outro.required && outro.treatment === "none") {
     errors.push("required outro has no usable treatment");
@@ -145,16 +158,32 @@ export function executeDirectedPlan(
   }
 
   // --- Validation (Part 15) ------------------------------------------------
-  const all: DirectedRenderClip[] = [...(introClip ? [introClip] : []), ...cueClips, ...(outroClip ? [outroClip] : [])];
+  const all: DirectedRenderClip[] = [...introClips, ...cueClips, ...outroClips];
   for (const c of all) {
     if (!(c.startMs >= 0) || !(c.durationMs > 0)) errors.push(`clip ${c.assetId} has invalid bounds (${c.startMs}/${c.durationMs})`);
     if (c.gainDb < GAIN_MIN || c.gainDb > GAIN_MAX) errors.push(`clip ${c.assetId} gain ${c.gainDb} out of bounds`);
     if (c.fadeInMs < 0 || c.fadeInMs > FADE_MAX || c.fadeOutMs < 0 || c.fadeOutMs > FADE_MAX) errors.push(`clip ${c.assetId} fades out of bounds`);
     if (c.sourceEndMs < c.sourceStartMs) errors.push(`clip ${c.assetId} negative source window`);
   }
-  // Required bookends must remain represented as a clip.
-  if (intro?.required && !introClip) errors.push("required intro is not represented in the render clips");
-  if (outro?.required && !outroClip) errors.push("required outro is not represented in the render clips");
+  // A bookend segment may cover a HARD-protected region ONLY when it is ducked
+  // (role "under_speech"). Any UNDUCKED bookend audio over hard-protected speech
+  // is a hard failure (the first/last meaningful words must stay intelligible).
+  const introDuckedRoles = new Set((intro?.segments ?? []).filter((s) => s.ducked).map((s) => s.role));
+  const outroDuckedRoles = new Set((outro?.segments ?? []).filter((s) => s.ducked).map((s) => s.role));
+  const checkUnducked = (clips: DirectedRenderClip[], duckedRoles: Set<string>, label: string) => {
+    for (const c of clips) {
+      if (duckedRoles.has(c.fitStrategy)) continue; // ducked segment: allowed under hard speech
+      if (cueCollidesWithProtected(opts.protectedRegions, c.startMs, c.startMs + c.durationMs, "hard")) {
+        errors.push(`${label} segment ${c.fitStrategy} plays UNDUCKED over hard-protected speech (${c.startMs}-${c.startMs + c.durationMs}ms)`);
+      }
+    }
+  };
+  checkUnducked(introClips, introDuckedRoles, "intro");
+  checkUnducked(outroClips, outroDuckedRoles, "outro");
 
-  return { introClip, outroClip, cueClips, bed, dialogueStartMs, fittings, skippedCues, validation: { ok: errors.length === 0, errors } };
+  // Required bookends must remain represented by at least one clip.
+  if (intro?.required && introClips.length === 0) errors.push("required intro is not represented in the render clips");
+  if (outro?.required && outroClips.length === 0) errors.push("required outro is not represented in the render clips");
+
+  return { introClips, outroClips, cueClips, bed, dialogueStartMs, fittings, skippedCues, validation: { ok: errors.length === 0, errors } };
 }

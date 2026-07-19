@@ -1,7 +1,7 @@
 // Post-TTS execution (clip generation + Part-15 validation) tests (PR 3, pure).
 // Run: npm run test:post-tts-execution
 
-import { directPostTtsSound, type PostTtsDirectorInput, type DirectorScriptLine } from "../lib/audio/postTtsSoundDirector";
+import { directPostTtsSound, resolveIntroDialogueStartMs, type PostTtsDirectorInput, type DirectorScriptLine } from "../lib/audio/postTtsSoundDirector";
 import { executeDirectedPlan, type LoadedAssetLite } from "../lib/audio/postTtsExecution";
 import { buildActualDialogueTimeline, type ActualTimelineLineInput } from "../lib/audio/dialogueTimeline";
 import { resolveWaveformConfig } from "../lib/audio/waveformAnalysis";
@@ -24,9 +24,13 @@ const profile = (over: Partial<FrozenSoundProfile> = {}): FrozenSoundProfile => 
   stingers: [ref("st-topic", "stinger", { cueFamily: "topic_reset" })], reactions: [ref("rx-agree", "reaction", { cueFamily: "agreement" })],
   introVariants: [], outroVariants: [], beds: [], sonicIdentity: DEFAULT_SONIC_IDENTITY, containsLegacyCompatAssets: false, excluded: [], ...over,
 });
-function timeline() {
+// The real stitcher offsets the dialogue by the intro treatment's speech-entry
+// BEFORE building the timeline, so the intro never overlaps the opening words.
+// Mirror that here (full_before on a 4000ms asset -> ~4250ms offset).
+const DIALOGUE_OFFSET = resolveIntroDialogueStartMs(profile(), "two_host_debate", true, 4000);
+function timeline(off: number = DIALOGUE_OFFSET) {
   const L = (i: number, start: number, dur: number, boundary: "inline" | "segment" | "topic"): ActualTimelineLineInput => ({
-    lineIndex: i, hostId: `h${i % 2}`, seatIndex: i % 2, fileDurationMs: dur, timelineStartMs: start, timelineEndMs: start + dur, leadSilenceMs: 0, trailSilenceMs: 0, isInterruption: false, segmentBoundary: boundary, timingSource: "ffprobe_waveform",
+    lineIndex: i, hostId: `h${i % 2}`, seatIndex: i % 2, fileDurationMs: dur, timelineStartMs: off + start, timelineEndMs: off + start + dur, leadSilenceMs: 0, trailSilenceMs: 0, isInterruption: false, segmentBoundary: boundary, timingSource: "ffprobe_waveform",
   });
   return buildActualDialogueTimeline([L(0, 0, 2000, "inline"), L(1, 4000, 2000, "topic"), L(2, 6800, 2000, "inline"), L(3, 11000, 2000, "inline")], wcfg);
 }
@@ -53,8 +57,8 @@ function main() {
     const plan = directPostTtsSound(input());
     const ex = executeDirectedPlan(plan, loadedMap(), { frozenAssetIds: frozenIds, protectedRegions: plan.protectedRegions });
     assert(ex.validation.ok, `validation: ${ex.validation.errors.join("; ")}`);
-    assert(!!ex.introClip && ex.introClip.assetId === "intro-1", "intro clip");
-    assert(!!ex.outroClip && ex.outroClip.assetId === "outro-1", "outro clip");
+    assert(ex.introClips.length >= 1 && ex.introClips.every((c) => c.assetId === "intro-1"), "intro clip(s)");
+    assert(ex.outroClips.length >= 1 && ex.outroClips.every((c) => c.assetId === "outro-1"), "outro clip(s)");
     assert(ex.cueClips.length >= 1 && ex.cueClips.every((c) => frozenIds.has(c.assetId)), "cue clips from frozen pool");
     assert(!!ex.bed && ex.bed.duckedGainDb < ex.bed.baseGainDb, "bed ducks under speech");
     assert(ex.dialogueStartMs > 0, "dialogue enters after the intro treatment");
@@ -93,14 +97,14 @@ function main() {
   check("all clip bounds/gains/fades are validated in-range", () => {
     const plan = directPostTtsSound(input());
     const ex = executeDirectedPlan(plan, loadedMap(), { frozenAssetIds: frozenIds, protectedRegions: plan.protectedRegions });
-    const all = [ex.introClip, ex.outroClip, ...ex.cueClips].filter(Boolean);
-    assert(all.every((c) => c!.startMs >= 0 && c!.durationMs > 0 && c!.gainDb >= -24 && c!.gainDb <= 6 && c!.fadeInMs >= 0 && c!.fadeOutMs >= 0), "all clips in bounds");
+    const all = [...ex.introClips, ...ex.outroClips, ...ex.cueClips];
+    assert(all.every((c) => c.startMs >= 0 && c.durationMs > 0 && c.gainDb >= -24 && c.gainDb <= 6 && c.fadeInMs >= 0 && c.fadeOutMs >= 0), "all clips in bounds");
   });
 
   check("clean profile executes to no clips and passes validation", () => {
     const plan = directPostTtsSound(input({ frozenProfile: profile({ mode: "clean", intro: null, outro: null, bed: null, stingers: [], reactions: [] }) }));
     const ex = executeDirectedPlan(plan, loadedMap(), { frozenAssetIds: frozenIds, protectedRegions: plan.protectedRegions });
-    assert(ex.validation.ok && !ex.introClip && !ex.outroClip && ex.cueClips.length === 0 && !ex.bed, "clean = no clips, valid");
+    assert(ex.validation.ok && ex.introClips.length === 0 && ex.outroClips.length === 0 && ex.cueClips.length === 0 && !ex.bed, "clean = no clips, valid");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

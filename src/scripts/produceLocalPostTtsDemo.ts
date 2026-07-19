@@ -36,6 +36,38 @@ async function freePort(): Promise<number> {
   return new Promise((res, rej) => { const s = net.createServer(); s.listen(0, () => { const p = (s.address() as net.AddressInfo).port; s.close(() => res(p)); }); s.on("error", rej); });
 }
 
+// A bookend gain-segment as stored on the plan.
+interface BookendSeg { role: string; sourceStartMs: number; sourceEndMs: number; timelineStartMs: number; gainDb: number; ducked: boolean }
+// The subset of the stored plan the harness reads.
+interface PlanView {
+  fingerprint?: string;
+  protectedRegions?: Array<{ startMs: number; endMs: number; paddingMs: number; severity: string }>;
+  cuePlacements?: Array<{ kind: string; targetStartMs: number; gapStartMs: number; gapEndMs: number }>;
+  detectedGaps?: unknown[];
+  bookendPlan?: {
+    intro?: { treatment?: string; segments?: BookendSeg[] } | null;
+    outro?: { treatment?: string; speechEndMs?: number; outroStartMs?: number; reflectiveGapMs?: number; segments?: BookendSeg[] } | null;
+  };
+  bedPlan?: { policy?: string; segments?: unknown[] } | null;
+}
+
+/** Mean RMS (dB) of a single frequency BAND over a window — isolates one synth
+ *  tone (e.g. the 330 Hz intro or 300 Hz outro) from the pink-noise dialogue, so
+ *  we can measure a treatment's music in the real waveform. -Infinity if silent.
+ *  Uses runFfmpeg (which captures the astats output ffmpeg prints to stderr). */
+let _runFfmpeg: ((p: string, args: string[]) => Promise<string>) | null = null;
+async function bandRmsDb(ffmpeg: string, file: string, fromMs: number, toMs: number, freq: number): Promise<number> {
+  if (!_runFfmpeg) _runFfmpeg = (await import("../lib/audio/assembly")).runFfmpeg;
+  const from = Math.max(0, fromMs) / 1000, to = Math.max(from + 0.05, toMs / 1000);
+  let out = "";
+  try {
+    out = await _runFfmpeg(ffmpeg, ["-i", file, "-af", `atrim=${from.toFixed(3)}:${to.toFixed(3)},bandpass=f=${freq}:width_type=h:w=60,astats=metadata=0:measure_overall=RMS_level:measure_perchannel=none`, "-f", "null", "-"]);
+  } catch { return -Infinity; }
+  const m = out.match(/RMS level dB:\s*(-?inf|-?[\d.]+)/);
+  if (!m) return -Infinity;
+  return /inf/i.test(m[1]) ? -Infinity : Number(m[1]);
+}
+
 // ---- Deterministic per-format fixtures ---------------------------------------
 // Two topics so the director always has a structural boundary to place a
 // transition; an amused peak in topic two to trigger a reaction; one hard
@@ -219,7 +251,7 @@ async function main() {
       const result = await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" });
       const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id }, orderBy: { renderVersion: "desc" } });
       const diag = (rr?.diagnostics as { postTts?: Record<string, unknown> } | null)?.postTts ?? {};
-      const plan = (rr?.plan as (Record<string, unknown> & { protectedRegions?: Array<{ startMs: number; endMs: number; paddingMs: number; severity: string }>; cuePlacements?: Array<{ kind: string; targetStartMs: number; gapStartMs: number; gapEndMs: number }>; detectedGaps?: unknown[]; bookendPlan?: { intro?: { treatment?: string }; outro?: { treatment?: string } }; bedPlan?: { policy?: string; segments?: unknown[] } | null; fingerprint?: string }) | null);
+      const plan = (rr?.plan as PlanView | null);
 
       // Copy the mastered MP3 out for listening.
       const outMp3 = path.join(outDir, `${fmt.formatId}.mp3`);
@@ -288,6 +320,61 @@ async function main() {
         assert(!s.match(/https?:\/\//), "no URLs");
         assert(!s.match(/[A-Za-z]:\\|\/storage\//), "no filesystem paths / storage keys");
       });
+
+      // ---- WAVEFORM treatment proofs (not JSON labels). The intro asset is a
+      // 330 Hz tone, the outro a 300 Hz tone; a band-pass isolates each from the
+      // pink-noise dialogue so we can measure the treatment in the master. ----
+      const introSegs = plan?.bookendPlan?.intro?.segments ?? [];
+      const outroSegs = plan?.bookendPlan?.outro?.segments ?? [];
+      const segLen = (s: BookendSeg) => s.sourceEndMs - s.sourceStartMs;
+
+      if (fmt.formatId === "sports_radio") {
+        await check("sports_radio: cold-open ducking is PRESENT in the waveform (lead louder than ducked tail under speech)", async () => {
+          const lead = introSegs.find((s) => s.role === "lead"); const duck = introSegs.find((s) => s.role === "under_speech");
+          assert(!!lead && !!duck, "cold_open_ducked has a lead + ducked segment");
+          const leadRms = await bandRmsDb(ffmpeg, outMp3, lead!.timelineStartMs, lead!.timelineStartMs + segLen(lead!), 330);
+          const duckRms = await bandRmsDb(ffmpeg, outMp3, duck!.timelineStartMs + 150, duck!.timelineStartMs + segLen(duck!) - 150, 330);
+          assert(Number.isFinite(duckRms) && duckRms > -70, `ducked intro still audible under opening speech (${duckRms.toFixed(1)} dB)`);
+          assert(leadRms > duckRms + 2.5, `intro DUCKS under speech: lead ${leadRms.toFixed(1)} dB > ducked ${duckRms.toFixed(1)} dB`);
+        });
+      }
+      if (fmt.formatId === "two_host_debate") {
+        await check("two_host_debate: rise-under-final is PRESENT in the waveform (tail louder than ducked-under-final)", async () => {
+          const under = outroSegs.find((s) => s.role === "under_speech"); const tail = outroSegs.find((s) => s.role === "tail");
+          assert(!!under && !!tail, "rise_under_final has a ducked-under + full tail segment");
+          const underRms = await bandRmsDb(ffmpeg, outMp3, under!.timelineStartMs + 100, under!.timelineStartMs + segLen(under!) - 100, 300);
+          const tailRms = await bandRmsDb(ffmpeg, outMp3, tail!.timelineStartMs + 100, tail!.timelineStartMs + segLen(tail!) - 100, 300);
+          assert(Number.isFinite(underRms) && underRms > -70, `outro present UNDER the final sentence (${underRms.toFixed(1)} dB)`);
+          assert(tailRms > underRms + 2.5, `outro RISES after speech: tail ${tailRms.toFixed(1)} dB > ducked ${underRms.toFixed(1)} dB`);
+        });
+      }
+      if (fmt.formatId === "documentary") {
+        await check("documentary: the theme enters AFTER the spoken cold open (waveform ordering)", async () => {
+          const theme = introSegs[0];
+          assert(!!theme && theme.timelineStartMs > 400, `theme starts after the cold-open line (@${theme?.timelineStartMs}ms)`);
+          const before = await bandRmsDb(ffmpeg, outMp3, 0, Math.max(200, theme.timelineStartMs - 200), 330);
+          const after = await bandRmsDb(ffmpeg, outMp3, theme.timelineStartMs + 100, theme.timelineStartMs + segLen(theme) - 100, 330);
+          assert(after > before + 2.5, `theme appears only after the cold open: after ${after.toFixed(1)} dB > before ${before.toFixed(1)} dB`);
+        });
+        await check("documentary: the reflective gap before the outro matches the plan (measured in the waveform)", async () => {
+          const o = plan?.bookendPlan?.outro;
+          assert(!!o && (o.reflectiveGapMs ?? 0) >= 800, `a reflective gap is planned (${o?.reflectiveGapMs}ms)`);
+          const gapRms = await bandRmsDb(ffmpeg, outMp3, (o!.speechEndMs ?? 0) + 150, (o!.outroStartMs ?? 0) - 150, 300);
+          const outroRms = await bandRmsDb(ffmpeg, outMp3, (o!.outroStartMs ?? 0) + 100, (o!.outroStartMs ?? 0) + 600, 300);
+          assert(outroRms > gapRms + 2.5, `outro is quiet through the reflective gap then enters (gap ${gapRms.toFixed(1)} dB, outro ${outroRms.toFixed(1)} dB)`);
+        });
+        // Verbatim reproduce (once, on a representative format): replays the stored
+        // plan's exact fingerprint and records stored_plan_reproduce.
+        await check("documentary: stored-plan reproduce replays the SAME fingerprint (director not re-run)", async () => {
+          const storedFp = plan?.fingerprint;
+          const rep = await stitchFinalEpisodeAudio({ scriptId: script.id, renderMode: "reproduce", forceRegenerate: true, productionStyle: "full" });
+          assert(rep.finalStatus === "completed", `reproduce completes (${rep.finalStatus})`);
+          const rrRep = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+          const engine = (rrRep?.diagnostics as { postTts?: { planningEngine?: string } } | null)?.postTts?.planningEngine;
+          assert(engine === "stored_plan_reproduce", `engine stored_plan_reproduce (${engine})`);
+          assert((rrRep?.plan as { fingerprint?: string } | null)?.fingerprint === storedFp, "reproduced fingerprint == original");
+        });
+      }
     }
 
     // Cross-format acceptance: the six formats must be MEANINGFULLY different.
@@ -298,6 +385,14 @@ async function main() {
     await check("formats differ in intro/outro treatment or cue/bed behavior (not one template)", () => {
       const shapes = new Set(reports.map((r) => `${r.introTreatment}|${r.outroTreatment}|${r.bedPolicy}|${r.transitions}:${r.reactions}`));
       assert(shapes.size >= 4, `>=4 distinct production shapes (${shapes.size})`);
+    });
+    await check("at least three DISTINCT intro treatments across the formats", () => {
+      const intros = new Set(reports.map((r) => r.introTreatment));
+      assert(intros.size >= 3, `>=3 intro treatments (${[...intros].join(", ")})`);
+    });
+    await check("at least three DISTINCT outro treatments across the formats", () => {
+      const outros = new Set(reports.map((r) => r.outroTreatment));
+      assert(outros.size >= 3, `>=3 outro treatments (${[...outros].join(", ")})`);
     });
     await check("every format rendered a mastered MP3 for listening", () => {
       for (const r of reports) assert(fs.existsSync(path.join(process.cwd(), r.mp3)), `${r.mp3} exists`);

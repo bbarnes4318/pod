@@ -60,7 +60,7 @@ function main() {
     const a = directPostTtsSound(baseInput());
     const b = directPostTtsSound(baseInput());
     assert(a.fingerprint === b.fingerprint && JSON.stringify(a) === JSON.stringify(b), "deterministic");
-    assert(a.mode === "post_tts" && a.directorVersion === 1 && !!a.fingerprint, "typed versioned plan");
+    assert(a.mode === "post_tts" && a.directorVersion === 2 && !!a.fingerprint, "typed versioned plan");
   });
 
   check("a different seed may alter an equivalent cue selection", () => {
