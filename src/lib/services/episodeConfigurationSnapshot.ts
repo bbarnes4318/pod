@@ -19,6 +19,7 @@
 import crypto from "node:crypto";
 import { canonicalJson, type ResolvedEpisodeConfiguration, type Provenance } from "./podcastConfiguration";
 import type { FrozenSoundProfile } from "./podcastSoundProfile";
+import { selectEpisodeSoundVariants } from "../audio/variantSelection";
 import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
 
 // Version 2 (Prompt 6) adds the FROZEN SOUND PROFILE: the exact permitted
@@ -40,7 +41,13 @@ import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFo
 // fabricate historical intent). v1/v2/v3 snapshots stay readable and BYTE/
 // FINGERPRINT stable — the new keys live only inside newly frozen v4 profiles,
 // and editorialMaterial serializes soundProfile exactly as stored.
-export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 4 as const;
+// Version 5 (PR 2) freezes the SONIC IDENTITY + the SELECTED intro/outro/bed
+// VARIANT (deterministically chosen from the podcast's permitted pools using a
+// stable per-episode seed) + the permitted variant pools + selection reasons.
+// Rendering reads this frozen selection; a later podcast sound edit never
+// changes a v5 episode. v1-v4 stay readable and BYTE/FINGERPRINT stable (the
+// new fields live only inside newly frozen v5 profiles).
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 5 as const;
 
 export interface SnapshotCast {
   formatId: string;
@@ -67,7 +74,7 @@ export function snapshotCastFor(formatId: string, pinnedHostIds: string[]): Snap
 
 /** The persisted shape (stored in Episode.configurationSnapshot as JSON). */
 export interface EpisodeConfigurationSnapshot {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   /** Version 3+: the frozen show format + pinned cast. Absent on v1/v2. */
   cast?: SnapshotCast;
   source: "podcast" | "standalone" | "legacy";
@@ -181,8 +188,19 @@ export function buildEpisodeConfigurationSnapshot(
    *  from it. */
   soundProfile?: FrozenSoundProfile,
   /** The frozen show format + pinned cast (Prompt 7, snapshot v3). */
-  cast?: SnapshotCast
+  cast?: SnapshotCast,
+  /** Stable per-episode seed (snapshot v5). When present, the exact intro/outro/
+   *  bed VARIANT is deterministically SELECTED from the permitted pools and
+   *  frozen; absent = the pool's first variant is frozen (deterministic, no
+   *  cross-episode variety — used by legacy callers/tests). */
+  soundSeed?: string
 ): EpisodeSnapshotColumns {
+  // v5: deterministically select this episode's variants from the permitted
+  // pools BEFORE freezing. Pure given (soundProfile, soundSeed, formatId).
+  if (soundProfile && soundSeed) {
+    const formatId = cast?.formatId ?? resolved.editorial.format.value ?? DEFAULT_FORMAT_ID;
+    soundProfile = selectEpisodeSoundVariants(soundProfile, { seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
+  }
   const snapshot: EpisodeConfigurationSnapshot = {
     version: EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
     ...(cast ? { cast } : {}),

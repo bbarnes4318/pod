@@ -67,6 +67,15 @@ export interface FrozenSoundAssetRef {
   rightsStatusAtCapture: string;
   licenseStatusAtCapture: string;
   provenance: "podcast_assignment" | "system_default" | "legacy_compat";
+  // --- Variant metadata (PR 2 / snapshot v5). Optional so v2-v4 refs stay
+  //     byte-stable; present only on newly frozen v5 profiles. ---
+  cueFamily?: string | null;
+  weight?: number;
+  isBrandedMotif?: boolean;
+  allowedFormatIds?: string[];
+  prohibitedFormatIds?: string[];
+  maxUsesPerEpisode?: number | null;
+  minEpisodeCooldown?: number | null;
 }
 
 export interface FrozenSoundProfile {
@@ -89,6 +98,16 @@ export interface FrozenSoundProfile {
   bed: FrozenSoundAssetRef | null;
   stingers: FrozenSoundAssetRef[];
   reactions: FrozenSoundAssetRef[];
+  // --- Variant pools + selection (PR 2 / snapshot v5). All optional so v2-v4
+  //     profiles stay byte-stable. `intro`/`outro`/`bed` above hold the SELECTED
+  //     variant; the *Variants pools below are the permitted set (audit +
+  //     future planner use). ---
+  sonicIdentity?: SonicIdentity;
+  introVariants?: FrozenSoundAssetRef[];
+  outroVariants?: FrozenSoundAssetRef[];
+  beds?: FrozenSoundAssetRef[];
+  selectionSeed?: string;
+  selectionReasons?: { intro?: string; outro?: string; bed?: string };
   /** True when the SYSTEM DEFAULT resolved through pre-Prompt-6 legacy assets
    *  (documented compatibility) — Admin surfaces show a review warning. */
   containsLegacyCompatAssets: boolean;
@@ -135,13 +154,20 @@ function newUseBlockReason(asset: AssetRow): string | null {
   return null;
 }
 
+interface AssignmentMix {
+  orderIndex: number; gainDb: number | null; fadeInMs: number | null; fadeOutMs: number | null;
+  cueFamily?: string | null; weight?: number; isBrandedMotif?: boolean;
+  allowedFormatIds?: string[]; prohibitedFormatIds?: string[];
+  maxUsesPerEpisode?: number | null; minEpisodeCooldown?: number | null;
+}
+
 function toRef(
   asset: AssetRow,
   role: SoundAssignmentRole,
   provenance: FrozenSoundAssetRef["provenance"],
-  assignment?: { orderIndex: number; gainDb: number | null; fadeInMs: number | null; fadeOutMs: number | null }
+  assignment?: AssignmentMix
 ): FrozenSoundAssetRef {
-  return {
+  const ref: FrozenSoundAssetRef = {
     assetId: asset.id,
     kind: asset.kind,
     category: asset.category,
@@ -159,6 +185,18 @@ function toRef(
     licenseStatusAtCapture: asset.licenseStatus,
     provenance,
   };
+  // Variant metadata is added ONLY for podcast assignments that carry it, so
+  // system_default refs and v2-v4-shaped refs stay byte-identical.
+  if (assignment && provenance === "podcast_assignment") {
+    ref.cueFamily = assignment.cueFamily ?? null;
+    ref.weight = assignment.weight ?? 1;
+    ref.isBrandedMotif = assignment.isBrandedMotif ?? false;
+    ref.allowedFormatIds = assignment.allowedFormatIds ?? [];
+    ref.prohibitedFormatIds = assignment.prohibitedFormatIds ?? [];
+    ref.maxUsesPerEpisode = assignment.maxUsesPerEpisode ?? null;
+    ref.minEpisodeCooldown = assignment.minEpisodeCooldown ?? null;
+  }
+  return ref;
 }
 
 /**
@@ -236,6 +274,10 @@ export async function resolveSystemDefaultSoundProfile(
     reactions.push({ ...toRef(row, "reaction", provenance), orderIndex: i++ });
   }
 
+  const intro = base.introEnabled === false ? null : freezeSlot(config?.themeIntroAssetId, "intro");
+  const outro = base.outroEnabled === false ? null : freezeSlot(config?.themeOutroAssetId, "outro");
+  const bed = freezeSlot(config?.bedAssetId, "bed");
+
   return {
     mode: "system_default",
     targetLoudnessLufs: base.targetLoudnessLufs ?? null,
@@ -250,11 +292,17 @@ export async function resolveSystemDefaultSoundProfile(
     // caught downstream via its `excluded` entry.
     introEnabled: base.introEnabled !== false && !!config?.themeIntroAssetId,
     outroEnabled: base.outroEnabled !== false && !!config?.themeOutroAssetId,
-    intro: base.introEnabled === false ? null : freezeSlot(config?.themeIntroAssetId, "intro"),
-    outro: base.outroEnabled === false ? null : freezeSlot(config?.themeOutroAssetId, "outro"),
-    bed: freezeSlot(config?.bedAssetId, "bed"),
+    intro,
+    outro,
+    bed,
     stingers,
     reactions,
+    // The shared system default carries the permissive identity + single-item
+    // pools (it does not claim any genre/mood — no fabrication).
+    sonicIdentity: DEFAULT_SONIC_IDENTITY,
+    introVariants: intro ? [intro] : [],
+    outroVariants: outro ? [outro] : [],
+    beds: bed ? [bed] : [],
     containsLegacyCompatAssets: legacyCompat,
     excluded,
   };
@@ -275,9 +323,14 @@ export async function resolvePodcastSoundProfile(
     reactionCooldownEpisodes?: number | null;
     defaultIntroEnabled?: boolean;
     defaultOutroEnabled?: boolean;
+    sonicIdentity?: unknown;
   } | null
 ): Promise<FrozenSoundProfile> {
   const mode = (production?.soundProfileMode ?? "system_default") as SoundProfileMode;
+  // The show's frozen creative identity (validated; permissive default when
+  // absent/invalid so an existing show behaves exactly as before).
+  const idResult = production?.sonicIdentity != null ? validateSonicIdentity(production.sonicIdentity) : null;
+  const identity: SonicIdentity = idResult && idResult.ok ? idResult.identity : DEFAULT_SONIC_IDENTITY;
   const base = {
     targetLoudnessLufs: production?.targetLoudnessLufs ?? null,
     cooldownScope: production?.cooldownScope ?? "podcast",
@@ -302,9 +355,10 @@ export async function resolvePodcastSoundProfile(
   });
 
   const excluded: FrozenSoundProfile["excluded"] = [];
-  let intro: FrozenSoundAssetRef | null = null;
-  let outro: FrozenSoundAssetRef | null = null;
-  let bed: FrozenSoundAssetRef | null = null;
+  // Variant POOLS (PR 2): every valid enabled assignment per role, in order.
+  const introVariants: FrozenSoundAssetRef[] = [];
+  const outroVariants: FrozenSoundAssetRef[] = [];
+  const beds: FrozenSoundAssetRef[] = [];
   const stingers: FrozenSoundAssetRef[] = [];
   const reactions: FrozenSoundAssetRef[] = [];
 
@@ -324,14 +378,24 @@ export async function resolvePodcastSoundProfile(
       excluded.push({ assetId: asset.id, role, reason: `kind ${asset.kind} incompatible with ${role}` });
       continue;
     }
+    // A variant whose cue family the identity now prohibits is EXCLUDED (named,
+    // never silently substituted).
+    const famOk = cueFamilyAllowedByIdentity(identity, a.cueFamily);
+    if (!famOk.ok) { excluded.push({ assetId: asset.id, role, reason: famOk.reason }); continue; }
 
     const ref = toRef(asset, role, "podcast_assignment", a);
-    if (role === "intro" && base.introEnabled !== false) intro = intro ?? ref;
-    else if (role === "outro" && base.outroEnabled !== false) outro = outro ?? ref;
-    else if (role === "bed") bed = bed ?? ref;
+    if (role === "intro") { if (base.introEnabled !== false) introVariants.push(ref); }
+    else if (role === "outro") { if (base.outroEnabled !== false) outroVariants.push(ref); }
+    else if (role === "bed") beds.push(ref);
     else if (role === "stinger") stingers.push(ref);
     else if (role === "reaction") reactions.push(ref);
   }
+
+  // Backward-compatible single slots hold the FIRST variant; deterministic
+  // per-episode SELECTION among variants happens in selectEpisodeSoundVariants.
+  const intro = introVariants[0] ?? null;
+  const outro = outroVariants[0] ?? null;
+  const bed = beds[0] ?? null;
 
   return {
     mode: "custom",
@@ -349,6 +413,10 @@ export async function resolvePodcastSoundProfile(
     bed,
     stingers,
     reactions,
+    sonicIdentity: identity,
+    introVariants,
+    outroVariants,
+    beds,
     containsLegacyCompatAssets: false,
     excluded,
   };
