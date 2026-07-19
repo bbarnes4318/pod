@@ -186,9 +186,8 @@ export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDir
   const rand = mulberry32(fnv1a(input.seed + ":cues"));
 
   for (const gap of input.timeline.gaps) {
-    const afterLine = lineById.get(gap.lineIndex);       // the line that OPENS after the gap (new topic)
     const beforeLine = lineById.get(gap.lineIndex - 1);  // the line JUST SPOKEN (reaction subject)
-    // TRANSITION: only at a real structural boundary (the new topic = afterLine),
+    // TRANSITION: only at a real structural boundary (the new topic at gap.lineIndex),
     // with a transition-sized gap.
     const structural = gap.boundary === "segment" || gap.boundary === "topic";
     if (structural && gapAllowsTransition(gap.classification) && transitions < policy.maxTransitionsPerEpisode) {
