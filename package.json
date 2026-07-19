@@ -28,6 +28,8 @@
     "test:bookend-qa": "tsx src/scripts/testBookendQa.ts",
     "test:bookend-render-gate": "tsx --conditions=react-server src/scripts/testBookendRenderGate.ts",
     "test:render-diagnostics-migration": "tsx --conditions=react-server src/scripts/testRenderDiagnosticsMigration.ts",
+    "test:sonic-identity-migration": "tsx --conditions=react-server src/scripts/testSonicIdentityMigration.ts",
+    "test:sonic-identity": "tsx src/scripts/testSonicIdentity.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
     "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",
