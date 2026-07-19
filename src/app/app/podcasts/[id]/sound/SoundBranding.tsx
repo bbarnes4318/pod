@@ -235,7 +235,21 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
         </p>
       )}
 
-      <div style={{ margin: "12px 0" }}>
+      {/* Sticky action footer — sits ABOVE the fixed persistent player bar (and
+          the mobile safe-area inset) so Save/Preview are always genuinely
+          clickable by mouse and keyboard, never intercepted by the player. */}
+      <div
+        data-testid="sound-actions"
+        style={{
+          position: "sticky",
+          bottom: "calc(var(--u-player-h, 72px) + env(safe-area-inset-bottom, 0px) + 12px)",
+          zIndex: 1,
+          marginTop: 16,
+          padding: "10px 0",
+          background: "var(--u-surface, var(--surface, #fff))",
+          borderTop: "1px solid var(--u-hairline-2, var(--border, #e5e5e5))",
+        }}
+      >
         <button type="button" onClick={save} disabled={pending} data-testid="sound-save">Save sound profile</button>{" "}
         <button type="button" onClick={preview} disabled={pending} data-testid="sound-preview">Preview resolution</button>
       </div>

@@ -1,5 +1,8 @@
 // Sound & Branding UI (PR 2): sonic identity, variant pools, preview resolution.
-// DB-only + UI — no LLM/TTS/network/paid APIs. Desktop project only.
+// DB-only + UI — no LLM/TTS/network/paid APIs. Uses ORDINARY browser
+// interactions only: real .click() / keyboard — never force:true,
+// dispatchEvent, or direct handler invocation. The persistent player bar is
+// visible throughout; the sticky action footer keeps Save/Preview clickable.
 
 import { test, expect, type Page } from "@playwright/test";
 import { e2eDb, closeE2eDb } from "./db";
@@ -24,6 +27,9 @@ async function seedAssets() {
 async function gotoSound(page: Page) {
   await page.goto(`/app/podcasts/${E2E.podcastId}/sound`);
   await expect(page.getByTestId("sound-branding")).toBeVisible();
+  // The persistent player bar must be present so these tests genuinely prove
+  // the sticky footer keeps the actions clickable underneath it.
+  await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
 }
 
 test.afterAll(async () => { await closeE2eDb(); });
@@ -40,48 +46,72 @@ test.describe("Sound & Branding", () => {
     }
   });
 
-  test("Tests 46-50: configure identity, add/reorder/weight variants, set cue family", async ({ page }, ti) => {
+  // Runs on ALL projects (desktop + tablet + mobile): proves a NORMAL mouse
+  // click on Save works with the player bar visible on every viewport.
+  test("Blocker 1: Save is clickable with a normal click while the player bar is visible", async ({ page }) => {
+    await seedAssets();
+    await gotoSound(page);
+    await page.getByTestId("mode-custom").check();
+    await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
+    await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
+    // No force, no dispatchEvent — an ordinary click. Passes strict actionability
+    // because the sticky footer sits above the fixed player; nothing intercepts.
+    await page.getByTestId("sound-save").click();
+    await expect(page.getByTestId("sound-status")).toContainText(/Saved|attention/i, { timeout: 15000 });
+    await expect(page.getByTestId("sound-status")).toBeInViewport();
+    await expect(page.getByTestId("sound-preview")).toBeVisible();
+    const introCount = await e2eDb().podcastSoundAssignment.count({ where: { podcastId: E2E.podcastId, role: "intro" } });
+    expect(introCount).toBe(1);
+  });
+
+  test("Blocker 1: Save is reachable and activatable by keyboard", async ({ page }, ti) => {
     test.skip(!desktopOnly(ti));
     await seedAssets();
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
-    // identity
+    await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
+    await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
+    const save = page.getByTestId("sound-save");
+    await save.focus();
+    await expect(save).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("sound-status")).toContainText(/Saved|attention/i, { timeout: 15000 });
+  });
+
+  test("Tests 46-50: configure identity, add/reorder/weight variants, set cue family", async ({ page }, ti) => {
+    test.skip(!desktopOnly(ti));
+    await seedAssets();
+    await e2eDb().podcastSoundAssignment.deleteMany({ where: { podcastId: E2E.podcastId } });
+    await gotoSound(page);
+    await page.getByTestId("mode-custom").check();
     await page.getByTestId("identity-broadcast").selectOption("sports_radio");
     await page.getByTestId("identity-pace").selectOption("fast");
-    // add two intro variants
     await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
     await page.getByTestId("pool-intro-add").selectOption("e2e-intro-b");
     await expect(page.getByTestId("pool-intro-row-e2e-intro-a")).toBeVisible();
     await expect(page.getByTestId("pool-intro-row-e2e-intro-b")).toBeVisible();
-    // add outro
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
-    // set a cue family + weight on the first intro
     const introRow = page.getByTestId("pool-intro-row-e2e-intro-a");
     await introRow.getByRole("combobox").first().selectOption("brand_high_energy");
     await introRow.getByRole("spinbutton").first().fill("5");
-    // reorder intro-a down
     await introRow.getByRole("button", { name: /Move .* down/ }).click();
-    // save
-    await page.getByTestId("sound-save").dispatchEvent("click");
+    await page.getByTestId("sound-save").click();
     await expect(page.getByTestId("sound-status")).toContainText(/Saved|attention/i, { timeout: 15000 });
-    // persisted: two enabled intro variants
-    const db = e2eDb();
-    const introCount = await db.podcastSoundAssignment.count({ where: { podcastId: E2E.podcastId, role: "intro" } });
+    const introCount = await e2eDb().podcastSoundAssignment.count({ where: { podcastId: E2E.podcastId, role: "intro" } });
     expect(introCount).toBe(2);
   });
 
   test("Test 51: enabling intro with no variant is a blocking validation error", async ({ page }, ti) => {
     test.skip(!desktopOnly(ti));
     await seedAssets();
-    // reset to a clean slate for this podcast
     await e2eDb().podcastSoundAssignment.deleteMany({ where: { podcastId: E2E.podcastId } });
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
-    // intro enabled (default) but assign only an outro + a stinger, no intro
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
     await page.getByTestId("pool-stinger-add").selectOption("e2e-sting-a");
-    await page.getByTestId("sound-save").dispatchEvent("click");
+    await page.getByTestId("sound-save").click();
     await expect(page.getByTestId("sound-status")).toContainText(/enabled an intro\/outro but assigned no variant/i, { timeout: 15000 });
+    await expect(page.getByTestId("sound-status")).toBeInViewport();
   });
 
   test("Test 53: Preview Resolution shows three deterministic examples without creating episodes", async ({ page }, ti) => {
@@ -89,12 +119,12 @@ test.describe("Sound & Branding", () => {
     await seedAssets();
     await gotoSound(page);
     const before = await e2eDb().episode.count({ where: { podcastId: E2E.podcastId } });
-    await page.getByTestId("sound-preview").dispatchEvent("click");
+    await page.getByTestId("sound-preview").click();
     await expect(page.getByTestId("preview-examples")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("preview-example-0")).toBeVisible();
     await expect(page.getByTestId("preview-example-2")).toBeVisible();
     const after = await e2eDb().episode.count({ where: { podcastId: E2E.podcastId } });
-    expect(after).toBe(before); // no episode created by preview
+    expect(after).toBe(before);
   });
 
   test("Test 54: clean mode hides all sound pools", async ({ page }, ti) => {
@@ -114,7 +144,7 @@ test.describe("Sound & Branding", () => {
     await page.getByTestId("mode-custom").check();
     await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
     const html = await page.content();
-    expect(html).not.toContain("x.test");        // seeded storage URL host
+    expect(html).not.toContain("x.test");
     expect(html).not.toMatch(/https?:\/\/[^"'\s]*\.(mp3|wav)/i);
     expect(html).not.toContain("rightsDocumentStorageKey");
     expect(html).not.toMatch(/episodes\/[a-z0-9-]+\/final/i);
