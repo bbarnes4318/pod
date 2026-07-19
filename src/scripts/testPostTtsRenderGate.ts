@@ -42,6 +42,11 @@ async function main() {
   execSync("npx prisma migrate deploy", { env: { ...process.env, DATABASE_URL: dbUrl, NODE_ENV: "development" }, stdio: ["ignore", "pipe", "pipe"] });
 
   const storageRoot = path.join(process.cwd(), "public", "storage");
+  // Local integration test: embedded PG + local storage + real ffmpeg, no Redis.
+  // Pin the runtime to development so the service import chain (which defaults an
+  // unset NODE_ENV to "production") does not trip the prod env assertions
+  // (assertProductionEnv requires a passworded REDIS_URL this test never uses).
+  Object.assign(process.env, { NODE_ENV: "development" });
   process.env.DATABASE_URL = dbUrl;
   process.env.STORAGE_PROVIDER = "local";
   process.env.NEXT_PUBLIC_APP_URL = "http://localhost:3000";

@@ -111,3 +111,10 @@ allow/deny). The old singleton intro/outro/bed constraint is dropped. The
 episode configuration snapshot advances to **v5**, freezing the deterministically
 selected intro/outro/bed variant + the permitted pools + the identity; v1–v4 stay
 readable and fingerprint-stable. Full detail: docs/SOUND_DESIGN.md ("PR 2").
+
+## PR 3 — post-TTS sound direction
+
+`POST_TTS_SOUND_DIRECTION_ENABLED` (default off) makes the render plan cues AFTER
+the real dialogue timing is measured, per the frozen v5 profile + format policy.
+No schema change. Reproduce of a post-TTS episode re-runs the deterministic
+director. Full detail: docs/SOUND_DESIGN.md ("PR 3").

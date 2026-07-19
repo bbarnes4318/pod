@@ -297,3 +297,71 @@ model + deterministic frozen-pool foundation those consume.
   instrumentation, and verification state (`unclassified`/`suggested`/
   `verified`). Only `verified` is authoritative; `suggested` is never silently
   promoted; `unclassified` stays honest.
+
+## PR 3 — post-TTS sound direction (actual timing + format-specific production)
+
+Pre-TTS planning estimates timing; **post-TTS direction** runs AFTER the dialogue
+segments exist and their real durations, silences, and overlaps are measurable.
+It is deterministic, fingerprinted, and gated by `POST_TTS_SOUND_DIRECTION_ENABLED`
+(default OFF).
+
+- **Where it runs.** In `audioStitchingService`, after the standardized segment
+  WAVs and the real `dialogueClips` timeline exist, before cue placement. A
+  flag-gated third branch replaces the planner/legacy CUE placement; the existing
+  (PR 1-QA'd) intro/outro placement stays.
+- **Actual dialogue timeline** (`dialogueTimeline.ts`) — encoded bounds vs
+  AUDIBLE speech bounds (spoken duration is never the file duration), embedded vs
+  assembly pauses, overlaps, per-line real gaps. Fails safe on impossible input.
+- **Waveform gap analysis** (`waveformAnalysis.ts`) — deterministic FFmpeg
+  per-segment silence measurement + gap classification (overlap_removed /
+  too_short / breath / reaction_ok / transition_ok / topic_gap), room-tone aware,
+  env-tunable (`POST_TTS_SILENCE_THRESHOLD_DB`, `_MIN_SILENCE_MS`,
+  `_MIN_TRANSITION_GAP_MS`, `_MIN_REACTION_GAP_MS`,
+  `_PROTECTED_SPEECH_PADDING_MS`, `_MAX_ANALYSIS_DURATION_MS`).
+- **Protected speech regions** (`protectedRegions.ts`) — every audible span is at
+  least soft-protected; opening/closing/interruption/critical content (from the
+  script's `isFactualClaim` + number/negation/score-odds/injury-transaction
+  detection) is HARD-protected. **No stinger/reaction/transition/unducked music
+  covers a protected region**; a ducked bed may continue under ordinary speech
+  (and hard speech only where policy allows).
+- **Format-specific policies** (`formatSoundPolicy.ts`, keyed to the registry) —
+  per-format intro/outro treatment, transition/reaction ceilings, min gap, bed
+  behavior, and cue-family permissions (hard hits, comedy, crowd, data reveal,
+  breaking news, chapter bridge, score update). Formats are meaningfully
+  different (solo sparse; sports permits score/data/crowd; documentary cinematic
+  bridges + longest gaps; news no comedy; rapid-fire shortest gaps, no
+  under-speech bed).
+- **The director** (`postTtsSoundDirector.ts`) — a seeded, fingerprinted plan:
+  intro/outro treatments (a too-short asset falls back to another TREATMENT, not
+  another asset; a required bookend with no usable asset -> structured failure);
+  transitions ONLY at structural boundaries in transition-sized gaps; reactions
+  ONLY on a preceding-line tone trigger in reaction-sized gaps (never every line,
+  never at a boundary, never during overlap unless the format permits); a bed
+  plan honoring the identity policy + format. Only frozen-pool assets; no
+  Math.random / wall-clock / current-config reads.
+- **Cue fitting** (`cueFitting.ts`) — full / faded excerpt / bounded time-stretch
+  / reject, env-bounded (`POST_TTS_MAX_TIME_STRETCH_PERCENT`,
+  `_MIN_CUE_AUDIBLE_MS`, `_MIN_FADE_MS`, `_MAX_FADE_MS`). Never an abrupt edge,
+  never a 2s cue in a 500ms gap, never aggressive stretching.
+- **Execution + validation** (`postTtsExecution.ts`) — placed, fitted clips +
+  Part-15 pre-render validation: every clip is a frozen-profile, loaded asset;
+  bounds/gains/fades valid; no cue covers a hard-protected region; required
+  bookends represented. Missing OPTIONAL cues skip with a reason; missing
+  REQUIRED bookends fail.
+- **Feature flag + render modes** (`postTtsFlag.ts`). OFF by default. Enabling it
+  later does NOT change published episodes (they reproduce their deterministic
+  plan). Reproduce of a post-TTS episode RE-RUNS the director (pure function of
+  frozen inputs -> identical plan + fingerprint). No silent fallback: a failure
+  fails the render (prior master preserved, no cue usage recorded); legacy is an
+  explicit mode.
+- **Diagnostics** (job log + `EpisodeAudioRender.diagnostics.postTts`) —
+  planning engine + version, format policy, dialogue duration, gap/protected/cue
+  counts, rejection reasons, intro/outro treatment, bed policy, plan fingerprint,
+  warnings, fallback reason. Names/counts/reasons only — never URLs/keys/paths.
+
+**Deferred to PR 4:** cross-episode repetition prevention, within-episode
+cue-family diversity scoring, cue-sequence similarity, long-horizon cooldown, and
+the multi-episode listening acceptance matrix. **Known limitation:** intro/outro
+TREATMENTS are chosen + recorded and the bookends are placed and QA-verified
+audible via the existing path; deep treatment execution (e.g. host-over-ducked-
+intro-tail) is recorded but bounded by the current intro placement.
