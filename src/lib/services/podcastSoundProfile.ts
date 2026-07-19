@@ -22,6 +22,12 @@
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { rightsUsableForNewUse } from "./audioAssetAccess";
+import {
+  ASSIGNMENT_WEIGHT_MIN, ASSIGNMENT_WEIGHT_MAX,
+  DEFAULT_SONIC_IDENTITY, validateSonicIdentity, isCueFamilyValidForRole,
+  cueFamilyAllowedByIdentity, type SonicIdentity,
+} from "@/lib/audio/sonicIdentity";
+import { isRegisteredFormat } from "@/lib/formats/showFormatRegistry";
 
 type DbLike = PrismaClient | Prisma.TransactionClient;
 
@@ -365,6 +371,15 @@ export interface SoundAssignmentInput {
   gainDb?: number | null;
   fadeInMs?: number | null;
   fadeOutMs?: number | null;
+  // --- Variant pool metadata (PR 2) ---
+  enabled?: boolean;
+  cueFamily?: string | null;
+  weight?: number | null;
+  isBrandedMotif?: boolean;
+  maxUsesPerEpisode?: number | null;
+  minEpisodeCooldown?: number | null;
+  allowedFormatIds?: string[];
+  prohibitedFormatIds?: string[];
 }
 
 export type SoundProfileSaveError =
@@ -375,9 +390,13 @@ export type SoundProfileSaveError =
   | { code: "invalid_cooldown_scope"; scope: string }
   | { code: "invalid_gain"; assetId: string }
   | { code: "invalid_fade"; assetId: string }
+  | { code: "invalid_weight"; assetId: string }
   | { code: "duplicate_assignment"; assetId: string; role: string }
-  | { code: "multiple_singleton"; role: string }
   | { code: "bookend_enabled_without_asset"; role: "intro" | "outro" }
+  | { code: "invalid_cue_family"; assetId: string; role: string; cueFamily: string }
+  | { code: "cue_family_prohibited"; assetId: string; cueFamily: string; reason: string }
+  | { code: "invalid_format_id"; assetId: string; formatId: string }
+  | { code: "invalid_sonic_identity"; reason: string }
   | { code: "asset_not_assignable"; assetId: string; role: string; reason: string };
 
 /**
@@ -402,6 +421,8 @@ export async function savePodcastSoundProfile(args: {
     defaultIntroEnabled?: boolean;
     defaultOutroEnabled?: boolean;
     assignments?: SoundAssignmentInput[];
+    /** Versioned sonic identity (validated). Absent = leave existing/none. */
+    sonicIdentity?: unknown;
   };
 }): Promise<{ ok: true; configVersion: number } | { ok: false; error: SoundProfileSaveError }> {
   const { profile } = args;
@@ -411,9 +432,19 @@ export async function savePodcastSoundProfile(args: {
   if (profile.cooldownScope && !["podcast", "owner"].includes(profile.cooldownScope)) {
     return { ok: false, error: { code: "invalid_cooldown_scope", scope: profile.cooldownScope } };
   }
+
+  // Validate the sonic identity once (used below for cue-family prohibitions).
+  let identity: SonicIdentity = DEFAULT_SONIC_IDENTITY;
+  let identityToPersist: SonicIdentity | undefined;
+  if (profile.sonicIdentity !== undefined && profile.sonicIdentity !== null) {
+    const vi = validateSonicIdentity(profile.sonicIdentity);
+    if (!vi.ok) return { ok: false, error: { code: "invalid_sonic_identity", reason: vi.error.code } };
+    identity = vi.identity;
+    identityToPersist = vi.identity;
+  }
+
   const assignments = profile.assignments ?? [];
   const seen = new Set<string>();
-  const singletons: Record<string, number> = {};
   for (const a of assignments) {
     if (a.gainDb != null && (a.gainDb < GAIN_DB_MIN || a.gainDb > GAIN_DB_MAX || !Number.isFinite(a.gainDb))) {
       return { ok: false, error: { code: "invalid_gain", assetId: a.assetId } };
@@ -423,13 +454,26 @@ export async function savePodcastSoundProfile(args: {
         return { ok: false, error: { code: "invalid_fade", assetId: a.assetId } };
       }
     }
+    if (a.weight != null && (!Number.isFinite(a.weight) || a.weight < ASSIGNMENT_WEIGHT_MIN || a.weight > ASSIGNMENT_WEIGHT_MAX)) {
+      return { ok: false, error: { code: "invalid_weight", assetId: a.assetId } };
+    }
+    // Cue family must be valid for the ROLE and permitted by the sonic identity.
+    if (a.cueFamily != null) {
+      if (!isCueFamilyValidForRole(a.role, a.cueFamily)) {
+        return { ok: false, error: { code: "invalid_cue_family", assetId: a.assetId, role: a.role, cueFamily: a.cueFamily } };
+      }
+      const idOk = cueFamilyAllowedByIdentity(identity, a.cueFamily);
+      if (!idOk.ok) return { ok: false, error: { code: "cue_family_prohibited", assetId: a.assetId, cueFamily: a.cueFamily, reason: idOk.reason } };
+    }
+    // Optional per-assignment format restrictions must reference real formats.
+    for (const fid of [...(a.allowedFormatIds ?? []), ...(a.prohibitedFormatIds ?? [])]) {
+      if (!isRegisteredFormat(fid)) return { ok: false, error: { code: "invalid_format_id", assetId: a.assetId, formatId: fid } };
+    }
+    // Variant pools: intro/outro/bed may hold MANY variants (the singleton limit
+    // is gone). Only exact (role, asset) duplicates are rejected.
     const key = `${a.role}:${a.assetId}`;
     if (seen.has(key)) return { ok: false, error: { code: "duplicate_assignment", assetId: a.assetId, role: a.role } };
     seen.add(key);
-    if (["intro", "outro", "bed"].includes(a.role)) {
-      singletons[a.role] = (singletons[a.role] ?? 0) + 1;
-      if (singletons[a.role] > 1) return { ok: false, error: { code: "multiple_singleton", role: a.role } };
-    }
   }
 
   return args.db.$transaction(async (tx) => {
@@ -476,11 +520,13 @@ export async function savePodcastSoundProfile(args: {
     // (no partial save; optimistic concurrency untouched). Disabled bookends
     // need no assignment.
     if (profile.soundProfileMode === "custom") {
-      const roles = new Set(assignments.map((a) => a.role));
-      if (profile.defaultIntroEnabled !== false && !roles.has("intro")) {
+      // Pool semantics: an enabled bookend needs at least one ENABLED variant.
+      // An all-disabled pool is equivalent to no valid assignment.
+      const hasEnabled = (role: string) => assignments.some((a) => a.role === role && a.enabled !== false);
+      if (profile.defaultIntroEnabled !== false && !hasEnabled("intro")) {
         return { ok: false as const, error: { code: "bookend_enabled_without_asset" as const, role: "intro" as const } };
       }
-      if (profile.defaultOutroEnabled !== false && !roles.has("outro")) {
+      if (profile.defaultOutroEnabled !== false && !hasEnabled("outro")) {
         return { ok: false as const, error: { code: "bookend_enabled_without_asset" as const, role: "outro" as const } };
       }
     }
@@ -502,6 +548,9 @@ export async function savePodcastSoundProfile(args: {
         reactionCooldownEpisodes: profile.reactionCooldownEpisodes ?? null,
         defaultIntroEnabled: profile.defaultIntroEnabled ?? true,
         defaultOutroEnabled: profile.defaultOutroEnabled ?? true,
+        // Persist the validated identity only when the caller supplied one
+        // (undefined = leave the existing identity untouched).
+        ...(identityToPersist ? { sonicIdentity: identityToPersist as unknown as Prisma.InputJsonValue } : {}),
       },
     });
 
@@ -516,10 +565,17 @@ export async function savePodcastSoundProfile(args: {
           assetId: a.assetId,
           role: a.role,
           orderIndex: a.orderIndex ?? i,
-          enabled: true,
+          enabled: a.enabled ?? true,
           gainDb: a.gainDb ?? null,
           fadeInMs: a.fadeInMs ?? null,
           fadeOutMs: a.fadeOutMs ?? null,
+          cueFamily: a.cueFamily ?? null,
+          weight: a.weight ?? 1,
+          isBrandedMotif: a.isBrandedMotif ?? false,
+          maxUsesPerEpisode: a.maxUsesPerEpisode ?? null,
+          minEpisodeCooldown: a.minEpisodeCooldown ?? null,
+          allowedFormatIds: a.allowedFormatIds ?? [],
+          prohibitedFormatIds: a.prohibitedFormatIds ?? [],
         },
       });
     }
