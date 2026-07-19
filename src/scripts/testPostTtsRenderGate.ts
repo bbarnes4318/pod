@@ -164,6 +164,33 @@ async function main() {
       assert(after === priorAudioUrl, "prior master preserved on reproduce failure");
     });
 
+    await check("PR4: diversity ENFORCE renders successfully with audible bookends + records the mode", async () => {
+      process.env.SOUND_DIVERSITY_ENGINE_ENABLED = "true";
+      process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE = "enforce";
+      const r = await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" });
+      assert(r.finalStatus === "completed", `render completes with diversity on (${r.finalStatus})`);
+      const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const div = (rr?.diagnostics as { postTts?: { diversity?: { renderMode?: string } } } | null)?.postTts?.diversity;
+      assert(div?.renderMode === "enforce", `diversity mode recorded (${div?.renderMode})`);
+      const bk = (rr?.diagnostics as { bookend?: { ok?: boolean } } | null)?.bookend;
+      assert(bk?.ok !== false, "bookends remain audible under diversity");
+    });
+
+    await check("PR4: REPRODUCE ignores the diversity flags and replays the stored plan verbatim", async () => {
+      const before = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const fp = (before?.plan as { fingerprint?: string } | null)?.fingerprint;
+      // Flip the diversity mode: reproduce must not consult it.
+      process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE = "off";
+      const r = await stitchFinalEpisodeAudio({ scriptId: script.id, renderMode: "reproduce", forceRegenerate: true, productionStyle: "full" });
+      assert(r.finalStatus === "completed", `reproduce completes (${r.finalStatus})`);
+      const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const engine = (rr?.diagnostics as { postTts?: { planningEngine?: string } } | null)?.postTts?.planningEngine;
+      assert(engine === "stored_plan_reproduce", `engine stored_plan_reproduce (${engine})`);
+      assert((rr?.plan as { fingerprint?: string } | null)?.fingerprint === fp, "reproduced fingerprint unchanged by flags");
+      delete process.env.SOUND_DIVERSITY_ENGINE_ENABLED;
+      delete process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE;
+    });
+
     await check("flag OFF: the same episode renders via the LEGACY engine (no silent switch)", async () => {
       process.env.POST_TTS_SOUND_DIRECTION_ENABLED = "false";
       const r = await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" });

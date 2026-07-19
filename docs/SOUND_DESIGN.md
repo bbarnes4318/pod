@@ -385,3 +385,93 @@ audibility QA stays RMS-threshold based (presence + non-truncation), and the
 `demo:post-tts-sound-direction` harness proves treatments acoustically via
 single-tone band-pass fixtures — production assets are full-spectrum, so the
 same measurements are indicative, not a substitute for a listen.
+
+## PR 4 — sound diversity & anti-repetition engine
+
+A deterministic engine that stops the sound-system sounding mechanically
+repetitive across one episode, consecutive episodes, and a podcast's recent
+catalog — while preserving recognizable branding. Flag-gated
+(`SOUND_DIVERSITY_ENGINE_ENABLED`, default OFF); off = exact PR 1–3 behavior.
+
+- **Diversity policy** (`soundDiversityPolicy.ts`) — a typed, fully BOUNDED
+  `SoundDiversityPolicy`: history window, hard/soft asset + family cooldowns,
+  intro/outro/bed streak limits + min-variants-before-repeat, branded-motif
+  min/max rate, weighted penalties/bonuses, within-episode family/asset caps,
+  max cue-sequence similarity, system-cross-podcast toggle.
+  `resolveSoundDiversityPolicy` clamps every field to its bound and fails SAFE
+  to the default on invalid input. Resolved from code/env + the sonic identity —
+  **not** baked into the identity/snapshot fingerprint, so v1–v5 fingerprints
+  stay byte-identical. `DIVERSITY_BOUNDS` caps history window / cue tokens /
+  candidates / comparisons / system records / diagnostic records.
+- **History** (`diversityHistory.ts`) — podcast-scoped, from SUCCESSFUL renders
+  only: intro/outro/bed + family + motif from each episode's FROZEN snapshot,
+  cue-family sequence + transition/reaction assets from the succeeded render's
+  STORED plan. One entry per episode (reproduce/remix never double-count),
+  strict podcast/owner/system isolation, deterministic recency ordering, bounded
+  window; system scope is opt-in and shared-system-assets-only.
+- **Pre-snapshot intro/outro/bed** (`soundDiversity.ts` + `…Selection.ts`) —
+  hard immediate-asset cooldown (respected whenever an alternative exists),
+  streak limits + min-variants + exact intro/outro pair avoidance (excluded in
+  enforce, penalized in soft), soft asset/family/recency penalties, branded-
+  continuity + brand-match bonuses. One-item pools select honestly
+  (`single_item_pool`, no false cooldown claim); exhausted survivors relax to
+  the least-recently-used. Weight is a preference (favored over a large sample)
+  without a monopoly (low-weight variants still appear). Frozen into
+  `production.diversityDecision` — EXCLUDED from the fingerprint (the selection
+  it produced already lives in soundProfile and is hashed).
+- **Within-episode cue diversity** (`soundCueDiversity.ts`) — chooses WHICH
+  eligible cue asset the director places: within-episode asset/family caps,
+  per-assignment maxUsesPerEpisode, cross-episode cooldown, same-asset/same-
+  family penalties, prefer a different compatible family; never an incompatible
+  family for variety, sparse formats stay sparse, a cue opportunity may remain
+  empty. Runs only on FRESH renders (reproduce replays the stored plan).
+- **Cue-sequence similarity** (`soundSequenceSimilarity.ts`) — ROLE:family
+  tokenization + a bounded [0,1] unigram+bigram-Jaccard similarity; over the
+  policy ceiling records a soft `sequence_similarity_relaxed` (never reorders
+  required cues, never hard-fails).
+- **Branded-motif continuity** (`soundMotifContinuity.ts`) — measures the recent
+  per-role motif rate and prefers it below the minimum, penalizes it above the
+  maximum, else neutral; `unavailable` (no eligible motif) / `unavoidable`
+  (motif-only pool) reported honestly. Intro/outro evaluated independently.
+- **System cross-podcast diversity** — opt-in
+  (`SOUND_DIVERSITY_SYSTEM_HISTORY_ENABLED`), a SOFT penalty over shared-system
+  assets only; never uses private/owner history, never excludes (a small podcast
+  is never starved), ignored entirely when disabled.
+- **Rollout modes** (`soundDiversityFlags.ts`) — `off` (prior behavior) /
+  `observe` (compute + record, keep the plain selection) / `soft` (penalties +
+  relaxations, never fail for diversity) / `enforce` (hard constraints). An
+  invalid mode fails SAFE to off and records the raw value; enabled-but-unset
+  defaults to observe. **Reproduce ignores the flags entirely** and replays the
+  stored plan verbatim.
+- **Snapshot decision:** NO v6. The diverse selection is already frozen in v5's
+  soundProfile (and fingerprinted); the decision trace is stored
+  non-fingerprinted in `production.diversityDecision`. Reproduce is unchanged.
+- **Diagnostics + operator visibility** (`soundDiversityVisibility.ts`, render
+  diagnostics) — mode, cue-decision count, per-role selection reasons, motif
+  action/rate, relaxations, diversity fingerprint; podcast-level policy +
+  cooldowns + motif bounds + similarity threshold + recent asset/family
+  histograms. Safe names/counts/reasons only.
+- **Typed failures/relaxations** — `DiversityFailure` /
+  `DiversityRelaxation` enums; relaxations are explicit and deterministic (no
+  hidden fallback). A failed render preserves the prior master and records no
+  successful cue usage.
+
+**Acceptance:** `npm run demo:sound-diversity` drives the engine over three
+deterministic series (Sports 12ep, Documentary 8ep, System 10ep × 2 podcasts),
+threading history, and asserts the catalog stays varied (no exact-pair streak
+beyond policy, no prohibited family, system podcasts diverge, no asset monopoly,
+streaks within limits, motif rate in band, deterministic replay) — writing a
+safe `series-summary.json` (histograms + similarity matrix, no binaries) to
+`samples/sound-diversity/`. `test:post-tts-render-gate` proves a real render
+with diversity ENFORCE succeeds with audible bookends and that reproduce ignores
+the flags.
+
+**Known limitations:** "prefer the less-similar plan" is realized through
+within-episode cue variation + a recorded similarity relaxation rather than
+generating and ranking alternative full plans (the director stays a single
+deterministic pass). The multi-episode harness proves SELECTION diversity;
+per-episode audio + acoustic bookends under the engine are proven by the render
+gate. Env: `SOUND_DIVERSITY_ENGINE_ENABLED`, `SOUND_DIVERSITY_ENFORCEMENT_MODE`,
+`SOUND_DIVERSITY_SYSTEM_HISTORY_ENABLED`, plus `SOUND_DIVERSITY_HISTORY_WINDOW`,
+`_HARD_ASSET_COOLDOWN`, `_SOFT_ASSET_COOLDOWN`, `_FAMILY_COOLDOWN`,
+`_MAX_BED_STREAK`, `_MAX_SEQUENCE_SIMILARITY`.

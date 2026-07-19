@@ -118,3 +118,12 @@ readable and fingerprint-stable. Full detail: docs/SOUND_DESIGN.md ("PR 2").
 the real dialogue timing is measured, per the frozen v5 profile + format policy.
 No schema change. Reproduce of a post-TTS episode re-runs the deterministic
 director. Full detail: docs/SOUND_DESIGN.md ("PR 3").
+
+## PR 4 — sound diversity
+
+`SOUND_DIVERSITY_ENGINE_ENABLED` + `SOUND_DIVERSITY_ENFORCEMENT_MODE`
+(off/observe/soft/enforce) layer deterministic anti-repetition onto the frozen
+intro/outro/bed selection at episode creation, and within-episode cue selection
+at render time. No schema change; the decision is frozen non-fingerprinted in
+`production.diversityDecision`. Reproduce ignores the flags. Full detail:
+docs/SOUND_DESIGN.md ("PR 4").

@@ -45,6 +45,7 @@
     "test:sound-cue-diversity": "tsx --conditions=react-server src/scripts/testSoundCueDiversity.ts",
     "test:sound-motif-diversity": "tsx --conditions=react-server src/scripts/testSoundMotifDiversity.ts",
     "test:sound-diversity-rollout": "tsx --conditions=react-server src/scripts/testSoundDiversityRollout.ts",
+    "demo:sound-diversity": "tsx --conditions=react-server src/scripts/produceLocalSoundDiversityDemo.ts",
     "test:post-tts-render-gate": "tsx --conditions=react-server src/scripts/testPostTtsRenderGate.ts",
     "demo:post-tts-sound-direction": "tsx --conditions=react-server src/scripts/produceLocalPostTtsDemo.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
