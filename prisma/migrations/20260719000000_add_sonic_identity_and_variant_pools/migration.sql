@@ -58,3 +58,49 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS "AudioAsset_metadataState_idx" ON "AudioAsset" ("metadataState");
+
+-- ---------------------------------------------------------------------------
+-- 4. System-default VARIANT POOLS (PR 2 review). The shared system profile
+--    becomes admin-configurable weighted pools per role. Additive; the legacy
+--    SoundDesignConfig singleton slots remain as one-item compatibility inputs.
+-- ---------------------------------------------------------------------------
+ALTER TABLE "SoundDesignConfig" ADD COLUMN IF NOT EXISTS "configVersion" INTEGER NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS "SystemSoundAssignment" (
+  "id" TEXT NOT NULL,
+  "configId" TEXT NOT NULL DEFAULT 'default',
+  "assetId" TEXT NOT NULL,
+  "role" TEXT NOT NULL,
+  "orderIndex" INTEGER NOT NULL DEFAULT 0,
+  "enabled" BOOLEAN NOT NULL DEFAULT true,
+  "gainDb" DOUBLE PRECISION,
+  "fadeInMs" INTEGER,
+  "fadeOutMs" INTEGER,
+  "cueFamily" TEXT,
+  "weight" DOUBLE PRECISION NOT NULL DEFAULT 1,
+  "isBrandedMotif" BOOLEAN NOT NULL DEFAULT false,
+  "maxUsesPerEpisode" INTEGER,
+  "minEpisodeCooldown" INTEGER,
+  "allowedFormatIds" TEXT[] NOT NULL DEFAULT '{}',
+  "prohibitedFormatIds" TEXT[] NOT NULL DEFAULT '{}',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "SystemSoundAssignment_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "SystemSoundAssignment_configId_role_assetId_key" ON "SystemSoundAssignment"("configId", "role", "assetId");
+CREATE INDEX IF NOT EXISTS "SystemSoundAssignment_configId_role_idx" ON "SystemSoundAssignment"("configId", "role");
+CREATE INDEX IF NOT EXISTS "SystemSoundAssignment_configId_role_enabled_idx" ON "SystemSoundAssignment"("configId", "role", "enabled");
+CREATE INDEX IF NOT EXISTS "SystemSoundAssignment_assetId_idx" ON "SystemSoundAssignment"("assetId");
+
+DO $$ BEGIN
+  ALTER TABLE "SystemSoundAssignment" ADD CONSTRAINT "SystemSoundAssignment_weight_chk" CHECK ("weight" >= 0 AND "weight" <= 100);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "SystemSoundAssignment" ADD CONSTRAINT "SystemSoundAssignment_configId_fkey" FOREIGN KEY ("configId") REFERENCES "SoundDesignConfig"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "SystemSoundAssignment" ADD CONSTRAINT "SystemSoundAssignment_assetId_fkey" FOREIGN KEY ("assetId") REFERENCES "AudioAsset"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

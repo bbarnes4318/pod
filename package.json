@@ -31,6 +31,7 @@
     "test:sonic-identity-migration": "tsx --conditions=react-server src/scripts/testSonicIdentityMigration.ts",
     "test:sonic-identity": "tsx src/scripts/testSonicIdentity.ts",
     "test:variant-selection": "tsx --conditions=react-server src/scripts/testVariantSelection.ts",
+    "test:system-sound-pools": "tsx --conditions=react-server src/scripts/testSystemSoundPools.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
     "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",

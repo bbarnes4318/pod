@@ -859,6 +859,7 @@ model AudioAsset {
   updatedAt       DateTime @updatedAt
   auditEvents     AudioAssetAuditEvent[]
   soundAssignments PodcastSoundAssignment[]
+  systemAssignments SystemSoundAssignment[] @relation("SystemSoundAssignmentAsset")
 
   @@index([kind])
   @@index([isActive])
@@ -894,13 +895,53 @@ model AudioAssetAuditEvent {
 // plus the default production style / SFX density for new episodes.
 model SoundDesignConfig {
   id                String   @id @default("default")
+  // LEGACY singleton slots (PR 2 compatibility inputs): when no
+  // SystemSoundAssignment rows exist for a role, the resolver falls back to
+  // these as a one-item pool so existing installs keep their sound.
   themeIntroAssetId String?
   themeOutroAssetId String?
   bedAssetId        String?
   stingerAssetIds   Json?    // string[] — rotated deterministically between breaks
   defaultStyle      String   @default("full")   // "clean" | "light" | "full"
   defaultSfxDensity String   @default("subtle") // "subtle" | "medium" | "hype"
+  // Optimistic-concurrency version for the admin system-pool editor (PR 2).
+  configVersion     Int      @default(1)
+  systemAssignments SystemSoundAssignment[]
   updatedAt         DateTime @updatedAt
+}
+
+// System-default VARIANT POOLS (PR 2). The shared system profile is no longer
+// one intro/outro/bed: an administrator configures weighted, ordered variant
+// pools per role here, mirroring PodcastSoundAssignment but scoped to the
+// singleton SoundDesignConfig. Only shared_system (or documented legacy_global
+// compatibility) assets belong here — a private asset must never become a
+// global system assignment. Empty pools fall back to the legacy singleton slots.
+model SystemSoundAssignment {
+  id           String  @id @default(uuid())
+  configId     String  @default("default")
+  config       SoundDesignConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  assetId      String
+  asset        AudioAsset @relation("SystemSoundAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  role         String  // "intro" | "outro" | "bed" | "stinger" | "reaction"
+  orderIndex   Int     @default(0)
+  enabled      Boolean @default(true)
+  gainDb       Float?
+  fadeInMs     Int?
+  fadeOutMs    Int?
+  cueFamily          String?
+  weight             Float    @default(1) // bounded [0,100]
+  isBrandedMotif     Boolean  @default(false)
+  maxUsesPerEpisode  Int?
+  minEpisodeCooldown Int?
+  allowedFormatIds   String[] @default([])
+  prohibitedFormatIds String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([configId, role, assetId])
+  @@index([configId, role])
+  @@index([configId, role, enabled])
+  @@index([assetId])
 }
 
 // One row per sound asset a rendered episode consumed (stingers, beds,

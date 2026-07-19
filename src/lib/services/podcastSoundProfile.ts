@@ -185,9 +185,10 @@ function toRef(
     licenseStatusAtCapture: asset.licenseStatus,
     provenance,
   };
-  // Variant metadata is added ONLY for podcast assignments that carry it, so
-  // system_default refs and v2-v4-shaped refs stay byte-identical.
-  if (assignment && provenance === "podcast_assignment") {
+  // Variant metadata is added whenever an assignment carries it (podcast OR
+  // system pools). Singleton freezeSlot calls pass NO assignment, so those refs
+  // stay byte-identical to the v2-v4 shape.
+  if (assignment) {
     ref.cueFamily = assignment.cueFamily ?? null;
     ref.weight = assignment.weight ?? 1;
     ref.isBrandedMotif = assignment.isBrandedMotif ?? false;
@@ -220,13 +221,21 @@ export async function resolveSystemDefaultSoundProfile(
   const excluded: FrozenSoundProfile["excluded"] = [];
   let legacyCompat = false;
 
+  // PR 2: admin-configured system variant pools (weighted, ordered) per role.
+  const sysAssignments = await dbi.systemSoundAssignment.findMany({
+    where: { configId: "default", enabled: true },
+    include: { asset: true },
+    orderBy: [{ role: "asc" }, { orderIndex: "asc" }],
+  });
+  const sysByRole = new Map<string, typeof sysAssignments>();
+  for (const a of sysAssignments) {
+    const list = sysByRole.get(a.role) ?? [];
+    list.push(a);
+    sysByRole.set(a.role, list);
+  }
+
   const slotIds = [config?.themeIntroAssetId, config?.themeOutroAssetId, config?.bedAssetId].filter(Boolean) as string[];
   const stingerIds = Array.isArray(config?.stingerAssetIds) ? (config!.stingerAssetIds as string[]) : [];
-
-  // Configured slots/stingers by id; the reaction pool is every usable
-  // shared-system SFX (plus legacy_global SFX under the compat rule — the
-  // pre-Prompt-6 behavior was "all active SFX", and the system library is
-  // exactly the non-private remainder of that set).
   const rows = (await dbi.audioAsset.findMany({
     where: {
       OR: [
@@ -237,46 +246,76 @@ export async function resolveSystemDefaultSoundProfile(
   })) as AssetRow[];
   const byId = new Map(rows.map((r) => [r.id, r]));
 
-  const freezeSlot = (id: string | null | undefined, role: SoundAssignmentRole): FrozenSoundAssetRef | null => {
-    if (!id) return null;
-    const asset = byId.get(id);
-    if (!asset) { excluded.push({ assetId: id, role, reason: "missing asset" }); return null; }
+  // Validate a candidate SYSTEM asset (shared_system / legacy_global only —
+  // private assets can never resolve through the system profile) and, if OK,
+  // build its ref carrying any variant metadata.
+  const buildSystemRef = (
+    asset: AssetRow | null | undefined,
+    role: SoundAssignmentRole,
+    idForError: string,
+    mix?: AssignmentMix
+  ): FrozenSoundAssetRef | null => {
+    if (!asset) { excluded.push({ assetId: idForError, role, reason: "missing asset" }); return null; }
     if (asset.scope !== "shared_system" && asset.scope !== "legacy_global") {
-      // A private asset must never resolve through the SYSTEM profile.
-      excluded.push({ assetId: id, role, reason: "not a system asset" });
-      return null;
+      excluded.push({ assetId: asset.id, role, reason: "not a system asset" }); return null;
     }
     const block = newUseBlockReason(asset);
-    if (block) { excluded.push({ assetId: id, role, reason: block }); return null; }
+    if (block) { excluded.push({ assetId: asset.id, role, reason: block }); return null; }
     if (!ROLE_KIND_COMPATIBILITY[role].includes(asset.kind)) {
-      excluded.push({ assetId: id, role, reason: `kind ${asset.kind} incompatible with ${role}` });
-      return null;
+      excluded.push({ assetId: asset.id, role, reason: `kind ${asset.kind} incompatible with ${role}` }); return null;
     }
     const provenance = asset.scope === "legacy_global" ? "legacy_compat" : "system_default";
     if (provenance === "legacy_compat") legacyCompat = true;
-    return toRef(asset, role, provenance);
+    return toRef(asset, role, provenance, mix);
   };
 
-  const stingers: FrozenSoundAssetRef[] = [];
-  stingerIds.forEach((id, i) => {
-    const ref = freezeSlot(id, "stinger");
-    if (ref) stingers.push({ ...ref, orderIndex: i });
-  });
+  // Build a role's pool from SystemSoundAssignment rows; if there are none, fall
+  // back to the legacy singleton slot(s) as a one-item compatibility pool.
+  const poolFor = (role: SoundAssignmentRole, legacyIds: string[]): FrozenSoundAssetRef[] => {
+    const rowsForRole = sysByRole.get(role);
+    if (rowsForRole && rowsForRole.length > 0) {
+      const out: FrozenSoundAssetRef[] = [];
+      for (const a of rowsForRole) {
+        const ref = buildSystemRef(a.asset as unknown as AssetRow, role, a.assetId, a as unknown as AssignmentMix);
+        if (ref) out.push(ref);
+      }
+      return out;
+    }
+    // Legacy fallback (compatibility one-item pool).
+    const out: FrozenSoundAssetRef[] = [];
+    legacyIds.forEach((id, i) => {
+      const ref = buildSystemRef(byId.get(id), role, id, { orderIndex: i, gainDb: null, fadeInMs: null, fadeOutMs: null });
+      if (ref) out.push(ref);
+    });
+    return out;
+  };
 
-  const reactions: FrozenSoundAssetRef[] = [];
-  let i = 0;
-  for (const row of rows) {
-    if (row.kind !== "sfx") continue;
-    if (row.scope !== "shared_system" && row.scope !== "legacy_global") continue;
-    if (newUseBlockReason(row)) continue;
-    const provenance = row.scope === "legacy_global" ? "legacy_compat" : "system_default";
-    if (provenance === "legacy_compat") legacyCompat = true;
-    reactions.push({ ...toRef(row, "reaction", provenance), orderIndex: i++ });
+  const introVariants = base.introEnabled === false ? [] : poolFor("intro", config?.themeIntroAssetId ? [config.themeIntroAssetId] : []);
+  const outroVariants = base.outroEnabled === false ? [] : poolFor("outro", config?.themeOutroAssetId ? [config.themeOutroAssetId] : []);
+  const beds = poolFor("bed", config?.bedAssetId ? [config.bedAssetId] : []);
+  const stingers = poolFor("stinger", stingerIds);
+
+  // Reactions: explicit system reaction assignments win; otherwise the legacy
+  // "every usable shared-system/legacy_global SFX" pool (unchanged behavior).
+  let reactions: FrozenSoundAssetRef[];
+  if ((sysByRole.get("reaction")?.length ?? 0) > 0) {
+    reactions = poolFor("reaction", []);
+  } else {
+    reactions = [];
+    let i = 0;
+    for (const row of rows) {
+      if (row.kind !== "sfx") continue;
+      if (row.scope !== "shared_system" && row.scope !== "legacy_global") continue;
+      if (newUseBlockReason(row)) continue;
+      const provenance = row.scope === "legacy_global" ? "legacy_compat" : "system_default";
+      if (provenance === "legacy_compat") legacyCompat = true;
+      reactions.push({ ...toRef(row, "reaction", provenance), orderIndex: i++ });
+    }
   }
 
-  const intro = base.introEnabled === false ? null : freezeSlot(config?.themeIntroAssetId, "intro");
-  const outro = base.outroEnabled === false ? null : freezeSlot(config?.themeOutroAssetId, "outro");
-  const bed = freezeSlot(config?.bedAssetId, "bed");
+  const intro = introVariants[0] ?? null;
+  const outro = outroVariants[0] ?? null;
+  const bed = beds[0] ?? null;
 
   return {
     mode: "system_default",
@@ -284,25 +323,23 @@ export async function resolveSystemDefaultSoundProfile(
     cooldownScope: base.cooldownScope === "owner" ? "owner" : "podcast",
     stingerCooldownEpisodes: base.stingerCooldownEpisodes ?? null,
     reactionCooldownEpisodes: base.reactionCooldownEpisodes ?? null,
-    // For the SYSTEM default, a bookend is "enabled" only when the toggle is on
-    // AND the shared config actually pins a theme asset. A platform that has no
-    // system intro/outro configured simply has none — that is not a per-episode
-    // misconfiguration to fail on (the frozen intent honestly records `false`).
-    // A configured-but-unusable asset (rights) still reads enabled=true and is
-    // caught downstream via its `excluded` entry.
-    introEnabled: base.introEnabled !== false && !!config?.themeIntroAssetId,
-    outroEnabled: base.outroEnabled !== false && !!config?.themeOutroAssetId,
+    // A system bookend is "enabled" only when the toggle is on AND the system
+    // actually has at least one usable variant/slot for that role — an empty
+    // pool honestly records `false` (not a misconfiguration); a configured-but-
+    // unusable asset still reads enabled and is caught via its `excluded` entry.
+    introEnabled: base.introEnabled !== false && ((sysByRole.get("intro")?.length ?? 0) > 0 || !!config?.themeIntroAssetId),
+    outroEnabled: base.outroEnabled !== false && ((sysByRole.get("outro")?.length ?? 0) > 0 || !!config?.themeOutroAssetId),
     intro,
     outro,
     bed,
     stingers,
     reactions,
-    // The shared system default carries the permissive identity + single-item
-    // pools (it does not claim any genre/mood — no fabrication).
+    // The shared system default carries the permissive identity (it does not
+    // claim any genre/mood — no fabrication) + the real variant pools.
     sonicIdentity: DEFAULT_SONIC_IDENTITY,
-    introVariants: intro ? [intro] : [],
-    outroVariants: outro ? [outro] : [],
-    beds: bed ? [bed] : [],
+    introVariants,
+    outroVariants,
+    beds,
     containsLegacyCompatAssets: legacyCompat,
     excluded,
   };
@@ -653,6 +690,102 @@ export async function savePodcastSoundProfile(args: {
       where: { id: pod.id },
       data: { configVersion: pod.configVersion + 1 },
       select: { configVersion: true },
+    });
+    return { ok: true as const, configVersion: bumped.configVersion };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// SYSTEM-DEFAULT variant pools (PR 2 review): admin-managed. Same variant model
+// as podcast pools, but scoped to the singleton SoundDesignConfig and RESTRICTED
+// to shared_system assets — a private/owner/podcast asset can never become a
+// global system assignment. Atomic under SoundDesignConfig.configVersion
+// optimistic concurrency.
+// ---------------------------------------------------------------------------
+export type SystemSoundSaveError =
+  | { code: "system_config_changed"; expected: number; actual: number }
+  | { code: "invalid_gain"; assetId: string }
+  | { code: "invalid_fade"; assetId: string }
+  | { code: "invalid_weight"; assetId: string }
+  | { code: "duplicate_assignment"; assetId: string; role: string }
+  | { code: "invalid_cue_family"; assetId: string; role: string; cueFamily: string }
+  | { code: "invalid_format_id"; assetId: string; formatId: string }
+  | { code: "asset_not_assignable"; assetId: string; role: string; reason: string };
+
+export async function saveSystemSoundProfile(args: {
+  db: PrismaClient;
+  expectedVersion: number;
+  assignments: SoundAssignmentInput[];
+}): Promise<{ ok: true; configVersion: number } | { ok: false; error: SystemSoundSaveError }> {
+  const assignments = args.assignments ?? [];
+  const seen = new Set<string>();
+  for (const a of assignments) {
+    if (a.gainDb != null && (a.gainDb < GAIN_DB_MIN || a.gainDb > GAIN_DB_MAX || !Number.isFinite(a.gainDb))) {
+      return { ok: false, error: { code: "invalid_gain", assetId: a.assetId } };
+    }
+    for (const fade of [a.fadeInMs, a.fadeOutMs]) {
+      if (fade != null && (fade < 0 || fade > FADE_MS_MAX || !Number.isInteger(fade))) {
+        return { ok: false, error: { code: "invalid_fade", assetId: a.assetId } };
+      }
+    }
+    if (a.weight != null && (!Number.isFinite(a.weight) || a.weight < ASSIGNMENT_WEIGHT_MIN || a.weight > ASSIGNMENT_WEIGHT_MAX)) {
+      return { ok: false, error: { code: "invalid_weight", assetId: a.assetId } };
+    }
+    if (a.cueFamily != null && !isCueFamilyValidForRole(a.role, a.cueFamily)) {
+      return { ok: false, error: { code: "invalid_cue_family", assetId: a.assetId, role: a.role, cueFamily: a.cueFamily } };
+    }
+    for (const fid of [...(a.allowedFormatIds ?? []), ...(a.prohibitedFormatIds ?? [])]) {
+      if (!isRegisteredFormat(fid)) return { ok: false, error: { code: "invalid_format_id", assetId: a.assetId, formatId: fid } };
+    }
+    const key = `${a.role}:${a.assetId}`;
+    if (seen.has(key)) return { ok: false, error: { code: "duplicate_assignment", assetId: a.assetId, role: a.role } };
+    seen.add(key);
+  }
+
+  return args.db.$transaction(async (tx) => {
+    const cfg = await tx.soundDesignConfig.upsert({
+      where: { id: "default" },
+      create: { id: "default" },
+      update: {},
+      select: { id: true, configVersion: true },
+    });
+    if (cfg.configVersion !== args.expectedVersion) {
+      return { ok: false as const, error: { code: "system_config_changed" as const, expected: args.expectedVersion, actual: cfg.configVersion } };
+    }
+
+    for (const a of assignments) {
+      const asset = (await tx.audioAsset.findUnique({ where: { id: a.assetId } })) as AssetRow | null;
+      // SYSTEM assignments accept shared_system ONLY: private/owner/podcast
+      // assets are rejected, and legacy_global needs classification first.
+      if (!asset || asset.scope !== "shared_system") {
+        return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: "not a shared system asset" } };
+      }
+      if (asset.kind === "highlight") {
+        return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: "highlights cannot join ordinary pools" } };
+      }
+      const block = newUseBlockReason(asset);
+      if (block) return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: block } };
+      if (!ROLE_KIND_COMPATIBILITY[a.role]?.includes(asset.kind)) {
+        return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: `kind ${asset.kind} incompatible with role ${a.role}` } };
+      }
+    }
+
+    await tx.systemSoundAssignment.deleteMany({ where: { configId: "default" } });
+    for (let i = 0; i < assignments.length; i++) {
+      const a = assignments[i];
+      await tx.systemSoundAssignment.create({
+        data: {
+          configId: "default", assetId: a.assetId, role: a.role,
+          orderIndex: a.orderIndex ?? i, enabled: a.enabled ?? true,
+          gainDb: a.gainDb ?? null, fadeInMs: a.fadeInMs ?? null, fadeOutMs: a.fadeOutMs ?? null,
+          cueFamily: a.cueFamily ?? null, weight: a.weight ?? 1, isBrandedMotif: a.isBrandedMotif ?? false,
+          maxUsesPerEpisode: a.maxUsesPerEpisode ?? null, minEpisodeCooldown: a.minEpisodeCooldown ?? null,
+          allowedFormatIds: a.allowedFormatIds ?? [], prohibitedFormatIds: a.prohibitedFormatIds ?? [],
+        },
+      });
+    }
+    const bumped = await tx.soundDesignConfig.update({
+      where: { id: "default" }, data: { configVersion: cfg.configVersion + 1 }, select: { configVersion: true },
     });
     return { ok: true as const, configVersion: bumped.configVersion };
   });
