@@ -12,7 +12,7 @@
 
 import type { FrozenSoundAssetRef } from "@/lib/services/podcastSoundProfile";
 import type { SoundDiversityPolicy, DiversityMode, DiversityRelaxationCode } from "@/lib/audio/soundDiversityPolicy";
-import { DIVERSITY_BOUNDS } from "@/lib/audio/soundDiversityPolicy";
+import { DIVERSITY_BOUNDS, DIVERSITY_WEIGHT_SCALE } from "@/lib/audio/soundDiversityPolicy";
 
 function fnv1a(s: string): number { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
 function mulberry32(seed: number): () => number { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -100,7 +100,7 @@ export function selectDiverseCue(input: DiverseCueInput): DiverseCueResult {
       if (enforce) exclude(`asset cross-episode cooldown (${crossAgo} < ${ref.minEpisodeCooldown})`);
     }
 
-    let score = weight;
+    let score = weight * DIVERSITY_WEIGHT_SCALE;
     const penalties: string[] = [];
     // Avoid repeating the SAME asset back-to-back (esp. reactions).
     if (within.lastAssetId === ref.assetId) { score -= policy.assetReusePenalty; penalties.push("same_as_last_asset"); }

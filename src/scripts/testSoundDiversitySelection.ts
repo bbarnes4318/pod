@@ -26,7 +26,7 @@ const history = (eps: Array<Partial<DiversityHistoryEpisode>>): DiversityHistory
     episodeId: `e${i}`, renderId: `r${i}`, creationOrder: i, formatId: "two_host_debate",
     introAssetId: null, outroAssetId: null, bedAssetId: null, transitionAssetIds: [], reactionAssetIds: [],
     introFamily: null, outroFamily: null, bedFamily: null, transitionFamilySequence: [], reactionFamilySequence: [],
-    cueFamilySequence: [], brandedMotifUsed: false, planningEngine: "post_tts", planningVersion: 2, planFingerprint: `fp${i}`, renderKind: "initial", ...e,
+    cueFamilySequence: [], introIsMotif: false, outroIsMotif: false, bedIsMotif: false, brandedMotifUsed: false, planningEngine: "post_tts", planningVersion: 2, planFingerprint: `fp${i}`, renderKind: "initial", ...e,
   })),
 });
 

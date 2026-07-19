@@ -16,6 +16,13 @@ import type { SonicIdentity } from "@/lib/audio/sonicIdentity";
 
 export const SOUND_DIVERSITY_POLICY_VERSION = 1 as const;
 
+/** Scales an assignment weight into the scoring space so the 0–100 penalties/
+ *  bonuses are PROPORTIONAL adjustments to preference rather than absolute
+ *  overrides. A weight-1 asset starts at 20; a moderate penalty (40) can knock
+ *  it to 0, while a high-weight asset stays favored — weight is a preference,
+ *  a soft penalty disfavors without permanently starving. */
+export const DIVERSITY_WEIGHT_SCALE = 20;
+
 /** Rollout enforcement mode (Part 12). off = prior behavior; observe = compute
  *  but do not apply; soft = penalties + relaxable soft rules; enforce = apply
  *  hard constraints (fail only when explicit policy requires). */

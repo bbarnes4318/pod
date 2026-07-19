@@ -42,6 +42,9 @@ export interface DiversityHistoryEpisode {
   reactionFamilySequence: string[];
   /** Full ordered ROLE:family token stream (INTRO/BED/…/OUTRO). Bounded. */
   cueFamilySequence: string[];
+  introIsMotif: boolean;
+  outroIsMotif: boolean;
+  bedIsMotif: boolean;
   brandedMotifUsed: boolean;
   planningEngine: string | null;
   planningVersion: number | null;
@@ -213,6 +216,9 @@ export async function readDiversityHistory(opts: {
       transitionFamilySequence,
       reactionFamilySequence,
       cueFamilySequence,
+      introIsMotif: !!(intro?.isBrandedMotif && refScopeOk(intro)),
+      outroIsMotif: !!(outro?.isBrandedMotif && refScopeOk(outro)),
+      bedIsMotif: !!(bed?.isBrandedMotif && refScopeOk(bed)),
       brandedMotifUsed,
       planningEngine: engine,
       planningVersion: parsed.version,

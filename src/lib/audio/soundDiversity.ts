@@ -12,6 +12,7 @@ import type { FrozenSoundProfile, FrozenSoundAssetRef } from "@/lib/services/pod
 import { DEFAULT_SONIC_IDENTITY, type SonicIdentity } from "@/lib/audio/sonicIdentity";
 import { eligibleVariants, BRAND_MATCH } from "@/lib/audio/variantSelection";
 import { selectDiverseVariant, type DiversitySelectionDecision, type RoleHistoryView } from "@/lib/audio/soundDiversitySelection";
+import { evaluateMotifContinuity } from "@/lib/audio/soundMotifContinuity";
 import type { SoundDiversityPolicy, DiversityMode, DiversityRelaxationCode } from "@/lib/audio/soundDiversityPolicy";
 import type { DiversityHistory } from "@/lib/services/diversityHistory";
 
@@ -51,6 +52,9 @@ export interface DiverseBookendContext {
   seed: string;
   formatId: string;
   identity?: SonicIdentity;
+  /** Opt-in shared-system cross-podcast history (Part 9). Applied only as a SOFT
+   *  penalty over shared-system assets — never overrides hard podcast rules. */
+  systemHistory?: DiversityHistory;
 }
 
 export interface DiverseBookendResult {
@@ -84,9 +88,18 @@ export function selectDiverseBookends(profile: FrozenSoundProfile, ctx: DiverseB
   const outroEnabled = profile.outroEnabled !== false;
   const bedEnabled = identity.bedPolicy !== "none";
 
+  // System-wide shared-asset recency (soft, opt-in). Flattened newest-first.
+  const systemRecent = ctx.systemHistory && ctx.policy.systemCrossPodcastDiversityEnabled
+    ? { intro: ctx.systemHistory.episodes.map((e) => e.introAssetId).filter((x): x is string => !!x), outro: ctx.systemHistory.episodes.map((e) => e.outroAssetId).filter((x): x is string => !!x), bed: ctx.systemHistory.episodes.map((e) => e.bedAssetId).filter((x): x is string => !!x) }
+    : null;
+
+  // Motif rate decisions per role (drives prefer/penalize of branded motifs).
+  const introMotif = evaluateMotifContinuity({ role: "intro", candidates: introPool, recentMotifUsage: ctx.history.episodes.map((e) => e.introIsMotif), policy: ctx.policy });
+  const outroMotif = evaluateMotifContinuity({ role: "outro", candidates: outroPool, recentMotifUsage: ctx.history.episodes.map((e) => e.outroIsMotif), policy: ctx.policy });
+
   // Intro
   const introRes = introEnabled && introPool.length
-    ? selectDiverseVariant({ role: "intro", candidates: introPool, policy: ctx.policy, mode: applyMode, seed: ctx.seed, history: roleHistory(ctx.history, (e) => ({ assetId: e.introAssetId, family: e.introFamily })) })
+    ? selectDiverseVariant({ role: "intro", candidates: introPool, policy: ctx.policy, mode: applyMode, seed: ctx.seed, history: roleHistory(ctx.history, (e) => ({ assetId: e.introAssetId, family: e.introFamily })), motifAction: introMotif.action, systemRecentAssetIds: systemRecent?.intro })
     : null;
   const intro = introRes?.selected ?? null;
 
@@ -100,17 +113,25 @@ export function selectDiverseBookends(profile: FrozenSoundProfile, ctx: DiverseB
         chosenIntroId: intro?.assetId ?? null,
         priorPairs: ctx.history.episodes.map((e) => ({ introId: e.introAssetId, outroId: e.outroAssetId })),
         familyBonus: matchFamily ? { family: matchFamily, amount: ctx.policy.brandedContinuityBonus } : undefined,
+        motifAction: outroMotif.action, systemRecentAssetIds: systemRecent?.outro,
       })
     : null;
   const outro = outroRes?.selected ?? null;
 
   // Bed
   const bedRes = bedEnabled && bedPool.length
-    ? selectDiverseVariant({ role: "bed", candidates: bedPool, policy: ctx.policy, mode: applyMode, seed: ctx.seed, history: roleHistory(ctx.history, (e) => ({ assetId: e.bedAssetId, family: e.bedFamily })) })
+    ? selectDiverseVariant({ role: "bed", candidates: bedPool, policy: ctx.policy, mode: applyMode, seed: ctx.seed, history: roleHistory(ctx.history, (e) => ({ assetId: e.bedAssetId, family: e.bedFamily })), systemRecentAssetIds: systemRecent?.bed })
     : null;
   const bed = bedRes?.selected ?? null;
 
   for (const r of [introRes, outroRes, bedRes]) if (r) for (const rx of r.decision.relaxations) if (!relaxations.includes(rx)) relaxations.push(rx);
+  // Motif edge-case relaxations (honest, deterministic).
+  for (const m of [introMotif, outroMotif]) {
+    if (m.action === "unavailable" && m.recentRate < m.minimumRate && !relaxations.includes("motif_minimum_unavailable")) relaxations.push("motif_minimum_unavailable");
+    if (m.action === "unavoidable" && !relaxations.includes("motif_maximum_unavoidable")) relaxations.push("motif_maximum_unavoidable");
+  }
+  // The primary branding slot's motif decision (intro), with outro noted in warnings.
+  if (outroMotif.action === "unavoidable" || outroMotif.action === "unavailable") warnings.push(`outro motif: ${outroMotif.reason}`);
 
   const decision: SoundDiversityDecision = {
     version: SOUND_DIVERSITY_DECISION_VERSION,
@@ -121,7 +142,7 @@ export function selectDiverseBookends(profile: FrozenSoundProfile, ctx: DiverseB
     selectedIntro: introRes?.decision ?? null,
     selectedOutro: outroRes?.decision ?? null,
     selectedBed: bedRes?.decision ?? null,
-    motifDecision: null, // populated by the motif module (PR4 C4)
+    motifDecision: introMotif,
     relaxations,
     warnings,
     fingerprint: "",

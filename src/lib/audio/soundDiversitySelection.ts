@@ -16,8 +16,9 @@
 import type { FrozenSoundAssetRef } from "@/lib/services/podcastSoundProfile";
 import {
   type SoundDiversityPolicy, type DiversityMode, type DiversityRelaxationCode,
-  DIVERSITY_BOUNDS,
+  DIVERSITY_BOUNDS, DIVERSITY_WEIGHT_SCALE,
 } from "@/lib/audio/soundDiversityPolicy";
+import { motifScoreDelta, type MotifAction } from "@/lib/audio/soundMotifContinuity";
 
 // --- Decision records (Part 10) --------------------------------------------
 export interface DiversityScoreEntry { code: string; amount: number }
@@ -81,6 +82,11 @@ export interface DiverseVariantInput {
   /** A coherence bonus for a specific family (e.g. the outro family that brand-
    *  matches the chosen intro), applied to the candidate score. */
   familyBonus?: { family: string; amount: number };
+  /** How branded-motif candidates should be biased (from the motif module). */
+  motifAction?: MotifAction;
+  /** Shared-system assets recently used SYSTEM-WIDE (cross-podcast), applied as a
+   *  SOFT penalty only — never an exclusion (cannot starve a small podcast). */
+  systemRecentAssetIds?: string[];
 }
 
 const roleStreakMax = (role: string, p: SoundDiversityPolicy) =>
@@ -180,15 +186,22 @@ export function selectDiverseVariant(input: DiverseVariantInput): DiverseVariant
     if (usedAgo != null && usedAgo < policy.softAssetCooldownEpisodes) penalties.push({ code: "soft_asset_cooldown", amount: policy.assetReusePenalty * (1 - usedAgo / Math.max(1, policy.softAssetCooldownEpisodes)) });
     if (famAgo != null && famAgo < policy.familyCooldownEpisodes) penalties.push({ code: "family_cooldown", amount: policy.familyReusePenalty * (1 - famAgo / Math.max(1, policy.familyCooldownEpisodes)) });
     if (recentUsageCount > 0) penalties.push({ code: "recent_episode", amount: policy.recentEpisodePenalty * Math.min(1, recentUsageCount / Math.max(1, policy.historyWindowEpisodes)) });
-    // Branded continuity: a small bonus keeps a motif recognizable (full motif
-    // rate control lives in the motif module; this is the per-candidate nudge).
-    if (ref.isBrandedMotif) bonuses.push({ code: "branded_continuity", amount: policy.brandedContinuityBonus });
+    // Branded motif: the motif module's rate control decides the direction
+    // (prefer below-min rate, penalize above-max, else the mild continuity nudge).
+    if (ref.isBrandedMotif) {
+      const delta = motifScoreDelta(input.motifAction ?? "neutral", policy);
+      if (delta >= 0) bonuses.push({ code: "branded_motif", amount: delta });
+      else penalties.push({ code: "branded_motif_overuse", amount: -delta });
+    }
     // Brand-coherence: e.g. the outro family that matches the chosen intro.
     if (input.familyBonus && (ref.cueFamily ?? null) === input.familyBonus.family) bonuses.push({ code: "brand_match", amount: input.familyBonus.amount });
+    // System-wide (cross-podcast) recency: a SOFT penalty for shared-system
+    // assets heavily used across the platform. Never excludes.
+    if (input.systemRecentAssetIds && input.systemRecentAssetIds.includes(ref.assetId)) penalties.push({ code: "system_recent", amount: policy.recentEpisodePenalty * 0.5 });
 
     const penaltySum = penalties.reduce((a, p) => a + p.amount, 0);
     const bonusSum = bonuses.reduce((a, b) => a + b.amount, 0);
-    const score = Math.max(0, weight + bonusSum - penaltySum);
+    const score = Math.max(0, weight * DIVERSITY_WEIGHT_SCALE + bonusSum - penaltySum);
     return { ref, d: { assetId: ref.assetId, family: ref.cueFamily ?? null, weight, score, excluded, exclusionReason, penalties, bonuses, recentUsageCount, lastUsedEpisodesAgo: usedAgo } };
   });
 
