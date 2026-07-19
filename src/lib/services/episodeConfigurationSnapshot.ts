@@ -20,6 +20,9 @@ import crypto from "node:crypto";
 import { canonicalJson, type ResolvedEpisodeConfiguration, type Provenance } from "./podcastConfiguration";
 import type { FrozenSoundProfile } from "./podcastSoundProfile";
 import { selectEpisodeSoundVariants } from "../audio/variantSelection";
+import { selectDiverseBookends, type SoundDiversityDecision } from "../audio/soundDiversity";
+import type { SoundDiversityPolicy, DiversityMode } from "../audio/soundDiversityPolicy";
+import type { DiversityHistory } from "./diversityHistory";
 import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
 
 // Version 2 (Prompt 6) adds the FROZEN SOUND PROFILE: the exact permitted
@@ -123,6 +126,11 @@ export interface EpisodeConfigurationSnapshot {
      *  capture. The planner may only pick from THIS pool. Never contains
      *  storage keys or URLs. Absent on version-1 snapshots. */
     soundProfile?: FrozenSoundProfile;
+    /** PR 4: the safe pre-snapshot diversity DECISION (why this intro/outro/bed
+     *  was chosen). DELIBERATELY EXCLUDED from the fingerprint (see
+     *  editorialMaterial) — the *selection* it produced already lives in
+     *  soundProfile and is fingerprinted; this is the explanatory trace. */
+    diversityDecision?: SoundDiversityDecision;
   };
 }
 
@@ -193,13 +201,29 @@ export function buildEpisodeConfigurationSnapshot(
    *  bed VARIANT is deterministically SELECTED from the permitted pools and
    *  frozen; absent = the pool's first variant is frozen (deterministic, no
    *  cross-episode variety — used by legacy callers/tests). */
-  soundSeed?: string
+  soundSeed?: string,
+  /** PR 4: when provided AND mode !== "off", the intro/outro/bed selection is
+   *  diversity-aware (avoids recent repeats using podcast history). observe
+   *  records the decision but keeps the plain (v5) selection; soft/enforce apply
+   *  the diverse picks. Absent = exact v5 behavior (fingerprint-identical). */
+  diversity?: { policy: SoundDiversityPolicy; mode: DiversityMode; history: DiversityHistory }
 ): EpisodeSnapshotColumns {
   // v5: deterministically select this episode's variants from the permitted
   // pools BEFORE freezing. Pure given (soundProfile, soundSeed, formatId).
+  let diversityDecision: SoundDiversityDecision | undefined;
   if (soundProfile && soundSeed) {
     const formatId = cast?.formatId ?? resolved.editorial.format.value ?? DEFAULT_FORMAT_ID;
+    // Always compute the plain v5 selection first (pools, identity, reasons).
     soundProfile = selectEpisodeSoundVariants(soundProfile, { seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
+    // PR 4: diversity-aware selection layered on top.
+    if (diversity && diversity.mode !== "off") {
+      const div = selectDiverseBookends(soundProfile, { policy: diversity.policy, mode: diversity.mode, history: diversity.history, seed: soundSeed, formatId, identity: soundProfile.sonicIdentity });
+      diversityDecision = div.decision;
+      // observe: keep the plain v5 picks (record only). soft/enforce: APPLY.
+      if (diversity.mode === "soft" || diversity.mode === "enforce") {
+        soundProfile = { ...soundProfile, intro: div.intro, outro: div.outro, bed: div.bed };
+      }
+    }
   }
   const snapshot: EpisodeConfigurationSnapshot = {
     version: EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
@@ -251,6 +275,7 @@ export function buildEpisodeConfigurationSnapshot(
       productionStyle: resolved.production.productionStyle.value,
       sfxDensity: resolved.production.sfxDensity.value,
       ...(soundProfile ? { soundProfile } : {}),
+      ...(diversityDecision ? { diversityDecision } : {}),
       provenance: {
         hostIds: provenanceOf(resolved.production.hostIds),
         ttsProvider: provenanceOf(resolved.production.ttsProvider),

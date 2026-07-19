@@ -41,6 +41,7 @@
     "test:post-tts-reproduce": "tsx --conditions=react-server src/scripts/testPostTtsReproduce.ts",
     "test:sound-diversity-policy": "tsx --conditions=react-server src/scripts/testSoundDiversityPolicy.ts",
     "test:diversity-history": "tsx --conditions=react-server src/scripts/testDiversityHistory.ts",
+    "test:sound-diversity-selection": "tsx --conditions=react-server src/scripts/testSoundDiversitySelection.ts",
     "test:post-tts-render-gate": "tsx --conditions=react-server src/scripts/testPostTtsRenderGate.ts",
     "demo:post-tts-sound-direction": "tsx --conditions=react-server src/scripts/produceLocalPostTtsDemo.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",

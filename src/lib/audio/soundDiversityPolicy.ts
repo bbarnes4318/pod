@@ -16,6 +16,15 @@ import type { SonicIdentity } from "@/lib/audio/sonicIdentity";
 
 export const SOUND_DIVERSITY_POLICY_VERSION = 1 as const;
 
+/** Rollout enforcement mode (Part 12). off = prior behavior; observe = compute
+ *  but do not apply; soft = penalties + relaxable soft rules; enforce = apply
+ *  hard constraints (fail only when explicit policy requires). */
+export type DiversityMode = "off" | "observe" | "soft" | "enforce";
+export const DIVERSITY_MODES: readonly DiversityMode[] = ["off", "observe", "soft", "enforce"] as const;
+export function isDiversityMode(x: unknown): x is DiversityMode {
+  return typeof x === "string" && (DIVERSITY_MODES as readonly string[]).includes(x);
+}
+
 // --- Performance / safety bounds (Part 17) ---------------------------------
 export const DIVERSITY_BOUNDS = {
   /** Hard ceiling on how many recent episodes any history read/scoring spans. */

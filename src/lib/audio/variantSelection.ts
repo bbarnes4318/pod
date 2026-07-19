@@ -56,7 +56,7 @@ export function variantFormatCompatible(ref: FrozenSoundAssetRef, formatId: stri
 }
 
 /** Intro brand family -> the preferred matching OUTRO family (a coherent close). */
-const BRAND_MATCH: Record<string, string> = {
+export const BRAND_MATCH: Record<string, string> = {
   brand_main: "close_main",
   brand_short: "close_short",
   brand_high_energy: "close_high_energy",
@@ -64,8 +64,11 @@ const BRAND_MATCH: Record<string, string> = {
   brand_minimal: "close_reflective",
 };
 
-const eligible = (pool: FrozenSoundAssetRef[] | undefined, formatId: string, identity: SonicIdentity) =>
+/** Filter a pool to variants compatible with the episode's format + identity. */
+export const eligibleVariants = (pool: FrozenSoundAssetRef[] | undefined, formatId: string, identity: SonicIdentity): FrozenSoundAssetRef[] =>
   (pool ?? []).filter((r) => variantFormatCompatible(r, formatId, identity));
+
+const eligible = eligibleVariants;
 
 export interface VariantSelectionInput {
   seed: string;          // stable per-episode seed (e.g. the episode id)
