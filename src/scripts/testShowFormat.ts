@@ -97,7 +97,7 @@ async function main() {
     const cast = snapshotCastFor("two_host_debate", ["h1", "h2"]);
     assert(cast.members[0].role === "chair_a" && cast.members[1].role === "chair_b", "roles by seat");
     const s1 = buildEpisodeConfigurationSnapshot(resolved.resolved, new Date("2026-01-01T00:00:00Z"), undefined, cast);
-    assert(s1.configurationSnapshot.version === 3, "version 3");
+    assert(s1.configurationSnapshot.version === 4, "current snapshot version (4)");
     assert(s1.configurationSnapshot.cast?.formatId === "two_host_debate", "cast frozen");
     const s2 = buildEpisodeConfigurationSnapshot(resolved.resolved, new Date("2026-01-01T00:00:00Z"), undefined, snapshotCastFor("two_host_debate", ["h1"]));
     assert(s1.configurationFingerprint !== s2.configurationFingerprint, "cast change moves the fingerprint");

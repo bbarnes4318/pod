@@ -69,6 +69,15 @@ export interface FrozenSoundProfile {
   cooldownScope: CooldownScope;
   stingerCooldownEpisodes: number | null;
   reactionCooldownEpisodes: number | null;
+  /** Snapshot v4: EXPLICIT frozen bookend intent — did the producer enable an
+   *  intro/outro for this episode, independent of whether an asset ultimately
+   *  resolved? This is what distinguishes "intentionally disabled" (false) from
+   *  "enabled but no asset assigned" (true + intro/outro null + no excluded
+   *  entry). ABSENT (undefined) on v2/v3 profiles read from older snapshots —
+   *  the render gate falls back to documented compatibility behavior for those
+   *  and never fabricates historical intent. */
+  introEnabled?: boolean;
+  outroEnabled?: boolean;
   intro: FrozenSoundAssetRef | null;
   outro: FrozenSoundAssetRef | null;
   bed: FrozenSoundAssetRef | null;
@@ -89,6 +98,9 @@ export const CLEAN_SOUND_PROFILE: FrozenSoundProfile = {
   cooldownScope: "podcast",
   stingerCooldownEpisodes: null,
   reactionCooldownEpisodes: null,
+  // Clean = dialogue only: bookends are explicitly NOT enabled.
+  introEnabled: false,
+  outroEnabled: false,
   intro: null,
   outro: null,
   bed: null,
@@ -224,6 +236,14 @@ export async function resolveSystemDefaultSoundProfile(
     cooldownScope: base.cooldownScope === "owner" ? "owner" : "podcast",
     stingerCooldownEpisodes: base.stingerCooldownEpisodes ?? null,
     reactionCooldownEpisodes: base.reactionCooldownEpisodes ?? null,
+    // For the SYSTEM default, a bookend is "enabled" only when the toggle is on
+    // AND the shared config actually pins a theme asset. A platform that has no
+    // system intro/outro configured simply has none — that is not a per-episode
+    // misconfiguration to fail on (the frozen intent honestly records `false`).
+    // A configured-but-unusable asset (rights) still reads enabled=true and is
+    // caught downstream via its `excluded` entry.
+    introEnabled: base.introEnabled !== false && !!config?.themeIntroAssetId,
+    outroEnabled: base.outroEnabled !== false && !!config?.themeOutroAssetId,
     intro: base.introEnabled === false ? null : freezeSlot(config?.themeIntroAssetId, "intro"),
     outro: base.outroEnabled === false ? null : freezeSlot(config?.themeOutroAssetId, "outro"),
     bed: freezeSlot(config?.bedAssetId, "bed"),
@@ -313,6 +333,11 @@ export async function resolvePodcastSoundProfile(
     cooldownScope: base.cooldownScope === "owner" ? "owner" : "podcast",
     stingerCooldownEpisodes: base.stingerCooldownEpisodes,
     reactionCooldownEpisodes: base.reactionCooldownEpisodes,
+    // Custom: "enabled" is the producer's explicit toggle. savePodcastSoundProfile
+    // guarantees an enabled bookend has a valid assignment, so enabled => intro
+    // is set; a bypassed/legacy invalid save is caught at snapshot creation.
+    introEnabled: base.introEnabled !== false,
+    outroEnabled: base.outroEnabled !== false,
     intro,
     outro,
     bed,
@@ -352,6 +377,7 @@ export type SoundProfileSaveError =
   | { code: "invalid_fade"; assetId: string }
   | { code: "duplicate_assignment"; assetId: string; role: string }
   | { code: "multiple_singleton"; role: string }
+  | { code: "bookend_enabled_without_asset"; role: "intro" | "outro" }
   | { code: "asset_not_assignable"; assetId: string; role: string; reason: string };
 
 /**
@@ -439,6 +465,23 @@ export async function savePodcastSoundProfile(args: {
       if (block) return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: block } };
       if (!ROLE_KIND_COMPATIBILITY[a.role]?.includes(asset.kind)) {
         return { ok: false as const, error: { code: "asset_not_assignable" as const, assetId: a.assetId, role: a.role, reason: `kind ${asset.kind} incompatible with role ${a.role}` } };
+      }
+    }
+
+    // LEVEL 1 (bookend intent): a CUSTOM profile that ENABLES an intro/outro must
+    // assign a valid one. An enabled-but-unassigned bookend would otherwise
+    // freeze as introEnabled:true with no asset — the exact ambiguity v4 removes.
+    // Runs AFTER per-asset validation so a malformed asset still reports its
+    // specific error first; returns from the transaction so nothing is written
+    // (no partial save; optimistic concurrency untouched). Disabled bookends
+    // need no assignment.
+    if (profile.soundProfileMode === "custom") {
+      const roles = new Set(assignments.map((a) => a.role));
+      if (profile.defaultIntroEnabled !== false && !roles.has("intro")) {
+        return { ok: false as const, error: { code: "bookend_enabled_without_asset" as const, role: "intro" as const } };
+      }
+      if (profile.defaultOutroEnabled !== false && !roles.has("outro")) {
+        return { ok: false as const, error: { code: "bookend_enabled_without_asset" as const, role: "outro" as const } };
       }
     }
 

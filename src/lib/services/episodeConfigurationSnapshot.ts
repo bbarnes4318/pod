@@ -31,7 +31,16 @@ import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFo
 // hosts were pinned into which seats. An empty pinned cast is honest — the
 // remaining chairs are auto-cast at build time and recorded on the Script.
 // v1/v2 snapshots stay readable and byte-stable (keys added only when present).
-export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 3 as const;
+// Version 4 (Prompt 7.5) adds EXPLICIT FROZEN BOOKEND INTENT inside the frozen
+// sound profile (production.soundProfile.introEnabled / .outroEnabled). This
+// removes the v2/v3 ambiguity where "outro intentionally disabled" and "outro
+// enabled but no asset assigned" both froze as `outro: null, excluded: []`. A
+// v4 render REQUIRES an enabled bookend to be audible; a v2/v3 profile carries
+// no explicit intent and keeps the documented compatibility behavior (never
+// fabricate historical intent). v1/v2/v3 snapshots stay readable and BYTE/
+// FINGERPRINT stable — the new keys live only inside newly frozen v4 profiles,
+// and editorialMaterial serializes soundProfile exactly as stored.
+export const EPISODE_CONFIGURATION_SNAPSHOT_VERSION = 4 as const;
 
 export interface SnapshotCast {
   formatId: string;
@@ -58,7 +67,7 @@ export function snapshotCastFor(formatId: string, pinnedHostIds: string[]): Snap
 
 /** The persisted shape (stored in Episode.configurationSnapshot as JSON). */
 export interface EpisodeConfigurationSnapshot {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   /** Version 3+: the frozen show format + pinned cast. Absent on v1/v2. */
   cast?: SnapshotCast;
   source: "podcast" | "standalone" | "legacy";
@@ -234,6 +243,11 @@ export function buildEpisodeConfigurationSnapshot(
     },
   };
 
+  // LEVEL 2: never freeze a v4 profile that enables a bookend without an asset
+  // or a recorded exclusion. Throws before the episode is created (belt-and-
+  // suspenders behind the Level-1 save validation).
+  if (soundProfile) assertFrozenBookendIntent(soundProfile);
+
   return {
     configurationSource: resolved.source,
     podcastConfigurationVersion: resolved.podcastConfigurationVersion,
@@ -289,11 +303,49 @@ export function isFrozenSoundProfile(x: unknown): x is FrozenSoundProfile {
   if (!x || typeof x !== "object") return false;
   const p = x as Record<string, unknown>;
   if (typeof p.mode !== "string" || !FROZEN_SOUND_PROFILE_MODES.has(p.mode)) return false;
+  // v4 bookend intent is OPTIONAL (absent on v2/v3); if present it must be boolean.
+  if (p.introEnabled !== undefined && typeof p.introEnabled !== "boolean") return false;
+  if (p.outroEnabled !== undefined && typeof p.outroEnabled !== "boolean") return false;
   const slotOk = (v: unknown) => v === null || v === undefined || isFrozenSoundAssetRef(v);
   if (!slotOk(p.intro) || !slotOk(p.outro) || !slotOk(p.bed)) return false;
   if (!Array.isArray(p.stingers) || !p.stingers.every(isFrozenSoundAssetRef)) return false;
   if (!Array.isArray(p.reactions) || !p.reactions.every(isFrozenSoundAssetRef)) return false;
   return true;
+}
+
+/**
+ * The FROZEN bookend intent for a snapshot's sound profile:
+ *   true / false  — v4 explicit intent (enabled / disabled);
+ *   null          — v2/v3 profile with no frozen intent (compatibility path;
+ *                   the render gate must NOT fabricate historical intent).
+ */
+export function frozenBookendEnabled(profile: FrozenSoundProfile, kind: "intro" | "outro"): boolean | null {
+  const v = kind === "intro" ? profile.introEnabled : profile.outroEnabled;
+  return typeof v === "boolean" ? v : null;
+}
+
+/**
+ * LEVEL 2 (episode snapshot creation): refuse to freeze a v4 profile whose
+ * bookend intent says ENABLED but carries neither a resolved asset nor a
+ * structured exclusion reason. That is the "enabled but no asset assigned" state
+ * v4 exists to make impossible — never silently convert it to disabled. Only
+ * validates profiles that actually carry explicit v4 intent; v2/v3 profiles
+ * (no intent) are left to the documented compatibility path.
+ */
+export function assertFrozenBookendIntent(profile: FrozenSoundProfile): void {
+  for (const kind of ["intro", "outro"] as const) {
+    const enabled = frozenBookendEnabled(profile, kind);
+    if (enabled !== true) continue; // disabled or no-frozen-intent: nothing to assert
+    const ref = kind === "intro" ? profile.intro : profile.outro;
+    const excluded = profile.excluded.some((e) => e.role === kind);
+    if (!ref && !excluded) {
+      throw new Error(
+        `Cannot freeze episode configuration: ${kind} is enabled in the sound profile but no ${kind} asset ` +
+          `is assigned/resolved and no exclusion reason was recorded. Fix the show's sound profile (assign a ` +
+          `${kind} or disable it) before creating the episode.`
+      );
+    }
+  }
 }
 
 export type SnapshotSoundProfileStatus = "none" | "v1_legacy" | "frozen" | "corrupt";

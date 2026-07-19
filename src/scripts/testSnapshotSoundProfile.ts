@@ -14,6 +14,9 @@ import {
   resolveSnapshotSoundProfile,
   isFrozenSoundProfile,
   fingerprintEpisodeSnapshot,
+  frozenBookendEnabled,
+  assertFrozenBookendIntent,
+  EPISODE_CONFIGURATION_SNAPSHOT_VERSION,
   type EpisodeConfigurationSnapshot,
 } from "../lib/services/episodeConfigurationSnapshot";
 import type { FrozenSoundProfile, FrozenSoundAssetRef } from "../lib/services/podcastSoundProfile";
@@ -41,6 +44,11 @@ const validProfile = (): FrozenSoundProfile => ({
   stingers: [ref("st-1", "stinger", "stinger")],
   reactions: [ref("sfx-1", "sfx", "reaction")],
   containsLegacyCompatAssets: false, excluded: [],
+});
+
+/** A v4 profile carries EXPLICIT frozen bookend intent. */
+const v4Profile = (over: Partial<FrozenSoundProfile> = {}): FrozenSoundProfile => ({
+  ...validProfile(), introEnabled: true, outroEnabled: true, ...over,
 });
 
 const editorial = { verticals: [], teams: [], segmentCount: 3, format: "two_host_debate", minDebateScore: null, scriptStyle: null, maxWords: null, provenance: {} };
@@ -79,10 +87,11 @@ async function main() {
     assert(r.profile === null, "no profile for v1");
   });
 
-  await check("Test 4: a FUTURE version (v4) with a valid profile still resolves (no silent loss)", () => {
-    const r = resolveSnapshotSoundProfile(snapshot(4, validProfile()));
-    assert(r.status === "frozen", `future version must not drop a compatible profile, got ${r.status}`);
-    assert(r.profile?.bed?.assetId === "bed-1", "bed resolved on v4");
+  await check("Test 4: v4 and any FUTURE version with a valid profile still resolve (no silent loss)", () => {
+    const r4 = resolveSnapshotSoundProfile(snapshot(4, validProfile()));
+    assert(r4.status === "frozen" && r4.profile?.bed?.assetId === "bed-1", `v4 resolves, got ${r4.status}`);
+    const r5 = resolveSnapshotSoundProfile(snapshot(5, validProfile()));
+    assert(r5.status === "frozen", `a future version must not drop a compatible profile, got ${r5.status}`);
   });
 
   await check("Test 5a: a corrupt profile (bad mode) fails honestly (status=corrupt, never legacy)", () => {
@@ -145,6 +154,80 @@ async function main() {
     const a = snapshot(2, validProfile());
     const b = snapshot(2, validProfile());
     assert(fingerprintEpisodeSnapshot(a) === fingerprintEpisodeSnapshot(b), "identical v2 material -> identical fingerprint");
+  });
+
+  // ===== v4 explicit frozen bookend intent ================================
+  // Golden fingerprints over the unchanged editorialMaterial/fingerprint logic.
+  // The v4 change added an OPTIONAL profile field set only on v4 profiles, so
+  // these flag-less v1/v2/v3 hashes are byte-identical to pre-v4.
+  const GOLDEN = {
+    v1: "ae7a536d80dbdd255f98a30f7ee230d65cd1801893427830d40b80c4fa5c6599",
+    v2: "ad246f918c199bdcd8391814b4b12097d8b5e21b237f4cda5b5e050733228bed",
+    v3: "04fc4d655414d51c21f2642af5ba058051f720f9059a1664747610ce5e999126",
+  };
+  await check("Tests 13/14/15: v1/v2/v3 fingerprints are byte-stable (golden regression anchors)", () => {
+    const f = {
+      v1: fingerprintEpisodeSnapshot(snapshot(1)),
+      v2: fingerprintEpisodeSnapshot(snapshot(2, validProfile())),
+      v3: fingerprintEpisodeSnapshot(snapshot(3, validProfile())),
+    };
+    console.log(`      [golden] v1=${f.v1}\n               v2=${f.v2}\n               v3=${f.v3}`);
+    assert(f.v1 === GOLDEN.v1, `v1 fingerprint drifted -> ${f.v1}`);
+    assert(f.v2 === GOLDEN.v2, `v2 fingerprint drifted -> ${f.v2}`);
+    assert(f.v3 === GOLDEN.v3, `v3 fingerprint drifted -> ${f.v3}`);
+    // The v4 bookend flags must NOT retroactively affect a flag-less v2/v3 hash.
+    assert(fingerprintEpisodeSnapshot(snapshot(2, validProfile())) === f.v2, "v2 unaffected by v4 flags' existence");
+  });
+
+  await check("Test 16: v4 fingerprint is deterministic and distinct from v3", () => {
+    const a = snapshot(4, v4Profile());
+    const b = snapshot(4, v4Profile());
+    assert(fingerprintEpisodeSnapshot(a) === fingerprintEpisodeSnapshot(b), "v4 deterministic");
+    // Same assets, but explicit bookend intent + version 4 => a distinct hash.
+    assert(fingerprintEpisodeSnapshot(a) !== fingerprintEpisodeSnapshot(snapshot(3, validProfile())), "v4 distinct from v3");
+    // Bookend intent is fingerprint material: flipping outroEnabled moves the hash.
+    assert(
+      fingerprintEpisodeSnapshot(snapshot(4, v4Profile({ outroEnabled: false }))) !== fingerprintEpisodeSnapshot(a),
+      "outroEnabled is part of the fingerprint",
+    );
+    assert(EPISODE_CONFIGURATION_SNAPSHOT_VERSION === 4, "current snapshot version is 4");
+  });
+
+  await check("Test 17: editing the podcast after creation does not alter the v4 episode's bookend requirements", () => {
+    // The episode froze outroEnabled:true with outro-1. A later podcast edit is
+    // represented by a DIFFERENT 'current' profile — the frozen snapshot must be
+    // read unchanged; rendering never re-derives intent from current config.
+    const frozen = snapshot(4, v4Profile({ outro: ref("outro-1", "theme_outro", "outro") }));
+    const beforeFp = fingerprintEpisodeSnapshot(frozen);
+    const beforeIntent = frozenBookendEnabled(resolveSnapshotSoundProfile(frozen).profile!, "outro");
+    // Podcast owner later disables the outro and swaps the asset (current config):
+    const currentProfile = v4Profile({ outroEnabled: false, outro: ref("outro-9", "theme_outro", "outro") });
+    void currentProfile; // NOT read by the resolver — proving isolation.
+    const r = resolveSnapshotSoundProfile(frozen);
+    assert(r.status === "frozen" && r.profile!.outro?.assetId === "outro-1", "frozen outro asset unchanged after edit");
+    assert(frozenBookendEnabled(r.profile!, "outro") === true && beforeIntent === true, "frozen outro intent unchanged after edit");
+    assert(fingerprintEpisodeSnapshot(frozen) === beforeFp, "frozen fingerprint unchanged after edit");
+  });
+
+  await check("frozenBookendEnabled: v4 => boolean; v2/v3 (no intent) => null", () => {
+    assert(frozenBookendEnabled(v4Profile(), "intro") === true, "v4 enabled => true");
+    assert(frozenBookendEnabled(v4Profile({ introEnabled: false }), "intro") === false, "v4 disabled => false");
+    assert(frozenBookendEnabled(validProfile(), "intro") === null, "v2/v3 (no flag) => null");
+  });
+
+  await check("Level 2 (assertFrozenBookendIntent): enabled-without-asset-or-exclusion throws; valid states pass", () => {
+    // Enabled + asset => ok
+    assertFrozenBookendIntent(v4Profile());
+    // Disabled + no asset => ok
+    assertFrozenBookendIntent(v4Profile({ introEnabled: false, outroEnabled: false, intro: null, outro: null }));
+    // Enabled + excluded (structured reason) => ok
+    assertFrozenBookendIntent(v4Profile({ outro: null, excluded: [{ assetId: "x", role: "outro", reason: "rights blocked" }] }));
+    // Enabled + NO asset + NO exclusion => must throw
+    let threw = false;
+    try { assertFrozenBookendIntent(v4Profile({ outro: null })); } catch { threw = true; }
+    assert(threw, "enabled outro with no asset and no exclusion must throw at creation");
+    // v2/v3 (no explicit intent) => never throws (compat)
+    assertFrozenBookendIntent(validProfile());
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

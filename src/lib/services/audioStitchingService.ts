@@ -56,7 +56,7 @@ import { readCooldownSnapshot, recordPlanUsage, type CooldownScopeFilter } from 
 import { resolveEpisodeCast, makeCastMatchers } from "@/lib/services/hostCasting";
 import { resolvePodcastSoundProfile, type FrozenSoundProfile } from "@/lib/services/podcastSoundProfile";
 import { rightsUsableForNewUse } from "@/lib/services/audioAssetAccess";
-import { resolveSnapshotSoundProfile } from "@/lib/services/episodeConfigurationSnapshot";
+import { resolveSnapshotSoundProfile, frozenBookendEnabled } from "@/lib/services/episodeConfigurationSnapshot";
 import crypto from "crypto";
 
 /** The frozen sound profile from an Episode configuration snapshot, via the
@@ -1286,6 +1286,8 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         clean: style === "clean",
         enabled: kind === "intro" ? includeIntro : includeOutro,
         hasFrozenProfile: !!frozenProfile,
+        // v4 explicit frozen intent (null for v2/v3 — compatibility path).
+        frozenIntent: frozenProfile ? frozenBookendEnabled(frozenProfile, kind) : null,
         frozenRefAssetId: (kind === "intro" ? frozenProfile?.intro : frozenProfile?.outro)?.assetId ?? null,
         frozenExcludedReason: frozenProfile?.excluded.find((e) => e.role === kind)?.reason ?? null,
         legacyConfiguredAssetId: frozenProfile

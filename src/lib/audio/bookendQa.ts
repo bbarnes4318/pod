@@ -73,6 +73,12 @@ export interface BookendRequirementInput {
   /** includeIntro / includeOutro (the render-level enable toggle). */
   enabled: boolean;
   hasFrozenProfile: boolean;
+  /** v4 EXPLICIT frozen bookend intent: true (enabled) / false (disabled) /
+   *  null (v2/v3 profile with no frozen intent — compatibility path). When true,
+   *  the bookend is required even if no asset resolved (that must fail). When
+   *  false, it is intentionally disabled. When null, requirement is inferred
+   *  from the resolved asset / exclusion, never fabricated. */
+  frozenIntent: boolean | null;
   /** frozenProfile.intro?.assetId ?? null (or outro). */
   frozenRefAssetId: string | null;
   /** frozenProfile.excluded entry reason for this role, or null. A present
@@ -91,6 +97,8 @@ export interface BookendRequirement {
   code:
     | "clean"
     | "disabled"
+    | "frozen_disabled"
+    | "frozen_enabled_no_asset"
     | "profile_no_bookend"
     | "frozen_asset"
     | "excluded_at_resolution"
@@ -104,10 +112,23 @@ export function resolveBookendRequirement(i: BookendRequirementInput): BookendRe
   if (!i.enabled) return { required: false, assetId: null, code: "disabled", excludedReason: null };
   if (i.hasFrozenProfile) {
     // The frozen profile is authoritative for a snapshot episode.
+    if (i.frozenIntent === false) {
+      // v4 explicit: intentionally disabled. Not required; absence is valid.
+      return { required: false, assetId: null, code: "frozen_disabled", excludedReason: null };
+    }
+    if (i.frozenIntent === true) {
+      // v4 explicit: enabled. REQUIRED regardless of whether an asset resolved —
+      // an enabled bookend with no asset and no exclusion is the exact defect v4
+      // makes visible, and it must fail (never silently ship without it).
+      if (i.frozenRefAssetId) return { required: true, assetId: i.frozenRefAssetId, code: "frozen_asset", excludedReason: null };
+      if (i.frozenExcludedReason) return { required: true, assetId: null, code: "excluded_at_resolution", excludedReason: i.frozenExcludedReason };
+      return { required: true, assetId: null, code: "frozen_enabled_no_asset", excludedReason: null };
+    }
+    // frozenIntent === null: v2/v3 profile with NO frozen intent. Documented
+    // compatibility — infer requirement from what actually resolved; never
+    // fabricate historical intent from the current podcast configuration.
     if (i.frozenRefAssetId) return { required: true, assetId: i.frozenRefAssetId, code: "frozen_asset", excludedReason: null };
     if (i.frozenExcludedReason) return { required: true, assetId: null, code: "excluded_at_resolution", excludedReason: i.frozenExcludedReason };
-    // The profile resolved to no such bookend and recorded no exclusion — the
-    // episode was permitted none (disabled/unassigned). Not required.
     return { required: false, assetId: null, code: "profile_no_bookend", excludedReason: null };
   }
   // Legacy / system default path.
@@ -138,6 +159,9 @@ export function describeBookendAbsence(kind: BookendKind, ctx: BookendAbsenceCon
   const { req } = ctx;
   if (req.code === "excluded_at_resolution") {
     return `${kind} was configured but excluded at profile resolution: ${req.excludedReason ?? "rights/compatibility"}`;
+  }
+  if (req.code === "frozen_enabled_no_asset") {
+    return `${kind} is enabled in the frozen (v4) sound profile but no ${kind} asset was assigned or resolved`;
   }
   if (req.code === "legacy_unconfigured") {
     return `${kind} is enabled for a non-clean render but no ${kind} asset is configured`;

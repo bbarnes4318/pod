@@ -164,21 +164,37 @@ Three correctness guarantees sit on top of the mix engine:
   (This replaced a `snap.version !== 2` check that dropped every post-Prompt-7
   v3 episode's identity.) The resolver is read-only — snapshot bytes and
   fingerprints for v1/v2/v3 are unchanged.
-- **Post-render bookend verification.** `verifyBookends()`
-  (`src/lib/audio/bookendQa.ts`) measures the finished master with ffmpeg. For a
-  non-clean episode, an intro/outro that the resolved configuration REQUIRES
-  must be resolved, planned, loaded, executed, AND measurably audible. A
-  required bookend that vanished at ANY stage — profile resolution, the theme
-  genre gate, plan creation, asset loading, timeline execution, or mastering
-  (silent/clipped/truncated) — FAILS the render with a stage-specific safe
-  reason (recorded on the render record, prior master preserved, no failed
-  output promoted, no failed cue recorded as usage). "Required" is decided by
-  `resolveBookendRequirement()`: the frozen profile is authoritative for a
-  snapshot episode (an asset ref OR an `excluded` entry means required; a
-  profile that resolved to none is not); the legacy/system path treats an
-  enabled non-clean bookend with nothing configured as required (a
-  misconfiguration that must fail, not ship mute). Disabled and clean bookends
-  are skipped, not failed.
+- **Frozen bookend intent (snapshot v4).** The frozen sound profile now carries
+  EXPLICIT `introEnabled` / `outroEnabled` booleans, frozen at episode creation.
+  This removes the v2/v3 ambiguity where "outro intentionally disabled" and
+  "outro enabled but no asset assigned" both froze as `outro: null,
+  excluded: []`. Rendering reads the FROZEN intent from the episode snapshot —
+  never the podcast's current configuration — so a later podcast edit can never
+  change a historical episode's requirements. v2/v3 profiles carry no explicit
+  intent and keep the documented compatibility behavior (requirement inferred
+  from the resolved asset / exclusion; never fabricated).
+- **Three levels of enforcement for enabled bookends:**
+  1. *Configuration save* (`savePodcastSoundProfile`): a CUSTOM profile that
+     enables an intro/outro must assign a valid one, else a structured
+     `bookend_enabled_without_asset` error (no partial write; concurrency
+     intact). Disabled bookends need no assignment.
+  2. *Snapshot creation* (`assertFrozenBookendIntent`, called from
+     `buildEpisodeConfigurationSnapshot`): refuses to freeze a v4 profile whose
+     intent says enabled but carries neither a resolved asset nor a structured
+     exclusion — never silently converts enabled to disabled.
+  3. *Render-time defense* (`verifyBookends` + `resolveBookendRequirement`):
+     the final gate. For a non-clean episode, a REQUIRED bookend must be
+     resolved, planned, loaded, executed, AND measurably audible. A required
+     bookend that vanished at ANY stage — profile resolution, the theme genre
+     gate, plan creation, asset loading, timeline execution, or mastering
+     (silent/clipped/truncated) — FAILS the render with a stage-specific safe
+     reason. On failure the prior master stays active, no failed output is
+     promoted, the episode's prior status is restored, and no failed cue is
+     recorded as usage. Requirement is decided by frozen v4 intent (enabled =>
+     required even with no asset; disabled => not required); v2/v3 fall back to
+     the resolved-asset/exclusion inference; the legacy/system path treats an
+     enabled non-clean bookend with nothing configured as required. Disabled and
+     clean bookends are skipped, not failed.
 - **Safe render diagnostics.** `buildRenderDiagnostics()`
   (`src/lib/audio/renderDiagnostics.ts`) writes a safe cue-sheet report to
   `EpisodeAudioRender.diagnostics` (additive nullable column) on both success

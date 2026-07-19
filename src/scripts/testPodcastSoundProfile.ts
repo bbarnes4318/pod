@@ -91,6 +91,9 @@ async function main() {
         profile: {
           soundProfileMode: "custom",
           cooldownScope: "podcast",
+          // Intro assigned; outro deliberately disabled (v4: an enabled outro
+          // would now require an assignment).
+          defaultOutroEnabled: false,
           assignments: [
             { assetId: sysIntro.id, role: "intro", gainDb: -3, fadeInMs: 500 },
             { assetId: sysBed.id, role: "bed" },
@@ -234,7 +237,7 @@ async function main() {
       const current = (await db.podcast.findUnique({ where: { id: pod.id } }))!.configVersion;
       const res = await savePodcastSoundProfile({
         db, podcastId: pod.id, expectedVersion: current, canEdit: canEditAsAlice,
-        profile: { soundProfileMode: "custom", targetLoudnessLufs: -14, assignments: [{ assetId: sysSting.id, role: "stinger" }] },
+        profile: { soundProfileMode: "custom", targetLoudnessLufs: -14, defaultIntroEnabled: false, defaultOutroEnabled: false, assignments: [{ assetId: sysSting.id, role: "stinger" }] },
       });
       assert(res.ok, JSON.stringify(res));
       const after = fingerprintPodcastConfiguration((await loadPodcastConfiguration(db, pod.id))!);
@@ -249,6 +252,28 @@ async function main() {
         await db.podcastSoundAssignment.create({ data: { productionConfigId: production.id, podcastId: pod.id, assetId: sysOutro.id, role: "intro", enabled: true } });
       } catch { rejected = true; }
       assert(rejected, "second enabled intro must violate the partial unique index");
+    });
+
+    // Placed LAST: these saves replace the podcast's assignment set, so they run
+    // after every test that depends on the earlier saved state.
+    await check("Tests 1-4 (Level 1): a custom profile that ENABLES a bookend must assign one; disabled needs none", async () => {
+      const v = () => db.podcast.findUnique({ where: { id: pod.id } }).then((p) => p!.configVersion);
+      // 1. intro enabled (default), no intro assignment -> save fails.
+      let res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { soundProfileMode: "custom", defaultOutroEnabled: false, assignments: [{ assetId: sysSting.id, role: "stinger" }] } });
+      assert(!res.ok && res.error.code === "bookend_enabled_without_asset" && (res.error as { role: string }).role === "intro", `1: ${JSON.stringify(res)}`);
+      // 2. outro enabled (default), no outro assignment -> save fails.
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { soundProfileMode: "custom", assignments: [{ assetId: sysIntro.id, role: "intro" }, { assetId: sysSting.id, role: "stinger" }] } });
+      assert(!res.ok && res.error.code === "bookend_enabled_without_asset" && (res.error as { role: string }).role === "outro", `2: ${JSON.stringify(res)}`);
+      // 3. intro disabled, no intro assignment (outro enabled+assigned) -> succeeds.
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { soundProfileMode: "custom", defaultIntroEnabled: false, assignments: [{ assetId: sysOutro.id, role: "outro" }, { assetId: sysSting.id, role: "stinger" }] } });
+      assert(res.ok, `3: disabled intro needs no assignment: ${JSON.stringify(res)}`);
+      // 4. outro disabled, no outro assignment (intro enabled+assigned) -> succeeds.
+      res = await savePodcastSoundProfile({ db, podcastId: pod.id, expectedVersion: await v(), canEdit: canEditAsAlice,
+        profile: { soundProfileMode: "custom", defaultOutroEnabled: false, assignments: [{ assetId: sysIntro.id, role: "intro" }, { assetId: sysSting.id, role: "stinger" }] } });
+      assert(res.ok, `4: disabled outro needs no assignment: ${JSON.stringify(res)}`);
     });
 
   } finally {

@@ -26,6 +26,7 @@
     "test:production-planner": "tsx src/scripts/testProductionPlanner.ts",
     "test:snapshot-sound-profile": "tsx --conditions=react-server src/scripts/testSnapshotSoundProfile.ts",
     "test:bookend-qa": "tsx src/scripts/testBookendQa.ts",
+    "test:bookend-render-gate": "tsx --conditions=react-server src/scripts/testBookendRenderGate.ts",
     "test:render-diagnostics-migration": "tsx --conditions=react-server src/scripts/testRenderDiagnosticsMigration.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
