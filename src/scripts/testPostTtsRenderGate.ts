@@ -223,6 +223,19 @@ async function main() {
       assert(div?.renderMode === "enforce", `frozen enforce mode wins over env-off (${div?.renderMode})`);
       assert(div?.diversityFingerprint === built.context.fingerprint, "frozen diversity fingerprint carried through");
     });
+
+    await check("PR4 v6: remix_current_podcast re-resolves the CURRENT diversity config (not the frozen context)", async () => {
+      process.env.SOUND_DIVERSITY_ENGINE_ENABLED = "true";
+      process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE = "soft";
+      const r = await stitchFinalEpisodeAudio({ scriptId: script.id, renderMode: "remix_current_podcast", forceRegenerate: true, productionStyle: "full" });
+      assert(r.finalStatus === "completed", `remix_current render completes (${r.finalStatus})`);
+      const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: episode.id, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
+      const div = (rr?.diagnostics as { postTts?: { diversity?: { renderMode?: string; contextSource?: string } } } | null)?.postTts?.diversity;
+      assert(div?.contextSource === "current", `re-resolves CURRENT config (${div?.contextSource})`);
+      assert(div?.renderMode === "soft", `uses the current mode, not the frozen enforce (${div?.renderMode})`);
+      delete process.env.SOUND_DIVERSITY_ENGINE_ENABLED;
+      delete process.env.SOUND_DIVERSITY_ENFORCEMENT_MODE;
+    });
   } finally {
     await db.$disconnect().catch(() => {});
     await pg.stop().catch(() => {});

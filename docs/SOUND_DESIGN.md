@@ -475,3 +475,7 @@ gate. Env: `SOUND_DIVERSITY_ENGINE_ENABLED`, `SOUND_DIVERSITY_ENFORCEMENT_MODE`,
 `SOUND_DIVERSITY_SYSTEM_HISTORY_ENABLED`, plus `SOUND_DIVERSITY_HISTORY_WINDOW`,
 `_HARD_ASSET_COOLDOWN`, `_SOFT_ASSET_COOLDOWN`, `_FAMILY_COOLDOWN`,
 `_MAX_BED_STREAK`, `_MAX_SEQUENCE_SIMILARITY`.
+
+See **docs/SOUND_DIVERSITY_ACCEPTANCE_MATRIX.md** for the full production
+acceptance matrix mapping every scenario (formats, profiles, pools, modes,
+render modes, failure paths, freeze-safety) to its concrete test evidence.
