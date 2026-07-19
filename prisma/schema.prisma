@@ -553,6 +553,7 @@ model EpisodeAudioRender {
   targetLoudnessLufs       Float?
   configurationFingerprint String?   // Episode configuration fingerprint at render time
   plan                     Json?     // the exact ProductionPlan executed — the reproduce-mode source of truth
+  diagnostics              Json?     // safe per-render cue-sheet report (RenderDiagnostics) — names/ids/reasons/bookend result only, never URLs/keys
   outputAudioUrl           String?   // final master reference (existing Episode.audioUrl value)
   failureReason            String?   // safe category only — never URLs/keys/commands
   startedAt                DateTime  @default(now())

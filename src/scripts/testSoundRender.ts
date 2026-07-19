@@ -235,6 +235,53 @@ async function main() {
       assert(warnings.some((w) => /rights invalid/i.test(w)), "revocation surfaced as a warning");
     });
 
+    // --- v3 snapshot compatibility (the fixed bug) ---------------------------
+    await check("CORE: a version-3 episode resolves its frozen profile and stays isolated to it (never the legacy global pool)", async () => {
+      const { resolveSnapshotSoundProfile } = await import("../lib/services/episodeConfigurationSnapshot");
+      // Restore rights (a prior test revoked this asset) so it can load.
+      await db.$executeRawUnsafe(`UPDATE "AudioAsset" SET "rightsStatus" = 'not_required' WHERE "id" = '${frozenAsset.id}'`);
+      const v3Snapshot = {
+        version: 3,
+        cast: { formatId: "two_host_debate", formatVersion: 1, members: [] },
+        source: "podcast", capturedAt: "2026-01-01T00:00:00.000Z", podcast: null,
+        editorial: { verticals: [], teams: [], segmentCount: 1, format: "two_host_debate", minDebateScore: null, scriptStyle: null, maxWords: null, provenance: {} },
+        production: { hostIds: [], ttsProvider: null, ttsVoiceOverrides: null, productionStyle: null, sfxDensity: null, provenance: {}, soundProfile: JSON.parse(JSON.stringify(frozenProfile)) },
+      };
+      const res = resolveSnapshotSoundProfile(v3Snapshot);
+      assert(res.status === "frozen", `v3 must resolve its frozen profile (got ${res.status}) — the bug returned it as legacy`);
+      assert(res.profile?.stingers[0].assetId === frozenAsset.id, "frozen stinger id preserved through v3 resolution");
+
+      served.length = 0;
+      const tempDir = path.join(tmpRoot, "load-v3");
+      fs.mkdirSync(tempDir, { recursive: true });
+      const set = await loadSoundDesignAssetSet({
+        style: "full", config: null, frozenProfile: res.profile as never, highlightAssetIds: [],
+        tempDir, storageProvider: fakeStorage, ffmpegPath: ffmpeg, ffprobePath: ffprobe, sampleRate: 22050, warnings: [],
+      });
+      assert(set.stingers.length === 1 && set.stingers[0].id === frozenAsset.id, "loaded from the frozen pool");
+      assert(served.length === 1 && served[0].endsWith("/a"), `only the frozen object was fetched, not a legacy scan (served: ${served.join(",")})`);
+    });
+
+    await check("render diagnostics carry names/ids/reasons only — URLs and storage keys are redacted", async () => {
+      const { buildRenderDiagnostics } = await import("../lib/audio/renderDiagnostics");
+      const plan = {
+        version: 1, plannerVersion: "1.1.0", episodeId: "e", scriptId: "s", style: "full", sfxDensity: "subtle", seed: 1,
+        cues: [{ type: "stinger", lineIndex: 2, assetId: "a1", assetName: "Riser http://obj.test/secret", category: null, timing: "before", gainDb: -5, fadeInMs: 15, fadeOutMs: 90, fit: 0.8, reason: "topic turn key episodes/e/final/x.mp3" }],
+        stats: { lineCount: 1, boundaryCount: 1, stingerCues: 1, reactionCues: 0, silenceCues: 0, distinctAssetsUsed: 1, cooldownSuppressions: 0 },
+      } as never;
+      const diag = buildRenderDiagnostics({
+        renderId: "r1", renderVersion: 1, renderMode: "initial", snapshotVersion: 3, soundProfileMode: "custom",
+        plannerSeed: 1, plannerVersion: "1.1.0", style: "full", sfxDensity: "subtle", targetLoudnessLufs: -16, cooldownScope: "podcast",
+        frozenProfile: null, productionPlan: plan,
+        summary: { style: "full", sfxDensity: "subtle", introAsset: null, outroAsset: null, bedAsset: null, bedDucking: false, stingerCount: 1, reactionCount: 0, reactions: [], highlightCount: 0, highlights: [] } as never,
+        bookend: null, speechEndMs: 1000, masterDurationMs: 1500,
+        skippedWarnings: ["Sound asset 'X' failed to load (https://s3.test/secret) — skipped."],
+      });
+      const json = JSON.stringify(diag);
+      assert(!/https?:\/\//.test(json) && !/s3:\/\//.test(json), `no URLs in diagnostics: ${json}`);
+      assert(/\[redacted-(url|key)\]/.test(json), "url/key was redacted in diagnostics");
+    });
+
   } finally {
     await db.$disconnect();
     await pg.stop().catch(() => {});

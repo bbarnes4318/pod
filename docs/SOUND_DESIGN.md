@@ -148,3 +148,58 @@ The sections above describe the mix engine. Ownership and selection now follow
 - Asset downloads are bounded and sha256-verified; env `AUDIO_INTRO_URL` /
   `AUDIO_OUTRO_URL` fallbacks apply to LEGACY episodes only and are never
   logged as URLs.
+
+## Prompt 7.5 (PR 1) — snapshot compatibility, audible bookends, diagnostics
+
+Three correctness guarantees sit on top of the mix engine:
+
+- **Canonical frozen-profile resolver.** `resolveSnapshotSoundProfile()` in
+  `src/lib/services/episodeConfigurationSnapshot.ts` is the ONE place that reads
+  a frozen sound profile off an episode snapshot. It keys on the SHAPE of
+  `production.soundProfile`, never on the version number, so every
+  profile-bearing version (v2, v3, and any future version) resolves identically
+  — v1 and profile-less snapshots return "none" (legacy path), and a snapshot
+  that carries a *structurally invalid* profile returns "corrupt" so the render
+  fails honestly instead of silently falling back to the legacy global pool.
+  (This replaced a `snap.version !== 2` check that dropped every post-Prompt-7
+  v3 episode's identity.) The resolver is read-only — snapshot bytes and
+  fingerprints for v1/v2/v3 are unchanged.
+- **Frozen bookend intent (snapshot v4).** The frozen sound profile now carries
+  EXPLICIT `introEnabled` / `outroEnabled` booleans, frozen at episode creation.
+  This removes the v2/v3 ambiguity where "outro intentionally disabled" and
+  "outro enabled but no asset assigned" both froze as `outro: null,
+  excluded: []`. Rendering reads the FROZEN intent from the episode snapshot —
+  never the podcast's current configuration — so a later podcast edit can never
+  change a historical episode's requirements. v2/v3 profiles carry no explicit
+  intent and keep the documented compatibility behavior (requirement inferred
+  from the resolved asset / exclusion; never fabricated).
+- **Three levels of enforcement for enabled bookends:**
+  1. *Configuration save* (`savePodcastSoundProfile`): a CUSTOM profile that
+     enables an intro/outro must assign a valid one, else a structured
+     `bookend_enabled_without_asset` error (no partial write; concurrency
+     intact). Disabled bookends need no assignment.
+  2. *Snapshot creation* (`assertFrozenBookendIntent`, called from
+     `buildEpisodeConfigurationSnapshot`): refuses to freeze a v4 profile whose
+     intent says enabled but carries neither a resolved asset nor a structured
+     exclusion — never silently converts enabled to disabled.
+  3. *Render-time defense* (`verifyBookends` + `resolveBookendRequirement`):
+     the final gate. For a non-clean episode, a REQUIRED bookend must be
+     resolved, planned, loaded, executed, AND measurably audible. A required
+     bookend that vanished at ANY stage — profile resolution, the theme genre
+     gate, plan creation, asset loading, timeline execution, or mastering
+     (silent/clipped/truncated) — FAILS the render with a stage-specific safe
+     reason. On failure the prior master stays active, no failed output is
+     promoted, the episode's prior status is restored, and no failed cue is
+     recorded as usage. Requirement is decided by frozen v4 intent (enabled =>
+     required even with no asset; disabled => not required); v2/v3 fall back to
+     the resolved-asset/exclusion inference; the legacy/system path treats an
+     enabled non-clean bookend with nothing configured as required. Disabled and
+     clean bookends are skipped, not failed.
+- **Safe render diagnostics.** `buildRenderDiagnostics()`
+  (`src/lib/audio/renderDiagnostics.ts`) writes a safe cue-sheet report to
+  `EpisodeAudioRender.diagnostics` (additive nullable column) on both success
+  and failure: snapshot version, sound-profile mode, seed, per-cue selection
+  reasons + musical fit, executed placement, cooldown result, skipped cues with
+  safe reasons, speech-end / master-duration / outro-tail, and the bookend
+  result. Names and asset ids only — every free-text field is scrubbed of
+  URLs/keys/tokens as defense in depth.
