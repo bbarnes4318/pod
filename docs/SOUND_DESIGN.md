@@ -272,3 +272,28 @@ per episode.
 rewrite are **PR 3**; the full within/cross-episode anti-repetition + diversity
 engine and the listening acceptance suite are **PR 4**. PR 2 provides the data
 model + deterministic frozen-pool foundation those consume.
+
+### PR 2 review corrections
+
+- **System-default variant pools are real** (not single-item). Administrators
+  configure weighted, ordered variant pools per role via
+  `SystemSoundAssignment` (tied to the singleton `SoundDesignConfig`, managed in
+  the protected Admin Sound Design console). `resolveSystemDefaultSoundProfile`
+  builds those pools — respecting rights/readiness/archive/supersession,
+  shared_system-only, role/kind — freezes the selected intro/outro/bed +
+  permitted transition/reaction pools, and records named exclusions. The legacy
+  singleton `themeIntro/themeOutro/bed/stingerAssetIds` slots remain a one-item
+  compatibility fallback, so existing installs keep their sound. No classification
+  is fabricated: the system default carries the permissive identity and any
+  admin-added variants; hard format/identity claims require **verified** cue
+  metadata.
+- **Save actions clear the persistent player bar.** The Sound & Branding and
+  Admin system-pool Save/Preview buttons live in a sticky action footer whose
+  bottom offset accounts for the fixed player bar and the mobile safe-area
+  inset, so they are genuinely clickable by mouse and keyboard on every viewport
+  (proven by ordinary Playwright `.click()` — no `force`/`dispatchEvent`).
+- **Admin cue-metadata editor** (protected): per shared-system asset, set the
+  cue family (role-scoped; invalid family/kind is rejected), genre/moods/
+  instrumentation, and verification state (`unclassified`/`suggested`/
+  `verified`). Only `verified` is authoritative; `suggested` is never silently
+  promoted; `unclassified` stays honest.
