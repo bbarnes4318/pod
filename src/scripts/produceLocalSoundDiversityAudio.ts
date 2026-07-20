@@ -319,6 +319,11 @@ async function main() {
       for (const name of ["sports", "documentary"]) {
         const first = seriesResults[name][0];
         const r = await stitchFinalEpisodeAudio({ scriptId: first.script as string, forceRegenerate: true, productionStyle: "full" });
+        // A FRESH render (not reproduce) must re-plan to the SAME frozen plan and
+        // then render byte-identically — this is what the IIR-denormal fix guards.
+        const rrNew = await db.episodeAudioRender.findFirst({ where: { episodeId: first.ep as string }, orderBy: { renderVersion: "desc" } });
+        const newPlan = rrNew?.plan as { fingerprint?: string } | null;
+        assert((newPlan?.fingerprint ?? "") === (first.planFingerprint as string), `${name} re-render re-plans identically (fingerprint)`);
         assert(r.finalStatus === "completed", `${name} re-render completes`);
         const upd = await db.episode.findUnique({ where: { id: first.ep as string } });
         const mm = upd?.audioUrl?.match(/\/storage\/(.+)$/);

@@ -23,7 +23,25 @@ import path from "path";
 // depending on CPU scheduling, which made otherwise-identical renders produce
 // different master bytes. Slower, but the pipeline is offline and determinism
 // is a hard requirement (PR 4). Applied to EVERY ffmpeg call from one place.
-const DETERMINISTIC_FFMPEG_FLAGS = ["-nostdin", "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1", "-fflags", "+bitexact", "-flags", "+bitexact"];
+// -cpuflags 0 forces ffmpeg's reference C implementations instead of SIMD
+// (SSE/AVX) kernels. The vectorized kernels can accumulate floats in a
+// different order than the scalar path, so under heavy process churn a render
+// can occasionally land on a different rounding and produce different master
+// bytes across separate processes. The reference path is bit-identical
+// regardless of CPU dispatch or scheduling. Slower, but the pipeline is offline
+// and cross-process determinism is a hard requirement (PR 4).
+const DETERMINISTIC_FFMPEG_FLAGS = ["-nostdin", "-cpuflags", "0", "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1", "-fflags", "+bitexact", "-flags", "+bitexact"];
+
+// IIR biquad filters (highpass/lowpass/bandpass/…) keep recursive state. In the
+// default direct-form-I / f32 path, that state can decay into DENORMAL floats on
+// the near-silent tails of faded/overlapping speech. Denormal arithmetic depends
+// on the process FPU mode (MXCSR flush-to-zero), which is NOT bit-stable across
+// separate ffmpeg processes on Windows — so the SAME inputs + SAME filter graph
+// produced different master bytes intermittently (bisected to `highpass` after
+// the foreground amix: ~21/24 renders diverged). Running the biquad state in
+// double precision keeps it far above the f64 denormal floor for any audio-range
+// signal, making every biquad bit-reproducible. Append to EVERY biquad filter.
+const BIQUAD_DET = "precision=f64";
 
 /** Transient Windows process-spawn crashes (STATUS_DLL_INIT_FAILED /
  *  heap-exhaustion under heavy ffmpeg churn) — retryable; a retry is byte-safe
@@ -394,7 +412,7 @@ export async function renderTimelineToWav(
     const amplitude = Math.pow(10, roomToneDb / 20).toFixed(6);
     filterLines.push(
       `anoisesrc=color=pink:sample_rate=${sampleRate}:amplitude=${amplitude}:seed=1337:duration=${totalSec},` +
-        `lowpass=f=3800,highpass=f=90,aformat=sample_fmts=fltp:channel_layouts=stereo[room]`
+        `lowpass=f=3800:${BIQUAD_DET},highpass=f=90:${BIQUAD_DET},aformat=sample_fmts=fltp:channel_layouts=stereo[room]`
     );
     mixLabels.push("[room]");
   }
@@ -403,7 +421,7 @@ export async function renderTimelineToWav(
   // slow 2:1 bus compressor so alternating voices feel like one recording.
   filterLines.push(
     `${mixLabels.join("")}amix=inputs=${mixLabels.length}:normalize=0:dropout_transition=0[mix]`,
-    `[mix]highpass=f=55,acompressor=threshold=-21dB:ratio=2:attack=15:release=250:makeup=1.5dB[out]`
+    `[mix]highpass=f=55:${BIQUAD_DET},acompressor=threshold=-21dB:ratio=2:attack=15:release=250:makeup=1.5dB[out]`
   );
 
   // Filter graphs for long episodes exceed command-line limits — always use
