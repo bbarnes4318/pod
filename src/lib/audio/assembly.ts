@@ -18,23 +18,39 @@ import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 
-export function runFfmpeg(ffmpegPath: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args);
+// Force single-threaded filtering + coding so the render is BYTE-DETERMINISTIC.
+// Multi-threaded ffmpeg reorders float accumulation (amix/filters) run-to-run
+// depending on CPU scheduling, which made otherwise-identical renders produce
+// different master bytes. Slower, but the pipeline is offline and determinism
+// is a hard requirement (PR 4). Applied to EVERY ffmpeg call from one place.
+const DETERMINISTIC_FFMPEG_FLAGS = ["-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1"];
+
+/** Transient Windows process-spawn crashes (STATUS_DLL_INIT_FAILED /
+ *  heap-exhaustion under heavy ffmpeg churn) — retryable; a retry is byte-safe
+ *  because the render is deterministic. */
+const TRANSIENT_FFMPEG_CODES = new Set([3221225794, 3221226505]); // 0xC0000142, 0xC0000409
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function runFfmpeg(ffmpegPath: string, args: string[]): Promise<string> {
+  const attempt = () => new Promise<string>((resolve, reject) => {
+    const proc = spawn(ffmpegPath, [...DETERMINISTIC_FFMPEG_FLAGS, ...args]);
     let stdout = "";
     let stderr = "";
-
+    proc.on("error", (err) => reject(Object.assign(err, { transient: true })));
     proc.stdout.on("data", (data) => (stdout += data.toString()));
     proc.stderr.on("data", (data) => (stderr += data.toString()));
-
     proc.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout + stderr);
-      } else {
-        reject(new Error(`FFmpeg exited with code ${code}. Error: ${stderr.slice(-4000)}`));
-      }
+      if (code === 0) resolve(stdout + stderr);
+      else reject(Object.assign(new Error(`FFmpeg exited with code ${code}. Error: ${stderr.slice(-4000)}`), { transient: code != null && TRANSIENT_FFMPEG_CODES.has(code) }));
     });
   });
+  for (let tries = 0; ; tries++) {
+    try { return await attempt(); }
+    catch (err) {
+      if ((err as { transient?: boolean }).transient && tries < 3) { await delay(250 * (tries + 1)); continue; }
+      throw err;
+    }
+  }
 }
 
 export function runFfprobe(ffprobePath: string, args: string[]): Promise<string> {
