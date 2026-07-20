@@ -101,6 +101,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",
     "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts",
+    "test:redis-log-sanitization": "tsx --conditions=react-server src/scripts/testRedisLogSanitization.ts",
     "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts"
   },
   "dependencies": {
