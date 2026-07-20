@@ -9,6 +9,7 @@ import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import EpisodeWorkspace, { WorkspaceTab } from "./EpisodeWorkspace";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
+import EpisodeDiversityPanel from "./EpisodeDiversityPanel";
 import PublishPanel from "../../PublishPanel";
 import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
 import SocialClipPanel from "../../SocialClipPanel";
@@ -222,6 +223,8 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
               <MixView episodeId={episode.id} initialVm={mixVm} />
             </div>
           )}
+          {/* PR 4: safe sound-diversity decisions for the latest render. */}
+          <EpisodeDiversityPanel episodeId={episode.id} />
         </div>
       ),
     });

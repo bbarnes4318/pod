@@ -127,3 +127,22 @@ intro/outro/bed selection at episode creation, and within-episode cue selection
 at render time. No schema change; the decision is frozen non-fingerprinted in
 `production.diversityDecision`. Reproduce ignores the flags. Full detail:
 docs/SOUND_DESIGN.md ("PR 4").
+
+## PR 4 — sound diversity policy + snapshot v6
+
+Each show can tune a BOUNDED sound-diversity policy (history window, asset/family
+cooldowns, intro/outro/bed streak limits, min-variants-before-repeat, branded-
+motif rate band, within-episode caps, max cue-sequence similarity, system
+cross-podcast toggle) on the **Sound & Branding** screen. It persists to the
+additive nullable `PodcastProductionConfig.diversityPolicy` JSON column (every
+value re-clamped to its bound on save and on resolve), saved atomically via the
+existing `configVersion` optimistic concurrency.
+
+When the diversity engine is active at creation, the episode snapshot is stamped
+**v6**: the fully resolved policy, the rollout mode, the bounded podcast (+ opt-in
+shared-system) cue history, and the intro/outro/bed + motif decision are FROZEN
+and fingerprinted, so a delayed/initial render is deterministic regardless of
+later history/env/policy changes. Otherwise the snapshot stays v5 (identical to
+before). Reproduce always replays the stored plan verbatim; `remix_current_
+podcast` intentionally re-resolves current config. Full detail:
+docs/SOUND_DESIGN.md ("PR 4") and docs/SOUND_DIVERSITY_ACCEPTANCE_MATRIX.md.

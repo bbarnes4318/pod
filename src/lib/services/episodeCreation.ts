@@ -34,7 +34,7 @@ import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcast
 import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 import { resolveDiversityRollout } from "../audio/soundDiversityFlags";
-import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv } from "../audio/soundDiversityPolicy";
+import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, sanitizeDiversityPolicyOverrides } from "../audio/soundDiversityPolicy";
 import { readDiversityHistory, type DiversityHistoryDb } from "./diversityHistory";
 import type { CooldownScopeFilter } from "./cueCooldownService";
 
@@ -50,9 +50,15 @@ async function resolveCreationDiversity(
 ): Promise<Parameters<typeof buildEpisodeConfigurationSnapshot>[5] | undefined> {
   const rollout = resolveDiversityRollout();
   if (rollout.mode === "off" || !soundProfile || soundProfile.mode === "clean") return undefined;
+  // Per-podcast policy overrides (bounded) take precedence over env defaults.
+  let storedOverrides: Record<string, unknown> = {};
+  if (podcast) {
+    const cfg = await db.podcastProductionConfig.findUnique({ where: { podcastId: podcast.id }, select: { diversityPolicy: true } }).catch(() => null);
+    storedOverrides = sanitizeDiversityPolicyOverrides(cfg?.diversityPolicy);
+  }
   const policy = resolveSoundDiversityPolicy({
     identity: soundProfile.sonicIdentity,
-    overrides: { ...diversityPolicyOverridesFromEnv(), systemCrossPodcastDiversityEnabled: rollout.systemHistoryEnabled },
+    overrides: { ...diversityPolicyOverridesFromEnv(), ...storedOverrides, systemCrossPodcastDiversityEnabled: (storedOverrides.systemCrossPodcastDiversityEnabled as boolean | undefined) ?? rollout.systemHistoryEnabled },
   });
   const scope: CooldownScopeFilter = podcast
     ? (soundProfile.cooldownScope === "owner" && podcast.ownerId ? { kind: "owner", ownerId: podcast.ownerId } : { kind: "podcast", podcastId: podcast.id })

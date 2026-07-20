@@ -16,6 +16,7 @@ import {
   PACES, INTENSITIES, BROADCAST_STYLES, TRANSITION_FREQUENCIES, BED_POLICIES, VOICE_OVER_MUSIC_POLICIES,
   ROLE_CUE_FAMILIES, ALL_CUE_FAMILIES, type SonicIdentity, DEFAULT_SONIC_IDENTITY,
 } from "@/lib/audio/sonicIdentity";
+import type { SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
 
 type Row = {
   assetId: string; enabled: boolean; cueFamily: string | null; weight: number; isBrandedMotif: boolean;
@@ -52,6 +53,8 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
   const [cooldownScope, setCooldownScope] = useState(data.production?.cooldownScope ?? "podcast");
   const [loudness, setLoudness] = useState(data.production?.targetLoudnessLufs?.toString() ?? "");
   const [id, setId] = useState<SonicIdentity>(data.sonicIdentity ?? DEFAULT_SONIC_IDENTITY);
+  const [div, setDiv] = useState<SoundDiversityPolicy | null>(data.diversityPolicy ?? null);
+  const patchDiv = (p: Partial<SoundDiversityPolicy>) => setDiv((cur) => (cur ? { ...cur, ...p } : cur));
   const [status, setStatus] = useState("");
   const [conflict, setConflict] = useState(false);
   const [examples, setExamples] = useState<PreviewExample[] | null>(null);
@@ -133,6 +136,14 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
           defaultIntroEnabled: introEnabled, defaultOutroEnabled: outroEnabled,
           assignments: mode === "custom" ? buildAssignments() : [],
           sonicIdentity: id,
+          diversityPolicy: div ? {
+            historyWindowEpisodes: div.historyWindowEpisodes, hardAssetCooldownEpisodes: div.hardAssetCooldownEpisodes, softAssetCooldownEpisodes: div.softAssetCooldownEpisodes, familyCooldownEpisodes: div.familyCooldownEpisodes,
+            maximumSameIntroStreak: div.maximumSameIntroStreak, maximumSameOutroStreak: div.maximumSameOutroStreak, maximumSameBedStreak: div.maximumSameBedStreak,
+            minimumIntroVariantsBeforeRepeat: div.minimumIntroVariantsBeforeRepeat, minimumOutroVariantsBeforeRepeat: div.minimumOutroVariantsBeforeRepeat, minimumBedVariantsBeforeRepeat: div.minimumBedVariantsBeforeRepeat,
+            brandedMotifMinimumRate: div.brandedMotifMinimumRate, brandedMotifMaximumRate: div.brandedMotifMaximumRate,
+            withinEpisodeAssetCap: div.withinEpisodeAssetCap, withinEpisodeFamilyCap: div.withinEpisodeFamilyCap, maximumCueSequenceSimilarity: div.maximumCueSequenceSimilarity,
+            systemCrossPodcastDiversityEnabled: div.systemCrossPodcastDiversityEnabled,
+          } : undefined,
         });
         if (res.success) { setVersion(res.configVersion!); setConflict(false); setStatus("Saved. New episodes use this profile; existing episodes keep the sound they were made with."); }
         else { setConflict(!!res.conflict); setStatus(res.error ?? "Save failed."); }
@@ -147,6 +158,16 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
       if (res.success) { setExamples(res.examples ?? []); setStatus(res.note ?? ""); }
       else { setStatus(res.error ?? "Preview failed."); }
     });
+  };
+
+  const divNum = (label: string, field: keyof SoundDiversityPolicy, min: number, max: number, step: number) => div && (
+    <label style={{ display: "block" }}>{label}{" "}
+      <input type="number" data-testid={`div-${field}`} min={min} max={max} step={step} value={String(div[field])} onChange={(e) => patchDiv({ [field]: Number(e.target.value) } as Partial<SoundDiversityPolicy>)} />
+    </label>
+  );
+  const summaryLine = (h: Record<string, number>) => {
+    const entries = Object.entries(h).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    return entries.length ? entries.map(([k, v]) => `${k}×${v}`).join(", ") : "—";
   };
 
   const enumSelect = (label: string, field: keyof SonicIdentity, opts: readonly string[], testid: string) => (
@@ -224,6 +245,44 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
           <input type="number" min={-30} max={-8} step={0.5} value={loudness} onChange={(e) => setLoudness(e.target.value)} data-testid="loudness" />
         </label>
       </fieldset>
+
+      {/* PR 4: sound diversity / anti-repetition policy (bounded; every value is
+          re-clamped on save). The rollout mode is a deploy-level control shown
+          read-only. Recent usage summarizes THIS show's history only. */}
+      {div && (
+        <fieldset data-testid="diversity-policy">
+          <legend>Sound diversity (anti-repetition)</legend>
+          <p data-testid="diversity-rollout-mode" style={{ margin: "4px 0" }}>
+            Rollout mode: <strong>{data.diversitySummary?.rolloutMode ?? "off"}</strong>{" "}
+            <span style={{ opacity: 0.7 }}>(deploy-level; policy below tunes this show)</span>
+          </p>
+          {divNum("History window (episodes)", "historyWindowEpisodes", 0, 50, 1)}
+          {divNum("Hard asset cooldown (episodes)", "hardAssetCooldownEpisodes", 0, 20, 1)}
+          {divNum("Soft asset cooldown (episodes)", "softAssetCooldownEpisodes", 0, 20, 1)}
+          {divNum("Family cooldown (episodes)", "familyCooldownEpisodes", 0, 20, 1)}
+          {divNum("Max same intro streak", "maximumSameIntroStreak", 1, 20, 1)}
+          {divNum("Max same outro streak", "maximumSameOutroStreak", 1, 20, 1)}
+          {divNum("Max same bed streak", "maximumSameBedStreak", 1, 20, 1)}
+          {divNum("Min intro variants before repeat", "minimumIntroVariantsBeforeRepeat", 1, 10, 1)}
+          {divNum("Branded motif minimum rate", "brandedMotifMinimumRate", 0, 1, 0.01)}
+          {divNum("Branded motif maximum rate", "brandedMotifMaximumRate", 0, 1, 0.01)}
+          {divNum("Within-episode asset cap", "withinEpisodeAssetCap", 1, 50, 1)}
+          {divNum("Within-episode family cap", "withinEpisodeFamilyCap", 1, 50, 1)}
+          {divNum("Max cue-sequence similarity", "maximumCueSequenceSimilarity", 0, 1, 0.01)}
+          <label style={{ display: "block" }}>
+            <input type="checkbox" data-testid="div-systemCrossPodcastDiversityEnabled" checked={div.systemCrossPodcastDiversityEnabled} onChange={(e) => patchDiv({ systemCrossPodcastDiversityEnabled: e.target.checked })} />{" "}
+            System cross-podcast diversity (shared-system assets only)
+          </label>
+
+          {data.diversitySummary && (
+            <div data-testid="diversity-summary" style={{ marginTop: 10, fontSize: "0.92em" }}>
+              <div>Current branded-motif rate band: {div.brandedMotifMinimumRate}–{div.brandedMotifMaximumRate}; max sequence similarity {div.maximumCueSequenceSimilarity}.</div>
+              <div data-testid="diversity-intro-usage">Recent intro usage: {summaryLine(data.diversitySummary.recentAssetUsage)}</div>
+              <div data-testid="diversity-family-usage">Recent family usage: {summaryLine(data.diversitySummary.recentFamilyUsage)}</div>
+            </div>
+          )}
+        </fieldset>
+      )}
 
       {data.resolvedProfile?.containsLegacyCompatAssets && (
         <p data-testid="legacy-warning"><strong>Note:</strong> the current house sound includes pre-ownership legacy assets pending admin review.</p>

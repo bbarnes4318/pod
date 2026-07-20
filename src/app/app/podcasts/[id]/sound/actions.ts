@@ -22,6 +22,10 @@ import {
 } from "@/lib/services/podcastSoundProfile";
 import { selectEpisodeSoundVariants } from "@/lib/audio/variantSelection";
 import { validateSonicIdentity, DEFAULT_SONIC_IDENTITY, type SonicIdentity } from "@/lib/audio/sonicIdentity";
+import { resolveSoundDiversityPolicy, sanitizeDiversityPolicyOverrides, diversityPolicyOverridesFromEnv, type SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
+import { resolveDiversityRollout } from "@/lib/audio/soundDiversityFlags";
+import { readDiversityHistory, type DiversityHistoryDb } from "@/lib/services/diversityHistory";
+import { summarizePodcastDiversity, type PodcastDiversitySummary } from "@/lib/audio/soundDiversityVisibility";
 
 export interface SoundAssignmentDto {
   assetId: string; role: string; orderIndex: number; enabled: boolean;
@@ -51,6 +55,10 @@ export interface PodcastSoundData {
   assignments?: SoundAssignmentDto[];
   resolvedProfile?: FrozenSoundProfile;
   assets?: SafeAudioAssetDto[];
+  /** PR 4: the resolved bounded diversity policy for this show (defaults +
+   *  per-podcast overrides), and a safe recent-usage summary. */
+  diversityPolicy?: SoundDiversityPolicy;
+  diversitySummary?: PodcastDiversitySummary;
 }
 
 export async function fetchPodcastSoundData(podcastId: string): Promise<PodcastSoundData> {
@@ -65,9 +73,21 @@ export async function fetchPodcastSoundData(podcastId: string): Promise<PodcastS
     const production = pod.productionConfig;
     const resolvedProfile = await resolvePodcastSoundProfile(db, { id: pod.id, ownerId: pod.ownerId }, production);
     const assets = await listAccessibleAudioAssets(db, { kind: "user", userId: user.id }, { podcastId: pod.id });
+
+    // PR 4: resolve the effective diversity policy (defaults + env + per-podcast
+    // overrides) and a safe recent-usage summary (this show's history only).
+    const storedOverrides = sanitizeDiversityPolicyOverrides((production as { diversityPolicy?: unknown } | null)?.diversityPolicy);
+    const rollout = resolveDiversityRollout();
+    const diversityPolicy = resolveSoundDiversityPolicy({ identity: resolvedProfile.sonicIdentity, overrides: { ...diversityPolicyOverridesFromEnv(), ...storedOverrides } });
+    const scope = resolvedProfile.cooldownScope === "owner" && pod.ownerId ? { kind: "owner" as const, ownerId: pod.ownerId } : { kind: "podcast" as const, podcastId: pod.id };
+    const history = await readDiversityHistory({ db: db as unknown as DiversityHistoryDb, scope, windowEpisodes: diversityPolicy.historyWindowEpisodes }).catch(() => undefined);
+    const diversitySummary = summarizePodcastDiversity({ policy: diversityPolicy, rollout, history });
+
     return {
       success: true,
       podcastName: pod.name,
+      diversityPolicy,
+      diversitySummary,
       configVersion: pod.configVersion,
       production: {
         soundProfileMode: production?.soundProfileMode ?? "system_default",
@@ -129,6 +149,8 @@ export async function savePodcastSound(input: {
   defaultOutroEnabled?: boolean;
   assignments?: SoundAssignmentInput[];
   sonicIdentity?: unknown;
+  /** PR 4: per-podcast diversity policy overrides (bounded on save). */
+  diversityPolicy?: unknown;
 }) {
   const user = await currentUser();
   if (!user) return { success: false, error: "Sign in first." };
@@ -147,6 +169,7 @@ export async function savePodcastSound(input: {
       defaultOutroEnabled: input.defaultOutroEnabled,
       assignments: input.assignments,
       sonicIdentity: input.sonicIdentity,
+      diversityPolicy: input.diversityPolicy,
     },
   });
   if (!res.ok) {

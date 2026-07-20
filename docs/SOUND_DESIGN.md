@@ -479,3 +479,64 @@ gate. Env: `SOUND_DIVERSITY_ENGINE_ENABLED`, `SOUND_DIVERSITY_ENFORCEMENT_MODE`,
 See **docs/SOUND_DIVERSITY_ACCEPTANCE_MATRIX.md** for the full production
 acceptance matrix mapping every scenario (formats, profiles, pools, modes,
 render modes, failure paths, freeze-safety) to its concrete test evidence.
+
+## PR 4 — sound diversity, anti-repetition & snapshot v6
+
+A deterministic diversity engine stops the catalog sounding mechanically
+repetitive across one episode, consecutive episodes, and a podcast's recent
+history — without destroying branding. It never uses `Math.random`/wall-clock,
+never selects outside the frozen pool, and never bypasses rights/ownership/
+readiness/format/identity/family/role.
+
+- **Policy** (`soundDiversityPolicy.ts`) — a typed, BOUNDED `SoundDiversityPolicy`
+  (history window, hard/soft asset cooldowns, family cooldown, intro/outro/bed
+  streak limits, min-variants-before-repeat, branded-motif rate band,
+  within-episode asset/family caps, max cue-sequence similarity, system
+  cross-podcast toggle). Every field is clamped on resolve AND on save; an
+  invalid value fails safe to the nearest bound. Resolved from defaults + env +
+  per-podcast overrides (`PodcastProductionConfig.diversityPolicy`, additive
+  nullable JSON) — the per-podcast values win.
+- **History** (`diversityHistory.ts`) — podcast/owner/system-scoped reader over
+  SUCCESSFUL renders + frozen snapshots (intro/outro/bed) + stored plans
+  (cue-family sequences). One entry per episode (reproduce/remix never
+  double-counts); strict ownership isolation; deterministic recency ordering;
+  bounded window; missing/corrupt data handled honestly. System scope is opt-in
+  and shared-system-assets-only.
+- **Pre-snapshot selection** (`soundDiversitySelection.ts`), **within-episode cue
+  diversity** + **sequence similarity** (`soundDiversitySelection.ts` /
+  director), **motif continuity** (`soundMotifContinuity.ts`), and **system
+  cross-podcast diversity** are all deterministic and score-based; they record
+  penalties, bonuses, and typed relaxations, and honestly report when a small
+  pool makes diversity impossible.
+- **Snapshot v6 — the freeze** (`episodeConfigurationSnapshot.ts`,
+  `soundDiversity.ts`). Because within-episode cue diversity happens at RENDER
+  time, an initial/delayed render could otherwise drift when later history / env
+  / policy changes. v6 freezes the FULL render-influencing context (resolved
+  policy, rollout mode at creation, bounded podcast+system cue history, the
+  intro/outro/bed + motif decision, a fingerprint) INTO the snapshot and INCLUDES
+  it in the v6 fingerprint. An INITIAL / `remix_episode_profile` render reads the
+  FROZEN context; ONLY `remix_current_podcast` re-resolves current config
+  (recorded as `contextSource: "current"`); `reproduce` replays the stored plan.
+  v6 is stamped only when the engine was active at creation — otherwise the
+  snapshot stays v5, byte/fingerprint identical. v1–v5 golden hashes unchanged.
+- **Rollout** (`soundDiversityFlags.ts`) — `SOUND_DIVERSITY_ENGINE_ENABLED` +
+  `SOUND_DIVERSITY_ENFORCEMENT_MODE` (`off`/`observe`/`soft`/`enforce`) +
+  `SOUND_DIVERSITY_SYSTEM_HISTORY_ENABLED`. Invalid values fail safe. Reproduce
+  ignores current flags.
+- **Operator UI** — the podcast **Sound & Branding** screen
+  (`/app/podcasts/[id]/sound`) has a bounded diversity-policy fieldset + a safe
+  recent-usage summary, saved atomically via the existing `configVersion`
+  optimistic concurrency (a stale save shows the conflict banner). The studio
+  episode **Produce** surface shows the render's diversity decisions
+  (`EpisodeDiversityPanel`): engine, mode, whether FROZEN or CURRENT config was
+  used, fingerprint, per-role reasons, motif action, relaxations. Neither
+  exposes URLs/keys/paths or another podcast's private usage.
+- **Acceptance** — `npm run demo:sound-diversity` renders 30 real episodes
+  (Sports 12 / Documentary 8 / System 2×5) through the pipeline with acoustic +
+  diversity assertions; `docs/SOUND_DIVERSITY_ACCEPTANCE_MATRIX.md` maps every
+  scenario to its test.
+
+**Known limitation:** master AUDIO bytes can vary across full-pipeline
+re-renders (a rendering-layer property — two-pass loudnorm measurement / mp3
+muxer metadata — not the diversity engine); the diversity DECISIONS
+(fingerprints, selections, plan fingerprints) are provably deterministic.

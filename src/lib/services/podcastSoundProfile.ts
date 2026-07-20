@@ -20,7 +20,8 @@
 // so Admin surfaces can show the ownership-review warning. They are never
 // eligible for NEW podcast assignments (audioAssetAccess blocks that).
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { rightsUsableForNewUse } from "./audioAssetAccess";
 import {
   ASSIGNMENT_WEIGHT_MIN, ASSIGNMENT_WEIGHT_MAX,
@@ -28,6 +29,7 @@ import {
   cueFamilyAllowedByIdentity, type SonicIdentity,
 } from "@/lib/audio/sonicIdentity";
 import { isRegisteredFormat } from "@/lib/formats/showFormatRegistry";
+import { sanitizeDiversityPolicyOverrides } from "@/lib/audio/soundDiversityPolicy";
 
 type DbLike = PrismaClient | Prisma.TransactionClient;
 
@@ -528,6 +530,9 @@ export async function savePodcastSoundProfile(args: {
     assignments?: SoundAssignmentInput[];
     /** Versioned sonic identity (validated). Absent = leave existing/none. */
     sonicIdentity?: unknown;
+    /** PR 4: per-podcast diversity policy OVERRIDES (bounded on save). Absent =
+     *  leave existing; explicit null = clear to code/env defaults. */
+    diversityPolicy?: unknown;
   };
 }): Promise<{ ok: true; configVersion: number } | { ok: false; error: SoundProfileSaveError }> {
   const { profile } = args;
@@ -656,6 +661,9 @@ export async function savePodcastSoundProfile(args: {
         // Persist the validated identity only when the caller supplied one
         // (undefined = leave the existing identity untouched).
         ...(identityToPersist ? { sonicIdentity: identityToPersist as unknown as Prisma.InputJsonValue } : {}),
+        // PR 4: persist the BOUNDED diversity policy overrides. undefined = leave
+        // existing; null = clear to defaults; object = clamp + store.
+        ...(profile.diversityPolicy === undefined ? {} : { diversityPolicy: (profile.diversityPolicy === null ? Prisma.DbNull : (sanitizeDiversityPolicyOverrides(profile.diversityPolicy) as unknown as Prisma.InputJsonValue)) }),
       },
     });
 

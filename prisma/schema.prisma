@@ -513,6 +513,14 @@ model PodcastProductionConfig {
   // behavior). See src/lib/audio/sonicIdentity.ts.
   sonicIdentity             Json?
 
+  // --- Diversity policy (PR 4) -------------------------------------------
+  // Per-podcast anti-repetition policy OVERRIDES (a bounded Partial<Sound
+  // DiversityPolicy>). null = code/env defaults (unchanged behavior). Every
+  // numeric field is clamped to its bound on save + on resolve, so a bad value
+  // can never take effect. Not fingerprinted here — the RESOLVED policy is
+  // frozen into each Episode's v6 snapshot at creation.
+  diversityPolicy           Json?
+
   soundAssignments PodcastSoundAssignment[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

@@ -1,0 +1,11 @@
+-- PR 4: per-podcast sound-diversity policy overrides.
+--
+-- ADDITIVE and NON-DESTRUCTIVE. Adds a single nullable JSONB column to
+-- PodcastProductionConfig holding a bounded Partial diversity policy (history
+-- window, cooldowns, streak limits, motif bounds, caps, similarity threshold,
+-- system-cross-podcast toggle). Every numeric field is clamped to its bound at
+-- save AND at resolve time, so a corrupt value can never take effect. ASCII
+-- only. No backfill: existing shows keep NULL and use the code/env defaults
+-- (identical behavior). Does NOT touch any other table, index, snapshot,
+-- fingerprint, render, or usage row.
+ALTER TABLE "PodcastProductionConfig" ADD COLUMN IF NOT EXISTS "diversityPolicy" JSONB;
