@@ -15,7 +15,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { runFfmpeg } from "./assembly";
+import { makeBiquadsDeterministic, runFfmpeg } from "./assembly";
 
 export interface GeneratedAssetSpec {
   name: string;
@@ -403,7 +403,10 @@ export async function generatePackAsset(
   outDir: string
 ): Promise<{ filePath: string; durationMs: number }> {
   const outPath = path.join(outDir, spec.fileName);
-  const chain = [spec.post, "alimiter=limit=0.891"].filter(Boolean).join(",");
+  // Force every biquad IIR filter in the post chain to double precision so the
+  // synthesized asset bytes are reproducible across ffmpeg processes (the same
+  // denormal-nondeterminism fix applied to the render path — see BIQUAD_DET).
+  const chain = makeBiquadsDeterministic([spec.post, "alimiter=limit=0.891"].filter(Boolean).join(","));
   await runFfmpeg(ffmpegPath, [
     "-y",
     "-f", "lavfi",

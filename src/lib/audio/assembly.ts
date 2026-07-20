@@ -41,7 +41,28 @@ const DETERMINISTIC_FFMPEG_FLAGS = ["-nostdin", "-cpuflags", "0", "-threads", "1
 // the foreground amix: ~21/24 renders diverged). Running the biquad state in
 // double precision keeps it far above the f64 denormal floor for any audio-range
 // signal, making every biquad bit-reproducible. Append to EVERY biquad filter.
-const BIQUAD_DET = "precision=f64";
+export const BIQUAD_DET = "precision=f64";
+
+// Biquad-family IIR filter names (all share the denormal risk BIQUAD_DET fixes).
+export const BIQUAD_FILTER_NAMES = new Set([
+  "highpass", "lowpass", "bandpass", "bandreject", "allpass", "biquad",
+  "equalizer", "bass", "lowshelf", "treble", "highshelf", "tiltshift",
+]);
+
+/** Append BIQUAD_DET (precision=f64) to every biquad-family filter in a
+ *  comma-separated ffmpeg filter chain, so recursive state never lands in
+ *  denormal range → byte-reproducible across processes. Non-biquad filters
+ *  (afade/acompressor/alimiter/…) are left untouched. */
+export function makeBiquadsDeterministic(chain: string): string {
+  return chain
+    .split(",")
+    .map((seg) => {
+      const name = seg.trim().split("=", 1)[0].trim();
+      if (!BIQUAD_FILTER_NAMES.has(name)) return seg;
+      return seg.includes("=") ? `${seg}:${BIQUAD_DET}` : `${seg}=${BIQUAD_DET}`;
+    })
+    .join(",");
+}
 
 /** Transient Windows process-spawn crashes (STATUS_DLL_INIT_FAILED /
  *  heap-exhaustion under heavy ffmpeg churn) — retryable; a retry is byte-safe
