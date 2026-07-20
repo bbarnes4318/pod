@@ -87,6 +87,9 @@ export interface FrozenDiversityContext {
   /** Shared-system cross-podcast cue history (only when system diversity on). */
   systemTransitionHistory: FrozenCueHistory | null;
   systemReactionHistory: FrozenCueHistory | null;
+  /** Recent episodes' ROLE:family cue-token sequences (bounded), so a fresh
+   *  render can score sequence similarity deterministically against history. */
+  historyCueSequences: string[][];
   decision: SoundDiversityDecision;
   fingerprint: string;
 }
@@ -117,6 +120,7 @@ export function buildFrozenDiversityContext(profile: FrozenSoundProfile, ctx: Di
     reactionHistory: cueHistoryOf(ctx.history, "reaction"),
     systemTransitionHistory: ctx.systemHistory && ctx.policy.systemCrossPodcastDiversityEnabled ? cueHistoryOf(ctx.systemHistory, "transition") : null,
     systemReactionHistory: ctx.systemHistory && ctx.policy.systemCrossPodcastDiversityEnabled ? cueHistoryOf(ctx.systemHistory, "reaction") : null,
+    historyCueSequences: cap(ctx.history.episodes.map((e) => e.cueFamilySequence.slice(0, FROZEN_CUE_HISTORY_CAP))),
     decision: div.decision,
     fingerprint: "",
   };
@@ -130,7 +134,7 @@ export function fingerprintFrozenDiversityContext(c: FrozenDiversityContext): st
   const canonical = {
     v: c.version, pv: c.policyVersion, policy: c.policy, mode: c.rolloutMode, hw: c.historyWindow, hfp: c.historyFingerprint,
     th: c.transitionHistory, rh: c.reactionHistory, sth: c.systemTransitionHistory, srh: c.systemReactionHistory,
-    dfp: c.decision.fingerprint,
+    hcs: c.historyCueSequences, dfp: c.decision.fingerprint,
   };
   return crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }

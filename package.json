@@ -46,6 +46,7 @@
     "test:sound-motif-diversity": "tsx --conditions=react-server src/scripts/testSoundMotifDiversity.ts",
     "test:sound-diversity-rollout": "tsx --conditions=react-server src/scripts/testSoundDiversityRollout.ts",
     "test:frozen-diversity-context": "tsx --conditions=react-server src/scripts/testFrozenDiversityContext.ts",
+    "test:render-determinism": "tsx --conditions=react-server src/scripts/testRenderDeterminism.ts",
     "demo:sound-diversity": "tsx --conditions=react-server src/scripts/produceLocalSoundDiversityAudio.ts",
     "demo:sound-diversity-selection": "tsx --conditions=react-server src/scripts/produceLocalSoundDiversityDemo.ts",
     "test:post-tts-render-gate": "tsx --conditions=react-server src/scripts/testPostTtsRenderGate.ts",

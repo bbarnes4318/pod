@@ -205,18 +205,24 @@ export function resolveSoundDiversityPolicy(opts?: {
   return out;
 }
 
-/** Sanitize an untrusted per-podcast policy override object into a BOUNDED
- *  Partial: only known numeric fields (clamped to their bound) + the boolean
- *  toggle are kept; anything else is dropped. Safe to persist + re-resolve. */
-export function sanitizeDiversityPolicyOverrides(input: unknown): Partial<SoundDiversityPolicy> {
+/** The persisted per-podcast diversity config: bounded policy overrides plus an
+ *  optional rollout-mode override ("inherit" defers to the server default). */
+export type StoredDiversityConfig = Partial<SoundDiversityPolicy> & { rolloutModeOverride?: string };
+const ROLLOUT_OVERRIDE_VALUES = ["inherit", "off", "observe", "soft", "enforce"];
+
+/** Sanitize an untrusted per-podcast config object into a BOUNDED value: only
+ *  known numeric fields (clamped), the boolean toggle, and a valid rollout-mode
+ *  override are kept; anything else is dropped. Safe to persist + re-resolve. */
+export function sanitizeDiversityPolicyOverrides(input: unknown): StoredDiversityConfig {
   if (!input || typeof input !== "object") return {};
   const src = input as Record<string, unknown>;
-  const out: Partial<SoundDiversityPolicy> = {};
+  const out: StoredDiversityConfig = {};
   for (const key of Object.keys(NUMERIC_BOUNDS) as Array<keyof typeof NUMERIC_BOUNDS>) {
     const v = src[key];
     if (typeof v === "number" && Number.isFinite(v)) out[key] = clamp(v, NUMERIC_BOUNDS[key], DEFAULT_SOUND_DIVERSITY_POLICY[key]);
   }
   if (typeof src.systemCrossPodcastDiversityEnabled === "boolean") out.systemCrossPodcastDiversityEnabled = src.systemCrossPodcastDiversityEnabled;
+  if (typeof src.rolloutModeOverride === "string" && ROLLOUT_OVERRIDE_VALUES.includes(src.rolloutModeOverride)) out.rolloutModeOverride = src.rolloutModeOverride;
   return out;
 }
 

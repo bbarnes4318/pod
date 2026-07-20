@@ -19,7 +19,7 @@ import { verifyBookends, resolveBookendRequirement, describeBookendAbsence, type
 import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import { decidePlanningEngine } from "@/lib/audio/postTtsFlag";
 import { runPostTtsDirection, runPostTtsReproduce, type PostTtsBridgeInput } from "@/lib/audio/postTtsStitchBridge";
-import { resolveDiversityRollout } from "@/lib/audio/soundDiversityFlags";
+import { resolveEffectiveRollout } from "@/lib/audio/soundDiversityFlags";
 import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, type DiversityMode } from "@/lib/audio/soundDiversityPolicy";
 import type { FrozenDiversityContext } from "@/lib/audio/soundDiversity";
 import { readDiversityHistory, type DiversityHistoryDb } from "@/lib/services/diversityHistory";
@@ -1070,9 +1070,16 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           // FROZEN context — env/history/policy changes cannot alter this render.
           postTtsDiversityMode = frozenCtx.rolloutMode;
           postTtsDiversitySource = "frozen";
-          cueDiversity = { policy: frozenCtx.policy, mode: frozenCtx.rolloutMode, transitionHistory: frozenCtx.transitionHistory, reactionHistory: frozenCtx.reactionHistory };
+          cueDiversity = { policy: frozenCtx.policy, mode: frozenCtx.rolloutMode, transitionHistory: frozenCtx.transitionHistory, reactionHistory: frozenCtx.reactionHistory, historyCueSequences: frozenCtx.historyCueSequences };
         } else {
-        const rollout = resolveDiversityRollout();
+        // remix_current_podcast re-resolves the CURRENT per-podcast rollout
+        // override; other fresh renders (no frozen v6 context) use the env default.
+        let currentOverride: unknown = undefined;
+        if (useCurrentConfig && episode.podcastId) {
+          const cfg = await db.podcastProductionConfig.findUnique({ where: { podcastId: episode.podcastId }, select: { diversityPolicy: true } }).catch(() => null);
+          currentOverride = (cfg?.diversityPolicy as { rolloutModeOverride?: unknown } | null)?.rolloutModeOverride;
+        }
+        const rollout = resolveEffectiveRollout(process.env, currentOverride);
         postTtsDiversityMode = rollout.mode;
         if (rollout.mode === "soft" || rollout.mode === "enforce") {
           postTtsDiversitySource = useCurrentConfig ? "current" : "frozen_absent";
@@ -1089,6 +1096,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
               policy: dpolicy, mode: rollout.mode,
               transitionHistory: { recentAssetIds: dhist.episodes.flatMap((e) => e.transitionAssetIds), recentFamilies: dhist.episodes.flatMap((e) => e.transitionFamilySequence) },
               reactionHistory: { recentAssetIds: dhist.episodes.flatMap((e) => e.reactionAssetIds), recentFamilies: dhist.episodes.flatMap((e) => e.reactionFamilySequence) },
+              historyCueSequences: dhist.episodes.map((e) => e.cueFamilySequence),
             };
           } catch { /* history unavailable -> proceed without cue diversity */ }
         }
@@ -1408,6 +1416,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         "-b:a", targetBitrate,
         finalOutputPath,
       ]);
+    }
+
+    // Determinism diagnostics (opt-in, safe): log a sha256 of each render stage
+    // so two renders of the same episode can be bisected to the first divergence.
+    // Hashes only — never paths/URLs. Off unless POD_RENDER_DEBUG_HASHES=true.
+    if (process.env.POD_RENDER_DEBUG_HASHES === "true") {
+      const h = (p: string) => { try { return crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex").slice(0, 16); } catch { return "n/a"; } };
+      console.log(`[Stitcher][DET] foreground=${h(foregroundWavPath)} premaster=${h(mixWavPath)} mp3=${h(finalOutputPath)}`);
     }
 
     // 10b. Automated human-ness QA on the finished master.

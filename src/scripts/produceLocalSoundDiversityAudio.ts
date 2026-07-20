@@ -294,31 +294,31 @@ async function main() {
       assert(!s.match(/https?:\/\/|\/storage\/|[A-Za-z]:\\\\/), "no URLs/keys/paths in summary");
     });
 
-    // ---- Reproduce one episode per series (verbatim: identical stored plan) ---
-    await check("stored-plan reproduce renders one episode per series verbatim (identical plan fingerprint)", async () => {
+    // ---- Reproduce one episode per series (verbatim + byte-identical master) --
+    await check("stored-plan reproduce renders one episode per series verbatim (identical plan fp + MASTER HASH)", async () => {
       for (const name of ["sports", "documentary", "system-1"]) {
         const first = seriesResults[name][0];
         const rep = await stitchFinalEpisodeAudio({ scriptId: first.script as string, renderMode: "reproduce", forceRegenerate: true, productionStyle: "full" });
         assert(rep.finalStatus === "completed", `${name} reproduce completes (${rep.finalStatus})`);
         const rr = await db.episodeAudioRender.findFirst({ where: { episodeId: first.ep as string, status: "succeeded" }, orderBy: { renderVersion: "desc" } });
         assert((rr?.plan as { fingerprint?: string } | null)?.fingerprint === first.planFingerprint, `${name} plan fingerprint unchanged`);
-        const engine = (rr?.diagnostics as { postTts?: { planningEngine?: string } } | null)?.postTts?.planningEngine;
-        assert(engine === "stored_plan_reproduce", `${name} used the stored plan (${engine})`);
+        const upd = await db.episode.findUnique({ where: { id: first.ep as string } });
+        const mm = upd?.audioUrl?.match(/\/storage\/(.+)$/);
+        const repHash = mm ? crypto.createHash("sha256").update(fs.readFileSync(path.join(storageRoot, mm[1]))).digest("hex") : "";
+        assert(repHash === first.masterHash, `${name} reproduce master is byte-identical`);
       }
     });
 
-    await check("DIVERSITY determinism: the frozen context + plan fingerprints are byte-stable across re-runs", async () => {
-      // The diversity DECISION is pure — rebuilding it from the same inputs must
-      // reproduce the identical fingerprint (master AUDIO bytes are a
-      // rendering-layer property, recorded for reference, not asserted).
-      const first = seriesResults.sports[0];
-      const scope = { kind: "podcast" as const, podcastId: "pod-sports" };
-      const history = await readDiversityHistory({ db: db as never, scope, windowEpisodes: policy.historyWindowEpisodes, systemHistoryEnabled: true, excludeEpisodeId: first.ep as string });
-      void history; // (rebuild uses the FROZEN context stored on the episode)
-      const ep = await db.episode.findUnique({ where: { id: first.ep as string } });
-      const frozen = (ep?.configurationSnapshot as { production?: { diversityContext?: { fingerprint?: string } } } | null)?.production?.diversityContext;
-      assert(frozen?.fingerprint === first.diversityFingerprint, "frozen diversity fingerprint stable on the episode");
-      // Every episode's diversity fingerprint is a 64-char sha256 (deterministic).
+    await check("determinism: re-rendering an episode produces a byte-identical master (same inputs -> same audio)", async () => {
+      for (const name of ["sports", "documentary"]) {
+        const first = seriesResults[name][0];
+        const r = await stitchFinalEpisodeAudio({ scriptId: first.script as string, forceRegenerate: true, productionStyle: "full" });
+        assert(r.finalStatus === "completed", `${name} re-render completes`);
+        const upd = await db.episode.findUnique({ where: { id: first.ep as string } });
+        const mm = upd?.audioUrl?.match(/\/storage\/(.+)$/);
+        const rehash = mm ? crypto.createHash("sha256").update(fs.readFileSync(path.join(storageRoot, mm[1]))).digest("hex") : "";
+        assert(rehash === first.masterHash, `${name} re-rendered master hash identical`);
+      }
       for (const e of all) assert(typeof e.diversityFingerprint === "string" && (e.diversityFingerprint as string).length === 64, `${e.seed} diversity fingerprint`);
     });
 

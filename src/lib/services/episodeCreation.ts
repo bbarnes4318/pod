@@ -33,7 +33,7 @@ import {
 import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
 import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
-import { resolveDiversityRollout } from "../audio/soundDiversityFlags";
+import { resolveEffectiveRollout } from "../audio/soundDiversityFlags";
 import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, sanitizeDiversityPolicyOverrides } from "../audio/soundDiversityPolicy";
 import { readDiversityHistory, type DiversityHistoryDb } from "./diversityHistory";
 import type { CooldownScopeFilter } from "./cueCooldownService";
@@ -48,14 +48,16 @@ async function resolveCreationDiversity(
   soundProfile: Awaited<ReturnType<typeof resolveStandaloneSoundProfile>> | undefined,
   podcast: { id: string; ownerId?: string | null } | null
 ): Promise<Parameters<typeof buildEpisodeConfigurationSnapshot>[5] | undefined> {
-  const rollout = resolveDiversityRollout();
-  if (rollout.mode === "off" || !soundProfile || soundProfile.mode === "clean") return undefined;
-  // Per-podcast policy overrides (bounded) take precedence over env defaults.
+  if (!soundProfile || soundProfile.mode === "clean") return undefined;
+  // Per-podcast config (bounded overrides + rollout-mode override) takes
+  // precedence over env defaults; the RESOLVED mode is frozen into the v6 context.
   let storedOverrides: Record<string, unknown> = {};
   if (podcast) {
     const cfg = await db.podcastProductionConfig.findUnique({ where: { podcastId: podcast.id }, select: { diversityPolicy: true } }).catch(() => null);
     storedOverrides = sanitizeDiversityPolicyOverrides(cfg?.diversityPolicy);
   }
+  const rollout = resolveEffectiveRollout(process.env, storedOverrides.rolloutModeOverride);
+  if (rollout.mode === "off") return undefined;
   const policy = resolveSoundDiversityPolicy({
     identity: soundProfile.sonicIdentity,
     overrides: { ...diversityPolicyOverridesFromEnv(), ...storedOverrides, systemCrossPodcastDiversityEnabled: (storedOverrides.systemCrossPodcastDiversityEnabled as boolean | undefined) ?? rollout.systemHistoryEnabled },

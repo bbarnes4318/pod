@@ -12,8 +12,46 @@
 //   - The bed is ducked by the FOREGROUND mix (speech + SFX): dialogue
 //     always dominates; the bed breathes back up in gaps.
 
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { runFfmpeg } from "./assembly";
 import type { ProductionStyle, SfxDensity } from "./soundDesignShared";
+
+/** Decode a WAV to mono s16 PCM at `sampleRate` and compute a DETERMINISTIC
+ *  duck-gain envelope: 1.0 where the key is quiet, dropping toward `duckFloor`
+ *  where the key exceeds `threshold`, smoothed by attack/release. Written as a
+ *  mono s16 WAV (a 0..1 gain signal) that `amultiply` applies to the bed —
+ *  replacing ffmpeg's `sidechaincompress`, which is NOT bit-reproducible on this
+ *  build (its sidechain float state varies run to run). Pure given the key file. */
+function writeDuckEnvelopeWav(ffmpegPath: string, keyWav: string, outWav: string, cfg: { sampleRate: number; totalMs: number; threshold: number; duckFloorDb: number; attackMs: number; releaseMs: number }): void {
+  const sr = cfg.sampleRate;
+  const total = Math.max(1, Math.round((cfg.totalMs / 1000) * sr));
+  // Decode the key to raw mono s16 at the render rate (deterministic).
+  const raw = execFileSync(ffmpegPath, ["-i", keyWav, "-ac", "1", "-ar", String(sr), "-f", "s16le", "-c:a", "pcm_s16le", "-"], { maxBuffer: 1 << 30 });
+  const key = new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 2));
+  const duckFloor = Math.pow(10, -Math.abs(cfg.duckFloorDb) / 20);
+  const aCoef = 1 - Math.exp(-1 / Math.max(1, (cfg.attackMs / 1000) * sr));
+  const rCoef = 1 - Math.exp(-1 / Math.max(1, (cfg.releaseMs / 1000) * sr));
+  const env = new Int16Array(total);
+  let g = 1;
+  for (let i = 0; i < total; i++) {
+    const s = i < key.length ? Math.abs(key[i]) / 32768 : 0;
+    const target = s > cfg.threshold ? duckFloor : 1; // loud key -> duck
+    g += (target - g) * (target < g ? aCoef : rCoef);  // attack when ducking, release when recovering
+    env[i] = Math.max(0, Math.min(32767, Math.round(g * 32767)));
+  }
+  // Minimal mono s16 WAV.
+  const dataBytes = env.length * 2;
+  const buf = Buffer.alloc(44 + dataBytes);
+  buf.write("RIFF", 0); buf.writeUInt32LE(36 + dataBytes, 4); buf.write("WAVE", 8);
+  buf.write("fmt ", 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(sr, 24); buf.writeUInt32LE(sr * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+  buf.write("data", 36); buf.writeUInt32LE(dataBytes, 40);
+  Buffer.from(env.buffer, env.byteOffset, dataBytes).copy(buf, 44);
+  fs.writeFileSync(outWav, buf);
+}
 
 // Re-export the client-safe vocabulary so server code has one import site.
 export {
@@ -268,29 +306,34 @@ export async function mixBedUnderForeground(
   const duckThreshold = Number(process.env.AUDIO_BED_DUCK_THRESHOLD ?? 0.02);
   const duckRelease = Number(process.env.AUDIO_BED_DUCK_RELEASE_MS ?? 750);
 
-  // With a dedicated key (dialogue-only submix), the bed ducks under SPEECH
-  // but swells to full level in the topic gaps — even while a riser plays
-  // there. Without one, fall back to self-keying off the foreground (legacy).
-  const hasKey = !!opts.keyWavPath;
-  const bedChain =
+  // DETERMINISM (PR 4): the bed ducks under speech via a JS-computed gain
+  // ENVELOPE applied with `amultiply`, NOT ffmpeg's `sidechaincompress` — that
+  // filter's sidechain float state is not bit-reproducible on this build, which
+  // made otherwise-identical renders produce different master bytes. The
+  // dialogue-only key (or the foreground when no dedicated key) drives the
+  // envelope: 1.0 in gaps (bed swells to full), dropping to a floor under speech.
+  const keyForDuck = opts.keyWavPath ?? foregroundWav;
+  const duckFloorDb = Number(process.env.AUDIO_BED_DUCK_DEPTH_DB ?? 14); // depth of the duck under speech
+  const envWav = path.join(os.tmpdir(), `pod-duckenv-${path.basename(outWav)}.wav`);
+  writeDuckEnvelopeWav(ffmpegPath, keyForDuck, envWav, {
+    sampleRate, totalMs: opts.totalMs, threshold: duckThreshold, duckFloorDb, attackMs: 120, releaseMs: duckRelease,
+  });
+  void duckRatio; // ratio is subsumed by the fixed duck floor + attack/release.
+
+  const filter =
     `[1:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,` +
     `atrim=0:${totalSec},volume=${bedGainDb}dB,` +
-    `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];`;
-  const filter = hasKey
-    ? bedChain +
-      `[bed][2:a]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
-      `[0:a][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`
-    : bedChain +
-      `[0:a]asplit=2[fg][key];` +
-      `[bed][key]sidechaincompress=threshold=${duckThreshold}:ratio=${duckRatio}:attack=120:release=${duckRelease}[ducked];` +
-      `[fg][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
+    `afade=t=in:d=${(fadeInMs / 1000).toFixed(3)},afade=t=out:st=${fadeOutStart}:d=${(fadeOutMs / 1000).toFixed(3)}[bed];` +
+    `[2:a]aresample=${sampleRate},aformat=sample_fmts=fltp:channel_layouts=stereo,atrim=0:${totalSec}[env];` +
+    `[bed][env]amultiply[ducked];` +
+    `[0:a][ducked]amix=inputs=2:normalize=0:dropout_transition=0[out]`;
 
   const args = [
     "-y",
     "-i", foregroundWav,
     "-stream_loop", "-1",
     "-i", bedSourcePath,
-    ...(hasKey ? ["-i", opts.keyWavPath!] : []),
+    "-i", envWav,
     "-filter_complex", filter,
     "-map", "[out]",
     "-t", totalSec,
@@ -298,7 +341,11 @@ export async function mixBedUnderForeground(
     "-c:a", "pcm_s16le",
     outWav,
   ];
-  await runFfmpeg(ffmpegPath, args);
+  try {
+    await runFfmpeg(ffmpegPath, args);
+  } finally {
+    try { fs.rmSync(envWav, { force: true }); } catch { /* */ }
+  }
   return outWav;
 }
 

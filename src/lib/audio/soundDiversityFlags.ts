@@ -53,3 +53,29 @@ export function resolveDiversityRollout(env: NodeJS.ProcessEnv = process.env): D
   // Invalid mode -> fail SAFE to off, record the bad value.
   return { engineEnabled: true, mode: "off", systemHistoryEnabled, invalidMode: raw, reason: `invalid ${DIVERSITY_MODE_FLAG}="${raw}" — failing safe to off` };
 }
+
+/** A per-podcast rollout-mode override: "inherit" defers to the server default;
+ *  any other value explicitly overrides it for that show. */
+export type RolloutModeOverride = "inherit" | DiversityMode;
+export const ROLLOUT_MODE_OVERRIDES: readonly RolloutModeOverride[] = ["inherit", "off", "observe", "soft", "enforce"] as const;
+export function isRolloutModeOverride(x: unknown): x is RolloutModeOverride {
+  return typeof x === "string" && (ROLLOUT_MODE_OVERRIDES as readonly string[]).includes(x);
+}
+
+/** Resolve the EFFECTIVE rollout for a podcast: a valid per-podcast override
+ *  (other than "inherit") wins over the server default; "inherit"/absent/invalid
+ *  falls through to the env rollout. Deterministic given (env, override). */
+export function resolveEffectiveRollout(env: NodeJS.ProcessEnv = process.env, override?: unknown): DiversityRollout & { configuredOverride: RolloutModeOverride } {
+  const base = resolveDiversityRollout(env);
+  const ov: RolloutModeOverride = isRolloutModeOverride(override) ? override : "inherit";
+  if (ov === "inherit") return { ...base, configuredOverride: ov };
+  // Explicit per-podcast override: it sets the mode; engine is on unless "off".
+  return {
+    engineEnabled: ov !== "off",
+    mode: ov,
+    systemHistoryEnabled: base.systemHistoryEnabled,
+    invalidMode: null,
+    reason: `per-podcast rollout override = ${ov}`,
+    configuredOverride: ov,
+  };
+}

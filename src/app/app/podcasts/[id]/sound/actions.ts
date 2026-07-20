@@ -23,7 +23,7 @@ import {
 import { selectEpisodeSoundVariants } from "@/lib/audio/variantSelection";
 import { validateSonicIdentity, DEFAULT_SONIC_IDENTITY, type SonicIdentity } from "@/lib/audio/sonicIdentity";
 import { resolveSoundDiversityPolicy, sanitizeDiversityPolicyOverrides, diversityPolicyOverridesFromEnv, type SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
-import { resolveDiversityRollout } from "@/lib/audio/soundDiversityFlags";
+import { resolveEffectiveRollout, type RolloutModeOverride } from "@/lib/audio/soundDiversityFlags";
 import { readDiversityHistory, type DiversityHistoryDb } from "@/lib/services/diversityHistory";
 import { summarizePodcastDiversity, type PodcastDiversitySummary } from "@/lib/audio/soundDiversityVisibility";
 
@@ -59,6 +59,10 @@ export interface PodcastSoundData {
    *  per-podcast overrides), and a safe recent-usage summary. */
   diversityPolicy?: SoundDiversityPolicy;
   diversitySummary?: PodcastDiversitySummary;
+  /** The configured per-podcast rollout-mode override ("inherit" = server default). */
+  rolloutModeOverride?: RolloutModeOverride;
+  /** The mode that actually applies right now (override, else server default). */
+  effectiveDiversityMode?: string;
 }
 
 export async function fetchPodcastSoundData(podcastId: string): Promise<PodcastSoundData> {
@@ -77,7 +81,8 @@ export async function fetchPodcastSoundData(podcastId: string): Promise<PodcastS
     // PR 4: resolve the effective diversity policy (defaults + env + per-podcast
     // overrides) and a safe recent-usage summary (this show's history only).
     const storedOverrides = sanitizeDiversityPolicyOverrides((production as { diversityPolicy?: unknown } | null)?.diversityPolicy);
-    const rollout = resolveDiversityRollout();
+    const rolloutModeOverride = (storedOverrides.rolloutModeOverride as RolloutModeOverride | undefined) ?? "inherit";
+    const rollout = resolveEffectiveRollout(process.env, rolloutModeOverride);
     const diversityPolicy = resolveSoundDiversityPolicy({ identity: resolvedProfile.sonicIdentity, overrides: { ...diversityPolicyOverridesFromEnv(), ...storedOverrides } });
     const scope = resolvedProfile.cooldownScope === "owner" && pod.ownerId ? { kind: "owner" as const, ownerId: pod.ownerId } : { kind: "podcast" as const, podcastId: pod.id };
     const history = await readDiversityHistory({ db: db as unknown as DiversityHistoryDb, scope, windowEpisodes: diversityPolicy.historyWindowEpisodes }).catch(() => undefined);
@@ -88,6 +93,8 @@ export async function fetchPodcastSoundData(podcastId: string): Promise<PodcastS
       podcastName: pod.name,
       diversityPolicy,
       diversitySummary,
+      rolloutModeOverride,
+      effectiveDiversityMode: rollout.mode,
       configVersion: pod.configVersion,
       production: {
         soundProfileMode: production?.soundProfileMode ?? "system_default",

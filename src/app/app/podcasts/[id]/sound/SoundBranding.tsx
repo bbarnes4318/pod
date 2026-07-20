@@ -55,6 +55,7 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
   const [id, setId] = useState<SonicIdentity>(data.sonicIdentity ?? DEFAULT_SONIC_IDENTITY);
   const [div, setDiv] = useState<SoundDiversityPolicy | null>(data.diversityPolicy ?? null);
   const patchDiv = (p: Partial<SoundDiversityPolicy>) => setDiv((cur) => (cur ? { ...cur, ...p } : cur));
+  const [rolloutOverride, setRolloutOverride] = useState<string>(data.rolloutModeOverride ?? "inherit");
   const [status, setStatus] = useState("");
   const [conflict, setConflict] = useState(false);
   const [examples, setExamples] = useState<PreviewExample[] | null>(null);
@@ -143,7 +144,8 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
             brandedMotifMinimumRate: div.brandedMotifMinimumRate, brandedMotifMaximumRate: div.brandedMotifMaximumRate,
             withinEpisodeAssetCap: div.withinEpisodeAssetCap, withinEpisodeFamilyCap: div.withinEpisodeFamilyCap, maximumCueSequenceSimilarity: div.maximumCueSequenceSimilarity,
             systemCrossPodcastDiversityEnabled: div.systemCrossPodcastDiversityEnabled,
-          } : undefined,
+            rolloutModeOverride: rolloutOverride,
+          } : { rolloutModeOverride: rolloutOverride },
         });
         if (res.success) { setVersion(res.configVersion!); setConflict(false); setStatus("Saved. New episodes use this profile; existing episodes keep the sound they were made with."); }
         else { setConflict(!!res.conflict); setStatus(res.error ?? "Save failed."); }
@@ -252,10 +254,19 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
       {div && (
         <fieldset data-testid="diversity-policy">
           <legend>Sound diversity (anti-repetition)</legend>
-          <p data-testid="diversity-rollout-mode" style={{ margin: "4px 0" }}>
-            Rollout mode: <strong>{data.diversitySummary?.rolloutMode ?? "off"}</strong>{" "}
-            <span style={{ opacity: 0.7 }}>(deploy-level; policy below tunes this show)</span>
-          </p>
+          <label style={{ display: "block", margin: "4px 0" }} data-testid="diversity-rollout-mode">
+            Rollout mode for this show{" "}
+            <select data-testid="div-rolloutModeOverride" value={rolloutOverride} onChange={(e) => setRolloutOverride(e.target.value)}>
+              <option value="inherit">Inherit system setting</option>
+              <option value="off">Off</option>
+              <option value="observe">Observe only</option>
+              <option value="soft">Soft enforcement</option>
+              <option value="enforce">Hard enforcement</option>
+            </select>{" "}
+            <span data-testid="diversity-effective-mode" style={{ opacity: 0.75 }}>
+              (currently effective: <strong>{data.effectiveDiversityMode ?? "off"}</strong>)
+            </span>
+          </label>
           {divNum("History window (episodes)", "historyWindowEpisodes", 0, 50, 1)}
           {divNum("Hard asset cooldown (episodes)", "hardAssetCooldownEpisodes", 0, 20, 1)}
           {divNum("Soft asset cooldown (episodes)", "softAssetCooldownEpisodes", 0, 20, 1)}

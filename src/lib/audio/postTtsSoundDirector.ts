@@ -22,6 +22,7 @@ import { buildProtectedRegions, cueCollidesWithProtected, type ProtectedAudioReg
 import { getFormatSoundPolicy, type FormatSoundPolicy, type IntroTimingStyle, type OutroTimingStyle } from "@/lib/audio/formatSoundPolicy";
 import type { SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
 import { selectDiverseCue, recordCuePlacement, newWithinEpisodeCueState, type WithinEpisodeCueState, type CrossEpisodeCueHistory, type CueDiversityDecision } from "@/lib/audio/soundCueDiversity";
+import { evaluateSequenceSimilarity, type SequenceSimilarityDecision } from "@/lib/audio/soundSequenceSimilarity";
 
 // v2 (PR 3 review): intro/outro treatments now carry explicit, timeline-aware
 // gain SEGMENTS that the executor renders verbatim (cold-open ducking, spoken
@@ -138,6 +139,10 @@ export interface PostTtsSoundDirectionPlan {
    *  EXCLUDED from the fingerprint (the chosen assets already live in
    *  cuePlacements). Empty when the diversity engine was not active. */
   cueDiversityDecisions?: CueDiversityDecision[];
+  /** PR 4: this plan's cue-token sequence + its similarity vs recent episodes.
+   *  Diagnostic only (excluded from the fingerprint). */
+  cueSequence?: string[];
+  sequenceSimilarity?: SequenceSimilarityDecision;
   fingerprint: string;
 }
 
@@ -177,6 +182,9 @@ export interface PostTtsDirectorInput {
     mode: "soft" | "enforce";
     transitionHistory: CrossEpisodeCueHistory;
     reactionHistory: CrossEpisodeCueHistory;
+    /** Recent episodes' ROLE:family cue-token sequences, for sequence-similarity
+     *  scoring of THIS episode's plan against the catalog. */
+    historyCueSequences?: string[][];
   };
 }
 
@@ -268,12 +276,26 @@ export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDir
   // --- Bed -----------------------------------------------------------------
   const bedPlan = directBed(input, policy, identity, decisions, warnings, (f) => { failure = failure ?? f; });
 
+  // --- Cue-sequence similarity vs recent episodes (diagnostic) -------------
+  let cueSequence: string[] | undefined;
+  let sequenceSimilarity: SequenceSimilarityDecision | undefined;
+  if (input.diversity?.historyCueSequences && input.diversity.historyCueSequences.length) {
+    const seq: string[] = [];
+    if (bookendPlan.intro?.assetId) seq.push(`INTRO:${input.frozenProfile.intro?.cueFamily ?? "none"}`);
+    if (bedPlan) seq.push(`BED:${input.frozenProfile.bed?.cueFamily ?? "none"}`);
+    for (const c of [...cuePlacements].sort((a, b) => a.targetStartMs - b.targetStartMs)) seq.push(`${c.kind === "transition" ? "TRANSITION" : "REACTION"}:${c.cueFamily ?? "none"}`);
+    if (bookendPlan.outro?.assetId) seq.push(`OUTRO:${input.frozenProfile.outro?.cueFamily ?? "none"}`);
+    cueSequence = seq;
+    sequenceSimilarity = evaluateSequenceSimilarity(seq, input.diversity.historyCueSequences, input.diversity.policy.maximumCueSequenceSimilarity);
+  }
+
   const plan: PostTtsSoundDirectionPlan = {
     version: 1, mode: "post_tts", episodeId: input.episodeId, scriptId: input.scriptId, seed: input.seed,
     formatId: input.formatId, directorVersion: POST_TTS_DIRECTOR_VERSION,
     dialogueDurationMs: input.timeline.dialogueDurationMs,
     protectedRegions, detectedGaps: input.timeline.gaps, cuePlacements, bookendPlan, bedPlan,
-    failure, warnings, decisions, ...(cueDiversityDecisions.length ? { cueDiversityDecisions } : {}), fingerprint: "",
+    failure, warnings, decisions, ...(cueDiversityDecisions.length ? { cueDiversityDecisions } : {}),
+    ...(cueSequence ? { cueSequence, sequenceSimilarity } : {}), fingerprint: "",
   };
   plan.fingerprint = fingerprintDirectionPlan(plan);
   return plan;
