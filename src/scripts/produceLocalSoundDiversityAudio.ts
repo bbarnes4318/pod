@@ -229,14 +229,14 @@ async function main() {
     for (const spec of specs) await ensureAssets(spec);
     for (const spec of specs) {
       const results: Array<Record<string, unknown>> = [];
-      for (let i = 0; i < spec.episodes; i++) results.push(await renderEpisode(spec, i, spec.name, spec.ownerId, spec.podcastId));
+      for (let i = 0; i < spec.episodes; i++) { results.push(await renderEpisode(spec, i, spec.name, spec.ownerId, spec.podcastId)); await new Promise((r) => setTimeout(r, 400)); }
       seriesResults[spec.name] = results;
     }
     // System series 2: same shared pool, DIFFERENT podcast (null/null but distinct seed prefix).
     {
       const spec = specs[2];
       const results: Array<Record<string, unknown>> = [];
-      for (let i = 0; i < spec.episodes; i++) results.push(await renderEpisode(spec, i, "system-2", null, null));
+      for (let i = 0; i < spec.episodes; i++) { results.push(await renderEpisode(spec, i, "system-2", null, null)); await new Promise((r) => setTimeout(r, 400)); }
       seriesResults["system-2"] = results;
     }
 

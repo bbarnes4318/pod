@@ -23,7 +23,7 @@ import path from "path";
 // depending on CPU scheduling, which made otherwise-identical renders produce
 // different master bytes. Slower, but the pipeline is offline and determinism
 // is a hard requirement (PR 4). Applied to EVERY ffmpeg call from one place.
-const DETERMINISTIC_FFMPEG_FLAGS = ["-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1"];
+const DETERMINISTIC_FFMPEG_FLAGS = ["-nostdin", "-threads", "1", "-filter_threads", "1", "-filter_complex_threads", "1", "-fflags", "+bitexact", "-flags", "+bitexact"];
 
 /** Transient Windows process-spawn crashes (STATUS_DLL_INIT_FAILED /
  *  heap-exhaustion under heavy ffmpeg churn) — retryable; a retry is byte-safe

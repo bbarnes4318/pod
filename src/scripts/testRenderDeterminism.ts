@@ -76,6 +76,7 @@ async function main() {
 
   try {
     const host = await db.aiHost.create({ data: { name: "Det", slug: "det", role: "host", worldview: "w", speakingStyle: "s", catchphrases: [], likes: [], dislikes: [], argumentPatterns: [], bannedPhrases: [], intensityLevel: 5, ttsProvider: "stub", ttsVoiceId: "v", isActive: true } });
+    const host2 = await db.aiHost.create({ data: { name: "Det2", slug: "det2", role: "host", worldview: "w", speakingStyle: "s", catchphrases: [], likes: [], dislikes: [], argumentPatterns: [], bannedPhrases: [], intensityLevel: 5, ttsProvider: "stub", ttsVoiceId: "v", isActive: true } });
     const intro = await put("det/intro.mp3", 330, 3.0), outro = await put("det/outro.mp3", 300, 3.0), bed = await put("det/bed.mp3", 180, 30.0), sting = await put("det/sting.mp3", 660, 1.2), rx = await put("det/rx.mp3", 520, 0.7);
     const introA = await db.audioAsset.create({ data: { name: "Intro", kind: "theme_intro", tags: [], audioUrl: intro.url, license: "x", scope: "shared_system", processingStatus: "ready", contentHash: intro.hash, durationMs: 3000, isActive: true, licenseStatus: "licensed", rightsStatus: "not_required" } });
     const outroA = await db.audioAsset.create({ data: { name: "Outro", kind: "theme_outro", tags: [], audioUrl: outro.url, license: "x", scope: "shared_system", processingStatus: "ready", contentHash: outro.hash, durationMs: 3000, isActive: true, licenseStatus: "licensed", rightsStatus: "not_required" } });
@@ -83,10 +84,11 @@ async function main() {
     const stingA = await db.audioAsset.create({ data: { name: "Sting", kind: "stinger", tags: [], audioUrl: sting.url, license: "x", scope: "shared_system", processingStatus: "ready", contentHash: sting.hash, durationMs: 1200, isActive: true, licenseStatus: "licensed", rightsStatus: "not_required" } });
     const rxA = await db.audioAsset.create({ data: { name: "Rx", kind: "sfx", tags: [], audioUrl: rx.url, license: "x", scope: "shared_system", processingStatus: "ready", contentHash: rx.hash, durationMs: 700, isActive: true, licenseStatus: "licensed", rightsStatus: "not_required" } });
     const soundProfile = { mode: "custom", targetLoudnessLufs: null, cooldownScope: "podcast", stingerCooldownEpisodes: null, reactionCooldownEpisodes: null, introEnabled: true, outroEnabled: true, intro: ref(introA, "intro", "theme_intro"), outro: ref(outroA, "outro", "theme_outro"), bed: ref(bedA, "bed", "bed"), stingers: [ref(stingA, "stinger", "stinger", "topic_reset")], reactions: [ref(rxA, "reaction", "sfx", "agreement")], introVariants: [ref(introA, "intro", "theme_intro")], outroVariants: [ref(outroA, "outro", "theme_outro")], beds: [ref(bedA, "bed", "bed")], sonicIdentity: null, containsLegacyCompatAssets: false, excluded: [] };
-    const snapshot = { version: 5, cast: { formatId: "solo_commentary", formatVersion: 2, members: [{ hostId: host.id, role: "anchor", orderIndex: 0 }] }, source: "standalone", capturedAt: "2026-01-01T00:00:00.000Z", podcast: null, editorial: { verticals: [], teams: [], segmentCount: 2, format: "solo_commentary", minDebateScore: null, scriptStyle: null, maxWords: null, provenance: {} }, production: { hostIds: [host.id], ttsProvider: null, ttsVoiceOverrides: null, productionStyle: null, sfxDensity: null, provenance: {}, soundProfile } };
+    // sports_radio + cold_open_ducked + bed — the heaviest deterministic path.
+    const snapshot = { version: 5, cast: { formatId: "sports_radio", formatVersion: 2, members: [{ hostId: host.id, role: "lead_host", orderIndex: 0 }, { hostId: host2.id, role: "co_host", orderIndex: 1 }] }, source: "standalone", capturedAt: "2026-01-01T00:00:00.000Z", podcast: null, editorial: { verticals: [], teams: [], segmentCount: 2, format: "sports_radio", minDebateScore: null, scriptStyle: null, maxWords: null, provenance: {} }, production: { hostIds: [host.id, host2.id], ttsProvider: null, ttsVoiceOverrides: null, productionStyle: null, sfxDensity: null, provenance: {}, soundProfile } };
     const prior = await put("det/prior.mp3", 500, 1.0);
-    const ep = await db.episode.create({ data: { title: "Det Ep", slug: "det-ep", status: "content_ready", formatId: "solo_commentary", hostIds: [host.id], audioUrl: prior.url, durationSeconds: 10, soundDesign: { style: "full" } as object, configurationSource: "standalone", configurationSnapshot: snapshot as object, configurationFingerprint: "fp-det" } });
-    const line = (i: number, text: string, tone: string) => ({ lineIndex: i, speakerName: "Det", speakerHostId: host.id, text, tone, isFactualClaim: false, needsHumanReview: false, evidenceRefs: [], energy: tone === "amused" ? "high" : "medium" });
+    const ep = await db.episode.create({ data: { title: "Det Ep", slug: "det-ep", status: "content_ready", formatId: "sports_radio", hostIds: [host.id, host2.id], audioUrl: prior.url, durationSeconds: 10, soundDesign: { style: "full" } as object, configurationSource: "standalone", configurationSnapshot: snapshot as object, configurationFingerprint: "fp-det" } });
+    const line = (i: number, text: string, tone: string) => ({ lineIndex: i, speakerName: i % 2 ? "Det2" : "Det", speakerHostId: i % 2 ? host2.id : host.id, text, tone, isFactualClaim: false, needsHumanReview: false, evidenceRefs: [], energy: tone === "amused" ? "high" : "medium" });
     const script = await db.script.create({ data: { episodeId: ep.id, version: 1, status: "approved", plainText: "one two three four five", content: { segments: [{ type: "topic", lines: [line(0, "Welcome in everybody today.", "neutral"), line(1, "Lots to get through this hour.", "neutral")] }, { type: "topic", lines: [line(2, "Now our second big story.", "analytical"), line(3, "Wow that is wild, amazing.", "amused"), line(4, "Thanks for listening, goodbye.", "neutral")] }] } as object } });
     for (let i = 0; i < 5; i++) { const seg = await put(`det/seg${i}.mp3`, 700 + i, 1.6, true); await db.audioSegment.create({ data: { episodeId: ep.id, scriptId: script.id, lineIndex: i, text: `l${i}`, audioUrl: seg.url, status: "ready", durationMs: 1600 } }); }
     await db.factCheckResult.create({ data: { scriptId: script.id, episodeId: ep.id, passed: true, status: "passed", warnings: [] as object, errors: [] as object } });
@@ -106,6 +108,15 @@ async function main() {
       assert(r.finalStatus === "completed", "reproduce completes");
       assert((await masterHashOf(ep.id)) === m1, "reproduce master identical");
     });
+    await check("STRESS: 8 consecutive renders of the sports episode are ALL byte-identical (bisect by stage)", async () => {
+      const fg: string[] = [], pre: string[] = [], mp3: string[] = [];
+      for (let k = 0; k < 8; k++) { lastDet = null; await stitchFinalEpisodeAudio({ scriptId: script.id, forceRegenerate: true, productionStyle: "full" }); fg.push(lastDet!.foreground); pre.push(lastDet!.premaster); mp3.push(lastDet!.mp3); }
+      origLog(`      foreground distinct: ${[...new Set(fg)].length}  premaster distinct: ${[...new Set(pre)].length}  mp3 distinct: ${[...new Set(mp3)].length}`);
+      origLog(`      fg=${fg.map((h) => h.slice(0, 6)).join(",")}`);
+      origLog(`      pre=${pre.map((h) => h.slice(0, 6)).join(",")}`);
+      assert([...new Set(mp3)].length === 1, `all 8 mp3 identical (${[...new Set(mp3)].length} distinct)`);
+    });
+
     await check("7/8/9. diversity env/mode changes after creation do not alter the render bytes", async () => {
       // Toggling the DIVERSITY rollout env must not change this episode's audio
       // (its selection is frozen; render-tuning knobs like AUDIO_GAP_JITTER are a

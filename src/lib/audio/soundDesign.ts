@@ -28,7 +28,7 @@ function writeDuckEnvelopeWav(ffmpegPath: string, keyWav: string, outWav: string
   const sr = cfg.sampleRate;
   const total = Math.max(1, Math.round((cfg.totalMs / 1000) * sr));
   // Decode the key to raw mono s16 at the render rate (deterministic).
-  const raw = execFileSync(ffmpegPath, ["-threads", "1", "-filter_threads", "1", "-i", keyWav, "-ac", "1", "-ar", String(sr), "-f", "s16le", "-c:a", "pcm_s16le", "-"], { maxBuffer: 1 << 30 });
+  const raw = execFileSync(ffmpegPath, ["-nostdin", "-threads", "1", "-filter_threads", "1", "-fflags", "+bitexact", "-flags", "+bitexact", "-i", keyWav, "-ac", "1", "-ar", String(sr), "-f", "s16le", "-c:a", "pcm_s16le", "-"], { maxBuffer: 1 << 30 });
   const key = new Int16Array(raw.buffer, raw.byteOffset, Math.floor(raw.byteLength / 2));
   const duckFloor = Math.pow(10, -Math.abs(cfg.duckFloorDb) / 20);
   const aCoef = 1 - Math.exp(-1 / Math.max(1, (cfg.attackMs / 1000) * sr));
