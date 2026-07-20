@@ -47,7 +47,9 @@ export async function runFfmpeg(ffmpegPath: string, args: string[]): Promise<str
   for (let tries = 0; ; tries++) {
     try { return await attempt(); }
     catch (err) {
-      if ((err as { transient?: boolean }).transient && tries < 3) { await delay(250 * (tries + 1)); continue; }
+      // Windows can transiently fail to spawn ffmpeg under heavy churn; back off
+      // and retry generously (a retry is byte-safe — the render is deterministic).
+      if ((err as { transient?: boolean }).transient && tries < 6) { await delay(400 * (tries + 1)); continue; }
       throw err;
     }
   }

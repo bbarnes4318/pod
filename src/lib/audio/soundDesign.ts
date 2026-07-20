@@ -14,7 +14,6 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { runFfmpeg } from "./assembly";
 import type { ProductionStyle, SfxDensity } from "./soundDesignShared";
@@ -314,7 +313,9 @@ export async function mixBedUnderForeground(
   // envelope: 1.0 in gaps (bed swells to full), dropping to a floor under speech.
   const keyForDuck = opts.keyWavPath ?? foregroundWav;
   const duckFloorDb = Number(process.env.AUDIO_BED_DUCK_DEPTH_DB ?? 14); // depth of the duck under speech
-  const envWav = path.join(os.tmpdir(), `pod-duckenv-${path.basename(outWav)}.wav`);
+  // UNIQUE per render (in this render's temp dir), never a shared os.tmpdir path,
+  // so concurrent/sequential renders can't read a stale or half-written envelope.
+  const envWav = path.join(path.dirname(outWav), `duckenv-${path.basename(outWav)}.wav`);
   writeDuckEnvelopeWav(ffmpegPath, keyForDuck, envWav, {
     sampleRate, totalMs: opts.totalMs, threshold: duckThreshold, duckFloorDb, attackMs: 120, releaseMs: duckRelease,
   });
