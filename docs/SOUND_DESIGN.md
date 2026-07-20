@@ -536,7 +536,21 @@ readiness/format/identity/family/role.
   diversity assertions; `docs/SOUND_DIVERSITY_ACCEPTANCE_MATRIX.md` maps every
   scenario to its test.
 
-**Known limitation:** master AUDIO bytes can vary across full-pipeline
-re-renders (a rendering-layer property — two-pass loudnorm measurement / mp3
-muxer metadata — not the diversity engine); the diversity DECISIONS
-(fingerprints, selections, plan fingerprints) are provably deterministic.
+**Deterministic masters:** full-pipeline renders are byte-deterministic — the
+same episode + inputs produce identical pre-master PCM and identical final MP3
+(`test:render-determinism`, and the 30-episode harness asserts identical master
+hashes across two complete runs). The one nondeterministic step, ffmpeg's
+`sidechaincompress` (its sidechain float state is not bit-reproducible on this
+build), was replaced with a JS-computed duck GAIN ENVELOPE applied via
+`amultiply` in `mixBedUnderForeground` — same ducking behavior, byte-stable
+output. Two-pass loudnorm + libmp3lame were already deterministic; the only mp3
+tag is the static ffmpeg `encoder=Lavf…` string (no timestamp).
+
+**Rollout mode is per-podcast:** the Sound & Branding screen exposes an
+`inherit | off | observe | soft | enforce` override (stored in
+`diversityPolicy`); the RESOLVED mode is frozen into v6. `remix_current_podcast`
+re-resolves the latest override; `reproduce` ignores it. The render-detail panel
+(`EpisodeDiversityPanel`) surfaces the full safe evidence: engine, configured +
+effective mode, frozen-vs-current source, fingerprints, per-role selection
+reasons + streaks + excluded candidates, motif action/rate/band, cue decisions,
+sequence similarity, relaxations, and warnings.

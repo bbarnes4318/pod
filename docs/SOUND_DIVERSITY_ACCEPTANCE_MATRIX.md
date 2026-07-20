@@ -55,3 +55,16 @@ Postgres and/or real ffmpeg; "listening" = renders local MP3s for human review.
   (render gate, real ffmpeg + embedded PG); the multi-episode harness (row 32)
   proves catalog-level selection diversity deterministically.
 - No row is claimed without a passing test; counts are the suite's last run.
+
+## Final-gate additions (deterministic masters + full operator controls)
+
+| # | Scenario | Expected behavior | Test file | Check | Type | FFmpeg | PG | Result |
+|---|----------|-------------------|-----------|-------|------|--------|----|--------|
+| 33 | Deterministic pre-master PCM | Same episode → identical pre-master bytes twice | `testRenderDeterminism.ts` | "pre-master PCM byte-identical" | integration | yes | yes | ✅ |
+| 34 | Deterministic final MP3 | Same episode → identical MP3 bytes twice | `testRenderDeterminism.ts` | "final MP3 byte-identical" | integration | yes | yes | ✅ |
+| 35 | Reproduce = identical MP3 | Stored-plan reproduce → identical master | `testRenderDeterminism.ts` | "reproduce identical MP3" | integration | yes | yes | ✅ |
+| 36 | Diversity env after creation | Toggling diversity env doesn't alter frozen bytes | `testRenderDeterminism.ts` | "diversity env/mode changes … do not alter" | integration | yes | yes | ✅ |
+| 37 | Full 30-episode determinism | Two complete harness runs → identical master hashes | `produceLocalSoundDiversityAudio.ts` | reproduce + re-render byte-identical + `demo:sound-diversity` twice | listening | yes | yes | ✅ |
+| 38 | Per-podcast rollout override | Owner selects/saves mode; persists; effective shown | `sound-diversity.spec.ts` | "Rollout 1/2/13" | browser | no | yes | ✅ |
+| 39 | Rollout frozen into v6 | Resolved mode frozen; later change ignored by frozen render | `testPostTtsRenderGate.ts` | "FROZEN diversity context … flag OFF" | integration | yes | yes | ✅ |
+| 40 | Render-detail panel | Engine/mode/source/selections/motif/cues/sequence shown, safe | `sound-diversity.spec.ts` | "Render detail: the diversity panel shows …" | browser | no | yes | ✅ |
