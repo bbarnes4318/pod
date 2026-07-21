@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { fetchPodcastSoundData } from "./actions";
 import SoundBranding from "./SoundBranding";
 
@@ -9,13 +10,20 @@ export default async function PodcastSoundPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const data = await fetchPodcastSoundData(id);
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "1.5rem 1rem" }}>
-      <h1>Sound &amp; Branding{data.podcastName ? ` — ${data.podcastName}` : ""}</h1>
-      {data.success ? (
-        <SoundBranding podcastId={id} data={data} />
-      ) : (
-        <p role="alert" data-testid="sound-error">{data.error}</p>
-      )}
-    </main>
+    <>
+      <div className="uTopbar">
+        <h1 className="uPageTitle">Sound &amp; Branding{data.podcastName ? ` — ${data.podcastName}` : ""}</h1>
+        <Link href={`/app/podcasts/${id}`} style={{ color: "var(--u-brand)", fontWeight: 650, fontSize: "0.9rem" }}>
+          ← Back to podcast
+        </Link>
+      </div>
+      <div className="uContent" style={{ maxWidth: 960 }}>
+        {data.success ? (
+          <SoundBranding podcastId={id} data={data} />
+        ) : (
+          <p role="alert" data-testid="sound-error">{data.error}</p>
+        )}
+      </div>
+    </>
   );
 }
