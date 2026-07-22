@@ -150,6 +150,23 @@ export function getRedisUrl(): string {
 }
 
 /**
+ * A safe, credential-free description of the Redis connection target for
+ * STARTUP LOGS. Never include username/password — production Redis URLs carry
+ * an auth password, so logging the raw URL is a secret leak. Returns only a
+ * bare status plus host:port.
+ */
+export function describeRedisConnection(): string {
+  const raw = getRedisUrl();
+  if (!raw) return "not configured (falling back to localhost:6379)";
+  try {
+    const u = new URL(raw);
+    return `configured (${u.hostname}:${u.port || "6379"})`;
+  } catch {
+    return "configured";
+  }
+}
+
+/**
  * Performs a Redis connection and PING check to evaluate authentication status.
  * Never exposes the raw Redis URL or credentials in the returned string.
  */

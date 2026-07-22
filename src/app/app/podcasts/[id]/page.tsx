@@ -39,7 +39,29 @@ export default async function ManagePodcastPage({ params }: { params: Promise<{ 
     <>
       <div className="uTopbar">
         <h1 className="uPageTitle">{podcast.name}</h1>
-        <GenerateNowButton podcastId={podcast.id} solid />
+        <div style={{ display: "flex", gap: "0.8rem", alignItems: "center" }}>
+          <Link
+            href={`/app/podcasts/${podcast.id}/sound`}
+            data-testid="podcast-sound-branding-link"
+            style={{
+              textDecoration: "none",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "0.4rem",
+              background: "var(--u-surface)",
+              color: "var(--u-ink)",
+              border: "1px solid var(--u-hairline-2)",
+              padding: "0.5rem 1rem",
+              borderRadius: "999px",
+              fontWeight: 600,
+              fontSize: "0.85rem",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+            }}
+          >
+            🎵 Sound &amp; Branding
+          </Link>
+          <GenerateNowButton podcastId={podcast.id} solid />
+        </div>
       </div>
       <div className="uContent" style={{ maxWidth: 760 }}>
         <div className="uTakeMeta" style={{ marginBottom: "1.6rem", flexWrap: "wrap" }}>

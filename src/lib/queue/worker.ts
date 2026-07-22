@@ -1,6 +1,6 @@
 // Standalone Queue Worker for Take Machine
 import "dotenv/config";
-import { assertProductionEnv, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
+import { assertProductionEnv, describeRedisConnection, getOddsApiKeyStatus, getRssFeedStatus } from "../env";
 import { runResearchRouting } from "../research/source-router";
 import { fetchArticleExcerpts } from "../research/articleText";
 import {
@@ -81,7 +81,10 @@ console.log(
     `AUDIO_STINGER_MAX_ROOM_MS=${process.env.AUDIO_STINGER_MAX_ROOM_MS ?? "(default)"} ` +
     `SOUND_DESIGN_PLANNER=${process.env.SOUND_DESIGN_PLANNER ?? "(unset)"}`
 );
-console.log(`Redis Connection: ${process.env.REDIS_URL || "redis://localhost:6379"}`);
+// NEVER log the raw REDIS_URL — production Redis carries an auth password and
+// this line ships to shared logs. describeRedisConnection() returns host:port
+// only (see the redis-log-sanitization regression test).
+console.log(`Redis Connection: ${describeRedisConnection()}`);
 console.log(`Queue Name: ${QUEUE_NAME}`);
 console.log("--------------------------------------------------");
 
@@ -149,6 +152,18 @@ podcastQueue
   .then(() => console.log(`[Worker] Topic-generation scheduler registered: '${topicsGenerateCron()}' ${SPORTS_INGEST_TZ}`))
   .catch((err) => console.error(`[Worker] Failed to register topic-generation scheduler: ${err.message}`));
 
+// Worker concurrency is env-driven and bounded. Production defaults to 1 (the
+// DEPLOYMENT_RUNBOOK recommendation — a single ffmpeg/LLM-heavy job at a time
+// keeps memory predictable); non-production defaults to 2. An out-of-range or
+// unparseable WORKER_CONCURRENCY falls back to the default rather than trusting
+// arbitrary input.
+const WORKER_CONCURRENCY = (() => {
+  const parsed = Number.parseInt(process.env.WORKER_CONCURRENCY ?? "", 10);
+  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 8) return parsed;
+  return process.env.NODE_ENV === "production" ? 1 : 2;
+})();
+console.log(`Worker Concurrency: ${WORKER_CONCURRENCY}`);
+
 // Initialize BullMQ Worker
 const worker = new Worker(
   QUEUE_NAME,
@@ -192,7 +207,7 @@ const worker = new Worker(
   },
   {
     connection: getRedisClient() as any,
-    concurrency: 2, // Allow processing up to 2 jobs concurrently
+    concurrency: WORKER_CONCURRENCY, // env-driven, bounded; prod default 1
   }
 );
 

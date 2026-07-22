@@ -83,6 +83,11 @@ Because the deployment target is a shared 8 GB RAM Hetzner virtual server, we mu
 - Set `RSS_WORKER_CONCURRENCY=1`
 This prevents multiple heavy FFmpeg stitching jobs or multiple OpenAI/TTS generations from exhausting CPU/RAM threads.
 
+The BullMQ worker reads `WORKER_CONCURRENCY` directly (validated, bounded to
+1–8). If it is unset or invalid, it **defaults to 1 in production** (2 in
+non-production). This matches the recommendation above — the code and this
+runbook no longer disagree. Enforced by `npm run test:redis-log-sanitization`.
+
 ---
 
 ## Podcast Cover Image Asset
