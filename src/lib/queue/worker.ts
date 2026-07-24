@@ -478,6 +478,12 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
     let skippedNewsMissingUrl = 0;
     const skippedRecordsReasonSummary: string[] = [];
 
+    // True when a real provider call SUCCEEDED but the upstream had no events to
+    // return — e.g. an off-season league (NBA in July) with no scheduled games.
+    // A non-ok response throws before we get here, so an empty result set at
+    // this point means "nothing to ingest right now", not "ingest is broken".
+    let providerReturnedEmptySet = false;
+
     if (providerType.toLowerCase() === "rss-news") {
       // Ingest News items from RSS feeds
       const newsItems = await provider.getNews(leagueId);
@@ -876,6 +882,11 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
     } else if (providerType.toLowerCase() === "oddsapi") {
       // 1. Fetch live odds
       const odds = await provider.getOdds(leagueId, sport);
+      // An empty array here (200 OK, no events) means the sport has no games to
+      // price — normal in the off-season, not an ingest failure.
+      if (!odds || odds.length === 0) {
+        providerReturnedEmptySet = true;
+      }
       for (const gameOdds of odds) {
         const commenceTime = new Date(gameOdds.commence_time);
         const margin = 12 * 60 * 60 * 1000; // 12 hours search buffer
@@ -953,6 +964,22 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
     // (provider returned nothing, league unsupported, all records skipped, …)
     // so a broken feed can't masquerade as "completed successfully".
     if (totalWritten === 0) {
+      // Off-season / no-games case: the provider answered cleanly with an empty
+      // set and nothing was skipped for a fixable reason. That's "nothing to
+      // ingest right now", not a broken pipeline — record it as completed so it
+      // doesn't page anyone (NBA in July, etc.).
+      if (providerReturnedEmptySet && skippedRecordsReasonSummary.length === 0) {
+        const msg =
+          `${provider.name} ingest for ${leagueId || "(no league)"}: upstream returned 0 events — ` +
+          `no scheduled games (commonly the league's off-season). Nothing to write; not an error.`;
+        console.log(`[Worker] Ingestion produced 0 rows but upstream is legitimately empty — marking COMPLETED: ${msg}`);
+        await db.jobLog.update({
+          where: { id: jobLog.id },
+          data: { status: "completed", output: { ...outputObj, message: msg, emptyUpstream: true } },
+        });
+        return { success: true, emptyUpstream: true, counts: { games: gamesCount, news: newsCount, odds: oddsCount, injuries: injuriesCount, stats: statsCount } };
+      }
+
       const reason =
         `${provider.name} ingest for ${leagueId || "(no league)"} wrote 0 rows across games/news/odds/injuries/stats. ` +
         `Likely causes: provider returned no data, unsupported league/season, or every record was skipped. ` +
