@@ -61,7 +61,13 @@ function lineHeat(u: { tone?: string; energy?: string }): number {
 
 /** Pure request builder (unit-tested without network). */
 export function buildFishScenePayload(input: DialogueSceneInput): FishScenePayload {
-  const model = (process.env.FISH_SCENE_MODEL || "s2-pro").trim();
+  // Default is the FREE-TIER model. s2-pro (the SDK-canonical paid model)
+  // 402s on an account with no API credit — Fish bills API credit separately
+  // from platform credit — and the prod account hit exactly that: 17/17
+  // scenes failed on 2026-07-25. s2.1-pro-free renders multi-speaker scenes
+  // (verified live against the real API the same day). Funded accounts opt
+  // into the paid model with FISH_SCENE_MODEL=s2-pro.
+  const model = (process.env.FISH_SCENE_MODEL || "s2.1-pro-free").trim();
 
   // Speaker index = order of first appearance in the scene.
   const voiceOrder: string[] = [];
