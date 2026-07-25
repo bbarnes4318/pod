@@ -334,12 +334,17 @@ export function assertProductionEnv(): void {
     throw new Error(`Unsupported RESEARCH_PROVIDER: ${research}`);
   }
   // 4. TTS Provider Checks
+  //
+  // DO NOT add a throwing check for the default TTS provider here. This
+  // function runs at MODULE SCOPE via src/lib/db.ts, so anything it throws
+  // takes down every database-backed page in the web app on boot — and the
+  // web app does not synthesize speech at all (the worker does). A fish
+  // throw was added here on 2026-07-25 and immediately 500'd the site,
+  // because the web app's FISH_API_KEY is scoped preview-only in Coolify.
+  // Missing TTS keys are reported non-fatally by the readiness checklist in
+  // productionEnvService.ts instead; that is the correct place for them.
   const tts = (process.env.TTS_PROVIDER || "fish").trim().toLowerCase();
-  if (tts === "fish") {
-    if (getFishTtsStatus() !== "CONFIGURED") {
-      throw new Error("Missing required production env var: FISH_API_KEY when TTS_PROVIDER=fish");
-    }
-  } else if (tts === "boson") {
+  if (tts === "boson") {
     if (getBosonTtsStatus() !== "CONFIGURED") {
       throw new Error("Missing required production env var: BOSON_API_KEY");
     }
