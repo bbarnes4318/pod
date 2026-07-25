@@ -90,6 +90,11 @@ export interface ScenePerformanceContext {
   direction: string;
   /** 1-10 character intensity CEILING (range, not a per-line volume command). */
   intensityLevel: number;
+  /** Direction this character's anger moves ("louder_faster" default;
+   *  "slower_quieter" = anger lands as slow, quiet precision). Adapters map
+   *  this to genuinely different delivery cues so two heated hosts never get
+   *  the same treatment. */
+  angerStyle?: "louder_faster" | "slower_quieter";
   /** Max inline delivery cues per utterance the adapter may emit. */
   maxCueDensity: number;
   /** Versioned performance profile snapshot (validated; may be defaults). */

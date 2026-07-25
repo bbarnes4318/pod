@@ -53,10 +53,10 @@
   --error-text: #FF6B6E;
 
   /* Host identity */
-  --host-max: #FF5A1F;
-  --host-doc: #4C8DFF;
-  /* Prompt 7: seats 3 + 4 for multi-voice formats (seat 0 = --host-max,
-     seat 1 = --host-doc). */
+  --host-a: #FF5A1F;
+  --host-b: #4C8DFF;
+  /* Prompt 7: seats 3 + 4 for multi-voice formats (seat 0 = --host-a,
+     seat 1 = --host-b). */
   --host-3: #2EC27E;
   --host-4: #B78AF7;
 
@@ -332,8 +332,8 @@ textarea {
 .text-success { color: var(--success); }
 .text-warning { color: var(--warning); }
 .text-error   { color: var(--error-text); }
-.text-host-max { color: var(--host-max); }
-.text-host-doc { color: var(--host-doc); }
+.text-host-a { color: var(--host-a); }
+.text-host-b { color: var(--host-b); }
 
 .border-default { border: 1px solid var(--border); }
 

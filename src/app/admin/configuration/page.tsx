@@ -240,13 +240,13 @@ export default async function ConfigurationPage() {
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.CARTESIA_MODEL_ID || "sonic-2"}</div>
               </div>
               <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Max Voltage Voice</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Seat A Voice (legacy env fallback)</div>
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
                   {process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || "Adrian (default fallback)"}
                 </div>
               </div>
               <div>
-                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Dr. Linebreak Voice</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Seat B Voice (legacy env fallback)</div>
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
                   {process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || "Aiden (default fallback)"}
                 </div>

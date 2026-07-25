@@ -255,6 +255,7 @@ function buildSceneInput(opts: {
         sceneType: scene.sceneType,
       }),
       intensityLevel: profile.peakIntensity,
+      angerStyle: profile.angerStyle,
       maxCueDensity: profile.maxCueDensity,
       profileVersion: PERFORMANCE_PROFILE_VERSION,
       providerOverrides: overrides as Record<string, number> | undefined,

@@ -34,8 +34,9 @@ export function validateScriptContent(
     hostA?: { id: string; name: string };
     hostB?: { id: string; name: string };
     /** Prompt 7: the FULL episode cast in seat order (1-4). Supersedes
-     *  hostA/hostB when present. */
-    cast?: Array<{ id: string; name: string }>;
+     *  hostA/hostB when present. `argumentPatterns` (when supplied) enables
+     *  persona-device checks like the once-per-episode stale-info admission. */
+    cast?: Array<{ id: string; name: string; argumentPatterns?: unknown }>;
     /** The episode's show format — supplies per-chair approval floors.
      *  Absent = the two-host debate policy (25% each), the legacy behavior. */
     format?: import("../formats/showFormatRegistry").ShowFormat | null;
@@ -264,6 +265,41 @@ export function validateScriptContent(
 
     if (summary.evidenceCoveragePercent < 90) {
       summary.reasons.push(`Factual evidence coverage is ${summary.evidenceCoveragePercent}%, which is under the required 90%.`);
+    }
+
+    // PERSONA-DEVICE RULE ("The Room" rule, Host Bible v2): a host whose
+    // argument patterns declare a once-per-episode stale-info admission (e.g.
+    // Otis Kemp — "Admit — at least once — that his information is out of
+    // date") must actually deliver that admission somewhere in the episode.
+    // Enforced here, not hoped for in the prompt: the admission is what keeps
+    // an insider character credible instead of an oracle. Only fires when the
+    // caller supplies argumentPatterns for the cast (all production callers do).
+    {
+      const STALE_ADMISSION_RE =
+        /(out of date|outdated|stale|old (info|information|intel)|been (a while|years|\d+ years)|haven'?t been (in|inside|back)|since i (left|was there|was inside|got fired)|when i was (there|in the room|inside)|back in (19|20)\d\d|things (have |may have )?changed|building'?s changed|might be different now|not in the room anymore|that was \d+ years ago|my (info|information|read) (is|might be|may be) old)/i;
+      for (const h of castList as Array<{ id: string; name: string; argumentPatterns?: unknown }>) {
+        const patterns = Array.isArray(h.argumentPatterns)
+          ? (h.argumentPatterns as unknown[]).filter((p): p is string => typeof p === "string")
+          : [];
+        const declaresStaleDevice = patterns.some((p) => /out of date|stale/i.test(p));
+        if (!declaresStaleDevice) continue;
+        let admitted = false;
+        if (Array.isArray(content?.segments)) {
+          for (const seg of content.segments) {
+            if (!Array.isArray(seg?.lines)) continue;
+            for (const line of seg.lines) {
+              if (line?.speakerHostId !== h.id && String(line?.speakerName || "").toLowerCase() !== h.name.toLowerCase()) continue;
+              if (STALE_ADMISSION_RE.test(String(line?.text || ""))) { admitted = true; break; }
+            }
+            if (admitted) break;
+          }
+        }
+        if (!admitted) {
+          summary.reasons.push(
+            `${h.name} never admits his information is out of date. This host's persona requires that admission at least once per episode (it's what keeps the insider device credible) — add one line where he concedes the intel is stale.`
+          );
+        }
+      }
     }
 
   } catch (err: any) {

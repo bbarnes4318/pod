@@ -103,7 +103,7 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
 
       {creating && (
         <div style={{ marginTop: "1.2rem" }}>
-          <HostEditor mode="create" host={null} accent="var(--host-max)" onClose={() => setCreating(false)} />
+          <HostEditor mode="create" host={null} accent="var(--host-a)" onClose={() => setCreating(false)} />
         </div>
       )}
 
@@ -154,7 +154,7 @@ function HostCard({
   onEdit: () => void;
   onCloseEdit: () => void;
 }) {
-  const accent = slot === 1 ? "var(--host-doc)" : "var(--host-max)";
+  const accent = slot === 1 ? "var(--host-b)" : "var(--host-a)";
   const provenanceUndocumented = !host.voiceSource;
 
   const [busy, setBusy] = useState<null | "audition" | "archive" | "clone">(null);

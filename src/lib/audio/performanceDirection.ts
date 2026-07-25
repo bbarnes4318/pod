@@ -101,6 +101,12 @@ export function buildPerformanceDirection(input: DirectionInput): string {
   parts.push(
     `Your intensity ranges ${input.profile.baselineIntensity}/10 at baseline up to ${input.profile.peakIntensity}/10 at genuine peaks — most sentences sit near baseline.`
   );
+  // Opposite anger signatures keep a two-voice fight legible in mono.
+  parts.push(
+    input.profile.angerStyle === "slower_quieter"
+      ? "When genuinely angry you get SLOWER and QUIETER and more precise — never louder."
+      : "When genuinely angry you get louder and faster."
+  );
   if (input.profile.prohibitedTraits.length > 0) {
     parts.push(`Never: ${input.profile.prohibitedTraits.join(", ")}.`);
   }

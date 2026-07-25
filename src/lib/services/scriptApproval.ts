@@ -42,7 +42,7 @@ async function contextForEpisode(episodeId: string) {
   // Prompt 7: resolve the FULL format-driven cast (two_host_debate delegates
   // to the legacy pair resolver, so existing episodes cast identically).
   const resolvedCast = await resolveEpisodeCast({ hostIds: ep.hostIds, formatId: (ep as { formatId?: string }).formatId });
-  const cast = resolvedCast.members.map((m) => ({ id: m.host.id, name: m.host.name }));
+  const cast = resolvedCast.members.map((m) => ({ id: m.host.id, name: m.host.name, argumentPatterns: m.host.argumentPatterns }));
   const format = getShowFormat(resolvedCast.formatId);
   const hostA = cast[0];
   const hostB = cast[1] ?? cast[0];

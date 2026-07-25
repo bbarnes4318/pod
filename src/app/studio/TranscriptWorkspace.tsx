@@ -75,7 +75,7 @@ export default function TranscriptWorkspace({
   }
 
   // Seat-indexed colours (Prompt 7): seats 0-3 -> the four host tokens.
-  const SEAT_COLORS = ["var(--host-max)", "var(--host-doc)", "var(--host-3)", "var(--host-4)"];
+  const SEAT_COLORS = ["var(--host-a)", "var(--host-b)", "var(--host-3)", "var(--host-4)"];
   const colorFor = (speaker: string) => {
     const s = speaker.trim().toLowerCase();
     const seat = vm.cast.findIndex((h) => h.name.toLowerCase() === s);
@@ -182,8 +182,8 @@ function TranscriptEditor({
       <div className="transcriptHead">
         <div className="sectionTitle" style={{ margin: 0 }}>Transcript</div>
         <div className="transcriptLegend">
-          <span><span className="legendSwatch" style={{ background: "var(--host-max)" }} />{vm.hostA.name}</span>
-          <span><span className="legendSwatch" style={{ background: "var(--host-doc)" }} />{vm.hostB.name}</span>
+          <span><span className="legendSwatch" style={{ background: "var(--host-a)" }} />{vm.hostA.name}</span>
+          <span><span className="legendSwatch" style={{ background: "var(--host-b)" }} />{vm.hostB.name}</span>
         </div>
       </div>
 

@@ -28,6 +28,15 @@ import { SCRIPT_TAG_TO_FISH, TONE_TO_FISH_CUE } from "./fishFormat";
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
 
+/** Heated cues for a host whose anger goes DOWN (slower, quieter, precise)
+ *  instead of up. Same hot tones, opposite delivery direction. */
+const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
+  heated: "[slow, quiet, cold and precise]",
+  excited: "[measured, intense, deliberate]",
+  incredulous: "[quiet disbelief, unhurried]",
+  dismissive: "[flat, slow, done with this]",
+};
+
 export interface FishScenePayload {
   url: string;
   model: string;
@@ -71,7 +80,11 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
   }
 
   const cueCapByHost = new Map<string, number>();
-  for (const c of input.cast) cueCapByHost.set(c.speakerHostId, Math.max(0, Math.min(2, c.maxCueDensity)));
+  const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter">();
+  for (const c of input.cast) {
+    cueCapByHost.set(c.speakerHostId, Math.max(0, Math.min(2, c.maxCueDensity)));
+    angerStyleByHost.set(c.speakerHostId, c.angerStyle ?? "louder_faster");
+  }
 
   // The ONE line (if any) allowed a tone-derived accent cue this scene.
   let accentLineIndex = -1;
@@ -110,8 +123,16 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
 
     // Scene-level accent: exactly one line in the scene may open with a
     // tone cue — controlled variation instead of stamping every hot line.
+    // The cue direction follows the SPEAKER's anger signature: a
+    // louder_faster host gets the hot cue; a slower_quieter host's anger
+    // lands as slow, cold precision — opposite directions keep a heated
+    // stretch legible even in mono.
     if (u.lineIndex === accentLineIndex && cueCount === 0 && cap > 0) {
-      const cue = TONE_TO_FISH_CUE[(u.tone || "").toLowerCase()];
+      const tone = (u.tone || "").toLowerCase();
+      const slowQuiet = angerStyleByHost.get(u.speakerHostId) === "slower_quieter";
+      const cue = slowQuiet
+        ? SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
+        : TONE_TO_FISH_CUE[tone];
       if (cue) {
         openers.push(cue);
         cueCount++;

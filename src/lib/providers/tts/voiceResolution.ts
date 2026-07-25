@@ -103,8 +103,22 @@ function isDrLinebreak(host: HostVoiceContext): boolean {
   return host.slug === "dr-linebreak" || host.name === "Dr. Linebreak";
 }
 
+/** Generic per-host env var: <PROVIDER>_VOICE_ID_<SLUG_UPPER_SNAKE>, e.g.
+ *  FISH_VOICE_ID_BERNIE_LINE_TWO. Works for ANY host slug — the named
+ *  MAX_VOLTAGE/DR_LINEBREAK vars below are legacy fallbacks kept for
+ *  existing deployments. */
+function slugEnvVoice(provider: string, host: HostVoiceContext): string | undefined {
+  const slug = (host.slug || "").trim();
+  if (!slug) return undefined;
+  const key = `${provider.toUpperCase()}_VOICE_ID_${slug.toUpperCase().replace(/-/g, "_")}`;
+  const v = process.env[key];
+  return v && v.trim() ? v.trim() : undefined;
+}
+
 /** Per-provider, per-host env fallback voice id. */
 function envVoiceFor(provider: string, host: HostVoiceContext): string | undefined {
+  const generic = slugEnvVoice(provider, host);
+  if (generic) return generic;
   const pick = (maxVar?: string, docVar?: string, sharedVar?: string) =>
     (isMaxVoltage(host) ? maxVar : isDrLinebreak(host) ? docVar : undefined) || sharedVar || undefined;
 

@@ -459,7 +459,9 @@ export default function ScriptReviewView({
       const next = [...prev];
       const newLine: ScriptLine = {
         lineIndex: 0,
-        speakerName: "Max Voltage",
+        // Default a new line to the episode's ACTUAL seat-A host — never a
+        // hardcoded name from a retired roster.
+        speakerName: hostA.name,
         speakerHostId: hostA.id,
         text: "",
         tone: "heated",
