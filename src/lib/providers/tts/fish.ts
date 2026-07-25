@@ -1,6 +1,8 @@
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { getFishApiKey } from "../../env";
 import { formatLineForFish } from "./fishFormat";
+import type { DialogueSceneInput, DialogueSceneProvider, DialogueSceneResult } from "./sceneTypes";
+import { synthesizeFishDialogueScene } from "./fishDialogue";
 
 // Fish Audio TTS provider (S2.1 family). Delivery is steered with inline
 // natural-language [bracket] cues, so every line passes through
@@ -18,8 +20,14 @@ import { formatLineForFish } from "./fishFormat";
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 
-export class FishTTSProvider implements TTSProvider {
+export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
   public readonly name = "fish";
+
+  /** Native multi-speaker scene: one request with <|speaker:N|> tags and an
+   *  ordered reference_id array (S2-Pro; docs/TTS_SCENE_CAPABILITIES.md). */
+  synthesizeDialogueScene(input: DialogueSceneInput): Promise<DialogueSceneResult> {
+    return synthesizeFishDialogueScene(input);
+  }
 
   async synthesizeSpeech(input: SynthesizeSpeechInput): Promise<SynthesizeSpeechResult> {
     const apiKey = getFishApiKey();
