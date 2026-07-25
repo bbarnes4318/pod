@@ -14,6 +14,7 @@ import fs from "node:fs";
 import { findAntithesis } from "../lib/services/scriptAntithesis";
 
 const FILES = [
+  "prisma/seed.ts",
   "src/lib/formats/formatScriptPrompts.ts",
   "src/lib/queue/worker.ts",
   "src/lib/services/scriptOutlineEngine.ts",
