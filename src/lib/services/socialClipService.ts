@@ -8,7 +8,7 @@
 // audio is standardized and mixed through the SAME functions the full-episode
 // stitch uses — planConversationTimeline → renderTimelineToWav → masterToMp3 —
 // so the clip is genuine episode audio, never mock. Captions are host-colour
-// coded (slot 0 = --host-max, slot 1 = --host-doc) and time-synced to those
+// coded (slot 0 = --host-a, slot 1 = --host-b) and time-synced to those
 // exact clip offsets. A 9:16 H.264 mp4 with burned-in captions is attempted via
 // ffmpeg's libass + libx264; if the deploy ffmpeg lacks them we fall back to the
 // mp3 + a WebVTT caption track and record kind = "audio+captions".
@@ -85,8 +85,8 @@ async function sceneAbsoluteLineTimings(
   }
   return out.size > 0 ? out : null;
 }
-// Seat colours (Prompt 7): seats 0-3 mirror the UI tokens --host-max /
-// --host-doc / --host-3 / --host-4. Two-host clips keep the classic pair.
+// Seat colours (Prompt 7): seats 0-3 mirror the UI tokens --host-a /
+// --host-b / --host-3 / --host-4. Two-host clips keep the classic pair.
 const SLOT_HEX = ["#FF5A1F", "#4C8DFF", "#2EC27E", "#B78AF7"] as const;
 
 interface FlatLine {

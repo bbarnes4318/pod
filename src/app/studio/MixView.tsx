@@ -86,7 +86,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
   if (vm.segments.length === 0) return <div className="emptyNote">No script yet — the mix appears once the debate is written.</div>;
 
   // Seat-indexed colours (Prompt 7): seats 0-3 -> the four host tokens.
-  const SEAT_COLORS = ["var(--host-max)", "var(--host-doc)", "var(--host-3)", "var(--host-4)"];
+  const SEAT_COLORS = ["var(--host-a)", "var(--host-b)", "var(--host-3)", "var(--host-4)"];
   const colorFor = (speaker: string) => {
     const s = speaker.trim().toLowerCase();
     const seat = vm.cast.findIndex((h) => h.name.toLowerCase() === s);

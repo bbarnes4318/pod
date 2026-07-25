@@ -51,6 +51,11 @@ export const hostPerformanceProfileSchema = z
     concessionBehavior: z.enum(["grudging", "gracious", "analytical"]).default("analytical"),
     interruptionBehavior: z.enum(["never", "rare", "assertive"]).default("rare"),
     killShotBehavior: z.enum(["never", "measured", "theatrical"]).default("measured"),
+    /** Which DIRECTION this character's anger moves. Opposite signatures on a
+     *  two-host show make a heated stretch legible in mono: "louder_faster"
+     *  escalates up (volume/pace), "slower_quieter" escalates DOWN — slower,
+     *  quieter, more precise. Engines map this to genuinely different cues. */
+    angerStyle: z.enum(["louder_faster", "slower_quieter"]).default("louder_faster"),
     preferredPauseStyle: z.enum(["tight", "natural", "spacious"]).default("natural"),
     /** Hard cap on inline delivery cues per utterance an adapter may add. */
     maxCueDensity: z.number().int().min(0).max(2).default(1),
@@ -95,6 +100,9 @@ export function deriveProfileFromHostFields(host: HostProfileSource): HostPerfor
     concessionBehavior: /analy|measured|evidence/.test(style) ? "analytical" : "grudging",
     interruptionBehavior: hot ? "assertive" : "rare",
     killShotBehavior: hot ? "theatrical" : "measured",
+    angerStyle: /quiet|slow|precise|measured|deadpan|unhurried|gravell/.test(style)
+      ? "slower_quieter"
+      : "louder_faster",
     preferredPauseStyle: calm ? "spacious" : hot ? "tight" : "natural",
     maxCueDensity: 1,
     prohibitedTraits: [],

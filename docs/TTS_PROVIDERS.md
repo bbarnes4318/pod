@@ -104,5 +104,6 @@ Emotion/delivery markup is applied per resolved engine, per line:
 | --- | --- |
 | `TTS_PROVIDER` | Global default engine |
 | `FISH_API_KEY` / `FISH_MODEL` | Fish Audio auth + model (`s2.1-pro-free` default) |
-| `FISH_TTS_VOICE`, `FISH_MAX_VOLTAGE_VOICE_ID`, `FISH_DR_LINEBREAK_VOICE_ID` | Fish voice (reference id) overrides |
+| `<PROVIDER>_VOICE_ID_<HOST_SLUG>` | Generic per-host voice fallback for ANY host slug (upper-snake), e.g. `FISH_VOICE_ID_BERNIE_LINE_TWO`, `FISH_VOICE_ID_OTIS_LAMINATE`. Checked before the legacy named vars below. |
+| `FISH_TTS_VOICE`, `FISH_MAX_VOLTAGE_VOICE_ID`, `FISH_DR_LINEBREAK_VOICE_ID` | Fish voice (reference id) overrides (legacy names kept for existing deployments) |
 | `FISH_TTS_TIMEOUT_MS`, `FISH_TTS_MAX_RETRIES` | Fish request tuning |

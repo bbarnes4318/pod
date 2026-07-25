@@ -257,6 +257,72 @@ async function main() {
     assert(/never dominate/i.test(moderator), "moderator must control traffic without dominating");
   });
 
+  check("opposite anger signatures: slower_quieter host gets cold/quiet cues, never [angry]", () => {
+    const input = sceneInput();
+    // Kemp-style speaker: heated line, anger goes DOWN.
+    input.utterances = [
+      { lineIndex: 0, speakerHostId: "hB", speakerName: "B", seatIndex: 1, voiceId: FISH_B, spokenText: "You weren't in the room!", tone: "heated", energy: "high" },
+      { lineIndex: 1, speakerHostId: "hA", speakerName: "A", seatIndex: 0, voiceId: FISH_A, spokenText: "Calm reply.", tone: "analytical", energy: "low" },
+    ];
+    input.cast = [
+      { speakerHostId: "hA", formatRoleId: "chair_a", direction: "", intensityLevel: 8, angerStyle: "louder_faster", maxCueDensity: 1, profileVersion: 1 },
+      { speakerHostId: "hB", formatRoleId: "chair_b", direction: "", intensityLevel: 6, angerStyle: "slower_quieter", maxCueDensity: 1, profileVersion: 1 },
+    ];
+    const p = buildFishScenePayload(input);
+    assert(!p.body.text.includes("[angry]"), "slower_quieter host must never get the hot [angry] cue");
+    assert(/\[(slow, quiet|measured|quiet disbelief|flat, slow)/.test(p.body.text), `expected a cold/quiet cue, got: ${p.body.text}`);
+    // Same line from a louder_faster host → the hot cue.
+    input.cast[1].angerStyle = "louder_faster";
+    const p2 = buildFishScenePayload(input);
+    assert(p2.body.text.includes("[angry]"), "louder_faster host should get the hot cue");
+    // Directions carry the signature too.
+    const prof = deriveProfileFromHostFields({ speakingStyle: "low, gravelly, unhurried, deadpan", intensityLevel: 6 });
+    assert(prof.angerStyle === "slower_quieter", "gravelly/unhurried style must derive slower_quieter");
+    const dir = buildPerformanceDirection({ formatId: "two_host_debate", roleId: "chair_b", host: { name: "Otis" }, profile: prof, sceneType: "argument_escalation" });
+    assert(/SLOWER and QUIETER/i.test(dir), "direction must state the downward anger signature");
+  });
+
+  check("The Room rule: stale-info admission is validated, not hoped for", async () => {
+    const { validateScriptContent } = await import("../lib/services/scriptValidation");
+    const cast = [
+      { id: "hA", name: "Bernadette Zabala" },
+      { id: "hB", name: "Otis Kemp", argumentPatterns: ["Admit — at least once — that his information is out of date"] },
+    ];
+    const mkContent = (kempLine: string) => ({
+      segments: [{
+        type: "topic",
+        lines: Array.from({ length: 40 }, (_, i) => ({
+          lineIndex: i,
+          speakerName: i % 2 === 0 ? "Bernadette Zabala" : "Otis Kemp",
+          speakerHostId: i % 2 === 0 ? "hA" : "hB",
+          text: i === 1 ? kempLine : "Just an opinion line with no factual claim at all.",
+          tone: "analytical",
+          evidenceRefs: [],
+          isFactualClaim: false,
+          needsHumanReview: false,
+        })),
+      }],
+    });
+    const missing = validateScriptContent(mkContent("Another ordinary opinion line."), { allowedSourceRefs: new Set(), cast, unsafeClaims: [] } as never);
+    assert(missing.reasons.some((r: string) => /never admits his information is out of date/.test(r)), "missing admission must be flagged");
+    const present = validateScriptContent(mkContent("Look, my information might be old — I haven't been inside since 2019 — but that got decided in March."), { allowedSourceRefs: new Set(), cast, unsafeClaims: [] } as never);
+    assert(!present.reasons.some((r: string) => /never admits/.test(r)), "a genuine admission must satisfy the rule");
+  });
+
+  check("generic per-slug voice env var resolves for any host (no name special-casing)", async () => {
+    const { resolveTtsProviderAndVoice } = await import("../lib/providers/tts/voiceResolution");
+    process.env.FISH_VOICE_ID_BERNIE_LINE_TWO = FISH_A;
+    try {
+      const r = resolveTtsProviderAndVoice({
+        host: { id: "h1", slug: "bernie-line-two", name: 'Bernadette "Line Two" Zabala', ttsProvider: "fish", ttsVoiceId: "not-a-fish-id" },
+        envProvider: undefined,
+      });
+      assert(r.provider === "fish" && r.voiceId === FISH_A && r.voiceSource === "env_default", `generic slug env var not honored: ${JSON.stringify(r)}`);
+    } finally {
+      delete process.env.FISH_VOICE_ID_BERNIE_LINE_TWO;
+    }
+  });
+
   check("performance profiles: bounds, derivation, and intensity-as-range", () => {
     const hot = deriveProfileFromHostFields({ role: "driver", speakingStyle: "loud", intensityLevel: 9 });
     assert(hot.peakIntensity === 9 && hot.baselineIntensity === 7, "intensity 9 must be the CEILING with a lower baseline");
