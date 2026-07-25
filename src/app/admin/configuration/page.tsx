@@ -16,15 +16,27 @@ export default async function ConfigurationPage() {
   const redisUrlStatus = await getRedisStatus();
   const previewTokenStatus = maskSecret(process.env.RSS_PREVIEW_TOKEN);
 
+  // How many environment variables this SERVER PROCESS can actually see. A
+  // container that is receiving its configuration normally reports dozens. A
+  // very low number means the variables are not reaching the process at all,
+  // which is a different problem from any single key being unset — and it is
+  // the distinction that a per-key MISSING/CONFIGURED readout cannot make.
+  const visibleEnvCount = Object.keys(process.env).length;
+
+  // Providers this project actually uses. Previously this list showed OpenAI
+  // and Gemini — neither is used by the pipeline (Gemini has no adapter at
+  // all) — while omitting Fish, the live voice engine, so an operator
+  // checking the Fish key found nothing on the page to check.
   const providerApis = [
-    { name: "OpenAI API Key (if used)", value: maskSecret(process.env.OPENAI_API_KEY) },
-    { name: "Anthropic API Key (if used)", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
-    { name: "Gemini API Key (if used)", value: maskSecret(process.env.GEMINI_API_KEY) },
-    { name: "ElevenLabs API Key (if used)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
-    { name: "Boson API Key (if used)", value: getBosonTtsStatus() },
+    { name: "Anthropic API Key (ANTHROPIC_API_KEY) — all LLM stages", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
+    { name: "Fish Audio API Key (FISH_API_KEY) — voice engine", value: maskSecret(process.env.FISH_API_KEY) },
+    { name: "ElevenLabs API Key (fallback)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
+    { name: "Cartesia API Key (fallback)", value: maskSecret(process.env.CARTESIA_API_KEY) },
+    { name: "Boson API Key (fallback)", value: getBosonTtsStatus() },
     { name: "Research Provider (RESEARCH_PROVIDER)", value: getResearchProviderStatus() },
     { name: "Odds API Key (ODDS_API_KEY)", value: getOddsApiKeyStatus() },
     { name: "RSS Feed Ingest (NEWS_RSS_FEEDS)", value: getRssFeedStatus() },
+    { name: "Env vars visible to this process", value: String(visibleEnvCount) },
   ];
 
   return (
