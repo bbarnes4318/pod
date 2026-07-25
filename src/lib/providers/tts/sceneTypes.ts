@@ -169,6 +169,12 @@ export interface DialogueSceneResult {
 /** Safe error taxonomy for scene generation (never raw provider bodies). */
 export type SceneErrorCategory =
   | "authentication"
+  /** HTTP 402 — the provider account has no API credit. Fish bills API credit
+   *  separately from platform credit; a funded fish.audio account can still
+   *  402 on every API call. Fix: fund API credit at fish.audio/app/developers,
+   *  or point FISH_SCENE_MODEL at the free-tier model (s2.1-pro-free — scene
+   *  shape verified working on it 2026-07-25). */
+  | "insufficient_credit"
   | "unsupported_model"
   | "invalid_voice"
   | "request_too_large"
@@ -193,6 +199,7 @@ export class SceneGenerationError extends Error {
 /** Classify an HTTP status into the safe taxonomy. */
 export function categorizeHttpStatus(status: number): SceneErrorCategory {
   if (status === 401 || status === 403) return "authentication";
+  if (status === 402) return "insufficient_credit";
   if (status === 404 || status === 422) return "invalid_voice";
   if (status === 413) return "request_too_large";
   if (status === 429) return "rate_limited";

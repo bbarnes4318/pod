@@ -135,7 +135,7 @@ async function main() {
     const input = sceneInput();
     input.utterances = input.utterances.map((u) => ({ ...u, voiceId: u.speakerHostId === "hA" ? FISH_A : FISH_B }));
     const p = buildFishScenePayload(input);
-    assert(p.model === "s2-pro", `scene model default must be s2-pro (got ${p.model})`);
+    assert(p.model === "s2.1-pro-free", `scene model default must be s2.1-pro-free (free tier; s2-pro 402s without API credit) (got ${p.model})`);
     assert(Array.isArray(p.body.reference_id) && p.body.reference_id.length === 2, "reference_id must be a 2-entry array");
     assert(p.body.reference_id[0] === FISH_A && p.body.reference_id[1] === FISH_B, "reference order must match speaker indexes");
     assert(p.body.text.startsWith("<|speaker:0|>"), "text must open with speaker 0");
