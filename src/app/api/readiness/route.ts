@@ -35,10 +35,16 @@ export async function GET() {
     const envWarnings = envChecklist.filter((c) => c.status === "warning");
 
     if (envFailures.length > 0) {
+      // Report each key WITH its individual verdict. Collapsing these into
+      // "missing or placeholder" made a genuinely-set variable and an absent
+      // one indistinguishable, which sent an operator hunting through Coolify
+      // for a key that was present all along. `value` is only ever the literal
+      // string MISSING or PLACEHOLDER here — never the secret itself.
       checks.push({
         name: "environment_variables",
         status: "fail",
-        message: `Missing or placeholder required production variables: ${envFailures.map((f) => f.key).join(", ")}`,
+        message: `Failing required production variables: ${envFailures.map((f) => `${f.key} (${f.value})`).join(", ")}`,
+        detail: envFailures.map((f) => ({ key: f.key, verdict: f.value, message: f.message })),
       });
     } else if (envWarnings.length > 0) {
       checks.push({
