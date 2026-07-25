@@ -49,6 +49,42 @@ import { parseProductionPlan } from "@/lib/audio/productionPlan";
 
 const CLIP_MIN_MS = 20_000;
 const CLIP_MAX_MS = 45_000;
+
+/**
+ * Scene-mode line timing: absolute (episode-master-relative) start/end per
+ * line, derived from REAL provider timing maps + the scene render's stored
+ * placement timeline. Returns null when the episode has no scene render or
+ * any required timing is missing — callers must fail honestly, NEVER
+ * fabricate caption timestamps from text length.
+ */
+async function sceneAbsoluteLineTimings(
+  episodeId: string,
+  scriptId: string
+): Promise<Map<number, { startMs: number; endMs: number; speakerHostId: string }> | null> {
+  const render = await db.episodeAudioRender.findFirst({
+    where: { episodeId, status: "succeeded", renderMode: "scene" },
+    orderBy: { renderVersion: "desc" },
+    select: { diagnostics: true },
+  });
+  const timeline = (render?.diagnostics as { sceneTimeline?: Array<{ sceneIndex: number; startMs: number }> } | null)?.sceneTimeline;
+  if (!Array.isArray(timeline) || timeline.length === 0) return null;
+  const startBySceneIndex = new Map(timeline.map((t) => [t.sceneIndex, t.startMs]));
+
+  const scenes = await db.dialogueSceneAudio.findMany({
+    where: { scriptId, status: "ready", selected: true },
+    select: { sceneIndex: true, timingStatus: true, timingMap: true },
+  });
+  const out = new Map<number, { startMs: number; endMs: number; speakerHostId: string }>();
+  for (const scene of scenes) {
+    const base = startBySceneIndex.get(scene.sceneIndex);
+    if (base === undefined) continue;
+    if (scene.timingStatus === "timing_unavailable" || !Array.isArray(scene.timingMap)) continue;
+    for (const u of scene.timingMap as Array<{ lineIndex: number; startMs: number; endMs: number; speakerHostId: string }>) {
+      out.set(u.lineIndex, { startMs: base + u.startMs, endMs: base + u.endMs, speakerHostId: u.speakerHostId });
+    }
+  }
+  return out.size > 0 ? out : null;
+}
 // Seat colours (Prompt 7): seats 0-3 mirror the UI tokens --host-max /
 // --host-doc / --host-3 / --host-4. Two-host clips keep the classic pair.
 const SLOT_HEX = ["#FF5A1F", "#4C8DFF", "#2EC27E", "#B78AF7"] as const;
@@ -125,8 +161,20 @@ function heat(line: FlatLine): number {
 export async function selectHottestRange(
   scriptId: string
 ): Promise<{ startLineIndex: number; endLineIndex: number } | null> {
-  const lines = (await flattenLines(scriptId)).filter((l) => l.hasAudio);
-  if (lines.length === 0) return null;
+  let lines = (await flattenLines(scriptId)).filter((l) => l.hasAudio);
+  if (lines.length === 0) {
+    // Scene-mode episode: no per-line AudioSegments exist. Use REAL scene
+    // timing (when available) for per-line durations; without timing there is
+    // no honest auto-selection and we return null instead of guessing.
+    const script = await db.script.findUnique({ where: { id: scriptId }, select: { episodeId: true } });
+    if (!script) return null;
+    const timing = await sceneAbsoluteLineTimings(script.episodeId, scriptId);
+    if (!timing) return null;
+    lines = (await flattenLines(scriptId))
+      .filter((l) => timing.has(l.lineIndex))
+      .map((l) => ({ ...l, hasAudio: true, durationMs: Math.max(1, timing.get(l.lineIndex)!.endMs - timing.get(l.lineIndex)!.startMs) }));
+    if (lines.length === 0) return null;
+  }
 
   let best: { i: number; j: number; score: number } | null = null;
   for (let i = 0; i < lines.length; i++) {
@@ -333,9 +381,10 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
   try {
     const episode = await db.episode.findUnique({
       where: { id: clip.episodeId },
-      select: { id: true, title: true, hostIds: true, soundDesign: true },
+      select: { id: true, title: true, hostIds: true, soundDesign: true, ttsRenderMode: true, audioUrl: true },
     });
     if (!episode) throw new Error("Episode not found.");
+    const sceneMode = episode.ttsRenderMode === "scene" || episode.ttsRenderMode === "mixed_fallback";
     // FORMAT-driven cast (Prompt 7): captions colour and label 1-4 seats.
     const clipCastResolved = await resolveEpisodeCast({
       hostIds: episode.hostIds,
@@ -348,6 +397,66 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
     };
 
     const all = await flattenLines(clip.scriptId);
+    const clipMp3 = path.join(tmp, "clip.mp3");
+    let cues: CaptionCue[] = [];
+    let durationMs = 0;
+
+    if (sceneMode) {
+      // SCENE-MODE CLIP: extract a CONTINUOUS range from the real episode
+      // master (music, interruptions, and the model's native turn timing all
+      // intact) using REAL provider timing maps. No per-line restitching —
+      // scene episodes have no independent line audio, and rebuilding one
+      // would destroy the performance. Missing timing fails HONESTLY: we
+      // never publish captions synced by guesswork.
+      if (!episode.audioUrl) {
+        throw new Error("Scene-mode clip requires the stitched episode master — stitch the episode before clipping.");
+      }
+      const timing = await sceneAbsoluteLineTimings(clip.episodeId, clip.scriptId);
+      const rangeLines = all.filter((l) => l.lineIndex >= clip.startLineIndex && l.lineIndex <= clip.endLineIndex);
+      if (rangeLines.length === 0) throw new Error("No script lines in the selected range.");
+      const missingTiming = rangeLines.filter((l) => !timing?.has(l.lineIndex));
+      if (!timing || missingTiming.length > 0) {
+        throw new Error(
+          `timing_unavailable: no real timing map covers line(s) ${missingTiming.slice(0, 5).map((l) => l.lineIndex).join(", ") || "(all)"} — ` +
+            "caption-synced clips require provider timestamps (or a configured alignment service); fabricated timestamps are prohibited."
+        );
+      }
+
+      const absStart = Math.min(...rangeLines.map((l) => timing.get(l.lineIndex)!.startMs));
+      const absEnd = Math.max(...rangeLines.map((l) => timing.get(l.lineIndex)!.endMs));
+      const clipStartMs = Math.max(0, absStart - 150);
+      const clipEndMs = absEnd + 250;
+      durationMs = clipEndMs - clipStartMs;
+
+      const masterPath = path.join(tmp, "master.mp3");
+      const dl = await storage.getObject({ url: episode.audioUrl });
+      fs.writeFileSync(masterPath, dl.body);
+      await runFfmpegInDir(
+        [
+          "-y",
+          "-ss", (clipStartMs / 1000).toFixed(3),
+          "-to", (clipEndMs / 1000).toFixed(3),
+          "-i", "master.mp3",
+          "-c:a", "libmp3lame",
+          "-b:a", "192k",
+          "clip.mp3",
+        ],
+        tmp
+      );
+
+      cues = rangeLines.map((l) => {
+        const t = timing.get(l.lineIndex)!;
+        const slot = seatOfHost(t.speakerHostId || l.speakerHostId);
+        const speaker = clipCast[Math.min(slot, clipCast.length - 1)]?.name ?? l.speakerName;
+        return {
+          startMs: Math.max(0, t.startMs - clipStartMs),
+          endMs: Math.max(0, t.endMs - clipStartMs),
+          text: l.text,
+          speaker,
+          slot,
+        };
+      });
+    } else {
     const range = all.filter(
       (l) => l.lineIndex >= clip.startLineIndex && l.lineIndex <= clip.endLineIndex && l.hasAudio && l.audioUrl
     );
@@ -434,17 +543,17 @@ export async function renderSocialClip(clipId: string): Promise<RenderClipResult
       masterInput = beddedWav;
     }
 
-    const clipMp3 = path.join(tmp, "clip.mp3");
     await masterToMp3(ffmpegPath(), masterInput, clipMp3, {});
 
     // 3. Caption cues from the EXACT clip offsets the mix used.
-    const cues: CaptionCue[] = clips.map((c) => {
+    cues = clips.map((c) => {
       const ln = range.find((r) => r.lineIndex === planned.find((p) => p.filePath === c.filePath)?.lineIndex);
       const slot = slotByLine.get(ln?.lineIndex ?? -1) ?? 0;
       const speaker = clipCast[Math.min(slot, clipCast.length - 1)]?.name ?? "";
       return { startMs: c.startMs, endMs: c.startMs + c.durationMs, text: ln?.text || "", speaker, slot };
     });
-    const durationMs = clips.length ? Math.max(...clips.map((c) => c.startMs + c.durationMs)) : 0;
+    durationMs = clips.length ? Math.max(...clips.map((c) => c.startMs + c.durationMs)) : 0;
+    } // end legacy per-line clip path
 
     const title = episode.title || "Take Machine";
     const vtt = buildVtt(cues);

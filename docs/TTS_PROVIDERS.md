@@ -1,5 +1,26 @@
 # TTS Providers & Voice-Engine Resolution
 
+> **Scene mode (native multi-speaker dialogue).** Line-by-line synthesis is now
+> the LEGACY render mode. When `TTS_RENDER_MODE=scene|auto` and every cast
+> voice resolves to ONE engine with verified native dialogue support
+> (`elevenlabs` via Text to Dialogue, `fish` via S2-Pro `<|speaker:N|>` — see
+> `docs/TTS_SCENE_CAPABILITIES.md`), whole conversational scenes are generated
+> in single requests (`src/lib/services/ttsSceneService.ts`, planner in
+> `src/lib/audio/dialogueScenePlanner.ts`) and assembled with their native
+> internal timing preserved (`src/lib/services/sceneStitchingService.ts`).
+> The decision actually taken is persisted on `Episode.ttsRenderMode`
+> (`legacy_line | scene | mixed_fallback`). Flags:
+> `TTS_RENDER_MODE` (default `legacy_line`), `TTS_SCENE_PROVIDER_ALLOWLIST`
+> (default `elevenlabs,fish`), `TTS_SCENE_CANDIDATES_COLD_OPEN|_PEAK|_DEFAULT`
+> (default 1), `ELEVENLABS_DIALOGUE_MODEL_ID` (default `eleven_v3`),
+> `ELEVENLABS_DIALOGUE_TIMESTAMPS` (default on), `FISH_SCENE_MODEL` (default
+> `s2-pro`), `FISH_SCENE_MAX_CHARS` (default 2000),
+> `TTS_TRANSCRIPT_QA_ENABLED` (default false — transcript QA reports
+> `not_run`, never a fake pass). Tests: `npm run test:scene-planner`,
+> `npm run test:scene-contracts`. Blind A/B pack: `npm run sample:human-dialogue`.
+> Everything below describes voice/engine RESOLUTION, which scene mode reuses
+> unchanged.
+
 Registered engines (see `src/lib/providers/tts/factory.ts` and
 `src/lib/providers/tts/providerIds.ts`): `elevenlabs`, `cartesia`, `openai`,
 `boson`, `fish`, `stub`.

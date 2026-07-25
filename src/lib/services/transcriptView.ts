@@ -53,6 +53,10 @@ export interface TranscriptVM {
   scriptId: string | null;
   scriptStatus: string | null;
   episodeStatus: string | null;
+  /** How the episode's speech was generated ("legacy_line" | "scene" |
+   *  "mixed_fallback" | null). Scene mode changes what a "re-voice" costs:
+   *  the containing SCENE regenerates, not one isolated line. */
+  ttsRenderMode: string | null;
   episodeTitle: string;
   hostA: { id: string | null; name: string };
   hostB: { id: string | null; name: string };
@@ -176,6 +180,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
     scriptId: null,
     scriptStatus: null,
     episodeStatus: null,
+    ttsRenderMode: null,
     episodeTitle: "",
     hostA: { id: null, name: "Host 1" },
     hostB: { id: null, name: "Host 2" },
@@ -193,6 +198,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
       title: true,
       status: true,
       hostIds: true,
+      ttsRenderMode: true,
       scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true, status: true, content: true } },
     },
   });
@@ -219,6 +225,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
   base.scriptId = script?.id ?? null;
   base.scriptStatus = script?.status ?? null;
   base.episodeStatus = episode.status;
+  base.ttsRenderMode = (episode as { ttsRenderMode?: string | null }).ttsRenderMode ?? null;
   base.episodeTitle = episode.title;
   base.hostA = hostA;
   base.hostB = hostB;

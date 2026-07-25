@@ -24,8 +24,7 @@ import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
-import { generateTtsSegments } from "../services/ttsSegmentService";
-import { stitchFinalEpisodeAudio } from "../services/audioStitchingService";
+import { dispatchTtsGeneration, dispatchFinalStitch, dispatchLineRegen } from "../services/stitchDispatch";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
@@ -2608,21 +2607,28 @@ async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
   });
 
   try {
-    const res = await generateTtsSegments(job.data);
+    // Render-mode dispatch: scene generation when enabled + eligible; the
+    // legacy per-line pipeline otherwise (and for segmentRange/host filters).
+    const dispatched = await dispatchTtsGeneration(job.data);
+    const res = dispatched.result as Record<string, unknown>;
 
-    const hasErrors = Array.isArray(res.failedLines) && res.failedLines.length > 0;
+    const failedLines = (res as { failedLines?: unknown[] }).failedLines;
+    const failedScenes = (res as { failedScenes?: number }).failedScenes;
+    const hasErrors =
+      (Array.isArray(failedLines) && failedLines.length > 0) ||
+      (typeof failedScenes === "number" && failedScenes > 0);
     const finalJobStatus = hasErrors ? "completed_with_errors" : "completed";
 
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: finalJobStatus,
-        output: res as any,
+        output: { pipeline: dispatched.pipeline, ...res } as any,
       },
     });
 
-    console.log(`[Worker] TTS segment generation completed. Status: ${finalJobStatus}`);
-    return { success: true, ...res };
+    console.log(`[Worker] TTS generation completed via '${dispatched.pipeline}'. Status: ${finalJobStatus}`);
+    return { success: true, pipeline: dispatched.pipeline, ...res };
   } catch (err: any) {
     console.error(`[Worker] TTS segment generation failed:`, err.message);
     await db.jobLog.update({
@@ -2645,7 +2651,9 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
   const { scriptId } = job.data;
   console.log(`[Worker] Starting audio:stitch-final job for Script ${scriptId}`);
   try {
-    const res = await stitchFinalEpisodeAudio(job.data);
+    // Scene-voiced episodes assemble whole scenes; legacy episodes keep the
+    // exact per-line path (decided by the PERSISTED Episode.ttsRenderMode).
+    const res = await dispatchFinalStitch(job.data);
     console.log(`[Worker] Final audio stitching job completed. Status: ${res.finalStatus}`);
     return { success: true, ...res };
   } catch (err: any) {
@@ -2686,13 +2694,13 @@ async function handleSocialClipGeneration(job: Job<SocialClipJobData>) {
 }
 
 /**
- * Line-level audio regeneration — the budget-protection payoff.
- * Step 1: re-synthesize ONLY the one edited line via generateTtsSegments with
- *   segmentRange = {start:end:lineIndex} + forceRegenerate. Every other line is
- *   filtered out, so no TTS is spent on unchanged lines.
- * Step 2: re-splice with the EXISTING stitchFinalEpisodeAudio, which downloads
- *   each line's already-synthesized AudioSegment.audioUrl (the new one for this
- *   line, the untouched ones for the rest) and re-mixes — no TTS at stitch.
+ * Line-edit audio regeneration (render-mode aware; see stitchDispatch).
+ * LEGACY episodes: re-synthesize ONLY the edited line (segmentRange collapses
+ *   to one line), then re-splice reusing every other line's stored audio.
+ * SCENE episodes: an isolated line cannot be re-performed without changing
+ *   the conversation around it — the smallest CONTAINING SCENE regenerates
+ *   with its context, unaffected scenes' audio is reused untouched, and the
+ *   episode re-stitches from unchanged scenes + the regenerated scene.
  */
 async function handleLineAudioRegen(job: Job<LineAudioRegenJobData>) {
   const { scriptId, lineIndex } = job.data;
@@ -2701,23 +2709,23 @@ async function handleLineAudioRegen(job: Job<LineAudioRegenJobData>) {
     data: { jobType: "audio:regenerate-line", status: "running", input: { scriptId, lineIndex } as any, output: {} },
   });
   try {
-    // 1. Re-voice ONLY this line (segmentRange collapses to one line).
-    const tts = await generateTtsSegments({
-      scriptId,
-      segmentRange: { startLineIndex: lineIndex, endLineIndex: lineIndex },
-      forceRegenerate: true,
-    });
-    // 2. Re-splice reusing every other line's existing audio (no TTS here).
-    const stitch = await stitchFinalEpisodeAudio({ scriptId });
+    // Render-mode-aware: legacy episodes re-voice ONE line and re-splice;
+    // scene episodes truthfully regenerate the smallest CONTAINING SCENE
+    // (with its conversational context) and re-stitch from unchanged scenes
+    // plus the regenerated one. The output records which happened.
+    const res = await dispatchLineRegen(scriptId, lineIndex);
+    const stitchStatus = (res.stitch as { finalStatus?: string }).finalStatus;
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
-        status: stitch.finalStatus === "completed" ? "completed" : "completed_with_errors",
-        output: { scriptId, lineIndex, tts, stitch } as any,
+        status: stitchStatus === "completed" ? "completed" : "completed_with_errors",
+        output: { scriptId, lineIndex, ...res } as any,
       },
     });
-    console.log(`[Worker] Line regen complete for line #${lineIndex}; re-stitch: ${stitch.finalStatus}`);
-    return { success: true, tts, stitch };
+    console.log(
+      `[Worker] ${res.mode === "scene" ? `Scene regen (scene ${res.regeneratedScene.sceneIndex}, lines ${res.regeneratedScene.firstLineIndex}-${res.regeneratedScene.lastLineIndex})` : `Line regen`} complete for line #${lineIndex}; re-stitch: ${stitchStatus}`
+    );
+    return { success: true, ...res };
   } catch (err: any) {
     console.error(`[Worker] Line audio regen failed:`, err.message);
     await db.jobLog.update({

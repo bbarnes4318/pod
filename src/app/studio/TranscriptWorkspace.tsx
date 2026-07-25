@@ -238,8 +238,21 @@ function TranscriptEditor({
                     <div className="tLineActions">
                       <button className="tMini" onClick={() => variant(line.lineIndex, "spicier")} disabled={busyLine === line.lineIndex}>🌶 Spicier</button>
                       <button className="tMini" onClick={() => variant(line.lineIndex, "calmer")} disabled={busyLine === line.lineIndex}>🧊 Calmer</button>
-                      <button className="tMini" onClick={() => variant(line.lineIndex, "regenerate")} disabled={busyLine === line.lineIndex}>
-                        {canRevoice ? "↻ Re-voice line" : "↻ Regenerate"}
+                      <button
+                        className="tMini"
+                        onClick={() => variant(line.lineIndex, "regenerate")}
+                        disabled={busyLine === line.lineIndex}
+                        title={
+                          canRevoice && (vm.ttsRenderMode === "scene" || vm.ttsRenderMode === "mixed_fallback")
+                            ? "Scene-voiced episode: re-voicing regenerates this line's whole scene (with its surrounding conversation) so the performance stays continuous."
+                            : undefined
+                        }
+                      >
+                        {canRevoice
+                          ? vm.ttsRenderMode === "scene" || vm.ttsRenderMode === "mixed_fallback"
+                            ? "↻ Re-voice scene"
+                            : "↻ Re-voice line"
+                          : "↻ Regenerate"}
                       </button>
                     </div>
                   )}

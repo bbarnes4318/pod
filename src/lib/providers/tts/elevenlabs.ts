@@ -1,5 +1,7 @@
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { stripAudioTags } from "@/lib/audio/speechText";
+import type { DialogueSceneInput, DialogueSceneProvider, DialogueSceneResult } from "./sceneTypes";
+import { synthesizeElevenLabsDialogueScene } from "./elevenlabsDialogue";
 
 /**
  * ElevenLabs provider tuned for conversational podcast dialogue.
@@ -12,8 +14,15 @@ import { stripAudioTags } from "@/lib/audio/speechText";
  * - Maps the script's tone/energy metadata onto voice_settings instead of
  *   using one fixed stability for the whole episode.
  */
-export class ElevenLabsTTSProvider implements TTSProvider {
+export class ElevenLabsTTSProvider implements TTSProvider, DialogueSceneProvider {
   name = "elevenlabs";
+
+  /** Native multi-speaker scene via the official Text to Dialogue endpoint
+   *  (docs/TTS_SCENE_CAPABILITIES.md). One request per scene — never one per
+   *  line — so the model performs the whole conversational movement. */
+  synthesizeDialogueScene(input: DialogueSceneInput): Promise<DialogueSceneResult> {
+    return synthesizeElevenLabsDialogueScene(input);
+  }
 
   async synthesizeSpeech(input: SynthesizeSpeechInput): Promise<SynthesizeSpeechResult> {
     const apiKey = process.env.ELEVENLABS_API_KEY;

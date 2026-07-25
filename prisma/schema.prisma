@@ -87,6 +87,10 @@ model AiHost {
   ttsProvider      String
   ttsVoiceId       String
   intensityLevel   Int
+  // Optional versioned performance profile (validated by
+  // src/lib/hosts/performanceProfile.ts — never a bag of unchecked JSON).
+  // null = derive safely from role/speakingStyle/intensityLevel.
+  performanceProfile Json?
   isActive         Boolean  @default(true)
   // Soft archive (Step 8 Character Studio): archived hosts drop out of active
   // pickers but keep their association with existing episodes. Additive +
@@ -634,6 +638,11 @@ model Episode {
   audioMimeType      String         @default("audio/mpeg")
   ttsProvider        String?        // Voice engine chosen at build time ("fish", "boson", ...); null = fall through to host/env. See docs/TTS_PROVIDERS.md
   ttsVoiceOverrides  Json?          // Per-host voice picks keyed by host slug: { "max-voltage": { provider, voiceId, voiceName? }, ... }. See docs/TTS_PROVIDERS.md
+  // How this episode's SPOKEN audio was generated — persisted at generation
+  // time, never inferred later from whichever env vars happen to exist.
+  // "legacy_line" | "scene" | "mixed_fallback" | "performance_conversion";
+  // null = generated before scene mode existed (legacy line pipeline).
+  ttsRenderMode      String?
   soundDesign        Json?          // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
   podcastId          String?        // Nullable — pre-existing episodes have no podcast
   ownerId            String?        // User.id of the creator; null for legacy/pre-auth episodes
@@ -659,6 +668,7 @@ model Episode {
   audioSegments      AudioSegment[]
   socialClips        SocialClip[]
   audioRenders       EpisodeAudioRender[]
+  dialogueScenes     DialogueSceneAudio[]
 
   playEvents         PlayEvent[]
 
@@ -734,6 +744,7 @@ model Script {
   episode          Episode           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   factCheckResults FactCheckResult[]
   audioSegments    AudioSegment[]
+  dialogueScenes   DialogueSceneAudio[]
 
   @@index([episodeId])
   @@index([status])
@@ -778,6 +789,47 @@ model AudioSegment {
   @@index([episodeId])
   @@index([scriptId])
   @@index([lineIndex])
+}
+
+// One SCENE generation of dialogue audio (native multi-speaker TTS). ADDITIVE
+// next to AudioSegment — legacy per-line rows are never repurposed or
+// destroyed; an episode's ttsRenderMode records which pipeline voiced it.
+// Candidates: each (scene, candidateIndex) generation persists separately and
+// exactly one row per scene may be selected for the final stitch.
+model DialogueSceneAudio {
+  id                 String   @id @default(uuid())
+  episodeId          String
+  scriptId           String
+  sceneIndex         Int
+  sceneType          String   // cold_open | conversation | argument_escalation | ... (DialogueSceneType)
+  firstLineIndex     Int
+  lastLineIndex      Int
+  lineIndexes        Json     // number[] — every APPROVED line this scene performs, in order
+  provider           String   // "elevenlabs" | "fish" | ...
+  model              String   // exact model id used (e.g. "eleven_v3", "s2-pro")
+  renderUnit         String   // "multi_speaker_scene" | "speaker_turn_cluster" | "single_line" (oversized fallback)
+  voiceMap           Json     // { [hostId]: voiceId } actually sent (never keys/secrets)
+  requestFingerprint String   // sha256 over approved text + speakers + provider/model/voices/settings/seed + versions
+  candidateIndex     Int      @default(0)
+  seed               Int?
+  status             String   // "pending" | "processing" | "ready" | "failed"
+  audioUrl           String?
+  durationMs         Int?
+  contentType        String?
+  providerMetadata   Json?    // secret-free (request ids, voice order, cue preview)
+  timingStatus       String   @default("timing_unavailable") // provider_timestamps | forced_alignment | stt_alignment | timing_unavailable
+  timingMap          Json?    // [{ lineIndex, sceneId, startMs, endMs, speakerHostId }] — never fabricated
+  errorCategory      String?  // safe taxonomy (sceneTypes.SceneErrorCategory)
+  selected           Boolean  @default(false) // the candidate the final stitch uses (max one per scene)
+  continuationRef    String?  // reserved: only for providers with verified continuation
+  plannerVersion     Int      @default(1)
+  createdAt          DateTime @default(now())
+  episode            Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  script             Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+
+  @@index([episodeId])
+  @@index([scriptId, sceneIndex])
+  @@index([requestFingerprint])
 }
 
 // Managed post-production audio asset (theme, stinger, music bed, SFX,
