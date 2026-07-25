@@ -52,6 +52,17 @@ interface ValidationSummary {
   reasons: string[];
 }
 
+interface AntithesisSummary {
+  totalHits: number;
+  hitsPerHundredLines: number;
+  beforeTotalHits: number;
+  beforeHitsPerHundredLines: number;
+  rounds: number;
+  linesCorrected: number;
+  linesUnresolved: number;
+  byKind: Record<string, number>;
+}
+
 interface EvidencePanelItem {
   type: string;
   id: string;
@@ -307,6 +318,10 @@ export default function ScriptReviewView({
   const [validationSummary, setValidationSummary] = useState<ValidationSummary | null>(
     script.content.safety || null
   );
+
+  // Stamped at generation, so it belongs to this script version and survives
+  // re-validation (which replaces validationSummary wholesale).
+  const antithesis: AntithesisSummary | null = script.content?.antithesis || null;
 
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -1084,6 +1099,40 @@ export default function ScriptReviewView({
             ) : (
               <div style={{ color: "var(--text-secondary)", fontSize: "0.85rem", fontStyle: "italic" }}>
                 Script has not been validated yet. Click "Validate Script" to scan.
+              </div>
+            )}
+
+            {/* Machine-voice check: how often the script reaches for the
+                balanced-negation frame. Measured at generation. */}
+            {antithesis && (
+              <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border-color)", paddingTop: "0.75rem" }}>
+                <span className="sectionGroupLabel" style={{ fontSize: "0.7rem", marginBottom: "0.5rem", display: "block" }}>
+                  Antithesis (balanced negation)
+                </span>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", fontSize: "0.8rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Total frames:</span>
+                    <strong style={{ color: antithesis.totalHits > 1 ? "var(--warning-color)" : "var(--success-color)" }}>
+                      {antithesis.totalHits}
+                    </strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Per 100 lines:</span>
+                    <strong style={{ color: antithesis.hitsPerHundredLines > 2 ? "var(--warning-color)" : "var(--success-color)" }}>
+                      {antithesis.hitsPerHundredLines}
+                    </strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>Left for human review:</span>
+                    <strong style={{ color: antithesis.linesUnresolved > 0 ? "var(--error-color)" : "var(--text-primary)" }}>
+                      {antithesis.linesUnresolved}
+                    </strong>
+                  </div>
+                  <span style={{ fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                    {antithesis.beforeTotalHits} at generation ({antithesis.beforeHitsPerHundredLines} per 100),{" "}
+                    {antithesis.linesCorrected} rewritten over {antithesis.rounds} round(s).
+                  </span>
+                </div>
               </div>
             )}
           </div>
