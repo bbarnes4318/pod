@@ -31,9 +31,27 @@ interface ConsoleHost {
   name: string;
 }
 
+/** One SELECTED, ready native scene render covering a contiguous run of lines. */
+interface SceneAudio {
+  id: string;
+  sceneIndex: number;
+  sceneType: string;
+  firstLineIndex: number;
+  lastLineIndex: number;
+  lineIndexes: number[];
+  audioUrl: string | null;
+  durationMs: number | null;
+  provider: string;
+  model: string;
+}
+
 interface ConsoleProps {
   script: ScriptInfo;
   initialSegments: any[];
+  /** Scene-mode audio (PR #42). Empty on legacy per-line episodes. */
+  initialScenes?: SceneAudio[];
+  /** Episode.ttsRenderMode: "scene" | "mixed_fallback" | "legacy_line" | null. */
+  ttsRenderMode?: string | null;
   eligible: boolean;
   eligibilityReason?: string;
   eligibilityWarnings?: string[];
@@ -47,6 +65,8 @@ interface ConsoleProps {
 export default function AudioSegmentsConsole({
   script,
   initialSegments,
+  initialScenes = [],
+  ttsRenderMode,
   eligible,
   eligibilityReason,
   eligibilityWarnings = [],
@@ -56,6 +76,26 @@ export default function AudioSegmentsConsole({
   episodeVoiceOverrides,
 }: ConsoleProps) {
   const [segments, setSegments] = useState<any[]>(initialSegments);
+
+  // lineIndex -> the scene that voiced it. A scene render is ONE audio file
+  // covering many lines, so the player is shown on the scene's first line and
+  // the remaining lines say which scene carries them — never "No audio", which
+  // would claim a fully-voiced episode has none.
+  const sceneByLine = React.useMemo(() => {
+    const map = new Map<number, SceneAudio>();
+    for (const scene of initialScenes) {
+      if (!scene.audioUrl) continue;
+      const covered = scene.lineIndexes.length
+        ? scene.lineIndexes
+        : Array.from(
+            { length: scene.lastLineIndex - scene.firstLineIndex + 1 },
+            (_, i) => scene.firstLineIndex + i
+          );
+      for (const idx of covered) map.set(idx, scene);
+    }
+    return map;
+  }, [initialScenes]);
+  const sceneMode = sceneByLine.size > 0;
   const [loading, setLoading] = useState(false);
   const [rangeStart, setRangeStart] = useState<number>(0);
   const [rangeEnd, setRangeEnd] = useState<number>(Math.max(0, script.totalLines - 1));
@@ -243,7 +283,17 @@ export default function AudioSegmentsConsole({
         <div>
           <div className="editorPanel">
             <div className="panelTitle" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span>Dialogue Lines Speech Progress</span>
+              <span>
+                Dialogue Lines Speech Progress
+                {sceneMode && (
+                  <span
+                    style={{ fontSize: "0.7rem", fontWeight: 400, color: "var(--text-secondary)", marginLeft: "0.5rem" }}
+                    title={`Episode render mode: ${ttsRenderMode || "scene"}. Each scene is one continuous multi-speaker take, so one player covers all of its lines.`}
+                  >
+                    · scene mode — {initialScenes.length} scene(s), one take each
+                  </span>
+                )}
+              </span>
               <button
                 onClick={refreshSegments}
                 disabled={loading}
@@ -271,7 +321,12 @@ export default function AudioSegmentsConsole({
                 <tbody>
                   {script.lines.map((line, idx) => {
                     const seg = segments.find((s) => s.lineIndex === line.lineIndex);
-                    const statusVal = seg ? seg.status : "missing";
+                    // A per-line segment wins when present (legacy + the
+                    // per-line fallback inside a mixed run); otherwise the
+                    // scene that voiced this line stands in for it.
+                    const scene = seg ? undefined : sceneByLine.get(line.lineIndex);
+                    const isSceneHead = !!scene && scene.firstLineIndex === line.lineIndex;
+                    const statusVal = seg ? seg.status : scene ? "ready" : "missing";
 
                     const isReady = statusVal === "ready";
                     const isFailed = statusVal === "failed";
@@ -306,6 +361,14 @@ export default function AudioSegmentsConsole({
                           }`} style={{ fontSize: "0.7rem", padding: "0.15rem 0.4rem" }}>
                             {statusVal}
                           </span>
+                          {scene && (
+                            <div
+                              style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}
+                              title={`Scene ${scene.sceneIndex + 1} (${scene.sceneType}) — lines #${scene.firstLineIndex + 1}–#${scene.lastLineIndex + 1}, rendered as one take by ${scene.provider}/${scene.model}`}
+                            >
+                              {scene.provider} · scene {scene.sceneIndex + 1}
+                            </div>
+                          )}
                           {seg?.provider && (
                             <div
                               style={{ fontSize: "0.65rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}
@@ -319,7 +382,11 @@ export default function AudioSegmentsConsole({
                           )}
                         </td>
                         <td style={{ fontSize: "0.8rem", color: "var(--text-primary)", textAlign: "center" }}>
-                          {seg?.durationMs ? `${(seg.durationMs / 1000).toFixed(1)}s` : "--"}
+                          {seg?.durationMs
+                            ? `${(seg.durationMs / 1000).toFixed(1)}s`
+                            : isSceneHead && scene?.durationMs
+                            ? `${(scene.durationMs / 1000).toFixed(1)}s`
+                            : "--"}
                         </td>
                         <td>
                           {isReady && seg?.audioUrl ? (
@@ -333,6 +400,21 @@ export default function AudioSegmentsConsole({
                                 Download MP3
                               </a>
                             </div>
+                          ) : isSceneHead && scene?.audioUrl ? (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                              <audio src={scene.audioUrl} controls style={{ width: "140px", height: "24px" }} />
+                              <a
+                                href={scene.audioUrl}
+                                download={`scene-${scene.sceneIndex}.mp3`}
+                                style={{ fontSize: "0.7rem", color: "var(--accent-color)", textDecoration: "underline" }}
+                              >
+                                Download scene MP3
+                              </a>
+                            </div>
+                          ) : scene ? (
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>
+                              ▸ in scene {scene.sceneIndex + 1} (plays from #{scene.firstLineIndex + 1})
+                            </span>
                           ) : (
                             <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontStyle: "italic" }}>No audio</span>
                           )}
@@ -345,7 +427,7 @@ export default function AudioSegmentsConsole({
                               className="editButton"
                               style={{ fontSize: "0.75rem", padding: "0.2rem 0.4rem" }}
                             >
-                              {isReady ? "Regen" : isFailed ? "Retry" : "Generate"}
+                              {scene ? "Re-voice scene" : isReady ? "Regen" : isFailed ? "Retry" : "Generate"}
                             </button>
                           )}
                         </td>

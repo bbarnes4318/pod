@@ -46,6 +46,13 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
     include: {
       episode: true,
       audioSegments: true,
+      // Scene-mode audio lives here, NOT in audioSegments — without it a
+      // fully-voiced scene episode reports Ready 0 next to a status of
+      // audio_segments_ready, which reads as a failure it isn't.
+      dialogueScenes: {
+        where: { status: "ready", selected: true },
+        select: { lineIndexes: true },
+      },
       factCheckResults: {
         orderBy: { checkedAt: "desc" },
         take: 1,
@@ -60,12 +67,31 @@ export default async function AudioSegmentsDashboardPage({ searchParams }: PageP
       ? (s.content as any).segments.reduce((acc: number, seg: any) => acc + (seg.lines?.length || 0), 0)
       : 0;
 
-    const readyCount = s.audioSegments.filter((a) => a.status === "ready").length;
-    const failedCount = s.audioSegments.filter((a) => a.status === "failed").length;
-    const pendingCount = s.audioSegments.filter((a) => a.status === "pending" || a.status === "processing").length;
+    // Lines voiced by a selected, ready native scene. Counted alongside the
+    // per-line rows so scene, legacy and mixed_fallback episodes all report a
+    // truthful ready count.
+    const sceneVoicedLines = new Set<number>();
+    for (const scene of s.dialogueScenes) {
+      const indexes = Array.isArray(scene.lineIndexes) ? scene.lineIndexes : [];
+      for (const idx of indexes) {
+        if (typeof idx === "number") sceneVoicedLines.add(idx);
+      }
+    }
+    const readySegmentLines = new Set(
+      s.audioSegments.filter((a) => a.status === "ready").map((a) => a.lineIndex)
+    );
+    for (const idx of sceneVoicedLines) readySegmentLines.add(idx);
+
+    const readyCount = readySegmentLines.size;
+    const failedCount = s.audioSegments.filter(
+      (a) => a.status === "failed" && !sceneVoicedLines.has(a.lineIndex)
+    ).length;
+    const pendingCount = s.audioSegments.filter(
+      (a) => (a.status === "pending" || a.status === "processing") && !sceneVoicedLines.has(a.lineIndex)
+    ).length;
 
     // Load active host config for provider check
-    const provider = s.audioSegments[0]?.audioUrl
+    const provider = s.audioSegments[0]?.audioUrl || sceneVoicedLines.size > 0
       ? "TTS Run"
       : process.env.TTS_PROVIDER || "stub";
 
