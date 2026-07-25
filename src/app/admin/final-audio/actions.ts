@@ -65,9 +65,32 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
       segmentMap.set(seg.lineIndex, list);
     }
 
+    // Scene-mode coverage. The scene pipeline (PR #42) voices a whole scene as
+    // ONE render and deliberately leaves the legacy AudioSegment rows untouched,
+    // so a purely per-line count reports every line missing and permanently
+    // blocks the stitch on episodes whose audio is in fact complete. A line is
+    // voiced if a SELECTED, ready scene row covers it — the exact same filter
+    // the stitcher itself uses (sceneStitchingService: status ready + selected)
+    // — so this gate can never green-light audio the stitcher would not find.
+    // Unioning both sources also covers "mixed_fallback" runs, where some
+    // scenes rendered natively and the rest fell back to per-line segments.
+    const sceneRows = await db.dialogueSceneAudio.findMany({
+      where: { scriptId, status: "ready", selected: true },
+      select: { lineIndexes: true, audioUrl: true },
+    });
+    const sceneCoveredLines = new Set<number>();
+    for (const row of sceneRows) {
+      if (!row.audioUrl) continue;
+      const indexes = Array.isArray(row.lineIndexes) ? row.lineIndexes : [];
+      for (const idx of indexes) {
+        if (typeof idx === "number") sceneCoveredLines.add(idx);
+      }
+    }
+
     let missing = 0;
     let notReady = 0;
     for (const line of allLines) {
+      if (sceneCoveredLines.has(line.lineIndex)) continue;
       const list = segmentMap.get(line.lineIndex) || [];
       if (list.length === 0) {
         missing++;
@@ -90,7 +113,7 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
     if (!allReady) {
       return {
         eligible: false,
-        reason: `Audio not ready: ${readyCount} of ${allLines.length} lines have audio (${missing} missing, ${notReady} failed/not-ready). Generate the remaining segments in the Audio Segments console.`,
+        reason: `Audio not ready: ${readyCount} of ${allLines.length} lines have audio (${missing} missing, ${notReady} failed/not-ready)${sceneCoveredLines.size > 0 ? ` — ${sceneCoveredLines.size} of those are voiced by ${sceneRows.length} native scene(s)` : ""}. Generate the remaining audio from the Audio Segments console.`,
         details: { missing, failed: notReady, duplicate: 0, totalLines: allLines.length, ready: readyCount },
       };
     }
