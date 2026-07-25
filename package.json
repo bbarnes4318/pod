@@ -61,6 +61,7 @@
     "test:factcheck-semantic": "tsx --conditions=react-server src/scripts/testSemanticFactCheck.ts",
     "test:fact-numbers": "tsx src/scripts/testFactNumbers.ts",
     "test:self-verify": "tsx src/scripts/testSelfVerify.ts",
+    "test:antithesis": "tsx src/scripts/testAntithesis.ts",
     "test:evidence-context": "tsx src/scripts/testEvidenceContext.ts",
     "test:compliance": "tsx src/scripts/testCompliance.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
