@@ -39,16 +39,16 @@ function batchOf(
 
 const evidenceByRefId = new Map<string, string>([["f1", "Detroit hit three home runs in the win. The team is 48-38."]]);
 const fullEvidenceText = "Detroit hit three home runs in the win. The team is 48-38, second in the East.";
-const hostNames = ["Zabala", "Kemp"];
+const hostNames = ["Zabala", "Meachum"];
 
 function freshSegments() {
   return [
     {
       lines: [
         { lineIndex: 0, speakerName: "Zabala", isFactualClaim: true, text: "Five homers tonight — five!", evidenceRefs: [{ type: "game", id: "f1" }] }, // 5 vs 3
-        { lineIndex: 1, speakerName: "Kemp", isFactualClaim: true, text: "And Boone said they flat-out quit.", evidenceRefs: [{ type: "game", id: "f1" }] }, // invented quote
+        { lineIndex: 1, speakerName: "Meachum", isFactualClaim: true, text: "And Boone said they flat-out quit.", evidenceRefs: [{ type: "game", id: "f1" }] }, // invented quote
         { lineIndex: 2, speakerName: "Zabala", isFactualClaim: true, text: "They're 48-38, that's real.", evidenceRefs: [{ type: "game", id: "f1" }] }, // grounded
-        { lineIndex: 3, speakerName: "Kemp", isFactualClaim: false, text: "Oh, come on." }, // not a claim
+        { lineIndex: 3, speakerName: "Meachum", isFactualClaim: false, text: "Oh, come on." }, // not a claim
       ],
     },
   ];
@@ -130,7 +130,7 @@ async function main() {
       Promise.resolve(
         ctx.semanticReason ? { text: "The Orioles are 39-48, nine under — the Yankees are 48-38.", evidenceRefs: ctx.line.evidenceRefs } : null
       );
-    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: full, hostNames: ["Zabala", "Kemp"], rewrite: batchOf(rewrite), semanticReview, maxSemanticRounds: 2 });
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: full, hostNames: ["Zabala", "Meachum"], rewrite: batchOf(rewrite), semanticReview, maxSemanticRounds: 2 });
     assert(r.semantic.ran, "semantic pass ran");
     assert(r.semantic.linesFlagged === 1, `flagged 1, got ${r.semantic.linesFlagged}`);
     assert(r.semantic.linesCorrected === 1, `corrected 1, got ${r.semantic.linesCorrected}`);
@@ -143,7 +143,7 @@ async function main() {
     const evByRef = new Map<string, string>([["f1", "The Orioles are 39-48."]]);
     const semanticReview = async () => [{ lineIndex: 0, status: "needs_review", reason: "wrong subject" }]; // never satisfied
     const rewrite = (ctx: RewriteContext) => Promise.resolve(ctx.semanticReason ? { text: "The Yankees are 39-48." } : null); // no real change
-    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "The Orioles are 39-48.", hostNames: ["Zabala", "Kemp"], rewrite: batchOf(rewrite), semanticReview, maxSemanticRounds: 2 });
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "The Orioles are 39-48.", hostNames: ["Zabala", "Meachum"], rewrite: batchOf(rewrite), semanticReview, maxSemanticRounds: 2 });
     assert(r.semantic.rounds === 2, `expected 2 rounds, got ${r.semantic.rounds}`);
     assert(r.semantic.linesUnresolved === 1, `expected 1 unresolved, got ${r.semantic.linesUnresolved}`);
   });
@@ -152,7 +152,7 @@ async function main() {
     const segs = [{ lines: [{ lineIndex: 0, speakerName: "Zabala", isFactualClaim: true, text: "Five homers, and that's—", evidenceRefs: [{ type: "game", id: "f1" }] }] }];
     const evByRef = new Map<string, string>([["f1", "Detroit hit three home runs."]]);
     const rewrite = () => Promise.resolve({ text: "Three homers, and that's the story." }); // drops the dash + period
-    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "Detroit hit three home runs.", hostNames: ["Zabala", "Kemp"], rewrite: batchOf(rewrite), maxAttempts: 2 });
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId: evByRef, fullEvidenceText: "Detroit hit three home runs.", hostNames: ["Zabala", "Meachum"], rewrite: batchOf(rewrite), maxAttempts: 2 });
     assert(/—$/.test(segs[0].lines[0].text.trim()), `em-dash must be preserved, got: ${segs[0].lines[0].text}`);
     assert(r.linesCorrected === 1, "figure still corrected");
   });

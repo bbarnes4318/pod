@@ -31,10 +31,10 @@ function assert(cond: boolean, msg: string) {
 // Fixture script: an intro, a reaction fragment, an interruption (all
 // isFactualClaim:false), and ONE genuinely false factual claim.
 const LINES = [
-  { lineIndex: 0, speakerName: "Louie", text: "Welcome in — I'm Louie the Lip, that's Mickey.", isFactualClaim: false },
-  { lineIndex: 1, speakerName: "Louie", text: "It's a good start!", isFactualClaim: false },
-  { lineIndex: 2, speakerName: "Mickey", text: "[interrupting] So the man who said one game means nothin'—", isFactualClaim: false },
-  { lineIndex: 3, speakerName: "Mickey", text: "Skubal threw a perfect game with 27 strikeouts last night.", isFactualClaim: true }, // false claim
+  { lineIndex: 0, speakerName: "Zabala", text: "Welcome in — I'm Bernie Zabala, that's Ray Meachum.", isFactualClaim: false },
+  { lineIndex: 1, speakerName: "Zabala", text: "It's a good start!", isFactualClaim: false },
+  { lineIndex: 2, speakerName: "Meachum", text: "[interrupting] So the man who said one game means nothin'—", isFactualClaim: false },
+  { lineIndex: 3, speakerName: "Meachum", text: "Skubal threw a perfect game with 27 strikeouts last night.", isFactualClaim: true }, // false claim
 ];
 const factualByIndex = new Map<number, boolean>(LINES.map((l) => [l.lineIndex, l.isFactualClaim]));
 const originalFlatLines = LINES.map((l) => ({ lineIndex: l.lineIndex, speakerName: l.speakerName, text: l.text }));
@@ -135,10 +135,10 @@ function main() {
   (async () => {
     const flagged = await reviewFactualLinesForRewrite(stubProvider, {
       reviewLines: [
-        { lineIndex: 0, speakerName: "Louie", text: "Yankees are 39-48.", isFactualClaim: true },
-        { lineIndex: 1, speakerName: "Mickey", text: "Five homers.", isFactualClaim: true },
-        { lineIndex: 2, speakerName: "Louie", text: "Oh, come on.", isFactualClaim: false },
-        { lineIndex: 3, speakerName: "Mickey", text: "They're 48-38.", isFactualClaim: true },
+        { lineIndex: 0, speakerName: "Zabala", text: "Yankees are 39-48.", isFactualClaim: true },
+        { lineIndex: 1, speakerName: "Meachum", text: "Five homers.", isFactualClaim: true },
+        { lineIndex: 2, speakerName: "Zabala", text: "Oh, come on.", isFactualClaim: false },
+        { lineIndex: 3, speakerName: "Meachum", text: "They're 48-38.", isFactualClaim: true },
       ],
       evidencePanelItems: [{ detailText: "Orioles are 39-48. Yankees are 48-38." }],
       unsafeClaims: [],
