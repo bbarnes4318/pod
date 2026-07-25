@@ -43,7 +43,6 @@ import { getCreateProgressVM } from "@/lib/services/createProgress";
 import { validateEpisodeForRss, publishEpisode, prepareEpisodeForPublishing } from "@/lib/services/rssPublishingService";
 import { ensurePublishAssets, generateTitleOptions } from "@/lib/services/publishAssetsService";
 import { episodeHasBettingContent, scanProhibitedGamblingLanguage, checkGamblingCompliance } from "@/lib/services/compliance";
-import { stageForStatus } from "@/lib/createFlow";
 import { isValidVertical } from "@/lib/verticals";
 import { SEGMENT_MIN, SEGMENT_MAX } from "../podcasts/config";
 
@@ -337,124 +336,6 @@ export async function generateEpisodeAssets(episodeId: string) {
   } catch (err: any) {
     return { success: false as const, error: err.message || "Failed to build assets." };
   }
-}
-
-/**
- * REAL progress for the Create flow. This is the source the streaming UI polls:
- * it reflects Episode.status (written by the worker as each pipeline job
- * completes) plus the artifacts that have actually landed — the ResearchBrief,
- * the generated Script (with its lines), and the AudioSegment rows. No mock
- * stages; everything here is a live read of what the pipeline has produced.
- */
-export async function getCreateProgress(params: { topicId?: string; episodeId?: string }) {
-  const user = await currentUser();
-  if (!user) return { ok: false as const, error: "Please sign in." };
-
-  // Research brief (lives on the topic, before the episode exists).
-  let brief: null | {
-    present: boolean;
-    whyMattersNow: string | null;
-    mainAngle: string | null;
-    factCount: number;
-    argA: string | null;
-    argB: string | null;
-    talkingPoints: string[];
-  } = null;
-  if (params.topicId) {
-    const rb = await db.researchBrief.findUnique({ where: { topicId: params.topicId } });
-    if (rb) {
-      const facts = Array.isArray(rb.keyFactsContext) && rb.keyFactsContext.length
-        ? (rb.keyFactsContext as any[])
-        : Array.isArray(rb.facts) ? (rb.facts as any[]) : [];
-      const tps = Array.isArray(rb.onAirTalkingPoints) ? (rb.onAirTalkingPoints as any[]) : [];
-      brief = {
-        present: true,
-        whyMattersNow: rb.whyMattersNow ?? null,
-        mainAngle: rb.mainAngle ?? null,
-        factCount: facts.length,
-        argA: rb.argumentForHostA ?? null,
-        argB: rb.argumentForHostB ?? null,
-        talkingPoints: tps.map((t: any) => (typeof t === "string" ? t : String(t?.text || t?.point || ""))).filter(Boolean).slice(0, 6),
-      };
-    } else {
-      brief = { present: false, whyMattersNow: null, mainAngle: null, factCount: 0, argA: null, argB: null, talkingPoints: [] };
-    }
-  }
-
-  if (!params.episodeId) {
-    return { ok: true as const, stage: brief?.present ? "research" : "research", brief, episode: null, script: null, audio: null };
-  }
-
-  const episode = await db.episode.findUnique({
-    where: { id: params.episodeId },
-    select: { id: true, title: true, status: true, ownerId: true, audioUrl: true, durationSeconds: true, transcriptUrl: true },
-  });
-  if (!episode) return { ok: false as const, error: "Episode not found." };
-  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
-    return { ok: false as const, error: "That episode belongs to someone else." };
-  }
-
-  const scriptRow = await db.script.findFirst({
-    where: { episodeId: episode.id },
-    orderBy: { version: "desc" },
-    select: { id: true, version: true, status: true, content: true },
-  });
-
-  let script: null | {
-    present: boolean;
-    id: string;
-    version: number;
-    status: string;
-    lineCount: number;
-    estMinutes: number | null;
-    quality: number | null;
-    lines: { speaker: string; text: string; tone: string | null }[];
-  } = null;
-  if (scriptRow) {
-    const content = (scriptRow.content as any) || {};
-    const segs = Array.isArray(content.segments) ? content.segments : [];
-    const lines: { speaker: string; text: string; tone: string | null }[] = [];
-    for (const seg of segs) {
-      for (const ln of seg?.lines || []) {
-        if (!ln?.text) continue;
-        lines.push({ speaker: String(ln.speakerName || ""), text: String(ln.text), tone: ln.tone ?? null });
-      }
-    }
-    script = {
-      present: true,
-      id: scriptRow.id,
-      version: scriptRow.version,
-      status: scriptRow.status,
-      lineCount: lines.length,
-      estMinutes: typeof content.estimatedDurationMinutes === "number" ? content.estimatedDurationMinutes : null,
-      quality: content.quality && typeof content.quality.total === "number" ? content.quality.total : null,
-      lines: lines.slice(0, 400),
-    };
-  }
-
-  // Audio segments — how many lines have been voiced so far.
-  const [totalSegments, readySegments] = await Promise.all([
-    db.audioSegment.count({ where: { episodeId: episode.id } }),
-    db.audioSegment.count({ where: { episodeId: episode.id, status: "ready" } }),
-  ]);
-
-  const stage = stageForStatus(episode.status, !!scriptRow);
-
-  return {
-    ok: true as const,
-    stage,
-    brief,
-    episode: {
-      id: episode.id,
-      title: episode.title,
-      status: episode.status,
-      audioUrl: episode.audioUrl,
-      durationSeconds: episode.durationSeconds,
-      transcriptUrl: episode.transcriptUrl,
-    },
-    script,
-    audio: { totalSegments, readySegments },
-  };
 }
 
 /* ============================================================================
