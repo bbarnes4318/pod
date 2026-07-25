@@ -1942,7 +1942,7 @@ Rules:
 - Return valid JSON only with the schema below.
 
 SPECIFICITY REQUIREMENTS (this brief is ammunition for a debate show — generic summaries are useless):
-- Mine the articleExcerpt and research highlights for EXACT numbers, dates, records, scores, contract figures, and named people. Every keyFactsContext item should carry at least one concrete number or named person.
+- Mine the articleExcerpt and research highlights for EXACT numbers, dates, records, scores, contract figures, and named people. Every keyFactsContext item should carry at least one concrete number or named person. When a number comes from a research highlight, cite the DURABLE record that also carries it; if only research carries it, the item belongs in unsafeClaims.
 - Capture who-said-what: if the evidence contains a striking statement, include it as a SHORT paraphrase or a quote of at most 20 words with attribution ("per <source>"). NEVER copy longer passages verbatim.
 - Surface the CONFLICT: what changed, who is angry, what is at stake, what happens next. "Team is playing well" is not a fact worth writing down; "Team has won 7 of 9 since benching X, per <source>" is.
 - Aim for 8-12 keyFactsContext items and 4-6 onAirTalkingPoints when the evidence supports it.
@@ -1997,6 +1997,23 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     const llm = getLLMProvider();
     
     let llmResult: any;
+    // DURABLE-EVIDENCE PRECHECK. The brief is rejected at the end if nothing
+    // durable was cited, and routed research is stripped before that decision.
+    // A topic carrying only research therefore cannot pass, no matter what the
+    // model writes — so fail here instead of paying for a full generation and
+    // reporting it as a validation failure the operator cannot act on.
+    const durableEvidenceCount =
+      resolvedGames.length + resolvedNews.length + resolvedInjuries.length +
+      resolvedOdds.length + resolvedTeamStats.length + resolvedPlayerStats.length +
+      usableSources.length;
+    if (durableEvidenceCount === 0) {
+      throw new Error(
+        `Brief generation failed: topic has no durable evidence. ${researchResults.length} routed research result(s) were found, but routed research is transient and can never source a brief. ` +
+          `Import a source article for this topic, or re-run ingest so it has news/game/injury/odds records to cite.`
+      );
+    }
+    console.log(`[Worker] Brief evidence for topic=${topicId}: ${durableEvidenceCount} durable record(s), ${researchResults.length} transient research result(s).`);
+
     let parseErrorCount = 0;
     let providerError = null;
 

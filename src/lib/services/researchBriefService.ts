@@ -36,6 +36,11 @@ import {
 export const PROMPT_EVIDENCE_TYPES =
   `"game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "topicSource" | "research"`;
 
+/** The durable subset, shown to the model wherever it must be told that a
+ *  citation has to survive the end of the job. Mirrors DURABLE_EVIDENCE_TYPES. */
+export const PROMPT_DURABLE_EVIDENCE_TYPES =
+  `"game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "topicSource"`;
+
 export interface PacketTopicSource {
   id: string;
   canonicalUrl: string;
@@ -135,6 +140,14 @@ export function sourceRulesBlock(): string {
     "- NEVER cite a topicSource id that is not in the evidence packet below.",
     "- NEVER cite the topic itself as a source. The topic is the thing being researched. It can never serve as evidence for itself.",
     '- NEVER invent a "research-N" id. Only use ones present in the packet.',
+    // The gate below (and worker.ts) strips every research ref before deciding
+    // whether the brief is sourced. Saying so here keeps the prompt and the
+    // gate in agreement. Without this the model mines the research highlights,
+    // cites only research-N, and the brief is rejected after it is written.
+    '- "research-N" entries are BACKGROUND READING ONLY. They vanish when this job ends, so a citation to one proves nothing later.',
+    `- Because of that: every keyFactsContext item, every counterArgument, and BOTH host arguments must cite at least one DURABLE record (${PROMPT_DURABLE_EVIDENCE_TYPES}). Cite research-N only ALONGSIDE a durable ref, never on its own.`,
+    "- Research highlights may tell you WHERE to look and how to phrase a point. The durable record is what makes it publishable.",
+    "- A claim you can support only from research-N belongs in unsafeClaims. Writing it with a research-only citation gets the whole brief thrown away.",
     "- The topic's title, summary, angle and editorial notes are an EDITOR'S OPINION about what to look into. They are NOT facts and NOT evidence. Never restate them as verified, and never cite them.",
     "- Every factual item needs evidenceRefs. If the packet does not support a claim, put it in unsafeClaims rather than asserting it.",
   ].join("\n");
