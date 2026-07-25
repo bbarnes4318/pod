@@ -54,9 +54,9 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "solo briefing script",
         dynamicsContract: `SOLO DELIVERY CONTRACT (the engine of the show):
 - ${anchor.name} carries the WHOLE episode alone, talking straight to the listener — direct address ("you", "listen", "here's the thing") is the register.
-- The argument still has shape: stake out the take -> steelman the counter ("the other side of this says...") -> knock it down or concede a piece -> land the button. The anchor argues WITH THE LISTENER'S doubts, not with another host.
+- The argument still has shape: stake out the take -> steelman the counter ("the other side of this says...") -> knock it down or concede a piece -> land the button. The anchor argues with the listener's doubts. There is no second host to push against.
 - Self-interruption replaces host interruption: false starts, "wait, actually—", rhetorical questions answered immediately. "isInterruption" is ALWAYS false — there is no second voice to overlap.
-- Energy still varies: heat on the take, drop low for the aside, build again. A monologue at one energy level is a lecture, not a show.`,
+- Energy still varies: heat on the take, drop low for the aside, build again. A monologue at one energy level puts people to sleep. Move.`,
         extraSpeechRules: `\nSOLO FORMAT RULES:
 - EVERY line's speakerName is "${anchor.name}" — there is no other legal speaker.
 - "isInterruption" must be false on every line (no second voice exists).
@@ -98,7 +98,7 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         showDescriptor: "a conversational sports-radio podcast",
         scriptNoun: "sports-radio script",
         dynamicsContract: `SPORTS RADIO CONTRACT (the engine of the show):
-- ${lead.name} DRIVES: teases upcoming topics ("later this hour—"), sets the pace, hands off, and lands strong transitions. Conversational energy, not courtroom debate.
+- ${lead.name} DRIVES: teases upcoming topics ("later this hour—"), sets the pace, hands off, and lands strong transitions. Keep the energy conversational throughout.
 - ${co.name} RIDES ALONG: quick reactions, color, short natural interruptions — agrees, piles on, and needles as often as argues. NOT EVERY TOPIC BECOMES A DEBATE; some are riffs, some are quick hits.
 - NO forced chair-A/chair-B opposition: heat happens when it happens, and topics can end in agreement.${update ? `\n- ${update.name} is the UPDATE CHAIR: occasional factual resets and headlines ONLY, each grounded in supplied evidence — then straight back to the hosts.` : ""}
 - NEVER reference callers, off-mic producers, phone lines, or listener texts — none exist.`,
@@ -112,7 +112,7 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "news roundup script",
         dynamicsContract: `NEWS ROUNDUP CONTRACT (the engine of the show):
 - ${anchor.name} ANCHORS: each story opens HEADLINE-FIRST, then the supplied facts, in order of timeliness and importance. Transitions between stories are clean and efficient ("Next—", "Meanwhile—"); each rundown topic is one clearly-bounded story.
-- FACT vs ANALYSIS never blur: the anchor's factual delivery is grounded in evidence; anything interpretive is clearly framed as read ("here's what that means", "my read—").${analyst ? `\n- ${analyst.name} is the ANALYST: explains what a story MEANS — implications, stakes, context — and NEVER re-reads the anchor's facts back. No forced disagreement; this is explanation, not debate.` : ""}
+- FACT vs ANALYSIS never blur: the anchor's factual delivery is grounded in evidence; anything interpretive is clearly framed as read ("here's what that means", "my read—").${analyst ? `\n- ${analyst.name} is the ANALYST: explains what a story MEANS — implications, stakes, context — and NEVER re-reads the anchor's facts back. No forced disagreement. The analyst explains.` : ""}
 - The anchor OPENS and CLOSES the episode.`,
         extraSpeechRules: "",
       };
@@ -124,7 +124,7 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "host-and-expert script",
         dynamicsContract: `HOST & EXPERT CONTRACT (the engine of the show):
 - ${host.name} ASKS: grounded questions that set up the material, then FOLLOW-UPS that respond to what ${expert.name} just said — never a pre-written list marched through, never "great question"/"that's such a good point" filler.
-- ${expert.name} EXPLAINS: carries the substance with longer, evidence-grounded answers. ${expert.name} is a SYNTHETIC SHOW CHARACTER: never claim real-world credentials, employment, event attendance, insider access, or first-person experience of real events; expertise is voice and analysis, not biography.
+- ${expert.name} EXPLAINS: carries the substance with longer, evidence-grounded answers. ${expert.name} is a SYNTHETIC SHOW CHARACTER: never claim real-world credentials, employment, event attendance, insider access, or first-person experience of real events; expertise lives in voice and analysis. Invent no biography.
 - Questions that contain factual premises are held to the same evidence bar as answers — a question must not smuggle in an invented stat.
 - The expert speaks MORE than the host across the episode.`,
         extraSpeechRules: "",
@@ -166,12 +166,12 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "rapid-fire script",
         dynamicsContract: `RAPID FIRE CONTRACT (the engine of the show):
 - ${mod.name} MODERATES: fires SHORT prompts (one breath), enforces the clock, calls category changes crisply ("New category—"), keeps every respondent involved, and CLOSES with a quick scorecard/takeaway naming each respondent's best moment. The moderator OPENS and CLOSES.
-- Respondents (${respondents.map((r) => r.name).join(", ")}) answer FAST: every answer lands in roughly two sentences — a HARD CAP of about 45 words per line is enforced by validation, so an oversized answer is a defect, not a style choice.
+- Respondents (${respondents.map((r) => r.name).join(", ")}) answer FAST: every answer lands in roughly two sentences — a HARD CAP of about 45 words per line is enforced by validation, so validation rejects oversized answers.
 - No monologues, minimal filler, no wind-ups. Momentum is the show.
 - Every respondent gets real participation on every category.`,
         extraSpeechRules: `\nRAPID FIRE FORMAT RULES:
 - Keep EVERY line under ~45 words. Split longer thoughts into multiple quick lines only when genuinely needed.
-- The moderator's prompts are questions or category calls, not takes.`,
+- The moderator asks questions and calls categories. The moderator withholds their own take.`,
       };
     }
     default: {
@@ -183,10 +183,18 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "debate script",
         dynamicsContract: `CHEMISTRY CONTRACT (the engine of the show):
 - BOTH hosts are true believers with their OWN agenda, and they collide. Each argues from their own Worldview and Argument Patterns above, each trying to WIN — neither is the straight man, neither merely reacts. ${hostB.name} drives just as hard as ${hostA.name}: he presses attacks, goes on the offensive, overreaches, and gets heated when his worldview is insulted — he can be wrong, and he does NOT just absorb ${hostA.name}'s swings and calmly deflate them. Give ${hostB.name} a stake he defends and pushes, drawn from his own worldview (a "the public is late, emotional, and wrong" markets host ATTACKS the emotional take on its own terms — he doesn't merely fact-check it from the sidelines).
-- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates — heated, incredulous, raising their voice, pressing the attack. Both hosts spend time in the high-energy tones, not just one.
-- Concessions are earned, not scheduled: a host concedes only when genuinely cornered, grudgingly, and the other pounces — but no one is required to concede, and stubbornly refusing to give up an obvious point is itself in character.
+- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates — heated, incredulous, raising their voice, pressing the attack. Both hosts spend real time in the high-energy tones.
+- Concessions must be earned in the moment: a host concedes only when genuinely cornered, grudgingly, and the other pounces — but no one is required to concede, and stubbornly refusing to give up an obvious point is itself in character.
 - They know each other. Reference shared history when it lands ("You did this exact thing during the playoffs").
-- HUMOR IS ATTITUDE, NOT MATERIAL. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny is the delivery and the disdain, not a bit you insert on cue.`,
+- HUMOR COMES FROM ATTITUDE. Never write a setup and a punchline. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny lives in the delivery and the disdain. Never insert a bit on cue.
+- SENTENCE SHAPE — the hard one. Do NOT build lines out of balanced negation. Banned shapes:
+  "That's not X, that's Y" / "That wasn't X. That was Y." / "Same X. New Y." /
+  "You just described X" / "X, not Y." / "This isn't about X, it's about Y." / "Not a X, a Y."
+  You may use this shape ONCE in the entire episode, never in the first six lines, and only
+  when the host has actually earned it. Every other line carries its meaning some other way:
+  a number, a name, a thing that happened, a question, an interruption, or a flat refusal.
+- When a host would reach for a definition, make them reach for a memory instead. Concrete
+  objects and specific moments beat abstract contrast every time.`,
         extraSpeechRules: "",
       };
     }
