@@ -218,6 +218,37 @@ function envVoiceFor(
   return undefined;
 }
 
+/**
+ * Seat-keyed env fallback for the PROVIDERS, which receive a synthesis input
+ * rather than a host record and so have no slug to key on. Same order as the
+ * resolver's env layer minus the slug var: seat, then the deprecated named
+ * vars, then the provider's shared default.
+ *
+ * Providers deliberately do not warn here. They run once per line, and the
+ * resolver has already warned once per host for the same condition.
+ */
+export function seatFallbackVoice(
+  provider: string,
+  seatIndex?: number
+): { voiceId: string; scope: EnvVoiceScope } | undefined {
+  const bySeat = seatEnvVoice(provider, seatIndex);
+  if (bySeat) return { voiceId: bySeat, scope: "seat" };
+
+  const legacy = legacySeatEnvVoice(provider, seatIndex);
+  if (legacy) return { voiceId: legacy, scope: "legacy_seat" };
+
+  const shared = sharedEnvVoice(provider);
+  if (shared) return { voiceId: shared, scope: "shared" };
+
+  return undefined;
+}
+
+/** Stock per-seat voice for Cartesia when nothing is configured at all. */
+export function cartesiaSeatDefault(seatIndex?: number): string {
+  const seated = typeof seatIndex === "number" ? CARTESIA_SEAT_DEFAULTS[seatIndex] : undefined;
+  return seated || CARTESIA_GENERIC_DEFAULT;
+}
+
 /** Find this host's entry in an overrides map — slug key preferred, id accepted. */
 function overrideFor(
   overrides: TtsVoiceOverrides | null | undefined,
@@ -304,11 +335,8 @@ export function resolveTtsProviderAndVoice(input: ResolveTtsInput): ResolvedTtsV
       // Fish works without a reference_id (engine default voice); empty means
       // "send no reference_id".
       return { provider, voiceId: "", voiceSource: "provider_default" };
-    case "cartesia": {
-      const seated =
-        typeof host.seatIndex === "number" ? CARTESIA_SEAT_DEFAULTS[host.seatIndex] : undefined;
-      return { provider, voiceId: seated || CARTESIA_GENERIC_DEFAULT, voiceSource: "provider_default" };
-    }
+    case "cartesia":
+      return { provider, voiceId: cartesiaSeatDefault(host.seatIndex), voiceSource: "provider_default" };
     default:
       throw new Error(
         `No voice ID configured for provider ${provider} and host ${host.name}. ` +

@@ -461,6 +461,7 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
             text: sanitizeForGenericTts(l.text),
             voiceId: resolved.voiceId,
             speakerName: l.speakerName,
+            seatIndex: castByHostId.get(l.speakerHostId)?.orderIndex,
             tone: l.tone ?? undefined,
             energy: (l.energy as "low" | "medium" | "high") ?? undefined,
             isInterruption: l.isInterruption === true,

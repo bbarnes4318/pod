@@ -43,7 +43,8 @@ async function main() {
       const res = await provider.synthesizeSpeech({
         text: LINE.text,
         voiceId: "",
-        speakerName: "Max Voltage",
+        speakerName: 'Bernadette "Line Two" Zabala',
+        seatIndex: 0,
         tone: LINE.tone,
         energy: LINE.energy,
         isInterruption: LINE.isInterruption,

@@ -378,6 +378,72 @@ check("no voice anywhere warns before the engine default", () => {
   assertEqual(warnings.length, 1, "warning count");
 });
 
+console.log("Meachum acceptance (the ticket's three bullets, offline):");
+
+const MEACHUM_OWN = "36780e7121b84d5c9c24cbd2f15eaaa4";
+const meachumSeeded: HostVoiceContext = {
+  id: "meachum-id",
+  slug: "ray-forty-one",
+  name: 'Ray "Forty-One" Meachum',
+  ttsProvider: "fish",
+  ttsVoiceId: MEACHUM_OWN,
+  seatIndex: 1,
+};
+
+check("his own reference id wins with FISH_TTS_VOICE unset", () => {
+  clearVoiceEnv();
+  const r = resolveTtsProviderAndVoice({ providerOverride: "fish", host: meachumSeeded });
+  assertEqual(r.voiceId, MEACHUM_OWN, "voiceId");
+  assertEqual(r.voiceSource, "host_default", "voiceSource");
+});
+
+check("FISH_HOST_B_VOICE_ID set + his voice cleared resolves to seat B, no warning", () => {
+  clearVoiceEnv();
+  process.env.FISH_HOST_B_VOICE_ID = FISH_B;
+  process.env.FISH_TTS_VOICE = FISH_SHARED;
+  let r: ReturnType<typeof resolveTtsProviderAndVoice> | undefined;
+  const warnings = captureWarnings(() => {
+    r = resolveTtsProviderAndVoice({
+      providerOverride: "fish",
+      host: { ...meachumSeeded, ttsVoiceId: null },
+    });
+  });
+  assertEqual(r?.voiceId, FISH_B, "voiceId");
+  assertEqual(warnings.length, 0, "warning count");
+});
+
+check("both unset falls to shared AND warns, naming him and seat B", () => {
+  clearVoiceEnv();
+  process.env.FISH_TTS_VOICE = FISH_SHARED;
+  let r: ReturnType<typeof resolveTtsProviderAndVoice> | undefined;
+  const warnings = captureWarnings(() => {
+    r = resolveTtsProviderAndVoice({
+      providerOverride: "fish",
+      host: { ...meachumSeeded, ttsVoiceId: null },
+    });
+  });
+  assertEqual(r?.voiceId, FISH_SHARED, "voiceId");
+  assertEqual(warnings.length, 1, "warning count");
+  if (!warnings[0].includes("Meachum") || !warnings[0].includes("seat B")) {
+    throw new Error(`warning does not name host and seat: ${warnings[0]}`);
+  }
+});
+
+check("Zabala and Meachum never collapse onto the same Fish voice", () => {
+  clearVoiceEnv();
+  process.env.FISH_HOST_A_VOICE_ID = FISH_A;
+  process.env.FISH_HOST_B_VOICE_ID = FISH_B;
+  const a = resolveTtsProviderAndVoice({
+    providerOverride: "fish",
+    host: { ...zabala, ttsProvider: "fish", ttsVoiceId: null, seatIndex: 0 },
+  });
+  const b = resolveTtsProviderAndVoice({
+    providerOverride: "fish",
+    host: { ...meachumSeeded, ttsVoiceId: null },
+  });
+  if (a.voiceId === b.voiceId) throw new Error(`both chairs resolved to ${a.voiceId}`);
+});
+
 check("Cartesia stock fallbacks are keyed by seat, so two chairs stay distinct", () => {
   clearVoiceEnv();
   const a = resolveTtsProviderAndVoice({

@@ -359,6 +359,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
           text: sanitizedText,
           voiceId: resolved.voiceId,
           speakerName: line.speakerName,
+          seatIndex: seatByHostId.get(line.speakerHostId),
           tone: line.tone,
           energy: line.energy,
           isInterruption: line.isInterruption === true,
