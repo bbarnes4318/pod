@@ -44,14 +44,16 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `DATABASE_URL` | Connection URL for PostgreSQL | `postgresql://<user>:<password>@<host>:5432/<database>` |
 | `REDIS_URL` | Connection URL for Redis queue | `redis://default:<password>@<host>:6379` |
 | `RSS_PREVIEW_TOKEN` | Auth token for private feed previews | A strong, random alphanumeric string used for `/rss/preview?token=<token>` |
-| `LLM_PROVIDER` | AI script/brief generation provider | `openai` |
-| `OPENAI_API_KEY` | OpenAI authentication key | `sk-proj-...` |
-| `OPENAI_MODEL` | OpenAI Model target | `gpt-5.5` |
-| `TTS_PROVIDER` | Speech synthesis provider | `elevenlabs` |
-| `ELEVENLABS_API_KEY` | ElevenLabs API credential key | `sk_...` |
-| `ELEVENLABS_MODEL` | ElevenLabs model target | `eleven_v3` |
-| `ELEVENLABS_MAX_VOLTAGE_VOICE_ID` | Max Voltage voice identifier | Active ElevenLabs voice ID |
-| `ELEVENLABS_DR_LINEBREAK_VOICE_ID` | Dr. Linebreak voice identifier | Active ElevenLabs voice ID |
+| `LLM_PROVIDER` | Topics, research briefs, classification, show notes | `anthropic` |
+| `ANTHROPIC_API_KEY` | Anthropic authentication key | `sk-ant-...` |
+| `ANTHROPIC_MODEL` | Model for the non-writing stages | `claude-sonnet-5` |
+| `SCRIPT_LLM_PROVIDER` | Overrides the provider for script writing only | `anthropic` |
+| `SCRIPT_LLM_MODEL` | Model for script outline + acts (the quality-critical stage) | `claude-opus-5` |
+| `TTS_PROVIDER` | Speech synthesis provider | `fish` |
+| `FISH_API_KEY` | Fish Audio API credential key | `...` |
+| `FISH_MODEL` | Fish Audio model target | `s2.1-pro-free` |
+| `FISH_ZABALA_VOICE_ID` | Bernadette "Line Two" Zabala voice (seat A) — optional, read by the seed | 32-hex Fish reference ID |
+| `FISH_KEMP_VOICE_ID` | Otis "Laminate" Kemp voice (seat B) — optional, read by the seed | 32-hex Fish reference ID |
 | `SPORTS_PROVIDER` | Sports news/data provider | `api-sports` |
 | `API_SPORTS_KEY` | API-Sports authorization key | API key from provider |
 

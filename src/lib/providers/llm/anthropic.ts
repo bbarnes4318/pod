@@ -2,10 +2,10 @@ import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOpt
 import { recordLlmCall } from "./costLedger";
 
 /**
- * Anthropic Claude provider, hardened for modern models (Opus 4.7/4.8,
+ * Anthropic Claude provider, hardened for modern models (Opus 5, Opus 4.7/4.8,
  * Sonnet 5, Fable 5):
  *
- * - Model-aware parameters: Opus 4.7+/Sonnet 5/Fable 5 REJECT temperature/
+ * - Model-aware parameters: Opus 4.7+/Opus 5/Sonnet 5/Fable 5 REJECT temperature/
  *   top_p/top_k with a 400 — we only send temperature to models that accept
  *   it. Adaptive thinking is enabled on models that support it (it is NOT on
  *   by default on Opus 4.7/4.8 when the field is omitted).
@@ -30,19 +30,26 @@ export class AnthropicLLMProvider implements LLMProvider {
       throw new Error("[Anthropic] Missing or default ANTHROPIC_API_KEY environment variable. Set ANTHROPIC_API_KEY to use Claude for script generation.");
     }
     this.apiKey = key;
-    this.model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-opus-4-8";
+    this.model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-opus-5";
   }
 
   getAccumulatedUsage(): LLMUsage {
     return { ...this.usage };
   }
 
-  /** Opus 4.7+, Sonnet 5, and Fable 5 reject sampling params (400). */
+  /**
+   * Opus 4.7+, Opus 5, Sonnet 5, and Fable 5 reject sampling params (400).
+   * Matched by substring: "opus-5" cannot collide with "opus-4-5", and the
+   * dated legacy ids (opus-4-5-20251101) keep their own separate entries.
+   * A model NOT listed here is assumed to be an older one that still accepts
+   * temperature — adding a new frontier model means adding it to both lists.
+   */
   private supportsSampling(): boolean {
     const m = this.model.toLowerCase();
     return !(
       m.includes("opus-4-7") ||
       m.includes("opus-4-8") ||
+      m.includes("opus-5") ||
       m.includes("sonnet-5") ||
       m.includes("fable") ||
       m.includes("mythos")
@@ -56,6 +63,7 @@ export class AnthropicLLMProvider implements LLMProvider {
       m.includes("opus-4-6") ||
       m.includes("opus-4-7") ||
       m.includes("opus-4-8") ||
+      m.includes("opus-5") ||
       m.includes("sonnet-4-6") ||
       m.includes("sonnet-5") ||
       m.includes("fable") ||
@@ -99,6 +107,14 @@ export class AnthropicLLMProvider implements LLMProvider {
       // whatever the model produces.
       const headroom = Number(process.env.LLM_THINKING_HEADROOM_TOKENS) || 8192;
       body.max_tokens = (options.maxTokens || 8192) + headroom;
+    }
+    // Effort is the cost/quality dial that replaced sampling params on these
+    // models (API default is "high"). Left unset unless an operator opts in,
+    // so behavior is unchanged until someone deliberately tunes it. Applies
+    // only where adaptive thinking does — older models reject output_config.
+    const effort = (process.env.LLM_EFFORT || "").trim().toLowerCase();
+    if (effort && this.supportsAdaptiveThinking()) {
+      body.output_config = { effort };
     }
     return body;
   }

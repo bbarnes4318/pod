@@ -334,8 +334,12 @@ export function assertProductionEnv(): void {
     throw new Error(`Unsupported RESEARCH_PROVIDER: ${research}`);
   }
   // 4. TTS Provider Checks
-  const tts = (process.env.TTS_PROVIDER || "elevenlabs").trim().toLowerCase();
-  if (tts === "boson") {
+  const tts = (process.env.TTS_PROVIDER || "fish").trim().toLowerCase();
+  if (tts === "fish") {
+    if (getFishTtsStatus() !== "CONFIGURED") {
+      throw new Error("Missing required production env var: FISH_API_KEY when TTS_PROVIDER=fish");
+    }
+  } else if (tts === "boson") {
     if (getBosonTtsStatus() !== "CONFIGURED") {
       throw new Error("Missing required production env var: BOSON_API_KEY");
     }

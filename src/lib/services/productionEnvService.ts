@@ -113,15 +113,35 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   checkRequired("S3_SECRET_ACCESS_KEY", true);
   checkRequired("S3_PUBLIC_BASE_URL");
 
-  // 4. LLM
+  // 4. LLM — validate the keys the CONFIGURED provider actually needs. The
+  // chain is SCRIPT_LLM_PROVIDER (script writing) > LLM_PROVIDER (everything
+  // else), so both are resolved and every provider in play gets checked.
   checkRequired("LLM_PROVIDER");
-  checkRequired("OPENAI_API_KEY", true);
-  checkRequired("OPENAI_MODEL");
+  const baseLlm = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
+  const scriptLlm = (process.env.SCRIPT_LLM_PROVIDER || baseLlm).trim().toLowerCase();
+  const llmProviders = new Set([baseLlm, scriptLlm].filter(Boolean));
+  if (llmProviders.has("anthropic")) {
+    checkRequired("ANTHROPIC_API_KEY", true);
+    checkRequired("ANTHROPIC_MODEL");
+  }
+  if (llmProviders.has("openai")) {
+    checkRequired("OPENAI_API_KEY", true);
+    checkRequired("OPENAI_MODEL");
+  }
+  if (llmProviders.has("stub")) {
+    checks.push({ key: "LLM_PROVIDER", status: "fail", value: "stub", message: "LLM_PROVIDER=stub is not a real provider — set anthropic in production." });
+  }
 
   // 5. Providers Specifics
-  const ttsProvider = process.env.TTS_PROVIDER || "elevenlabs";
+  const ttsProvider = (process.env.TTS_PROVIDER || "fish").trim().toLowerCase();
   checkRequired("TTS_PROVIDER");
-  if (ttsProvider === "elevenlabs") {
+  if (ttsProvider === "fish") {
+    checkRequired("FISH_API_KEY", true);
+    checkRequired("FISH_MODEL");
+    checkOptional("ELEVENLABS_API_KEY", true);
+    checkOptional("BOSON_API_KEY", true);
+    checkOptional("CARTESIA_API_KEY", true);
+  } else if (ttsProvider === "elevenlabs") {
     checkRequired("ELEVENLABS_API_KEY", true);
     checkRequired("ELEVENLABS_MODEL");
     checkRequired("ELEVENLABS_MAX_VOLTAGE_VOICE_ID");

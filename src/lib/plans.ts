@@ -13,7 +13,7 @@ export interface PlanConfig {
   blurb: string;
   /** Episodes an account may GENERATE per calendar month. null = unlimited. */
   maxEpisodesPerMonth: number | null;
-  /** May use premium TTS engines (ElevenLabs/Cartesia/Fish/Boson) at generation. */
+  /** May use premium TTS engines (ElevenLabs/Cartesia/Boson) at generation. */
   premiumVoices: boolean;
   /** Podcasts (shows) an account may own. null = unlimited. */
   maxPodcasts: number | null;
@@ -39,7 +39,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     features: [
       "4 episodes / month",
       "1 podcast",
-      "Standard voices (OpenAI)",
+      "Standard voices (Fish Audio)",
       "Public RSS + downloads",
       "Analytics",
     ],
@@ -57,7 +57,7 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     features: [
       "30 episodes / month",
       "Up to 5 podcasts",
-      "Premium voices (ElevenLabs, Cartesia, Fish, Boson)",
+      "Premium voices (ElevenLabs, Cartesia, Boson)",
       "Advanced Producer controls",
       "Social clips",
     ],
@@ -111,9 +111,12 @@ export const OWNER_PLAN: PlanConfig = {
   ],
 };
 
-/** TTS engines that count as "premium" and require a premium-voices plan. The
- *  stub + OpenAI engines are the free tier's standard voices. */
-export const PREMIUM_TTS_PROVIDERS = ["elevenlabs", "cartesia", "fish", "boson"] as const;
+/** TTS engines that count as "premium" and require a premium-voices plan.
+ *  Fish is NOT premium: it is the platform default engine, so every plan is
+ *  already generating with it whenever a user doesn't override the provider.
+ *  Gating it would only have blocked users from naming the engine they were
+ *  being given anyway — and OpenAI, the old free-tier engine, is gone. */
+export const PREMIUM_TTS_PROVIDERS = ["elevenlabs", "cartesia", "boson"] as const;
 
 export function isPlanId(v: unknown): v is PlanId {
   return typeof v === "string" && (PLAN_ORDER as string[]).includes(v);
