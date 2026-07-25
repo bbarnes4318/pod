@@ -6,33 +6,45 @@ export interface NextAction {
   stage: string;
 }
 
-/** Map an episode's pipeline status to the user's next move. */
-export function nextActionFor(episode: { id: string; status: string }, scriptId?: string | null): NextAction {
-  const s = episode.status;
-  const sid = scriptId || "";
-  switch (s) {
+/**
+ * Map an episode's pipeline status to the user's next move.
+ *
+ * Every destination stays inside /studio. These labels are shown to customers,
+ * and the /admin console is operator-only and Basic-Auth locked — the previous
+ * version pointed a customer at /admin/scripts, /admin/final-audio, and friends
+ * ("Stitching now — watch progress" sent them to the ops console), which is a
+ * dead end for anyone who isn't an operator. In-studio equivalents now exist:
+ * the production console covers progress, and the episode tabs are addressable
+ * by hash (see EpisodeWorkspace).
+ *
+ * Ops shortcuts are still reachable — the episode page keeps them behind an
+ * explicit "Advanced / ops shortcuts" disclosure.
+ */
+export function nextActionFor(episode: { id: string; status: string }): NextAction {
+  const ep = `/studio/episodes/${episode.id}`;
+  switch (episode.status) {
     case "draft":
-      return { stage: "Script", label: "Write the script", href: "/admin/episodes" };
+      return { stage: "Script", label: "Watch it being written", href: ep };
     case "script_draft":
-      return { stage: "Script", label: "Review & approve the script", href: sid ? `/admin/scripts/${sid}` : "/admin/scripts" };
+      return { stage: "Script", label: "Read & approve the script", href: `${ep}#transcript` };
     case "script_approved":
-      return { stage: "Fact check", label: "Run the fact check", href: "/admin/fact-checks" };
+      return { stage: "Fact check", label: "Check the claims", href: `${ep}#transcript` };
     case "fact_checked":
-      return { stage: "Voices", label: "Generate the voices", href: sid ? `/admin/audio-segments/${sid}` : "/admin/audio-segments" };
+      return { stage: "Voices", label: "Record the voices", href: `${ep}#produce` };
     case "audio_segments_ready":
-      return { stage: "Mix", label: "Stitch the episode", href: sid ? `/admin/final-audio/${sid}` : "/admin/final-audio" };
+      return { stage: "Mix", label: "Mix the episode", href: `${ep}#produce` };
     case "audio_stitching":
-      return { stage: "Mix", label: "Stitching now — watch progress", href: sid ? `/admin/final-audio/${sid}` : "/admin/final-audio" };
+      return { stage: "Mix", label: "Mixing now — watch progress", href: ep };
     case "audio_ready":
-      return { stage: "Package", label: "Create show notes & assets", href: sid ? `/admin/content-assets/${sid}` : "/admin/content-assets" };
+      return { stage: "Package", label: "Create show notes & assets", href: `${ep}#publish` };
     case "content_ready":
-      return { stage: "Package", label: "Prep publishing metadata", href: sid ? `/admin/content-assets/${sid}` : "/admin/content-assets" };
+      return { stage: "Package", label: "Prep publishing metadata", href: `${ep}#publish` };
     case "publish_ready":
-      return { stage: "Publish", label: "Publish to the feed", href: sid ? `/admin/rss/${sid}` : "/admin/rss" };
+      return { stage: "Publish", label: "Publish to the feed", href: `${ep}#publish` };
     case "published":
       return { stage: "Live", label: "View in feed", href: "/rss" };
     default:
-      return { stage: "Pipeline", label: "Open pipeline", href: "/admin/episodes" };
+      return { stage: "Pipeline", label: "Open episode", href: ep };
   }
 }
 

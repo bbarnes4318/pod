@@ -13,6 +13,8 @@ import EpisodeDiversityPanel from "./EpisodeDiversityPanel";
 import PublishPanel from "../../PublishPanel";
 import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
 import SocialClipPanel from "../../SocialClipPanel";
+import ProductionConsole from "../../ProductionConsole";
+import { getCreateProgressVM } from "@/lib/services/createProgress";
 import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
 export const dynamic = "force-dynamic";
@@ -130,7 +132,11 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   }));
 
   const chip = statusChip(episode.status);
-  const action = nextActionFor(episode, script?.id);
+  const action = nextActionFor(episode);
+
+  // Seed the production console server-side so the pre-audio state paints with
+  // real progress instead of a skeleton. Only needed while there is no master.
+  const progressVm = episode.audioUrl ? null : await getCreateProgressVM(episode.id);
 
   // ---- Overview tab: quality breakdown + quick actions (the calm landing) ----
   const overviewNode = (
@@ -272,13 +278,11 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           hostNames={[hostA.name, hostB.name]}
         />
       ) : (
-        <div className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>No audio yet</div>
-            <div style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>This episode is still in the {action.stage.toLowerCase()} stage.</div>
-          </div>
-          <Link href={action.href} className="btnPrimary">{action.label} →</Link>
-        </div>
+        /* Until there is audio, this slot is the LIVE production console rather
+           than a static "No audio yet" card. It polls real pipeline state, so
+           the page no longer requires a manual browser refresh to progress. The
+           first read is done here on the server, so it paints already-populated. */
+        <ProductionConsole episodeId={episode.id} initialVm={progressVm ?? undefined} />
       )}
 
       {/* ---- Everything else, organized into one focused tab at a time ---- */}

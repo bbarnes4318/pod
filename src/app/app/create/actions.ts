@@ -39,6 +39,7 @@ import { shouldFailStartDebate, shouldStubQueue } from "@/lib/e2eSeam";
 import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
+import { getCreateProgressVM } from "@/lib/services/createProgress";
 import { validateEpisodeForRss, publishEpisode, prepareEpisodeForPublishing } from "@/lib/services/rssPublishingService";
 import { ensurePublishAssets, generateTitleOptions } from "@/lib/services/publishAssetsService";
 import { episodeHasBettingContent, scanProhibitedGamblingLanguage, checkGamblingCompliance } from "@/lib/services/compliance";
@@ -741,6 +742,73 @@ export async function getMixView(episodeId: string) {
     return { ok: false as const, error: "That episode belongs to someone else." };
   }
   return getEpisodeMixVM(episodeId);
+}
+
+/* ============================================================================
+ * PRODUCTION CONSOLE — live progress + per-stage retry (owner-gated).
+ * ========================================================================== */
+
+/**
+ * Live production progress for the studio console. Owner-gated, and a pure read
+ * — safe to poll. The VM tells the client how long to wait before asking again
+ * (and returns pollAfterMs: 0 once nothing more will change on its own).
+ */
+export async function getEpisodeProgress(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return { ok: false as const, error: gate.error.error };
+  return getCreateProgressVM(episodeId);
+}
+
+/**
+ * Re-enqueue the job for a stage that failed. Each branch re-runs exactly the
+ * job the pipeline would have run itself — no stage is skipped and no status is
+ * hand-edited, so a retried episode follows the identical path to a clean one.
+ */
+export async function retryProductionStage(episodeId: string, stageKey: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  const scriptId = gate.scriptId;
+  const needsScript = (): string | null =>
+    scriptId ? null : "There's no script to retry against yet.";
+  try {
+    switch (stageKey) {
+      case "script":
+        await queueScriptGenerationJob({ episodeId, forceRegenerate: true });
+        break;
+      case "factcheck": {
+        const miss = needsScript();
+        if (miss) return { success: false as const, error: miss };
+        await queueFactCheckJob({ scriptId: scriptId!, forceRecheck: true });
+        break;
+      }
+      case "voices": {
+        const miss = needsScript();
+        if (miss) return { success: false as const, error: miss };
+        // Not forceRegenerate: already-voiced lines are kept, so a retry picks
+        // up where the failed run stopped instead of re-billing every line.
+        await queueTtsSegmentGenerationJob({ scriptId: scriptId! });
+        break;
+      }
+      case "mix": {
+        const miss = needsScript();
+        if (miss) return { success: false as const, error: miss };
+        await queueFinalAudioStitchJob({ scriptId: scriptId! });
+        break;
+      }
+      case "assets": {
+        const miss = needsScript();
+        if (miss) return { success: false as const, error: miss };
+        await queueContentAssetGenerationJob({ scriptId: scriptId! });
+        break;
+      }
+      default:
+        return { success: false as const, error: "That stage can't be retried." };
+    }
+    revalidatePath(`/studio/episodes/${episodeId}`);
+    return { success: true as const };
+  } catch (err: any) {
+    return { success: false as const, error: err?.message || "Couldn't restart that step." };
+  }
 }
 
 /* ============================================================================

@@ -178,7 +178,12 @@ export default function SocialClipPanel({ episodeId }: { episodeId: string }) {
                   {c.captionsUrl && <a className="btnGhost clipDl" href={c.captionsUrl} download>⬇ Captions</a>}
                 </div>
               )}
-              {(c.status === "pending" || c.status === "rendering") && <span className="clipSpin">rendering…</span>}
+              {(c.status === "pending" || c.status === "rendering") && (
+                <span className="clipSpin" role="status">
+                  <span className="btnSpin" aria-hidden="true" />
+                  {c.status === "pending" ? "queued…" : "rendering…"}
+                </span>
+              )}
               {c.error && <div className="clipErr">{c.error}</div>}
             </div>
           ))}

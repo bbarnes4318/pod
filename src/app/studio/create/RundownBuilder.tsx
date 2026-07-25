@@ -23,6 +23,7 @@ import { MAX_DESCRIPTION_LEN } from "@/lib/episodeLimits";
 // Shared rundown core — the SAME picker/tray Admin uses (src/components/rundown).
 import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
 import RundownTray from "@/components/rundown/RundownTray";
+import ProductionConsole from "../ProductionConsole";
 
 type Mode = "manual" | "automatic" | "hybrid";
 export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; }
@@ -356,7 +357,7 @@ export default function RundownBuilder({
           )}
           <div className="rundownTwoCol">
             <div>
-              {loadingTopics ? <div className="studioCard emptyNote">Loading takes…</div> : (
+              {loadingTopics ? <TopicPickerSkeleton /> : (
                 <TopicRundownPicker topics={topics} selectedIds={selectedIds} onToggle={toggleTopic} selectionDisabled={mode === "automatic"} podcastScoped={podcastScoped} announce={announce} />
               )}
             </div>
@@ -551,7 +552,8 @@ function ReviewStep({
       {!validation.ok && <p role="alert" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{validation.error}</p>}
       <div className="stageActions">
         <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
-        <button type="button" data-testid="create-episode" className="btnPrimary" onClick={onSubmit} disabled={!validation.ok || submitting} style={{ marginLeft: "auto" }}>
+        <button type="button" data-testid="create-episode" className="btnPrimary" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting} style={{ marginLeft: "auto" }}>
+          {submitting && <span className="btnSpin" aria-hidden="true" />}
           {submitting ? "Creating…" : "Create episode"}
         </button>
       </div>
@@ -563,6 +565,7 @@ function ReviewStep({
 function ResultView({ result, topicsById }: { result: Extract<CreateResult, { success: true }>; topicsById: Map<string, StudioTopicVM> }) {
   const reduced = result.finalOrder.length < result.requestedCount;
   const [starting, setStarting] = useState(false);
+  const [started, setStarted] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const start = async () => {
     setStarting(true); setStartError(null);
@@ -570,11 +573,23 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
       if (!result.episodeId) throw new Error("No episode id.");
       const res = (await startDebate(result.episodeId)) as { success?: boolean; error?: string };
       if (res && res.success === false) { setStartError(res.error || "Couldn't start the debate."); return; }
-      window.location.href = `/studio/episodes/${result.episodeId}`;
+      // Stay put and hand over to the live console. The old behaviour was a hard
+      // window.location navigation into a server-rendered page that showed no
+      // progress — a white flash followed by a static card.
+      setStarted(true);
     } catch (e) {
       setStartError(e instanceof Error ? e.message : "Couldn't start the debate.");
     } finally { setStarting(false); }
   };
+
+  if (started && result.episodeId) {
+    return (
+      <div className="fadeUp">
+        <ProductionConsole episodeId={result.episodeId} offEpisodePage />
+      </div>
+    );
+  }
+
   return (
     <div className="studioCard">
       <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎬 Episode created</h2>
@@ -602,10 +617,31 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
       {startError && <p role="alert" data-testid="start-error" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{startError}</p>}
       <div className="stageActions" style={{ marginTop: "1rem" }}>
         <Link href={`/studio/episodes/${result.episodeId}`} className="btnGhost">Open episode</Link>
-        <button type="button" data-testid="start-debate" className="btnPrimary" style={{ marginLeft: "auto" }} disabled={starting} onClick={start}>
+        <button type="button" data-testid="start-debate" className="btnPrimary" style={{ marginLeft: "auto" }} disabled={starting} aria-busy={starting} onClick={start}>
+          {starting && <span className="btnSpin" aria-hidden="true" />}
           {starting ? "Starting…" : "Start the debate →"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/** Re-scoping the board to another show refetches the topic pool. Hold the
+ *  column's shape with take-card placeholders instead of collapsing it to a
+ *  line of text, which used to make the whole picker jump. */
+function TopicPickerSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading takes" style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="skelBlock">
+          <div className="skelRow" style={{ marginBottom: "0.9rem" }}>
+            <div className="skelChip" />
+            <div className="skelChip" style={{ width: 60 }} />
+          </div>
+          <div className="skelLine" />
+          <div className="skelLine skelLine--short" />
+        </div>
+      ))}
     </div>
   );
 }

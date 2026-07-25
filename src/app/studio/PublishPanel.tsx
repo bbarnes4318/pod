@@ -8,6 +8,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { getPublishState, preparePublishAssets, setEpisodeTitle, publishOwnedEpisode } from "../app/create/actions";
+import PanelSkeleton from "./PanelSkeleton";
 
 type PublishState = Awaited<ReturnType<typeof getPublishState>>;
 type PrepareResult = Awaited<ReturnType<typeof preparePublishAssets>>;
@@ -26,7 +27,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  if (!st) return <div className="stageHint">Loading publish status…</div>;
+  if (!st) return <PanelSkeleton label="Loading publish status" rows={4} />;
   if (!st.ok) return <div className="emptyNote">{st.error}</div>;
 
   const base = origin || "";

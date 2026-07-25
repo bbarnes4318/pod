@@ -81,6 +81,7 @@
     "lint:changed": "node scripts/lintChanged.js",
     "test:concurrency-prod-path": "tsx --conditions=react-server src/scripts/testEpisodeConcurrencyProdPath.ts",
     "test:studio-rundown": "tsx --conditions=react-server src/scripts/testStudioRundown.ts",
+    "test:production-progress": "tsx --conditions=react-server src/scripts/testProductionProgress.ts",
     "test:admin-rundown": "tsx --conditions=react-server src/scripts/testAdminRundown.ts",
     "test:url-security": "tsx --conditions=react-server src/scripts/testUrlSecurity.ts",
     "test:admin-topic-ingestion": "tsx --conditions=react-server src/scripts/testAdminTopicIngestion.ts",

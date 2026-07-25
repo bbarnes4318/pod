@@ -10,7 +10,7 @@
 // PublishPanel polling) keep their state across tab switches — and every panel
 // still mounts on load exactly as it did in the old single-scroll layout.
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export interface WorkspaceTab {
   key: string;
@@ -21,6 +21,23 @@ export interface WorkspaceTab {
 
 export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
   const [active, setActive] = useState(tabs[0]?.key ?? "");
+
+  // Tabs are addressable by hash (#transcript, #produce, …) so anything on the
+  // page — notably the production console's "Read the draft" checkpoint CTA —
+  // can send the user straight to the right panel instead of telling them to go
+  // find a tab. Read on mount and follow subsequent hash changes.
+  useEffect(() => {
+    const applyHash = () => {
+      const key = window.location.hash.replace(/^#/, "");
+      if (key && tabs.some((t) => t.key === key)) setActive(key);
+    };
+    applyHash();
+    window.addEventListener("hashchange", applyHash);
+    return () => window.removeEventListener("hashchange", applyHash);
+    // `tabs` is rebuilt each server render; key identity is what matters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs.map((t) => t.key).join(",")]);
+
   if (tabs.length === 0) return null;
 
   return (
