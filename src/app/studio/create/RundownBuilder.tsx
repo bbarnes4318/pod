@@ -60,7 +60,7 @@ export default function RundownBuilder({
   const [leadTopicId, setLeadTopicId] = useState<string | null>(d?.leadTopicId ?? null);
   const [targetTopicCount, setTargetTopicCount] = useState<number>(d?.targetTopicCount ?? 3);
   const [podcastId, setPodcastId] = useState<string | null>(d?.podcastId ?? null);
-  const [formatId, setFormatId] = useState<string>((d as { formatId?: string })?.formatId ?? "two_host_debate");
+  const [formatId, setFormatId] = useState<string>(d?.formatId ?? "two_host_debate");
   const format = getShowFormat(formatId) ?? getShowFormat("two_host_debate")!;
   const [hostIds, setHostIds] = useState<string[]>(d?.hostIds?.length ? d.hostIds : hosts.slice(0, 2).map((h) => h.id));
   const [ttsProvider, setTtsProvider] = useState<string>(d?.ttsProvider ?? "");
@@ -103,7 +103,7 @@ export default function RundownBuilder({
 
   const stateSnapshot: RundownDraftState = useMemo(
     () => ({
-      mode, selectedTopicIds: selectedIds, leadTopicId, targetTopicCount, podcastId,
+      mode, selectedTopicIds: selectedIds, leadTopicId, targetTopicCount, podcastId, formatId,
       hostIds, ttsProvider: ttsProvider || null, ttsVoiceOverrides: buildVoiceOverrides(voicePicks, ttsProvider),
       productionStyle: (productionStyle || null) as RundownDraftState["productionStyle"], sfxDensity: (sfxDensity || null) as RundownDraftState["sfxDensity"], title: title || null, description: description || null,
       verticals: verticals.length ? verticals : undefined, leagueIds: leagueIds.length ? leagueIds : undefined,
@@ -112,27 +112,64 @@ export default function RundownBuilder({
       // inherited value from a deliberate override.
       overrides: { hosts: hostSelectionDirty, targetTopicCount: targetCountDirty, selectionPreferences: prefsDirty },
     }),
-    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step, hostSelectionDirty, targetCountDirty, prefsDirty]
+    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, formatId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step, hostSelectionDirty, targetCountDirty, prefsDirty]
   );
 
   // ---- Autosave (debounced, cross-session resume) ----
+  // Every save is HANDLED: the result drives a visible three-state indicator
+  // (saving / saved / failed-with-retry). The old fire-and-forget `void save()`
+  // meant a rejected draft failed silently on every keystroke and the user
+  // found out by reloading into an empty form.
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(initialDraft ? "saved" : "idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const discardedRef = useRef(false);
+  const saveNow = useCallback(async (snap: RundownDraftState) => {
+    if (discardedRef.current) return;
+    setSaveState("saving");
+    try {
+      const res = (await saveStudioRundownDraft(snap)) as { ok?: boolean; success?: boolean; error?: string };
+      if (discardedRef.current) return;
+      if (res && (res.ok === false || res.success === false)) {
+        setSaveState("error");
+        setSaveError(res.error || "Couldn't save your draft.");
+      } else {
+        setSaveState("saved");
+        setSaveError(null);
+        setSavedAt(new Date());
+      }
+    } catch {
+      if (!discardedRef.current) { setSaveState("error"); setSaveError("Couldn't reach the studio — check your connection."); }
+    }
+  }, []);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
-    if (result) return;
-    const id = setTimeout(() => { void saveStudioRundownDraft(stateSnapshot); }, 700);
+    if (result || discardedRef.current) return;
+    const id = setTimeout(() => { void saveNow(stateSnapshot); }, 700);
     return () => clearTimeout(id);
-  }, [stateSnapshot, result]);
+  }, [stateSnapshot, result, saveNow]);
 
-  // ---- Mode switching (item 3) — pure transition keeps state consistent ----
+  // ---- Discard (two-step confirm; only offered when a draft exists) ----
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const hasDraft = initialDraft !== null || savedAt !== null;
+  const discardDraft = async () => {
+    setDiscarding(true);
+    // Stop any in-flight/pending autosave from resurrecting the draft.
+    discardedRef.current = true;
+    try { await discardStudioRundownDraft(); } finally { window.location.reload(); }
+  };
+
+  // ---- Mode switching — non-destructive: picks are kept, never deleted ----
   const setMode = (next: Mode) => {
     if (next === mode) return;
     const r = applyModeChange({ mode, selectedTopicIds: selectedIds, leadTopicId, targetTopicCount }, next, maxTopics);
     setSelectedIds(r.selectedTopicIds);
     setLeadTopicId(r.leadTopicId);
     if (r.targetTopicCount !== targetTopicCount) { setTargetTopicCount(r.targetTopicCount); setTargetCountDirty(true); }
-    if (next === "automatic") announce("Automatic mode — hand-picked topics cleared; the studio will select them.");
     if (r.note) { setInheritNote(r.note); announce(r.note); }
+    else if (next === "automatic") announce("Automatic mode — the studio selects the topics at creation.");
     setModeState(next);
   };
 
@@ -293,6 +330,19 @@ export default function RundownBuilder({
         })}
       </ol>
 
+      {/* Save state — visible at all times; failures are never silent. */}
+      <p className="stageHint" data-testid="save-status" aria-live="polite" style={{ margin: "-0.75rem 0 1rem" }}>
+        {saveState === "saving" && "Saving…"}
+        {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+        {saveState === "error" && (
+          <span style={{ color: "var(--warning-color, #b45309)" }}>
+            Couldn&apos;t save — {saveError}{" "}
+            <button type="button" className="advLink" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
+          </span>
+        )}
+        {saveState === "idle" && "Draft saves automatically as you build."}
+      </p>
+
       {error && (
         <div className="studioCard createAlert" role="alert" data-testid="create-error">
           <strong>{error}</strong>
@@ -362,7 +412,14 @@ export default function RundownBuilder({
               )}
             </div>
             <div className="rundownTrayCol">
-              <RundownTray items={orderedSelected} leadTopicId={leadTopicId} maxTopics={maxTopics} mode={mode} targetTopicCount={targetTopicCount} estimate={estimate} podcastScoped={podcastScoped} onReorder={reorder} onRemove={removeTopic} onSetLead={setLead} />
+              {/* In Automatic the kept picks are INACTIVE: the tray shows the
+                  automatic plan, and a note explains where the picks went. */}
+              {mode === "automatic" && selectedIds.length > 0 && (
+                <p className="stageHint" data-testid="kept-picks-note" style={{ marginTop: 0 }}>
+                  {selectedIds.length} pick{selectedIds.length === 1 ? "" : "s"} kept for Manual/Hybrid — Automatic ignores them.
+                </p>
+              )}
+              <RundownTray items={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} maxTopics={maxTopics} mode={mode} targetTopicCount={targetTopicCount} estimate={estimate} podcastScoped={podcastScoped} onReorder={reorder} onRemove={removeTopic} onSetLead={setLead} />
             </div>
           </div>
           {!validation.ok && <p className="stageHint" role="note" style={{ marginTop: "0.6rem", color: "var(--warning-color, #b45309)" }}>{validation.error}</p>}
@@ -438,16 +495,30 @@ export default function RundownBuilder({
       {step === "review" && (
         <ReviewStep
           mode={mode} podcast={podcasts.find((p) => p.id === podcastId) ?? null}
-          orderedSelected={orderedSelected} leadTopicId={leadTopicId} targetTopicCount={targetTopicCount}
+          orderedSelected={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} targetTopicCount={targetTopicCount}
           hosts={hosts.filter((h) => hostIds.includes(h.id))} ttsProvider={ttsProvider} productionStyle={productionStyle}
           sfxDensity={sfxDensity} title={title} description={description} estimate={estimate} validation={validation}
           prefs={{ verticals, leagueIds, teams, sport, minDebateScore }} submitting={submitting} onBack={goBack} onSubmit={submit}
         />
       )}
 
-      <p style={{ marginTop: "1rem" }}>
-        <button type="button" className="advLink" data-testid="discard-draft" onClick={async () => { await discardStudioRundownDraft(); window.location.reload(); }}>Discard this draft</button>
-      </p>
+      {/* Destructive action: only offered when a draft exists, and always
+          behind an explicit confirm. */}
+      {hasDraft && (
+        <p style={{ marginTop: "1rem" }}>
+          {confirmingDiscard ? (
+            <span role="alertdialog" aria-label="Confirm discard">
+              <span style={{ color: "var(--warning-color, #b45309)", marginRight: "0.6rem" }}>Discard this draft? Your rundown, picks, and settings are deleted.</span>
+              <button type="button" className="btnGhost" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()} style={{ marginRight: "0.4rem" }}>
+                {discarding ? "Discarding…" : "Yes, discard"}
+              </button>
+              <button type="button" className="advLink" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
+            </span>
+          ) : (
+            <button type="button" className="advLink" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard this draft</button>
+          )}
+        </p>
+      )}
     </div>
   );
 }

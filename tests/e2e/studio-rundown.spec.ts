@@ -16,8 +16,11 @@ test.afterAll(async () => { await closeE2eDb(); });
 async function gotoCreate(page: Page) {
   await page.goto("/studio/create");
   const discard = page.getByTestId("discard-draft");
+  // Discard is only rendered when a draft exists, and now sits behind an
+  // explicit confirm step.
   if (await discard.isVisible().catch(() => false)) {
     await discard.click();
+    await page.getByTestId("discard-confirm").click();
     await page.waitForLoadState("networkidle").catch(() => {});
   }
   await expect(page.getByTestId("mode-manual")).toBeVisible();
@@ -295,10 +298,13 @@ test.describe("Studio rundown — full flows", () => {
     await expect(page.getByTestId("start-debate")).toBeEnabled();
     await expect(page.getByTestId("start-debate")).toContainText("Start the debate");
 
-    // Disarm → retry redirects to the episode.
+    // Disarm → retry succeeds. Since the live production console (#52),
+    // success hands over IN PLACE — no hard navigation; the episode stays
+    // reachable via the console's Open link.
     await request.post("/api/e2e/start-debate-failure", { data: { fail: false } });
     await page.getByTestId("start-debate").click();
-    await page.waitForURL(/\/studio\/episodes\//, { timeout: 30000 });
+    await expect(page.getByTestId("production-console")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open episode" })).toHaveAttribute("href", /\/studio\/episodes\//);
   });
 
   test("accessibility: keyboard selection, reorder, live region, aria-expanded", async ({ page }) => {
@@ -318,6 +324,89 @@ test.describe("Studio rundown — full flows", () => {
     await expect(page.getByTestId(`tray-expand-${T.two}`)).toHaveAttribute("aria-expanded", "true");
     await expect(page.getByTestId(`tray-detail-${T.two}`)).toBeVisible();
     await page.getByTestId("discard-draft").click();
+  });
+});
+
+test.describe("Studio rundown — Phase 1: no silent data loss", () => {
+  test.beforeEach(({}, testInfo) => desktopOnly(testInfo.project.name));
+
+  test("step-1 state (title + mode) survives a reload — the default manual/zero-topics draft persists", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("episode-title").fill("Title typed on step one");
+    // The draft must actually land server-side despite zero topics selected.
+    const saved = await waitForDraft(E2E.userA.id, (s) => s.title === "Title typed on step one");
+    expect(saved.mode).toBe("manual");
+    await page.reload();
+    await expect(page.getByTestId("episode-title")).toHaveValue("Title typed on step one");
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("format choice survives a reload (formatId is a persisted draft field)", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("step-hosts").click();
+    await page.getByTestId("format-sports_radio").click();
+    await waitForDraft(E2E.userA.id, (s) => s.formatId === "sports_radio");
+    await page.reload();
+    await page.getByTestId("step-hosts").click();
+    await expect(page.getByTestId("format-sports_radio")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("a failed save is VISIBLE and retryable — never silent", async ({ page }) => {
+    await gotoCreate(page);
+    // Kill the network for server-action POSTs on this page.
+    await page.route("**/studio/create*", (route) =>
+      route.request().method() === "POST" ? route.abort() : route.continue()
+    );
+    await page.getByTestId("episode-title").fill("Will fail to save");
+    await expect(page.getByTestId("save-status")).toContainText(/Couldn't save/i);
+    // Restore the network → the offered retry actually works.
+    await page.unroute("**/studio/create*");
+    await page.getByTestId("save-retry").click();
+    await expect(page.getByTestId("save-status")).toContainText(/^Saved/);
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("discard requires confirmation, cancel keeps the draft, and the button is absent with no draft", async ({ page }) => {
+    await gotoCreate(page);
+    // Fresh page, no draft yet → no discard button rendered.
+    await expect(page.getByTestId("discard-draft")).toHaveCount(0);
+    await page.getByTestId("episode-title").fill("Draft to protect");
+    await waitForDraft(E2E.userA.id, (s) => s.title === "Draft to protect");
+    // Two-step: cancel keeps everything.
+    await page.getByTestId("discard-draft").click();
+    await expect(page.getByTestId("discard-confirm")).toBeVisible();
+    await page.getByTestId("discard-cancel").click();
+    await expect(page.getByTestId("episode-title")).toHaveValue("Draft to protect");
+    // Confirm actually discards.
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+    await expect(page.getByTestId("episode-title")).toHaveValue("");
+  });
+
+  test("switching to Automatic keeps manual picks and restores them on switch back", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("mode-manual").click();
+    await toTopics(page);
+    await pick(page, T.lead); await pick(page, T.two);
+    expect(await trayOrder(page)).toEqual([T.lead, T.two]);
+
+    await page.getByTestId("step-show").click();
+    await page.getByTestId("mode-automatic").click();
+    await page.getByTestId("step-topics").click();
+    // Picks are inactive (tray shows the automatic plan) but NOT deleted.
+    await expect(page.getByTestId("kept-picks-note")).toContainText("2 picks kept");
+    expect(await trayOrder(page)).toEqual([]);
+
+    await page.getByTestId("step-show").click();
+    await page.getByTestId("mode-manual").click();
+    await page.getByTestId("step-topics").click();
+    expect(await trayOrder(page)).toEqual([T.lead, T.two]);
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
   });
 });
 

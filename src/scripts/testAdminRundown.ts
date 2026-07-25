@@ -610,10 +610,15 @@ async function main() {
     assert(after.draft === null, "discard didn't remove the draft");
   });
 
-  await check("the admin draft schema enforces the SAME shared rundown rules as Studio", async () => {
-    assert(!AdminRundownDraftStateSchema.safeParse({ mode: "automatic", selectedTopicIds: ["t1"], targetTopicCount: 2, hostIds: H }).success, "automatic must not carry hand-picked topics");
-    assert(!AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: [], targetTopicCount: 2, hostIds: H }).success, "manual needs at least one topic");
-    assert(!AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], leadTopicId: "nope", targetTopicCount: 1, hostIds: H }).success, "the lead must be one of the selected topics");
+  await check("the admin draft schema shares Studio's persist/create split: permissive scratchpad, hard field limits", async () => {
+    // PERSISTENCE is permissive — a draft is a scratchpad. Incomplete or
+    // transiently-incoherent states (the builder's default first screen, kept
+    // picks in automatic) must save; the CREATION rules are enforced at episode
+    // creation (CreateEpisodeDraftInputSchema), not here. These two used to be
+    // rejected, which silently killed autosave for the whole first screen.
+    assert(AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: [], targetTopicCount: 2, hostIds: H }).success, "manual + zero topics must persist (step-1 default)");
+    assert(AdminRundownDraftStateSchema.safeParse({ mode: "automatic", selectedTopicIds: ["t1"], targetTopicCount: 2, hostIds: H }).success, "automatic + kept picks must persist");
+    // FIELD-level integrity still holds at persistence.
     assert(!AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: PLATFORM_MAX_TOPICS + 1, hostIds: H }).success, "the platform max must be enforced");
     const dup = AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1", "t1", "t2"], targetTopicCount: 2, hostIds: H });
     assert(dup.success && JSON.stringify(dup.data.selectedTopicIds) === JSON.stringify(["t1", "t2"]), "ordered dedupe not applied");

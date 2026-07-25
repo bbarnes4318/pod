@@ -16,7 +16,7 @@
 
 import { z } from "zod";
 import { db } from "../db";
-import { RundownDraftShape, refineRundownDraft } from "./studioDraft";
+import { RundownDraftShape } from "./studioDraft";
 
 /** The DB surface the admin draft helpers touch — satisfied by PrismaClient and
  *  the in-memory test doubles, so no `any` is needed at call sites. */
@@ -28,19 +28,22 @@ export interface AdminDraftDb {
   };
 }
 
-export const AdminRundownDraftStateSchema = z
-  .object({
-    ...RundownDraftShape,
-    // ---- ADMIN AUTHORITY (absent from the Studio draft by design) ----
-    // The operator's decision to permit a recently-used topic the
-    // exclude_podcast policy would otherwise block. Persisting it is what makes
-    // the decision survive a resume; it is NOT what authorizes it — the server
-    // re-checks requireAdmin() on every mutation, and the shared creation core
-    // strips the override for any non-admin actor.
-    reuseOverride: z.boolean().default(false),
-    reuseOverrideReason: z.string().trim().max(500).nullable().optional(),
-  })
-  .superRefine(refineRundownDraft);
+// PERSISTENCE schema: shape only, NO creation-rule refinement — a draft is a
+// scratchpad and must accept incomplete states (e.g. manual mode with zero
+// topics, the builder's default first screen). The creation rules
+// (refineRundownDraft) are enforced where they belong: at episode creation.
+// This mirrors the Studio draft's persist/create split exactly.
+export const AdminRundownDraftStateSchema = z.object({
+  ...RundownDraftShape,
+  // ---- ADMIN AUTHORITY (absent from the Studio draft by design) ----
+  // The operator's decision to permit a recently-used topic the
+  // exclude_podcast policy would otherwise block. Persisting it is what makes
+  // the decision survive a resume; it is NOT what authorizes it — the server
+  // re-checks requireAdmin() on every mutation, and the shared creation core
+  // strips the override for any non-admin actor.
+  reuseOverride: z.boolean().default(false),
+  reuseOverrideReason: z.string().trim().max(500).nullable().optional(),
+});
 
 export type AdminRundownDraftState = z.infer<typeof AdminRundownDraftStateSchema>;
 

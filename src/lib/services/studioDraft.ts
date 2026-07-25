@@ -42,6 +42,9 @@ export const RundownDraftShape = {
     targetTopicCount: z.number().int().min(1).max(PLATFORM_MAX_TOPICS).default(3),
     podcastId: z.string().min(1).nullable().optional(),
     hostIds: z.array(z.string().min(1)).max(MAX_HOSTS, `The pipeline supports ${MAX_HOSTS} hosts.`).default([]),
+    // Show format for standalone episodes (podcast episodes inherit the show's
+    // format server-side). Optional so legacy drafts keep parsing.
+    formatId: z.string().min(1).nullable().optional(),
     // Normalized to the canonical provider id; validated in superRefine against
     // the shared supported-provider list.
     ttsProvider: z.string().trim().min(1).transform((s) => s.toLowerCase()).nullable().optional(),
@@ -120,9 +123,28 @@ export function refineRundownDraft(
     }
 }
 
+/** CREATION-time coherence: shape + cross-field rundown rules. This is what a
+ *  rundown must satisfy to become an episode — mirrored client-side by
+ *  validateRundownDraft and enforced authoritatively in episodeCreation.ts. */
 export const RundownDraftStateSchema = z.object(RundownDraftShape).superRefine(refineRundownDraft);
 
 export type RundownDraftState = z.infer<typeof RundownDraftStateSchema>;
+
+/** PERSISTENCE-time schema: the shape WITHOUT the creation rules.
+ *
+ *  A draft is a scratchpad, not an episode. The builder's default state on step
+ *  one is manual mode with zero topics — a state refineRundownDraft rejects —
+ *  so validating persistence with the creation rules made autosave silently
+ *  fail for the entire first screen (title, description, mode, show pick all
+ *  lost on reload). Field-level integrity (types, caps, provider ids via the
+ *  creation schema at submit) still applies; only the cross-field "is this a
+ *  creatable rundown yet" rules are deferred to Create, where they belong. */
+export const RundownDraftPersistSchema = z.object({
+  ...RundownDraftShape,
+  // A transient pick of a 3rd host (e.g. while exploring formats) must not
+  // void the whole autosave; the creation path still enforces MAX_HOSTS.
+  hostIds: z.array(z.string().min(1)).default([]),
+});
 
 /** Load + validate a user's saved rundown draft. Returns null when there is no
  *  draft OR the stored blob no longer validates (fail-open to a fresh builder). */
@@ -132,7 +154,7 @@ export async function loadStudioDraft(
 ): Promise<RundownDraftState | null> {
   const row = await dbi.studioDraft.findUnique({ where: { ownerId } });
   if (!row) return null;
-  const parsed = RundownDraftStateSchema.safeParse(row.state);
+  const parsed = RundownDraftPersistSchema.safeParse(row.state);
   return parsed.success ? parsed.data : null;
 }
 
@@ -143,7 +165,7 @@ export async function saveStudioDraft(
   state: unknown,
   dbi: StudioDraftDb = db as unknown as StudioDraftDb
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const parsed = RundownDraftStateSchema.safeParse(state);
+  const parsed = RundownDraftPersistSchema.safeParse(state);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message || "Invalid draft state." };
   }

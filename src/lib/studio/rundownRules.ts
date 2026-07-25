@@ -39,28 +39,35 @@ export interface ModeChangeResult extends ModeSelection {
 }
 
 /**
- * Pure selection transition when the producer changes mode. Prevents stale
- * Manual/Hybrid picks from leaking into Automatic (and vice-versa), and clamps
- * the target so it can never sit below the pinned count.
+ * Pure selection transition when the producer changes mode.
+ *
+ * NON-DESTRUCTIVE: picks are never deleted by a mode switch. Entering
+ * Automatic KEEPS the hand-picked topics in state — the UI greys them and the
+ * submit path strips them (createStudioEpisode sends [] in automatic), so they
+ * never leak into an automatic creation, but flipping back to Manual/Hybrid
+ * restores exactly what the producer had. Mode switching used to empty the
+ * selection both entering and leaving Automatic with no confirm and no undo.
  */
 export function applyModeChange(prev: ModeSelection & { mode: RundownMode }, next: RundownMode, maxTopics: number): ModeChangeResult {
   if (next === prev.mode) return { ...prev };
-  // Entering Automatic: no hand-picked topics or lead may remain.
+  const kept = prev.selectedTopicIds;
+  const lead = prev.leadTopicId && kept.includes(prev.leadTopicId) ? prev.leadTopicId : null;
+  // Entering Automatic: keep picks (inactive), note what happened to them.
   if (next === "automatic") {
-    return { selectedTopicIds: [], leadTopicId: null, targetTopicCount: prev.targetTopicCount };
+    return {
+      selectedTopicIds: kept,
+      leadTopicId: lead,
+      targetTopicCount: prev.targetTopicCount,
+      note: kept.length > 0 ? `Your ${kept.length} pick${kept.length === 1 ? "" : "s"} are kept for Manual/Hybrid — Automatic ignores them.` : undefined,
+    };
   }
-  // Leaving Automatic: start empty — there are no hidden picks to resurrect.
-  if (prev.mode === "automatic") {
-    return { selectedTopicIds: [], leadTopicId: null, targetTopicCount: prev.targetTopicCount };
+  // Leaving Automatic, or Manual ↔ Hybrid: picks come back live; clamp the
+  // Hybrid target so it can never sit below the pinned count.
+  if (next === "hybrid" && prev.targetTopicCount < kept.length) {
+    const targetTopicCount = Math.min(maxTopics, kept.length);
+    return { selectedTopicIds: kept, leadTopicId: lead, targetTopicCount, note: `Target count raised to ${targetTopicCount} so it isn't below your ${kept.length} pinned topics.` };
   }
-  // Manual ↔ Hybrid: preserve picks; clamp target ≥ pinned count for Hybrid.
-  const selectedTopicIds = prev.selectedTopicIds;
-  const lead = prev.leadTopicId && selectedTopicIds.includes(prev.leadTopicId) ? prev.leadTopicId : null;
-  if (next === "hybrid" && prev.targetTopicCount < selectedTopicIds.length) {
-    const targetTopicCount = Math.min(maxTopics, selectedTopicIds.length);
-    return { selectedTopicIds, leadTopicId: lead, targetTopicCount, note: `Target count raised to ${targetTopicCount} so it isn't below your ${selectedTopicIds.length} pinned topics.` };
-  }
-  return { selectedTopicIds, leadTopicId: lead, targetTopicCount: prev.targetTopicCount };
+  return { selectedTopicIds: kept, leadTopicId: lead, targetTopicCount: prev.targetTopicCount };
 }
 
 export interface RundownValidationInput {
@@ -77,7 +84,8 @@ export function validateRundownDraft(input: RundownValidationInput): { ok: boole
     return { ok: false, error: `No more than ${input.maxTopics} topics per episode.` };
   }
   if (input.mode === "manual" && n === 0) return { ok: false, error: "Manual mode needs at least one topic." };
-  if (input.mode === "automatic" && n > 0) return { ok: false, error: "Automatic mode doesn't take hand-picked topics." };
+  // Automatic: kept picks are inactive (the submit path strips them), so their
+  // presence is not an error — they're just not part of this creation.
   if (input.mode === "hybrid" && n === 0) return { ok: false, error: "Hybrid mode needs at least one pinned topic." };
   if (input.mode === "hybrid" && n > input.targetTopicCount) {
     return { ok: false, error: `Pinned topics (${n}) can't exceed the target count (${input.targetTopicCount}).` };
