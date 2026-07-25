@@ -19,6 +19,7 @@ import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
+import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 
@@ -46,6 +47,8 @@ export interface ScriptBuildResult {
   scriptId?: string;
   /** FIX 1 self-verify summary (how many ungrounded lines were corrected). */
   selfVerify?: import("./scriptSelfVerify").SelfVerifyReport;
+  /** Balanced-negation pass — frame counts before/after the rewrite rounds. */
+  antithesis?: import("./scriptAntithesisPass").AntithesisPassReport;
   /** FIX 3 evidence-packet audit — how rich the facts actually are. */
   evidenceAudit?: {
     topicCount: number;
@@ -697,6 +700,46 @@ Delivery field meanings:
     result.reasons.push("Normalized non-unique lineIndex numbering from the model (audio-repetition guard).");
   }
 
+  // 10c-bis. ANTITHESIS PASS — strip the balanced-negation frame ("That's not
+  // X, that's Y"). The model reaches for this shape by default because it
+  // manufactures the feeling of an insight for free; three of them in an
+  // episode and the show sounds written. Runs HERE, after global renumbering,
+  // because the cold-open rule keys off the true episode-wide lineIndex, and
+  // before the interruption/pause guards so those repair anything a rewrite
+  // disturbed. Best-effort by default: a failure never blocks generation, and
+  // surviving frames are marked needsHumanReview rather than dropped.
+  try {
+    const antithesisLlm = getVerifyLLMProvider();
+    const anti = await antithesisPassAndCorrect(finalSegments, {
+      maxRounds: Number(process.env.SCRIPT_ANTITHESIS_ROUNDS) || 2,
+      rewrite: (items) => rewriteLinesForGrounding(antithesisLlm, items, systemPrompt),
+      evidenceTextFor: (line) => {
+        const refs = Array.isArray(line?.evidenceRefs) ? line.evidenceRefs : [];
+        const cited = refs
+          .map((r) => evidenceByRefId.get((r as { id?: string })?.id ?? "") || "")
+          .join("  ")
+          .trim();
+        return cited || evidenceTexts.join("  ");
+      },
+    });
+    result.antithesis = anti;
+    result.reasons.push(...anti.reasons);
+
+    if (anti.linesUnresolved > 0 && process.env.ANTITHESIS_STRICT === "true") {
+      const msg =
+        `Validation failed (ANTITHESIS_STRICT=true): ${anti.linesUnresolved} line(s) still use the ` +
+        `balanced-negation frame after ${anti.rounds} rewrite round(s): ` +
+        anti.unresolved.map((u) => `#${u.lineIndex} [${u.speakerName}] ${u.kinds.join(",")}`).join("; ");
+      result.reasons.push(msg);
+      throw new Error(msg);
+    }
+  } catch (antiErr) {
+    if (process.env.ANTITHESIS_STRICT === "true") throw antiErr;
+    const antiMsg = antiErr instanceof Error ? antiErr.message : String(antiErr);
+    console.warn(`[ScriptService] antithesis pass failed: ${antiMsg}`);
+    result.reasons.push(`Antithesis pass skipped (error): ${antiMsg}`);
+  }
+
   // 10d. INTERRUPTION CUE GUARD — every isInterruption line needs the PREVIOUS
   // line to end mid-sentence with "—" or the renderer's overlap mis-fires
   // (planConversationTimeline keys the negative-gap overlap off the flag, and
@@ -794,6 +837,21 @@ Delivery field meanings:
       requiresHumanReview: true,
     },
   };
+
+  // Carried on the script so the review console can show the frame count for
+  // THIS version. The JobLog copy is per-run; this one survives re-validation.
+  if (result.antithesis) {
+    cleanContent.antithesis = {
+      totalHits: result.antithesis.totalHits,
+      hitsPerHundredLines: result.antithesis.hitsPerHundredLines,
+      beforeTotalHits: result.antithesis.before.totalHits,
+      beforeHitsPerHundredLines: result.antithesis.before.hitsPerHundredLines,
+      rounds: result.antithesis.rounds,
+      linesCorrected: result.antithesis.linesCorrected,
+      linesUnresolved: result.antithesis.linesUnresolved,
+      byKind: result.antithesis.byKind,
+    };
+  }
 
   // Attach the 0-100 quality score so every script carries its own rubric,
   // plus the source-material talkability that fed it (for regression tracking).

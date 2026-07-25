@@ -69,7 +69,7 @@ function resolveProvider(): TTSProvider {
 }
 
 function voiceIdFor(speaker: string): string {
-  const isA = speaker === "Max Voltage";
+  const isA = speaker === "Zabala";
   return (
     (isA ? process.env.SAMPLE_VOICE_A : process.env.SAMPLE_VOICE_B) ||
     (isA
@@ -96,7 +96,7 @@ $items = Get-Content -Raw "${manifestPath.replace(/\\/g, "\\\\")}" | ConvertFrom
 $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
 $voices = $synth.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }
 foreach ($item in $items) {
-  $target = if ($item.speaker -eq "Max Voltage") { $voices | Where-Object { $_ -match "David" } | Select-Object -First 1 } else { $voices | Where-Object { $_ -match "Zira" } | Select-Object -First 1 }
+  $target = if ($item.speaker -eq "Zabala") { $voices | Where-Object { $_ -match "David" } | Select-Object -First 1 } else { $voices | Where-Object { $_ -match "Zira" } | Select-Object -First 1 }
   if ($target) { $synth.SelectVoice($target) }
   $synth.Rate = $item.rate
   $synth.SetOutputToWaveFile($item.outPath)
@@ -211,7 +211,7 @@ async function renderAfter(files: Map<number, string>, outPath: string): Promise
       filePath: wav,
       durationMs: await getFileDurationMs(ffprobePath, wav),
       lineIndex: line.lineIndex,
-      hostSlot: line.speaker === "Max Voltage" ? 0 : 1,
+      hostSlot: line.speaker === "Zabala" ? 0 : 1,
       pauseBefore: line.pauseBefore,
       isInterruption: line.isInterruption,
       segmentBreak: "none",

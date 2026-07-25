@@ -47,7 +47,7 @@ export function buildSemanticReviewPrompt(input: SemanticReviewInput): {
   prompt: string;
   jsonSchema: any;
 } {
-  const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product, not violations. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records — not to demand citations for opinions.
+  const systemPrompt = `You are a strict fact-checking assistant for a sports DEBATE podcast. The show format is two hosts arguing: hot takes, predictions, and judgments are the product. Treat them as expected. Your job is to verify FACTUAL ASSERTIONS against the allowed evidence records. Opinions never require citations.
 
 Each line is PRE-CLASSIFIED with an "isFactualClaim" flag plus "tone", "isInterruption", and "isFragment" context. Honor them.
 

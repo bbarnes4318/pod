@@ -133,7 +133,7 @@ export function sourceRulesBlock(): string {
     '- A "topicSource" is a published article an editor imported for THIS topic. Its supplied excerpt is the only part of it you may rely on.',
     "- Cite a topicSource ONLY when the supplied excerpt itself supports the claim. Do not infer what the rest of the article probably says.",
     "- NEVER cite a topicSource id that is not in the evidence packet below.",
-    "- NEVER cite the topic itself as a source. The topic is the thing being researched, not evidence for it.",
+    "- NEVER cite the topic itself as a source. The topic is the thing being researched. It can never serve as evidence for itself.",
     '- NEVER invent a "research-N" id. Only use ones present in the packet.',
     "- The topic's title, summary, angle and editorial notes are an EDITOR'S OPINION about what to look into. They are NOT facts and NOT evidence. Never restate them as verified, and never cite them.",
     "- Every factual item needs evidenceRefs. If the packet does not support a claim, put it in unsafeClaims rather than asserting it.",
