@@ -733,10 +733,11 @@ Delivery field meanings:
       result.reasons.push(msg);
       throw new Error(msg);
     }
-  } catch (antiErr: any) {
+  } catch (antiErr) {
     if (process.env.ANTITHESIS_STRICT === "true") throw antiErr;
-    console.warn(`[ScriptService] antithesis pass failed: ${antiErr?.message}`);
-    result.reasons.push(`Antithesis pass skipped (error): ${antiErr?.message}`);
+    const antiMsg = antiErr instanceof Error ? antiErr.message : String(antiErr);
+    console.warn(`[ScriptService] antithesis pass failed: ${antiMsg}`);
+    result.reasons.push(`Antithesis pass skipped (error): ${antiMsg}`);
   }
 
   // 10d. INTERRUPTION CUE GUARD — every isInterruption line needs the PREVIOUS
