@@ -44,10 +44,12 @@ const ENV_SNAPSHOT: Record<string, string | undefined> = {
   DATABASE_URL: process.env.DATABASE_URL,
   DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
   ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
-  ELEVENLABS_DR_LINEBREAK_VOICE_ID: process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID,
-  ELEVENLABS_MAX_VOLTAGE_VOICE_ID: process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID,
+  ELEVENLABS_HOST_A_VOICE_ID: process.env.ELEVENLABS_HOST_A_VOICE_ID,
+  ELEVENLABS_HOST_B_VOICE_ID: process.env.ELEVENLABS_HOST_B_VOICE_ID,
   ELEVENLABS_MODEL: process.env.ELEVENLABS_MODEL,
   FISH_API_KEY: process.env.FISH_API_KEY,
+  FISH_HOST_A_VOICE_ID: process.env.FISH_HOST_A_VOICE_ID,
+  FISH_HOST_B_VOICE_ID: process.env.FISH_HOST_B_VOICE_ID,
   FISH_MODEL: process.env.FISH_MODEL,
   FISH_SCENE_MODEL: process.env.FISH_SCENE_MODEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
@@ -214,14 +216,20 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     // so leaving them unset is legitimate — warn, never fail.
     checkOptional("FISH_MODEL");
     checkOptional("FISH_SCENE_MODEL");
+    // Seat-keyed voices. Optional because the seeded hosts carry their own
+    // reference ids; setting them is what guarantees a roster change cannot
+    // drop a chair onto the shared FISH_TTS_VOICE.
+    checkOptional("FISH_HOST_A_VOICE_ID");
+    checkOptional("FISH_HOST_B_VOICE_ID");
     checkOptional("ELEVENLABS_API_KEY", true);
     checkOptional("BOSON_API_KEY", true);
     checkOptional("CARTESIA_API_KEY", true);
   } else if (ttsProvider === "elevenlabs") {
     checkRequired("ELEVENLABS_API_KEY", true);
     checkRequired("ELEVENLABS_MODEL");
-    checkRequired("ELEVENLABS_MAX_VOLTAGE_VOICE_ID");
-    checkRequired("ELEVENLABS_DR_LINEBREAK_VOICE_ID");
+    // ElevenLabs has no safe default voice, so both chairs must be set.
+    checkRequired("ELEVENLABS_HOST_A_VOICE_ID");
+    checkRequired("ELEVENLABS_HOST_B_VOICE_ID");
     checkOptional("BOSON_API_KEY", true);
     checkOptional("CARTESIA_API_KEY", true);
   } else if (ttsProvider === "boson") {

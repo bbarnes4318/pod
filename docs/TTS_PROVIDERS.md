@@ -65,10 +65,25 @@ id to Fish as a `reference_id`.
    An entry only applies when its `provider` matches the resolved engine.
 3. **Host default** — `AiHost.ttsVoiceId`, but only when `AiHost.ttsProvider`
    matches the resolved engine.
-4. **Per-provider env fallback** — `<PROVIDER>_MAX_VOLTAGE_VOICE_ID` /
-   `<PROVIDER>_DR_LINEBREAK_VOICE_ID` / shared default
-   (`BOSON_TTS_VOICE`, `FISH_TTS_VOICE`, `ELEVENLABS_VOICE_ID`,
-   `CARTESIA_VOICE_ID`, `OPENAI_TTS_VOICE`).
+4. **Per-provider env fallback**, most specific first:
+   1. `<PROVIDER>_VOICE_ID_<HOST_SLUG>` — the host's own var, any slug.
+   2. `<PROVIDER>_HOST_A_VOICE_ID` .. `_HOST_D_VOICE_ID` — **seat-keyed**,
+      where A is chair 0 and the index comes from `EpisodeCastMember`
+      order. This is the layer that survives a roster change.
+   3. `<PROVIDER>_MAX_VOLTAGE_VOICE_ID` / `<PROVIDER>_DR_LINEBREAK_VOICE_ID`
+      — **DEPRECATED**, read for seats 0 and 1 only so deployments that
+      still set them keep working. Remove once every environment has moved
+      to the seat vars.
+   4. Shared default (`BOSON_TTS_VOICE`, `FISH_TTS_VOICE`,
+      `ELEVENLABS_VOICE_ID`, `CARTESIA_VOICE_ID`, `OPENAI_TTS_VOICE`).
+      **Reaching this logs a warning** naming the host, the seat, and the
+      env var that would fix it, because every host on the provider then
+      sounds identical.
+
+   Fallbacks are keyed by SEAT rather than by host identity on purpose. The
+   previous scheme compared `host.name` against two literals from a roster
+   retired two generations ago, so every host fell through to the shared
+   default and nothing logged it.
 5. **Provider safe default** — Boson `default`, OpenAI `alloy`, Fish "no
    reference_id" (engine default voice), Cartesia known-good stock voices.
    ElevenLabs has no safe default and fails with
@@ -104,6 +119,8 @@ Emotion/delivery markup is applied per resolved engine, per line:
 | --- | --- |
 | `TTS_PROVIDER` | Global default engine |
 | `FISH_API_KEY` / `FISH_MODEL` | Fish Audio auth + model (`s2.1-pro-free` default) |
-| `<PROVIDER>_VOICE_ID_<HOST_SLUG>` | Generic per-host voice fallback for ANY host slug (upper-snake), e.g. `FISH_VOICE_ID_BERNIE_LINE_TWO`, `FISH_VOICE_ID_OTIS_LAMINATE`. Checked before the legacy named vars below. |
-| `FISH_TTS_VOICE`, `FISH_MAX_VOLTAGE_VOICE_ID`, `FISH_DR_LINEBREAK_VOICE_ID` | Fish voice (reference id) overrides (legacy names kept for existing deployments) |
+| `<PROVIDER>_VOICE_ID_<HOST_SLUG>` | Per-host voice for ANY host slug (upper-snake), e.g. `FISH_VOICE_ID_BERNIE_LINE_TWO`, `FISH_VOICE_ID_RAY_FORTY_ONE`. Most specific; beats the seat vars. |
+| `<PROVIDER>_HOST_A_VOICE_ID` .. `_HOST_D_VOICE_ID` | Seat-keyed voice for chairs 0-3. Applies at synthesis time, so it overrides a missing or invalid seeded `ttsVoiceId` without a reseed. |
+| `FISH_TTS_VOICE` | Shared Fish default. A host reaching it logs a warning. |
+| `FISH_MAX_VOLTAGE_VOICE_ID`, `FISH_DR_LINEBREAK_VOICE_ID` | **DEPRECATED** — use `FISH_HOST_A_VOICE_ID` / `FISH_HOST_B_VOICE_ID`. Read for seats 0 and 1 only, during rollout. |
 | `FISH_TTS_TIMEOUT_MS`, `FISH_TTS_MAX_RETRIES` | Fish request tuning |
