@@ -2,6 +2,22 @@ import { SportsDataProvider } from "./interface";
 import { XMLParser } from "fast-xml-parser";
 import { getRssNewsFeeds } from "@/lib/env";
 
+// Feeds like ESPN and CBS Sports bot-detect header-less requests coming from
+// datacenter IPs and refuse them (ESPN answers 202 with an empty body, CBS
+// answers 429). Presenting a normal browser User-Agent + Accept makes the same
+// request succeed. This is the single most common cause of "RSS works locally
+// but writes 0 rows on the server".
+const FEED_FETCH_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+// Cap on how long we'll honor a 429 Retry-After before giving up, so one
+// throttled feed can't stall the whole ingest run.
+const MAX_RETRY_DELAY_MS = 5000;
+
 export class RssNewsProvider implements SportsDataProvider {
   name = "rss-news";
 
@@ -14,6 +30,22 @@ export class RssNewsProvider implements SportsDataProvider {
 
   private getFeedUrls(): string[] {
     return getRssNewsFeeds();
+  }
+
+  /** Fetch a feed with browser-like headers. On a 429 we honor Retry-After
+   *  (capped) and try once more, since the throttles these feeds apply to
+   *  datacenter IPs are usually short. */
+  private async fetchFeed(url: string): Promise<Response> {
+    let response = await fetch(url, { headers: FEED_FETCH_HEADERS });
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, MAX_RETRY_DELAY_MS)
+        : 1500;
+      await new Promise((r) => setTimeout(r, delayMs));
+      response = await fetch(url, { headers: FEED_FETCH_HEADERS });
+    }
+    return response;
   }
 
   async getNews(league: string): Promise<any[]> {
@@ -36,7 +68,7 @@ export class RssNewsProvider implements SportsDataProvider {
     for (const url of urls) {
       try {
         console.log(`[RSSNewsProvider] Fetching RSS feed: ${url}`);
-        const response = await fetch(url);
+        const response = await this.fetchFeed(url);
         if (!response.ok) {
           console.error(`[RSSNewsProvider] Failed to fetch feed ${url}: ${response.statusText}`);
           this.lastRunIssues.push(`Feed ${url}: HTTP ${response.status} ${response.statusText}`);
