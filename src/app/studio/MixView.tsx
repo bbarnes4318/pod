@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getMixView, regenerateLineAudio, tableReadEpisode } from "../app/create/actions";
 import type { MixVM, MixLineVM } from "@/lib/services/mixView";
+import PanelSkeleton from "./PanelSkeleton";
 
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -81,7 +82,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
     return () => clearInterval(id);
   }, [polling, refresh]);
 
-  if (loading && !vm) return <div className="stageHint">Loading mix…</div>;
+  if (loading && !vm) return <PanelSkeleton label="Loading the mix" rows={5} />;
   if (!vm || !vm.ok) return <div className="emptyNote">{vm?.error || "No mix available yet."}</div>;
   if (vm.segments.length === 0) return <div className="emptyNote">No script yet — the mix appears once the debate is written.</div>;
 
@@ -250,7 +251,9 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
                 <div className="mixLineActions">
                   <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} onClick={() => revoice(l.lineIndex, "spicier")}>🌶 Spicier</button>
                   <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} onClick={() => revoice(l.lineIndex, "calmer")}>🧊 Calmer</button>
-                  <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} onClick={() => revoice(l.lineIndex)}>{busyLine === l.lineIndex ? "…" : "↻ Re-voice"}</button>
+                  <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} aria-busy={busyLine === l.lineIndex} onClick={() => revoice(l.lineIndex)}>
+                    {busyLine === l.lineIndex ? (<><span className="btnSpin" aria-hidden="true" />Re-voicing…</>) : "↻ Re-voice"}
+                  </button>
                 </div>
               </div>
             ))}

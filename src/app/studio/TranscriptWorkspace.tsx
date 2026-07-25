@@ -17,6 +17,7 @@ import {
   attemptPublish,
 } from "../app/create/actions";
 import type { TranscriptVM, TranscriptLineVM, Citation, FactStatus } from "@/lib/services/transcriptView";
+import PanelSkeleton from "./PanelSkeleton";
 
 const FACT_META: Record<FactStatus, { label: string; cls: string; glyph: string }> = {
   verified: { label: "Verified", cls: "fact-ok", glyph: "✓" },
@@ -68,7 +69,7 @@ export default function TranscriptWorkspace({
     if (!initialVm) refresh();
   }, [initialVm, refresh]);
 
-  if (loading && !vm) return <div className="stageHint">Loading transcript…</div>;
+  if (loading && !vm) return <PanelSkeleton label="Loading the transcript" rows={6} />;
   if (!vm || !vm.ok) return <div className="emptyNote">{vm?.error || "No transcript available yet."}</div>;
   if (!vm.scriptId || vm.segments.length === 0) {
     return <div className="emptyNote">The script isn&apos;t written yet — it appears here once the debate is generated.</div>;
@@ -209,7 +210,8 @@ function TranscriptEditor({
                     <div className="tEditRow">
                       <textarea className="textarea tEditArea" value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} />
                       <div className="tEditActions">
-                        <button className="btnPrimary" onClick={() => saveEdit(line.lineIndex)} disabled={busyLine === line.lineIndex}>
+                        <button className="btnPrimary" onClick={() => saveEdit(line.lineIndex)} disabled={busyLine === line.lineIndex} aria-busy={busyLine === line.lineIndex}>
+                          {busyLine === line.lineIndex && <span className="btnSpin" aria-hidden="true" />}
                           {busyLine === line.lineIndex ? "Saving…" : "Save"}
                         </button>
                         <button className="btnGhost" onClick={() => setEditing(null)}>Cancel</button>
@@ -242,17 +244,22 @@ function TranscriptEditor({
                         className="tMini"
                         onClick={() => variant(line.lineIndex, "regenerate")}
                         disabled={busyLine === line.lineIndex}
+                        aria-busy={busyLine === line.lineIndex}
                         title={
                           canRevoice && (vm.ttsRenderMode === "scene" || vm.ttsRenderMode === "mixed_fallback")
                             ? "Scene-voiced episode: re-voicing regenerates this line's whole scene (with its surrounding conversation) so the performance stays continuous."
                             : undefined
                         }
                       >
-                        {canRevoice
-                          ? vm.ttsRenderMode === "scene" || vm.ttsRenderMode === "mixed_fallback"
+                        {busyLine === line.lineIndex ? (
+                          <><span className="btnSpin" aria-hidden="true" />Working…</>
+                        ) : canRevoice ? (
+                          vm.ttsRenderMode === "scene" || vm.ttsRenderMode === "mixed_fallback"
                             ? "↻ Re-voice scene"
                             : "↻ Re-voice line"
-                          : "↻ Regenerate"}
+                        ) : (
+                          "↻ Regenerate"
+                        )}
                       </button>
                     </div>
                   )}

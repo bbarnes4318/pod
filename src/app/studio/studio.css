@@ -1305,7 +1305,8 @@
 .clipMeta { font-size: 0.78rem; color: var(--text-muted); }
 .clipDownloads { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .clipDl { padding: 0.35rem 0.7rem; font-size: 0.78rem; }
-.clipSpin { font-size: 0.78rem; color: var(--text-muted); }
+/* Now actually carries a spinner, so it has to lay out as a row. */
+.clipSpin { display: inline-flex; align-items: center; font-size: 0.78rem; color: var(--text-muted); }
 .clipErr { font-size: 0.74rem; color: var(--warning); }
 
 /* ============================================================
@@ -1410,4 +1411,258 @@
   .rundownFilters .input,
   .rundownFilters select { width: 100%; }
   .reviewGrid { grid-template-columns: 1fr !important; }
+}
+
+/* ============================================================
+   PRODUCTION CONSOLE — the live "on air" wait experience.
+
+   Shown from the moment a debate starts until the episode is
+   ready. The visual contract, which the copy depends on:
+     · determinate fill    = real counted progress (voicing only)
+     · indeterminate sweep = "running, duration unknown"
+   A sweep must never stand in for a real percentage, and a fill
+   must never be drawn without a real denominator. Every looping
+   animation here is disabled by the global prefers-reduced-motion
+   block in globals.css.
+   ============================================================ */
+
+.prodConsole {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* ---- Header: identity + live state ---- */
+.prodHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.15rem 1.35rem;
+  border-bottom: 1px solid var(--border);
+  /* A faint warm wash so a live surface reads hotter than a resting card. */
+  background: linear-gradient(180deg, var(--accent-muted), transparent 140%);
+}
+.prodHeadMain { min-width: 0; }
+.prodHeadline {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0.45rem 0 0.2rem;
+  line-height: 1.2;
+}
+.prodSub { font-size: 0.84rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
+.prodElapsedWrap { text-align: right; flex-shrink: 0; }
+.prodElapsed {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+.prodElapsedLabel {
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+/* ---- The stage rail ---- */
+.prodRail { list-style: none; margin: 0; padding: 0.4rem 0; }
+.prodStage {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  padding: 0 1.35rem;
+}
+.prodStageMark {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  padding-top: 0.95rem;
+}
+/* The connector lives in the mark column so it inherits that column's exact
+   centre line no matter how tall the row's body grows. */
+.prodStageMark::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.prodStage:first-child .prodStageMark::before { top: 0.95rem; }
+.prodStage:last-child .prodStageMark::before { bottom: calc(100% - 0.95rem); }
+.prodStage--done .prodStageMark::before { background: var(--success); }
+
+.prodDot {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+  flex-shrink: 0;
+}
+.prodStage--done .prodDot { background: var(--success); color: var(--bg); box-shadow: 0 0 0 1px var(--success); }
+.prodStage--active .prodDot,
+.prodStage--checkpoint .prodDot { background: var(--accent); color: var(--bg); box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow); }
+.prodStage--active .prodDot { animation: onAirPulse 2s ease-in-out infinite; }
+.prodStage--failed .prodDot { background: var(--error-text); color: var(--bg); box-shadow: 0 0 0 1px var(--error-text); }
+
+.prodStageBody { padding: 0.8rem 0 0.95rem; min-width: 0; }
+.prodStageTop { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.prodStageLabel { font-size: 0.92rem; font-weight: 700; color: var(--text-muted); }
+.prodStage--active .prodStageLabel,
+.prodStage--checkpoint .prodStageLabel,
+.prodStage--failed .prodStageLabel { color: var(--text); }
+.prodStageBlurb {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin: 0.3rem 0 0;
+  max-width: 62ch;
+}
+/* Tabular figures + right alignment so a ticking second never shifts the row. */
+.prodStageTime {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ---- Progress affordances ---- */
+.prodBarTrack {
+  position: relative;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+  margin-top: 0.7rem;
+  max-width: 62ch;
+}
+/* Determinate: width is a REAL fraction (voiced lines / script lines). */
+.prodBarFill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--wave-hot), var(--wave-warm));
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Indeterminate: a sweep, deliberately NOT a percentage, for the stages the
+   pipeline finishes in a single atomic write. */
+.prodBarSweep::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: prodSweep 1.65s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes prodSweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(400%); }
+}
+.prodCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--text);
+  margin-top: 0.45rem;
+}
+.prodCount b { color: var(--accent); font-weight: 700; }
+
+/* ---- Notes + terminal states ---- */
+.prodNote {
+  margin: 0.75rem 0 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+.prodNote--error { background: var(--error-muted); border: 1px solid var(--error-border); color: var(--error-text); }
+.prodNote--warn { background: var(--warning-muted); border: 1px solid var(--warning-border); color: var(--warning); }
+.prodNoteActions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.7rem; }
+
+.prodFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.35rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.prodFoot .btnPrimary { margin-left: auto; }
+.prodSafe { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); }
+
+@media (max-width: 560px) {
+  .prodStage { grid-template-columns: 34px minmax(0, 1fr); padding: 0 0.9rem; }
+  .prodHead, .prodFoot { padding: 1rem; }
+  .prodElapsedWrap { text-align: left; }
+  .prodFoot .btnPrimary { margin-left: 0; width: 100%; }
+}
+
+/* ============================================================
+   SKELETONS — route- and panel-level loading placeholders.
+   Sized to match the real content so nothing shifts on swap.
+   ============================================================ */
+
+.skelBlock { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); padding: 1.25rem; }
+.skelLine,
+.skelChip {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: skelShimmer 1.5s ease-in-out infinite;
+}
+.skelLine { height: 11px; border-radius: 6px; }
+.skelLine + .skelLine { margin-top: 0.6rem; }
+.skelLine--title { height: 20px; width: 38%; margin-bottom: 1rem; }
+.skelLine--short { width: 55%; }
+.skelLine--tiny { width: 30%; }
+.skelChip { height: 24px; width: 84px; border-radius: 999px; }
+.skelRow { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.skelGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+/* Stagger so the shimmer reads as one light source crossing the page rather
+   than every block flashing in lockstep. */
+.skelLine:nth-child(2), .skelChip:nth-child(2) { animation-delay: 0.08s; }
+.skelLine:nth-child(3), .skelChip:nth-child(3) { animation-delay: 0.16s; }
+.skelLine:nth-child(4), .skelChip:nth-child(4) { animation-delay: 0.24s; }
+
+/* Inline "this button is working" spinner, sized to sit in button text. */
+.btnSpin {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.45em;
+  vertical-align: -0.03em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: btnSpin 0.7s linear infinite;
+}
+@keyframes btnSpin { to { transform: rotate(360deg); } }
+
+/* Reduced motion removes the looping cues, so each one needs a static form
+   that still reads as "busy" rather than vanishing. */
+@media (prefers-reduced-motion: reduce) {
+  .btnSpin { border-right-color: currentColor; opacity: 0.5; }
+  .prodBarSweep::after { display: none; }
+  .prodBarTrack.prodBarSweep { background: var(--accent-muted); }
 }

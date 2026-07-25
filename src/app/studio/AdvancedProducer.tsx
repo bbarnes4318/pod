@@ -153,7 +153,8 @@ export default function AdvancedProducer({
                   <button type="button" className={`segBtn${maxWords === null ? " on" : ""}`} onClick={() => setMaxWords(null)}>Auto</button>
                 </div>
               </div>
-              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={regen} disabled={busy === "script"}>
+              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={regen} disabled={busy === "script"} aria-busy={busy === "script"}>
+                {busy === "script" && <span className="btnSpin" aria-hidden="true" />}
                 {busy === "script" ? "Rewriting…" : "Regenerate script"}
               </button>
               <p className="advNote">Runs the real script job. The fact-check gate re-runs on approval — a rewrite never bypasses it.</p>
@@ -182,7 +183,8 @@ export default function AdvancedProducer({
                   ))}
                 </div>
               </div>
-              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={remix} disabled={busy === "mix" || !canRemix}>
+              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={remix} disabled={busy === "mix" || !canRemix} aria-busy={busy === "mix"}>
+                {busy === "mix" && <span className="btnSpin" aria-hidden="true" />}
                 {busy === "mix" ? "Re-mixing…" : "Re-mix audio"}
               </button>
               <p className="advNote">
