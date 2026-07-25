@@ -1,4 +1,4 @@
-import { getRedisUrl } from "@/lib/env";
+import { getRedisUrl, getNewsProvider } from "@/lib/env";
 
 export interface EnvCheck {
   key: string;
@@ -240,16 +240,25 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checks.push({ key: "ODDS_API_KEY", status: "warning", value: "MISSING", message: "ODDS_API_KEY is missing." });
   }
 
-  // NEWS_RSS_FEEDS check
+  // NEWS_RSS_FEEDS. This was a hard FAIL whenever the variable was absent,
+  // which is wrong twice over: the block's own message claims it is "required
+  // when NEWS_PROVIDER is 'rss'" but it never read NEWS_PROVIDER, and more
+  // importantly getRssNewsFeeds() falls back to the curated
+  // DEFAULT_NEWS_RSS_FEEDS list, so an absent variable is a supported,
+  // working configuration — not a deployment blocker. Operators who
+  // deliberately drop the variable were being told production was broken.
   const rssFeeds = process.env.NEWS_RSS_FEEDS;
   const legacyRssFeeds = process.env.RSS_NEWS_FEEDS;
+  const newsProvider = getNewsProvider();
 
   if (rssFeeds && rssFeeds.trim() !== "") {
     checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "CONFIGURED" });
   } else if (legacyRssFeeds && legacyRssFeeds.trim() !== "") {
     checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "LEGACY DETECTED", message: "Using legacy RSS_NEWS_FEEDS environment variable fallback." });
+  } else if (newsProvider === "rss") {
+    checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "USING BUILT-IN DEFAULTS", message: "Unset — falling back to the curated DEFAULT_NEWS_RSS_FEEDS list. Set NEWS_RSS_FEEDS only to override those feeds." });
   } else {
-    checks.push({ key: "NEWS_RSS_FEEDS", status: "fail", value: "MISSING", message: "NEWS_RSS_FEEDS is required when NEWS_PROVIDER is 'rss'." });
+    checks.push({ key: "NEWS_RSS_FEEDS", status: "pass", value: "NOT APPLICABLE", message: `Not required — NEWS_PROVIDER is '${newsProvider}', not 'rss'.` });
   }
 
   checkOptional("BALLDONTLIE_API_KEY", true);
