@@ -51,8 +51,8 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `SCRIPT_LLM_MODEL` | Model for script outline + acts (the quality-critical stage) | `claude-opus-5` |
 | `TTS_PROVIDER` | Speech synthesis provider | `fish` |
 | `FISH_API_KEY` | Fish Audio API credential key | `...` |
-| `FISH_MODEL` | Fish model for single lines + auditions. Valid: `s1`, `s2-pro`, `s2.1-pro`, `s2.1-pro-free` (free developer tier). Optional — code defaults to `s2.1-pro-free` | `s2.1-pro` on a paid account |
-| `FISH_SCENE_MODEL` | Fish model for native multi-speaker scenes — the primary episode render path. Optional — code defaults to `s2-pro` | `s2-pro` |
+| `FISH_MODEL` | Fish model for single lines + Character Studio auditions only. SDK-canonical ids are `s1` / `s2-pro`; `s2.1-pro-free` is the free-tier id from the official curl example. Optional — code defaults to `s2.1-pro-free` | leave unset |
+| `FISH_SCENE_MODEL` | Fish model for native multi-speaker scenes — the **primary** episode render path. **Must be `s2-pro`**: multi-speaker dialogue is S2-Pro only (see `docs/TTS_SCENE_CAPABILITIES.md`); any other value breaks scene rendering and forces the line-by-line fallback. Optional — code defaults to `s2-pro` | `s2-pro` |
 | `FISH_ZABALA_VOICE_ID` | Bernadette "Line Two" Zabala voice (seat A) — optional, read by the seed | 32-hex Fish reference ID |
 | `FISH_KEMP_VOICE_ID` | Otis "Laminate" Kemp voice (seat B) — optional, read by the seed | 32-hex Fish reference ID |
 | `SPORTS_PROVIDER` | Sports news/data provider | `api-sports` |
