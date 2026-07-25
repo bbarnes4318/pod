@@ -75,7 +75,7 @@ export default function TranscriptWorkspace({
   }
 
   // Seat-indexed colours (Prompt 7): seats 0-3 -> the four host tokens.
-  const SEAT_COLORS = ["var(--host-a)", "var(--host-b)", "var(--host-3)", "var(--host-4)"];
+  const SEAT_COLORS = ["var(--host-a)", "var(--host-b)", "var(--host-c)", "var(--host-d)"];
   const colorFor = (speaker: string) => {
     const s = speaker.trim().toLowerCase();
     const seat = vm.cast.findIndex((h) => h.name.toLowerCase() === s);

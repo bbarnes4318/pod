@@ -55,10 +55,10 @@
   /* Host identity */
   --host-a: #FF5A1F;
   --host-b: #4C8DFF;
-  /* Prompt 7: seats 3 + 4 for multi-voice formats (seat 0 = --host-a,
-     seat 1 = --host-b). */
-  --host-3: #2EC27E;
-  --host-4: #B78AF7;
+  /* Prompt 7: seats 2 + 3 for multi-voice formats (seat 0 = --host-a,
+     seat 1 = --host-b), matching the HOST_A..D voice env vars. */
+  --host-c: #2EC27E;
+  --host-d: #B78AF7;
 
   /* ------------------------------------------------------------
      Legacy aliases — load-bearing: every existing page consumes

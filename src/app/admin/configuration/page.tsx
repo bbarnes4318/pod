@@ -1,11 +1,27 @@
 import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
 import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus, getResearchProviderStatus, getBosonTtsStatus } from "@/lib/env";
+import { resolveEpisodeCast } from "@/lib/services/hostCasting";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConfigurationPage() {
   const audit = await runProductionReadinessAudit();
+
+  // Seat labels come from the CURRENT roster, never from name literals. This
+  // page used to print "Max Voltage Voice" and "Dr. Linebreak Voice" against a
+  // pair that had been retired for two rosters. Wrapped because this is a
+  // diagnostic page: a casting failure must not blank the whole readout.
+  let castNames: string[] = [];
+  try {
+    const cast = await resolveEpisodeCast({ hostIds: [] });
+    castNames = cast.members.map((m) => m.host.name);
+  } catch {
+    castNames = [];
+  }
+  const SEAT_LETTERS = ["A", "B", "C", "D"];
+  const seatLabel = (i: number) =>
+    castNames[i] ? `${castNames[i]} (seat ${SEAT_LETTERS[i]})` : `Seat ${SEAT_LETTERS[i]}`;
 
   const maskSecret = (envVar: string | undefined): string => {
     if (!envVar || envVar.trim() === "") return "MISSING";
@@ -252,15 +268,19 @@ export default async function ConfigurationPage() {
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>{process.env.CARTESIA_MODEL_ID || "sonic-2"}</div>
               </div>
               <div style={{ borderBottom: "1px solid var(--border-color)", paddingBottom: "0.5rem" }}>
-                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Seat A Voice (legacy env fallback)</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>{seatLabel(0)} Voice</div>
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
-                  {process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID || "Adrian (default fallback)"}
+                  {process.env.CARTESIA_HOST_A_VOICE_ID ||
+                    process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID ||
+                    "Adrian (default fallback)"}
                 </div>
               </div>
               <div>
-                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>Seat B Voice (legacy env fallback)</div>
+                <div style={{ color: "var(--text-secondary)", fontSize: "0.75rem", textTransform: "uppercase" }}>{seatLabel(1)} Voice</div>
                 <div style={{ color: "var(--text-primary)", fontWeight: "600" }}>
-                  {process.env.CARTESIA_DR_LINEBREAK_VOICE_ID || "Aiden (default fallback)"}
+                  {process.env.CARTESIA_HOST_B_VOICE_ID ||
+                    process.env.CARTESIA_DR_LINEBREAK_VOICE_ID ||
+                    "Aiden (default fallback)"}
                 </div>
               </div>
             </div>
