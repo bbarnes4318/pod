@@ -81,6 +81,28 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
     providerMetadata: s.providerMetadata,
   }));
 
+  // Scene-mode audio. The scene pipeline voices a whole scene as ONE render
+  // into DialogueSceneAudio and never writes the legacy per-line AudioSegment
+  // rows, so without this the console shows "No audio" on every line of a
+  // fully-voiced episode. Filter to the SELECTED, ready candidate — the same
+  // row the stitcher uses — so rejected takes never appear here.
+  const sceneRows = await db.dialogueSceneAudio.findMany({
+    where: { scriptId, status: "ready", selected: true },
+    orderBy: { sceneIndex: "asc" },
+  });
+  const initialScenes = sceneRows.map((s) => ({
+    id: s.id,
+    sceneIndex: s.sceneIndex,
+    sceneType: s.sceneType,
+    firstLineIndex: s.firstLineIndex,
+    lastLineIndex: s.lastLineIndex,
+    lineIndexes: (Array.isArray(s.lineIndexes) ? s.lineIndexes : []) as number[],
+    audioUrl: s.audioUrl,
+    durationMs: s.durationMs,
+    provider: s.provider,
+    model: s.model,
+  }));
+
   const eligibility = await fetchTtsEligibility(scriptId);
 
   let hosts: Array<{ id: string; slug: string; name: string }> = [];
@@ -95,6 +117,8 @@ export default async function AudioSegmentsDetailPage({ params }: PageProps) {
     <AudioSegmentsConsole
       script={serializedScript}
       initialSegments={initialSegments}
+      initialScenes={initialScenes}
+      ttsRenderMode={script.episode.ttsRenderMode || null}
       eligible={!!eligibility.eligible}
       eligibilityReason={eligibility.reason}
       eligibilityWarnings={eligibility.warnings || []}

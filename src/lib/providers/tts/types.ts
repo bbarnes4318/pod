@@ -3,6 +3,11 @@ export interface SynthesizeSpeechInput {
   text: string;
   voiceId: string;
   speakerName?: string;
+  /** 0-based chair for this line's speaker, from the resolved cast. Providers
+   *  use it to pick <PROVIDER>_HOST_A..D_VOICE_ID when voiceId is unusable.
+   *  Keying the fallback on the seat rather than the speaker's name is what
+   *  keeps a roster change from dropping a host onto the shared voice. */
+  seatIndex?: number;
   /** Script tone label (heated, sarcastic, analytical, ...). */
   tone?: string;
   /** Vocal intensity for this line. */

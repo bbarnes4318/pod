@@ -86,7 +86,7 @@ async function sceneAbsoluteLineTimings(
   return out.size > 0 ? out : null;
 }
 // Seat colours (Prompt 7): seats 0-3 mirror the UI tokens --host-a /
-// --host-b / --host-3 / --host-4. Two-host clips keep the classic pair.
+// --host-b / --host-c / --host-d. Two-host clips keep the classic pair.
 const SLOT_HEX = ["#FF5A1F", "#4C8DFF", "#2EC27E", "#B78AF7"] as const;
 
 interface FlatLine {

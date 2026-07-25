@@ -25,8 +25,22 @@ something (live, hot, act here).
 | success / warning / error | muted green/amber/red | Semantic states, kept quiet |
 
 **Sanctioned second hue:** `#58A6FF` (ice blue) is *functional only* — it
-identifies Host B (Dr. Linebreak) in the player host-strip and transcripts.
-Never use it decoratively.
+identifies seat B in the player host-strip and transcripts. Never use it
+decoratively.
+
+**Seat identity tokens** (`globals.css`). Keyed by chair, never by host name,
+so a roster change is a data change:
+
+| Token | Value | Seat |
+| --- | --- | --- |
+| `--host-a` | `#FF5A1F` | Chair 0 |
+| `--host-b` | `#4C8DFF` | Chair 1 |
+| `--host-c` | `#2EC27E` | Chair 2 (multi-voice formats) |
+| `--host-d` | `#B78AF7` | Chair 3 (multi-voice formats) |
+
+Consumers index them by `EpisodeCastMember` order: `MixView`,
+`TranscriptWorkspace`, and social-clip captions. The same A-D lettering keys
+the `<PROVIDER>_HOST_A..D_VOICE_ID` voice vars (docs/TTS_PROVIDERS.md).
 
 **Buttons on accent:** text is `#0B0D12` (dark on orange ≈ 6:1 contrast), not white.
 

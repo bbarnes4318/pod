@@ -1,6 +1,7 @@
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { getFishApiKey } from "../../env";
 import { formatLineForFish } from "./fishFormat";
+import { seatFallbackVoice } from "./voiceResolution";
 import type { DialogueSceneInput, DialogueSceneProvider, DialogueSceneResult } from "./sceneTypes";
 import { synthesizeFishDialogueScene } from "./fishDialogue";
 
@@ -41,21 +42,16 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
     const maxAttempts = Math.max(1, parseInt(process.env.FISH_TTS_MAX_RETRIES || "3", 10));
 
     // Voice resolution: explicit voice id (episode/run override, host
-    // default) wins; per-speaker env overrides, then FISH_TTS_VOICE, are
-    // only the FALLBACK; last resort is Fish's default voice (no
-    // reference_id). Fish reference ids are 32-hex; anything else (stub ids,
-    // ElevenLabs/Boson voice ids on a host whose engine was overridden at
-    // the episode level, bad env values) never goes out.
+    // default) wins; the SEAT-keyed env fallback comes next, ending at
+    // FISH_TTS_VOICE; last resort is Fish's default voice (no reference_id).
+    // Fish reference ids are 32-hex; anything else (stub ids, ElevenLabs/Boson
+    // voice ids on a host whose engine was overridden at the episode level,
+    // bad env values) never goes out.
     const asFishId = (id?: string | null): string | undefined =>
       id && /^[0-9a-f]{32}$/i.test(id) ? id : undefined;
     let referenceId = asFishId(input.voiceId);
     if (!referenceId) {
-      if (input.speakerName === "Max Voltage") {
-        referenceId = asFishId(process.env.FISH_MAX_VOLTAGE_VOICE_ID);
-      } else if (input.speakerName === "Dr. Linebreak") {
-        referenceId = asFishId(process.env.FISH_DR_LINEBREAK_VOICE_ID);
-      }
-      if (!referenceId) referenceId = asFishId(process.env.FISH_TTS_VOICE);
+      referenceId = asFishId(seatFallbackVoice("fish", input.seatIndex)?.voiceId);
     }
 
     // The Fish formatting layer: tone/energy/interruption + [tags] become

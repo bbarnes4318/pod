@@ -42,7 +42,7 @@ Execute the entire pipeline in order, validating each transition without shortcu
 - [ ] Go to **Debate Research Dossiers** (`/admin/research-briefs`).
 - [ ] Generate a production-grade research brief for the approved topic.
 - [ ] Go to the **LLM Script Review Console** (`/admin/scripts`).
-- [ ] Generate a debate script for hosts Max Voltage and Dr. Linebreak based on the brief.
+- [ ] Generate a debate script for the seeded cast (Bernadette "Line Two" Zabala, seat A; Ray "Forty-One" Meachum, seat B) based on the brief.
 - [ ] Read through the generated dialogue. Modify dialogue if any fake fallback quotes or ungrounded statistics exist.
 - [ ] Click **Approve Script**.
 

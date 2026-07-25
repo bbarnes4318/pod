@@ -105,7 +105,7 @@ async function buildEnrichedBrief(llm: LLMProvider, topic: any, items: FeedItem[
 
   return llm.generateStructuredOutput<any>({
     systemPrompt: `You prepare fact-grounded debate briefs for a sports podcast. Use ONLY the supplied evidence. Mine the ARTICLE TEXT for exact numbers, dates, records, and who-said-what. Quotes at most 20 words, attributed, never longer verbatim passages. Every keyFactsContext item must carry a concrete number or named person. Surface CONFLICT and stakes. Aim for 8-12 keyFactsContext items. Return valid JSON only.`,
-    prompt: `Topic: ${topic.title}\nSummary: ${topic.summary}\n\nEVIDENCE:\n${evidence}\n\nReturn JSON: { "mainAngle": "...", "whyMattersNow": "...", "keyFactsContext": [ { "text": "...", "evidenceRefs": [ { "type": "newsItem", "id": "news-<index>" } ], "confidence": "high" } ], "onAirTalkingPoints": [ { "text": "...", "evidenceRefs": [] } ], "counterArguments": [ { "host": "Max Voltage" | "Dr. Linebreak", "claim": "..." } ], "contrarianAngle": "...", "strongestDebateQuestion": "...", "suggestedHostTake": "...", "argumentForHostA": "...", "argumentForHostB": "...", "sourceIds": [ { "type": "newsItem", "id": "news-<index>" } ] }`,
+    prompt: `Topic: ${topic.title}\nSummary: ${topic.summary}\n\nEVIDENCE:\n${evidence}\n\nReturn JSON: { "mainAngle": "...", "whyMattersNow": "...", "keyFactsContext": [ { "text": "...", "evidenceRefs": [ { "type": "newsItem", "id": "news-<index>" } ], "confidence": "high" } ], "onAirTalkingPoints": [ { "text": "...", "evidenceRefs": [] } ], "counterArguments": [ { "host": "Zabala" | "Meachum", "claim": "..." } ], "contrarianAngle": "...", "strongestDebateQuestion": "...", "suggestedHostTake": "...", "argumentForHostA": "...", "argumentForHostB": "...", "sourceIds": [ { "type": "newsItem", "id": "news-<index>" } ] }`,
     temperature: 0.4,
     maxTokens: 10000,
   });
@@ -119,8 +119,8 @@ function topicPromptBlock(idx: number, topic: any, brief: any): string {
   if (brief.contrarianAngle) lines.push(`Contrarian Angle (use it): ${brief.contrarianAngle}`);
   if (brief.suggestedHostTake) lines.push(`Suggested Host Take: ${brief.suggestedHostTake}`);
   lines.push(
-    `Max Voltage Debate Stance: ${brief.argumentForHostA || ""}`,
-    `Dr. Linebreak Debate Stance: ${brief.argumentForHostB || ""}`,
+    `Zabala Debate Stance: ${brief.argumentForHostA || ""}`,
+    `Meachum Debate Stance: ${brief.argumentForHostB || ""}`,
     `Key Grounded Facts: ${JSON.stringify(brief.keyFactsContext || [])}`,
     `On-Air Talking Points: ${JSON.stringify(brief.onAirTalkingPoints || [])}`,
     `Suggested Counter-arguments: ${JSON.stringify(brief.counterArguments || [])}`,
@@ -133,7 +133,7 @@ function topicPromptBlock(idx: number, topic: any, brief: any): string {
 async function generateAndScore(label: string, llm: LLMProvider, topicsPrompts: string, systemPrompt: string) {
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
-      speakerNames: ["Max Voltage", "Dr. Linebreak"],
+      speakerNames: ["Zabala", "Meachum"],
     systemPrompt,
     episodeTitle: `Model A/B test (${label})`,
     topicsPrompts,

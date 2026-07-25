@@ -35,7 +35,7 @@ const buggySegments = Array.from({ length: 4 }, (_, s) => ({
   title: `Segment ${s + 1}`,
   lines: Array.from({ length: 12 }, (_, i) => ({
     lineIndex: i, // <-- restarts per segment, as the model emits it
-    speakerName: i % 2 ? "Dr. Linebreak" : "Max Voltage",
+    speakerName: i % 2 ? "Meachum" : "Zabala",
     text: `Segment ${s + 1} line ${i + 1} unique content about play number ${s * 12 + i}.`,
   })),
 }));
@@ -74,11 +74,11 @@ const restated = {
       type: "topic",
       title: "t",
       lines: [
-        { lineIndex: 0, speakerName: "Max Voltage", text: "The Wolves have lost five straight games and the coach is out of answers." },
-        { lineIndex: 1, speakerName: "Dr. Linebreak", text: "Their net rating in those five losses is historically bad for a two seed." },
-        { lineIndex: 2, speakerName: "Max Voltage", text: "Five straight losses for the Wolves, and the coach has zero answers left." }, // reworded repeat of 0
-        { lineIndex: 3, speakerName: "Dr. Linebreak", text: "The Wolves have lost five straight games and the coach is out of answers." }, // verbatim repeat of 0
-        { lineIndex: 4, speakerName: "Max Voltage", text: "Meanwhile the backup point guard just dropped thirty in a quarter." },
+        { lineIndex: 0, speakerName: "Zabala", text: "The Wolves have lost five straight games and the coach is out of answers." },
+        { lineIndex: 1, speakerName: "Meachum", text: "Their net rating in those five losses is historically bad for a two seed." },
+        { lineIndex: 2, speakerName: "Zabala", text: "Five straight losses for the Wolves, and the coach has zero answers left." }, // reworded repeat of 0
+        { lineIndex: 3, speakerName: "Meachum", text: "The Wolves have lost five straight games and the coach is out of answers." }, // verbatim repeat of 0
+        { lineIndex: 4, speakerName: "Zabala", text: "Meanwhile the backup point guard just dropped thirty in a quarter." },
       ],
     },
   ],
@@ -91,7 +91,7 @@ check("dedupe keeps first occurrence", deduped.segments[0].lines.length === 3, `
 // Degenerate 45x case
 const degenerate = Array.from({ length: 50 }, (_, i) => ({
   lineIndex: i,
-  speakerName: "Max Voltage",
+  speakerName: "Zabala",
   text: i < 5 ? `Unique opening line number ${i} about the game.` : "Rings talk, baby! You either hang banners or you make excuses!",
 }));
 const degenRep = findRepetitions(degenerate.map((l) => l.text));
@@ -125,7 +125,7 @@ async function liveTest() {
   const llm = getScriptLLMProvider();
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
-      speakerNames: ["Max Voltage", "Dr. Linebreak"],
+      speakerNames: ["Zabala", "Meachum"],
     systemPrompt,
     episodeTitle: "Live repetition regression test episode",
     topicsPrompts,

@@ -3,7 +3,7 @@
   "lines": [
     {
       "lineIndex": 0,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "No no no, you do not get to hang a two-seed banner for beating three teams with losing records. You don't!",
       "tone": "heated",
       "energy": "high",
@@ -12,8 +12,8 @@
     },
     {
       "lineIndex": 1,
-      "speaker": "Dr. Linebreak",
-      "text": "[sighs] Here we go. Max, they have the second-best point differential in the conference. That is not a schedule artifact.",
+      "speaker": "Meachum",
+      "text": "[sighs] Here we go. Bernie, they have the second-best point differential in the conference. That is not a schedule artifact.",
       "tone": "analytical",
       "energy": "low",
       "pauseBefore": "beat",
@@ -21,7 +21,7 @@
     },
     {
       "lineIndex": 2,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "Point differential? POINT differential? Who hangs a point differential banner? Where does it go, the analytics department?",
       "tone": "incredulous",
       "energy": "high",
@@ -30,7 +30,7 @@
     },
     {
       "lineIndex": 3,
-      "speaker": "Dr. Linebreak",
+      "speaker": "Meachum",
       "text": "[chuckles] The teams that understand it tend to hang the real ones later. But sure, let's do feelings instead.",
       "tone": "sarcastic",
       "energy": "medium",
@@ -39,7 +39,7 @@
     },
     {
       "lineIndex": 4,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "Okay, feelings? Feelings?! I watched that game Saturday. Fourth quarter, down six, and their star is standing in the corner like a mailbox—",
       "tone": "heated",
       "energy": "high",
@@ -48,8 +48,8 @@
     },
     {
       "lineIndex": 5,
-      "speaker": "Dr. Linebreak",
-      "text": "A mailbox that scored thirty-one points, Max.",
+      "speaker": "Meachum",
+      "text": "A mailbox that scored thirty-one points, Bernie.",
       "tone": "dismissive",
       "energy": "medium",
       "pauseBefore": "none",
@@ -57,7 +57,7 @@
     },
     {
       "lineIndex": 6,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "In garbage time! Half of that came when the game was already gone. You know this. You KNOW this.",
       "tone": "heated",
       "energy": "high",
@@ -66,7 +66,7 @@
     },
     {
       "lineIndex": 7,
-      "speaker": "Dr. Linebreak",
+      "speaker": "Meachum",
       "text": "I know that thirty-one is thirty-one. [pause] Look — I'll give you this much. The rotation gets thin late in games. That part is real.",
       "tone": "conceding",
       "energy": "low",
@@ -75,7 +75,7 @@
     },
     {
       "lineIndex": 8,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "Thank you! Was that so hard?",
       "tone": "amused",
       "energy": "medium",
@@ -84,7 +84,7 @@
     },
     {
       "lineIndex": 9,
-      "speaker": "Dr. Linebreak",
+      "speaker": "Meachum",
       "text": "It was, actually. [laughs softly] Physically painful.",
       "tone": "amused",
       "energy": "low",
@@ -93,7 +93,7 @@
     },
     {
       "lineIndex": 10,
-      "speaker": "Max Voltage",
+      "speaker": "Zabala",
       "text": "There it is, folks. Growth. Alright — playoffs start Friday, and if they lose in round one, I don't want to hear a word about point differential.",
       "tone": "setup",
       "energy": "medium",
@@ -102,7 +102,7 @@
     },
     {
       "lineIndex": 11,
-      "speaker": "Dr. Linebreak",
+      "speaker": "Meachum",
       "text": "And if they win it all, I expect that apology in writing. Notarized.",
       "tone": "deadpan",
       "energy": "low",
