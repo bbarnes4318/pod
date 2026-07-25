@@ -7,6 +7,7 @@ import {
   TtsVoiceOverrides,
   getTtsModelId,
   resolveTtsProviderAndVoice,
+  seatLabel,
 } from "@/lib/providers/tts/voiceResolution";
 import { hasLineIndexCollisions, normalizeLineIndexes } from "@/lib/services/scriptRepetition";
 import { resolveEpisodeCast, makeCastMatchers } from "@/lib/services/hostCasting";
@@ -130,6 +131,11 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
   });
   const cast = resolvedCast.members.map((m) => m.host);
   const speakers = makeCastMatchers(cast);
+  // Chair index per host, for the seat-keyed voice env fallbacks. members is
+  // already seat-ordered; orderIndex is authoritative when present.
+  const seatByHostId = new Map<string, number>(
+    resolvedCast.members.map((m, i) => [m.host.id, typeof m.orderIndex === "number" ? m.orderIndex : i])
+  );
 
   if (hostId && !cast.some((h) => h.id === hostId)) {
     throw new Error(`Invalid hostId '${hostId}'. Host filter must match one of this episode's cast host IDs (${cast.map((h) => h.name).join(", ")}).`);
@@ -274,11 +280,12 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         name: host.name,
         ttsProvider: host.ttsProvider,
         ttsVoiceId: host.ttsVoiceId,
+        seatIndex: seatByHostId.get(host.id),
       },
       envProvider: process.env.TTS_PROVIDER,
     });
     resolvedByHostId.set(host.id, resolved);
-    console.log(`[TTS Service] Voice resolution for ${host.name}: provider=${resolved.provider} voiceId=${resolved.voiceId || "(engine default)"} source=${resolved.voiceSource}`);
+    console.log(`[TTS Service] Voice resolution for ${host.name} (${seatLabel(seatByHostId.get(host.id))}): provider=${resolved.provider} voiceId=${resolved.voiceId || "(engine default)"} source=${resolved.voiceSource}`);
   }
 
   // 5. Worker queue controller
@@ -352,6 +359,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
           text: sanitizedText,
           voiceId: resolved.voiceId,
           speakerName: line.speakerName,
+          seatIndex: seatByHostId.get(line.speakerHostId),
           tone: line.tone,
           energy: line.energy,
           isInterruption: line.isInterruption === true,

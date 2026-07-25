@@ -1,3 +1,4 @@
+import { seatFallbackVoice } from "./voiceResolution";
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { getBosonApiKey } from "../../env";
 import { formatLineForBoson } from "./bosonFormat";
@@ -31,13 +32,7 @@ export class BosonTTSProvider implements TTSProvider {
     const isStubVoice = !input.voiceId || input.voiceId.includes("stub");
     let voice = isStubVoice ? "" : input.voiceId;
     if (!voice) {
-      if (input.speakerName === "Max Voltage" && process.env.BOSON_MAX_VOLTAGE_VOICE_ID) {
-        voice = process.env.BOSON_MAX_VOLTAGE_VOICE_ID;
-      } else if (input.speakerName === "Dr. Linebreak" && process.env.BOSON_DR_LINEBREAK_VOICE_ID) {
-        voice = process.env.BOSON_DR_LINEBREAK_VOICE_ID;
-      } else {
-        voice = process.env.BOSON_TTS_VOICE || "default";
-      }
+      voice = seatFallbackVoice("boson", input.seatIndex)?.voiceId || "default";
     }
 
     // The Boson formatting layer: tone/energy/interruption metadata + inline

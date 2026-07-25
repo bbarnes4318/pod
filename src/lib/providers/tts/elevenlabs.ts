@@ -1,3 +1,4 @@
+import { seatFallbackVoice } from "./voiceResolution";
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { stripAudioTags } from "@/lib/audio/speechText";
 import type { DialogueSceneInput, DialogueSceneProvider, DialogueSceneResult } from "./sceneTypes";
@@ -59,16 +60,11 @@ export class ElevenLabsTTSProvider implements TTSProvider, DialogueSceneProvider
     const isStubVoice = !input.voiceId || input.voiceId.includes("stub");
     let voiceId = isStubVoice ? "" : input.voiceId;
     if (!voiceId) {
-      if (input.speakerName === "Max Voltage") {
-        voiceId = process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID || "";
-      } else if (input.speakerName === "Dr. Linebreak") {
-        voiceId = process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID || "";
-      }
-      if (!voiceId) voiceId = process.env.ELEVENLABS_VOICE_ID || "";
+      voiceId = seatFallbackVoice("elevenlabs", input.seatIndex)?.voiceId || "";
     }
     if (!voiceId) {
       throw new Error(
-        "ElevenLabs voice ID is missing. Set ELEVENLABS_MAX_VOLTAGE_VOICE_ID and ELEVENLABS_DR_LINEBREAK_VOICE_ID, or configure the host's ttsVoiceId."
+        "ElevenLabs voice ID is missing. Set ELEVENLABS_HOST_A_VOICE_ID and ELEVENLABS_HOST_B_VOICE_ID, or configure the host's ttsVoiceId."
       );
     }
 

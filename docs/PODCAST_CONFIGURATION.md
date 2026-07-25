@@ -7,6 +7,37 @@ episode. It reflects the foundation delivered by the
 per-show reuse policy, private feeds, and per-show schedule times are explicitly
 **out of scope here** and tracked as follow-ups.
 
+## Current roster
+
+Defined in `prisma/seed.ts`, which is the source of truth. Both hosts run on
+Fish.
+
+| Seat | Host | Slug | Intensity |
+|------|------|------|-----------|
+| A (index 0) | Bernadette "Line Two" Zabala | `bernie-line-two` | 8 |
+| B (index 1) | Ray "Forty-One" Meachum | `ray-forty-one` | 7 |
+
+**Seat order is load-bearing.** `worker.ts` builds the research brief assuming
+seat B is the LOWER-intensity chair: the topic prompt asks why host A takes the
+strong stance and why host B contradicts it from their own worldview. Swapping
+the array order in the seed inverts that brief without any error. Keep the
+higher-intensity host at index 0.
+
+The gap is deliberately narrow (8 vs 7). Wide enough for the pipeline's A/B
+chair convention, close enough that escalation can genuinely start from either
+chair.
+
+Retired hosts are listed in `RETIRED_HOST_SLUGS` and archived, never deleted.
+`isArchived: true` removes a host from pickers and auto-casting;
+`isActive` MUST stay true, because `resolveEpisodeCast` looks a **pinned**
+`hostId` up by `isActive` alone. Deactivating a retired host makes episodes
+that pinned them fall through to auto-fill and silently re-cast with the
+current roster. `npm run test:seed` pins this behavior.
+
+Seat colours (`--host-a` .. `--host-d`) and voice env vars
+(`<PROVIDER>_HOST_A..D_VOICE_ID`) are keyed by the same chair index, so a
+roster change never needs a code change.
+
 ## Data model
 
 Identity lives on `Podcast`; settings live in three 1-1 config tables keyed by

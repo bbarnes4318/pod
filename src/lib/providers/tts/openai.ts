@@ -1,3 +1,4 @@
+import { seatFallbackVoice } from "./voiceResolution";
 import { SynthesizeSpeechInput, SynthesizeSpeechResult, TTSProvider } from "./types";
 import { OPENAI_TTS_VOICE_NAMES } from "./providerIds";
 import { stripAudioTags } from "@/lib/audio/speechText";
@@ -31,12 +32,7 @@ export class OpenAITTSProvider implements TTSProvider {
       v && allowed.includes(v.toLowerCase()) ? v.toLowerCase() : undefined;
     let voice = asOpenAiVoice(input.voiceId);
     if (!voice) {
-      if (input.speakerName === "Max Voltage") {
-        voice = asOpenAiVoice(process.env.OPENAI_MAX_VOLTAGE_VOICE);
-      } else if (input.speakerName === "Dr. Linebreak") {
-        voice = asOpenAiVoice(process.env.OPENAI_DR_LINEBREAK_VOICE);
-      }
-      if (!voice) voice = asOpenAiVoice(process.env.OPENAI_TTS_VOICE) || "alloy";
+      voice = asOpenAiVoice(seatFallbackVoice("openai", input.seatIndex)?.voiceId) || "alloy";
     }
 
     const body: Record<string, unknown> = {

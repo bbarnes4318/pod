@@ -38,7 +38,7 @@ pair resolver — byte-identical casting). Snapshot v3 freezes
 - **Audio**: `hostSlot` = seat index; `seatPan()` seats 1-4 across the stereo
   field (two-seat = the exact legacy left/right pair).
 - **Presentation**: transcripts/mix color by seat across four tokens
-  (`--host-max`, `--host-doc`, `--host-3`, `--host-4`); social-clip captions
+  (`--host-a`, `--host-b`, `--host-c`, `--host-d`); social-clip captions
   use four seat colours and cast-derived labels.
 
 ## Surfaces
