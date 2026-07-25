@@ -174,6 +174,7 @@ export async function loadScenePlanForScript(scriptId: string): Promise<{
           name: m.host.name,
           ttsProvider: m.host.ttsProvider,
           ttsVoiceId: m.host.ttsVoiceId,
+          seatIndex: m.orderIndex,
         },
         envProvider: process.env.TTS_PROVIDER,
       })

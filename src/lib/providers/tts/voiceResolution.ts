@@ -47,6 +47,10 @@ export interface HostVoiceContext {
   name: string;
   ttsProvider?: string | null;
   ttsVoiceId?: string | null;
+  /** 0-based chair, matching EpisodeCastMember.orderIndex. Drives the
+   *  <PROVIDER>_HOST_A/B/C/D_VOICE_ID env fallbacks. Omitted means the caller
+   *  has no cast context, and only the slug and shared vars apply. */
+  seatIndex?: number;
 }
 
 export interface ResolveTtsInput {
@@ -63,12 +67,15 @@ export interface ResolveTtsInput {
   envProvider?: string | null;
 }
 
-// Cartesia's provider previously hard-coded these per-speaker fallbacks; they
-// stay the safety net so a stub/missing voice never produces a random voice.
-const CARTESIA_DEFAULTS: Record<string, string> = {
-  "max-voltage": "e2d48e7b-cd73-4c4c-bc1e-f232580e8709",
-  "dr-linebreak": "3ccc4544-84f7-45e3-ae57-5c52b5a1fac6",
-};
+// Cartesia's provider previously hard-coded these per-speaker fallbacks under
+// the Max Voltage / Dr. Linebreak slugs. Now keyed by SEAT, so the two chairs
+// keep two distinct stock voices across every roster change. Identity keying
+// meant both hosts collapsed onto the generic default the moment those two
+// slugs stopped existing.
+const CARTESIA_SEAT_DEFAULTS: string[] = [
+  "e2d48e7b-cd73-4c4c-bc1e-f232580e8709",
+  "3ccc4544-84f7-45e3-ae57-5c52b5a1fac6",
+];
 const CARTESIA_GENERIC_DEFAULT = "a5136bf9-224c-4d76-b823-52bd5efcffcc"; // Jameson
 
 function normalizeProvider(value?: string | null): string | null {
@@ -95,18 +102,17 @@ export function isVoiceIdValidForProvider(provider: string, voiceId?: string | n
   }
 }
 
-function isMaxVoltage(host: HostVoiceContext): boolean {
-  return host.slug === "max-voltage" || host.name === "Max Voltage";
-}
+/** Chair letters for the seat-keyed env vars. Index is EpisodeCastMember
+ *  orderIndex, so seat 0 is host A. */
+const SEAT_LETTERS = ["A", "B", "C", "D"] as const;
 
-function isDrLinebreak(host: HostVoiceContext): boolean {
-  return host.slug === "dr-linebreak" || host.name === "Dr. Linebreak";
+export function seatLabel(seatIndex?: number): string {
+  if (typeof seatIndex !== "number" || !SEAT_LETTERS[seatIndex]) return "unseated";
+  return `seat ${SEAT_LETTERS[seatIndex]} (index ${seatIndex})`;
 }
 
 /** Generic per-host env var: <PROVIDER>_VOICE_ID_<SLUG_UPPER_SNAKE>, e.g.
- *  FISH_VOICE_ID_BERNIE_LINE_TWO. Works for ANY host slug — the named
- *  MAX_VOLTAGE/DR_LINEBREAK vars below are legacy fallbacks kept for
- *  existing deployments. */
+ *  FISH_VOICE_ID_BERNIE_LINE_TWO. Works for ANY host slug. */
 function slugEnvVoice(provider: string, host: HostVoiceContext): string | undefined {
   const slug = (host.slug || "").trim();
   if (!slug) return undefined;
@@ -115,47 +121,101 @@ function slugEnvVoice(provider: string, host: HostVoiceContext): string | undefi
   return v && v.trim() ? v.trim() : undefined;
 }
 
-/** Per-provider, per-host env fallback voice id. */
-function envVoiceFor(provider: string, host: HostVoiceContext): string | undefined {
-  const generic = slugEnvVoice(provider, host);
-  if (generic) return generic;
-  const pick = (maxVar?: string, docVar?: string, sharedVar?: string) =>
-    (isMaxVoltage(host) ? maxVar : isDrLinebreak(host) ? docVar : undefined) || sharedVar || undefined;
+/** Seat-keyed env var: <PROVIDER>_HOST_A_VOICE_ID .. _HOST_D_VOICE_ID.
+ *  Keyed by chair rather than by host identity, so a roster change never
+ *  silently drops a host onto the shared default. */
+function seatEnvVoice(provider: string, seatIndex?: number): string | undefined {
+  if (typeof seatIndex !== "number") return undefined;
+  const letter = SEAT_LETTERS[seatIndex];
+  if (!letter) return undefined;
+  const v = process.env[`${provider.toUpperCase()}_HOST_${letter}_VOICE_ID`];
+  return v && v.trim() ? v.trim() : undefined;
+}
 
+/**
+ * DEPRECATED per-seat env vars, named after the Max Voltage / Dr. Linebreak
+ * roster that was retired two rosters ago. They are read for seats 0 and 1
+ * only, so deployments that still set them keep working through the rollout.
+ *
+ * REMOVE once every environment has moved to <PROVIDER>_HOST_A_VOICE_ID /
+ * <PROVIDER>_HOST_B_VOICE_ID. Nothing else in the codebase keys off these
+ * names any more.
+ */
+function legacySeatEnvVoice(provider: string, seatIndex?: number): string | undefined {
+  if (seatIndex !== 0 && seatIndex !== 1) return undefined;
+  const seatA = seatIndex === 0;
+  let v: string | undefined;
   switch (provider) {
     case "boson":
-      return pick(
-        process.env.BOSON_MAX_VOLTAGE_VOICE_ID,
-        process.env.BOSON_DR_LINEBREAK_VOICE_ID,
-        process.env.BOSON_TTS_VOICE
-      );
+      v = seatA ? process.env.BOSON_MAX_VOLTAGE_VOICE_ID : process.env.BOSON_DR_LINEBREAK_VOICE_ID;
+      break;
     case "fish":
-      return pick(
-        process.env.FISH_MAX_VOLTAGE_VOICE_ID,
-        process.env.FISH_DR_LINEBREAK_VOICE_ID,
-        process.env.FISH_TTS_VOICE
-      );
+      v = seatA ? process.env.FISH_MAX_VOLTAGE_VOICE_ID : process.env.FISH_DR_LINEBREAK_VOICE_ID;
+      break;
     case "elevenlabs":
-      return pick(
-        process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID,
-        process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID,
-        process.env.ELEVENLABS_VOICE_ID
-      );
+      v = seatA ? process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID : process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID;
+      break;
     case "cartesia":
-      return pick(
-        process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID,
-        process.env.CARTESIA_DR_LINEBREAK_VOICE_ID,
-        process.env.CARTESIA_VOICE_ID
-      );
+      v = seatA ? process.env.CARTESIA_MAX_VOLTAGE_VOICE_ID : process.env.CARTESIA_DR_LINEBREAK_VOICE_ID;
+      break;
     case "openai":
-      return pick(
-        process.env.OPENAI_MAX_VOLTAGE_VOICE,
-        process.env.OPENAI_DR_LINEBREAK_VOICE,
-        process.env.OPENAI_TTS_VOICE
-      );
+      v = seatA ? process.env.OPENAI_MAX_VOLTAGE_VOICE : process.env.OPENAI_DR_LINEBREAK_VOICE;
+      break;
     default:
       return undefined;
   }
+  return v && v.trim() ? v.trim() : undefined;
+}
+
+/** The seat-agnostic default for a provider. Reaching this means nobody
+ *  configured a voice for this specific host or chair. */
+function sharedEnvVoice(provider: string): string | undefined {
+  let v: string | undefined;
+  switch (provider) {
+    case "boson":
+      v = process.env.BOSON_TTS_VOICE;
+      break;
+    case "fish":
+      v = process.env.FISH_TTS_VOICE;
+      break;
+    case "elevenlabs":
+      v = process.env.ELEVENLABS_VOICE_ID;
+      break;
+    case "cartesia":
+      v = process.env.CARTESIA_VOICE_ID;
+      break;
+    case "openai":
+      v = process.env.OPENAI_TTS_VOICE;
+      break;
+    default:
+      return undefined;
+  }
+  return v && v.trim() ? v.trim() : undefined;
+}
+
+/** Where an env-sourced voice came from. "shared" is the one worth warning
+ *  about: it means this host is about to speak in a voice nobody chose for
+ *  them, which is how a whole roster change went unnoticed. */
+export type EnvVoiceScope = "slug" | "seat" | "legacy_seat" | "shared";
+
+/** Per-provider env fallback voice id, most specific first. */
+function envVoiceFor(
+  provider: string,
+  host: HostVoiceContext
+): { voiceId: string; scope: EnvVoiceScope } | undefined {
+  const bySlug = slugEnvVoice(provider, host);
+  if (bySlug) return { voiceId: bySlug, scope: "slug" };
+
+  const bySeat = seatEnvVoice(provider, host.seatIndex);
+  if (bySeat) return { voiceId: bySeat, scope: "seat" };
+
+  const legacy = legacySeatEnvVoice(provider, host.seatIndex);
+  if (legacy) return { voiceId: legacy, scope: "legacy_seat" };
+
+  const shared = sharedEnvVoice(provider);
+  if (shared) return { voiceId: shared, scope: "shared" };
+
+  return undefined;
 }
 
 /** Find this host's entry in an overrides map — slug key preferred, id accepted. */
@@ -210,14 +270,31 @@ export function resolveTtsProviderAndVoice(input: ResolveTtsInput): ResolvedTtsV
     return { provider, voiceId: (host.ttsVoiceId as string).trim(), voiceSource: "host_default" };
   }
 
-  // 4. Provider-specific env fallback.
-  const envVoice = envVoiceFor(provider, host);
-  if (envVoice && isVoiceIdValidForProvider(provider, envVoice)) {
-    const voiceId = provider === "openai" ? envVoice.trim().toLowerCase() : envVoice.trim();
+  // 4. Provider-specific env fallback, most specific first: the host's own
+  // slug var, then the seat var, then the deprecated named vars, then the
+  // provider's shared default.
+  const envPick = envVoiceFor(provider, host);
+  if (envPick && isVoiceIdValidForProvider(provider, envPick.voiceId)) {
+    if (envPick.scope === "shared") {
+      console.warn(
+        `[TTS Voice] ${host.name} (${host.slug}, ${seatLabel(host.seatIndex)}) has no voice of their own for ` +
+          `provider '${provider}' and fell back to the SHARED default. Every host on this provider will sound ` +
+          `the same. Set ${provider.toUpperCase()}_HOST_${SEAT_LETTERS[host.seatIndex ?? 0] ?? "A"}_VOICE_ID, ` +
+          `or give the host a valid ttsVoiceId.`
+      );
+    }
+    const voiceId = provider === "openai" ? envPick.voiceId.toLowerCase() : envPick.voiceId;
     return { provider, voiceId, voiceSource: "env_default" };
   }
 
-  // 5. Provider safe defaults, else a clear error.
+  // 5. Provider safe defaults, else a clear error. Reaching here means no
+  // host voice, no seat voice, and no shared default — the engine picks. That
+  // is the quietest failure of all, so it warns too.
+  console.warn(
+    `[TTS Voice] ${host.name} (${host.slug}, ${seatLabel(host.seatIndex)}) resolved NO voice for provider ` +
+      `'${provider}' and will use the engine's built-in default. Set ` +
+      `${provider.toUpperCase()}_HOST_${SEAT_LETTERS[host.seatIndex ?? 0] ?? "A"}_VOICE_ID or the host's ttsVoiceId.`
+  );
   switch (provider) {
     case "boson":
       return { provider, voiceId: "default", voiceSource: "provider_default" };
@@ -228,8 +305,9 @@ export function resolveTtsProviderAndVoice(input: ResolveTtsInput): ResolvedTtsV
       // "send no reference_id".
       return { provider, voiceId: "", voiceSource: "provider_default" };
     case "cartesia": {
-      const fallback = CARTESIA_DEFAULTS[host.slug] || CARTESIA_GENERIC_DEFAULT;
-      return { provider, voiceId: fallback, voiceSource: "provider_default" };
+      const seated =
+        typeof host.seatIndex === "number" ? CARTESIA_SEAT_DEFAULTS[host.seatIndex] : undefined;
+      return { provider, voiceId: seated || CARTESIA_GENERIC_DEFAULT, voiceSource: "provider_default" };
     }
     default:
       throw new Error(
