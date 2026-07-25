@@ -12,6 +12,78 @@ export interface ReadinessResult {
   checks: EnvCheck[];
 }
 
+/**
+ * Statically-referenced snapshot of every variable this checklist inspects.
+ *
+ * WHY THIS EXISTS: Next.js inlines `process.env` into the server bundle at
+ * build time. A LITERAL read (`process.env.REDIS_URL`) is substituted with the
+ * real value, but a COMPUTED read (`process.env[key]`) can only find variables
+ * that are ALSO referenced literally somewhere in that same bundle. Keys used
+ * exclusively by the worker — FISH_API_KEY, ANTHROPIC_API_KEY — are never
+ * referenced literally in anything the web app bundles, so `process.env[key]`
+ * returned undefined for them and readiness reported MISSING for keys that
+ * were demonstrably present in the container (`env | grep` showed them).
+ *
+ * Listing each name literally here forces it into the bundle. Any key added to
+ * a checkRequired/checkOptional call MUST be added here too, or it will
+ * silently read as missing in production while working fine in local dev
+ * (where there is no bundler and process.env is the real thing).
+ */
+const ENV_SNAPSHOT: Record<string, string | undefined> = {
+  ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+  ADMIN_USERNAME: process.env.ADMIN_USERNAME,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+  AUDIO_STITCH_WORKER_CONCURRENCY: process.env.AUDIO_STITCH_WORKER_CONCURRENCY,
+  BALLDONTLIE_API_KEY: process.env.BALLDONTLIE_API_KEY,
+  BOSON_API_KEY: process.env.BOSON_API_KEY,
+  BOSON_TTS_MODEL: process.env.BOSON_TTS_MODEL,
+  BOSON_TTS_VOICE: process.env.BOSON_TTS_VOICE,
+  CARTESIA_API_KEY: process.env.CARTESIA_API_KEY,
+  CONTENT_WORKER_CONCURRENCY: process.env.CONTENT_WORKER_CONCURRENCY,
+  DATABASE_URL: process.env.DATABASE_URL,
+  DEEPGRAM_API_KEY: process.env.DEEPGRAM_API_KEY,
+  ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+  ELEVENLABS_DR_LINEBREAK_VOICE_ID: process.env.ELEVENLABS_DR_LINEBREAK_VOICE_ID,
+  ELEVENLABS_MAX_VOLTAGE_VOICE_ID: process.env.ELEVENLABS_MAX_VOLTAGE_VOICE_ID,
+  ELEVENLABS_MODEL: process.env.ELEVENLABS_MODEL,
+  FISH_API_KEY: process.env.FISH_API_KEY,
+  FISH_MODEL: process.env.FISH_MODEL,
+  FISH_SCENE_MODEL: process.env.FISH_SCENE_MODEL,
+  LLM_PROVIDER: process.env.LLM_PROVIDER,
+  NEWS_PROVIDER: process.env.NEWS_PROVIDER,
+  NEWS_RSS_FEEDS: process.env.NEWS_RSS_FEEDS,
+  NODE_ENV: process.env.NODE_ENV,
+  ODDS_API_KEY: process.env.ODDS_API_KEY,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  OPENAI_MODEL: process.env.OPENAI_MODEL,
+  PODCAST_IMAGE_URL: process.env.PODCAST_IMAGE_URL,
+  RSS_NEWS_FEEDS: process.env.RSS_NEWS_FEEDS,
+  RSS_PREVIEW_TOKEN: process.env.RSS_PREVIEW_TOKEN,
+  RSS_WORKER_CONCURRENCY: process.env.RSS_WORKER_CONCURRENCY,
+  S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID,
+  S3_BUCKET: process.env.S3_BUCKET,
+  S3_ENDPOINT: process.env.S3_ENDPOINT,
+  S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL,
+  S3_REGION: process.env.S3_REGION,
+  S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
+  SCRIPT_LLM_MODEL: process.env.SCRIPT_LLM_MODEL,
+  SCRIPT_LLM_PROVIDER: process.env.SCRIPT_LLM_PROVIDER,
+  SPORTSDATAIO_API_KEY: process.env.SPORTSDATAIO_API_KEY,
+  SPORTS_PROVIDER: process.env.SPORTS_PROVIDER,
+  STORAGE_PROVIDER: process.env.STORAGE_PROVIDER,
+  TTS_PROVIDER: process.env.TTS_PROVIDER,
+  TTS_WORKER_CONCURRENCY: process.env.TTS_WORKER_CONCURRENCY,
+  WORKER_CONCURRENCY: process.env.WORKER_CONCURRENCY,
+};
+
+/** Read a variable by name, preferring the statically-bundled snapshot. */
+function readEnv(key: string): string | undefined {
+  const snapshot = ENV_SNAPSHOT[key];
+  if (snapshot !== undefined) return snapshot;
+  return process.env[key];
+}
+
 export function isPlaceholderValue(val: string | undefined): boolean {
   if (!val) return false;
   const normalized = val.trim().toUpperCase();
@@ -39,7 +111,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   const checks: EnvCheck[] = [];
 
   const checkRequired = (key: string, sensitive = false) => {
-    const val = process.env[key];
+    const val = readEnv(key);
     const isPlaceholder = isPlaceholderValue(val);
     if (!val || val.trim() === "") {
       checks.push({ key, status: "fail", value: "MISSING", message: `Required variable ${key} is missing.` });
@@ -51,7 +123,7 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   };
 
   const checkOptional = (key: string, sensitive = false) => {
-    const val = process.env[key];
+    const val = readEnv(key);
     const isPlaceholder = isPlaceholderValue(val);
     if (!val || val.trim() === "") {
       checks.push({ key, status: "warning", value: "MISSING", message: `Optional variable ${key} is missing.` });
