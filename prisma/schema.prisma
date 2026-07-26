@@ -8,27 +8,27 @@ generator client {
 }
 
 model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
+  id            String       @id @default(uuid())
+  email         String       @unique
   name          String?
-  role          String    @default("USER")
+  role          String       @default("USER")
   // Monetization tier (Step 9c). Additive, defaults to "free" for every existing
   // + new account. This single column is the entitlement source of truth a
   // future billing webhook would update — no processor is wired in this step.
-  plan          String    @default("free")
+  plan          String       @default("free")
   // --- Auth.js additions (all additive/nullable; existing columns unchanged) ---
   emailVerified DateTime? // set when the user confirms their email (email flow is stubbed until a mail provider is configured)
-  image         String?   // avatar URL (from OAuth or account settings)
-  passwordHash  String?   // bcrypt hash for the Credentials provider; null for OAuth-only accounts
+  image         String? // avatar URL (from OAuth or account settings)
+  passwordHash  String? // bcrypt hash for the Credentials provider; null for OAuth-only accounts
   accounts      Account[]
   sessions      Session[]
   podcasts      Podcast[] // shows this user owns
   episodes      Episode[] // episodes this user created
-  aiHosts       AiHost[]  // Character Studio hosts this user owns (null owner = shared)
+  aiHosts       AiHost[] // Character Studio hosts this user owns (null owner = shared)
   audioAssets   AudioAsset[] @relation("OwnedAudioAssets") // private sound library
   studioDraft   StudioDraft? // in-progress Studio rundown (pre-generation resume state)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 }
 
 // --- Auth.js (NextAuth v5) / @auth/prisma-adapter standard tables ---
@@ -73,35 +73,35 @@ model VerificationToken {
 }
 
 model AiHost {
-  id               String   @id @default(uuid())
-  name             String
-  slug             String   @unique
-  role             String
-  worldview        String
-  speakingStyle    String
-  catchphrases     Json     // Array of strings
-  likes            Json     // Array of strings
-  dislikes         Json     // Array of strings
-  argumentPatterns Json     // Array of strings or objects
-  bannedPhrases    Json     // Array of strings
-  ttsProvider      String
-  ttsVoiceId       String
-  intensityLevel   Int
+  id                  String              @id @default(uuid())
+  name                String
+  slug                String              @unique
+  role                String
+  worldview           String
+  speakingStyle       String
+  catchphrases        Json // Array of strings
+  likes               Json // Array of strings
+  dislikes            Json // Array of strings
+  argumentPatterns    Json // Array of strings or objects
+  bannedPhrases       Json // Array of strings
+  ttsProvider         String
+  ttsVoiceId          String
+  intensityLevel      Int
   // Optional versioned performance profile (validated by
   // src/lib/hosts/performanceProfile.ts — never a bag of unchecked JSON).
   // null = derive safely from role/speakingStyle/intensityLevel.
-  performanceProfile Json?
-  isActive         Boolean  @default(true)
+  performanceProfile  Json?
+  isActive            Boolean             @default(true)
   // Soft archive (Step 8 Character Studio): archived hosts drop out of active
   // pickers but keep their association with existing episodes. Additive +
   // default false (migration 20260707140000).
-  isArchived       Boolean  @default(false)
+  isArchived          Boolean             @default(false)
   // Per-account ownership (additive, nullable, migration 20260707150000).
   // null = system/shared host (existing rows + seed) — visible read-only to
   // every account; non-null = owned by that User.id. Pickers show own + shared;
   // mutations are owner-gated; the resolver stays owner-agnostic.
-  ownerId          String?
-  ownerUser        User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId             String?
+  ownerUser           User?               @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   // Declared so the schema matches what 20260707150000_add_aihost_owner actually
   // built. The pickers filter hosts by owner, so this index is wanted — it was
   // simply never written down here, which showed up as drift the moment a
@@ -113,9 +113,9 @@ model AiHost {
   // recorded. Additive + nullable (migration 20260707130000).
   voiceSource         String?
   voiceProvenanceNote String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  castMemberships  EpisodeCastMember[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  castMemberships     EpisodeCastMember[]
 
   @@index([ownerId])
 }
@@ -130,8 +130,8 @@ model EpisodeCastMember {
   episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   hostId     String
   host       AiHost   @relation(fields: [hostId], references: [id], onDelete: Restrict)
-  role       String   // ShowFormatRole.id from the registry
-  orderIndex Int      // seat order: drives speaking order, seating, colors
+  role       String // ShowFormatRole.id from the registry
+  orderIndex Int // seat order: drives speaking order, seating, colors
   createdAt  DateTime @default(now())
 
   @@unique([episodeId, orderIndex])
@@ -140,14 +140,14 @@ model EpisodeCastMember {
 }
 
 model SportsDataSource {
-  id            String    @id @default(uuid())
-  name          String    @unique
-  type          String
-  baseUrl       String
-  isActive      Boolean   @default(true)
+  id             String    @id @default(uuid())
+  name           String    @unique
+  type           String
+  baseUrl        String
+  isActive       Boolean   @default(true)
   lastIngestedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model League {
@@ -199,20 +199,20 @@ model Player {
 }
 
 model Game {
-  id             String          @id
-  leagueId       String
-  homeTeamId     String
-  awayTeamId     String
-  scheduledAt    DateTime
-  status         String
-  homeScore      Int?
-  awayScore      Int?
-  sourceId       String?
-  raw            Json
-  league         League          @relation(fields: [leagueId], references: [id])
-  homeTeam       Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam       Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  oddsSnapshots  OddsSnapshot[]
+  id            String         @id
+  leagueId      String
+  homeTeamId    String
+  awayTeamId    String
+  scheduledAt   DateTime
+  status        String
+  homeScore     Int?
+  awayScore     Int?
+  sourceId      String?
+  raw           Json
+  league        League         @relation(fields: [leagueId], references: [id])
+  homeTeam      Team           @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeam      Team           @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  oddsSnapshots OddsSnapshot[]
 
   @@index([leagueId])
   @@index([homeTeamId])
@@ -298,9 +298,9 @@ model NewsItem {
   url         String
   publishedAt DateTime
   summary     String?
-  entities    Json     // Array of extracted entities/keywords
+  entities    Json // Array of extracted entities/keywords
   raw         Json
-  
+
   @@index([publishedAt])
 }
 
@@ -314,7 +314,7 @@ enum TopicEditorialStatus {
 }
 
 model TopicCandidate {
-  id                    String         @id @default(uuid())
+  id                    String               @id @default(uuid())
   title                 String
   sport                 String
   leagueId              String?
@@ -324,17 +324,17 @@ model TopicCandidate {
   bettingRelevanceScore Float
   recencyScore          Float
   debateScore           Float
-  evidenceIds           Json           // Structured logs linking back to Games/Stats/News
+  evidenceIds           Json // Structured logs linking back to Games/Stats/News
   // EDITORIAL READINESS ONLY — never a global usage flag. Usage is derived from
   // EpisodeTopic (a topic can be consumed by many users/podcasts/episodes).
   // Enforced at the DB level as an enum so "used"/arbitrary values can't be
   // written through Prisma.
   status                TopicEditorialStatus
-  createdAt             DateTime       @default(now())
-  league                League?        @relation(fields: [leagueId], references: [id])
+  createdAt             DateTime             @default(now())
+  league                League?              @relation(fields: [leagueId], references: [id])
   researchBrief         ResearchBrief?
   episodeTopics         EpisodeTopic[]
-  sources               TopicSource[]  // operator-imported articles (editorial input, NOT evidence)
+  sources               TopicSource[] // operator-imported articles (editorial input, NOT evidence)
 
   @@index([leagueId])
   @@index([status])
@@ -353,29 +353,29 @@ model TopicCandidate {
 // would both lose the fields below and quietly feed the automatic topic
 // generator. Injury.sourceUrl is the only other URL column and is unrelated.
 model TopicSource {
-  id           String    @id @default(uuid())
-  topicId      String
+  id                     String    @id @default(uuid())
+  topicId                String
   // As pasted (minus any credentials, which are rejected before we get here).
-  originalUrl  String
+  originalUrl            String
   // Post-redirect, normalized. The duplicate-detection key.
-  canonicalUrl String
-  title        String?
-  publisher    String?
-  author       String?
-  publishedAt  DateTime?
+  canonicalUrl           String
+  title                  String?
+  publisher              String?
+  author                 String?
+  publishedAt            DateTime?
   // Sanitized PLAIN TEXT only. Raw HTML is never stored: it has no consumer,
   // and storing it would keep an XSS payload alive in the database.
-  excerpt      String?
+  excerpt                String?
   // sha256 of the fetched body — cheap change detection without keeping it.
-  contentHash  String?
+  contentHash            String?
   // "imported" | one of the FetchErrorCategory values.
-  fetchStatus  String
-  fetchErrorCategory String?
-  retrievedAt  DateTime?
+  fetchStatus            String
+  fetchErrorCategory     String?
+  retrievedAt            DateTime?
   // adminIdentity() — an audit label, NOT a User FK (admins have no User row).
   createdByAdminIdentity String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   topic TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
@@ -386,46 +386,46 @@ model TopicSource {
 }
 
 model ResearchBrief {
-  id                String         @id @default(uuid())
-  topicId           String         @unique
-  facts             Json           // Scraped facts/bulletpoints
-  stats             Json           // Relevant statistics
-  injuryContext     String?
-  oddsContext       String?
-  argumentForHostA  String
-  argumentForHostB  String
-  counterArguments  Json           // Counter arguments structure
-  unsafeClaims      Json           // Moderated/flagged points
-  sourceIds         Json           // List of source URLs/IDs
-  createdAt         DateTime       @default(now())
-  topic             TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  id               String         @id @default(uuid())
+  topicId          String         @unique
+  facts            Json // Scraped facts/bulletpoints
+  stats            Json // Relevant statistics
+  injuryContext    String?
+  oddsContext      String?
+  argumentForHostA String
+  argumentForHostB String
+  counterArguments Json // Counter arguments structure
+  unsafeClaims     Json // Moderated/flagged points
+  sourceIds        Json // List of source URLs/IDs
+  createdAt        DateTime       @default(now())
+  topic            TopicCandidate @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
   // Decoupled editorial fields
-  classification    String?
-  mainAngle         String?
-  whyMattersNow     String?
-  keyFactsContext   Json?
-  onAirTalkingPoints Json?
-  contrarianAngle   String?
+  classification          String?
+  mainAngle               String?
+  whyMattersNow           String?
+  keyFactsContext         Json?
+  onAirTalkingPoints      Json?
+  contrarianAngle         String?
   strongestDebateQuestion String?
-  suggestedHostTake String?
-  sourceNotesUsed   String?
+  suggestedHostTake       String?
+  sourceNotesUsed         String?
 }
 
 // A user-defined show: the saved recipe (verticals, teams, hosts, segment
 // count, cadence) that episodes are generated from — one-time or recurring.
 model Podcast {
-  id            String   @id @default(uuid())
-  name          String
-  cadence       String   // "one_time" | "recurring"
-  scheduleDays  String[] @default([]) // ["mon".."sun"] — recurring only
-  verticals     String[] @default([]) // display names from src/lib/verticals.ts (e.g. "NFL", "College Football")
-  teams         String[] @default([]) // Team.id values; empty = vertical-wide
-  segmentCount  Int      @default(3)  // maps to the pipeline's targetTopicCount
-  hostIds       String[] @default([]) // AiHost.id values
-  owner         String   @default("listener") // legacy free-text owner; superseded by ownerId
-  ownerId       String?  // User.id of the creator; null for legacy/pre-auth podcasts
-  ownerUser     User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  id                    String   @id @default(uuid())
+  name                  String
+  cadence               String // "one_time" | "recurring"
+  scheduleDays          String[] @default([]) // ["mon".."sun"] — recurring only
+  verticals             String[] @default([]) // display names from src/lib/verticals.ts (e.g. "NFL", "College Football")
+  teams                 String[] @default([]) // Team.id values; empty = vertical-wide
+  segmentCount          Int      @default(3) // maps to the pipeline's targetTopicCount
+  hostIds               String[] @default([]) // AiHost.id values
+  owner                 String   @default("listener") // legacy free-text owner; superseded by ownerId
+  ownerId               String? // User.id of the creator; null for legacy/pre-auth podcasts
+  ownerUser             User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   // "YYYY-MM-DD" in the scheduler TZ — atomic idempotency claim so a re-run
   // of the daily scheduler never double-generates (see recurring scheduler).
   lastAutoGeneratedDate String?
@@ -434,30 +434,31 @@ model Podcast {
   // A show is a saved, versioned configuration. These fields are the show's
   // public identity; the editorial/production/publishing *settings* live in
   // the three 1-1 config tables below. See docs/PODCAST_CONFIGURATION.md.
-  slug          String?  @unique // URL-safe, normalized, reserved-name-rejecting; null only until backfilled
+  slug          String? @unique // URL-safe, normalized, reserved-name-rejecting; null only until backfilled
   description   String?
-  author        String?  // shown as the RSS <itunes:author> / channel author
-  ownerName     String?  // owner display name (distinct from the legacy free-text `owner`)
-  ownerEmail    String?  // SENSITIVE: contact email for the feed owner. Never returned by list APIs and never written into an Episode snapshot.
+  author        String? // shown as the RSS <itunes:author> / channel author
+  ownerName     String? // owner display name (distinct from the legacy free-text `owner`)
+  ownerEmail    String? // SENSITIVE: contact email for the feed owner. Never returned by list APIs and never written into an Episode snapshot.
   websiteUrl    String?
-  language      String   @default("en") // RSS channel language (BCP-47)
-  category      String?  // Apple Podcasts primary category
-  subcategory   String?  // Apple Podcasts subcategory
-  explicit      Boolean  @default(false) // channel-level explicit default
+  language      String  @default("en") // RSS channel language (BCP-47)
+  category      String? // Apple Podcasts primary category
+  subcategory   String? // Apple Podcasts subcategory
+  explicit      Boolean @default(false) // channel-level explicit default
   copyright     String?
   coverImageUrl String?
-  visibility    String   @default("private") // "private" | "unlisted" | "public" — private != token feed; see Prompt 8 (deferred)
+  visibility    String  @default("private") // "private" | "unlisted" | "public" — private != token feed; see Prompt 8 (deferred)
   // Bumped on every accepted configuration change (optimistic concurrency).
-  configVersion Int      @default(1)
+  configVersion Int     @default(1)
 
   editorialConfig  PodcastEditorialConfig?
   productionConfig PodcastProductionConfig?
   publishingConfig PodcastPublishingConfig?
+  continuity       ShowContinuity?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  episodes      Episode[]
-  audioAssets   AudioAsset[] // podcast-private sound assets
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  episodes    Episode[]
+  audioAssets AudioAsset[] // podcast-private sound assets
 
   @@index([cadence])
   @@index([ownerId])
@@ -468,18 +469,18 @@ model Podcast {
 // Kept normalized (not JSON) so the resolver validates each field and migrations
 // can reason about them. See docs/PODCAST_CONFIGURATION.md.
 model PodcastEditorialConfig {
-  id            String   @id @default(uuid())
-  podcastId     String   @unique
-  podcast       Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
-  verticals     String[] @default([]) // mirrors Podcast.verticals during transition; resolver reads this
-  teams         String[] @default([]) // Team.id values
-  segmentCount  Int      @default(3)  // pipeline targetTopicCount
-  format        String   @default("two_host_debate") // ONLY two_host_debate is supported (Prompt 7 deferred)
-  minDebateScore Int?    // real TopicCandidate.debateScore floor; null = pipeline default
-  scriptStyle   String?  // Advanced Producer scriptStyle (real)
-  maxWords      Int?     // Advanced Producer maxWords (real)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(uuid())
+  podcastId      String   @unique
+  podcast        Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  verticals      String[] @default([]) // mirrors Podcast.verticals during transition; resolver reads this
+  teams          String[] @default([]) // Team.id values
+  segmentCount   Int      @default(3) // pipeline targetTopicCount
+  format         String   @default("two_host_debate") // ONLY two_host_debate is supported (Prompt 7 deferred)
+  minDebateScore Int? // real TopicCandidate.debateScore floor; null = pipeline default
+  scriptStyle    String? // Advanced Producer scriptStyle (real)
+  maxWords       Int? // Advanced Producer maxWords (real)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 // One-to-one production settings: voices and post-production.
@@ -488,26 +489,26 @@ model PodcastProductionConfig {
   podcastId         String   @unique
   podcast           Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
   hostIds           String[] @default([]) // AiHost.id values; generation supports at most 2
-  ttsProvider       String?  // voice engine override; null = fall through host/env
-  ttsVoiceOverrides Json?    // per-host voice picks, same shape as Episode.ttsVoiceOverrides
-  productionStyle   String?  // sound design style: "clean" | "light" | "full"
-  sfxDensity        String?  // sound design sfx density
+  ttsProvider       String? // voice engine override; null = fall through host/env
+  ttsVoiceOverrides Json? // per-host voice picks, same shape as Episode.ttsVoiceOverrides
+  productionStyle   String? // sound design style: "clean" | "light" | "full"
+  sfxDensity        String? // sound design sfx density
 
   // --- Sound profile (Prompt 6) ------------------------------------------
   // "system_default": the shared system profile, FROZEN into each Episode's
   //   snapshot at creation (a later system edit never changes that Episode).
   // "custom": this Podcast's explicit PodcastSoundAssignment rows.
   // "clean": dialogue only — no intro/outro/bed/stingers/reactions.
-  soundProfileMode          String  @default("system_default")
-  targetLoudnessLufs        Float?  // master loudness target; null = pipeline default (-16)
+  soundProfileMode         String  @default("system_default")
+  targetLoudnessLufs       Float? // master loudness target; null = pipeline default (-16)
   // Cue anti-repetition scope: "podcast" (default — only THIS show's prior
   // usage counts) or "owner" (all of this owner's shows). NEVER global:
   // another customer's usage must not influence this show's rotation.
-  cooldownScope             String  @default("podcast")
-  stingerCooldownEpisodes   Int?    // null = pipeline default
-  reactionCooldownEpisodes  Int?    // null = pipeline default
-  defaultIntroEnabled       Boolean @default(true)
-  defaultOutroEnabled       Boolean @default(true)
+  cooldownScope            String  @default("podcast")
+  stingerCooldownEpisodes  Int? // null = pipeline default
+  reactionCooldownEpisodes Int? // null = pipeline default
+  defaultIntroEnabled      Boolean @default(true)
+  defaultOutroEnabled      Boolean @default(true)
 
   // --- Sonic identity (PR 2) ---------------------------------------------
   // The producer's declared, versioned creative identity for THIS show
@@ -515,7 +516,7 @@ model PodcastProductionConfig {
   // prohibited cue families, format restrictions, bed & voice-over-music
   // policy, music-gap bounds). null = the permissive default (unchanged
   // behavior). See src/lib/audio/sonicIdentity.ts.
-  sonicIdentity             Json?
+  sonicIdentity Json?
 
   // --- Diversity policy (PR 4) -------------------------------------------
   // Per-podcast anti-repetition policy OVERRIDES (a bounded Partial<Sound
@@ -523,11 +524,11 @@ model PodcastProductionConfig {
   // numeric field is clamped to its bound on save + on resolve, so a bad value
   // can never take effect. Not fingerprinted here — the RESOLVED policy is
   // frozen into each Episode's v6 snapshot at creation.
-  diversityPolicy           Json?
+  diversityPolicy Json?
 
   soundAssignments PodcastSoundAssignment[]
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
 }
 
 // Normalized Podcast sound assignment (Prompt 6; VARIANT POOLS in PR 2): which
@@ -539,28 +540,28 @@ model PodcastProductionConfig {
 // optional branded-motif flag, per-episode use/cooldown limits, and optional
 // per-assignment format allow/deny lists.
 model PodcastSoundAssignment {
-  id           String  @id @default(uuid())
-  productionConfigId String
-  productionConfig   PodcastProductionConfig @relation(fields: [productionConfigId], references: [id], onDelete: Cascade)
-  podcastId    String  // denormalized for direct scoping queries + constraints
-  assetId      String
-  asset        AudioAsset @relation(fields: [assetId], references: [id], onDelete: Restrict)
-  role         String  // "intro" | "outro" | "bed" | "stinger" | "reaction"
-  orderIndex   Int     @default(0) // deterministic pool ordering
-  enabled      Boolean @default(true)
-  gainDb       Float?  // bounded trim; null = neutral
-  fadeInMs     Int?
-  fadeOutMs    Int?
+  id                  String                  @id @default(uuid())
+  productionConfigId  String
+  productionConfig    PodcastProductionConfig @relation(fields: [productionConfigId], references: [id], onDelete: Cascade)
+  podcastId           String // denormalized for direct scoping queries + constraints
+  assetId             String
+  asset               AudioAsset              @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  role                String // "intro" | "outro" | "bed" | "stinger" | "reaction"
+  orderIndex          Int                     @default(0) // deterministic pool ordering
+  enabled             Boolean                 @default(true)
+  gainDb              Float? // bounded trim; null = neutral
+  fadeInMs            Int?
+  fadeOutMs           Int?
   // --- Variant pool metadata (PR 2) --------------------------------------
-  cueFamily          String?  // creative purpose (see sonicIdentity.ts); must be valid for role
-  weight             Float    @default(1) // bounded [0,100]; deterministic selection weight
-  isBrandedMotif     Boolean  @default(false)
-  maxUsesPerEpisode  Int?     // null = pipeline default
-  minEpisodeCooldown Int?     // null = pipeline default
-  allowedFormatIds   String[] @default([]) // empty = all formats
-  prohibitedFormatIds String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  cueFamily           String? // creative purpose (see sonicIdentity.ts); must be valid for role
+  weight              Float                   @default(1) // bounded [0,100]; deterministic selection weight
+  isBrandedMotif      Boolean                 @default(false)
+  maxUsesPerEpisode   Int? // null = pipeline default
+  minEpisodeCooldown  Int? // null = pipeline default
+  allowedFormatIds    String[]                @default([]) // empty = all formats
+  prohibitedFormatIds String[]                @default([])
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
   @@unique([podcastId, role, assetId]) // no duplicate pool entries
   @@index([podcastId, role])
@@ -573,25 +574,25 @@ model PodcastSoundAssignment {
 // record (plus its SoundCueUsage rows) says what actually HAPPENED — and a
 // later asset/profile edit can never rewrite it.
 model EpisodeAudioRender {
-  id                       String    @id @default(uuid())
+  id                       String          @id @default(uuid())
   episodeId                String
-  episode                  Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  episode                  Episode         @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   scriptId                 String?
-  renderVersion            Int       // 1, 2, ... per episode
-  status                   String    // "running" | "succeeded" | "failed"
-  renderMode               String    // "initial" | "reproduce" | "remix_episode_profile" | "remix_current_podcast" | "legacy"
+  renderVersion            Int // 1, 2, ... per episode
+  status                   String // "running" | "succeeded" | "failed"
+  renderMode               String // "initial" | "reproduce" | "remix_episode_profile" | "remix_current_podcast" | "legacy"
   plannerSeed              Int?
   productionStyle          String?
   sfxDensity               String?
   targetLoudnessLufs       Float?
-  configurationFingerprint String?   // Episode configuration fingerprint at render time
-  plan                     Json?     // the exact ProductionPlan executed — the reproduce-mode source of truth
-  diagnostics              Json?     // safe per-render cue-sheet report (RenderDiagnostics) — names/ids/reasons/bookend result only, never URLs/keys
-  outputAudioUrl           String?   // final master reference (existing Episode.audioUrl value)
-  failureReason            String?   // safe category only — never URLs/keys/commands
-  startedAt                DateTime  @default(now())
+  configurationFingerprint String? // Episode configuration fingerprint at render time
+  plan                     Json? // the exact ProductionPlan executed — the reproduce-mode source of truth
+  diagnostics              Json? // safe per-render cue-sheet report (RenderDiagnostics) — names/ids/reasons/bookend result only, never URLs/keys
+  outputAudioUrl           String? // final master reference (existing Episode.audioUrl value)
+  failureReason            String? // safe category only — never URLs/keys/commands
+  startedAt                DateTime        @default(now())
   completedAt              DateTime?
-  createdAt                DateTime  @default(now())
+  createdAt                DateTime        @default(now())
   usages                   SoundCueUsage[]
 
   @@unique([episodeId, renderVersion])
@@ -604,73 +605,90 @@ model EpisodeAudioRender {
 // lives on Podcast; this table is per-show publishing behavior. Nothing here
 // enables private feeds (Prompt 8 deferred) — /rss stays as-is.
 model PodcastPublishingConfig {
-  id                   String   @id @default(uuid())
-  podcastId            String   @unique
-  podcast              Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
-  autoGenerateChapters Boolean  @default(true)
-  autoGenerateShowNotes Boolean @default(true)
-  autoGenerateCover    Boolean  @default(true)
-  includeTranscript    Boolean  @default(true)
-  downloadsEnabled     Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  podcastId             String   @unique
+  podcast               Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  autoGenerateChapters  Boolean  @default(true)
+  autoGenerateShowNotes Boolean  @default(true)
+  autoGenerateCover     Boolean  @default(true)
+  includeTranscript     Boolean  @default(true)
+  downloadsEnabled      Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 }
 
 model Episode {
-  id                 String         @id @default(uuid())
-  title              String
-  slug               String         @unique
-  status             String         // "draft" | "queued" | "generating" | "completed" | "failed"
-  description        String?
-  longShowNotes      String?
-  durationSeconds    Int?
-  audioUrl           String?
-  transcriptUrl      String?
-  rssGuid            String?        @unique
-  publishedAt        DateTime?
-  episodeNumber      Int?
-  seasonNumber       Int?
-  explicit           Boolean        @default(false)
-  rssSummary         String?
-  rssSubtitle        String?
-  rssImageUrl        String?
-  audioFileSizeBytes Int?
-  audioMimeType      String         @default("audio/mpeg")
-  ttsProvider        String?        // Voice engine chosen at build time ("fish", "boson", ...); null = fall through to host/env. See docs/TTS_PROVIDERS.md
-  ttsVoiceOverrides  Json?          // Per-host voice picks keyed by host slug: { "max-voltage": { provider, voiceId, voiceName? }, ... }. See docs/TTS_PROVIDERS.md
+  id                          String               @id @default(uuid())
+  title                       String
+  slug                        String               @unique
+  // Canonical ladder + the produced-or-later boundary live in
+  // src/lib/episodeStatus.ts (EPISODE_STATUS_LADDER / PRODUCED_OR_LATER).
+  // In pipeline order:
+  //   draft -> script_draft -> fact_checked -> script_approved ->
+  //   audio_segments_ready -> audio_stitching -> audio_ready ->
+  //   content_generating -> content_ready -> publish_ready -> published
+  // plus "failed", which is off-ladder and reachable from anywhere.
+  // There is NO "completed" Episode status. The previous comment here claimed
+  // one, and that error propagated into a design decision before anyone
+  // checked. Import the constant; never re-derive this list from a literal.
+  status                      String
+  description                 String?
+  longShowNotes               String?
+  durationSeconds             Int?
+  audioUrl                    String?
+  transcriptUrl               String?
+  rssGuid                     String?              @unique
+  publishedAt                 DateTime?
+  episodeNumber               Int?
+  seasonNumber                Int?
+  explicit                    Boolean              @default(false)
+  rssSummary                  String?
+  rssSubtitle                 String?
+  rssImageUrl                 String?
+  audioFileSizeBytes          Int?
+  audioMimeType               String               @default("audio/mpeg")
+  ttsProvider                 String? // Voice engine chosen at build time ("fish", "boson", ...); null = fall through to host/env. See docs/TTS_PROVIDERS.md
+  ttsVoiceOverrides           Json? // Per-host voice picks keyed by host slug: { "max-voltage": { provider, voiceId, voiceName? }, ... }. See docs/TTS_PROVIDERS.md
   // How this episode's SPOKEN audio was generated — persisted at generation
   // time, never inferred later from whichever env vars happen to exist.
   // "legacy_line" | "scene" | "mixed_fallback" | "performance_conversion";
   // null = generated before scene mode existed (legacy line pipeline).
-  ttsRenderMode      String?
-  soundDesign        Json?          // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
-  podcastId          String?        // Nullable — pre-existing episodes have no podcast
-  ownerId            String?        // User.id of the creator; null for legacy/pre-auth episodes
-  hostIds            String[]       @default([]) // LEGACY compat: AiHost.id list in seat order; canonical cast = castMembers (Prompt 7)
+  ttsRenderMode               String?
+  soundDesign                 Json? // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
+  // What this episode CLAIMED about the show's running bits — the validated
+  // ContinuityUpdate, written when fact-check passes. Attached to the episode
+  // that claimed it, so ShowContinuity can be re-derived by folding these in
+  // order. That makes the ShowContinuity row a CACHE rather than the truth: a
+  // failed generation, a deleted episode, or a bug in the increment logic is
+  // recoverable instead of permanent drift. See showContinuityService.ts.
+  continuityUpdate            Json?
+  podcastId                   String? // Nullable — pre-existing episodes have no podcast
+  ownerId                     String? // User.id of the creator; null for legacy/pre-auth episodes
+  hostIds                     String[]             @default([]) // LEGACY compat: AiHost.id list in seat order; canonical cast = castMembers (Prompt 7)
   // --- Show format (Prompt 7) --------------------------------------------
   // Which registered format built this episode. two_host_debate is the
   // backfilled value for every pre-format episode — that IS what built them.
-  formatId           String         @default("two_host_debate")
-  castMembers        EpisodeCastMember[]
+  formatId                    String               @default("two_host_debate")
+  castMembers                 EpisodeCastMember[]
   // --- Immutable configuration snapshot (Prompt 5) -----------------------
   // Frozen at creation so a later edit to the Podcast can never rewrite how a
   // finished episode was built. See src/lib/services/episodeConfigurationSnapshot.ts.
-  configurationSource         String  @default("legacy") // "podcast" | "standalone" | "legacy"
-  podcastConfigurationVersion Int?    // Podcast.configVersion captured at snapshot time (podcast episodes only)
-  configurationSnapshot       Json?   // versioned, deterministic, secret-free resolved config
+  configurationSource         String               @default("legacy") // "podcast" | "standalone" | "legacy"
+  podcastConfigurationVersion Int? // Podcast.configVersion captured at snapshot time (podcast episodes only)
+  configurationSnapshot       Json? // versioned, deterministic, secret-free resolved config
   configurationFingerprint    String? // sha256 of the canonicalized snapshot
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  podcast            Podcast?       @relation(fields: [podcastId], references: [id], onDelete: SetNull)
-  ownerUser          User?          @relation(fields: [ownerId], references: [id], onDelete: SetNull)
-  topics             EpisodeTopic[]
-  scripts            Script[]
-  audioSegments      AudioSegment[]
-  socialClips        SocialClip[]
-  audioRenders       EpisodeAudioRender[]
-  dialogueScenes     DialogueSceneAudio[]
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+  podcast                     Podcast?             @relation(fields: [podcastId], references: [id], onDelete: SetNull)
+  ownerUser                   User?                @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  topics                      EpisodeTopic[]
+  scripts                     Script[]
+  audioSegments               AudioSegment[]
+  socialClips                 SocialClip[]
+  audioRenders                EpisodeAudioRender[]
+  dialogueScenes              DialogueSceneAudio[]
 
-  playEvents         PlayEvent[]
+  playEvents PlayEvent[]
 
   @@index([status])
   @@index([publishedAt])
@@ -709,7 +727,7 @@ model EpisodeTopic {
 model StudioDraft {
   id        String   @id @default(uuid())
   ownerId   String   @unique // one resumable Studio rundown per user
-  state     Json     // RundownDraftState (src/lib/services/studioDraft.ts)
+  state     Json // RundownDraftState (src/lib/services/studioDraft.ts)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   ownerUser User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -726,7 +744,7 @@ model StudioDraft {
 model AdminDraft {
   id        String   @id @default(uuid())
   adminId   String   @unique // adminIdentity() — one resumable rundown per operator
-  state     Json     // RundownDraftState (same schema as StudioDraft.state)
+  state     Json // RundownDraftState (same schema as StudioDraft.state)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -734,14 +752,14 @@ model AdminDraft {
 }
 
 model Script {
-  id               String            @id @default(uuid())
+  id               String               @id @default(uuid())
   episodeId        String
   version          Int
-  content          Json              // Lines format: [{hostId, text, stageDirection}]
+  content          Json // Lines format: [{hostId, text, stageDirection}]
   plainText        String?
-  status           String            // "draft" | "generating" | "ready" | "failed"
-  createdAt        DateTime          @default(now())
-  episode          Episode           @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  status           String // "draft" | "generating" | "ready" | "failed"
+  createdAt        DateTime             @default(now())
+  episode          Episode              @relation(fields: [episodeId], references: [id], onDelete: Cascade)
   factCheckResults FactCheckResult[]
   audioSegments    AudioSegment[]
   dialogueScenes   DialogueSceneAudio[]
@@ -754,8 +772,8 @@ model FactCheckResult {
   id               String   @id @default(uuid())
   scriptId         String
   passed           Boolean
-  warnings         Json     // Array of warning objects
-  errors           Json     // Array of error objects
+  warnings         Json // Array of warning objects
+  errors           Json // Array of error objects
   createdAt        DateTime @default(now())
   script           Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
   episodeId        String?
@@ -771,15 +789,15 @@ model FactCheckResult {
 }
 
 model AudioSegment {
-  id         String   @id @default(uuid())
-  episodeId  String
-  scriptId   String
-  hostId     String?  // References host profile who spoke it
-  lineIndex  Int
-  text       String
-  audioUrl   String?
-  durationMs Int?
-  status           String   // "pending" | "processing" | "ready" | "failed"
+  id               String   @id @default(uuid())
+  episodeId        String
+  scriptId         String
+  hostId           String? // References host profile who spoke it
+  lineIndex        Int
+  text             String
+  audioUrl         String?
+  durationMs       Int?
+  status           String // "pending" | "processing" | "ready" | "failed"
   provider         String?
   providerMetadata Json?
   createdAt        DateTime @default(now())
@@ -801,27 +819,27 @@ model DialogueSceneAudio {
   episodeId          String
   scriptId           String
   sceneIndex         Int
-  sceneType          String   // cold_open | conversation | argument_escalation | ... (DialogueSceneType)
+  sceneType          String // cold_open | conversation | argument_escalation | ... (DialogueSceneType)
   firstLineIndex     Int
   lastLineIndex      Int
-  lineIndexes        Json     // number[] — every APPROVED line this scene performs, in order
-  provider           String   // "elevenlabs" | "fish" | ...
-  model              String   // exact model id used (e.g. "eleven_v3", "s2-pro")
-  renderUnit         String   // "multi_speaker_scene" | "speaker_turn_cluster" | "single_line" (oversized fallback)
-  voiceMap           Json     // { [hostId]: voiceId } actually sent (never keys/secrets)
-  requestFingerprint String   // sha256 over approved text + speakers + provider/model/voices/settings/seed + versions
+  lineIndexes        Json // number[] — every APPROVED line this scene performs, in order
+  provider           String // "elevenlabs" | "fish" | ...
+  model              String // exact model id used (e.g. "eleven_v3", "s2-pro")
+  renderUnit         String // "multi_speaker_scene" | "speaker_turn_cluster" | "single_line" (oversized fallback)
+  voiceMap           Json // { [hostId]: voiceId } actually sent (never keys/secrets)
+  requestFingerprint String // sha256 over approved text + speakers + provider/model/voices/settings/seed + versions
   candidateIndex     Int      @default(0)
   seed               Int?
-  status             String   // "pending" | "processing" | "ready" | "failed"
+  status             String // "pending" | "processing" | "ready" | "failed"
   audioUrl           String?
   durationMs         Int?
   contentType        String?
-  providerMetadata   Json?    // secret-free (request ids, voice order, cue preview)
+  providerMetadata   Json? // secret-free (request ids, voice order, cue preview)
   timingStatus       String   @default("timing_unavailable") // provider_timestamps | forced_alignment | stt_alignment | timing_unavailable
-  timingMap          Json?    // [{ lineIndex, sceneId, startMs, endMs, speakerHostId }] — never fabricated
-  errorCategory      String?  // safe taxonomy (sceneTypes.SceneErrorCategory)
+  timingMap          Json? // [{ lineIndex, sceneId, startMs, endMs, speakerHostId }] — never fabricated
+  errorCategory      String? // safe taxonomy (sceneTypes.SceneErrorCategory)
   selected           Boolean  @default(false) // the candidate the final stitch uses (max one per scene)
-  continuationRef    String?  // reserved: only for providers with verified continuation
+  continuationRef    String? // reserved: only for providers with verified continuation
   plannerVersion     Int      @default(1)
   createdAt          DateTime @default(now())
   episode            Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
@@ -837,19 +855,19 @@ model DialogueSceneAudio {
 // additionally require an explicit rights affirmation before they can be
 // mixed into an episode.
 model AudioAsset {
-  id              String   @id @default(uuid())
+  id              String  @id @default(uuid())
   name            String
-  kind            String   // "theme_intro" | "theme_outro" | "stinger" | "bed" | "sfx" | "highlight"
-  category        String?  // sfx flavor: "laugh" | "crowd" | "airhorn" | "buzzer" | "rimshot" | "whoosh" | "impact"
-  tags            Json     // string[]
-  audioUrl        String   // LEGACY compat read path; new code resolves via storageKey + provider
+  kind            String // "theme_intro" | "theme_outro" | "stinger" | "bed" | "sfx" | "highlight"
+  category        String? // sfx flavor: "laugh" | "crowd" | "airhorn" | "buzzer" | "rimshot" | "whoosh" | "impact"
+  tags            Json // string[]
+  audioUrl        String // LEGACY compat read path; new code resolves via storageKey + provider
   storageKey      String?
   durationMs      Int?
-  license         String   // LEGACY free-text; superseded by licenseStatus/licenseName below
+  license         String // LEGACY free-text; superseded by licenseStatus/licenseName below
   licenseNote     String?
-  rightsConfirmed Boolean  @default(false) // LEGACY boolean; superseded by rightsStatus below
-  isActive        Boolean  @default(true)
-  source          String   @default("upload") // "seed" | "upload"
+  rightsConfirmed Boolean @default(false) // LEGACY boolean; superseded by rightsStatus below
+  isActive        Boolean @default(true)
+  source          String  @default("upload") // "seed" | "upload"
 
   // --- Ownership scope (Prompt 6) ----------------------------------------
   // "shared_system"   admin-managed library, usable by everyone (ownerId/podcastId null)
@@ -861,31 +879,31 @@ model AudioAsset {
   //                   insert that forgets scope can never widen access.
   // NOTE: a "workspace" scope belongs to Prompt 13 (Workspaces) — do NOT add
   // it here; until then assets are user-owned, podcast-associated, or shared.
-  scope                    String  @default("legacy_global")
-  ownerId                  String? // User.id — required for owner_private/podcast_private
-  ownerUser                User?    @relation("OwnedAudioAssets", fields: [ownerId], references: [id], onDelete: SetNull)
-  podcastId                String? // Podcast.id — required for podcast_private only
-  podcast                  Podcast? @relation(fields: [podcastId], references: [id], onDelete: SetNull)
-  uploadedByUserId         String? // audit: who performed the upload (plain id, not authority)
-  createdByAdminIdentity   String? // audit: admin identity for shared_system assets
-  legacyScopeReviewRequired Boolean @default(false) // true = admin must classify before new use
+  scope                     String   @default("legacy_global")
+  ownerId                   String? // User.id — required for owner_private/podcast_private
+  ownerUser                 User?    @relation("OwnedAudioAssets", fields: [ownerId], references: [id], onDelete: SetNull)
+  podcastId                 String? // Podcast.id — required for podcast_private only
+  podcast                   Podcast? @relation(fields: [podcastId], references: [id], onDelete: SetNull)
+  uploadedByUserId          String? // audit: who performed the upload (plain id, not authority)
+  createdByAdminIdentity    String? // audit: admin identity for shared_system assets
+  legacyScopeReviewRequired Boolean  @default(false) // true = admin must classify before new use
 
   // --- Immutable media content (Prompt 6) ---------------------------------
   // Once processingStatus = "ready", contentHash/storageKey/bytes are frozen
   // (a DB trigger enforces this): replacing audio creates a NEW asset that
   // supersedes this one, so historical snapshots and renders stay auditable.
-  contentHash        String? // sha256 of the media bytes; null only for unrepaired legacy rows
-  originalFilename   String? // display-only; NEVER used as a storage path
-  mimeType           String?
-  fileSizeBytes      Int?
-  sampleRate         Int?
-  channelCount       Int?
-  bitrateKbps        Int?
-  processingStatus   String  @default("ready") // "uploading" | "processing" | "ready" | "failed"
-  processingError    String? // safe category only — never commands/paths/URLs
+  contentHash         String? // sha256 of the media bytes; null only for unrepaired legacy rows
+  originalFilename    String? // display-only; NEVER used as a storage path
+  mimeType            String?
+  fileSizeBytes       Int?
+  sampleRate          Int?
+  channelCount        Int?
+  bitrateKbps         Int?
+  processingStatus    String       @default("ready") // "uploading" | "processing" | "ready" | "failed"
+  processingError     String? // safe category only — never commands/paths/URLs
   supersededByAssetId String?
-  supersededByAsset  AudioAsset?  @relation("AudioAssetSupersession", fields: [supersededByAssetId], references: [id], onDelete: SetNull)
-  supersedes         AudioAsset[] @relation("AudioAssetSupersession")
+  supersededByAsset   AudioAsset?  @relation("AudioAssetSupersession", fields: [supersededByAssetId], references: [id], onDelete: SetNull)
+  supersedes          AudioAsset[] @relation("AudioAssetSupersession")
 
   // --- Archive (never hard-delete an asset with history) ------------------
   isArchived    Boolean   @default(false)
@@ -893,17 +911,17 @@ model AudioAsset {
   archiveReason String?
 
   // --- License + rights (Prompt 6; structured, replaces the loose strings) --
-  licenseStatus              String    @default("unknown") // "original" | "licensed" | "public_domain" | "cc0" | "unknown" | "restricted" | "expired" | "revoked"
-  licenseName                String?
-  licenseReference           String?
-  rightsStatus               String    @default("not_required") // "not_required" | "pending" | "confirmed" | "rejected" | "expired" | "revoked"
-  rightsNotes                String?
-  allowedUse                 String?   // e.g. "podcast_production"; enforced for restricted assets
-  rightsConfirmedAt          DateTime?
-  rightsConfirmedByUserId    String?
+  licenseStatus                  String    @default("unknown") // "original" | "licensed" | "public_domain" | "cc0" | "unknown" | "restricted" | "expired" | "revoked"
+  licenseName                    String?
+  licenseReference               String?
+  rightsStatus                   String    @default("not_required") // "not_required" | "pending" | "confirmed" | "rejected" | "expired" | "revoked"
+  rightsNotes                    String?
+  allowedUse                     String? // e.g. "podcast_production"; enforced for restricted assets
+  rightsConfirmedAt              DateTime?
+  rightsConfirmedByUserId        String?
   rightsConfirmedByAdminIdentity String?
-  rightsExpiresAt            DateTime?
-  rightsDocumentStorageKey   String?   // PRIVATE — never in DTOs/logs; served only via an authorized route
+  rightsExpiresAt                DateTime?
+  rightsDocumentStorageKey       String? // PRIVATE — never in DTOs/logs; served only via an authorized route
 
   // --- Cue metadata (PR 2) -----------------------------------------------
   // Admin-reviewed creative metadata (cue family, genre, mood, energy,
@@ -912,14 +930,14 @@ model AudioAsset {
   // "unclassified" (none), "suggested" (proposed, NOT authoritative), or
   // "verified" (admin-confirmed, usable for HARD compatibility decisions).
   // See src/lib/audio/cueMetadata.ts.
-  cueMetadata     Json?
-  metadataState   String   @default("unclassified") // "unclassified" | "suggested" | "verified"
+  cueMetadata   Json?
+  metadataState String @default("unclassified") // "unclassified" | "suggested" | "verified"
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  auditEvents     AudioAssetAuditEvent[]
-  soundAssignments PodcastSoundAssignment[]
-  systemAssignments SystemSoundAssignment[] @relation("SystemSoundAssignmentAsset")
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+  auditEvents       AudioAssetAuditEvent[]
+  soundAssignments  PodcastSoundAssignment[]
+  systemAssignments SystemSoundAssignment[]  @relation("SystemSoundAssignmentAsset")
 
   @@index([kind])
   @@index([isActive])
@@ -934,18 +952,18 @@ model AudioAsset {
 // application updates or deletes rows here; hard-deleting an asset (allowed
 // only for failed/unreferenced uploads) cascades its events away with it.
 model AudioAssetAuditEvent {
-  id            String   @id @default(uuid())
+  id            String     @id @default(uuid())
   assetId       String
   asset         AudioAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  event         String   // created | upload_completed | metadata_extracted | metadata_failed |
-                         // license_updated | rights_confirmed | rights_revoked | assigned_to_podcast |
-                         // removed_from_podcast | archived | restored | superseded | classified | rendered
-  actorType     String   // "user" | "admin" | "system"
+  event         String // created | upload_completed | metadata_extracted | metadata_failed |
+  // license_updated | rights_confirmed | rights_revoked | assigned_to_podcast |
+  // removed_from_podcast | archived | restored | superseded | classified | rendered
+  actorType     String // "user" | "admin" | "system"
   userId        String?
   adminIdentity String?
   podcastId     String?
-  metadata      Json?    // SAFE fields only — never secrets/URLs/storage keys/rights docs
-  createdAt     DateTime @default(now())
+  metadata      Json? // SAFE fields only — never secrets/URLs/storage keys/rights docs
+  createdAt     DateTime   @default(now())
 
   @@index([assetId, createdAt])
   @@index([event])
@@ -954,20 +972,20 @@ model AudioAssetAuditEvent {
 // Singleton (id = "default"): which assets voice the show's produced sound,
 // plus the default production style / SFX density for new episodes.
 model SoundDesignConfig {
-  id                String   @id @default("default")
+  id                String                  @id @default("default")
   // LEGACY singleton slots (PR 2 compatibility inputs): when no
   // SystemSoundAssignment rows exist for a role, the resolver falls back to
   // these as a one-item pool so existing installs keep their sound.
   themeIntroAssetId String?
   themeOutroAssetId String?
   bedAssetId        String?
-  stingerAssetIds   Json?    // string[] — rotated deterministically between breaks
-  defaultStyle      String   @default("full")   // "clean" | "light" | "full"
-  defaultSfxDensity String   @default("subtle") // "subtle" | "medium" | "hype"
+  stingerAssetIds   Json? // string[] — rotated deterministically between breaks
+  defaultStyle      String                  @default("full") // "clean" | "light" | "full"
+  defaultSfxDensity String                  @default("subtle") // "subtle" | "medium" | "hype"
   // Optimistic-concurrency version for the admin system-pool editor (PR 2).
-  configVersion     Int      @default(1)
+  configVersion     Int                     @default(1)
   systemAssignments SystemSoundAssignment[]
-  updatedAt         DateTime @updatedAt
+  updatedAt         DateTime                @updatedAt
 }
 
 // System-default VARIANT POOLS (PR 2). The shared system profile is no longer
@@ -977,26 +995,26 @@ model SoundDesignConfig {
 // compatibility) assets belong here — a private asset must never become a
 // global system assignment. Empty pools fall back to the legacy singleton slots.
 model SystemSoundAssignment {
-  id           String  @id @default(uuid())
-  configId     String  @default("default")
-  config       SoundDesignConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
-  assetId      String
-  asset        AudioAsset @relation("SystemSoundAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
-  role         String  // "intro" | "outro" | "bed" | "stinger" | "reaction"
-  orderIndex   Int     @default(0)
-  enabled      Boolean @default(true)
-  gainDb       Float?
-  fadeInMs     Int?
-  fadeOutMs    Int?
-  cueFamily          String?
-  weight             Float    @default(1) // bounded [0,100]
-  isBrandedMotif     Boolean  @default(false)
-  maxUsesPerEpisode  Int?
-  minEpisodeCooldown Int?
-  allowedFormatIds   String[] @default([])
-  prohibitedFormatIds String[] @default([])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  String            @id @default(uuid())
+  configId            String            @default("default")
+  config              SoundDesignConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  assetId             String
+  asset               AudioAsset        @relation("SystemSoundAssignmentAsset", fields: [assetId], references: [id], onDelete: Restrict)
+  role                String // "intro" | "outro" | "bed" | "stinger" | "reaction"
+  orderIndex          Int               @default(0)
+  enabled             Boolean           @default(true)
+  gainDb              Float?
+  fadeInMs            Int?
+  fadeOutMs           Int?
+  cueFamily           String?
+  weight              Float             @default(1) // bounded [0,100]
+  isBrandedMotif      Boolean           @default(false)
+  maxUsesPerEpisode   Int?
+  minEpisodeCooldown  Int?
+  allowedFormatIds    String[]          @default([])
+  prohibitedFormatIds String[]          @default([])
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   @@unique([configId, role, assetId])
   @@index([configId, role])
@@ -1014,7 +1032,7 @@ model SoundCueUsage {
   scriptId  String?
   assetId   String
   assetName String?
-  cueType   String   // "stinger" | "bed_change" | "reaction" | "theme_intro" | "theme_outro" | "highlight"
+  cueType   String // "stinger" | "bed_change" | "reaction" | "theme_intro" | "theme_outro" | "highlight"
   usedAt    DateTime @default(now())
 
   // --- Ownership + render provenance (Prompt 6) ---------------------------
@@ -1023,20 +1041,20 @@ model SoundCueUsage {
   // asset edit/archive cannot rewrite render history. Legacy rows (before
   // this migration) carry selectionSource "legacy" and nulls where the truth
   // is unknown; the backfill fills owner/podcast from the Episode only.
-  renderId          String?
-  render            EpisodeAudioRender? @relation(fields: [renderId], references: [id], onDelete: SetNull)
-  ownerId           String?
-  podcastId         String?
-  assetKind         String?
-  assetScope        String?
-  assetContentHash  String?
-  lineIndex         Int?
+  renderId           String?
+  render             EpisodeAudioRender? @relation(fields: [renderId], references: [id], onDelete: SetNull)
+  ownerId            String?
+  podcastId          String?
+  assetKind          String?
+  assetScope         String?
+  assetContentHash   String?
+  lineIndex          Int?
   timelinePositionMs Int?
-  orderIndex        Int?
-  gainDb            Float?
-  fadeInMs          Int?
-  fadeOutMs         Int?
-  selectionSource   String  @default("legacy") // "podcast_assignment" | "system_default" | "production_planner" | "episode_highlight" | "historical_reproduction" | "legacy"
+  orderIndex         Int?
+  gainDb             Float?
+  fadeInMs           Int?
+  fadeOutMs          Int?
+  selectionSource    String              @default("legacy") // "podcast_assignment" | "system_default" | "production_planner" | "episode_highlight" | "historical_reproduction" | "legacy"
 
   @@index([assetId, usedAt])
   @@index([episodeId])
@@ -1073,13 +1091,13 @@ model JobLog {
 model PlayEvent {
   id         String   @id @default(uuid())
   episodeId  String
-  ownerId    String?  // Episode.ownerId at record time; null for legacy episodes
-  kind       String   // "download" | "play"
-  source     String   // "rss" | "direct" | "player"
-  clientHash String   // sha256(ip + ua + daily salt), truncated — never the raw IP
-  country    String?  // 2-letter ISO, only when a geo header is present; else null
-  appBucket  String?  // coarse client bucket from UA (Apple Podcasts, Spotify, Web, …)
-  dayBucket  String   // UTC "YYYY-MM-DD" — the IAB dedup window
+  ownerId    String? // Episode.ownerId at record time; null for legacy episodes
+  kind       String // "download" | "play"
+  source     String // "rss" | "direct" | "player"
+  clientHash String // sha256(ip + ua + daily salt), truncated — never the raw IP
+  country    String? // 2-letter ISO, only when a geo header is present; else null
+  appBucket  String? // coarse client bucket from UA (Apple Podcasts, Spotify, Web, …)
+  dayBucket  String // UTC "YYYY-MM-DD" — the IAB dedup window
   at         DateTime @default(now())
   episode    Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 
@@ -1096,15 +1114,15 @@ model SocialClip {
   id             String   @id @default(uuid())
   episodeId      String
   scriptId       String
-  ownerId        String?  // creator (Episode.ownerId); null for legacy episodes
+  ownerId        String? // creator (Episode.ownerId); null for legacy episodes
   startLineIndex Int
   endLineIndex   Int
   title          String?
   status         String   @default("pending") // pending | rendering | ready | failed
-  kind           String?  // "video" (9:16 mp4) | "audio+captions" (mp3 + vtt fallback)
-  audioUrl       String?  // always produced (real episode audio)
-  videoUrl       String?  // 9:16 burned-caption mp4 when the ffmpeg build allows it
-  captionsUrl    String?  // WebVTT caption track (host-colour cues)
+  kind           String? // "video" (9:16 mp4) | "audio+captions" (mp3 + vtt fallback)
+  audioUrl       String? // always produced (real episode audio)
+  videoUrl       String? // 9:16 burned-caption mp4 when the ffmpeg build allows it
+  captionsUrl    String? // WebVTT caption track (host-colour cues)
   durationMs     Int?
   autoSelected   Boolean  @default(false)
   error          String?
@@ -1114,4 +1132,74 @@ model SocialClip {
 
   @@index([episodeId])
   @@index([ownerId])
+}
+
+// Persistent, per-show continuity state — what turns a hundred disconnected
+// episodes into a season. One row per Podcast.
+//
+// There is deliberately NO season concept here. "Twice a season" and
+// "episode 16" are different kinds of thing and only one needs a boundary;
+// modelling seasons would add a reset job whose only purpose is to be got
+// wrong. Episode.seasonNumber already exists for RSS packaging, which is a
+// display concern and stays separate from these mechanics.
+//
+// Every field below is exactly one of five kinds. New fields must declare
+// which, because the kind determines the update rule:
+//
+//   1. COUNTER    monotonic, never resets, no boundary. Getting absurd over
+//                 hundreds of episodes is the joke working.
+//   2. LADDER     one-shot rungs, monotonic, TERMINATES. Each rung fires once
+//                 and is consumed; a ladder never wraps. On reaching its
+//                 authored end the generator stops advancing it and the show
+//                 falls back to runners-only episodes — it must never invent
+//                 a new rung.
+//   3. CYCLE      advances, then deliberately resets. The reset is the bit.
+//   4. RATE LIMIT rolling window over episode indices. Stored as the list of
+//                 indices where it fired, NOT as a count, so scarcity works
+//                 without a boundary and there is no reset logic.
+//   5. ROTATION   bounded recency — full history kept, a window does the work.
+model ShowContinuity {
+  id        String  @id @default(cuid())
+  podcastId String  @unique
+  podcast   Podcast @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+
+  // COUNTER — the index every rolling window below is measured against.
+  episodeCount Int @default(0)
+
+  // --- The Attendance Ledger ---------------------------------------------
+  phantomFansTotal    Int  @default(0) // COUNTER
+  lastAttendanceClaim Int? // last figure he announced
+  lastAttendanceReal  Int? // last real figure she read back
+
+  // --- The Pronoun Hunt ---------------------------------------------------
+  weCount            Int     @default(0) // COUNTER — lifetime "we"s
+  weCountThisEpisode Int     @default(0) // CYCLE — reset at each episode start
+  currentDodge       String? // CYCLE — climbs, then backslides to "we"
+
+  // --- The Duane Hoyt arc -------------------------------------------------
+  hoytStage            Int      @default(0) // LADDER, terminates at HOYT_LADDER_END
+  hoytFactsEstablished String[] @default([]) // append-only; never contradict
+
+  // --- Season arc + the badge ---------------------------------------------
+  arcBeat    Int @default(0) // LADDER, terminates at AUTHORED_ARC_LENGTH
+  badgeStage Int @default(0) // LADDER, terminates at BADGE_LADDER_END
+
+  // --- Wolverines bank ----------------------------------------------------
+  wolverinesInvoked String[] @default([]) // ROTATION — full history
+  lastWolverineUsed String?
+
+  // --- Rate limits: episode indices where each fired, newest last ---------
+  // "Fewer than N firings in the last W episodes" — a rolling window, so the
+  // intended scarcity holds forever with no season boundary to reset.
+  nuclearOptionFirings  Int[] @default([]) // "you weren't there"
+  coldOpenFullRuns      Int[] @default([]) // she lets him finish the cold open
+  uncorrectedLedgerRuns Int[] @default([]) // she lets an attendance figure go
+
+  // --- The Standing Wager -------------------------------------------------
+  wagerTerms  String?
+  wagerLeader String?
+  wagerPot    Int     @default(0) // COUNTER
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

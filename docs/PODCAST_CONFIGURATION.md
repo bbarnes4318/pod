@@ -15,7 +15,7 @@ Fish.
 | Seat | Host | Slug | Intensity |
 |------|------|------|-----------|
 | A (index 0) | Bernadette "Line Two" Zabala | `bernie-line-two` | 8 |
-| B (index 1) | Ray "Forty-One" Meachum | `ray-forty-one` | 7 |
+| B (index 1) | Dutch "Attendance" Mulkey | `dutch-attendance` | 7 |
 
 **Seat order is load-bearing.** `worker.ts` builds the research brief assuming
 seat B is the LOWER-intensity chair: the topic prompt asks why host A takes the

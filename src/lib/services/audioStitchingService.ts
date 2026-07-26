@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
+import { commitContinuity } from "./showContinuityService";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import fs from "fs";
 import path from "path";
@@ -417,13 +419,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // "add music to a finished episode" works. The episode's later status is
     // preserved after the re-stitch (see finalEpisodeStatus below), so a re-mix
     // never knocks a published episode back to audio_ready.
-    const PRODUCED_OR_LATER = new Set([
-      "audio_ready",
-      "content_generating",
-      "content_ready",
-      "publish_ready",
-      "published",
-    ]);
     if (
       episode.status !== "audio_segments_ready" &&
       episode.status !== "fact_checked" &&
@@ -1588,6 +1583,29 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         },
       }),
     ]);
+
+    // CONTINUITY PHASE 2 — the audio now exists, so this episode is going to be
+    // heard and its claimed running-bit deltas may finally move the show's
+    // state. Committing here rather than at fact-check is what stops a script
+    // that dies in audio generation from permanently burning a Hoyt rung and a
+    // Wolverine. commitContinuity re-folds every produced episode, so it is
+    // idempotent and safe on a retried stitch.
+    if (episode.podcastId) {
+      try {
+        const folded = await commitContinuity(episode.podcastId);
+        console.log(
+          `[Continuity] Committed after stitch: podcast=${episode.podcastId} episode=${episode.id} ` +
+            `episodeCount=${folded.episodeCount} phantomFans=${folded.phantomFansTotal} hoytStage=${folded.hoytStage}`
+        );
+      } catch (err) {
+        // Never fail a finished episode over continuity bookkeeping — the fold
+        // is recomputable, so the next commit repairs it.
+        console.error(
+          `[Continuity] Commit failed for podcast ${episode.podcastId} after stitching episode ${episode.id}. ` +
+            `The audio is fine; continuity will re-derive on the next commit or reconcile. ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+    }
 
     // What the sound-design stage actually mixed in — the proof layer (hoisted
     // so both the job log and the render diagnostics reuse one source of truth).

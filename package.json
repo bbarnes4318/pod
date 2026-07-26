@@ -33,7 +33,6 @@
     "test:variant-selection": "tsx --conditions=react-server src/scripts/testVariantSelection.ts",
     "test:system-sound-pools": "tsx --conditions=react-server src/scripts/testSystemSoundPools.ts",
     "test:dialogue-timeline": "tsx src/scripts/testDialogueTimeline.ts",
-    "hosts:migrate-v2": "tsx --conditions=react-server src/scripts/migrateHostsV2.ts",
     "migrate:legacy-formats": "tsx --conditions=react-server src/scripts/migrateLegacyPanelFormats.ts",
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
@@ -58,6 +57,8 @@
     "demo:post-tts-sound-direction": "tsx --conditions=react-server src/scripts/produceLocalPostTtsDemo.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:seed": "tsx --conditions=react-server src/scripts/testSeedIdempotency.ts",
+    "test:cast-guards": "tsx src/scripts/testCastGuards.ts",
+    "test:continuity": "tsx --conditions=react-server src/scripts/testShowContinuity.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
     "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",
     "test:factcheck-semantic": "tsx --conditions=react-server src/scripts/testSemanticFactCheck.ts",
@@ -111,7 +112,8 @@
     "test:e2e-lifecycle": "tsx src/scripts/testE2eLifecycle.ts",
     "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts",
     "test:redis-log-sanitization": "tsx --conditions=react-server src/scripts/testRedisLogSanitization.ts",
-    "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts"
+    "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts",
+    "test:episode-status": "tsx src/scripts/testEpisodeStatus.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

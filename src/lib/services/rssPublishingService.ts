@@ -2,6 +2,20 @@ import { db } from "../db";
 import { getStorageProvider } from "../providers/storage/factory";
 import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance";
 
+/** Matches the seed's placeholder sentinel for a host whose real cloned voice
+ *  does not exist yet. Deliberately broad (any PLACEHOLDER_* id) so a future
+ *  host using the same convention is caught without touching this file. */
+const PLACEHOLDER_VOICE_ID_RE = /^PLACEHOLDER[_-]/i;
+
+/** Seed-time voice env vars are keyed by host IDENTITY, and the key is not
+ *  derivable from the slug (slug `dutch-attendance` is read from
+ *  FISH_MULKEY_VOICE_ID). Rather than guess a name that does not exist, the
+ *  blocker points at the seat-keyed overrides, which ARE positional and always
+ *  correct, plus the doc that lists the identity vars. */
+const VOICE_ENV_HELP =
+  "Set the seat-keyed override (FISH_HOST_A_VOICE_ID for seat A, FISH_HOST_B_VOICE_ID for seat B) to fix this " +
+  "without a reseed, or set the host's identity-keyed seed var listed in docs/PRODUCTION_ENV.md and reseed.";
+
 export async function validateEpisodeForRss(
   scriptId: string,
   action?: "prepare" | "publish" | "unpublish"
@@ -23,6 +37,7 @@ export async function validateEpisodeForRss(
     podcastConfigValid: false,
     rssGuidValid: false,
     noPlaceholderMetadata: true,
+    noPlaceholderVoice: true, // stays true unless a cast host has no real voice
     gamblingComplianceOk: true, // stays true for non-betting content
   };
 
@@ -301,6 +316,32 @@ export async function validateEpisodeForRss(
   if (isPlaceholder(episode.title) || isPlaceholder(episode.description) || isPlaceholder(episode.longShowNotes)) {
     checks.noPlaceholderMetadata = false;
     errorReasons.push("Episode metadata contains placeholder text.");
+  }
+
+  // 13. No host is still sitting on a placeholder voice.
+  //
+  // A host seeded without its real cloned voice carries a sentinel id that is
+  // deliberately not a valid provider reference. Reaching publish on one means
+  // the episode was voiced by a fallback (or a shared default), which is a
+  // wrong-voice release — the one failure a listener notices immediately and
+  // that cannot be walked back once the RSS item is out. Named env var in the
+  // message so the fix is obvious without reading the seed.
+  const castHostIds = Array.isArray(episode.hostIds) ? episode.hostIds.filter(Boolean) : [];
+  if (castHostIds.length > 0) {
+    const castHosts = await db.aiHost.findMany({
+      where: { id: { in: castHostIds } },
+      select: { name: true, slug: true, ttsVoiceId: true },
+    });
+    const unvoiced = castHosts.filter((h) => PLACEHOLDER_VOICE_ID_RE.test(h.ttsVoiceId || ""));
+    if (unvoiced.length > 0) {
+      checks.noPlaceholderVoice = false;
+      for (const h of unvoiced) {
+        errorReasons.push(
+          `${h.name} (${h.slug}) has no real voice yet — ttsVoiceId is the '${h.ttsVoiceId}' placeholder. ` +
+            `Create the cloned voice first. ${VOICE_ENV_HELP}`
+        );
+      }
+    }
   }
 
   const eligible = Object.values(checks).every((v) => v === true);
