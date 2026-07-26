@@ -27,6 +27,8 @@ export const E2E = {
   podcastLegacyId: "e2e-pod-legacy",
   episodeForeignId: "e2e-ep-foreign",
   episodeLegacyId: "e2e-ep-legacy",
+  /** Parked at the human checkpoint: script_draft, awaiting approval. */
+  episodeAwaitingApprovalId: "e2e-ep-awaiting",
   hostAce: "e2e-host-ace",
   hostBlaze: "e2e-host-blaze",
   hostCoach: "e2e-host-coach",
@@ -166,5 +168,41 @@ export async function seed(prisma: PrismaClient, bcrypt: { hashSync: (s: string,
   });
   await prisma.episode.create({
     data: { id: E2E.episodeLegacyId, title: LEGACY_EPISODE_TITLE, slug: "e2e-legacy", status: "audio_ready", audioUrl: "https://example.invalid/legacy.mp3", durationSeconds: 120, ownerId: null, hostIds: [] } as any,
+  });
+
+  // ---- Approval-checkpoint fixture (D-01) -----------------------------------
+  // An episode parked at exactly the point the customer run died: script_draft,
+  // waiting on the human checkpoint. The script is deliberately built to PASS
+  // the approval gates (>= 40 lines, both chairs above the 25% floor, every
+  // speakerName/speakerHostId resolving to the cast) so the test exercises the
+  // success path rather than a validation refusal.
+  await prisma.episode.create({
+    data: {
+      id: E2E.episodeAwaitingApprovalId, title: "Awaiting your read", slug: "e2e-awaiting-approval",
+      status: "script_draft", ownerId: E2E.userA.id, podcastId: E2E.podcastId,
+      hostIds: [E2E.hostAce, E2E.hostBlaze],
+    } as any,
+  });
+  const lines = Array.from({ length: 48 }, (_, i) => {
+    const ace = i % 2 === 0;
+    return {
+      lineIndex: i,
+      speakerName: ace ? "Ace" : "Blaze",
+      speakerHostId: ace ? E2E.hostAce : E2E.hostBlaze,
+      text: `Approvable line ${i + 1}. This is ordinary opinion, not a factual claim.`,
+      tone: "neutral",
+      isFactualClaim: false,
+      needsHumanReview: false,
+      evidenceRefs: [] as string[],
+    };
+  });
+  await prisma.script.create({
+    data: {
+      episodeId: E2E.episodeAwaitingApprovalId,
+      version: 1,
+      status: "draft",
+      content: { segments: [{ type: "debate", title: "The argument", lines }] } as any,
+      plainText: lines.map((l) => `${l.speakerName}:\n${l.text}`).join("\n\n"),
+    } as any,
   });
 }

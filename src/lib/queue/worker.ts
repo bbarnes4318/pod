@@ -23,7 +23,14 @@ import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeB
 // Stage-chaining enqueuers: build:episode -> generate:script, and
 // generate:topics -> generate:research-brief. Without these two chains an
 // episode never leaves 'draft' and a topic never becomes pickable.
-import { queueScriptGenerationJob, queueResearchBriefGenerationJob } from "./podcastQueue";
+import {
+  queueScriptGenerationJob,
+  queueResearchBriefGenerationJob,
+  queueTtsSegmentGenerationJob,
+  queueFinalAudioStitchJob,
+  queueContentAssetGenerationJob,
+} from "./podcastQueue";
+import { nextProductionJobFor } from "@/lib/createFlow";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
@@ -2548,6 +2555,79 @@ async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * PRODUCTION CHAIN (D-01)
+ *
+ * lib/createFlow.ts declares exactly which stages wait on a human: only
+ * `review` has checkpoint:true. Every other stage is supposed to follow on its
+ * own. Nothing did. After `generate:script` the pipeline simply stopped, and the
+ * only triggers for fact-check / voices / mix / assets lived in the Basic-Auth
+ * /admin console. A customer who approved their script watched an episode sit at
+ * `script_approved` forever.
+ *
+ * Each link gates on the EPISODE STATUS the previous stage is supposed to have
+ * written, never on "the job returned". A job can complete having advanced
+ * nothing (fact-check only moves the episode when the script was approved and
+ * the check passed), and chaining off a no-op is how you get a queue that looks
+ * busy and produces nothing.
+ * ------------------------------------------------------------------------- */
+
+interface ChainResult {
+  chainedStage: string | null;
+  chainedJobId: string | null;
+  chainSkippedReason: string | null;
+  chainEnqueueError: string | null;
+}
+
+const NO_CHAIN: ChainResult = { chainedStage: null, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: null };
+
+/**
+ * Advance the pipeline one step, based on the episode's CURRENT status.
+ * Never throws: a chain failure is reported on the job log so an operator can
+ * re-trigger the stage, and must not roll back work that already succeeded.
+ */
+async function chainProductionStage(scriptId: string): Promise<ChainResult> {
+  try {
+    const script = await db.script.findUnique({
+      where: { id: scriptId },
+      select: { id: true, episode: { select: { id: true, status: true } } },
+    });
+    const episode = script?.episode;
+    if (!episode) return { ...NO_CHAIN, chainSkippedReason: `no episode for script ${scriptId}` };
+
+    const enqueue = async (stage: string, fn: () => Promise<{ id?: string | number }>): Promise<ChainResult> => {
+      try {
+        const j = await fn();
+        const id = String(j.id ?? "");
+        console.log(`[Worker] Chained ${stage} for episode ${episode.id}: job=${id}`);
+        return { chainedStage: stage, chainedJobId: id, chainSkippedReason: null, chainEnqueueError: null };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "unknown enqueue error";
+        console.error(`[Worker] Could not chain ${stage} for episode ${episode.id}: ${msg}`);
+        return { chainedStage: stage, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: msg };
+      }
+    };
+
+    // The decision lives in lib/createFlow (pure, unit-tested); this function
+    // only performs the I/O it asks for.
+    const next = nextProductionJobFor(episode.status);
+    switch (next) {
+      case "tts:generate-segments":
+        return enqueue(next, () => queueTtsSegmentGenerationJob({ scriptId }));
+      case "audio:stitch-final":
+        return enqueue(next, () => queueFinalAudioStitchJob({ scriptId }));
+      case "content:generate-assets":
+        return enqueue(next, () => queueContentAssetGenerationJob({ scriptId }));
+      default:
+        // Not an error: the stage ran but did not move the episode (a failed
+        // fact-check, an unapproved script, an already-produced episode).
+        return { ...NO_CHAIN, chainSkippedReason: `episode status is '${episode.status}' — nothing to chain` };
+    }
+  } catch (e) {
+    return { ...NO_CHAIN, chainEnqueueError: e instanceof Error ? e.message : "unknown chain error" };
+  }
+}
+
 // 6. Script Generator Handler
 async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
@@ -2618,11 +2698,16 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
     const warnings = Array.isArray(issues.warnings) ? issues.warnings : [];
     const reasons = [...errors, ...warnings].map((i: any) => i.reason || JSON.stringify(i));
 
+    // Chain voicing only when the check actually moved the episode to
+    // fact_checked (see chainProductionStage).
+    const chain = await chainProductionStage(scriptId);
+
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: "completed",
         output: {
+          ...chain,
           finalStatus: res.status,
           deterministicPassed: summary.deterministicPassed,
           semanticStatus: summary.semanticStatus,
@@ -2698,16 +2783,21 @@ async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
       (typeof failedScenes === "number" && failedScenes > 0);
     const finalJobStatus = hasErrors ? "completed_with_errors" : "completed";
 
+    // Chain the mix. Gated on the episode reaching audio_segments_ready, which
+    // the TTS services only write from fact_checked — a partial voicing run
+    // therefore does not start a mix of a half-recorded episode.
+    const chain = await chainProductionStage(scriptId);
+
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: finalJobStatus,
-        output: { pipeline: dispatched.pipeline, ...res } as any,
+        output: { pipeline: dispatched.pipeline, ...res, ...chain } as any,
       },
     });
 
     console.log(`[Worker] TTS generation completed via '${dispatched.pipeline}'. Status: ${finalJobStatus}`);
-    return { success: true, pipeline: dispatched.pipeline, ...res };
+    return { success: true, pipeline: dispatched.pipeline, ...res, ...chain };
   } catch (err: any) {
     console.error(`[Worker] TTS segment generation failed:`, err.message);
     await db.jobLog.update({
@@ -2733,8 +2823,12 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
     // Scene-voiced episodes assemble whole scenes; legacy episodes keep the
     // exact per-line path (decided by the PERSISTED Episode.ttsRenderMode).
     const res = await dispatchFinalStitch(job.data);
+    // Chain show notes / chapters / cover once the master exists. A forced
+    // re-mix of an already-published episode leaves the status above audio_ready,
+    // so chainProductionStage skips rather than regenerating its assets.
+    const chain = await chainProductionStage(scriptId);
     console.log(`[Worker] Final audio stitching job completed. Status: ${res.finalStatus}`);
-    return { success: true, ...res };
+    return { success: true, ...res, ...chain };
   } catch (err: any) {
     console.error(`[Worker] Final audio stitching job failed:`, err.message);
     throw err;

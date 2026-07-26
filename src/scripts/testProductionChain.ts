@@ -1,0 +1,130 @@
+// D-01 — the production chain, and the one human checkpoint that drives it.
+//
+// The defect: lib/createFlow declares exactly one stage as a human checkpoint
+// (`review`), yet NOTHING chained the rest. After generate:script the pipeline
+// stopped dead. The only triggers for fact-check / voices / mix / notes lived in
+// the Basic-Auth /admin console, and the studio's own server actions
+// (approveEpisodeScript, castEpisodeVoices) had zero UI callers — dead code.
+//
+// The customer-visible result: the console said "Nothing is voiced until you
+// approve the draft — read it, edit any line, then approve", and no control
+// containing the word "approve" existed anywhere on the episode page. The three
+// links that did move an episode were labelled "(ops)", pointed at /admin, and
+// returned 401 onto a blank error page with no way back.
+//
+// These are structural + pure assertions. The full click-through lives in
+// tests/e2e/production-chain.spec.ts; this file guards the rules cheaply.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { nextProductionJobFor, PRODUCTION_STAGES } from "../lib/createFlow";
+import { EPISODE_STATUS_LADDER } from "../lib/episodeStatus";
+
+let passed = 0;
+let failed = 0;
+
+function check(name: string, fn: () => void) {
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    passed++;
+  } catch (err) {
+    console.log(`  ✗ ${name}\n      ${err instanceof Error ? err.message : String(err)}`);
+    failed++;
+  }
+}
+function assert(cond: boolean, msg: string): asserts cond {
+  if (!cond) throw new Error(msg);
+}
+
+const src = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
+const worker = src("lib/queue/worker.ts");
+const console_ = src("app/studio/ProductionConsole.tsx");
+
+/** The body of a worker handler, so a match cannot come from elsewhere in the file. */
+function handlerBody(name: string): string {
+  const start = worker.indexOf(`async function ${name}(`);
+  assert(start !== -1, `handler ${name} not found`);
+  const next = worker.indexOf("\nasync function ", start + 1);
+  return worker.slice(start, next === -1 ? worker.length : next);
+}
+
+console.log("Production chain + approval checkpoint\n");
+
+check("exactly one stage is a human checkpoint, and it is the script review", () => {
+  const cps = PRODUCTION_STAGES.filter((s) => s.checkpoint);
+  assert(cps.length === 1, `expected 1 checkpoint stage, got ${cps.length}: ${cps.map((c) => c.key).join(",")}`);
+  assert(cps[0].key === "review", `the checkpoint should be 'review', got '${cps[0].key}'`);
+});
+
+check("every non-checkpoint stage after the script has a chain rule", () => {
+  // If a stage is not waiting on a human, something must start it. These are the
+  // three transitions that had no trigger at all outside /admin.
+  assert(nextProductionJobFor("fact_checked") === "tts:generate-segments", "fact_checked must chain voicing");
+  assert(nextProductionJobFor("audio_segments_ready") === "audio:stitch-final", "voiced must chain the mix");
+  assert(nextProductionJobFor("audio_ready") === "content:generate-assets", "a finished master must chain show notes");
+});
+
+check("statuses that did NOT advance chain nothing", () => {
+  // Chaining off a job that completed without moving the episode is how a queue
+  // looks busy while producing nothing.
+  for (const s of ["draft", "script_draft", "script_approved", "audio_stitching"]) {
+    assert(nextProductionJobFor(s) === null, `status '${s}' must not chain (got ${nextProductionJobFor(s)})`);
+  }
+});
+
+check("a produced episode is never re-chained by a forced re-mix", () => {
+  // audio_ready chains notes once; published/publish_ready/content_ready must not
+  // regenerate assets when an operator re-mixes.
+  for (const s of ["content_generating", "content_ready", "publish_ready", "published"]) {
+    assert(nextProductionJobFor(s) === null, `already-produced status '${s}' must not chain (got ${nextProductionJobFor(s)})`);
+  }
+});
+
+check("every ladder status is accounted for — a new rung forces a decision", () => {
+  const unknown = EPISODE_STATUS_LADDER.filter(
+    (s) => nextProductionJobFor(s) === null && !["draft", "script_draft", "script_approved", "audio_stitching", "content_generating", "content_ready", "publish_ready", "published"].includes(s)
+  );
+  assert(unknown.length === 0, `these statuses have no explicit chain decision: ${unknown.join(", ")}`);
+});
+
+check("the worker actually calls the chain after fact-check, voices and mix", () => {
+  for (const [handler, why] of [
+    ["handleFactChecking", "an approved+passing script must start voicing"],
+    ["handleTtsSegmentGeneration", "a voiced script must start the mix"],
+    ["handleFinalAudioStitching", "a finished master must start show notes"],
+  ] as const) {
+    assert(/chainProductionStage\(/.test(handlerBody(handler)), `${handler} must chain — ${why}`);
+  }
+});
+
+check("a chain failure is recorded, never swallowed", () => {
+  assert(/chainEnqueueError/.test(worker), "the enqueue failure must be surfaced on the job output");
+  assert(/chainSkippedReason/.test(worker), "a deliberate skip must be distinguishable from a failure");
+});
+
+check("the console renders a real APPROVE control at the checkpoint", () => {
+  // The regression being guarded: the checkpoint used to render only
+  // `<a href="#transcript">Read the draft →</a>` — a scroll anchor. The word
+  // "approve" appeared on the page exactly once, in the instruction telling the
+  // customer to do it.
+  assert(/prod-approve-cta/.test(console_), "the checkpoint needs an approve CTA with a stable test id");
+  assert(/approveEpisodeScript/.test(console_), "the CTA must call the real owner-gated approval action");
+  // Anchor on the JSX render guard specifically — `s.state === "checkpoint"`
+  // also appears earlier in the `stages.find(...)` that picks the active stage.
+  const at = console_.indexOf('{s.state === "checkpoint" && (');
+  assert(at !== -1, "the checkpoint render block was not found");
+  const checkpointBlock = console_.slice(at, at + 1400);
+  assert(/<button/.test(checkpointBlock), "the checkpoint's primary control must be a button, not only a link");
+  assert(/prod-approve-cta/.test(checkpointBlock), "the approve CTA must be inside the checkpoint block");
+});
+
+check("the approval gate's own reasons are rendered to the customer", () => {
+  // approveEpisodeLatestScript returns { success:false, reasons:[...] } listing
+  // exactly what is wrong. A correct refusal the screen never shows is half a guard.
+  assert(/approveReasons/.test(console_), "gate reasons must be held in state");
+  assert(/prod-approve-error/.test(console_), "gate failure needs an addressable, asserted-on region");
+});
+
+console.log(`\n${passed} passed, ${failed} failed`);
+if (failed > 0) process.exit(1);

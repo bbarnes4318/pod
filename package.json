@@ -115,7 +115,8 @@
     "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts",
     "test:episode-status": "tsx src/scripts/testEpisodeStatus.ts",
     "test:ledger": "tsx --conditions=react-server src/scripts/testLedger.ts",
-    "test:pipeline-chaining": "tsx src/scripts/testPipelineChaining.ts"
+    "test:pipeline-chaining": "tsx src/scripts/testPipelineChaining.ts",
+    "test:production-chain": "tsx --conditions=react-server src/scripts/testProductionChain.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
