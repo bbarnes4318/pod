@@ -146,7 +146,7 @@ export default function TopicsDashboard({ initialTopics, initialStats, config }:
       {isLlmStub && (
         <div className="noticeCard noticeCard--error" role="alert">
           <strong>LLM provider is stub — real generation is disabled.</strong>
-          <span>Set <code>LLM_PROVIDER</code> to a real provider (OpenAI / Anthropic) to generate topics.</span>
+          <span>Set <code>LLM_PROVIDER</code> to a real provider (Gemini / Anthropic / OpenAI) to generate topics.</span>
         </div>
       )}
       {hasNoEvidence && (

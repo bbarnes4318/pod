@@ -55,6 +55,11 @@ export default async function SystemOverview() {
     "Script LLM": process.env.SCRIPT_LLM_PROVIDER
       ? `${process.env.SCRIPT_LLM_PROVIDER} / ${process.env.SCRIPT_LLM_MODEL || "default"}`
       : "(inherits LLM engine)",
+    // Verification runs on its own chain and can point at a different provider
+    // from the writer. Omitting it here hid mixed configurations entirely.
+    "Verify LLM": process.env.VERIFY_LLM_PROVIDER
+      ? `${process.env.VERIFY_LLM_PROVIDER} / ${process.env.VERIFY_MODEL || "default"}`
+      : "(inherits script/LLM chain)",
     "TTS Engine": process.env.TTS_PROVIDER || "stub",
     "Sports Data": process.env.SPORTS_PROVIDER || "stub",
     "Storage": process.env.STORAGE_PROVIDER || "stub",

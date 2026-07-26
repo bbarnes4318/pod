@@ -44,11 +44,105 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `DATABASE_URL` | Connection URL for PostgreSQL | `postgresql://<user>:<password>@<host>:5432/<database>` |
 | `REDIS_URL` | Connection URL for Redis queue | `redis://default:<password>@<host>:6379` |
 | `RSS_PREVIEW_TOKEN` | Auth token for private feed previews | A strong, random alphanumeric string used for `/rss/preview?token=<token>` |
-| `LLM_PROVIDER` | Topics, research briefs, classification, show notes | `anthropic` |
-| `ANTHROPIC_API_KEY` | Anthropic authentication key | `sk-ant-...` |
-| `ANTHROPIC_MODEL` | Model for the non-writing stages | `claude-sonnet-5` |
-| `SCRIPT_LLM_PROVIDER` | Overrides the provider for script writing only | `anthropic` |
-| `SCRIPT_LLM_MODEL` | Model for script outline + acts (the quality-critical stage) | `claude-opus-5` |
+| `LLM_PROVIDER` | Topics, research briefs, classification, show notes. `gemini` \| `anthropic` \| `openai` \| `stub` | `gemini` |
+| `GEMINI_API_KEY` | Gemini authentication key | `AIza...` |
+| `GEMINI_MODEL` | Model for the non-writing stages | `gemini-3.6-flash` |
+| `SCRIPT_LLM_PROVIDER` | Overrides the provider for script writing only | `gemini` |
+| `SCRIPT_LLM_MODEL` | Model for script outline + acts (the quality-critical stage) | `gemini-3.6-flash` |
+| `VERIFY_LLM_PROVIDER` | Overrides the provider for grounding rewrites + the semantic fact-check reviewer | `gemini` |
+| `VERIFY_MODEL` | Model for verification | `gemini-3.6-flash` |
+| `ANTHROPIC_API_KEY` | Anthropic authentication key — **keep set: this is the rollback target** | `sk-ant-...` |
+| `ANTHROPIC_MODEL` | Anthropic model for the non-writing stages | `claude-sonnet-5` |
+
+### LLM roles, and why there are four
+
+Four roles resolve independently, and they **inherit**:
+
+```
+verifier  <-  fact-checker  <-  script writer  <-  global
+```
+
+| Role | Variables | What it does |
+| :--- | :--- | :--- |
+| Global | `LLM_PROVIDER` | topics, topic classification, research briefs, show notes |
+| Script writer | `SCRIPT_LLM_PROVIDER` / `SCRIPT_LLM_MODEL` | episode outline + the three movements (~64% of token spend) |
+| Fact-checker | `FACTCHECK_LLM_PROVIDER` / `FACTCHECK_LLM_MODEL` | semantic fact-check reviewer |
+| Verifier | `VERIFY_LLM_PROVIDER` / `VERIFY_MODEL` | self-verify grounding rewrites |
+
+A **mixed** configuration is normal, not an edge case. The readiness audit
+resolves all four and requires credentials **only** for providers a configured
+role actually uses — carrying an unused Anthropic key while Gemini is primary
+does not fail the audit. `/admin/configuration` prints the resolved
+provider/model for each role, so "what is writing my scripts right now" is
+answerable without reading env vars.
+
+> [!IMPORTANT]
+> Every LLM variable must be set on **both** the web and worker services. The
+> worker runs the whole generation pipeline; the web app runs studio creation
+> and the readiness audit. Setting them on one service produces a system that
+> half works.
+
+### Gemini-primary (production default)
+
+```env
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=SET_IN_COOLIFY_ONLY
+GEMINI_MODEL=gemini-3.6-flash
+
+SCRIPT_LLM_PROVIDER=gemini
+SCRIPT_LLM_MODEL=gemini-3.6-flash
+
+VERIFY_LLM_PROVIDER=gemini
+VERIFY_MODEL=gemini-3.6-flash
+```
+
+### Anthropic rollback
+
+Change **only** these provider/model values and redeploy web + worker. No code
+change is required.
+
+```env
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=SET_IN_COOLIFY_ONLY
+ANTHROPIC_MODEL=claude-sonnet-5
+
+SCRIPT_LLM_PROVIDER=anthropic
+SCRIPT_LLM_MODEL=claude-opus-5
+
+VERIFY_LLM_PROVIDER=anthropic
+VERIFY_MODEL=claude-sonnet-5
+```
+
+### Mixed (recommended if only script quality regresses)
+
+```env
+LLM_PROVIDER=gemini
+GEMINI_MODEL=gemini-3.6-flash
+
+SCRIPT_LLM_PROVIDER=anthropic
+SCRIPT_LLM_MODEL=claude-opus-5
+
+VERIFY_LLM_PROVIDER=gemini
+VERIFY_MODEL=gemini-3.6-flash
+```
+
+### Optional Gemini tuning
+
+| Variable | Purpose | Default |
+| :--- | :--- | :--- |
+| `GEMINI_REQUEST_TIMEOUT_MS` | Per-request `AbortController` deadline | `180000` |
+| `GEMINI_MAX_RETRIES` | Retries for 408/429/5xx and transport failures | `2` |
+| `GEMINI_THINKING_LEVEL` | `minimal` \| `low` \| `medium` \| `high`. Unset = Google's per-model default (`medium` on `gemini-3.6-flash`) | unset |
+| `GEMINI_THINKING_HEADROOM_TOKENS` | Extra `maxOutputTokens` ceiling on top of the caller's request | `8192` |
+
+**Why the headroom exists.** Gemini 3 models think by default, thinking tokens
+are billed at the output rate, and Google does **not** document them as exempt
+from `maxOutputTokens`. A 16,000-token script movement whose reasoning ate the
+budget returns truncated JSON, which reads like a model quality problem rather
+than a configuration one. Raising a ceiling costs nothing — billing is what the
+model actually emits — so the adapter adds headroom and clamps to the model's
+documented **65,536**-token output limit, warning out loud if a caller ever
+requests more than the model can produce.
 | `TTS_PROVIDER` | Speech synthesis provider | `fish` |
 | `FISH_API_KEY` | Fish Audio API credential key | `...` |
 | `FISH_MODEL` | Fish model for single lines + Character Studio auditions only. SDK-canonical ids are `s1` / `s2-pro`; `s2.1-pro-free` is the free-tier id from the official curl example. Optional — code defaults to `s2.1-pro-free` | leave unset |
