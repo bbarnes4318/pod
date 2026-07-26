@@ -79,7 +79,7 @@ function makeSegments(specs: SegSpec[]): Array<{ type: string; lines: RawScriptL
     type: s.type,
     lines: s.lines.map((l) => ({
       lineIndex: lineIndex++,
-      speakerName: lineIndex % 2 === 0 ? "Zabala" : "Mulkey",
+      speakerName: lineIndex % 2 === 0 ? "Zabala" : "Mercer",
       text: "This is a fairly typical hot-take line about the game last night, long enough to feel real.",
       tone: l.tone ?? "analytical",
       energy: l.energy ?? "medium",

@@ -1585,17 +1585,17 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     ]);
 
     // CONTINUITY PHASE 2 — the audio now exists, so this episode is going to be
-    // heard and its claimed running-bit deltas may finally move the show's
+    // heard and its claimed continuity deltas may finally move the show's
     // state. Committing here rather than at fact-check is what stops a script
-    // that dies in audio generation from permanently burning a Hoyt rung and a
-    // Wolverine. commitContinuity re-folds every produced episode, so it is
-    // idempotent and safe on a retried stitch.
+    // that dies in audio generation from permanently burning a Red Eye layer.
+    // commitContinuity re-folds every produced episode, so it is idempotent and
+    // safe on a retried stitch.
     if (episode.podcastId) {
       try {
         const folded = await commitContinuity(episode.podcastId);
         console.log(
           `[Continuity] Committed after stitch: podcast=${episode.podcastId} episode=${episode.id} ` +
-            `episodeCount=${folded.episodeCount} phantomFans=${folded.phantomFansTotal} hoytStage=${folded.hoytStage}`
+            `episodeCount=${folded.episodeCount} redEyeStage=${folded.redEyeStage} trust=${folded.trustLevel}`
         );
       } catch (err) {
         // Never fail a finished episode over continuity bookkeeping — the fold

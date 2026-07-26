@@ -420,22 +420,29 @@ Delivery field meanings:
   // standalone episode with no podcast — `systemPromptWithContinuity` is byte-
   // identical to `systemPrompt` and generation is exactly what it is today.
   const continuityEnabled = process.env.CONTINUITY_INJECTION !== "false";
-  const continuity = continuityEnabled ? await continuityForGeneration(ep.podcastId) : null;
+  // Every continuity relevance gate reads THIS episode's topic material: the
+  // Red Eye File is only eligible when the story genuinely touches
+  // scapegoating or institutional self-protection, and a prior position is
+  // only recallable when the subjects overlap. Without this the devices fire on
+  // a schedule, which is the checklist behavior the engine exists to prevent.
+  const continuityContext = { topicText: topicsPrompts };
+  const continuity = continuityEnabled ? await continuityForGeneration(ep.podcastId, continuityContext) : null;
   const systemPromptWithContinuity = composeGenerationSystemPrompt(
     systemPrompt,
     continuity?.promptBlock ?? null
   );
 
   if (continuity) {
-    // Debug-level, keyed to the episode: when a runner misfires this is how you
+    // Debug-level, keyed to the episode: when a device misfires this is how you
     // see what the model was TOLD, without re-running generation.
     console.debug(
-      `[Continuity] episode=${ep.id} podcast=${ep.podcastId} injected block (episodeIndex=${continuity.runners.episodeIndex}):\n${continuity.promptBlock}`
+      `[Continuity] episode=${ep.id} podcast=${ep.podcastId} injected block (episodeIndex=${continuity.opportunities.episodeIndex}):\n${continuity.promptBlock}`
     );
+    const o = continuity.opportunities;
     result.reasons.push(
-      `Continuity injected: episode index ${continuity.runners.episodeIndex}, hoytStage ${continuity.state.hoytStage}, ` +
-        `${continuity.runners.wolverine.eligible.length} eligible Wolverines, ` +
-        `${continuity.runners.rateLimited.filter((r) => !r.allowed).length} device(s) on cooldown.`
+      `Continuity injected: episode index ${o.episodeIndex}, featured device "${o.featured}", ` +
+        `Red Eye stage ${o.redEye.stage}${o.redEye.eligible ? " (offered)" : ` (unavailable: ${o.redEye.blockedBy})`}, ` +
+        `${o.languageLedger.entries.length} phrase(s) on record, ${o.positions.relevant.length} relevant prior position(s).`
     );
   } else if (!continuityEnabled) {
     result.reasons.push("Continuity injection is DISABLED (CONTINUITY_INJECTION=false).");
@@ -937,17 +944,18 @@ Delivery field meanings:
   if (continuity) {
     const claim = await reportContinuityClaim(llm, {
       scriptText: plainText,
-      runners: continuity.runners,
+      opportunities: continuity.opportunities,
       log: (m) => result.reasons.push(m),
     });
     if (claim) {
       console.debug(`[Continuity] episode=${ep.id} returned claim: ${JSON.stringify(claim)}`);
-      const recorded = await recordEpisodeContinuityClaim(ep.id, claim);
+      const recorded = await recordEpisodeContinuityClaim(ep.id, claim, continuityContext);
       if (recorded.ok) {
         result.reasons.push(
-          `Continuity claim recorded: ${claim.wolverineUsed ?? "no Wolverine"}, ` +
-            `${claim.weSaidCount} "we", attendance ${claim.attendanceClaimed ?? "—"}/${claim.attendanceReal ?? "—"}, ` +
-            `unity beat ${claim.unityBeatPresent ? "present" : "MISSING"}.`
+          `Continuity claim recorded: Red Eye layer ${claim.redEyeLayerDelivered ? "delivered" : "not used"}, ` +
+            `${claim.languageUsed.length} phrase(s) logged, ${claim.languageResolved.length} taken back, ` +
+            `${claim.positionsTaken.length} position(s) remembered, ` +
+            `position moved by ${claim.relationship.positionChangedBy}.`
         );
       } else {
         // The script violated continuity. Say so loudly — it is a quality

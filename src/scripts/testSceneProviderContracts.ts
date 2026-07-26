@@ -329,7 +329,7 @@ async function main() {
 
     // Direction text carries the third signature too.
     const dir = buildPerformanceDirection({
-      formatId: "two_host_debate", roleId: "chair_b", host: { name: "Dutch" },
+      formatId: "two_host_debate", roleId: "chair_b", host: { name: "Cal" },
       profile: deriveProfileFromHostFields({ speakingStyle: "enormous projection, stretched long, louder and slower", intensityLevel: 6 }),
       sceneType: "argument_escalation",
     });

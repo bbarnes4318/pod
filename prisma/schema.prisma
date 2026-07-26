@@ -674,6 +674,13 @@ model Episode {
   // failed generation, a deleted episode, or a bug in the increment logic is
   // recoverable instead of permanent drift. See showContinuityService.ts.
   continuityUpdate            Json?
+  // The pre-Cal (Dutch Mulkey) continuity claim, moved here by migration
+  // 20260727000000 so the fold can never see a claim in the retired shape.
+  // Leaving those claims in `continuityUpdate` would have made every fold log a
+  // "no longer validates" warning for every historical episode, forever, and
+  // would have kept retired running-bit state one schema change away from
+  // reaching a prompt. Retained for one release for rollback; nothing reads it.
+  legacyContinuityUpdate      Json?
   podcastId                   String? // Nullable — pre-existing episodes have no podcast
   ownerId                     String? // User.id of the creator; null for legacy/pre-auth episodes
   hostIds                     String[]             @default([]) // LEGACY compat: AiHost.id list in seat order; canonical cast = castMembers (Prompt 7)
@@ -1155,21 +1162,25 @@ model SocialClip {
 // wrong. Episode.seasonNumber already exists for RSS packaging, which is a
 // display concern and stays separate from these mechanics.
 //
-// Every field below is exactly one of five kinds. New fields must declare
+// NOTHING HERE IS MANDATORY PER EPISODE. The previous version of this model
+// stored a recurring-comedy scoreboard (attendance figures, pronoun counts, a
+// teammate rotation) and the prompt required every one of them in every
+// episode. Those columns were archived to "ShowContinuityLegacyDutch" and
+// dropped — see migration 20260727000000_replace_dutch_continuity_with_red_eye.
+//
+// Every field below is exactly one of four kinds. New fields must declare
 // which, because the kind determines the update rule:
 //
-//   1. COUNTER    monotonic, never resets, no boundary. Getting absurd over
-//                 hundreds of episodes is the joke working.
+//   1. COUNTER    monotonic, never resets, no boundary.
 //   2. LADDER     one-shot rungs, monotonic, TERMINATES. Each rung fires once
 //                 and is consumed; a ladder never wraps. On reaching its
 //                 authored end the generator stops advancing it and the show
-//                 falls back to runners-only episodes — it must never invent
-//                 a new rung.
-//   3. CYCLE      advances, then deliberately resets. The reset is the bit.
-//   4. RATE LIMIT rolling window over episode indices. Stored as the list of
+//                 runs standalone episodes — it must never invent a new rung.
+//   3. RATE LIMIT rolling window over episode indices. Stored as the list of
 //                 indices where it fired, NOT as a count, so scarcity works
 //                 without a boundary and there is no reset logic.
-//   5. ROTATION   bounded recency — full history kept, a window does the work.
+//   4. LOG        append-only evidence, capped. Read through the validators in
+//                 showContinuity.ts, never trusted raw.
 model ShowContinuity {
   id        String  @id @default(cuid())
   podcastId String  @unique
@@ -1178,40 +1189,66 @@ model ShowContinuity {
   // COUNTER — the index every rolling window below is measured against.
   episodeCount Int @default(0)
 
-  // --- The Attendance Ledger ---------------------------------------------
-  phantomFansTotal    Int  @default(0) // COUNTER
-  lastAttendanceClaim Int? // last figure he announced
-  lastAttendanceReal  Int? // last real figure she read back
+  // --- The Red Eye File ---------------------------------------------------
+  // Cal Mercer's one unresolved career decision, revealed in authored layers.
+  // FICTIONAL AND COMPOSITE: never attached to a real person, team, or event.
+  redEyeStage       Int      @default(0) // LADDER, terminates at RED_EYE_LADDER_END
+  redEyeDisclosures String[] @default([]) // what has already been confessed; never repeat one
+  redEyeFirings     Int[]    @default([]) // RATE LIMIT — episode indices, newest last
 
-  // --- The Pronoun Hunt ---------------------------------------------------
-  weCount            Int     @default(0) // COUNTER — lifetime "we"s
-  weCountThisEpisode Int     @default(0) // CYCLE — reset at each episode start
-  currentDodge       String? // CYCLE — climbs, then backslides to "we"
+  // --- The Language Ledger ------------------------------------------------
+  // LOG of the institutional phrases Cal reached for, and whether he later
+  // rejected or revised one. Evidence of how he hides, not a gag counter.
+  // Shape: LedgerEntry[] in src/lib/services/showContinuity.ts.
+  languageLedger        Json  @default("[]")
+  languageRecallFirings Int[] @default([]) // RATE LIMIT
 
-  // --- The Duane Hoyt arc -------------------------------------------------
-  hoytStage            Int      @default(0) // LADDER, terminates at HOYT_LADDER_END
-  hoytFactsEstablished String[] @default([]) // append-only; never contradict
+  // --- Position memory ----------------------------------------------------
+  // LOG of what each host actually argued, so a callback can be checked for
+  // relevance rather than asserted. Shape: PositionEntry[].
+  positionMemory          Json  @default("[]")
+  positionCallbackFirings Int[] @default([]) // RATE LIMIT
 
-  // --- Season arc + the badge ---------------------------------------------
-  arcBeat    Int @default(0) // LADDER, terminates at AUTHORED_ARC_LENGTH
-  badgeStage Int @default(0) // LADDER, terminates at BADGE_LADDER_END
-
-  // --- Wolverines bank ----------------------------------------------------
-  wolverinesInvoked String[] @default([]) // ROTATION — full history
-  lastWolverineUsed String?
-
-  // --- Rate limits: episode indices where each fired, newest last ---------
-  // "Fewer than N firings in the last W episodes" — a rolling window, so the
-  // intended scarcity holds forever with no season boundary to reset.
-  nuclearOptionFirings  Int[] @default([]) // "you weren't there"
-  coldOpenFullRuns      Int[] @default([]) // she lets him finish the cold open
-  uncorrectedLedgerRuns Int[] @default([]) // she lets an attendance figure go
-
-  // --- The Standing Wager -------------------------------------------------
-  wagerTerms  String?
-  wagerLeader String?
-  wagerPot    Int     @default(0) // COUNTER
+  // --- Relationship movement ----------------------------------------------
+  // Compact state that STEERS writing. Never rendered as a number in a prompt
+  // and never spoken: a visible score turns the show into a game mechanic.
+  trustLevel               Int     @default(0) // -5..5, clamped on write
+  calDisclosureCount       Int     @default(0) // COUNTER
+  calRationalizationCount  Int     @default(0) // COUNTER
+  zabalaOverreachCount     Int     @default(0) // COUNTER
+  positionChangeCount      Int     @default(0) // COUNTER — either host moved the other
+  openThread               String? // the interpersonal thread still hanging
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Rollback archive for the retired Dutch Mulkey continuity columns.
+//
+// Retained for ONE release so a rollback can restore the old state rather than
+// losing it. NOTHING IN THE RUNTIME READS THIS TABLE — that is the point. It
+// exists so the dropped columns are recoverable, and it is safe to drop once
+// the replacement has shipped and been accepted.
+model ShowContinuityLegacyDutch {
+  podcastId             String   @id
+  episodeCount          Int      @default(0)
+  phantomFansTotal      Int      @default(0)
+  lastAttendanceClaim   Int?
+  lastAttendanceReal    Int?
+  weCount               Int      @default(0)
+  weCountThisEpisode    Int      @default(0)
+  currentDodge          String?
+  hoytStage             Int      @default(0)
+  hoytFactsEstablished  String[] @default([])
+  arcBeat               Int      @default(0)
+  badgeStage            Int      @default(0)
+  wolverinesInvoked     String[] @default([])
+  lastWolverineUsed     String?
+  nuclearOptionFirings  Int[]    @default([])
+  coldOpenFullRuns      Int[]    @default([])
+  uncorrectedLedgerRuns Int[]    @default([])
+  wagerTerms            String?
+  wagerLeader           String?
+  wagerPot              Int      @default(0)
+  archivedAt            DateTime @default(now())
 }

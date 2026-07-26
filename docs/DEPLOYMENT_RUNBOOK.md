@@ -230,6 +230,53 @@ This is the procedure required by
 10. **Resume** the queue and schedulers.
 11. **Disable maintenance mode** and restore traffic.
 
+### B2. The seat-B recast (Dutch Mulkey → Cal "Red Eye" Mercer)
+Follow §B, with **one extra step between 7 and 8**.
+
+The two migrations in this release are `20260727000000_replace_dutch_continuity_with_red_eye`
+and `20260727010000_replace_mulkey_host_with_cal_mercer`. The second one performs
+an **identity move**: it renames the existing seat-B `AiHost` row rather than
+inserting a new one, so every podcast and episode keeps pointing at the same
+`AiHost.id` and **nothing needs recasting by hand**. It deliberately leaves the
+character content as an explicitly-marked stub, because the character bible lives
+in `src/lib/hosts/roster.ts` and duplicating it into SQL would guarantee drift.
+
+7b. **Seed, exactly once, from the same release job:**
+```bash
+npx prisma db seed
+```
+
+Between 7 and 7b, seat B is a host named Cal Mercer carrying a `PENDING SEED`
+worldview. Do not restore traffic in that window. If 7b fails, re-run it — the
+seed is idempotent and upserts by slug.
+
+**What the two migrations do to data:**
+- The retired continuity columns are **copied** into `ShowContinuityLegacyDutch`
+  and then dropped. Each episode's retired continuity claim is **moved** to
+  `Episode.legacyContinuityUpdate` and cleared from `Episode.continuityUpdate`.
+  Nothing is deleted; a rollback restores state rather than losing it.
+- `ShowContinuity.episodeCount` is carried over unchanged — it is an honest count
+  of produced episodes and means the same thing under the new engine. Every other
+  new column starts at its default. **No retired counter is reinterpreted as a
+  new one**; a Hoyt stage and a Red Eye stage measure different things and any
+  mapping between them would be a fabrication.
+- Existing shows therefore restart their season arc at layer 0. That is
+  intentional and is the honest outcome of replacing the character.
+
+**Voice.** The seat-B `ttsVoiceId` is **untouched** by the migration and
+**preserved** by the seed, so a working voice never gets replaced by the
+publish-blocking placeholder. Cal has **not** been auditioned on it — see
+[CAL_MERCER_VOICE_AUDITION.md](CAL_MERCER_VOICE_AUDITION.md) before treating the
+current voice as approved. Set `FISH_HOST_B_VOICE_ID` on **both** web and worker
+once a Cal voice exists. `FISH_MULKEY_VOICE_ID` still resolves for one
+compatibility release and is deprecated.
+
+**Rollback.** Redeploy the previous image, then restore from the archives:
+`ShowContinuityLegacyDutch` back into `ShowContinuity`, and
+`Episode.legacyContinuityUpdate` back into `Episode.continuityUpdate`. The host
+row needs its slug and character fields restored from the previous seed. Both
+archives are retained for one release and may be dropped after that.
+
 ### C. Smoke tests (before restoring traffic)
 - Application loads.
 - Authentication works.

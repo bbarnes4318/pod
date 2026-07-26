@@ -1,41 +1,50 @@
-// The Attendance Ledger — read model for the public /ledger page.
+// The Language Ledger — read model for the public /ledger page.
+//
+// WHAT THIS PAGE IS FOR
+//
+// It used to be a scoreboard for a running gag: every crowd figure the previous
+// seat-B host invented, totalled. That made the show's public artifact a joke
+// counter. This one is evidence of a character changing — every institutional
+// phrase Cal Mercer reached for, what he was covering when he said it, and
+// whether he later took it back.
 //
 // Reads the SAME source of truth the continuity engine folds: each produced
-// episode's stored claim. It does not read ShowContinuity's cached counters for
-// the per-episode rows, because the cache is a fold of these and the page
-// should show the underlying entries, not a summary that could have drifted
-// from them.
+// episode's stored claim. It does not read ShowContinuity's cached ledger,
+// because the cache is a fold of these and the page should show the underlying
+// entries, not a summary that could have drifted from them.
 //
-// Every number here is real or absent. There is no placeholder data and no
+// Every entry here is real or absent. There is no placeholder data and no
 // projection — an empty ledger renders as an honest empty state.
 
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { continuityUpdateSchema } from "./showContinuityService";
 
-export interface LedgerEntry {
+export type LedgerStatus = "used" | "rejected" | "revised";
+
+export interface LedgerEntryView {
   episodeId: string;
   episodeTitle: string;
   episodeSlug: string;
   publishedAt: Date | null;
-  /** What he announced. */
-  claimed: number;
-  /** What she read back. */
-  real: number;
-  /** claimed - real, i.e. the fans he invented that night. */
-  phantom: number;
+  /** The phrase, verbatim. */
+  phrase: string;
+  /** What he was covering when he said it. May be empty. */
+  context: string;
+  /** "used" until a later episode shows him taking it back. */
+  status: LedgerStatus;
 }
 
 export interface LedgerView {
   podcastId: string | null;
   podcastName: string | null;
-  entries: LedgerEntry[];
-  /** Sum of every phantom figure — the headline number. */
-  phantomTotal: number;
-  /** How many episodes contributed an attendance claim. */
-  episodesWithClaim: number;
-  /** The largest single invention. */
-  biggest: LedgerEntry | null;
+  entries: LedgerEntryView[];
+  /** How many phrases are on record. */
+  phraseCount: number;
+  /** How many he has since rejected or revised — the arc, as a number. */
+  takenBackCount: number;
+  /** How many episodes contributed at least one phrase. */
+  episodesWithEntry: number;
   /** True when nothing has been recorded yet — render the empty state. */
   isEmpty: boolean;
 }
@@ -54,29 +63,44 @@ export interface LedgerSourceRow {
  * PURE aggregation — the whole read model except the query. Extracted so the
  * rules that decide what counts as a ledger entry are testable without a
  * database, because those rules are the part that can be silently wrong.
+ *
+ * Resolutions are applied ACROSS episodes: a phrase Cal used in episode 3 and
+ * rejected in episode 9 shows as rejected on its episode-3 row. Showing it as
+ * still "used" would tell the reader the opposite of what the season did.
  */
 export function summarizeLedger(rows: LedgerSourceRow[]): Omit<LedgerView, "podcastName"> {
-  const entries: LedgerEntry[] = [];
+  const entries: LedgerEntryView[] = [];
   const podcastByEpisode = new Map<string, string | null>();
+  /** phrase (lowercased) -> the resolution a later episode applied to it. */
+  const resolutions = new Map<string, LedgerStatus>();
 
   for (const ep of rows) {
     podcastByEpisode.set(ep.id, ep.podcastId);
     if (!ep.continuityUpdate) continue;
     const parsed = continuityUpdateSchema.safeParse(ep.continuityUpdate);
     if (!parsed.success) continue; // never guess at a claim that no longer validates
-    const { attendanceClaimed, attendanceReal } = parsed.data;
-    if (attendanceClaimed === null || attendanceReal === null) continue;
-    const phantom = attendanceClaimed - attendanceReal;
-    if (phantom <= 0) continue; // the bit is inflation; an honest figure is not an entry
-    entries.push({
-      episodeId: ep.id,
-      episodeTitle: ep.title,
-      episodeSlug: ep.slug,
-      publishedAt: ep.publishedAt,
-      claimed: attendanceClaimed,
-      real: attendanceReal,
-      phantom,
-    });
+
+    for (const used of parsed.data.languageUsed) {
+      const phrase = used.phrase.trim();
+      if (!phrase) continue;
+      entries.push({
+        episodeId: ep.id,
+        episodeTitle: ep.title,
+        episodeSlug: ep.slug,
+        publishedAt: ep.publishedAt,
+        phrase,
+        context: used.context.trim(),
+        status: "used",
+      });
+    }
+    for (const res of parsed.data.languageResolved) {
+      resolutions.set(res.phrase.trim().toLowerCase(), res.resolution);
+    }
+  }
+
+  for (const e of entries) {
+    const resolved = resolutions.get(e.phrase.toLowerCase());
+    if (resolved) e.status = resolved;
   }
 
   // Multi-show deployments: scope to the podcast with the most entries.
@@ -88,15 +112,12 @@ export function summarizeLedger(rows: LedgerSourceRow[]): Omit<LedgerView, "podc
   const podcastId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const scoped = podcastId ? entries.filter((e) => podcastByEpisode.get(e.episodeId) === podcastId) : entries;
 
-  const phantomTotal = scoped.reduce((sum, e) => sum + e.phantom, 0);
-  const biggest = scoped.reduce<LedgerEntry | null>((best, e) => (!best || e.phantom > best.phantom ? e : best), null);
-
   return {
     podcastId,
     entries: scoped,
-    phantomTotal,
-    episodesWithClaim: scoped.length,
-    biggest,
+    phraseCount: scoped.length,
+    takenBackCount: scoped.filter((e) => e.status !== "used").length,
+    episodesWithEntry: new Set(scoped.map((e) => e.episodeId)).size,
     isEmpty: scoped.length === 0,
   };
 }

@@ -1,6 +1,6 @@
 # Take Machine - AI Sports Debate Podcast Generation Platform
 
-Take Machine is a production-ready platform designed to automatically scrape sports talking points, score and rank them, generate debate scripts for two virtual hosts (the current roster is seeded in `prisma/seed.ts`; today that's Bernadette "Line Two" Zabala and Dutch "Attendance" Mulkey), synthesis host speech using TTS engines, stitch them into a finished MP3, and distribute approved episodes via an RSS feed.
+Take Machine is a production-ready platform designed to automatically scrape sports talking points, score and rank them, generate debate scripts for two virtual hosts (the current roster is seeded in `prisma/seed.ts`; today that's Bernadette "Line Two" Zabala and Cal "Red Eye" Mercer), synthesis host speech using TTS engines, stitch them into a finished MP3, and distribute approved episodes via an RSS feed.
 
 This repository holds the **clean architecture foundation** for the project.
 
