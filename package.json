@@ -34,6 +34,7 @@
     "test:system-sound-pools": "tsx --conditions=react-server src/scripts/testSystemSoundPools.ts",
     "test:dialogue-timeline": "tsx src/scripts/testDialogueTimeline.ts",
     "hosts:migrate-v2": "tsx --conditions=react-server src/scripts/migrateHostsV2.ts",
+    "migrate:legacy-formats": "tsx --conditions=react-server src/scripts/migrateLegacyPanelFormats.ts",
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
     "sample:human-dialogue": "tsx --conditions=react-server src/scripts/produceHumanDialogueAudition.ts",

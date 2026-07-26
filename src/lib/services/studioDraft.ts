@@ -12,10 +12,6 @@ import { z } from "zod";
 import { db } from "../db";
 import { PLATFORM_MAX_TOPICS, MAX_HOSTS, MAX_TITLE_LEN, MAX_DESCRIPTION_LEN, PRODUCTION_STYLES, SFX_DENSITIES } from "../episodeLimits";
 import { dedupeIds } from "../studio/rundownRules";
-// Reuse the EXISTING provider/voice validation architecture — no duplicated
-// provider definitions here.
-import { isTtsProviderId } from "../providers/tts/providerIds";
-import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 
 /** The DB surface the draft helpers touch — satisfied by PrismaClient and the
  *  in-memory test doubles, so no `any` is needed at call sites. */
@@ -77,59 +73,6 @@ export const RundownDraftShape = {
     activeStep: z.enum(RUNDOWN_STEPS).default("show"),
 } as const;
 
-/** The rundown-draft RULES (mode/lead/count/TTS coherence). Shared verbatim by
- *  the Studio and Admin draft schemas — it reads only the common fields above,
- *  so neither surface can quietly validate a rundown differently. */
-export function refineRundownDraft(
-  val: {
-    mode: "manual" | "automatic" | "hybrid";
-    selectedTopicIds: string[];
-    leadTopicId?: string | null;
-    targetTopicCount: number;
-    ttsProvider?: string | null;
-    ttsVoiceOverrides?: unknown;
-  },
-  ctx: z.RefinementCtx
-): void {
-    const n = val.selectedTopicIds.length;
-    if (val.mode === "manual" && n < 1) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Manual mode needs at least one topic." });
-    }
-    if (val.mode === "automatic") {
-      if (n > 0) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Automatic mode can't carry hand-picked topics." });
-      if (val.leadTopicId) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadTopicId"], message: "Automatic mode has no lead topic." });
-    }
-    if (val.mode === "hybrid") {
-      if (n < 1) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: "Hybrid mode needs at least one pinned topic." });
-      if (n > val.targetTopicCount) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `Pinned topics (${n}) can't exceed the target count (${val.targetTopicCount}).` });
-    }
-    if (n > PLATFORM_MAX_TOPICS) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `No more than ${PLATFORM_MAX_TOPICS} topics per episode.` });
-    }
-    if (val.leadTopicId && !val.selectedTopicIds.includes(val.leadTopicId)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["leadTopicId"], message: "The lead topic must be one of the selected topics." });
-    }
-    // TTS: validate against the SHARED provider list + override validator, so a
-    // malformed engine/voice can never be persisted and silently restored.
-    if (val.ttsProvider && !isTtsProviderId(val.ttsProvider)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsProvider"], message: `Unknown TTS provider '${val.ttsProvider}'.` });
-    }
-    if (val.ttsVoiceOverrides !== undefined && val.ttsVoiceOverrides !== null) {
-      try {
-        validateTtsVoiceOverridesInput(val.ttsVoiceOverrides);
-      } catch (err) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsVoiceOverrides"], message: (err as Error).message });
-      }
-    }
-}
-
-/** CREATION-time coherence: shape + cross-field rundown rules. This is what a
- *  rundown must satisfy to become an episode — mirrored client-side by
- *  validateRundownDraft and enforced authoritatively in episodeCreation.ts. */
-export const RundownDraftStateSchema = z.object(RundownDraftShape).superRefine(refineRundownDraft);
-
-export type RundownDraftState = z.infer<typeof RundownDraftStateSchema>;
-
 /** PERSISTENCE-time schema: the shape WITHOUT the creation rules.
  *
  *  A draft is a scratchpad, not an episode. The builder's default state on step
@@ -145,6 +88,8 @@ export const RundownDraftPersistSchema = z.object({
   // void the whole autosave; the creation path still enforces MAX_HOSTS.
   hostIds: z.array(z.string().min(1)).default([]),
 });
+
+export type RundownDraftState = z.infer<typeof RundownDraftPersistSchema>;
 
 /** Load + validate a user's saved rundown draft. Returns null when there is no
  *  draft OR the stored blob no longer validates (fail-open to a fresh builder). */

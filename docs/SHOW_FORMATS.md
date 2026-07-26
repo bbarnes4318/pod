@@ -14,9 +14,37 @@ engine. `two_host_debate` is now registered format #1, not the architecture.
 
 Each format declares speaker bounds, ordered roles with directions, and
 per-chair line-share floors (approval floor; generation gate = 0.8x — the
-debate keeps its historical 25%/20% pair). `generationReady` gates NEW saves:
-a registered-but-unready format is rejected honestly (all four are ready as of
-the Prompt 7 finale).
+debate keeps its historical 25%/20% pair).
+
+### Selectability is DERIVED, not a flag alone
+
+A format is selectable for NEW shows/episodes (`isGenerationReadyFormat`) only
+when **both** hold:
+
+1. `generationReady === true` (the format's own flag), and
+2. `speakerMin <= MAX_HOSTS` (`src/lib/episodeLimits.ts`, currently 2) — the
+   generation pipeline casts at most `MAX_HOSTS` voices, and `hostCasting`
+   throws below a format's `speakerMin`, so a format whose *minimum* exceeds
+   the cap cannot be produced.
+
+Consequences today:
+
+- **Blocked:** `three_person_panel` (min 3) and its historical alias
+  `roundtable`. The UI shows it disabled with "Needs 3 voices — coming soon";
+  `savePodcastConfiguration` rejects it with `unsupported_format`.
+- **Selectable despite a larger `speakerMax`:** `sports_radio` (2–3),
+  `betting_desk` (2–3), `documentary` (1–4), `rapid_fire` (2–4) — their
+  minimum casts fit the cap; optional seats above the cast simply stay
+  unfilled. The UI caps the host picker at `min(speakerMax, MAX_HOSTS)`.
+- **Raising `MAX_HOSTS` re-enables larger formats automatically** — the gate
+  is derived from the registry + the cap, never a hardcoded list.
+
+**Legacy stored formats:** a show saved on a now-blocked format before the
+derived gate does NOT break — `resolveEpisodeConfiguration` degrades the
+inherited value to `two_host_debate` with a named warning (and clamps an
+oversized stored cast), so episode creation never fails on a value the owner
+can no longer select. `npm run migrate:legacy-formats` reports/moves such rows
+(reversible; priors recorded in a JobLog).
 
 ## Cast
 

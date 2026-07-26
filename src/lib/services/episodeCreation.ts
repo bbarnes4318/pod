@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { PLATFORM_MAX_TOPICS, DEFAULT_TARGET_TOPIC_COUNT } from "../episodeLimits";
+import { isTtsProviderId } from "../providers/tts/providerIds";
+import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 import {
   TopicWithBrief,
   EpisodeBuildInput,
@@ -90,7 +92,7 @@ async function computeCreationSnapshot(
   dbi: Parameters<typeof loadPodcastConfiguration>[0],
   input: { podcastId?: string; verticals?: string[]; hostIds?: string[]; targetTopicCount?: number; minDebateScore?: number },
   settings: { ttsProvider: string | null; ttsVoiceOverrides?: unknown; soundDesign?: { style?: string; sfxDensity?: string } }
-): Promise<EpisodeSnapshotColumns | undefined> {
+): Promise<{ snapshot: EpisodeSnapshotColumns; warnings: string[] } | undefined> {
   const podcast = input.podcastId ? await loadPodcastConfiguration(dbi, input.podcastId) : null;
   const resolved = resolveEpisodeConfiguration({
     podcast,
@@ -118,18 +120,21 @@ async function computeCreationSnapshot(
     : await resolveStandaloneSoundProfile(dbi);
   // PR 4: diversity-aware selection layered on the v5 selection (flag-gated).
   const diversity = await resolveCreationDiversity(dbi as unknown as DiversityHistoryDb, soundProfile, podcast ? { id: podcast.id, ownerId: podcast.ownerId } : null);
-  return buildEpisodeConfigurationSnapshot(
-    resolved.resolved,
-    new Date(),
-    soundProfile,
-    snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? []),
-    // Stable per-episode selection seed (snapshot v5). CSPRNG, not Math.random:
-    // the SELECTION is deterministic given this seed, which is frozen into the
-    // snapshot so the choice is reproducible; distinct episodes -> distinct
-    // seeds -> coherent cross-episode variety.
-    randomUUID(),
-    diversity
-  );
+  return {
+    snapshot: buildEpisodeConfigurationSnapshot(
+      resolved.resolved,
+      new Date(),
+      soundProfile,
+      snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? []),
+      // Stable per-episode selection seed (snapshot v5). CSPRNG, not Math.random:
+      // the SELECTION is deterministic given this seed, which is frozen into the
+      // snapshot so the choice is reproducible; distinct episodes -> distinct
+      // seeds -> coherent cross-episode variety.
+      randomUUID(),
+      diversity
+    ),
+    warnings: resolved.resolved.warnings,
+  };
 }
 
 /** Configurable cap on topics per episode. Env-tunable DOWN, but never above
@@ -201,6 +206,21 @@ export const CreateEpisodeDraftInputSchema = z
     }
     if (deduped.length > MAX_TOPICS_PER_EPISODE) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `No more than ${MAX_TOPICS_PER_EPISODE} topics per episode (got ${deduped.length}).` });
+    }
+    // TTS coherence, against the SHARED provider list + override validator.
+    // These rules used to live only in the (now-deleted) draft creation schema,
+    // which nothing in the runtime invoked — so a malformed provider/voice
+    // reached the pipeline unchecked. This schema is the authoritative gate
+    // every creation path runs, so they belong here.
+    if (val.ttsProvider && !isTtsProviderId(val.ttsProvider)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsProvider"], message: `Unknown TTS provider '${val.ttsProvider}'.` });
+    }
+    if (val.ttsVoiceOverrides !== undefined && val.ttsVoiceOverrides !== null) {
+      try {
+        validateTtsVoiceOverridesInput(val.ttsVoiceOverrides);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsVoiceOverrides"], message: (err as Error).message });
+      }
     }
   });
 
@@ -450,7 +470,11 @@ export async function createEpisodeDraft(
   let configuration = deps?.configuration;
   if (!configuration) {
     try {
-      configuration = await computeCreationSnapshot(dbi, input, settings);
+      const computed = await computeCreationSnapshot(dbi, input, settings);
+      configuration = computed?.snapshot;
+      // Resolver warnings (e.g. a legacy stored format degraded to the
+      // default) are user-facing facts about THIS episode — surface them.
+      if (computed?.warnings.length) reasons.push(...computed.warnings);
     } catch {
       // A snapshot must never break creation; the column default keeps it honest.
       configuration = undefined;

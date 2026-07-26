@@ -111,6 +111,11 @@ export interface StudioPodcast {
   teamNames: string[];
   segmentCount: number;
   hostIds: string[];
+  /** The show's format (PodcastEditorialConfig.format) — a podcast episode
+   *  inherits it server-side, so the builder must display it, not offer a
+   *  picker that changes nothing. null = show has no editorial config yet
+   *  (episode creation falls back to the default format). */
+  format: string | null;
 }
 
 /** The signed-in user's OWN saved shows only (never legacy null-owner podcasts),
@@ -119,7 +124,10 @@ export async function getStudioPodcastsFor(ctx: StudioCtx): Promise<{ success: t
   const rows = await ctx.db.podcast.findMany({
     where: { ownerId: ctx.user.id },
     orderBy: { createdAt: "desc" },
-    select: { id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true },
+    select: {
+      id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true,
+      editorialConfig: { select: { format: true } },
+    },
   });
   const allTeamIds = [...new Set(rows.flatMap((p) => p.teams))];
   const teamRows = allTeamIds.length
@@ -130,6 +138,7 @@ export async function getStudioPodcastsFor(ctx: StudioCtx): Promise<{ success: t
     success: true,
     podcasts: rows.map((p) => ({
       id: p.id, name: p.name, verticals: p.verticals, segmentCount: p.segmentCount, hostIds: p.hostIds,
+      format: p.editorialConfig?.format ?? null,
       teamIds: p.teams,
       // Unresolved ids are dropped rather than shown as fake names.
       teamNames: p.teams.map((id) => nameById.get(id)).filter((n): n is string => !!n),

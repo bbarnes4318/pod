@@ -21,7 +21,7 @@ import type { PrismaClient } from "@prisma/client";
 import { buildStudioTopicVMs, type RawPoolTopic, type StudioTopicVM } from "./studioTopicPool";
 import { getTopicUsage, resolveTopicReusePolicy, type UsageDb } from "./topicUsageService";
 import { createRundownEpisode, type RundownCreationOutcome } from "./rundownCreation";
-import { loadAdminDraft, saveAdminDraft, clearAdminDraft, AdminRundownDraftStateSchema, type AdminRundownDraftState, type AdminDraftDb } from "./adminDraft";
+import { loadAdminDraft, saveAdminDraft, clearAdminDraft, AdminRundownDraftPersistSchema, type AdminRundownDraftState, type AdminDraftDb } from "./adminDraft";
 import { getResearchStates, type ResearchStateDb } from "./researchState";
 import type { EligibilityReason } from "./topicEligibility";
 
@@ -224,5 +224,5 @@ export async function discardAdminDraftFor(ctx: AdminCtx): Promise<{ success: tr
   return { success: true };
 }
 
-export { AdminRundownDraftStateSchema };
+export { AdminRundownDraftPersistSchema };
 export type { AdminRundownDraftState };

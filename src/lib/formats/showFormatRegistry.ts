@@ -17,6 +17,8 @@
 // selectors and new records always store the canonical id. Historical
 // snapshots are NEVER rewritten — a stored alias id stays byte-stable.
 
+import { MAX_HOSTS } from "../episodeLimits";
+
 export const SHOW_FORMAT_REGISTRY_VERSION = 2;
 
 export const PLATFORM_MIN_SPEAKERS = 1;
@@ -270,10 +272,29 @@ export function isRegisteredFormat(id: string): boolean {
   return BY_ID.has(canonicalFormatId(id));
 }
 
-/** May a NEW show/episode select this format today? Registered AND the whole
- *  pipeline supports it. Unknown formats fail closed. */
+/** May a NEW show/episode select this format today? Registered, flagged ready,
+ *  AND buildable under the pipeline's host cap. Unknown formats fail closed.
+ *
+ *  The cap gate is DERIVED, not hardcoded: a format whose MINIMUM cast exceeds
+ *  MAX_HOSTS cannot be generated (hostCasting.ts throws below speakerMin), so
+ *  offering it ends in "A show supports at most two hosts" at the last click.
+ *  Formats whose minimum fits but whose maximum exceeds the cap (e.g.
+ *  sports_radio, 2-3 seats) DO generate today — optional seats stay unfilled —
+ *  so they stay selectable; the UI caps the host picker at MAX_HOSTS instead.
+ *  Raising MAX_HOSTS re-enables larger formats automatically. */
 export function isGenerationReadyFormat(id: string): boolean {
-  return getShowFormat(id)?.generationReady === true;
+  const f = getShowFormat(id);
+  return f?.generationReady === true && f.speakerMin <= MAX_HOSTS;
+}
+
+/** Why a registered format can't be selected today, for honest UI copy.
+ *  null = selectable. */
+export function formatBlockedReason(id: string): string | null {
+  const f = getShowFormat(id);
+  if (!f) return "Unknown format.";
+  if (!f.generationReady) return "Coming soon.";
+  if (f.speakerMin > MAX_HOSTS) return `Needs ${f.speakerMin} voices — coming soon.`;
+  return null;
 }
 
 export const DEFAULT_FORMAT_ID = "two_host_debate";
