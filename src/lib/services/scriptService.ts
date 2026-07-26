@@ -64,6 +64,7 @@ import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./c
 import { resolveEpisodeCast, makeCastMatchers } from "./hostCasting";
 import { getShowFormat } from "../formats/showFormatRegistry";
 import { formatPromptPieces, castPersonaBlocks } from "../formats/formatScriptPrompts";
+import { continuityForGeneration } from "./showContinuityService";
 import { castBalanceGateMessage, checkFormatStructure } from "../formats/formatScriptValidation";
 import type { AiHost } from "@prisma/client";
 
@@ -405,6 +406,35 @@ Delivery field meanings:
 - "isInterruption": true only when this line cuts the previous speaker off (previous line should end with "—").
 `;
 
+  // 7b. CONTINUITY INJECTION. Appends this episode's running-bit state and the
+  // closed list of choices the model may select from.
+  //
+  // Behind a kill switch (CONTINUITY_INJECTION=false) because it touches the
+  // live generation path: if the continuity block ever degrades script quality
+  // the operator needs a toggle, not a revert. With the flag off — or for a
+  // standalone episode with no podcast — `systemPromptWithContinuity` is byte-
+  // identical to `systemPrompt` and generation is exactly what it is today.
+  const continuityEnabled = process.env.CONTINUITY_INJECTION !== "false";
+  const continuity = continuityEnabled ? await continuityForGeneration(ep.podcastId) : null;
+  const systemPromptWithContinuity = continuity
+    ? `${systemPrompt}\n\n${continuity.promptBlock}`
+    : systemPrompt;
+
+  if (continuity) {
+    // Debug-level, keyed to the episode: when a runner misfires this is how you
+    // see what the model was TOLD, without re-running generation.
+    console.debug(
+      `[Continuity] episode=${ep.id} podcast=${ep.podcastId} injected block (episodeIndex=${continuity.runners.episodeIndex}):\n${continuity.promptBlock}`
+    );
+    result.reasons.push(
+      `Continuity injected: episode index ${continuity.runners.episodeIndex}, hoytStage ${continuity.state.hoytStage}, ` +
+        `${continuity.runners.wolverine.eligible.length} eligible Wolverines, ` +
+        `${continuity.runners.rateLimited.filter((r) => !r.allowed).length} device(s) on cooldown.`
+    );
+  } else if (!continuityEnabled) {
+    result.reasons.push("Continuity injection is DISABLED (CONTINUITY_INJECTION=false).");
+  }
+
   // 8. Generate the script: outline-first, then act-by-act with running
   // memory. A single mega-call has no protection against the model circling
   // back over the same points; the outline assigns every beat and fact ONCE,
@@ -417,7 +447,7 @@ Delivery field meanings:
 
   try {
     llmResult = await generateOutlineDrivenScript(llm, {
-      systemPrompt,
+      systemPrompt: systemPromptWithContinuity,
       episodeTitle: ep.title,
       topicsPrompts,
       targetDuration,
@@ -434,7 +464,9 @@ Delivery field meanings:
       llmResult = await withLlmStage("script:single-shot-fallback", () =>
         llm.generateStructuredOutput<any>({
           prompt,
-          systemPrompt,
+          // The fallback path carries continuity too — an episode that fell
+          // back to single-shot must not silently lose its running bits.
+          systemPrompt: systemPromptWithContinuity,
           temperature,
           maxTokens,
         })

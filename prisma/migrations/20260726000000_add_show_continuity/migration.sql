@@ -67,3 +67,11 @@ BEGIN
       ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
+
+-- What each episode CLAIMED about the running bits (the validated
+-- ContinuityUpdate), written when fact-check passes and attached to the
+-- episode that claimed it. Folding these in order re-derives ShowContinuity,
+-- which makes that row a cache rather than the source of truth — a failed
+-- generation, a deleted episode, or a bug in the increment logic all become
+-- recoverable instead of permanent, undetectable drift.
+ALTER TABLE "Episode" ADD COLUMN IF NOT EXISTS "continuityUpdate" JSONB;

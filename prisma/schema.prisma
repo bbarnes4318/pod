@@ -645,6 +645,13 @@ model Episode {
   // null = generated before scene mode existed (legacy line pipeline).
   ttsRenderMode               String?
   soundDesign                 Json? // Post-production settings: { style, sfxDensity, highlights: [{lineIndex, assetId}] }. See docs/SOUND_DESIGN.md
+  // What this episode CLAIMED about the show's running bits — the validated
+  // ContinuityUpdate, written when fact-check passes. Attached to the episode
+  // that claimed it, so ShowContinuity can be re-derived by folding these in
+  // order. That makes the ShowContinuity row a CACHE rather than the truth: a
+  // failed generation, a deleted episode, or a bug in the increment logic is
+  // recoverable instead of permanent drift. See showContinuityService.ts.
+  continuityUpdate            Json?
   podcastId                   String? // Nullable — pre-existing episodes have no podcast
   ownerId                     String? // User.id of the creator; null for legacy/pre-auth episodes
   hostIds                     String[]             @default([]) // LEGACY compat: AiHost.id list in seat order; canonical cast = castMembers (Prompt 7)

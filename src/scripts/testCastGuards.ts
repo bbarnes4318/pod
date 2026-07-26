@@ -11,6 +11,7 @@
 // not a reason to change the character.
 
 import { findAntithesis } from "../lib/services/scriptAntithesis";
+import { deriveProfileFromHostFields } from "../lib/hosts/performanceProfile";
 
 let passed = 0;
 let failed = 0;
@@ -81,6 +82,44 @@ check("a triple repeat carrying a real antithesis inside it is still caught", ()
   // repetition, the frame is still banned.
   const hits = findAntithesis("HOYT. HOYT. That is not a receiver, that is a standard.");
   assert(hits.length > 0, "repetition must not be usable as a wrapper to smuggle antithesis past the detector");
+});
+
+// --- performance energy is not seating rank --------------------------------
+//
+// intensityLevel decides WHICH SEAT a host takes (hostCasting sorts by it).
+// Deriving performance energy from it put a loud character in a quiet
+// performance. Both directions are pinned: a loud style at a low rank must
+// stay big, and a reserved style at a high rank must stay small.
+
+check("a LOUD style at intensity 5 derives assertive/natural/theatrical", () => {
+  const p = deriveProfileFromHostFields({
+    speakingStyle:
+      "ENORMOUS trained PA projection. Barked HAW of a laugh on top of his own punchlines. " +
+      "Slaps the desk, whoops. Interrupts by out-volumeing, never by waiting. Louder and SLOWER under pressure.",
+    intensityLevel: 5,
+  });
+  assert(p.laughBehavior === "natural", `laughBehavior is '${p.laughBehavior}' — a barked laugh is not "rare"`);
+  assert(p.interruptionBehavior === "assertive", `interruptionBehavior is '${p.interruptionBehavior}' — he interrupts by out-volumeing`);
+  assert(p.killShotBehavior === "theatrical", `killShotBehavior is '${p.killShotBehavior}' — whooping and desk-slapping is not "measured"`);
+  assert(p.angerStyle === "louder_slower", `angerStyle is '${p.angerStyle}'`);
+});
+
+check("a RESERVED style at intensity 8 still derives rare/measured", () => {
+  const p = deriveProfileFromHostFields({
+    speakingStyle:
+      "Quiet and clipped. Rarely laughs. Waits for a gap and lets him finish. Understated, clinical, never raises his voice.",
+    intensityLevel: 8,
+  });
+  assert(p.laughBehavior === "rare", `laughBehavior is '${p.laughBehavior}' — high rank must not force laughter`);
+  assert(p.interruptionBehavior === "rare", `interruptionBehavior is '${p.interruptionBehavior}' — he waits for a gap`);
+  assert(p.killShotBehavior === "measured", `killShotBehavior is '${p.killShotBehavior}' — understated and clinical`);
+});
+
+check("intensityLevel is still the fallback when the style text is silent", () => {
+  const hot = deriveProfileFromHostFields({ speakingStyle: "talks about sports", intensityLevel: 9 });
+  assert(hot.interruptionBehavior === "assertive" && hot.killShotBehavior === "theatrical", "a silent style at a high rank falls back to hot");
+  const calm = deriveProfileFromHostFields({ speakingStyle: "talks about sports", intensityLevel: 3 });
+  assert(calm.interruptionBehavior === "rare" && calm.killShotBehavior === "measured", "a silent style at a low rank falls back to calm");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

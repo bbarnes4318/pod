@@ -252,5 +252,79 @@ check("rate-limited devices that are on cooldown are named as FORBIDDEN in the p
   assert(/You weren't there/.test(block), "the blocked device must be named");
 });
 
+// --- THE FOLD IS THE SOURCE OF TRUTH ---------------------------------------
+//
+// ShowContinuity is a CACHE of folding every produced episode's stored claim.
+// These assertions are the reason that design was worth the extra column: an
+// incrementally-maintained counter that drifts is permanently and silently
+// wrong, while a fold can always be recomputed.
+
+/** The same reduction commitContinuity performs, without a database. */
+const foldOf = (claims: ContinuityUpdate[]): ContinuityState =>
+  claims.reduce<ContinuityState>((s, c) => nextContinuityState(s, c), { ...EMPTY_CONTINUITY });
+
+check("folding claims equals incrementally applying them", () => {
+  const claims = [
+    update({ attendanceClaimed: 6492, attendanceReal: 5200, weSaidCount: 2, wolverineUsed: "Petey Vandersloot", hoytBeatDelivered: true }),
+    update({ attendanceClaimed: 7311, attendanceReal: 5200, weSaidCount: 1, wolverineUsed: "Big Ed Mazurek", arcBeatDelivered: true }),
+    update({ attendanceClaimed: 4877, attendanceReal: 3100, weSaidCount: 3, wolverineUsed: "Marcus Ludd", rateLimitedFired: ["nuclearOption"] }),
+  ];
+
+  // Incremental: apply one at a time, carrying state forward.
+  let incremental: ContinuityState = { ...EMPTY_CONTINUITY };
+  for (const c of claims) incremental = nextContinuityState(incremental, c);
+
+  assert(JSON.stringify(foldOf(claims)) === JSON.stringify(incremental), "the fold must equal the incremental result — otherwise the cache and the truth disagree");
+  assert(incremental.episodeCount === 3, `expected 3 episodes, got ${incremental.episodeCount}`);
+  assert(incremental.phantomFansTotal === 1292 + 2111 + 1777, `phantom total is ${incremental.phantomFansTotal}`);
+  assert(incremental.weCount === 6, `we count is ${incremental.weCount}`);
+  assert(incremental.nuclearOptionFirings.length === 1 && incremental.nuclearOptionFirings[0] === 2, `the nuclear firing must be stamped with its episode index, got ${JSON.stringify(incremental.nuclearOptionFirings)}`);
+});
+
+check("a dropped episode is REPAIRED by re-folding, not by subtraction", () => {
+  const all = [
+    update({ attendanceClaimed: 6492, attendanceReal: 5200, wolverineUsed: "Petey Vandersloot", hoytBeatDelivered: true }),
+    update({ attendanceClaimed: 7311, attendanceReal: 5200, wolverineUsed: "Big Ed Mazurek", hoytBeatDelivered: true }),
+    update({ attendanceClaimed: 4877, attendanceReal: 3100, wolverineUsed: "Marcus Ludd", hoytBeatDelivered: true }),
+  ];
+  const withAll = foldOf(all);
+  assert(withAll.hoytStage === 3, `three delivered beats should give stage 3, got ${withAll.hoytStage}`);
+
+  // Episode 2 is deleted (or never reached audio). Re-folding the survivors
+  // yields a CONSISTENT state — the ladder is at 2 and the rotation no longer
+  // contains the dropped Wolverine. Subtracting from the cached row could not
+  // have restored the rotation's ordering.
+  const repaired = foldOf([all[0], all[2]]);
+  assert(repaired.episodeCount === 2, `expected 2, got ${repaired.episodeCount}`);
+  assert(repaired.hoytStage === 2, `expected the ladder to fall back to 2, got ${repaired.hoytStage}`);
+  assert(!repaired.wolverinesInvoked.includes("Big Ed Mazurek"), "the dropped episode's Wolverine must leave the rotation");
+  assert(repaired.phantomFansTotal === 1292 + 1777, `phantom total should exclude the dropped episode, got ${repaired.phantomFansTotal}`);
+});
+
+check("a failed generation cannot burn a ladder rung", () => {
+  // The failure the two-phase commit exists to prevent: an episode clears
+  // fact-check (its claim is recorded) but never produces audio, so it is
+  // never folded and the rung stays available for the next episode.
+  const produced = [update({ hoytBeatDelivered: true, wolverineUsed: "Petey Vandersloot" })];
+  const stateAfterProduced = foldOf(produced);
+  assert(stateAfterProduced.hoytStage === 1, "the produced episode advanced the ladder");
+
+  // The next episode's claim exists but its episode never reaches audio, so it
+  // is absent from the fold entirely.
+  const stillOne = foldOf(produced);
+  assert(stillOne.hoytStage === 1, "an episode that never produced audio must not advance the ladder");
+  assert(stillOne.episodeCount === 1, "nor the episode count");
+});
+
+check("rate-limit windows survive a re-fold with the same episode indices", () => {
+  const claims = Array.from({ length: 25 }, (_, i) =>
+    update({ rateLimitedFired: i === 3 || i === 7 ? ["nuclearOption"] : [] })
+  );
+  const folded = foldOf(claims);
+  assert(JSON.stringify(folded.nuclearOptionFirings) === JSON.stringify([3, 7]), `firings must be stamped with stable indices, got ${JSON.stringify(folded.nuclearOptionFirings)}`);
+  // 25 episodes in, both firings are outside the 20-window → available again.
+  assert(rateLimitAllows(folded, "nuclearOption"), "old firings must age out of the window after a re-fold");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

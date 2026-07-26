@@ -105,6 +105,69 @@ export function deriveAngerStyle(speakingStyle: string): HostPerformanceProfile[
   return "louder_faster";
 }
 
+// PERFORMANCE ENERGY IS NOT SEATING RANK.
+//
+// These three dials used to derive from `intensityLevel >= 7`, which is the
+// same conflation that put a loud character in a quiet chair: intensityLevel
+// decides WHICH SEAT a host takes (hostCasting sorts by it), not how big the
+// performance is. A loud chair-B host at level 6 derived "rare" laughing,
+// "rare" interrupting and "measured" kill shots — a quiet, non-interrupting,
+// measured version of a character built to be none of those.
+//
+// Each dial now reads the STYLE TEXT, which is where the performance actually
+// lives, checking restraint before expression so an explicit "rarely laughs"
+// beats an incidental "laugh". intensityLevel is consulted only when the text
+// says nothing either way.
+const RESTRAINED_LAUGH_RE = /never laughs|rarely laughs|seldom laughs|humorless|mirthless|does not laugh|humourless/;
+const EXPRESSIVE_LAUGH_RE = /laugh|haw|whoop|cackle|giggle|chuckle|guffaw|delighted|amused/;
+
+const RESTRAINED_INTERRUPT_RE = /never interrupts|rarely interrupts|waits for (a|the) gap|waits his turn|waits her turn|lets (him|her|them|people) finish|does not interrupt|polite/;
+const ASSERTIVE_INTERRUPT_RE = /interrupt|talks over|talk over|out-volume|out-volumeing|cuts (in|off)|arrives on top|barges|steps on/;
+
+const RESTRAINED_KILLSHOT_RE = /understated|clinical|restrained|deadpan|clipped|matter-of-fact|never raises|dry delivery/;
+const THEATRICAL_KILLSHOT_RE = /theatrical|showman|flourish|performs|for the room|announces|declares|enormous|whoop|slaps the desk|kill shot|devastating|big swing/;
+
+/** Expressive/restrained/fallback resolution shared by the three energy dials. */
+function deriveDial<T extends string>(
+  style: string,
+  restrained: RegExp,
+  restrainedValue: T,
+  expressive: RegExp,
+  expressiveValue: T,
+  fallback: T
+): T {
+  if (restrained.test(style)) return restrainedValue;
+  if (expressive.test(style)) return expressiveValue;
+  return fallback;
+}
+
+export function deriveLaughBehavior(speakingStyle: string, intensityLevel: number): HostPerformanceProfile["laughBehavior"] {
+  return deriveDial(
+    (speakingStyle || "").toLowerCase(),
+    RESTRAINED_LAUGH_RE, "rare",
+    EXPRESSIVE_LAUGH_RE, "natural",
+    intensityLevel >= 7 ? "natural" : "rare"
+  );
+}
+
+export function deriveInterruptionBehavior(speakingStyle: string, intensityLevel: number): HostPerformanceProfile["interruptionBehavior"] {
+  return deriveDial(
+    (speakingStyle || "").toLowerCase(),
+    RESTRAINED_INTERRUPT_RE, "rare",
+    ASSERTIVE_INTERRUPT_RE, "assertive",
+    intensityLevel >= 7 ? "assertive" : "rare"
+  );
+}
+
+export function deriveKillShotBehavior(speakingStyle: string, intensityLevel: number): HostPerformanceProfile["killShotBehavior"] {
+  return deriveDial(
+    (speakingStyle || "").toLowerCase(),
+    RESTRAINED_KILLSHOT_RE, "measured",
+    THEATRICAL_KILLSHOT_RE, "theatrical",
+    intensityLevel >= 7 ? "theatrical" : "measured"
+  );
+}
+
 /** Safe derivation from the legacy host fields — the migration behavior for
  *  every host without a stored profile. Deterministic and bounded. */
 export function deriveProfileFromHostFields(host: HostProfileSource): HostPerformanceProfile {
@@ -122,10 +185,12 @@ export function deriveProfileFromHostFields(host: HostProfileSource): HostPerfor
     vocalTextureNotes: "",
     accentNotes: "",
     sarcasmBehavior: /sarcas|dry|deadpan/.test(style) ? "open" : "dry",
-    laughBehavior: hot ? "natural" : "rare",
+    // Read from the style text, NOT from intensity rank — see the block comment
+    // above deriveLaughBehavior. intensityLevel is the fallback only.
+    laughBehavior: deriveLaughBehavior(style, level),
     concessionBehavior: /analy|measured|evidence/.test(style) ? "analytical" : "grudging",
-    interruptionBehavior: hot ? "assertive" : "rare",
-    killShotBehavior: hot ? "theatrical" : "measured",
+    interruptionBehavior: deriveInterruptionBehavior(style, level),
+    killShotBehavior: deriveKillShotBehavior(style, level),
     angerStyle: deriveAngerStyle(style),
     preferredPauseStyle: calm ? "spacious" : hot ? "tight" : "natural",
     maxCueDensity: 1,

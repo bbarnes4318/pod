@@ -12,6 +12,7 @@
 //      next episode silently skips a rung nobody ever heard.
 
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import {
   ARC_BEATS,
@@ -22,6 +23,7 @@ import {
   RATE_LIMITS,
   WOLVERINES_BANK,
   WOLVERINE_WINDOW,
+  EMPTY_CONTINUITY,
   eligibleRunners,
   eligibleWolverines,
   rateLimitAllows,
@@ -415,18 +417,56 @@ export function nextContinuityState(
   };
 }
 
+// ---------------------------------------------------------------------------
+// TWO-PHASE COMMIT
+//
+// Writing continuity when fact-check passes is too early. A script can clear
+// fact-check and then die in audio generation, and the increment has already
+// burned a Hoyt rung and a Wolverine — episode N+1 opens at hoytStage 4 having
+// never delivered stage 3, with nothing to reconcile it.
+//
+// So:
+//   PHASE 1 (fact-check passes) — record what the episode CLAIMED on the
+//     episode row. Nothing global moves.
+//   PHASE 2 (the audio exists)  — fold every produced episode's claim, in
+//     order, and write the result to ShowContinuity.
+//
+// The fold is the source of truth; the ShowContinuity row is a cache of it.
+// That is what makes a failed generation, a deleted episode, or a bug in the
+// increment logic recoverable rather than silent permanent damage.
+// ---------------------------------------------------------------------------
+
 /**
- * Persist a validated continuity update.
+ * The real terminal boundary. NOTE: there is no "completed" Episode status —
+ * the schema comment saying so is stale. The pipeline runs
+ *   draft → scripting → script_draft → fact_checked → script_approved →
+ *   audio_segments_ready → audio_stitching → audio_ready → content_generating
+ *   → content_ready → publish_ready → published
+ * and "the audio exists, so this episode is going to be heard" is `audio_ready`
+ * or later. This mirrors PRODUCED_OR_LATER in sceneStitchingService, which is
+ * the codebase's existing name for the same idea.
  *
- * MUST be called only after the fact-check gate passes. Refuses to write when
- * the update violates continuity, so a rejected script cannot advance the
- * season — that would burn an arc beat, a Wolverine and a rate-limited device
- * on an episode nobody ever hears.
+ * Deliberately NOT `published`: publishing is an operator decision, and gating
+ * narrative progression on it would let unpublished episodes pile up and
+ * re-deliver the same arc beat, producing near-duplicate episodes.
  */
-export async function applyContinuityUpdate(
-  podcastId: string,
+export const CONTINUITY_COMMITTED_STATUSES = [
+  "audio_ready",
+  "content_generating",
+  "content_ready",
+  "publish_ready",
+  "published",
+] as const;
+
+/**
+ * PHASE 1. Record what this episode claimed. Validates against the state the
+ * episode was generated from and refuses to store a violating claim, so a bad
+ * script never enters the fold.
+ */
+export async function recordEpisodeContinuityClaim(
+  episodeId: string,
   rawUpdate: unknown
-): Promise<{ ok: true; state: ContinuityState } | { ok: false; violations: ContinuityViolation[] }> {
+): Promise<{ ok: true; update: ContinuityUpdate } | { ok: false; violations: ContinuityViolation[] }> {
   const parsed = continuityUpdateSchema.safeParse(rawUpdate);
   if (!parsed.success) {
     return {
@@ -438,17 +478,126 @@ export async function applyContinuityUpdate(
     };
   }
 
-  const row = await getOrCreateContinuity(podcastId);
-  if (!row) {
-    return { ok: false, violations: [{ rule: "continuity:missing", detail: `No podcast '${podcastId}'.` }] };
+  const episode = await db.episode.findUnique({
+    where: { id: episodeId },
+    select: { id: true, podcastId: true },
+  });
+  if (!episode) {
+    return { ok: false, violations: [{ rule: "episode:missing", detail: `No episode '${episodeId}'.` }] };
   }
+  // Standalone episodes have no podcast and therefore no continuity.
+  if (!episode.podcastId) return { ok: true, update: parsed.data };
 
-  const violations = checkContinuity(row, parsed.data);
+  const state = await foldContinuity(episode.podcastId, episodeId);
+  const violations = checkContinuity(state, parsed.data);
   if (violations.length > 0) return { ok: false, violations };
 
-  const next = nextContinuityState(row, parsed.data);
-  await db.showContinuity.update({ where: { podcastId }, data: next });
-  return { ok: true, state: next };
+  await db.episode.update({
+    where: { id: episodeId },
+    data: { continuityUpdate: parsed.data as object },
+  });
+  return { ok: true, update: parsed.data };
+}
+
+/**
+ * Re-derive continuity by folding every PRODUCED episode's stored claim in
+ * creation order. This is the source of truth.
+ *
+ * `excludeEpisodeId` lets a not-yet-produced episode compute the state it is
+ * being generated against without counting itself.
+ */
+export async function foldContinuity(
+  podcastId: string,
+  excludeEpisodeId?: string
+): Promise<ContinuityState> {
+  const episodes = await db.episode.findMany({
+    where: {
+      podcastId,
+      status: { in: [...CONTINUITY_COMMITTED_STATUSES] },
+      continuityUpdate: { not: Prisma.JsonNull },
+      ...(excludeEpisodeId ? { id: { not: excludeEpisodeId } } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, continuityUpdate: true },
+  });
+
+  let state: ContinuityState = { ...EMPTY_CONTINUITY };
+  for (const ep of episodes) {
+    const parsed = continuityUpdateSchema.safeParse(ep.continuityUpdate);
+    if (!parsed.success) {
+      // A stored claim that no longer parses (schema changed under it) is
+      // skipped rather than silently mis-folded, and said out loud.
+      console.warn(
+        `[Continuity] Episode ${ep.id} has a stored claim that no longer validates; skipping it in the fold. ` +
+          `Continuity for podcast ${podcastId} will be short by this episode until it is repaired.`
+      );
+      continue;
+    }
+    state = nextContinuityState(state, parsed.data);
+  }
+  return state;
+}
+
+/**
+ * PHASE 2. Recompute from the fold and write the cache. Idempotent — running it
+ * twice is the same as running it once, which is what makes it safe to call
+ * from a retried job, and safe as the repair path after an episode is deleted.
+ */
+export async function commitContinuity(podcastId: string): Promise<ContinuityState> {
+  const folded = await foldContinuity(podcastId);
+  await db.showContinuity.upsert({
+    where: { podcastId },
+    create: { podcastId, ...folded },
+    update: folded,
+  });
+  return folded;
+}
+
+/**
+ * Repair path. An episode being deleted or rolled back does not subtract — it
+ * recomputes, because subtraction cannot restore a consumed ladder rung's
+ * position relative to the ones after it.
+ */
+export async function reconcileContinuity(podcastId: string): Promise<{
+  drifted: boolean;
+  before: ContinuityState | null;
+  after: ContinuityState;
+}> {
+  const before = (await db.showContinuity.findUnique({ where: { podcastId } })) as ContinuityState | null;
+  const after = await commitContinuity(podcastId);
+  const drifted = before ? JSON.stringify(normalizeForCompare(before)) !== JSON.stringify(normalizeForCompare(after)) : true;
+  if (drifted && before) {
+    console.warn(
+      `[Continuity] Podcast ${podcastId} had drifted from the fold and was repaired. ` +
+        `episodeCount ${before.episodeCount} -> ${after.episodeCount}, hoytStage ${before.hoytStage} -> ${after.hoytStage}.`
+    );
+  }
+  return { drifted, before, after };
+}
+
+/** Compare only the continuity fields, in a stable key order. */
+export function normalizeForCompare(s: ContinuityState): ContinuityState {
+  return {
+    episodeCount: s.episodeCount,
+    phantomFansTotal: s.phantomFansTotal,
+    lastAttendanceClaim: s.lastAttendanceClaim,
+    lastAttendanceReal: s.lastAttendanceReal,
+    weCount: s.weCount,
+    weCountThisEpisode: s.weCountThisEpisode,
+    currentDodge: s.currentDodge,
+    hoytStage: s.hoytStage,
+    hoytFactsEstablished: s.hoytFactsEstablished,
+    arcBeat: s.arcBeat,
+    badgeStage: s.badgeStage,
+    wolverinesInvoked: s.wolverinesInvoked,
+    lastWolverineUsed: s.lastWolverineUsed,
+    nuclearOptionFirings: s.nuclearOptionFirings,
+    coldOpenFullRuns: s.coldOpenFullRuns,
+    uncorrectedLedgerRuns: s.uncorrectedLedgerRuns,
+    wagerTerms: s.wagerTerms,
+    wagerLeader: s.wagerLeader,
+    wagerPot: s.wagerPot,
+  };
 }
 
 /** Convenience: state + this episode's eligible runners + the prompt block. */
