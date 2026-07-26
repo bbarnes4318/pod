@@ -62,6 +62,21 @@ check("D-06: the state read runs the same gate the publish action enforces", () 
   assert(/canPublish/.test(body) && /publishBlockers/.test(body), "it must return both the verdict and the reasons");
 });
 
+check("D-06: the readiness check validates the action the button ACTUALLY performs", () => {
+  // Regression from the Phase 4 run: the first version of this fix always
+  // validated "publish", but publishOwnedEpisode promotes a content_ready
+  // episode to publish_ready itself first. The panel therefore reported
+  // "must be 'publish_ready'" and disabled the button on a publishable episode.
+  // A readiness check that disagrees with the action it guards blocks real work.
+  const fn = actions.slice(actions.indexOf("export async function getPublishState"));
+  const body = fn.slice(0, fn.indexOf("\nexport async function", 1));
+  assert(/ep\.status === "content_ready" \? "prepare" : "publish"/.test(body),
+    "a content_ready episode must be validated against 'prepare', which is what the publish path does to it");
+  const pub = actions.slice(actions.indexOf("export async function publishOwnedEpisode"));
+  assert(/status === "content_ready"\) await prepareEpisodeForPublishing/.test(pub.slice(0, 1200)),
+    "this test's premise: the publish action auto-prepares a content_ready episode");
+});
+
 check("D-04: the created screen says nothing is running yet", () => {
   assert(!/🎬 Episode created<\/h2>/.test(builder), "the terminal-sounding headline must be gone");
   assert(/not started yet/i.test(builder), "the heading must name the actual state");
