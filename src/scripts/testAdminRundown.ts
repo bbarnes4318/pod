@@ -32,7 +32,7 @@ import {
   getAdminTopicsFor, createAdminEpisodeFor, resumeAdminRundown,
   saveAdminDraftFor, loadAdminDraftFor, discardAdminDraftFor, type AdminCtx,
 } from "../lib/services/adminRundown";
-import { AdminRundownDraftStateSchema } from "../lib/services/adminDraft";
+import { AdminRundownDraftPersistSchema } from "../lib/services/adminDraft";
 import { EpisodeTopicSnapshotV1Schema } from "../lib/services/topicSnapshot";
 import { verifyAdminAuthHeader } from "../lib/adminBasicAuth";
 import { PLATFORM_MAX_TOPICS, DEFAULT_MIN_DEBATE_SCORE } from "../lib/episodeLimits";
@@ -616,11 +616,11 @@ async function main() {
     // picks in automatic) must save; the CREATION rules are enforced at episode
     // creation (CreateEpisodeDraftInputSchema), not here. These two used to be
     // rejected, which silently killed autosave for the whole first screen.
-    assert(AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: [], targetTopicCount: 2, hostIds: H }).success, "manual + zero topics must persist (step-1 default)");
-    assert(AdminRundownDraftStateSchema.safeParse({ mode: "automatic", selectedTopicIds: ["t1"], targetTopicCount: 2, hostIds: H }).success, "automatic + kept picks must persist");
+    assert(AdminRundownDraftPersistSchema.safeParse({ mode: "manual", selectedTopicIds: [], targetTopicCount: 2, hostIds: H }).success, "manual + zero topics must persist (step-1 default)");
+    assert(AdminRundownDraftPersistSchema.safeParse({ mode: "automatic", selectedTopicIds: ["t1"], targetTopicCount: 2, hostIds: H }).success, "automatic + kept picks must persist");
     // FIELD-level integrity still holds at persistence.
-    assert(!AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: PLATFORM_MAX_TOPICS + 1, hostIds: H }).success, "the platform max must be enforced");
-    const dup = AdminRundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1", "t1", "t2"], targetTopicCount: 2, hostIds: H });
+    assert(!AdminRundownDraftPersistSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: PLATFORM_MAX_TOPICS + 1, hostIds: H }).success, "the platform max must be enforced");
+    const dup = AdminRundownDraftPersistSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1", "t1", "t2"], targetTopicCount: 2, hostIds: H });
     assert(dup.success && JSON.stringify(dup.data.selectedTopicIds) === JSON.stringify(["t1", "t2"]), "ordered dedupe not applied");
   });
 

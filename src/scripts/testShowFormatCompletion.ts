@@ -53,7 +53,10 @@ async function main() {
     assert(JSON.stringify(ids) === JSON.stringify([...CANONICAL].sort()), `catalog: ${ids.join(",")}`);
     for (const id of CANONICAL) {
       const f = getShowFormat(id)!;
-      assert(isGenerationReadyFormat(id), `${id} ready`);
+      // Selectability = flagged ready AND buildable under the pipeline's host
+      // cap (speakerMin <= MAX_HOSTS); three_person_panel is registered and
+      // flagged but needs 3 voices, so it is honestly not selectable today.
+      assert(isGenerationReadyFormat(id) === (f.generationReady && f.speakerMin <= 2), `${id} selectability`);
       assert(f.roles.length >= f.speakerMax, `${id} role per seat`);
       assert(f.description.length > 0 && f.pacing.length > 0 && f.useCase.length > 0, `${id} UI card fields`);
       assert(f.roles.filter((r) => r.required).length >= f.speakerMin || f.speakerMin === 1, `${id} required seats cover the minimum`);
@@ -69,7 +72,12 @@ async function main() {
       assert(getShowFormat(alias)!.id === canonical, `${alias} -> ${canonical}`);
       assert(canonicalFormatId(alias) === canonical, "canonicalization");
       assert(!listShowFormats().some((f) => f.id === alias), `${alias} not listed`);
-      assert(isGenerationReadyFormat(alias), `${alias} still resolves as ready (historical safety)`);
+      // Historical safety = the alias still RESOLVES (snapshots keep loading).
+      // Selectability for NEW records follows the canonical format's own gate —
+      // roundtable → three_person_panel needs 3 voices, so it is not
+      // selectable under the 2-host cap, exactly like its canonical id.
+      assert(getShowFormat(alias) !== null, `${alias} still resolves (historical safety)`);
+      assert(isGenerationReadyFormat(alias) === isGenerationReadyFormat(canonical), `${alias} selectability matches its canonical format`);
     }
     // snapshotCastFor STORES the canonical id even when given an alias:
     const snap = snapshotCastFor("roundtable", ["h1", "h2", "h3"]);

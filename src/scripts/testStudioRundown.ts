@@ -14,10 +14,10 @@ process.env.TOPIC_MIN_TALKABILITY = "1";
 
 import { buildStudioTopicVMs } from "../lib/services/studioTopicPool";
 import { getTopicUsage, resolveTopicReusePolicy } from "../lib/services/topicUsageService";
-import { loadStudioDraft, saveStudioDraft, clearStudioDraft, RundownDraftStateSchema } from "../lib/services/studioDraft";
+import { loadStudioDraft, saveStudioDraft, clearStudioDraft, RundownDraftPersistSchema } from "../lib/services/studioDraft";
 import { estimateRundown } from "../lib/services/episodeEstimate";
-import { validateRundownDraft, leadFirst, dedupeIds, applyModeChange } from "../lib/studio/rundownRules";
-import { createEpisodeDraft } from "../lib/services/episodeCreation";
+import { validateRundownDraft, leadFirst, dedupeIds, applyModeChange, submissionSelection } from "../lib/studio/rundownRules";
+import { createEpisodeDraft, CreateEpisodeDraftInputSchema } from "../lib/services/episodeCreation";
 import {
   createStudioEpisodeFor, getStudioTopicsFor, getStudioPodcastsFor,
   saveStudioDraftFor, loadStudioDraftFor, discardStudioDraftFor, type StudioCtx,
@@ -177,24 +177,35 @@ async function run() {
     const v = validateRundownDraft({ mode: "automatic", selectedTopicIds: ["a", "b"], targetTopicCount: 3, maxTopics: 6 });
     assert(v.ok, "kept picks are not a validation error in automatic");
   });
-  await check("schema: ONE platform max — targetTopicCount 0, 7, 24 all rejected; 6 allowed", () => {
+  await check("submit: automatic strips BOTH kept picks AND the lead from the posted selection", () => {
+    const auto = submissionSelection("automatic", ["a", "b"], "a");
+    assert(auto.selectedTopicIds.length === 0 && auto.leadTopicId === null, "automatic posts no picks and no lead");
+    const man = submissionSelection("manual", ["a", "b"], "b");
+    assert(JSON.stringify(man.selectedTopicIds) === JSON.stringify(["a", "b"]) && man.leadTopicId === "b", "manual posts picks + lead untouched");
+    const hyb = submissionSelection("hybrid", ["a"], "a");
+    assert(hyb.selectedTopicIds.length === 1 && hyb.leadTopicId === "a", "hybrid posts pins + lead untouched");
+  });
+  await check("persist schema: ONE platform max — targetTopicCount 0, 7, 24 all rejected; 6 allowed", () => {
     const base = { mode: "automatic", selectedTopicIds: [], hostIds: H, activeStep: "topics" };
-    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 0 }).success, "0 rejected");
-    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 7 }).success, "7 rejected (> platform max)");
-    assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 24 }).success, "24 rejected");
-    assert(RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: PLATFORM_MAX_TOPICS }).success, "6 allowed");
+    assert(!RundownDraftPersistSchema.safeParse({ ...base, targetTopicCount: 0 }).success, "0 rejected");
+    assert(!RundownDraftPersistSchema.safeParse({ ...base, targetTopicCount: 7 }).success, "7 rejected (> platform max)");
+    assert(!RundownDraftPersistSchema.safeParse({ ...base, targetTopicCount: 24 }).success, "24 rejected");
+    assert(RundownDraftPersistSchema.safeParse({ ...base, targetTopicCount: PLATFORM_MAX_TOPICS }).success, "6 allowed");
     assert(PLATFORM_MAX_TOPICS === 6, "platform max is 6");
   });
-  await check("schema: superRefine enforces mode rules, lead-in-set, host cap; dedupes before save", () => {
-    const V = (s: any) => RundownDraftStateSchema.safeParse(s).success;
-    assert(!V({ mode: "manual", selectedTopicIds: [], hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "manual 0 rejected");
-    assert(!V({ mode: "automatic", selectedTopicIds: ["t1"], hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "auto+picks rejected");
-    assert(!V({ mode: "automatic", selectedTopicIds: [], leadTopicId: "t1", hostIds: H, activeStep: "topics", targetTopicCount: 3 }), "auto+lead rejected");
-    assert(!V({ mode: "hybrid", selectedTopicIds: ["a", "b", "c", "d"], targetTopicCount: 3, hostIds: H, activeStep: "topics" }), "hybrid pins>target rejected");
-    assert(!V({ mode: "manual", selectedTopicIds: ["a"], leadTopicId: "zzz", hostIds: H, targetTopicCount: 3, activeStep: "topics" }), "lead not in set rejected");
-    assert(!V({ mode: "manual", selectedTopicIds: ["a"], hostIds: ["h1", "h2", "h3"], targetTopicCount: 3, activeStep: "topics" }), ">2 hosts rejected");
-    const dd = RundownDraftStateSchema.safeParse({ mode: "manual", selectedTopicIds: ["a", "b", "a", "c"], hostIds: H, targetTopicCount: 3, activeStep: "topics" });
+  await check("persist schema: dedupes topic ids preserving order", () => {
+    const dd = RundownDraftPersistSchema.safeParse({ mode: "manual", selectedTopicIds: ["a", "b", "a", "c"], hostIds: H, targetTopicCount: 3, activeStep: "topics" });
     assert(dd.success && JSON.stringify(dd.data.selectedTopicIds) === JSON.stringify(["a", "b", "c"]), "topic ids deduped preserving order");
+  });
+  // The CROSS-FIELD creation rules live where every creation path runs them:
+  // CreateEpisodeDraftInputSchema. (The old draft-level creation schema had
+  // ZERO runtime callers — authoritative-looking validation nothing invoked.)
+  await check("creation schema: mode rules enforced at the real gate", () => {
+    const V = (s: object) => CreateEpisodeDraftInputSchema.safeParse(s).success;
+    assert(!V({ mode: "manual", selectedTopicIds: [] }), "manual 0 rejected");
+    assert(!V({ mode: "automatic", selectedTopicIds: ["t1"] }), "auto+picks rejected");
+    assert(!V({ mode: "hybrid", selectedTopicIds: ["a", "b", "c", "d"], targetTopicCount: 3 }), "hybrid pins>target rejected");
+    assert(V({ mode: "manual", selectedTopicIds: ["a"] }), "well-formed manual accepted");
   });
 
   // ---- Inheritance provenance in the durable draft ----
@@ -229,16 +240,16 @@ async function run() {
     assert(loaded!.hostIds.length === 2 && loaded!.overrides.hosts === false, "values persist but remain inherited");
   });
 
-  // ---- TTS validation in the durable draft ----
-  await check("schema: invalid TTS provider rejected; supported id normalized", () => {
+  // ---- TTS validation at CREATION (moved from the deleted draft-level
+  //      creation schema, which nothing in the runtime invoked) ----
+  await check("creation schema: invalid TTS provider rejected; persist schema still normalizes ids", () => {
     const base: any = { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" };
-    assert(!RundownDraftStateSchema.safeParse({ ...base, ttsProvider: "not-a-provider" }).success, "unknown provider rejected");
-    const okp = RundownDraftStateSchema.safeParse({ ...base, ttsProvider: "ElevenLabs" });
+    assert(!CreateEpisodeDraftInputSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], ttsProvider: "not-a-provider" }).success, "unknown provider rejected at creation");
+    const okp = RundownDraftPersistSchema.safeParse({ ...base, ttsProvider: "ElevenLabs" });
     assert(okp.success && okp.data.ttsProvider === "elevenlabs", "supported provider normalized to canonical id");
   });
-  await check("schema: malformed / mismatched ttsVoiceOverrides rejected (shared validator)", () => {
-    const base: any = { mode: "manual", selectedTopicIds: ["t1"], targetTopicCount: 3, hostIds: H, activeStep: "topics" };
-    const V = (o: unknown) => RundownDraftStateSchema.safeParse({ ...base, ttsVoiceOverrides: o }).success;
+  await check("creation schema: malformed / mismatched ttsVoiceOverrides rejected (shared validator)", () => {
+    const V = (o: unknown) => CreateEpisodeDraftInputSchema.safeParse({ mode: "manual", selectedTopicIds: ["t1"], ttsVoiceOverrides: o }).success;
     assert(!V({ "host-a": "not-an-object" }), "non-object override rejected");
     assert(!V({ "host-a": { provider: "bogus", voiceId: "x" } }), "unknown override provider rejected");
     // A real provider/voice MISMATCH the shared validator can determine:

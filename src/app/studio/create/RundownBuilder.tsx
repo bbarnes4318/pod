@@ -17,16 +17,16 @@ import {
 import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 import type { RundownDraftState, RundownStep } from "@/lib/services/studioDraft";
 import { estimateRundown } from "@/lib/services/episodeEstimate";
-import { validateRundownDraft, applyModeChange } from "@/lib/studio/rundownRules";
-import { getShowFormat, listShowFormats, isGenerationReadyFormat } from "@/lib/formats/showFormatRegistry";
-import { MAX_DESCRIPTION_LEN } from "@/lib/episodeLimits";
+import { validateRundownDraft, applyModeChange, submissionSelection } from "@/lib/studio/rundownRules";
+import { getShowFormat, listShowFormats, formatBlockedReason } from "@/lib/formats/showFormatRegistry";
+import { MAX_DESCRIPTION_LEN, MAX_HOSTS } from "@/lib/episodeLimits";
 // Shared rundown core — the SAME picker/tray Admin uses (src/components/rundown).
 import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
 import RundownTray from "@/components/rundown/RundownTray";
 import ProductionConsole from "../ProductionConsole";
 
 type Mode = "manual" | "automatic" | "hybrid";
-export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; }
+export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; format?: string | null; }
 export interface BuilderHost { id: string; name: string; intensity: number; }
 
 const STEPS: { key: RundownStep; label: string }[] = [
@@ -53,15 +53,33 @@ export default function RundownBuilder({
   seedTopicId?: string | null;
 }) {
   const d = initialDraft;
-  const seeded = !d && seedTopicId && initialTopics.some((t) => t.id === seedTopicId && t.eligible) ? [seedTopicId] : [];
-
+  // ?topic= is honoured even when a draft exists: the seed MERGES into the
+  // draft's picks (it used to be silently discarded whenever a draft existed —
+  // which is nearly always — making "Generate episode" on a board card a no-op).
+  const seedTopic = seedTopicId ? initialTopics.find((t) => t.id === seedTopicId) ?? null : null;
+  const draftIds = d?.selectedTopicIds ?? [];
+  const seedMerged = !!seedTopic?.eligible && !draftIds.includes(seedTopic.id);
   const [mode, setModeState] = useState<Mode>(d?.mode ?? "manual");
-  const [selectedIds, setSelectedIds] = useState<string[]>(d?.selectedTopicIds ?? seeded);
+  const [selectedIds, setSelectedIds] = useState<string[]>(seedMerged ? [...draftIds, seedTopic!.id] : draftIds);
   const [leadTopicId, setLeadTopicId] = useState<string | null>(d?.leadTopicId ?? null);
+  // The seed's outcome is always REPORTED, including the failure cases.
+  const [seedNote, setSeedNote] = useState<string | null>(() => {
+    if (!seedTopicId) return null;
+    if (!seedTopic) return "That topic isn't in the current pool, so it wasn't added to your rundown.";
+    if (!seedTopic.eligible) return `“${seedTopic.title}” can't be added: ${seedTopic.readiness.replace(/_/g, " ")}.`;
+    return seedMerged ? `Added “${seedTopic.title}” to your rundown.` : `“${seedTopic.title}” is already in your rundown.`;
+  });
   const [targetTopicCount, setTargetTopicCount] = useState<number>(d?.targetTopicCount ?? 3);
   const [podcastId, setPodcastId] = useState<string | null>(d?.podcastId ?? null);
   const [formatId, setFormatId] = useState<string>(d?.formatId ?? "two_host_debate");
-  const format = getShowFormat(formatId) ?? getShowFormat("two_host_debate")!;
+  // A podcast episode inherits the SHOW's format (the server enforces this);
+  // standalone episodes use the picked one. The UI must gate and describe
+  // against the format that will actually apply.
+  const activePodcast = podcastId ? podcasts.find((p) => p.id === podcastId) ?? null : null;
+  const format = getShowFormat(activePodcast ? activePodcast.format ?? "two_host_debate" : formatId) ?? getShowFormat("two_host_debate")!;
+  // What the pipeline can actually voice today, regardless of the format's
+  // aspirational seat count.
+  const seatCap = Math.min(format.speakerMax, MAX_HOSTS);
   const [hostIds, setHostIds] = useState<string[]>(d?.hostIds?.length ? d.hostIds : hosts.slice(0, 2).map((h) => h.id));
   const [ttsProvider, setTtsProvider] = useState<string>(d?.ttsProvider ?? "");
   const [voicePicks, setVoicePicks] = useState<Record<string, string>>(() => voicePicksFromOverrides(d?.ttsVoiceOverrides));
@@ -69,7 +87,8 @@ export default function RundownBuilder({
   const [sfxDensity, setSfxDensity] = useState<string>(d?.sfxDensity ?? "medium");
   const [title, setTitle] = useState<string>(d?.title ?? "");
   const [description, setDescription] = useState<string>(d?.description ?? "");
-  const [step, setStep] = useState<RundownStep>(d?.activeStep ?? "show");
+  // A seed deep-links to the Topics step so the user lands where the topic is.
+  const [step, setStep] = useState<RundownStep>(seedTopic?.eligible ? "topics" : d?.activeStep ?? "show");
 
   // Selection preferences (automatic/hybrid) — distinct from board filters.
   const [verticals, setVerticals] = useState<string[]>(d?.verticals ?? []);
@@ -133,15 +152,21 @@ export default function RundownBuilder({
       if (res && (res.ok === false || res.success === false)) {
         setSaveState("error");
         setSaveError(res.error || "Couldn't save your draft.");
+        // The one save state worth announcing — a settled failure.
+        announce(`Couldn't save your draft: ${res.error || "unknown error"}. A retry button is available.`);
       } else {
         setSaveState("saved");
         setSaveError(null);
         setSavedAt(new Date());
       }
     } catch {
-      if (!discardedRef.current) { setSaveState("error"); setSaveError("Couldn't reach the studio — check your connection."); }
+      if (!discardedRef.current) {
+        setSaveState("error");
+        setSaveError("Couldn't reach the studio — check your connection.");
+        announce("Couldn't save your draft — connection problem. A retry button is available.");
+      }
     }
-  }, []);
+  }, [announce]);
   const firstRender = useRef(true);
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
@@ -174,11 +199,44 @@ export default function RundownBuilder({
   };
 
   // ---- Re-scope topics when the podcast changes ----
+  // The selection is RECONCILED against the new pool: picks (including kept
+  // picks in Automatic) that aren't available for the new show are removed
+  // EXPLICITLY and named in a dismissible notice — never silently dropped by a
+  // display-time filter while the count and validator still count them.
+  const [dropNote, setDropNote] = useState<string | null>(null);
+  const reconcileRefs = useRef({ selectedIds, leadTopicId, byId });
+  useEffect(() => { reconcileRefs.current = { selectedIds, leadTopicId, byId }; }, [selectedIds, leadTopicId, byId]);
   const refreshTopics = useCallback(async (pid: string | null) => {
     setLoadingTopics(true);
-    try { const res = await getStudioTopics(pid); if (res.success) setTopics(res.topics); }
-    finally { setLoadingTopics(false); }
-  }, []);
+    try {
+      const res = await getStudioTopics(pid);
+      if (res.success) {
+        // A pick survives the switch only if it's still in the pool AND still
+        // eligible under the new show's rules (e.g. "recently used by this
+        // show" flips eligibility per show while pool membership stays put).
+        // Keeping an ineligible pick would let the count/validator pass while
+        // the server rejects it at create — the ghost-id trap.
+        const vmById = new Map(res.topics.map((t) => [t.id, t]));
+        const { selectedIds: prev, leadTopicId: lead, byId: oldById } = reconcileRefs.current;
+        const dropped = prev.filter((id) => !(vmById.get(id)?.eligible ?? false));
+        if (dropped.length > 0) {
+          const why = (id: string) => {
+            const vm = vmById.get(id);
+            if (!vm) return "no longer in the pool";
+            if (vm.usedByShowRecent) return "recently used by this show";
+            return vm.readiness.replace(/_/g, " ");
+          };
+          const names = dropped.map((id) => `${oldById.get(id)?.title ?? id} (${why(id)})`);
+          setSelectedIds(prev.filter((id) => !dropped.includes(id)));
+          if (lead && dropped.includes(lead)) setLeadTopicId(null);
+          const msg = `Removed from your rundown for this show: ${names.join(", ")}.`;
+          setDropNote(msg);
+          announce(msg);
+        }
+        setTopics(res.topics);
+      }
+    } finally { setLoadingTopics(false); }
+  }, [announce]);
 
   // ---- Podcast selection + inheritance with dirty-state ----
   // A NON-dirty field always takes the newly selected show's value — INCLUDING an
@@ -272,11 +330,15 @@ export default function RundownBuilder({
     if (!validation.ok || submitting) return;
     setSubmitting(true); setError(null); setRejected([]);
     try {
+      // Automatic strips BOTH the kept picks and the lead — a lead pointing at
+      // a topic outside the (empty) list is exactly the state the creation
+      // rules declare illegal.
+      const sel = submissionSelection(mode, selectedIds, leadTopicId);
       const res = await createStudioEpisode({
         mode,
-        selectedTopicIds: mode === "automatic" ? [] : selectedIds,
+        selectedTopicIds: sel.selectedTopicIds,
         targetTopicCount,
-        leadTopicId,
+        leadTopicId: sel.leadTopicId,
         podcastId,
         hostIds,
         // Standalone episodes carry the picked format; a podcast episode
@@ -330,8 +392,24 @@ export default function RundownBuilder({
         })}
       </ol>
 
-      {/* Save state — visible at all times; failures are never silent. */}
-      <p className="stageHint" data-testid="save-status" aria-live="polite" style={{ margin: "-0.75rem 0 1rem" }}>
+      {/* One-shot notices: seed outcome + reconcile drops, both dismissible. */}
+      {seedNote && (
+        <div className="studioCard createAlert" role="status" data-testid="seed-note" style={{ marginBottom: "0.8rem" }}>
+          {seedNote}{" "}
+          <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
+        </div>
+      )}
+      {dropNote && (
+        <div className="studioCard createAlert" role="status" data-testid="dropped-note" style={{ marginBottom: "0.8rem" }}>
+          {dropNote}{" "}
+          <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
+        </div>
+      )}
+
+      {/* Save state — visible at all times; failures are never silent. NOT a
+          live region: announcing "Saving…/Saved" on every keystroke spams
+          assistive tech. Failures are announced once via `announce()`. */}
+      <p className="stageHint" data-testid="save-status" style={{ margin: "-0.75rem 0 1rem" }}>
         {saveState === "saving" && "Saving…"}
         {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
         {saveState === "error" && (
@@ -431,20 +509,40 @@ export default function RundownBuilder({
       {step === "hosts" && (
         <div className="studioCard">
           <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎙 Format &amp; Hosts</h2>
-          <div className="segRow" style={{ flexWrap: "wrap", marginBottom: 8 }} role="radiogroup" aria-label="Show format">
-            {listShowFormats().filter((f) => isGenerationReadyFormat(f.id)).map((f) => (
-              <button key={f.id} type="button" data-testid={`format-${f.id}`} className={`segBtn${formatId === f.id ? " on" : ""}`} aria-pressed={formatId === f.id}
-                title={f.description}
-                onClick={() => { setFormatId(f.id); setHostIds((prev) => prev.slice(0, f.speakerMax)); }}>
-                {f.displayName} ({f.speakerMin === f.speakerMax ? f.speakerMin : `${f.speakerMin}-${f.speakerMax}`} voice{f.speakerMax === 1 ? "" : "s"})
-              </button>
-            ))}
-          </div>
+          {podcastScoped ? (
+            /* A podcast episode INHERITS the show's format server-side, so the
+               control must not pretend to change it. Read-only, with the real
+               place to change it linked. */
+            <p className="stageHint" data-testid="format-inherited" style={{ marginBottom: 8 }}>
+              This show uses <strong style={{ color: "var(--text)" }}>{format.displayName}</strong> — change it in{" "}
+              <Link href={`/app/podcasts/${podcastId}`}>show settings →</Link>
+            </p>
+          ) : (
+            <div className="segRow" style={{ flexWrap: "wrap", marginBottom: 8 }} role="radiogroup" aria-label="Show format">
+              {listShowFormats().map((f) => {
+                const blocked = formatBlockedReason(f.id);
+                return (
+                  <button key={f.id} type="button" data-testid={`format-${f.id}`} className={`segBtn${formatId === f.id ? " on" : ""}`} aria-pressed={formatId === f.id}
+                    disabled={!!blocked} aria-disabled={!!blocked}
+                    title={blocked ?? f.description}
+                    onClick={() => { setFormatId(f.id); setHostIds((prev) => prev.slice(0, Math.min(f.speakerMax, MAX_HOSTS))); }}>
+                    {f.displayName} ({f.speakerMin === f.speakerMax ? f.speakerMin : `${f.speakerMin}-${f.speakerMax}`} voice{f.speakerMax === 1 ? "" : "s"})
+                    {blocked && <span className="stageHint" style={{ marginLeft: 6 }}>{blocked}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <p className="stageHint">
             <strong>{format.description}</strong>{" "}
             Pacing: {format.pacing} Best for: {format.useCase}{" "}
-            {format.roles.slice(0, format.speakerMax).map((r, i) => `Seat ${i + 1}: ${r.name}${r.required ? "" : " (optional)"}`).join(" · ")}. Only your own and shared hosts appear here.
+            {format.roles.slice(0, seatCap).map((r, i) => `Seat ${i + 1}: ${r.name}${r.required ? "" : " (optional)"}`).join(" · ")}. Only your own and shared hosts appear here.
           </p>
+          {format.speakerMax > MAX_HOSTS && (
+            <p className="stageHint" data-testid="seat-cap-note">
+              This format supports up to {format.speakerMax} seats; the studio currently voices {MAX_HOSTS} — extra seats are coming soon.
+            </p>
+          )}
           <div className="segRow" style={{ flexWrap: "wrap" }}>
             {hosts.map((h) => {
               const seat = hostIds.indexOf(h.id);
@@ -453,11 +551,15 @@ export default function RundownBuilder({
                 <button key={h.id} type="button" data-testid={`host-${h.id}`} className={`segBtn${on ? " on" : ""}`} aria-pressed={on}
                   onClick={() => {
                     setHostSelectionDirty(true);
+                    // Cap at what the pipeline can actually voice (MAX_HOSTS),
+                    // never at the format's aspirational speakerMax — a 3rd
+                    // pick used to sail through to "at most two hosts" at the
+                    // last click.
                     setHostIds((prev) => prev.includes(h.id)
                       ? (prev.length <= 1 ? prev : prev.filter((x) => x !== h.id))
-                      : prev.length < format.speakerMax
+                      : prev.length < seatCap
                         ? [...prev, h.id]
-                        : [...prev.slice(0, format.speakerMax - 1), h.id]);
+                        : [...prev.slice(0, seatCap - 1), h.id]);
                   }}>
                   {on && <strong style={{ marginRight: 4 }}>{seat + 1}</strong>}{h.name}
                 </button>
@@ -465,7 +567,7 @@ export default function RundownBuilder({
             })}
             {hosts.length === 0 && <span className="stageHint">No active hosts — <Link href="/studio/hosts">add one →</Link></span>}
           </div>
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < format.speakerMin} />
+          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < Math.min(format.speakerMin, MAX_HOSTS)} />
         </div>
       )}
 
@@ -549,8 +651,14 @@ function AutoPrefs({
           </select>
         </div>
         <div>
-          <div className="fieldLabel">Min debate score: {minDebateScore ?? "any"}</div>
-          <input type="range" min={0} max={100} step={5} value={minDebateScore ?? 0} data-testid="pref-mindebate" onChange={(e) => setMinDebateScore(Number(e.target.value) || null)} style={{ width: "100%" }} />
+          <div className="fieldLabel">Min debate score: {minDebateScore === null ? "any" : minDebateScore}</div>
+          {/* 0 maps EXPLICITLY to "any" (a ≥0 threshold filters nothing, so
+              they are the same query). The old `|| null` coerced every falsy
+              value blindly — same wire value, but by accident, and the label
+              rendered "0" while the state said null. */}
+          <input type="range" min={0} max={100} step={5} value={minDebateScore ?? 0} data-testid="pref-mindebate"
+            aria-valuetext={minDebateScore === null ? "any" : String(minDebateScore)}
+            onChange={(e) => { const v = Number(e.target.value); setMinDebateScore(v === 0 ? null : v); }} style={{ width: "100%" }} />
         </div>
         {leagues.length > 0 && (
           <div style={{ gridColumn: "1 / -1" }}>

@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import { E2E } from "./seed";
-import { episodeTopicOrder, episodeRow, waitForDraft, closeE2eDb } from "./db";
+import { e2eDb, episodeTopicOrder, episodeRow, waitForDraft, closeE2eDb } from "./db";
 
 const SHOTS = path.join(process.cwd(), "docs", "screenshots", "studio-rundown");
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -405,6 +405,144 @@ test.describe("Studio rundown — Phase 1: no silent data loss", () => {
     await page.getByTestId("mode-manual").click();
     await page.getByTestId("step-topics").click();
     expect(await trayOrder(page)).toEqual([T.lead, T.two]);
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+});
+
+test.describe("Studio rundown — Phase 2: honest controls", () => {
+  test.beforeEach(({}, testInfo) => desktopOnly(testInfo.project.name));
+
+  test("automatic creation posts NO lead topic (kept picks and lead both stripped)", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("mode-manual").click();
+    await toTopics(page);
+    await pick(page, T.lead); await pick(page, T.two);
+    await page.getByTestId(`tray-lead-${T.two}`).click(); // explicit lead
+    await page.getByTestId("step-show").click();
+    await page.getByTestId("mode-automatic").click();
+    await page.getByTestId("step-topics").click();
+    await page.getByTestId("pref-sport").selectOption("NFL");
+
+    // Capture the create action's POST body.
+    const bodies: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "POST" && req.url().includes("/studio/create")) bodies.push(req.postData() ?? "");
+    });
+    await page.getByTestId("step-review").click();
+    await page.getByTestId("create-episode").click();
+    await expect(page.getByTestId("result-final-order")).toBeVisible();
+    const createBody = bodies.find((b) => b.includes('"mode":"automatic"')) ?? "";
+    expect(createBody).toContain('"leadTopicId":null');
+    expect(createBody).toContain('"selectedTopicIds":[]');
+  });
+
+  test("blocked format is visible, disabled, and says why; selectable big formats cap hosts at 2", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("step-hosts").click();
+    // three_person_panel (min 3 voices) is shown but not selectable.
+    const panel = page.getByTestId("format-three_person_panel");
+    await expect(panel).toBeVisible();
+    await expect(panel).toBeDisabled();
+    await expect(panel).toContainText(/3 voices — coming soon/i);
+    // sports_radio (2-3 seats) IS selectable — and the host picker refuses a
+    // 3rd seat, so "A show supports at most two hosts" is unreachable.
+    await page.getByTestId("format-sports_radio").click();
+    await expect(page.getByTestId("seat-cap-note")).toBeVisible();
+    // Deterministically seat exactly [Ace, Blaze]. The picker's semantics:
+    // clicking a pressed host toggles it OFF; adding beyond the cap REPLACES
+    // the last seat — so order matters. Clear Coach first, then add.
+    const coach = page.getByTestId(`host-${E2E.hostCoach}`);
+    if ((await coach.getAttribute("aria-pressed")) === "true") await coach.click();
+    await expect(coach).toHaveAttribute("aria-pressed", "false");
+    for (const id of [E2E.hostAce, E2E.hostBlaze]) {
+      const btn = page.getByTestId(`host-${id}`);
+      if ((await btn.getAttribute("aria-pressed")) !== "true") await btn.click();
+      await expect(btn).toHaveAttribute("aria-pressed", "true");
+    }
+    const pressed = page.locator('[data-testid^="host-"][aria-pressed="true"]');
+    await expect(pressed).toHaveCount(2);
+    // A third DISTINCT host may replace a seat but never grow the cast to 3 —
+    // the "at most two hosts" server rejection is unreachable from here.
+    await coach.click();
+    await expect(pressed).toHaveCount(2);
+    await expect(coach).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("podcast episode shows the show's format read-only instead of a lying picker", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId(`podcast-${E2E.podcastId}`).click();
+    await page.getByTestId("step-hosts").click();
+    await expect(page.getByTestId("format-inherited")).toContainText(/this show uses/i);
+    await expect(page.getByTestId("format-inherited")).toContainText(/show settings/i);
+    // The standalone-only format radiogroup is gone for podcast episodes.
+    await expect(page.getByTestId("format-two_host_debate")).toHaveCount(0);
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("?topic= merges into an EXISTING draft, deep-links to Topics, and confirms", async ({ page }) => {
+    await gotoCreate(page);
+    // Build a draft first (the case main silently discards the seed in).
+    await toTopics(page);
+    await pick(page, T.lead);
+    await waitForDraft(E2E.userA.id, (s) => s.selectedTopicIds.includes(T.lead));
+    await page.goto(`/studio/create?topic=${T.two}`);
+    await expect(page.getByTestId("seed-note")).toContainText("Added");
+    // Deep-linked straight to the Topics step, seed merged with the draft.
+    await expect(page.getByTestId("board-filter-note")).toBeVisible();
+    expect(await trayOrder(page)).toEqual([T.lead, T.two]);
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("an ineligible ?topic= is reported, never silently dropped", async ({ page }) => {
+    await gotoCreate(page);
+    await page.goto(`/studio/create?topic=${T.noEvidence}`);
+    await expect(page.getByTestId("seed-note")).toContainText(/can't be added/i);
+    expect(await trayOrder(page)).toEqual([]);
+  });
+
+  test("a pick that leaves the pool is dropped EXPLICITLY on show switch, with name and reason", async ({ page }) => {
+    // NOTE: under the default TOPIC_REUSE_MODE="allow", recent use by a show
+    // only WARNS (the pick stays eligible), so eligibility can't be flipped
+    // that way here. Archival removes the topic from the pool entirely — the
+    // same editorial event the admin spec exercises.
+    const db = e2eDb();
+    await gotoCreate(page);
+    await toTopics(page);
+    await pick(page, T.lead); await pick(page, T.three);
+    expect(await trayOrder(page)).toEqual([T.lead, T.three]);
+    // An editor archives the topic while the rundown is being built.
+    await db.topicCandidate.update({ where: { id: T.three }, data: { status: "archived" } });
+    try {
+      // Switching shows refetches the pool → the reconcile must REPORT the drop
+      // (main silently ghosts it: tray count and validator disagree, and the
+      // stale id gets posted).
+      await page.getByTestId("step-show").click();
+      await page.getByTestId(`podcast-${E2E.podcastId}`).click();
+      await expect(page.getByTestId("dropped-note")).toContainText(/no longer in the pool/i);
+      await expect(page.getByTestId("dropped-note")).toContainText("Trade deadline: buyers or sellers?");
+      await page.getByTestId("step-topics").click();
+      expect(await trayOrder(page)).toEqual([T.lead]);
+    } finally {
+      await db.topicCandidate.update({ where: { id: T.three }, data: { status: "approved" } });
+    }
+    await page.getByTestId("discard-draft").click();
+    await page.getByTestId("discard-confirm").click();
+  });
+
+  test("min-debate-score maps 0 to 'any' explicitly (no snap-back surprise)", async ({ page }) => {
+    await gotoCreate(page);
+    await page.getByTestId("mode-automatic").click();
+    await page.getByTestId("step-topics").click();
+    await page.getByTestId("pref-mindebate").fill("60");
+    await expect(page.getByText("Min debate score: 60")).toBeVisible();
+    await page.getByTestId("pref-mindebate").fill("0");
+    await expect(page.getByText("Min debate score: any")).toBeVisible();
+    await expect(page.getByTestId("pref-mindebate")).toHaveAttribute("aria-valuetext", "any");
     await page.getByTestId("discard-draft").click();
     await page.getByTestId("discard-confirm").click();
   });

@@ -30,11 +30,15 @@ export interface AdminDraftDb {
 
 // PERSISTENCE schema: shape only, NO creation-rule refinement — a draft is a
 // scratchpad and must accept incomplete states (e.g. manual mode with zero
-// topics, the builder's default first screen). The creation rules
-// (refineRundownDraft) are enforced where they belong: at episode creation.
-// This mirrors the Studio draft's persist/create split exactly.
-export const AdminRundownDraftStateSchema = z.object({
+// topics, the builder's default first screen). The creation rules are enforced
+// where they belong: at episode creation (CreateEpisodeDraftInputSchema).
+// This mirrors the Studio draft's persist schema exactly, INCLUDING the
+// hostIds relaxation — the shared shape's max(MAX_HOSTS) would otherwise void
+// the whole autosave on a transient 3rd host, the exact silent-loss bug the
+// persist split exists to kill.
+export const AdminRundownDraftPersistSchema = z.object({
   ...RundownDraftShape,
+  hostIds: z.array(z.string().min(1)).default([]),
   // ---- ADMIN AUTHORITY (absent from the Studio draft by design) ----
   // The operator's decision to permit a recently-used topic the
   // exclude_podcast policy would otherwise block. Persisting it is what makes
@@ -45,7 +49,7 @@ export const AdminRundownDraftStateSchema = z.object({
   reuseOverrideReason: z.string().trim().max(500).nullable().optional(),
 });
 
-export type AdminRundownDraftState = z.infer<typeof AdminRundownDraftStateSchema>;
+export type AdminRundownDraftState = z.infer<typeof AdminRundownDraftPersistSchema>;
 
 /** Load + validate an operator's saved rundown draft. Returns null when there is
  *  no draft OR the stored blob no longer validates (fail-open to a fresh
@@ -56,7 +60,7 @@ export async function loadAdminDraft(
 ): Promise<AdminRundownDraftState | null> {
   const row = await dbi.adminDraft.findUnique({ where: { adminId } });
   if (!row) return null;
-  const parsed = AdminRundownDraftStateSchema.safeParse(row.state);
+  const parsed = AdminRundownDraftPersistSchema.safeParse(row.state);
   return parsed.success ? parsed.data : null;
 }
 
@@ -67,7 +71,7 @@ export async function saveAdminDraft(
   state: unknown,
   dbi: AdminDraftDb = db as unknown as AdminDraftDb
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const parsed = AdminRundownDraftStateSchema.safeParse(state);
+  const parsed = AdminRundownDraftPersistSchema.safeParse(state);
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message || "Invalid draft state." };
   }

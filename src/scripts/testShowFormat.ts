@@ -18,8 +18,9 @@ import net from "node:net";
 
 import {
   listShowFormats, getShowFormat, isRegisteredFormat, isGenerationReadyFormat,
-  validatePinnedCast, roleForSeat, DEFAULT_FORMAT_ID, PLATFORM_MAX_SPEAKERS,
+  formatBlockedReason, validatePinnedCast, roleForSeat, DEFAULT_FORMAT_ID, PLATFORM_MAX_SPEAKERS,
 } from "../lib/formats/showFormatRegistry";
+import { MAX_HOSTS } from "../lib/episodeLimits";
 import { makeCastMatchers } from "../lib/services/hostCastingShared";
 import { resolveEpisodeConfiguration, loadPodcastConfiguration, savePodcastConfiguration } from "../lib/services/podcastConfiguration";
 import { buildEpisodeConfigurationSnapshot, fingerprintEpisodeSnapshot, snapshotCastFor, type EpisodeConfigurationSnapshot } from "../lib/services/episodeConfigurationSnapshot";
@@ -54,8 +55,16 @@ async function main() {
     for (const f of formats) {
       assert(f.speakerMin >= 1 && f.speakerMax <= PLATFORM_MAX_SPEAKERS, `${f.id} within platform bounds`);
       assert(f.roles.length >= f.speakerMax, `${f.id} declares a role per seat`);
-      assert(f.generationReady, `${f.id} is generation-ready (the full pipeline landed in PRs 2-3)`);
+      assert(f.generationReady, `${f.id} is flagged generation-ready (the full pipeline landed in PRs 2-3)`);
+      // Selectability is DERIVED: flagged ready AND buildable under the host
+      // cap. A format whose minimum cast exceeds MAX_HOSTS cannot generate
+      // (hostCasting throws below speakerMin) and must not be offered.
+      assert(isGenerationReadyFormat(f.id) === (f.speakerMin <= MAX_HOSTS), `${f.id} selectability derived from speakerMin <= MAX_HOSTS`);
     }
+    assert(!isGenerationReadyFormat("three_person_panel"), "panel (min 3) is NOT selectable under the 2-host cap");
+    assert(isGenerationReadyFormat("sports_radio"), "sports_radio (min 2, max 3) IS selectable — optional seat stays unfilled");
+    assert(formatBlockedReason("three_person_panel")?.includes("3 voices") === true, "blocked reason names the missing voices");
+    assert(formatBlockedReason("two_host_debate") === null, "selectable formats have no blocked reason");
     assert(getShowFormat("solo_briefing")!.id === "solo_commentary", "solo_briefing alias resolves to solo_commentary");
     assert(getShowFormat("solo_commentary")!.speakerMin === 1, "solo = 1 voice");
     assert(getShowFormat("roundtable")!.id === "three_person_panel", "roundtable alias resolves to the canonical panel");
@@ -179,16 +188,30 @@ async function main() {
     await check("CORE: NEW config saves accept every generation-ready format; unregistered rejected", async () => {
       const owner = await db.user.create({ data: { email: "o@x.test", passwordHash: "x" } });
       const pod = await db.podcast.create({ data: { name: "S", cadence: "one_time", slug: "s-show", ownerId: owner.id, editorialConfig: { create: {} }, productionConfig: { create: {} }, publishingConfig: { create: {} } } });
+      // A show may NOT save a format the pipeline can't generate: roundtable →
+      // three_person_panel needs 3 voices and the generation path is built for
+      // MAX_HOSTS=2 (scriptService casts a fixed pair; contentAssetService
+      // throws on a third speaker). Offering it ended in "A show supports at
+      // most two hosts" at the last click. Selectability is derived from
+      // speakerMin <= MAX_HOSTS, so raising the cap re-enables it here with no
+      // code change.
       const round = await savePodcastConfiguration({
         db, podcastId: pod.id, expectedVersion: 1, canEdit: () => true,
         input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "roundtable" }, production: { hostIds: [] } },
       });
-      assert(round.ok, `roundtable now selectable (pipeline complete): ${JSON.stringify(round)}`);
+      assert(!round.ok && round.error.code === "unsupported_format", `panel formats are not saveable under the 2-host cap: ${JSON.stringify(round)}`);
       const fake = await savePodcastConfiguration({
-        db, podcastId: pod.id, expectedVersion: 2, canEdit: () => true,
+        db, podcastId: pod.id, expectedVersion: 1, canEdit: () => true,
         input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "game_show" } },
       });
       assert(!fake.ok && fake.error.code === "unsupported_format", "unregistered still rejected");
+      // A 3-seat format whose MINIMUM fits the cap saves fine (optional seat
+      // stays unfilled at generation).
+      const radio = await savePodcastConfiguration({
+        db, podcastId: pod.id, expectedVersion: 1, canEdit: () => true,
+        input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "sports_radio" }, production: { hostIds: [] } },
+      });
+      assert(radio.ok, `sports_radio (min 2) still saves: ${JSON.stringify(radio)}`);
       const ready = await savePodcastConfiguration({
         db, podcastId: pod.id, expectedVersion: 2, canEdit: () => true,
         input: { identity: { name: "S", slug: "s-show" }, editorial: { format: "two_host_debate" } },

@@ -70,6 +70,21 @@ export function applyModeChange(prev: ModeSelection & { mode: RundownMode }, nex
   return { selectedTopicIds: kept, leadTopicId: lead, targetTopicCount: prev.targetTopicCount };
 }
 
+/**
+ * The selection actually POSTED at create time. Automatic mode keeps picks in
+ * builder state (non-destructive mode switching) but they are INACTIVE — both
+ * the ids and the lead must be stripped from the submission, or an automatic
+ * creation posts a leadTopicId referencing a topic outside the (empty) list.
+ */
+export function submissionSelection(
+  mode: RundownMode,
+  selectedTopicIds: string[],
+  leadTopicId: string | null
+): { selectedTopicIds: string[]; leadTopicId: string | null } {
+  if (mode === "automatic") return { selectedTopicIds: [], leadTopicId: null };
+  return { selectedTopicIds, leadTopicId };
+}
+
 export interface RundownValidationInput {
   mode: RundownMode;
   selectedTopicIds: string[];

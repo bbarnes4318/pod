@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
 import { PLATFORM_MAX_TOPICS, DEFAULT_TARGET_TOPIC_COUNT } from "../episodeLimits";
+import { isTtsProviderId } from "../providers/tts/providerIds";
+import { validateTtsVoiceOverridesInput } from "../providers/tts/voiceResolution";
 import {
   TopicWithBrief,
   EpisodeBuildInput,
@@ -201,6 +203,21 @@ export const CreateEpisodeDraftInputSchema = z
     }
     if (deduped.length > MAX_TOPICS_PER_EPISODE) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["selectedTopicIds"], message: `No more than ${MAX_TOPICS_PER_EPISODE} topics per episode (got ${deduped.length}).` });
+    }
+    // TTS coherence, against the SHARED provider list + override validator.
+    // These rules used to live only in the (now-deleted) draft creation schema,
+    // which nothing in the runtime invoked — so a malformed provider/voice
+    // reached the pipeline unchecked. This schema is the authoritative gate
+    // every creation path runs, so they belong here.
+    if (val.ttsProvider && !isTtsProviderId(val.ttsProvider)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsProvider"], message: `Unknown TTS provider '${val.ttsProvider}'.` });
+    }
+    if (val.ttsVoiceOverrides !== undefined && val.ttsVoiceOverrides !== null) {
+      try {
+        validateTtsVoiceOverridesInput(val.ttsVoiceOverrides);
+      } catch (err) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ttsVoiceOverrides"], message: (err as Error).message });
+      }
     }
   });
 
