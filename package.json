@@ -19,6 +19,8 @@
     "test:repetition": "tsx --conditions=react-server src/scripts/testRepetition.ts",
     "test:real-episode": "tsx --conditions=react-server src/scripts/testRealEpisode.ts",
     "test:model-ab": "tsx --conditions=react-server src/scripts/testModelAB.ts",
+    "test:gemini-provider": "tsx --conditions=react-server src/scripts/testGeminiProvider.ts",
+    "test:gemini-unit": "tsx --conditions=react-server src/scripts/testGeminiProviderUnit.ts",
     "test:boson-format": "tsx src/scripts/testBosonFormat.ts",
     "test:voice-resolution": "tsx src/scripts/testVoiceResolution.ts",
     "test:sound-pack": "tsx src/scripts/testSoundPack.ts",
