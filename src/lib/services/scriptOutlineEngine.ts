@@ -1,11 +1,14 @@
 // Outline-driven progressive script generation.
 //
-// Phase A builds a beat-sheet where every beat and every fact is assigned
-// ONCE. Phase B writes the script act by act; each act call receives the
-// full outline, every claim already made, and the last exchange verbatim —
-// so generation can only move forward. This is the architectural fix for
-// content repetition: no chunk ever writes blind, and no fact or angle is
-// ever handed to two different parts of the episode.
+// The previous engine treated natural conversation as a checklist: a target
+// number of lines, scheduled interruptions, required reaction fragments and
+// metadata variety. That produced scripts which *displayed* human mannerisms
+// without the conversational cause-and-effect that makes people sound alive.
+//
+// This version plans a small story spine, writes three large movements, and
+// carries relationship state between calls. Word-count ranges are soft; line
+// counts are never targeted. Delivery metadata describes what naturally
+// happened in the dialogue instead of driving the writing.
 
 import { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
@@ -37,35 +40,72 @@ export interface OutlineDrivenArgs {
   log: (msg: string) => void;
 }
 
+interface ConversationState {
+  emotionalTemperature: "cool" | "warming" | "hot" | "settling";
+  unresolvedThreads: string[];
+  positionShifts: string[];
+  callbacksAvailable: string[];
+  relationshipChange: string;
+}
+
+const EMPTY_STATE: ConversationState = {
+  emotionalTemperature: "cool",
+  unresolvedThreads: [],
+  positionShifts: [],
+  callbacksAvailable: [],
+  relationshipChange: "Nothing has happened between the hosts yet.",
+};
+
+/**
+ * Keep the actual cast/persona material and persistent-show continuity, while
+ * dropping the giant mechanics checklist. Evidence and factual rules stay in
+ * the act prompt, where they are concrete and relevant.
+ */
+export function compactCreativeSystemPrompt(systemPrompt: string): string {
+  const speechRulesAt = systemPrompt.indexOf("HOW REAL PODCAST SPEECH WORKS");
+  const personaPrefix = (speechRulesAt >= 0 ? systemPrompt.slice(0, speechRulesAt) : systemPrompt).trim();
+  const continuityAt = systemPrompt.indexOf("=== SHOW CONTINUITY");
+  const continuity = continuityAt >= 0 ? systemPrompt.slice(continuityAt).trim() : "";
+
+  return `${personaPrefix}
+
+CREATIVE PRIORITY:
+Write people reacting to each other, not a model demonstrating podcast mannerisms. Every turn must be caused by what was just said: answer it, resist it, misunderstand it, sharpen it, or reveal why it matters. If a line could be moved anywhere in the episode without changing the surrounding exchange, it is generic and must be rewritten.
+
+Do not sprinkle interruptions, filler, false starts, laughs, tangents, concessions, or callbacks to satisfy a quota. Use one only when the thought or relationship causes it. Do not make both hosts equally polished. Let a point breathe. Let one host hold the floor when the other is genuinely listening. A surprising quiet line is more valuable than another manufactured argument.
+
+The listener needs an unresolved question, personal stakes, changing leverage, and a payoff. The hosts may disagree, agree, miss each other, get embarrassed, become curious, or change position. They must not merely trade prepared takes.
+
+Write spoken language. No essay paragraphs, no debate-club signposting, no greetings before the cold-open hook, no summary of what the episode is about, and no artificial "human" tic repeated on schedule.${continuity ? `\n\n${continuity}` : ""}`;
+}
+
 export async function generateOutlineDrivenScript(
   llm: LLMProvider,
   args: OutlineDrivenArgs
 ): Promise<{ segments: any[] }> {
-  const beats = await generateEpisodeOutline(llm, args);
-  args.log(`Outline: ${beats.length} beats, each fact assigned once.`);
+  const creativeSystemPrompt = compactCreativeSystemPrompt(args.systemPrompt);
+  const beats = await generateEpisodeOutline(llm, args, creativeSystemPrompt);
+  args.log(`Story spine: ${beats.length} beats across three conversational movements.`);
 
-  // Group beats into acts of up to 4 beats
-  const acts: OutlineBeat[][] = [];
-  for (let i = 0; i < beats.length; i += 4) {
-    acts.push(beats.slice(i, i + 4));
-  }
-
-  const totalLineTarget = Math.min(80, Math.max(40, Math.round(args.targetDuration * 4.5)));
+  const acts = groupIntoMovements(beats);
   const rawSegments: any[] = [];
   const claimsSoFar: string[] = [];
   const lastLines: { speakerName: string; text: string }[] = [];
-  let linesWritten = 0;
+  let state: ConversationState = { ...EMPTY_STATE };
+  const totalWordTarget = Math.max(550, Math.round(args.targetDuration * 145));
+  let wordsWritten = 0;
 
   for (let actIdx = 0; actIdx < acts.length; actIdx++) {
     const remainingActs = acts.length - actIdx;
-    const linesTarget = Math.max(6, Math.ceil((totalLineTarget - linesWritten) / remainingActs));
+    const remainingWords = Math.max(180, totalWordTarget - wordsWritten);
+    const softWordTarget = Math.max(180, Math.round(remainingWords / remainingActs));
 
-    let actSegments: any[] | null = null;
+    let result: { segments: any[]; stateAfter: ConversationState } | null = null;
     let lastErr: any = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        actSegments = await generateActSegments(llm, {
-          systemPrompt: args.systemPrompt,
+        result = await generateActSegments(llm, {
+          creativeSystemPrompt,
           episodeTitle: args.episodeTitle,
           topicsPrompts: args.topicsPrompts,
           beats,
@@ -74,7 +114,8 @@ export async function generateOutlineDrivenScript(
           actCount: acts.length,
           claimsSoFar,
           lastLines,
-          linesTarget,
+          state,
+          softWordTarget,
           temperature: args.temperature,
           maxTokens: args.maxTokens,
           speakerNames: args.speakerNames,
@@ -82,47 +123,72 @@ export async function generateOutlineDrivenScript(
         break;
       } catch (err: any) {
         lastErr = err;
-        console.warn(`[ScriptOutline] Act ${actIdx + 1} attempt ${attempt} failed: ${err.message}`);
+        console.warn(`[ScriptOutline] Movement ${actIdx + 1} attempt ${attempt} failed: ${err.message}`);
       }
     }
-    if (!actSegments) {
-      throw new Error(`Act ${actIdx + 1} generation failed twice: ${lastErr?.message}`);
+    if (!result) {
+      throw new Error(`Movement ${actIdx + 1} generation failed twice: ${lastErr?.message}`);
     }
 
-    // Update running memory from this act's output
-    for (const seg of actSegments) {
+    let movementWords = 0;
+    for (const seg of result.segments) {
       if (!seg || !Array.isArray(seg.lines)) continue;
       for (const line of seg.lines) {
         if (!line || typeof line.text !== "string") continue;
-        linesWritten++;
-        lastLines.push({ speakerName: line.speakerName, text: line.text });
         const spoken = stripAudioTags(line.text);
-        if (line.isFactualClaim || spoken.length > 60) {
-          claimsSoFar.push(spoken.slice(0, 140));
-        }
+        movementWords += spoken.split(/\s+/).filter(Boolean).length;
+        lastLines.push({ speakerName: line.speakerName, text: line.text });
+        if (line.isFactualClaim || spoken.length > 65) claimsSoFar.push(spoken.slice(0, 180));
       }
     }
-    while (lastLines.length > 8) lastLines.shift();
-    if (claimsSoFar.length > 60) claimsSoFar.splice(0, claimsSoFar.length - 60);
+    wordsWritten += movementWords;
+    while (lastLines.length > 18) lastLines.shift();
+    if (claimsSoFar.length > 80) claimsSoFar.splice(0, claimsSoFar.length - 80);
+    state = normalizeState(result.stateAfter, state);
+    rawSegments.push(...result.segments);
 
-    rawSegments.push(...actSegments);
     args.log(
-      `Act ${actIdx + 1}/${acts.length}: ${actSegments.reduce((n, s) => n + (s.lines?.length || 0), 0)} lines.`
+      `Movement ${actIdx + 1}/${acts.length}: ${movementWords} words; state=${state.emotionalTemperature}; unresolved=${state.unresolvedThreads.length}.`
     );
   }
 
-  // Self-verify (FIX 1) runs in scriptService AFTER generation, on whichever
-  // path produced the script (outline OR single-shot fallback), so a transient
-  // outline parse-failure never skips grounding.
   return { segments: rawSegments };
 }
 
-/** Ask the model to rewrite ALL flagged ungrounded lines in ONE batched call:
- *  use the correct figure from evidence, or restate the point qualitatively
- *  (the "argue without it" valve). Keeps each line's speaker, tone, and
- *  conversational feel; adds no new fabrication. One call replaces the old
- *  per-line loop (N calls); very large batches are chunked defensively.
- *  Exported so scriptService can run self-verify on both generation paths. */
+function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
+  if (beats.length <= 3) return [beats];
+  const closing = beats[beats.length - 1];
+  const body = beats.slice(0, -1);
+  const firstCut = Math.max(1, Math.ceil(body.length * 0.34));
+  const secondCut = Math.max(firstCut + 1, Math.ceil(body.length * 0.72));
+  return [
+    body.slice(0, firstCut),
+    body.slice(firstCut, secondCut),
+    [...body.slice(secondCut), closing],
+  ].filter((a) => a.length > 0);
+}
+
+function normalizeState(value: any, previous: ConversationState): ConversationState {
+  const arr = (v: unknown) =>
+    Array.isArray(v)
+      ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 6)
+      : [];
+  const allowed = new Set(["cool", "warming", "hot", "settling"]);
+  return {
+    emotionalTemperature: allowed.has(value?.emotionalTemperature)
+      ? value.emotionalTemperature
+      : previous.emotionalTemperature,
+    unresolvedThreads: arr(value?.unresolvedThreads),
+    positionShifts: arr(value?.positionShifts),
+    callbacksAvailable: arr(value?.callbacksAvailable),
+    relationshipChange:
+      typeof value?.relationshipChange === "string" && value.relationshipChange.trim()
+        ? value.relationshipChange.trim().slice(0, 300)
+        : previous.relationshipChange,
+  };
+}
+
+/** Ask the model to rewrite ALL flagged ungrounded lines in ONE batched call. */
 export async function rewriteLinesForGrounding(
   llm: LLMProvider,
   items: RewriteContext[],
@@ -131,11 +197,9 @@ export async function rewriteLinesForGrounding(
   const out = new Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>();
   if (items.length === 0) return out;
 
-  // Keep each batched response comfortably under output limits.
   const CHUNK = 15;
   for (let i = 0; i < items.length; i += CHUNK) {
     const chunk = items.slice(i, i + CHUNK);
-
     const lineBlocks = chunk.map((ctx) => {
       const figs = ctx.unsupportedFigures
         .map(
@@ -146,43 +210,40 @@ export async function rewriteLinesForGrounding(
         )
         .join("\n");
       const attrs = ctx.unsupportedAttributions
-        .map((n) => `  - "${n}" is presented as saying/doing something specific, but is NOT in the evidence (fabricated attribution — remove or make it a general reference)`)
+        .map((n) => `  - "${n}" is presented as saying/doing something specific, but is NOT in the evidence`)
         .join("\n");
       const semantic = ctx.semanticReason
-        ? `\n  SEMANTIC REVIEWER FLAG (fix exactly this): ${ctx.semanticReason}\n  - If a real figure is attached to the WRONG subject/team, move it to the subject the evidence attributes it to, or drop it.\n  - If the line is MORE precise than the evidence, reduce it to exactly what the evidence supports, or go qualitative.`
+        ? `\n  SEMANTIC REVIEWER FLAG: ${ctx.semanticReason}`
         : "";
       return `LINE ${ctx.line.lineIndex} — SPEAKER: ${ctx.line.speakerName}
   CURRENT TEXT: ${JSON.stringify(ctx.line.text)}
   VIOLATIONS:
 ${figs || "  (no figure violations)"}
 ${attrs}${semantic}
-  EVIDENCE FOR THIS LINE (the only facts it may state as true):
-  ${ctx.evidenceText || "(no specific evidence for this line — go qualitative: assert no figure and no named-person quote/action)"}`;
+  EVIDENCE FOR THIS LINE:
+  ${ctx.evidenceText || "(no specific evidence — keep the point qualitative)"}`;
     });
 
-    const prompt = `${chunk.length} line(s) of the podcast script state specifics that are NOT supported by their evidence. Rewrite EACH listed line so every number and every named-person attribution is supported by that line's evidence — OR restate the point qualitatively (conviction, memory, rhetoric — no invented figure or quote). Keep each line's SAME speaker, tone, energy, and conversational feel (fragments, interruptions, attitude, an ending "—" if it was an interruption). Introduce NO new fabrications. Do not touch any line not listed.
+    const prompt = `Rewrite each listed line so every factual detail is supported, or make the line qualitative. Preserve the speaker's intent and the conversational action the line performs on the line before it. Do not polish it into an essay. Keep fragments, pressure, humor, and an ending em dash when present. Introduce no new fact and touch no unlisted line.
 
 ${lineBlocks.join("\n\n")}
 
 Return valid JSON only:
-{ "rewrites": [ { "lineIndex": <number from LINE header>, "text": "the rewritten spoken line", "isFactualClaim": true | false, "evidenceRefs": [ { "type": "game|newsItem|injury|oddsSnapshot|teamStat|playerStat", "id": "..." } ] } ] }
-- One rewrites entry per listed line, keyed by its lineIndex.
-- Keep a real figure only if it is in that line's evidence -> isFactualClaim true + the matching evidenceRefs.
-- Go qualitative (no specific figure/quote) -> isFactualClaim false + evidenceRefs [].`;
+{ "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": [] } ] }`;
 
     try {
       const res = await withLlmStage("script:selfverify-rewrite", () =>
         llm.generateStructuredOutput<any>({
           prompt,
           systemPrompt,
-          temperature: 0.6,
+          temperature: 0.5,
           maxTokens: Math.min(300 * chunk.length + 600, 8000),
         })
       );
       const rewrites = Array.isArray(res?.rewrites) ? res.rewrites : [];
       const requested = new Set(chunk.map((c) => c.line.lineIndex));
       for (const rw of rewrites) {
-        if (!requested.has(rw?.lineIndex)) continue; // never touch unlisted lines
+        if (!requested.has(rw?.lineIndex)) continue;
         if (typeof rw?.text !== "string" || !rw.text.trim()) continue;
         out.set(rw.lineIndex, {
           text: rw.text,
@@ -192,65 +253,50 @@ Return valid JSON only:
       }
     } catch (err: any) {
       console.warn(`[SelfVerify] batched rewrite failed: ${err?.message}`);
-      // Chunk failure = those lines stay unrewritten this round; the
-      // deterministic re-check and the fact-check gate still catch them.
     }
   }
   return out;
 }
 
-async function generateEpisodeOutline(llm: LLMProvider, args: OutlineDrivenArgs): Promise<OutlineBeat[]> {
+async function generateEpisodeOutline(
+  llm: LLMProvider,
+  args: OutlineDrivenArgs,
+  creativeSystemPrompt: string
+): Promise<OutlineBeat[]> {
   const prompt = [
-    `You are the showrunner planning episode "${args.episodeTitle}" (target ${args.targetDuration} minutes).`,
+    `You are showrunning episode "${args.episodeTitle}" (roughly ${args.targetDuration} minutes).`,
     ``,
     `TOPICS & EVIDENCE:`,
     args.topicsPrompts,
     ``,
-    `Build the episode beat sheet. Rules:`,
-    `- 10 to 14 beats total. Beat 1 MUST be "cold_open" (start mid-argument on the single hottest take of the episode). Last beat MUST be "closing".`,
-    `- Every topic is covered by 2-4 topic beats that ESCALATE: stake out -> clash -> concede-or-escalate -> button. A beat never re-covers ground from an earlier beat.`,
-    `- Assign each evidence fact to AT MOST ONE beat via factRefs (use the ids from the evidence above). A fact is used once in the whole episode, period.`,
-    `- GROUND EVERY BEAT IN THE SUPPLIED EVIDENCE: a beat may only rely on numbers, names, records, and dates that actually appear in the evidence above. Where a topic's evidence is qualitative — a story, a mood, a controversy — with no hard stats, plan a QUALITATIVE beat ("the host's fury at the sweep", "the booing turns personal"); do NOT plan a beat whose angle demands a figure the evidence doesn't supply. A beat that needs an unsupplied stat is what forces the writer to invent one — that is the failure we are preventing.`,
-    `- Include exactly one short tangent beat (type "transition") that humanizes the hosts.`,
-    `- Do NOT plan jokes, bits, or running gags — humor is NOT outlined; it emerges from the two hosts clashing as the script is written. Use "callback" only for a genuine thematic thread worth revisiting, never a scheduled punchline.`,
-    `- Every beat's "angle" is a specific, arguable take. "Specific" means anchored to a REAL supplied fact when one exists; where the evidence is qualitative, the angle is a specific emotional/narrative tension — still arguable, never an invented statistic.`,
+    `Build a SMALL story spine, not a rundown checklist.`,
+    `- Use 6 to 8 beats total. Beat 1 is a cold open already in motion. The final beat is a closing payoff.`,
+    `- Organize the episode around one unresolved central question. Additional topics must deepen, complicate, or unexpectedly answer it; do not merely move to the next headline.`,
+    `- Every beat changes something: leverage, emotional temperature, a host's position, what the listener believes, or the relationship between the hosts.`,
+    `- Plan at least one genuine position shift or newly exposed stake. It may be small; it must be caused by the discussion, not scheduled as a ceremonial concession.`,
+    `- Assign each evidence fact to at most one beat. Facts are ammunition, not the plot.`,
+    `- Do not schedule jokes, filler, interruptions, tangents, catchphrases, callbacks, or audio tags. A callback note is allowed only when a concrete earlier phrase or image could naturally return.`,
+    `- Prefer fewer, deeper movements over exhaustive coverage. It is acceptable to leave a weak topic out.`,
     ``,
     `Return valid JSON only:`,
-    `{`,
-    `  "beats": [`,
-    `    {`,
-    `      "beatIndex": 0,`,
-    `      "segmentType": "cold_open" | "intro" | "topic" | "transition" | "closing",`,
-    `      "title": "short beat title",`,
-    `      "goal": "what this beat accomplishes in the argument arc",`,
-    `      "angle": "the specific take/tension driving this beat",`,
-    `      "topicId": "topic id if applicable",`,
-    `      "factRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "..." } ],`,
-    `      "escalation": "how this beat raises stakes vs the previous one",`,
-    `      "callback": "optional running-gag or callback note"`,
-    `    }`,
-    `  ]`,
-    `}`,
+    `{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open|intro|topic|transition|closing", "title": "...", "goal": "what changes", "angle": "specific pressure/question", "topicId": "optional", "factRefs": [], "escalation": "how stakes or understanding change", "callback": "optional concrete phrase/image" } ] }`,
   ].join("\n");
 
   const res = await withLlmStage("script:outline", () =>
     llm.generateStructuredOutput<any>({
       prompt,
-      systemPrompt: args.systemPrompt,
+      systemPrompt: creativeSystemPrompt,
       temperature: Math.min(args.temperature, 0.7),
-      maxTokens: Math.min(args.maxTokens, 8000),
+      maxTokens: Math.min(args.maxTokens, 7000),
     })
   );
 
-  const beats: OutlineBeat[] = Array.isArray(res?.beats) ? res.beats : [];
-  if (beats.length < 6) {
-    throw new Error(`Outline returned only ${beats.length} beats.`);
-  }
+  const beats: OutlineBeat[] = Array.isArray(res?.beats) ? res.beats.slice(0, 8) : [];
+  if (beats.length < 5) throw new Error(`Outline returned only ${beats.length} beats.`);
   beats.forEach((b, i) => (b.beatIndex = i));
-  if (beats[0].segmentType !== "cold_open") beats[0].segmentType = "cold_open";
-  if (beats[beats.length - 1].segmentType !== "closing") beats[beats.length - 1].segmentType = "closing";
+  beats[0].segmentType = "cold_open";
+  beats[beats.length - 1].segmentType = "closing";
 
-  // Enforce fact-used-once across beats
   const seenFacts = new Set<string>();
   for (const beat of beats) {
     beat.factRefs = (Array.isArray(beat.factRefs) ? beat.factRefs : []).filter((ref) => {
@@ -261,12 +307,11 @@ async function generateEpisodeOutline(llm: LLMProvider, args: OutlineDrivenArgs)
       return true;
     });
   }
-
   return beats;
 }
 
 interface ActArgs {
-  systemPrompt: string;
+  creativeSystemPrompt: string;
   episodeTitle: string;
   topicsPrompts: string;
   beats: OutlineBeat[];
@@ -275,146 +320,105 @@ interface ActArgs {
   actCount: number;
   claimsSoFar: string[];
   lastLines: { speakerName: string; text: string }[];
-  linesTarget: number;
+  state: ConversationState;
+  softWordTarget: number;
   temperature: number;
   maxTokens: number;
   speakerNames: string[];
 }
 
-async function generateActSegments(llm: LLMProvider, args: ActArgs): Promise<any[]> {
+async function generateActSegments(
+  llm: LLMProvider,
+  args: ActArgs
+): Promise<{ segments: any[]; stateAfter: ConversationState }> {
   const firstNow = args.actBeats[0]?.beatIndex ?? 0;
-  const lastNow = firstNow + args.actBeats.length - 1;
+  const lastNow = args.actBeats[args.actBeats.length - 1]?.beatIndex ?? firstNow;
   const outlineRecap = args.beats
-    .map((b, i) => {
-      const marker = i < firstNow ? "[DONE] " : i > lastNow ? "[LATER] " : ">>> NOW: ";
-      return `${marker}${i + 1}. ${b.segmentType} — ${b.title} — ${b.angle}`;
-    })
+    .map((b, i) => `${i < firstNow ? "[DONE]" : i > lastNow ? "[LATER]" : ">>> NOW"} ${i + 1}. ${b.segmentType} — ${b.title}: ${b.angle}`)
     .join("\n");
-
   const beatsDetail = args.actBeats
-    .map((b) =>
-      [
-        `Beat ${b.beatIndex + 1} (${b.segmentType}) — ${b.title}`,
-        `  Goal: ${b.goal}`,
-        `  Angle: ${b.angle}`,
-        `  Escalation: ${b.escalation || "n/a"}`,
-        `  Callback note: ${b.callback || "n/a"}`,
-        `  TopicId: ${b.topicId || "n/a"}`,
-        `  Assigned facts (ONLY these may introduce new factual claims — introduce each ONCE, but every later line that leans on one must still carry its ref): ${JSON.stringify(b.factRefs)}`,
-      ].join("\n")
-    )
+    .map((b) => `Beat ${b.beatIndex + 1} (${b.segmentType}) — ${b.title}\n  Change: ${b.goal}\n  Pressure: ${b.angle}\n  Escalation: ${b.escalation || "n/a"}\n  Optional callback seed: ${b.callback || "none"}\n  TopicId: ${b.topicId || "n/a"}\n  Assigned facts: ${JSON.stringify(b.factRefs)}`)
     .join("\n\n");
+  const claimsBlock = args.claimsSoFar.length ? args.claimsSoFar.map((c) => `- ${c}`).join("\n") : "(nothing yet)";
+  const lastExchange = args.lastLines.length ? args.lastLines.map((l) => `${l.speakerName}: ${l.text}`).join("\n") : "(start cold, already in motion)";
 
-  const claimsBlock = args.claimsSoFar.length
-    ? args.claimsSoFar.map((c) => `- ${c}`).join("\n")
-    : "(nothing yet — this is the start of the episode)";
+  const prompt = `Write MOVEMENT ${args.actNumber} of ${args.actCount} of "${args.episodeTitle}".
 
-  const lastExchange = args.lastLines.length
-    ? args.lastLines.map((l) => `${l.speakerName}: ${l.text}`).join("\n")
-    : "(episode has not started — open cold, mid-argument, no greetings)";
+FULL STORY SPINE:
+${outlineRecap}
 
-  const prompt = [
-    `You are writing ACT ${args.actNumber} of ${args.actCount} of "${args.episodeTitle}".`,
-    ``,
-    `FULL EPISODE OUTLINE (for orientation — write ONLY the ">>> NOW" beats):`,
-    outlineRecap,
-    ``,
-    `BEATS TO WRITE NOW:`,
-    beatsDetail,
-    ``,
-    `TOPIC EVIDENCE (reference for exact ids/values; use ONLY facts assigned to your beats above):`,
-    args.topicsPrompts,
-    ``,
-    `ALREADY SAID — DO NOT RESTATE ANY OF THIS, NOT EVEN REWORDED (callbacks = six words or fewer, referencing without repeating):`,
-    claimsBlock,
-    ``,
-    `THE LAST EXCHANGE (continue naturally mid-flow from here; no re-greetings, no recaps):`,
-    lastExchange,
-    ``,
-    `Write about ${args.linesTarget} dialogue lines covering ONLY your beats, in order.`,
-    // Conversation mechanics are per-speaker-count (Prompt 7): multi-voice
-    // acts get the interruption/fragment machinery; a solo act gets
-    // monologue mechanics (there is no other voice to overlap).
-    ...(args.speakerNames.length >= 2
-      ? [
-          `FORWARD MOTION is about the ARGUMENT advancing — NOT every line carrying a new fact. Reactions, pushback, short fragments, and building lines move the argument without introducing a new claim, and they are REQUIRED for the show to sound like real people talking, not essays traded back and forth.`,
-          ``,
-          `WRITE A CONVERSATION, NOT ALTERNATING SPEECHES:`,
-          `- Give one speaker TWO or THREE lines in a row when they're building, self-correcting, or piling on ("And another thing—"). Do NOT hand the mic back after every single line — strict ping-pong is the #1 robotic tell.`,
-          `- Jam short reactive FRAGMENTS from another speaker between the longer turns: "Oh, come on.", "That's not—", "Wait.", "Hold on.", plus overlapping agreement "Yeah, and—", "Right, right—".`,
-          `- REAL INTERRUPTIONS: when a speaker can't take it, they cut the current speaker off. The interrupting line sets "isInterruption": true AND the line immediately BEFORE it MUST end mid-sentence with a "—" (em dash) — no "—" on the previous line means the audio overlap mis-fires, so never set isInterruption without it. EVERY speaker interrupts, as often as the heat warrants — there is no quota.`,
-          `- Every speaker DRIVES: each pushes their own worldview and can get heated, incredulous, or exasperated. No one is the calm foil who only deflates — if a speaker's core belief is attacked, that speaker escalates.`,
-          ``,
-        ]
-      : [
-          `FORWARD MOTION is about the ARGUMENT advancing — NOT every line carrying a new fact. Self-questions, pivots, and building lines move the argument without introducing a new claim.`,
-          ``,
-          `WRITE A MONOLOGUE THAT BREATHES, NOT AN ESSAY:`,
-          `- This act has EXACTLY ONE speaker. "isInterruption" is false on every line — there is no second voice.`,
-          `- Self-interruption replaces host interruption: false starts, "wait, actually—", rhetorical questions answered immediately.`,
-          `- Talk TO the listener ("you", "look", "here's the thing") and argue with the listener's doubts out loud.`,
-          ``,
-        ]),
-    `DELIVERY & PERFORMANCE (set these per line — they drive the voice acting AND the pacing; do not leave them flat):`,
-    `- "energy": VARY it across the act. An all-"high" run is exhausting and fake — drop to "low"/"medium" for setups, analysis, and concessions; spike "high" on the clashes. Both hosts range across energies; neither sits on one.`,
-    `- "pauseBefore": VARY the pacing — do NOT default everything to "none"/"beat". "none" = a genuine jump-in (reaction or interruption) ONLY; "beat" = normal turn-taking (~0.3s); "breath" = a thought pivot (~0.7s); "long" = a dramatic beat (~1.2s). Use "long" on the single heaviest moment of your section — across the whole episode there should be at least 2-3 "long" pauses; a script with zero "long" pauses reads like a metronome.`,
-    `- "tone": match the REAL emotion of the line; BOTH hosts must range across their tones (heated, excited, sarcastic, dismissive, amused, incredulous, conceding, analytical, reflective) — a host stuck on only "analytical"/"dismissive"/"sarcastic" reads as a foil. Give them the full range.`,
-    ``,
-    `GROUNDING — THE ONE UNBREAKABLE RULE (read twice; it outranks every other instruction here):`,
-    `- EVERY number, name, date, score, record, streak, salary, and statistic a host states as fact MUST come verbatim from the supplied evidence (your beats' assigned facts / the TOPIC EVIDENCE above). If it is not in the evidence, it does not exist — do not say it, do not round it, do not inflate it, do not "remember" it, do not derive a new figure from it.`,
-    `- If the evidence lacks a specific the argument wants, the host ARGUES WITHOUT IT. Conviction, memory, rhetoric, and qualitative claims are fully allowed; invented specifics are not. Say "they've been rotten since June" — NOT "5-and-15 since June eighteenth" unless that exact figure is supplied. Say "they've stunk for years" — NOT "three straight 100-loss seasons" unless it's supplied. A vivid, unnumbered take beats a fabricated stat every single time.`,
-    `- Do NOT embellish a real fact into a bigger one: if your evidence says three home runs, the host says three — never "five", never "most since 2018". Matching the evidence exactly is mandatory; exaggerating a supplied number IS fabrication and fails the fact check.`,
-    `- BIND EVERY FIGURE TO ITS SUBJECT: a stat belongs to whichever team/player the evidence attributes it to — never transplant it onto another. If the evidence says the ORIOLES are 39-48 and nine under .500, a host must NOT say the YANKEES are 39-48 — that's a fabrication even though the number is real. Attach each figure to the exact subject the evidence names.`,
-    `- NAMED-PERSON ATTRIBUTION IS RADIOACTIVE (legal exposure): never put a quote, statement, thought, or specific action on a real named person unless the evidence contains it — no invented "Boone pulled him", "Michael Kay called it a disaster", "the GM promised a move". A GENERAL reference to a public figure is fine ("Boone's bullpen management", "the skipper's on the hot seat"); a fabricated quote or specific action is not, and fails the fact check.`,
-    `- The "Unsafe claims" list in your system prompt is RADIOACTIVE: never state any of those claims or numbers in any form — reworded, partial, or as a host's memory. The fact-checker knows that list and fails on contact.`,
-    ``,
-    `EVIDENCE MECHANICS:`,
-    `- A line that states a SUPPLIED number/stat/record/injury/event as true sets "isFactualClaim": true AND carries that fact's ref from your assigned facts in "evidenceRefs". No ref on a factual line = flagged.`,
-    `- RE-USING a ref is fine and expected: when a later line riffs on, restates, or derives from a supplied fact ("that's barely half of..."), it still carries that fact's ref. "Used once" limits the WORDING, never the ref.`,
-    `- "isFactualClaim": false (empty evidenceRefs) for anything that is NOT a specific checkable assertion: reactions ("Oh, come on."), rhetoric, insults, qualitative claims ("they've been terrible"), predictions, hot takes, and judgments. When torn between a vivid qualitative claim (false) and inventing a number (forbidden), choose the qualitative claim.`,
-    ``,
-    `Return valid JSON only:`,
-    `{`,
-    `  "segments": [`,
-    `    {`,
-    `      "type": "cold_open" | "intro" | "topic" | "transition" | "closing",`,
-    `      "title": "Segment Title",`,
-    `      "topicId": "optional",`,
-    `      "lines": [`,
-    `        {`,
-    `          "lineIndex": 0,`,
-    `          "speakerName": ${(args.speakerNames.length ? args.speakerNames : ["Host 1"]).map((n) => JSON.stringify(n)).join(" | ")},`,
-    `          "text": "spoken text, optionally with inline audio tags like [laughs]",`,
-    `          "tone": "heated | sarcastic | analytical | dismissive | amused | incredulous | conceding | excited | reflective | setup | transition",`,
-    `          "energy": "low" | "medium" | "high",`,
-    `          "pauseBefore": "none" | "beat" | "breath" | "long",`,
-    `          "isInterruption": true | false,`,
-    `          "evidenceRefs": [ { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "..." } ],`,
-    `          "isFactualClaim": true | false,`,
-    `          "needsHumanReview": false`,
-    `        }`,
-    `      ]`,
-    `    }`,
-    `  ]`,
-    `}`,
-  ].join("\n");
+BEATS TO WRITE NOW:
+${beatsDetail}
+
+CURRENT RELATIONSHIP / ARGUMENT STATE:
+${JSON.stringify(args.state, null, 2)}
+
+LAST EXCHANGE — continue its emotional and conversational logic:
+${lastExchange}
+
+ALREADY ESTABLISHED — do not restate:
+${claimsBlock}
+
+TOPIC EVIDENCE — only facts assigned to the current beats may be newly introduced:
+${args.topicsPrompts}
+
+Write a continuous conversation of roughly ${Math.round(args.softWordTarget * 0.75)}-${Math.round(args.softWordTarget * 1.2)} spoken words. This is a soft range, never a reason to pad. End the movement when its change has landed.
+
+NON-NEGOTIABLE CONVERSATIONAL TESTS:
+- Each turn must visibly respond to the previous turn. Generic lines that could be relocated fail.
+- Do not alternate mechanically. A speaker may hold the floor; the other may answer with one word, a question, silence implied by a pause, or a full counterargument.
+- Do not insert filler, false starts, interruptions, laughter, agreement, tangents, callbacks, catchphrases, or dramatic pauses because podcasts supposedly contain them. Include one only when this exact moment causes it.
+- Do not force conflict. Curiosity, embarrassment, recognition, partial agreement, and a quiet correction can be more gripping than shouting.
+- Preserve asymmetry: the hosts have different motives, sentence shapes, vulnerabilities, and ways of avoiding a point.
+- A factual correction must still sound like a person answering a person, not a fact-check note.
+- Delivery fields annotate the line you already wrote. Never write a line merely to create metadata variety.
+
+GROUNDING:
+Every specific number, date, result, record, quote, named-person action, injury or transaction stated as true must be present in the assigned evidence and carry its ref. When evidence is absent, argue vividly without a fabricated specific.
+
+Return valid JSON only:
+{
+  "segments": [
+    {
+      "type": "cold_open|intro|topic|transition|closing",
+      "title": "...",
+      "topicId": "optional",
+      "lines": [
+        {
+          "lineIndex": 0,
+          "speakerName": ${args.speakerNames.map((n) => JSON.stringify(n)).join(" | ")},
+          "text": "spoken words",
+          "tone": "heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition",
+          "energy": "low|medium|high",
+          "pauseBefore": "none|beat|breath|long",
+          "isInterruption": false,
+          "evidenceRefs": [],
+          "isFactualClaim": false,
+          "needsHumanReview": false
+        }
+      ]
+    }
+  ],
+  "stateAfter": {
+    "emotionalTemperature": "cool|warming|hot|settling",
+    "unresolvedThreads": ["specific question still alive"],
+    "positionShifts": ["what changed and why"],
+    "callbacksAvailable": ["exact phrase/image that could naturally return"],
+    "relationshipChange": "one sentence describing how the hosts now stand relative to each other"
+  }
+}`;
 
   const res = await withLlmStage("script:acts", () =>
     llm.generateStructuredOutput<any>({
       prompt,
-      systemPrompt: args.systemPrompt,
+      systemPrompt: args.creativeSystemPrompt,
       temperature: args.temperature,
       maxTokens: args.maxTokens,
     })
   );
 
   const segments = Array.isArray(res?.segments) ? res.segments : [];
-  const lineCount = segments.reduce(
-    (n: number, s: any) => n + (Array.isArray(s?.lines) ? s.lines.length : 0),
-    0
-  );
-  if (lineCount === 0) {
-    throw new Error("Act returned zero lines.");
-  }
-  return segments;
+  const lineCount = segments.reduce((n: number, s: any) => n + (Array.isArray(s?.lines) ? s.lines.length : 0), 0);
+  if (lineCount === 0) throw new Error("Movement returned zero lines.");
+  return { segments, stateAfter: normalizeState(res?.stateAfter, args.state) };
 }
