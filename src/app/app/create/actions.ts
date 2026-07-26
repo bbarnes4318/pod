@@ -8,6 +8,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
+import { canViewOwned } from "@/lib/ownerScope";
 import {
   queueResearchBriefGenerationJob,
   queueScriptGenerationJob,
@@ -60,7 +61,7 @@ async function ownedEpisode(episodeId: string): Promise<OwnedFail | OwnedOk> {
     include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true } } },
   });
   if (!episode) return fail("That episode no longer exists.");
-  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
+  if (!canViewOwned(user, episode)) {
     return fail("That episode belongs to someone else.");
   }
   return { ok: true, user, episode, scriptId: episode.scripts[0]?.id ?? null };
@@ -398,7 +399,7 @@ export async function getEpisodeTranscript(episodeId: string) {
   if (!user) return { ok: false as const, error: "Please sign in." };
   const episode = await db.episode.findUnique({ where: { id: episodeId }, select: { ownerId: true } });
   if (!episode) return { ok: false as const, error: "Episode not found." };
-  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
+  if (!canViewOwned(user, episode)) {
     return { ok: false as const, error: "That episode belongs to someone else." };
   }
   return getEpisodeTranscriptVM(episodeId);
@@ -619,7 +620,7 @@ export async function getMixView(episodeId: string) {
   if (!user) return { ok: false as const, error: "Please sign in." };
   const episode = await db.episode.findUnique({ where: { id: episodeId }, select: { ownerId: true } });
   if (!episode) return { ok: false as const, error: "Episode not found." };
-  if (episode.ownerId && episode.ownerId !== user.id && user.role !== "ADMIN") {
+  if (!canViewOwned(user, episode)) {
     return { ok: false as const, error: "That episode belongs to someone else." };
   }
   return getEpisodeMixVM(episodeId);
@@ -787,7 +788,7 @@ export async function getPublishState(episodeId: string) {
     },
   });
   if (!ep) return { ok: false as const, error: "Episode not found." };
-  if (ep.ownerId && ep.ownerId !== user.id && user.role !== "ADMIN") {
+  if (!canViewOwned(user, ep)) {
     return { ok: false as const, error: "That episode belongs to someone else." };
   }
   const topicTitles = ep.topics.map((et) => et.topic?.title).filter(Boolean) as string[];

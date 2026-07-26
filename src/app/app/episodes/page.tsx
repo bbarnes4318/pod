@@ -6,19 +6,18 @@ import { emojiForTitle, sportFromTitle, fmtMin, fmtDay, friendlyStage } from "..
 import { EpisodeCard, CardEpisode } from "../EpisodeCard";
 import { getEpisodeScores } from "../scores";
 import { currentUser } from "@/lib/currentUser";
+import { ownerScope } from "@/lib/ownerScope";
 
 export const dynamic = "force-dynamic";
 
 export default async function MyEpisodesPage() {
   const user = await currentUser();
-  // The signed-in user's episodes plus legacy (pre-auth, ownerId=null) ones so
-  // existing content stays visible; logged-out visitors see only legacy.
-  const ownerFilter = user
-    ? { OR: [{ ownerId: user.id }, { ownerId: null }] }
-    : { ownerId: null };
+  // Shared owner scoping (lib/ownerScope). Legacy pre-accounts episodes used to
+  // be OR'd in for every signed-in user, which showed new signups other people's
+  // back catalogue; they now belong to the operator only.
   const [episodes, scores] = await Promise.all([
     db.episode.findMany({
-      where: ownerFilter,
+      where: ownerScope(user),
       orderBy: { updatedAt: "desc" },
       take: 60,
       select: { id: true, title: true, audioUrl: true, durationSeconds: true, updatedAt: true, status: true },

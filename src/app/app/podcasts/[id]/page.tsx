@@ -8,6 +8,7 @@ import { WEEKDAY_LABELS } from "../config";
 import PodcastWizard, { WizardHost, WizardTeam } from "../new/PodcastWizard";
 import GenerateNowButton from "../GenerateNowButton";
 import { requireUserPage } from "@/lib/currentUser";
+import { canViewOwned } from "@/lib/ownerScope";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +25,12 @@ export default async function ManagePodcastPage({ params }: { params: Promise<{ 
     })
     .catch(() => null);
   if (!podcast) notFound();
-  // Owner-only management (legacy null-owner podcasts stay open for continuity).
-  if (podcast.ownerId && podcast.ownerId !== user.id) notFound();
+  // Owner-only management. This used to read `if (podcast.ownerId && ...)`, which
+  // let EVERY legacy null-owner podcast through to any signed-in account — the
+  // full editable settings wizard, plus "Generate episode now", on someone else's
+  // show. canViewOwned gives legacy rows to the operator only, and matches the
+  // filter the list page uses so a hidden row is not reachable by URL either.
+  if (!canViewOwned(user, podcast)) notFound();
 
   const [hostsRaw, teamsRaw] = await Promise.all([
     // Own + shared hosts only — never another account's roster.

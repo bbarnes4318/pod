@@ -8,6 +8,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
+import { canViewOwned } from "@/lib/ownerScope";
 import { assertCanCreatePodcast } from "@/lib/services/entitlementService";
 import {
   isValidVertical,
@@ -124,8 +125,9 @@ export async function generateEpisodesNow(podcastId: string) {
     if (!user) return { success: false as const, error: "Please sign in to generate episodes." };
     const podcast = await db.podcast.findUnique({ where: { id: podcastId } });
     if (!podcast) return { success: false as const, error: "Podcast not found." };
-    // Owner-only (legacy null-owner podcasts remain manageable for continuity).
-    if (podcast.ownerId && podcast.ownerId !== user.id) {
+    // Owner-only. A legacy null-owner podcast belongs to the OPERATOR, not to
+    // everyone — the old check let any signed-in account generate on it.
+    if (!canViewOwned(user, podcast)) {
       return { success: false as const, error: "This podcast belongs to another account." };
     }
 
@@ -149,8 +151,9 @@ export async function updatePodcast(id: string, input: PodcastInput) {
     if (!user) return { success: false as const, error: "Please sign in to edit a podcast." };
     const existing = await db.podcast.findUnique({ where: { id }, select: { id: true, ownerId: true } });
     if (!existing) return { success: false as const, error: "Podcast not found." };
-    // Owner-only (legacy null-owner podcasts remain editable for continuity).
-    if (existing.ownerId && existing.ownerId !== user.id) {
+    // Owner-only. A legacy null-owner podcast belongs to the OPERATOR, not to
+    // everyone — the old check let any signed-in account rewrite its settings.
+    if (!canViewOwned(user, existing)) {
       return { success: false as const, error: "This podcast belongs to another account." };
     }
 

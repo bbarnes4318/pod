@@ -8,6 +8,13 @@
 
 import type { PrismaClient } from "@prisma/client";
 
+/** Titles/names for the owner-isolation fixtures. Exported so specs assert on
+ *  the exact string a leak would render, not on a row count. */
+export const FOREIGN_PODCAST_NAME = "Someone Else's Show (must stay hidden)";
+export const LEGACY_PODCAST_NAME = "Legacy Unowned Show (must stay hidden)";
+export const FOREIGN_EPISODE_TITLE = "Someone Else's Episode (must stay hidden)";
+export const LEGACY_EPISODE_TITLE = "Legacy Unowned Episode (must stay hidden)";
+
 export const E2E = {
   userA: { id: "e2e-user-a", email: "e2e@studio.test", password: "test1234" },
   userB: { id: "e2e-user-b", email: "e2e-b@studio.test", password: "test1234" },
@@ -15,6 +22,11 @@ export const E2E = {
   podcastId: "e2e-pod",
   /** Podcast B: deliberately EMPTY verticals/teams/hosts + different count. */
   podcastBId: "e2e-pod-b",
+  /** Owner-isolation fixtures — never visible to userA. */
+  podcastForeignId: "e2e-pod-foreign",
+  podcastLegacyId: "e2e-pod-legacy",
+  episodeForeignId: "e2e-ep-foreign",
+  episodeLegacyId: "e2e-ep-legacy",
   hostAce: "e2e-host-ace",
   hostBlaze: "e2e-host-blaze",
   hostCoach: "e2e-host-coach",
@@ -129,4 +141,30 @@ export async function seed(prisma: PrismaClient, bcrypt: { hashSync: (s: string,
   // One prior use by the podcast so "used by this show" surfaces on a card.
   const ep = await prisma.episode.create({ data: { title: "Prior show", slug: "e2e-prior", status: "published", rssGuid: "e2e-guid", ownerId: E2E.userA.id, podcastId: E2E.podcastId, hostIds: [E2E.hostAce, E2E.hostBlaze] } as any });
   await prisma.episodeTopic.create({ data: { episodeId: ep.id, topicId: E2E.topics.four, orderIndex: 0, selectedAt: new Date() } as any });
+
+  // ---- Owner-isolation fixtures (D-02) --------------------------------------
+  // Rows the signed-in user (A) must NEVER see or reach: one owned by another
+  // account, and one LEGACY row with ownerId=null. The legacy case is the one
+  // that actually leaked in production — every surface OR'd `{ownerId: null}`
+  // into its filter, so a brand-new signup was shown (and could edit) the
+  // operator's entire back catalogue. Titles are distinctive so a test can
+  // assert on exact text rather than counts.
+  await prisma.podcast.create({
+    data: {
+      id: E2E.podcastForeignId, name: FOREIGN_PODCAST_NAME, cadence: "one_time", ownerId: E2E.userB.id,
+      verticals: ["NFL"], teams: [], segmentCount: 2, hostIds: [],
+    } as any,
+  });
+  await prisma.podcast.create({
+    data: {
+      id: E2E.podcastLegacyId, name: LEGACY_PODCAST_NAME, cadence: "one_time", ownerId: null,
+      verticals: ["NFL"], teams: [], segmentCount: 2, hostIds: [],
+    } as any,
+  });
+  await prisma.episode.create({
+    data: { id: E2E.episodeForeignId, title: FOREIGN_EPISODE_TITLE, slug: "e2e-foreign", status: "audio_ready", audioUrl: "https://example.invalid/foreign.mp3", durationSeconds: 120, ownerId: E2E.userB.id, hostIds: [] } as any,
+  });
+  await prisma.episode.create({
+    data: { id: E2E.episodeLegacyId, title: LEGACY_EPISODE_TITLE, slug: "e2e-legacy", status: "audio_ready", audioUrl: "https://example.invalid/legacy.mp3", durationSeconds: 120, ownerId: null, hostIds: [] } as any,
+  });
 }

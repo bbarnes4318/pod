@@ -1,12 +1,18 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
+import { ownerScope } from "@/lib/ownerScope";
 import { qualityOf, fmtDuration, fmtDate, statusChip } from "../lib";
 
 export const dynamic = "force-dynamic";
 
 export default async function EpisodesLibrary() {
+  // This page says "Everything you've made". It previously ran an unscoped
+  // findMany, so it listed every episode on the deployment to every account.
+  const user = await currentUser();
   const episodes = await db.episode.findMany({
+    where: ownerScope(user),
     orderBy: { updatedAt: "desc" },
     take: 60,
     include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true, content: true } } },

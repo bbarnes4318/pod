@@ -1,6 +1,8 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
+import { ownerScope } from "@/lib/ownerScope";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
 
@@ -66,6 +68,10 @@ function FlameIcon() {
 }
 
 export default async function StudioBoard() {
+  // The takes pool is deliberately shared (it is the deployment's candidate
+  // stories); EPISODES are not — they were previously listed unscoped, so the
+  // board showed a new account other people's work.
+  const viewer = await currentUser();
   const [takes, poolCount, newest, recentEpisodes] = await Promise.all([
     // The ranked take pool — reuse the EXISTING ranking (debateScore desc).
     db.topicCandidate.findMany({
@@ -82,6 +88,7 @@ export default async function StudioBoard() {
     }),
     // Real episodes — most recently touched, whatever their stage.
     db.episode.findMany({
+      where: ownerScope(viewer),
       orderBy: { updatedAt: "desc" },
       take: 8,
       select: { id: true, title: true, status: true, audioUrl: true, durationSeconds: true, updatedAt: true },
