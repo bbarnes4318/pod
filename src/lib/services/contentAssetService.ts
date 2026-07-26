@@ -323,12 +323,37 @@ export async function generateEpisodeContentAssets(input: {
     segmentMap.set(as.lineIndex, list);
   }
 
+  // SCENE-VOICED EPISODES HAVE NO PER-LINE AudioSegment ROWS.
+  //
+  // There are two voicing paths and they write to two different tables: the
+  // legacy per-line path writes AudioSegment, and scene mode writes
+  // DialogueSceneAudio. The stitcher understands both — which is why the mix
+  // succeeds — but this stage only ever read AudioSegment, so a fully voiced,
+  // fully mixed, finished episode failed here with "Line 0 does not have a
+  // matching AudioSegment" and stopped at the last stage of six.
+  //
+  // Per-line rows are used for ONE thing below: exact chapter timestamps. The
+  // code already estimates a duration from word count when a row is missing and
+  // already reports that by leaving timestampsApproximate = true. So the right
+  // behaviour for a scene-voiced episode is approximate chapters, not a dead
+  // episode — the audio it is describing demonstrably exists.
+  const sceneVoiced =
+    audioSegments.length === 0 &&
+    (await db.dialogueSceneAudio.count({ where: { scriptId, status: "ready" } })) > 0;
+  if (sceneVoiced) {
+    console.warn(
+      `[contentAssets] Script ${scriptId} is scene-voiced (no per-line AudioSegment rows). ` +
+        `Chapter timestamps will be estimated and reported as approximate.`
+    );
+  }
+
   for (const item of allLines) {
     const lineIndex = item.line.lineIndex;
     const list = segmentMap.get(lineIndex) || [];
-    
-    // 11. Matching AudioSegment exists
+
+    // 11. Matching AudioSegment exists — not applicable to scene-voiced episodes.
     if (list.length === 0) {
+      if (sceneVoiced) continue;
       throw new Error(`Line ${lineIndex} does not have a matching AudioSegment.`);
     }
     // Detect duplicate AudioSegments
