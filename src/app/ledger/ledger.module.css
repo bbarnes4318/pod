@@ -1,0 +1,197 @@
+.page {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem) clamp(1rem, 4vw, 2rem) 4rem;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+}
+
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  margin: 0 0 0.75rem;
+}
+
+.title {
+  font-size: clamp(3rem, 12vw, 6.5rem);
+  line-height: 0.95;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0;
+  color: var(--accent, #f97316);
+  font-variant-numeric: tabular-nums;
+}
+
+.titleUnit {
+  display: block;
+  font-size: clamp(0.9rem, 2.5vw, 1.15rem);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 0.6rem;
+}
+
+.blurb {
+  max-width: 44rem;
+  margin: 1.5rem auto 0;
+  color: var(--text-secondary, #cbd5e1);
+  line-height: 1.65;
+}
+
+/* --- empty state --------------------------------------------------------- */
+
+.empty {
+  border: 1px dashed var(--border, #334155);
+  border-radius: 12px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.emptyTitle {
+  font-weight: 700;
+  margin: 0 0 0.5rem;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.emptyBody {
+  margin: 0;
+  color: var(--text-muted, #94a3b8);
+  max-width: 34rem;
+  margin-inline: auto;
+  line-height: 1.6;
+}
+
+/* --- stats --------------------------------------------------------------- */
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat {
+  background: var(--surface-2, #111827);
+  border: 1px solid var(--border, #334155);
+  border-radius: 10px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.statValue {
+  display: block;
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.statLabel {
+  display: block;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 0.35rem;
+}
+
+/* --- table --------------------------------------------------------------- */
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border, #334155);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 34rem;
+}
+
+.caption {
+  caption-side: top;
+  text-align: left;
+  padding: 1rem 1rem 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--border, #334155);
+  text-align: left;
+}
+
+.table thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 600;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.epCell {
+  font-weight: 500;
+}
+
+.epTitle {
+  display: block;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.epDate {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  margin-top: 0.15rem;
+}
+
+.real {
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.phantom {
+  color: var(--accent, #f97316);
+  font-weight: 700;
+}
+
+.table tfoot th,
+.table tfoot td {
+  border-top: 2px solid var(--border, #334155);
+  font-weight: 700;
+  color: var(--text-primary, #e2e8f0);
+}
+
+/* --- footer -------------------------------------------------------------- */
+
+.footer {
+  margin-top: 2.5rem;
+  text-align: center;
+}
+
+.cta {
+  display: inline-block;
+  padding: 0.8rem 1.6rem;
+  border-radius: 999px;
+  background: var(--accent, #f97316);
+  color: #0b1220;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.cta:hover {
+  background: var(--accent-hover, #fb923c);
+}
