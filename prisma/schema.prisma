@@ -330,6 +330,16 @@ model TopicCandidate {
   // Enforced at the DB level as an enum so "used"/arbitrary values can't be
   // written through Prisma.
   status                TopicEditorialStatus
+  // Is this topic FRAMED around betting, or does it merely cite odds as a fact?
+  // Stored on the row, not computed at display time: the quota is enforced at
+  // GENERATION (a display-time filter would keep producing them and just hide
+  // the result), and a stored value is what makes "1 per rolling 30 days"
+  // answerable with a query. "human" | "betting".
+  frame                 String               @default("human")
+  /// Weighted evidence behind `frame`, kept so a classification can be explained.
+  frameScore            Int                  @default(0)
+  /// Which frame patterns fired, for auditing a disputed classification.
+  frameSignals          Json?
   createdAt             DateTime             @default(now())
   league                League?              @relation(fields: [leagueId], references: [id])
   researchBrief         ResearchBrief?
@@ -339,6 +349,8 @@ model TopicCandidate {
   @@index([leagueId])
   @@index([status])
   @@index([createdAt])
+  // The quota query: betting-framed topics created inside a rolling window.
+  @@index([frame, createdAt])
 }
 
 // An article an operator imported by URL as editorial STARTING MATERIAL for a

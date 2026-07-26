@@ -139,9 +139,23 @@ body:has(.userSurface) {
 }
 
 /* Reserve the player's height (+ mobile safe area) only while the bar is
-   mounted, so closing the player gives the space back. */
-.userSurface:has(.uPlayerBar) .uMain {
-  padding-bottom: calc(var(--u-player-h) + env(safe-area-inset-bottom) + 60px);
+   mounted, so closing the player gives the space back.
+ *
+ * This MUST be an in-flow spacer element, not padding-bottom on .uMain.
+ * .uMain is a stretched flex item of .userSurface (min-height:100vh, display:flex),
+ * so its own padding-bottom is laid out INSIDE its 100vh box: a taller column
+ * overflows straight past the padding instead of being pushed above it, and the
+ * document's scroll height never grows by it. Measured on the podcast wizard's
+ * TEAMS step: computed padding-bottom was 132px, yet at maximum scroll only 32px
+ * (.uContent's own padding) sat below the primary button, leaving it underneath
+ * the fixed bar with elementFromPoint returning .uPlayerBar — the wizard could
+ * not be completed at all. A real block child is part of the column's content,
+ * so it always extends the scrollable area. */
+.userSurface:has(.uPlayerBar) .uMain::after {
+  content: "";
+  display: block;
+  flex: 0 0 auto;
+  height: calc(var(--u-player-h) + env(safe-area-inset-bottom) + 24px);
 }
 
 .uTopbar {

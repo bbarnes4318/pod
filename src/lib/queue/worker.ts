@@ -23,7 +23,16 @@ import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeB
 // Stage-chaining enqueuers: build:episode -> generate:script, and
 // generate:topics -> generate:research-brief. Without these two chains an
 // episode never leaves 'draft' and a topic never becomes pickable.
-import { queueScriptGenerationJob, queueResearchBriefGenerationJob } from "./podcastQueue";
+import {
+  queueScriptGenerationJob,
+  queueResearchBriefGenerationJob,
+  queueTtsSegmentGenerationJob,
+  queueFinalAudioStitchJob,
+  queueContentAssetGenerationJob,
+} from "./podcastQueue";
+import { nextProductionJobFor } from "@/lib/createFlow";
+import { classifyTopicFrame } from "@/lib/services/bettingFrame";
+import { bettingQuotaState, admitsBetting, poolBettingPercent, BETTING_QUOTA, BETTING_WINDOW_DAYS } from "@/lib/services/bettingQuota";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
@@ -1228,6 +1237,25 @@ Rules:
 - Do not copy full copyrighted article summaries or texts.
 - If evidence is weak, lower scores. Prefer argument potential over boring facts.
 
+THE FRAME RULE — this is the most important instruction here.
+This show is about PEOPLE AND CONSEQUENCES: a person, a decision, a career, a
+job on the line, a grudge, something that happened to somebody. It is not a
+handicapping show.
+
+- Odds, spreads, totals, moneylines and run lines may appear as a SUPPORTING
+  FACT inside a topic ("the market moved after the injury news").
+- Odds must NEVER be the FRAME of a topic. Do not build a debate out of whether
+  a number is right, whether a line is disrespectful, whether something is worth
+  laying, or what the market is saying. "Is this line begging you to take
+  Denver?" and "Are the 49ers worth laying 3.5?" are exactly what NOT to write.
+- The evidence you are given is dominated by odds records — far more of them
+  than news. That is an artefact of how the data is collected, NOT a signal that
+  odds are what fans argue about. Do not let their volume steer the topics.
+  Reach past them to the human story the numbers are attached to.
+- Every title must name a person, a team's decision, or a consequence someone
+  lives with. If you cannot state who is affected and how, the topic is not
+  ready.
+
 You must return a JSON object containing a 'topics' array of 10-20 candidates.
 Schema for each topic candidate in the array:
 {
@@ -1295,8 +1323,16 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let leagueMismatchCount = 0;
     let skippedWeakEvidenceCount = 0;
     let belowScoreCount = 0;
+    let bettingOverQuotaCount = 0;
 
     const skippedRecordsReasonSummary: string[] = [];
+
+    // Read the rolling-window usage ONCE per batch, then track admissions
+    // locally — re-querying per topic would let a batch admit several before the
+    // first one's row is visible to the next count.
+    const quota = await bettingQuotaState();
+    const bettingUsedInWindow = quota.used;
+    let bettingAdmittedThisBatch = 0;
 
     const topicsList = llmResult?.topics || [];
 
@@ -1435,12 +1471,23 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       const bettingRelevance = Math.max(1, Math.min(100, Number(topic.bettingRelevanceScore) || 50));
       const recency = Math.max(1, Math.min(100, Number(topic.recencyScore) || 50));
 
-      // Server-side debateScore formula:
+      // Server-side debateScore formula.
+      //
+      // bettingRelevance used to carry 0.20 here — the same weight as star power
+      // and recency, second only to controversy. The Board ranks by debateScore,
+      // so the product was literally ordering its front page 20% by how
+      // betting-relevant a story was, which is not what the show is about.
+      // Measured on the live pool: betting-framed topics were 25% of briefed
+      // candidates but 40% of the top 20.
+      //
+      // Its weight is redistributed to controversy and recency — the two axes
+      // that actually track "people are arguing about this right now". The field
+      // is still stored and still shown, because a betting angle is real
+      // information about a story; it just no longer decides the ranking.
       const debateScore =
-        controversy * 0.30 +
+        controversy * 0.40 +
         starPower * 0.20 +
-        bettingRelevance * 0.20 +
-        recency * 0.20 +
+        recency * 0.30 +
         evidenceStrengthScore * 0.10;
 
       // Honor the operator's "Minimum Debate Score" (previously accepted from
@@ -1481,6 +1528,21 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         continue;
       }
 
+      // THE BETTING QUOTA, enforced HERE — at generation, before the row exists.
+      // Filtering the picker instead would leave the generator producing odds
+      // topics and merely hide them, which is how this regressed before.
+      const frame = classifyTopicFrame({ title: topic.title, summary: topic.summary });
+      if (frame.frame === "betting" && !admitsBetting(bettingUsedInWindow, bettingAdmittedThisBatch)) {
+        bettingOverQuotaCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(
+          `Topic '${topic.title}' skipped: betting-framed and the quota of ${BETTING_QUOTA} per ${BETTING_WINDOW_DAYS} rolling days is already used ` +
+            `(${bettingUsedInWindow} existing + ${bettingAdmittedThisBatch} this batch). Odds may be a fact inside a topic, never its frame.`
+        );
+        continue;
+      }
+      if (frame.frame === "betting") bettingAdmittedThisBatch++;
+
       // Save valid TopicCandidate
       const createdTopic = await db.topicCandidate.create({
         data: {
@@ -1495,6 +1557,9 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           debateScore,
           evidenceIds: validEvidence as any,
           status: "pending",
+          frame: frame.frame,
+          frameScore: frame.score,
+          frameSignals: frame.signals as any,
         },
       });
       insertedTopicIds.push(createdTopic.id);
@@ -1547,6 +1612,17 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       // all, so it belongs in the job's own output, not just the console.
       briefJobsQueued,
       briefEnqueueErrors: briefEnqueueErrors.slice(0, 5),
+      // THE STANDING POOL-COMPOSITION CHECK. Reported on every generation run so
+      // a betting regression is visible immediately instead of being
+      // rediscovered by reading the board months later.
+      bettingFrame: {
+        admittedThisBatch: bettingAdmittedThisBatch,
+        overQuotaRejected: bettingOverQuotaCount,
+        usedInWindowBefore: bettingUsedInWindow,
+        quota: BETTING_QUOTA,
+        windowDays: BETTING_WINDOW_DAYS,
+        poolBettingPercent: await poolBettingPercent(),
+      },
     };
 
     await db.jobLog.update({
@@ -2548,6 +2624,79 @@ async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * PRODUCTION CHAIN (D-01)
+ *
+ * lib/createFlow.ts declares exactly which stages wait on a human: only
+ * `review` has checkpoint:true. Every other stage is supposed to follow on its
+ * own. Nothing did. After `generate:script` the pipeline simply stopped, and the
+ * only triggers for fact-check / voices / mix / assets lived in the Basic-Auth
+ * /admin console. A customer who approved their script watched an episode sit at
+ * `script_approved` forever.
+ *
+ * Each link gates on the EPISODE STATUS the previous stage is supposed to have
+ * written, never on "the job returned". A job can complete having advanced
+ * nothing (fact-check only moves the episode when the script was approved and
+ * the check passed), and chaining off a no-op is how you get a queue that looks
+ * busy and produces nothing.
+ * ------------------------------------------------------------------------- */
+
+interface ChainResult {
+  chainedStage: string | null;
+  chainedJobId: string | null;
+  chainSkippedReason: string | null;
+  chainEnqueueError: string | null;
+}
+
+const NO_CHAIN: ChainResult = { chainedStage: null, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: null };
+
+/**
+ * Advance the pipeline one step, based on the episode's CURRENT status.
+ * Never throws: a chain failure is reported on the job log so an operator can
+ * re-trigger the stage, and must not roll back work that already succeeded.
+ */
+async function chainProductionStage(scriptId: string): Promise<ChainResult> {
+  try {
+    const script = await db.script.findUnique({
+      where: { id: scriptId },
+      select: { id: true, episode: { select: { id: true, status: true } } },
+    });
+    const episode = script?.episode;
+    if (!episode) return { ...NO_CHAIN, chainSkippedReason: `no episode for script ${scriptId}` };
+
+    const enqueue = async (stage: string, fn: () => Promise<{ id?: string | number }>): Promise<ChainResult> => {
+      try {
+        const j = await fn();
+        const id = String(j.id ?? "");
+        console.log(`[Worker] Chained ${stage} for episode ${episode.id}: job=${id}`);
+        return { chainedStage: stage, chainedJobId: id, chainSkippedReason: null, chainEnqueueError: null };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "unknown enqueue error";
+        console.error(`[Worker] Could not chain ${stage} for episode ${episode.id}: ${msg}`);
+        return { chainedStage: stage, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: msg };
+      }
+    };
+
+    // The decision lives in lib/createFlow (pure, unit-tested); this function
+    // only performs the I/O it asks for.
+    const next = nextProductionJobFor(episode.status);
+    switch (next) {
+      case "tts:generate-segments":
+        return enqueue(next, () => queueTtsSegmentGenerationJob({ scriptId }));
+      case "audio:stitch-final":
+        return enqueue(next, () => queueFinalAudioStitchJob({ scriptId }));
+      case "content:generate-assets":
+        return enqueue(next, () => queueContentAssetGenerationJob({ scriptId }));
+      default:
+        // Not an error: the stage ran but did not move the episode (a failed
+        // fact-check, an unapproved script, an already-produced episode).
+        return { ...NO_CHAIN, chainSkippedReason: `episode status is '${episode.status}' — nothing to chain` };
+    }
+  } catch (e) {
+    return { ...NO_CHAIN, chainEnqueueError: e instanceof Error ? e.message : "unknown chain error" };
+  }
+}
+
 // 6. Script Generator Handler
 async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
@@ -2618,11 +2767,16 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
     const warnings = Array.isArray(issues.warnings) ? issues.warnings : [];
     const reasons = [...errors, ...warnings].map((i: any) => i.reason || JSON.stringify(i));
 
+    // Chain voicing only when the check actually moved the episode to
+    // fact_checked (see chainProductionStage).
+    const chain = await chainProductionStage(scriptId);
+
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: "completed",
         output: {
+          ...chain,
           finalStatus: res.status,
           deterministicPassed: summary.deterministicPassed,
           semanticStatus: summary.semanticStatus,
@@ -2698,16 +2852,21 @@ async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
       (typeof failedScenes === "number" && failedScenes > 0);
     const finalJobStatus = hasErrors ? "completed_with_errors" : "completed";
 
+    // Chain the mix. Gated on the episode reaching audio_segments_ready, which
+    // the TTS services only write from fact_checked — a partial voicing run
+    // therefore does not start a mix of a half-recorded episode.
+    const chain = await chainProductionStage(scriptId);
+
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: finalJobStatus,
-        output: { pipeline: dispatched.pipeline, ...res } as any,
+        output: { pipeline: dispatched.pipeline, ...res, ...chain } as any,
       },
     });
 
     console.log(`[Worker] TTS generation completed via '${dispatched.pipeline}'. Status: ${finalJobStatus}`);
-    return { success: true, pipeline: dispatched.pipeline, ...res };
+    return { success: true, pipeline: dispatched.pipeline, ...res, ...chain };
   } catch (err: any) {
     console.error(`[Worker] TTS segment generation failed:`, err.message);
     await db.jobLog.update({
@@ -2733,8 +2892,12 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
     // Scene-voiced episodes assemble whole scenes; legacy episodes keep the
     // exact per-line path (decided by the PERSISTED Episode.ttsRenderMode).
     const res = await dispatchFinalStitch(job.data);
+    // Chain show notes / chapters / cover once the master exists. A forced
+    // re-mix of an already-published episode leaves the status above audio_ready,
+    // so chainProductionStage skips rather than regenerating its assets.
+    const chain = await chainProductionStage(scriptId);
     console.log(`[Worker] Final audio stitching job completed. Status: ${res.finalStatus}`);
-    return { success: true, ...res };
+    return { success: true, ...res, ...chain };
   } catch (err: any) {
     console.error(`[Worker] Final audio stitching job failed:`, err.message);
     throw err;

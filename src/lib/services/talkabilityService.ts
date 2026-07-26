@@ -111,12 +111,19 @@ export function scoreTopicTalkability(input: TalkabilityInput): TalkabilityRepor
   // ---- evidence (20) ----
   const sourceIds = Array.isArray(b.sourceIds) ? b.sourceIds : [];
   const typeSet = new Set(sourceIds.map((s: any) => s?.type).filter(Boolean));
-  const extraContext = (b.injuryContext ? 1 : 0) + (b.oddsContext ? 1 : 0);
+  // `oddsContext` used to be worth the same +2 as `injuryContext` here, so a
+  // brief scored higher merely for HAVING an odds paragraph attached —
+  // regardless of whether odds had anything to do with the argument. Measured on
+  // the live pool, evidence was the axis where betting-framed topics actually
+  // beat human-stakes ones (17.6/20 vs 13.8/20; specificity and tension were
+  // saturated at max for both and discriminated nothing). Injury context stays:
+  // who is hurt is a fact about people, which is what the show is about.
+  const extraContext = b.injuryContext ? 1 : 0;
   const evidenceScore = Math.min(20, Math.min(12, sourceIds.length * 1.5) + typeSet.size * 2 + extraContext * 2);
   const evidence: TalkabilityAxis = {
     score: Math.round(evidenceScore),
     max: 20,
-    detail: `${sourceIds.length} source(s) across ${typeSet.size} type(s), injury/odds context: ${extraContext}`,
+    detail: `${sourceIds.length} source(s) across ${typeSet.size} type(s), injury context: ${extraContext}`,
   };
 
   // ---- hook (15) ----

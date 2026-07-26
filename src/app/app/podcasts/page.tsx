@@ -2,6 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
+import { ownerScope } from "@/lib/ownerScope";
 import { WEEKDAY_LABELS } from "./config";
 import GenerateNowButton from "./GenerateNowButton";
 
@@ -9,15 +10,13 @@ export const dynamic = "force-dynamic";
 
 export default async function PodcastsPage() {
   const user = await currentUser();
-  // Scope to the signed-in user's shows plus legacy (pre-auth, ownerId=null)
-  // podcasts so existing content stays visible. Logged-out visitors see only
-  // the legacy/public shows.
-  const ownerFilter = user
-    ? { OR: [{ ownerId: user.id }, { ownerId: null }] }
-    : { ownerId: null };
+  // Owner scoping is shared with every other owned surface (lib/ownerScope).
+  // This previously OR'd in `{ ownerId: null }` for ANY signed-in user, so every
+  // legacy pre-accounts podcast was listed — and editable — for every new signup.
+  // Legacy rows now belong to the operator only.
   const podcasts = await db.podcast
     .findMany({
-      where: ownerFilter,
+      where: ownerScope(user),
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { episodes: true } } },
     })

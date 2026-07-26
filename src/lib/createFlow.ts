@@ -100,6 +100,37 @@ export const PRODUCTION_STAGES: ProductionStage[] = [
 
 export const PRODUCTION_STAGE_KEYS = PRODUCTION_STAGES.map((s) => s.key);
 
+/**
+ * Which job, if any, should follow once a stage has finished — decided purely
+ * from the episode status that stage was supposed to write.
+ *
+ * Only `review` is a human checkpoint (checkpoint:true above); every other stage
+ * is meant to follow on its own, and none of them did. The worker used to stop
+ * dead after `generate:script`, with the only triggers for the remaining stages
+ * living in the Basic-Auth /admin console.
+ *
+ * Keyed on STATUS rather than on "the previous job completed", because a job can
+ * complete having advanced nothing: fact-check only moves an episode whose
+ * script was approved and whose check passed, and a forced re-mix of a published
+ * episode deliberately leaves the status above audio_ready. Chaining off a no-op
+ * is how a queue ends up looking busy while producing nothing.
+ *
+ * Returns null when there is nothing to do — which is a normal outcome, not an
+ * error.
+ */
+export function nextProductionJobFor(episodeStatus: string): string | null {
+  switch (episodeStatus) {
+    case "fact_checked":
+      return "tts:generate-segments";
+    case "audio_segments_ready":
+      return "audio:stitch-final";
+    case "audio_ready":
+      return "content:generate-assets";
+    default:
+      return null;
+  }
+}
+
 export function productionStageIndex(key: string): number {
   return PRODUCTION_STAGE_KEYS.indexOf(key);
 }

@@ -27,7 +27,9 @@ export async function episodeTopicOrder(episodeId: string): Promise<string[]> {
 }
 
 export async function episodeRow(episodeId: string) {
-  return e2eDb().episode.findUnique({ where: { id: episodeId }, select: { id: true, ownerId: true, podcastId: true, hostIds: true, description: true } });
+  // `status` is here so specs can assert the pipeline actually moved, rather
+  // than trusting what the page renders.
+  return e2eDb().episode.findUnique({ where: { id: episodeId }, select: { id: true, status: true, ownerId: true, podcastId: true, hostIds: true, description: true } });
 }
 
 /**

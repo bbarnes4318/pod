@@ -15,7 +15,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getEpisodeProgress, retryProductionStage } from "../app/create/actions";
+import { getEpisodeProgress, retryProductionStage, approveEpisodeScript } from "../app/create/actions";
 import type { CreateProgressVM, ProgressStageVM } from "@/lib/services/createProgress";
 
 /** "2m 14s" / "48s" — compact and stable in width thanks to tabular figures. */
@@ -54,6 +54,10 @@ export default function ProductionConsole({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  // The one human checkpoint (createFlow: only `review` has checkpoint:true).
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [approveReasons, setApproveReasons] = useState<string[]>([]);
   // Milliseconds since the last successful read, held as state rather than
   // computed from Date.now() during render (which would be an impure render and
   // could produce a different number on every incidental re-render). It resets
@@ -137,6 +141,34 @@ export default function ProductionConsole({
       setRetryError(e instanceof Error ? e.message : "Couldn't restart that step.");
     } finally {
       setRetrying(false);
+    }
+  };
+
+  // Approving IS the human review: it runs the safety gates, flips the script to
+  // approved, and queues fact-check — which now chains voices → mix → notes.
+  // Before this existed the console told the customer to "approve" and offered
+  // nowhere to do it; the only routes onward were /admin links behind Basic Auth.
+  const onApprove = async () => {
+    setApproving(true);
+    setApproveError(null);
+    setApproveReasons([]);
+    try {
+      const res = (await approveEpisodeScript(episodeId)) as {
+        success?: boolean;
+        error?: string;
+        reasons?: string[];
+      };
+      if (res?.success === false) {
+        setApproveError(res.error || "Couldn't approve the script.");
+        setApproveReasons(Array.isArray(res.reasons) ? res.reasons : []);
+        return;
+      }
+      await poll();
+      router.refresh();
+    } catch (e) {
+      setApproveError(e instanceof Error ? e.message : "Couldn't approve the script.");
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -245,9 +277,36 @@ export default function ProductionConsole({
               )}
 
               {s.state === "checkpoint" && (
-                <div className="prodNoteActions">
-                  <a href={tabHref("transcript")} className="btnPrimary" data-testid="prod-review-cta">Read the draft →</a>
-                </div>
+                <>
+                  <div className="prodNoteActions">
+                    {/* The action that actually advances the episode. Everything
+                        downstream is automatic once this is pressed. */}
+                    <button
+                      type="button"
+                      className="btnPrimary"
+                      disabled={approving}
+                      onClick={onApprove}
+                      data-testid="prod-approve-cta"
+                    >
+                      {approving && <span className="btnSpin" aria-hidden="true" />}
+                      {approving ? "Approving…" : "Approve & start production"}
+                    </button>
+                    <a href={tabHref("transcript")} className="btnGhost" data-testid="prod-review-cta">Read the draft first</a>
+                  </div>
+                  {approveError && (
+                    <div className="prodNote prodNote--error" role="alert" data-testid="prod-approve-error">
+                      <div>{approveError}</div>
+                      {approveReasons.length > 0 && (
+                        // The gate's own reasons, rendered where the customer is.
+                        // A correct server-side refusal that never reaches the
+                        // screen is only half a guard.
+                        <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
+                          {approveReasons.map((r) => <li key={r}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </li>
