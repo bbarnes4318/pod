@@ -27,6 +27,16 @@ const FRAME_PATTERNS: { re: RegExp; weight: number; label: string }[] = [
   { re: /\b(lay(ing)?|take|back|fade|bet|wager)\s+(the\s+)?[-+]?\d+(\.\d+)?\b/i, weight: 3, label: "wagering instruction" },
   { re: /\b(worth\s+laying|do\s+you\s+lay|are\s+you\s+laying|cover\s+the\s+spread|beat\s+the\s+number)\b/i, weight: 3, label: "wagering instruction" },
   { re: /\bvalue\s+on\b/i, weight: 2, label: "value-on" },
+  // A market named with its posted number, WITHOUT an article or a unit word:
+  // "Giants-Diamondbacks Total at 9.5", "line of 3", "spread opened at 2.5".
+  // Found by a Phase 4 verification run — "Total at 9.5: Desert Runs or Public
+  // Bait?" scored 0 and reached the customer's top 10 after the purge, because
+  // every other rule wanted either "the total" or "9.5-point".
+  { re: /\b(total|line|spread|run\s+line|puck\s+line)\s*(at|of|is|sits\s+at|opened\s+at|:)\s*[-+]?\d+(\.\d)?\b/i, weight: 3, label: "named market + number" },
+  // Sportsbook slang for a number that is baiting the public.
+  { re: /\b(public\s+bait|sucker\s+line|trap\s+game|square\s+money|fade\s+the\s+public)\b/i, weight: 3, label: "book slang" },
+  // "over 9.5" / "under 44.5" as the argument.
+  { re: /\b(over|under)\s+\d+(\.\d)?\b/i, weight: 2, label: "over/under number" },
   // A posted price quoted in the frame: -160, +136, -1.5, 48.5-point.
   { re: /[-+]\d{3,4}\b/, weight: 3, label: "quoted price" },
   // A half-point handicap ("2.5-Point", "48.5-point") only exists because a

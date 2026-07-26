@@ -57,7 +57,17 @@ const REAL_BETTING = [
   "Is 49ers-Seahawks Being Priced Like a Track Meet?",
   "Does a 2.5-Point Chargers-Broncos Line Mean Nobody Trusts Either Side?",
   "Are Giants-Commanders Odds Too Respectful to New York?",
+  // Found by the Phase 4 verification run: scored 0 under the original rules and
+  // reached the customer top 10 after the purge. No article before "Total", no
+  // unit word after the number.
+  "Giants-Diamondbacks Total at 9.5: Desert Runs or Public Bait?",
 ];
+// Deliberately NOT in the list above: "Is Chargers-Broncos a toss-up or a trap?"
+// is not classifiable from its title — "trap" is ordinary sports-radio language
+// for a letdown spot as often as it is a betting term. The purge caught it from
+// its SUMMARY, which is the right mechanism. Forcing a title-only rule to fire on
+// it would start retiring human-stakes topics, which is the failure mode that
+// matters more.
 const REAL_HUMAN = [
   "Did the Bucks make a smart win-now move with Gary Trent Jr., or just buy comfort?",
   "Are the Braves allowed to be 'free-falling' and still treated like contenders?",
