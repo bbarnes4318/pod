@@ -259,6 +259,28 @@ test.describe("Admin rundown — full flows", () => {
     await ctx.close();
   });
 
+  test("draft: an INCOMPLETE admin draft (title only, zero topics) survives a reload", async ({ page }, testInfo) => {
+    test.skip(!desktopOnly(testInfo));
+    // This is the Phase-1 regression that bit ADMIN specifically: the shared
+    // draft schema ran the creation rules at persistence time, so the
+    // builder's default state (manual, zero topics) was rejected by zod on
+    // every keystroke and the operator's first-screen work silently vanished
+    // on reload. The studio got the fix and a test; admin got the fix from
+    // the same diff without being exercised — this holds admin to the same
+    // assertion, through the admin UI.
+    await gotoAdmin(page);
+    await page.getByTestId("mode-manual").click();
+    await page.getByTestId("episode-title").fill("Admin title typed before any topics");
+    await expect(async () => {
+      const row = await e2eDb().adminDraft.findUnique({ where: { adminId: E2E.admin.username } });
+      expect((row?.state as { title?: string })?.title).toBe("Admin title typed before any topics");
+    }).toPass({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.getByTestId("admin-rundown")).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("episode-title")).toHaveValue("Admin title typed before any topics");
+    await page.getByTestId("discard-draft").click();
+  });
+
   test("draft: a selection whose eligibility CHANGED is surfaced, not silently dropped", async ({ page }, testInfo) => {
     test.skip(!desktopOnly(testInfo));
     await gotoAdmin(page);

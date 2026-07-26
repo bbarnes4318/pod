@@ -406,6 +406,9 @@ export interface ResolvedEpisodeConfiguration {
   };
   /** Public show identity, carried for the snapshot. NEVER includes ownerEmail. */
   identity: LoadedPodcastConfiguration["identity"] | null;
+  /** Non-fatal resolution notes the user should see (e.g. a legacy stored
+   *  format the studio can no longer produce was degraded to the default). */
+  warnings: string[];
 }
 
 export type PodcastConfigurationError =
@@ -517,9 +520,39 @@ export function resolveEpisodeConfiguration(
   // --- validate the FINAL resolved values (inherited or overridden alike) ---
   // Registry-driven (Prompt 7): the format must be registered, and the pinned
   // cast must fit ITS speaker bounds — two_host_debate keeps its cap of 2.
-  const resolvedFormat = getShowFormat(format.value);
+  let resolvedFormat = getShowFormat(format.value);
   if (!resolvedFormat) {
     return { ok: false, error: { code: "unsupported_format", format: format.value } };
+  }
+  // LEGACY SAFETY: a STORED show format that is registered but no longer
+  // generation-ready (e.g. three_person_panel saved before selectability was
+  // derived from the host cap) must never trap the owner. They cannot
+  // re-select it (the picker blocks it, savePodcastConfiguration rejects it),
+  // and generation would die later in the worker (hostCasting enforces
+  // speakerMin against a MAX_HOSTS-capped cast). Degrade the INHERITED value
+  // to the default format with a named warning instead of failing — an
+  // explicit EPISODE-level override asking for a blocked format is a fresh
+  // request, not legacy data, and still fails loudly below.
+  const warnings: string[] = [];
+  if (!isGenerationReadyFormat(resolvedFormat.id)) {
+    if (format.provenance === "episode_override") {
+      return { ok: false, error: { code: "unsupported_format", format: format.value } };
+    }
+    const fallback = getShowFormat(DEFAULT_FORMAT)!;
+    warnings.push(
+      `This show's saved format '${resolvedFormat.displayName}' needs ${resolvedFormat.speakerMin} voices, which the studio can't produce yet — this episode uses '${fallback.displayName}' instead. Pick a new format in show settings to clear this notice.`
+    );
+    format.value = fallback.id;
+    format.provenance = "application_default";
+    resolvedFormat = fallback;
+    // A legacy panel show may also carry a 3-seat stored cast; clamping here
+    // keeps the too_many_hosts check below from trapping it the same way.
+    if (hostIds.value.length > fallback.speakerMax) {
+      warnings.push(
+        `Only the first ${fallback.speakerMax} of the show's ${hostIds.value.length} saved hosts are seated for this episode.`
+      );
+      hostIds.value = hostIds.value.slice(0, fallback.speakerMax);
+    }
   }
   if (hostIds.value.length > resolvedFormat.speakerMax) {
     return { ok: false, error: { code: "too_many_hosts", count: hostIds.value.length } };
@@ -551,6 +584,7 @@ export function resolveEpisodeConfiguration(
       editorial: { verticals, teams, segmentCount, format, minDebateScore, scriptStyle, maxWords },
       production: { hostIds, ttsProvider, ttsVoiceOverrides, productionStyle, sfxDensity },
       identity: podcast ? podcast.identity : null,
+      warnings,
     },
   };
 }

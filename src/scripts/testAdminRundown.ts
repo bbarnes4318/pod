@@ -624,6 +624,21 @@ async function main() {
     assert(dup.success && JSON.stringify(dup.data.selectedTopicIds) === JSON.stringify(["t1", "t2"]), "ordered dedupe not applied");
   });
 
+  await check("a REALISTIC pre-#56 admin blob (with reuseOverride, no formatId) still parses", async () => {
+    const legacyBlob = {
+      mode: "manual", selectedTopicIds: ["t1"], leadTopicId: "t1", targetTopicCount: 3,
+      hostIds: H, productionStyle: "light", sfxDensity: "medium", title: "Legacy admin draft",
+      overrides: { hosts: false, targetTopicCount: false, selectionPreferences: false },
+      reuseOverride: true, reuseOverrideReason: "editorial exception",
+      activeStep: "review",
+    };
+    const parsed = AdminRundownDraftPersistSchema.safeParse(legacyBlob);
+    assert(parsed.success, `legacy admin blob must parse: ${!parsed.success ? parsed.error.issues[0]?.message : ""}`);
+    if (!parsed.success) return;
+    assert(parsed.data.reuseOverride === true && parsed.data.reuseOverrideReason === "editorial exception", "admin authority fields survive");
+    assert(parsed.data.title === "Legacy admin draft" && parsed.data.formatId === undefined, "state intact, formatId absent");
+  });
+
   await check("a corrupt stored draft resumes as a fresh builder rather than crashing", async () => {
     const db = makeFakeDb({ topics: [goodTopic("t1")] });
     db._adminDrafts.set("admin", { adminId: "admin", state: { mode: "nonsense", selectedTopicIds: 42 } });

@@ -127,9 +127,13 @@ byte-stable). See `docs/AUDIO_ASSET_ARCHITECTURE.md`.
 
 ## Prompt 7 addendum — the show format is part of the configuration
 
-`PodcastEditorialConfig.format` now accepts any REGISTERED, GENERATION-READY
-format from the show-format registry (no longer only `two_host_debate`), and
-the host cap is the format's `speakerMax` (1-4) instead of a global 2.
+`PodcastEditorialConfig.format` now accepts any REGISTERED, SELECTABLE format
+from the show-format registry (no longer only `two_host_debate`). Selectability
+is derived: `generationReady && speakerMin <= MAX_HOSTS` — see
+`docs/SHOW_FORMATS.md`. The effective host cap is
+`min(format.speakerMax, MAX_HOSTS)`; a legacy stored format that is no longer
+selectable degrades to the default at episode resolution with a named warning
+instead of failing.
 Episode snapshots are version 3 (frozen format + pinned cast; v1/v2 stay
 byte-stable). See `docs/SHOW_FORMATS.md`.
 

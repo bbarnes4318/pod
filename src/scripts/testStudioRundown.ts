@@ -173,6 +173,25 @@ async function run() {
     const res = await saveStudioDraft("oA", { mode: "manual", selectedTopicIds: [], targetTopicCount: 3, hostIds: ["h1", "h2", "h3"], activeStep: "hosts" }, db as any);
     assert(res.ok, "creation still enforces MAX_HOSTS; persistence must not");
   });
+  await check("persist: a REALISTIC pre-#56 stored blob still parses (no formatId, creation-shaped state)", () => {
+    // Byte-shape of a draft the OLD schema (shape + creation refinement) would
+    // have persisted: complete, coherent, and WITHOUT formatId (the field did
+    // not exist). Loosening the schema must never orphan these rows.
+    const legacyBlob = {
+      mode: "hybrid", selectedTopicIds: ["t2", "t1"], leadTopicId: "t2", targetTopicCount: 4,
+      podcastId: "pod-1", hostIds: ["host-a", "host-b"], ttsProvider: "elevenlabs",
+      ttsVoiceOverrides: { "host-a": { provider: "elevenlabs", voiceId: "v1" } },
+      productionStyle: "full", sfxDensity: "hype", title: "Legacy draft", description: "notes",
+      verticals: ["NFL"], leagueIds: ["NFL"], teams: ["Chiefs"], sport: "NFL", minDebateScore: 60,
+      overrides: { hosts: true, targetTopicCount: false, selectionPreferences: true },
+      activeStep: "review",
+    };
+    const parsed = RundownDraftPersistSchema.safeParse(legacyBlob);
+    assert(parsed.success, `legacy blob must parse: ${!parsed.success ? parsed.error.issues[0]?.message : ""}`);
+    if (!parsed.success) return;
+    assert(parsed.data.title === "Legacy draft" && parsed.data.formatId === undefined, "state intact, formatId absent not defaulted");
+    assert(parsed.data.overrides.hosts === true, "provenance flags survive");
+  });
   await check("precheck: automatic mode IGNORES kept picks instead of erroring", () => {
     const v = validateRundownDraft({ mode: "automatic", selectedTopicIds: ["a", "b"], targetTopicCount: 3, maxTopics: 6 });
     assert(v.ok, "kept picks are not a validation error in automatic");

@@ -117,10 +117,52 @@ async function pureTests() {
     assert(r.ok && JSON.stringify(r.resolved.editorial.verticals.value) === JSON.stringify(["NFL"]), "empty array does not override");
   });
 
-  await check("resolution validates the FINAL value: an unsupported inherited format is rejected", () => {
+  await check("resolution validates the FINAL value: an UNREGISTERED inherited format is rejected", () => {
     const bad = baseConfig({ editorial: { ...baseConfig().editorial, format: "solo_monologue" } });
     const r = resolveEpisodeConfiguration({ podcast: bad, overrides: {} });
     assert(!r.ok && r.error.code === "unsupported_format", "unsupported format rejected");
+  });
+
+  // C1 legacy safety: a REGISTERED format that is no longer selectable
+  // (three_person_panel, saved before the derived gate) must not trap the
+  // owner — episode creation degrades to the default with a named warning.
+  await check("legacy safety: a stored panel format DEGRADES to the default with a warning, never hard-fails", () => {
+    const legacy = baseConfig({ editorial: { ...baseConfig().editorial, format: "three_person_panel" } });
+    const r = resolveEpisodeConfiguration({ podcast: legacy, overrides: {} });
+    assert(r.ok, `must resolve, got ${JSON.stringify(!r.ok && r.error)}`);
+    if (!r.ok) return;
+    assert(r.resolved.editorial.format.value === "two_host_debate", "degraded to the default format");
+    assert(r.resolved.editorial.format.provenance === "application_default", "provenance says the app substituted it");
+    assert(r.resolved.warnings.length === 1 && r.resolved.warnings[0].includes("needs 3 voices"), `warning names the old format + why: ${r.resolved.warnings[0]}`);
+  });
+
+  await check("legacy safety: a stored ALIAS of a blocked format degrades the same way", () => {
+    const legacy = baseConfig({ editorial: { ...baseConfig().editorial, format: "roundtable" } });
+    const r = resolveEpisodeConfiguration({ podcast: legacy, overrides: {} });
+    assert(r.ok && r.resolved.editorial.format.value === "two_host_debate", "alias degrades to default");
+  });
+
+  await check("legacy safety: a 3-seat stored cast is clamped when the format degrades", () => {
+    const base = baseConfig();
+    const legacy = baseConfig({
+      editorial: { ...base.editorial, format: "three_person_panel" },
+      production: { ...base.production, hostIds: ["h1", "h2", "h3"] },
+    });
+    const r = resolveEpisodeConfiguration({ podcast: legacy, overrides: {} });
+    assert(r.ok, `must resolve, got ${JSON.stringify(!r.ok && r.error)}`);
+    if (!r.ok) return;
+    assert(r.resolved.production.hostIds.value.length === 2, "cast clamped to the fallback's seats");
+    assert(r.resolved.warnings.length === 2, "both the format and the cast clamp are named");
+  });
+
+  await check("an EXPLICIT episode override asking for a blocked format still fails loudly (fresh request, not legacy data)", () => {
+    const r = resolveEpisodeConfiguration({ podcast: null, overrides: { format: "three_person_panel" } });
+    assert(!r.ok && r.error.code === "unsupported_format", "fresh blocked-format request rejected");
+  });
+
+  await check("a clean resolution carries no warnings", () => {
+    const r = resolveEpisodeConfiguration({ podcast: baseConfig(), overrides: {} });
+    assert(r.ok && r.resolved.warnings.length === 0, "no spurious warnings");
   });
 
   await check("resolution rejects unknown provider, bad style, and >2 hosts", () => {

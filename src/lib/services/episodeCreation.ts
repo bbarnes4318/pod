@@ -92,7 +92,7 @@ async function computeCreationSnapshot(
   dbi: Parameters<typeof loadPodcastConfiguration>[0],
   input: { podcastId?: string; verticals?: string[]; hostIds?: string[]; targetTopicCount?: number; minDebateScore?: number },
   settings: { ttsProvider: string | null; ttsVoiceOverrides?: unknown; soundDesign?: { style?: string; sfxDensity?: string } }
-): Promise<EpisodeSnapshotColumns | undefined> {
+): Promise<{ snapshot: EpisodeSnapshotColumns; warnings: string[] } | undefined> {
   const podcast = input.podcastId ? await loadPodcastConfiguration(dbi, input.podcastId) : null;
   const resolved = resolveEpisodeConfiguration({
     podcast,
@@ -120,18 +120,21 @@ async function computeCreationSnapshot(
     : await resolveStandaloneSoundProfile(dbi);
   // PR 4: diversity-aware selection layered on the v5 selection (flag-gated).
   const diversity = await resolveCreationDiversity(dbi as unknown as DiversityHistoryDb, soundProfile, podcast ? { id: podcast.id, ownerId: podcast.ownerId } : null);
-  return buildEpisodeConfigurationSnapshot(
-    resolved.resolved,
-    new Date(),
-    soundProfile,
-    snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? []),
-    // Stable per-episode selection seed (snapshot v5). CSPRNG, not Math.random:
-    // the SELECTION is deterministic given this seed, which is frozen into the
-    // snapshot so the choice is reproducible; distinct episodes -> distinct
-    // seeds -> coherent cross-episode variety.
-    randomUUID(),
-    diversity
-  );
+  return {
+    snapshot: buildEpisodeConfigurationSnapshot(
+      resolved.resolved,
+      new Date(),
+      soundProfile,
+      snapshotCastFor(resolved.resolved.editorial.format.value, input.hostIds ?? []),
+      // Stable per-episode selection seed (snapshot v5). CSPRNG, not Math.random:
+      // the SELECTION is deterministic given this seed, which is frozen into the
+      // snapshot so the choice is reproducible; distinct episodes -> distinct
+      // seeds -> coherent cross-episode variety.
+      randomUUID(),
+      diversity
+    ),
+    warnings: resolved.resolved.warnings,
+  };
 }
 
 /** Configurable cap on topics per episode. Env-tunable DOWN, but never above
@@ -467,7 +470,11 @@ export async function createEpisodeDraft(
   let configuration = deps?.configuration;
   if (!configuration) {
     try {
-      configuration = await computeCreationSnapshot(dbi, input, settings);
+      const computed = await computeCreationSnapshot(dbi, input, settings);
+      configuration = computed?.snapshot;
+      // Resolver warnings (e.g. a legacy stored format degraded to the
+      // default) are user-facing facts about THIS episode — surface them.
+      if (computed?.warnings.length) reasons.push(...computed.warnings);
     } catch {
       // A snapshot must never break creation; the column default keeps it honest.
       configuration = undefined;

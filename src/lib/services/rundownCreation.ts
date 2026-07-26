@@ -131,6 +131,8 @@ interface ResolvedRundownConfiguration {
   ownerId: string | null;
   production: { ttsProvider?: string; ttsVoiceOverrides?: unknown; productionStyle?: string; sfxDensity?: string; minDebateScore?: number };
   configuration: EpisodeSnapshotColumns;
+  /** Non-fatal resolver notes (e.g. a legacy stored format was degraded). */
+  warnings: string[];
 }
 
 /**
@@ -240,6 +242,7 @@ async function resolveRundownConfiguration(
       // randomUUID() is the stable per-episode selection seed (snapshot v5):
       // deterministic selection frozen into the snapshot, distinct per episode.
       configuration: buildEpisodeConfigurationSnapshot(r, new Date(), soundProfile, snapshotCastFor(r.editorial.format.value, draft.hostIds ?? []), randomUUID()),
+      warnings: r.warnings,
     },
   };
 }
@@ -297,8 +300,12 @@ export async function createRundownEpisode(
     { db: ctx.db, configuration },
   );
 
+  // Resolver warnings (e.g. a legacy stored format degraded to the default)
+  // are user-facing facts about this episode — carry them with the reasons.
+  const reasonsOut = [...resolution.resolved.warnings, ...res.reasons];
+
   if (!res.ok || !res.episodeId) {
-    return { success: false, error: res.error || "Couldn't create the episode.", rejectedTopics: res.rejectedTopics, reasons: res.reasons };
+    return { success: false, error: res.error || "Couldn't create the episode.", rejectedTopics: res.rejectedTopics, reasons: reasonsOut };
   }
 
   const requestedCount = input.mode === "manual" ? orderedIds.length : draft.targetTopicCount ?? DEFAULT_TARGET_TOPIC_COUNT;
@@ -311,7 +318,7 @@ export async function createRundownEpisode(
     rejectedTopics: res.rejectedTopics,
     autoSelectedTopicIds: res.autoSelectedTopicIds,
     finalOrder: res.finalOrder,
-    reasons: res.reasons,
+    reasons: reasonsOut,
     requestedCount,
     concurrentlyDroppedIds: concurrentlyDropped.map((r) => r.id),
     reuseOverrideApplied,
