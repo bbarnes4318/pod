@@ -814,7 +814,15 @@ export async function getPublishState(episodeId: string) {
     publishBlockers = ["There's no script yet."];
   } else {
     try {
-      const gate = await validateEpisodeForRss(latestScriptId, "publish");
+      // Validate the action the button will ACTUALLY perform. publishOwnedEpisode
+      // promotes a content_ready episode to publish_ready itself before
+      // publishing, so validating with "publish" here reported
+      //   "Episode status is 'content_ready', must be 'publish_ready'…"
+      // and disabled the button on an episode that was perfectly publishable.
+      // A readiness check that disagrees with the action it guards is worse than
+      // no check: it blocks work rather than merely failing to explain it.
+      const action = ep.status === "content_ready" ? "prepare" : "publish";
+      const gate = await validateEpisodeForRss(latestScriptId, action);
       canPublish = !!gate.eligible;
       publishBlockers = gate.eligible ? [] : (gate.errorReasons || []).slice(0, 12);
     } catch (err: any) {
