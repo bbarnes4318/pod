@@ -20,6 +20,10 @@ import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports
 import { getLLMProvider } from "../providers/llm/factory";
 import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
+// Stage-chaining enqueuers: build:episode -> generate:script, and
+// generate:topics -> generate:research-brief. Without these two chains an
+// episode never leaves 'draft' and a topic never becomes pickable.
+import { queueScriptGenerationJob, queueResearchBriefGenerationJob } from "./podcastQueue";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
@@ -1279,6 +1283,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
 
     // 5. Validation loop
     let insertedCount = 0;
+    const insertedTopicIds: string[] = [];
     let skippedCount = 0;
     let rejectedCount = 0;
     let duplicateCount = 0;
@@ -1477,7 +1482,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       }
 
       // Save valid TopicCandidate
-      await db.topicCandidate.create({
+      const createdTopic = await db.topicCandidate.create({
         data: {
           title: topic.title.trim(),
           sport: topicSport,
@@ -1492,8 +1497,33 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           status: "pending",
         },
       });
+      insertedTopicIds.push(createdTopic.id);
       insertedCount++;
     }
+
+    // CHAIN THE RESEARCH BRIEF. Talkability is scored almost entirely FROM the
+    // brief (specificity from its facts, tension from its stances and
+    // counter-arguments), so a topic without one scores ~10 against a minimum
+    // of 35 — it is not a weak topic, it is a structurally unusable one.
+    //
+    // Nothing chained brief generation, so freshly generated topics landed in
+    // the pool permanently unpickable and the studio picker filled up with
+    // takes a producer could look at but never use.
+    let briefJobsQueued = 0;
+    const briefEnqueueErrors: string[] = [];
+    for (const topicId of insertedTopicIds) {
+      try {
+        await queueResearchBriefGenerationJob({ topicId });
+        briefJobsQueued++;
+      } catch (e) {
+        // One failed enqueue must not lose the other topics' briefs.
+        briefEnqueueErrors.push(`${topicId}: ${e instanceof Error ? e.message : "unknown"}`);
+      }
+    }
+    if (briefEnqueueErrors.length > 0) {
+      console.error(`[Worker] ${briefEnqueueErrors.length} research-brief enqueue(s) failed:`, briefEnqueueErrors.slice(0, 5));
+    }
+    console.log(`[Worker] Queued ${briefJobsQueued}/${insertedTopicIds.length} research brief job(s) for the new topics.`);
 
     // 6. Complete JobLog
     const outputObj = {
@@ -1513,6 +1543,10 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       skippedWeakEvidenceCount,
       belowScoreCount,
       skippedRecordsReasonSummary: skippedRecordsReasonSummary.slice(0, 20),
+      // Brief coverage is what decides whether these topics are pickable at
+      // all, so it belongs in the job's own output, not just the console.
+      briefJobsQueued,
+      briefEnqueueErrors: briefEnqueueErrors.slice(0, 5),
     };
 
     await db.jobLog.update({
@@ -2463,16 +2497,44 @@ async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
   try {
     const res = await buildEpisodeFromTopics(job.data);
 
+    // CHAIN THE SCRIPT. Building an episode produced a DRAFT and stopped —
+    // nothing downstream advanced it, so every episode from the recurring
+    // scheduler and from /app/create sat at `draft` forever while this job
+    // reported "completed". The studio path enqueues its own script job; these
+    // two callers had no such step, which made scheduled generation silently
+    // non-functional rather than loudly broken.
+    let scriptJobId: string | null = null;
+    let scriptEnqueueError: string | null = null;
+    if (res.episodeId) {
+      try {
+        const sj = await queueScriptGenerationJob({ episodeId: res.episodeId });
+        scriptJobId = String(sj.id ?? "");
+        console.log(`[Worker] Episode Build chained script generation: job=${scriptJobId}`);
+      } catch (e) {
+        // The episode exists and is valid; failing to enqueue is recoverable by
+        // re-triggering the stage, so record it rather than losing the episode.
+        scriptEnqueueError = e instanceof Error ? e.message : "unknown enqueue error";
+        console.error(`[Worker] Episode Build could not enqueue script generation: ${scriptEnqueueError}`);
+      }
+    }
+
+    const output = { ...res, scriptJobId, scriptEnqueued: !!scriptJobId, scriptEnqueueError };
+
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
-        status: "completed",
-        output: res as any,
+        // An episode nothing will ever advance is not a completed build. Say so
+        // here, where an operator reading job logs can actually see it.
+        status: scriptEnqueueError ? "failed" : "completed",
+        error: scriptEnqueueError
+          ? `Episode ${res.episodeId} was created but script generation could not be queued: ${scriptEnqueueError}. The episode is stuck at 'draft' until the script stage is re-triggered.`
+          : undefined,
+        output: output as any,
       },
     });
 
     console.log(`[Worker] Episode Build completed. Episode ID: ${res.episodeId}`);
-    return res;
+    return output;
   } catch (err: any) {
     console.error(`[Worker] Episode Build failed:`, err.message);
     await db.jobLog.update({
