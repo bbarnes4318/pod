@@ -147,6 +147,36 @@ async function run() {
     assert((await loadStudioDraft("oA", db as any)) === null, "corrupt → null");
     assert(!(await saveStudioDraft("oB", { mode: "bogus" } as any, db as any)).ok && !db._drafts.has("oB"), "invalid rejected, nothing persisted");
   });
+
+  // ---- Persistence is PERMISSIVE: a draft is a scratchpad, not an episode ----
+  await check("persist: manual + zero topics (the step-1 default) SAVES and round-trips", async () => {
+    const db = makeFakeDb({});
+    const state = { mode: "manual", selectedTopicIds: [], targetTopicCount: 3, hostIds: H, title: "Working title", activeStep: "show" };
+    const res = await saveStudioDraft("oA", state, db as any);
+    assert(res.ok, `must save (was silently rejected before): ${(res as any).error ?? ""}`);
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(loaded?.title === "Working title" && loaded.mode === "manual", "step-1 state restored");
+  });
+  await check("persist: formatId is a real draft field and round-trips", async () => {
+    const db = makeFakeDb({});
+    await saveStudioDraft("oA", { mode: "manual", selectedTopicIds: [], targetTopicCount: 3, hostIds: H, formatId: "three_person_panel", activeStep: "hosts" }, db as any);
+    const loaded = await loadStudioDraft("oA", db as any);
+    assert(loaded?.formatId === "three_person_panel", "formatId restored");
+  });
+  await check("persist: automatic mode with KEPT picks saves (they're inactive, not invalid)", async () => {
+    const db = makeFakeDb({});
+    const res = await saveStudioDraft("oA", { mode: "automatic", selectedTopicIds: ["t1", "t2"], leadTopicId: "t1", targetTopicCount: 3, hostIds: H, activeStep: "topics" }, db as any);
+    assert(res.ok, "kept picks persist across a reload in automatic mode");
+  });
+  await check("persist: a transient 3rd host doesn't void the autosave", async () => {
+    const db = makeFakeDb({});
+    const res = await saveStudioDraft("oA", { mode: "manual", selectedTopicIds: [], targetTopicCount: 3, hostIds: ["h1", "h2", "h3"], activeStep: "hosts" }, db as any);
+    assert(res.ok, "creation still enforces MAX_HOSTS; persistence must not");
+  });
+  await check("precheck: automatic mode IGNORES kept picks instead of erroring", () => {
+    const v = validateRundownDraft({ mode: "automatic", selectedTopicIds: ["a", "b"], targetTopicCount: 3, maxTopics: 6 });
+    assert(v.ok, "kept picks are not a validation error in automatic");
+  });
   await check("schema: ONE platform max — targetTopicCount 0, 7, 24 all rejected; 6 allowed", () => {
     const base = { mode: "automatic", selectedTopicIds: [], hostIds: H, activeStep: "topics" };
     assert(!RundownDraftStateSchema.safeParse({ ...base, targetTopicCount: 0 }).success, "0 rejected");
@@ -226,13 +256,19 @@ async function run() {
     assert(JSON.stringify(dedupeIds(["a", "b", "a"])) === JSON.stringify(["a", "b"]), "dedupe");
     assert(JSON.stringify(leadFirst(["a", "b", "c"], "c")) === JSON.stringify(["c", "a", "b"]), "leadFirst");
   });
-  await check("mode transition: → Automatic clears picks + lead", () => {
+  await check("mode transition: → Automatic KEEPS picks (inactive) and says so", () => {
     const r = applyModeChange({ mode: "manual", selectedTopicIds: ["a", "b"], leadTopicId: "a", targetTopicCount: 3 }, "automatic", 6);
-    assert(r.selectedTopicIds.length === 0 && r.leadTopicId === null, "automatic clears selection + lead");
+    assert(JSON.stringify(r.selectedTopicIds) === JSON.stringify(["a", "b"]) && r.leadTopicId === "a", "picks + lead kept in state");
+    assert(!!r.note && r.note.includes("kept"), "note explains the picks are kept");
   });
-  await check("mode transition: Automatic → Manual starts empty (no resurrected ids)", () => {
-    const r = applyModeChange({ mode: "automatic", selectedTopicIds: [], leadTopicId: null, targetTopicCount: 4 }, "manual", 6);
-    assert(r.selectedTopicIds.length === 0, "no stale ids resurrected");
+  await check("mode transition: Automatic → Manual restores the kept picks", () => {
+    const r = applyModeChange({ mode: "automatic", selectedTopicIds: ["a", "b"], leadTopicId: "a", targetTopicCount: 4 }, "manual", 6);
+    assert(JSON.stringify(r.selectedTopicIds) === JSON.stringify(["a", "b"]) && r.leadTopicId === "a", "kept picks restored");
+  });
+  await check("mode transition: round-trip Manual → Automatic → Manual loses nothing", () => {
+    const auto = applyModeChange({ mode: "manual", selectedTopicIds: ["a", "b", "c"], leadTopicId: "b", targetTopicCount: 3 }, "automatic", 6);
+    const back = applyModeChange({ mode: "automatic", ...auto }, "manual", 6);
+    assert(JSON.stringify(back.selectedTopicIds) === JSON.stringify(["a", "b", "c"]) && back.leadTopicId === "b", "full selection survives the round trip");
   });
   await check("mode transition: Manual → Hybrid preserves picks and clamps target ≥ pinned", () => {
     const r = applyModeChange({ mode: "manual", selectedTopicIds: ["a", "b", "c", "d"], leadTopicId: "a", targetTopicCount: 2 }, "hybrid", 6);
