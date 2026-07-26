@@ -37,7 +37,49 @@ export interface OutlineDrivenArgs {
   maxTokens: number;
   /** The cast host names in seat order (1-4) — the only valid speakerName values. */
   speakerNames: string[];
+  /** Model for the OUTLINE call (script_outline role). Defaults to the movement
+   *  model when absent, which is what the single-provider callers rely on. */
+  outlineLlm?: LLMProvider;
+  /** Second dialogue model for a challenger comparison run. When present, each
+   *  movement is generated twice from IDENTICAL inputs and both results are
+   *  reported; the challenger's segments are NEVER mixed into the episode. */
+  challengerLlm?: LLMProvider;
+  /** Label for the challenger in logs, e.g. "nvidia/moonshotai/kimi-k2.6". */
+  challengerLabel?: string;
   log: (msg: string) => void;
+}
+
+/**
+ * Structural check for a generated script object, applied at the provider edge
+ * so a broken shape triggers the one allowed repair (and then the role's next
+ * model) instead of surfacing three services later as a mysteriously short
+ * episode. Returns an error message, or null when the shape is usable.
+ */
+export function validateScriptShape(value: unknown): string | null {
+  const segments = (value as { segments?: unknown })?.segments;
+  if (!Array.isArray(segments)) return "Response is missing the required 'segments' array.";
+  if (segments.length === 0) return "Response contains zero segments.";
+  let lines = 0;
+  for (const seg of segments) {
+    const segLines = (seg as { lines?: unknown })?.lines;
+    if (!Array.isArray(segLines)) return "A segment is missing its 'lines' array.";
+    lines += segLines.length;
+  }
+  if (lines === 0) return "Every segment is empty — the script has no lines.";
+  return null;
+}
+
+/** One movement's result, plus which model produced it. */
+export interface ChallengerMovementResult {
+  movement: number;
+  label: string;
+  ok: boolean;
+  lines: number;
+  words: number;
+  ms: number;
+  /** Honest failure reporting — an incomplete generation is reported, not hidden. */
+  error?: string;
+  segments?: any[];
 }
 
 interface ConversationState {
@@ -82,10 +124,14 @@ Write spoken language. No essay paragraphs, no debate-club signposting, no greet
 export async function generateOutlineDrivenScript(
   llm: LLMProvider,
   args: OutlineDrivenArgs
-): Promise<{ segments: any[] }> {
+): Promise<{ segments: any[]; challenger?: ChallengerMovementResult[] }> {
   const creativeSystemPrompt = compactCreativeSystemPrompt(args.systemPrompt);
-  const beats = await generateEpisodeOutline(llm, args, creativeSystemPrompt);
+  // The outline is its own role. A caller that passes only one provider (the
+  // A/B harness, the local test scripts) keeps the old single-model behavior.
+  const outlineLlm = args.outlineLlm ?? llm;
+  const beats = await generateEpisodeOutline(outlineLlm, args, creativeSystemPrompt);
   args.log(`Story spine: ${beats.length} beats across three conversational movements.`);
+  const challengerResults: ChallengerMovementResult[] = [];
 
   const acts = groupIntoMovements(beats);
   const rawSegments: any[] = [];
@@ -100,26 +146,32 @@ export async function generateOutlineDrivenScript(
     const remainingWords = Math.max(180, totalWordTarget - wordsWritten);
     const softWordTarget = Math.max(180, Math.round(remainingWords / remainingActs));
 
+    // IDENTICAL INPUTS for the primary and (optionally) the challenger: same
+    // outline, same evidence, same prior-movement context, same relationship
+    // state, same character prompt, same word target, same token allowance.
+    // Anything else would make the comparison meaningless.
+    const actArgs: ActArgs = {
+      creativeSystemPrompt,
+      episodeTitle: args.episodeTitle,
+      topicsPrompts: args.topicsPrompts,
+      beats,
+      actBeats: acts[actIdx],
+      actNumber: actIdx + 1,
+      actCount: acts.length,
+      claimsSoFar,
+      lastLines,
+      state,
+      softWordTarget,
+      temperature: args.temperature,
+      maxTokens: args.maxTokens,
+      speakerNames: args.speakerNames,
+    };
+
     let result: { segments: any[]; stateAfter: ConversationState } | null = null;
     let lastErr: any = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        result = await generateActSegments(llm, {
-          creativeSystemPrompt,
-          episodeTitle: args.episodeTitle,
-          topicsPrompts: args.topicsPrompts,
-          beats,
-          actBeats: acts[actIdx],
-          actNumber: actIdx + 1,
-          actCount: acts.length,
-          claimsSoFar,
-          lastLines,
-          state,
-          softWordTarget,
-          temperature: args.temperature,
-          maxTokens: args.maxTokens,
-          speakerNames: args.speakerNames,
-        });
+        result = await generateActSegments(llm, actArgs);
         break;
       } catch (err: any) {
         lastErr = err;
@@ -128,6 +180,40 @@ export async function generateOutlineDrivenScript(
     }
     if (!result) {
       throw new Error(`Movement ${actIdx + 1} generation failed twice: ${lastErr?.message}`);
+    }
+
+    // Challenger run. Its output is SCORED and STORED, never spliced into this
+    // episode — one episode is written by one dialogue model.
+    if (args.challengerLlm) {
+      const label = args.challengerLabel || "challenger";
+      const startedAt = Date.now();
+      try {
+        const alt = await generateActSegments(args.challengerLlm, actArgs);
+        const stats = countMovement(alt.segments);
+        challengerResults.push({
+          movement: actIdx + 1,
+          label,
+          ok: true,
+          lines: stats.lines,
+          words: stats.words,
+          ms: Date.now() - startedAt,
+          segments: alt.segments,
+        });
+        args.log(`Challenger ${label} movement ${actIdx + 1}: ${stats.lines} lines / ${stats.words} words.`);
+      } catch (err: any) {
+        // Reported, never swallowed: a challenger that cannot complete the
+        // movement is exactly the finding the comparison exists to produce.
+        challengerResults.push({
+          movement: actIdx + 1,
+          label,
+          ok: false,
+          lines: 0,
+          words: 0,
+          ms: Date.now() - startedAt,
+          error: err?.message || String(err),
+        });
+        args.log(`Challenger ${label} movement ${actIdx + 1} FAILED: ${err?.message}`);
+      }
     }
 
     let movementWords = 0;
@@ -152,7 +238,24 @@ export async function generateOutlineDrivenScript(
     );
   }
 
-  return { segments: rawSegments };
+  return {
+    segments: rawSegments,
+    challenger: challengerResults.length > 0 ? challengerResults : undefined,
+  };
+}
+
+/** Lines and spoken words in a movement's segments. */
+function countMovement(segments: any[]): { lines: number; words: number } {
+  let lines = 0;
+  let words = 0;
+  for (const seg of segments || []) {
+    for (const line of seg?.lines || []) {
+      if (!line || typeof line.text !== "string") continue;
+      lines++;
+      words += stripAudioTags(line.text).split(/\s+/).filter(Boolean).length;
+    }
+  }
+  return { lines, words };
 }
 
 function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
@@ -287,7 +390,15 @@ async function generateEpisodeOutline(
       prompt,
       systemPrompt: creativeSystemPrompt,
       temperature: Math.min(args.temperature, 0.7),
+      // The outline allowance stays at 7,000 — unchanged by role routing.
       maxTokens: Math.min(args.maxTokens, 7000),
+      // The outline is the plan every later movement is written against, so a
+      // beat-less outline is rejected at the edge rather than after the
+      // five-beat floor check below has already discarded the whole call.
+      validate: (v) =>
+        Array.isArray((v as { beats?: unknown })?.beats)
+          ? null
+          : "Outline is missing the required 'beats' array.",
     })
   );
 
@@ -413,7 +524,11 @@ Return valid JSON only:
       prompt,
       systemPrompt: args.creativeSystemPrompt,
       temperature: args.temperature,
+      // The caller's movement allowance, passed through untouched (16,000 in
+      // production). A provider that cannot honor it must fail loudly, not
+      // quietly return half a movement.
       maxTokens: args.maxTokens,
+      validate: validateScriptShape,
     })
   );
 

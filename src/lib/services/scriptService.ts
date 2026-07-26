@@ -1,6 +1,6 @@
 import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "../db";
-import { getScriptLLMProvider, getVerifyLLMProvider } from "../providers/llm/factory";
+import { getRoleLLMProvider, resolveScriptChallenger, roleProviderLabel } from "../providers/llm/routing";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { reviewFactualLinesForRewrite } from "./semanticReview";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
@@ -17,7 +17,7 @@ import {
 } from "../audio/pauseTiming";
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
-import { generateOutlineDrivenScript, rewriteLinesForGrounding } from "./scriptOutlineEngine";
+import { generateOutlineDrivenScript, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
@@ -49,6 +49,14 @@ export interface ScriptBuildResult {
   selfVerify?: import("./scriptSelfVerify").SelfVerifyReport;
   /** Balanced-negation pass — frame counts before/after the rewrite rounds. */
   antithesis?: import("./scriptAntithesisPass").AntithesisPassReport;
+  /** Dialogue-challenger comparison, when SCRIPT_CHALLENGER_ENABLED=true. The
+   *  challenger's dialogue is NEVER used in this episode — only measured. */
+  challenger?: {
+    label: string;
+    perMovement: import("./scriptOutlineEngine").ChallengerMovementResult[];
+  };
+  /** Which model actually played each routed role in this run. */
+  roleRouting?: Record<string, string>;
   /** FIX 3 evidence-packet audit — how rich the facts actually are. */
   evidenceAudit?: {
     topicCount: number;
@@ -446,8 +454,38 @@ Delivery field meanings:
   // back over the same points; the outline assigns every beat and fact ONCE,
   // and each act call receives what has already been said so it can only
   // move forward. Falls back to single-shot generation if outlining fails.
-  const llm = getScriptLLMProvider();
+  //
+  // TWO ROLES, TWO MODELS. Outlining is architectural reasoning; writing the
+  // movements is spoken-dialogue craft. They are separated here so each can be
+  // routed to the model that is actually best at it — the outline model never
+  // writes the dialogue, and the dialogue model never has to plan the episode.
+  const llm = getRoleLLMProvider("script_movement");
+  const outlineLlm = getRoleLLMProvider("script_outline");
+
+  // DIALOGUE CHALLENGER (development only, off unless explicitly enabled).
+  // Generates each movement a SECOND time from byte-identical inputs so two
+  // candidate dialogue models can be compared on this application's real work
+  // instead of on generic benchmarks. The challenger's lines never enter the
+  // episode — see generateOutlineDrivenScript.
+  const challenger = resolveScriptChallenger();
+  if (challenger) {
+    result.reasons.push(
+      `Dialogue challenger ENABLED: ${challenger.label} will re-generate every movement from identical inputs for comparison. ` +
+        `Its dialogue is measured only and is never spliced into this episode.`
+    );
+  }
+
+  result.roleRouting = {
+    script_outline: roleProviderLabel("script_outline"),
+    script_movement: roleProviderLabel("script_movement"),
+    script_verification: roleProviderLabel("script_verification"),
+    script_rewrite: roleProviderLabel("script_rewrite"),
+    continuity_report: roleProviderLabel("continuity_report"),
+  };
+
   const temperature = Number(process.env.SCRIPT_GEN_TEMPERATURE) || 0.85;
+  // 16,000 is the movement allowance and it is NOT negotiable downward — a
+  // silently halved budget truncates a movement mid-JSON.
   const maxTokens = Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000;
   let llmResult: any;
 
@@ -461,8 +499,19 @@ Delivery field meanings:
       temperature,
       maxTokens,
       speakerNames: speakers.hostNames,
+      outlineLlm,
+      challengerLlm: challenger?.provider,
+      challengerLabel: challenger?.label,
       log: (msg) => result.reasons.push(msg),
     });
+    if (challenger && llmResult?.challenger) {
+      result.challenger = { label: challenger.label, perMovement: llmResult.challenger };
+      const failed = llmResult.challenger.filter((c: { ok: boolean }) => !c.ok).length;
+      result.reasons.push(
+        `Challenger ${challenger.label}: ${llmResult.challenger.length - failed}/${llmResult.challenger.length} movement(s) completed` +
+          `${failed ? ` — ${failed} FAILED (see per-movement errors)` : ""}.`
+      );
+    }
   } catch (outlineErr: any) {
     console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
     result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);
@@ -475,6 +524,10 @@ Delivery field meanings:
           systemPrompt: systemPromptWithContinuity,
           temperature,
           maxTokens,
+          // Reject a segment-less or line-less script at the provider edge. A
+          // structure this broken is the one case worth one repair request
+          // before the role's next model is tried.
+          validate: validateScriptShape,
         })
       );
     } catch (err: any) {
@@ -501,25 +554,31 @@ Delivery field meanings:
   // restatement) up to N times. Best-effort: a self-verify error never blocks
   // generation — the gate still catches anything left.
   try {
-    // Verification provider: the semantic reviewer AND the grounding rewrites
-    // are structured grading/rewrite tasks, so they run on the cheaper VERIFY
-    // model (getVerifyLLMProvider — VERIFY_LLM_PROVIDER / VERIFY_MODEL), while
-    // the flagship stays on script WRITING. One instance so its tokens are
-    // metered together.
-    const verifyLlm = getVerifyLLMProvider();
+    // TWO DISTINCT ROLES, deliberately not the same model configuration:
+    //
+    //   script_verification — DIAGNOSES: which lines are ungrounded and why.
+    //   script_rewrite      — REPAIRS: rewrites those lines as dialogue.
+    //
+    // The model that finds a problem must not be the one that rewrites
+    // character dialogue: a grader asked to rewrite flattens speech into
+    // analysis. Keeping them separate also keeps the verifier independent of
+    // whoever wrote the script.
+    const verifyLlm = getRoleLLMProvider("script_verification");
+    const rewriteLlm = getRoleLLMProvider("script_rewrite");
     const evidencePanelItems = toEvidencePanel(evidenceTexts);
     result.reasons.push(`Self-verify reviewer evidence: ${JSON.stringify(evidenceFingerprint(evidenceTexts))}.`);
     const usageOf = (p: any) =>
       typeof p?.getAccumulatedUsage === "function" ? p.getAccumulatedUsage() : { inputTokens: 0, outputTokens: 0, requestCount: 0 };
-    const before = { llm: usageOf(llm), rev: usageOf(verifyLlm), t: Date.now() };
+    const before = { llm: usageOf(llm), rev: usageOf(verifyLlm), rw: usageOf(rewriteLlm), t: Date.now() };
 
     const sv = await selfVerifyAndCorrect(llmResult.segments, {
       evidenceByRefId,
       fullEvidenceText: evidenceTexts.join("  "),
       hostNames: speakers.hostNames,
       maxAttempts: Number(process.env.SCRIPT_SELFVERIFY_MAX_ATTEMPTS) || 3,
-      // ONE batched rewrite call per round for ALL flagged lines.
-      rewrite: (items) => rewriteLinesForGrounding(verifyLlm, items, systemPrompt),
+      // ONE batched rewrite call per round for ALL flagged lines — on the
+      // REWRITE role's model, not the verifier's.
+      rewrite: (items) => rewriteLinesForGrounding(rewriteLlm, items, systemPrompt),
       maxSemanticRounds: Number(process.env.SCRIPT_SELFVERIFY_SEMANTIC_ROUNDS) || 2,
       semanticReview: (reviewLines) =>
         withLlmStage("script:selfverify-semantic", () =>
@@ -532,12 +591,17 @@ Delivery field meanings:
         ),
     });
 
-    const after = { llm: usageOf(llm), rev: usageOf(verifyLlm) };
+    // Sum across every provider the pass touched — writer, verifier and
+    // rewriter are now three role-routed instances, and a delta that counted
+    // only two of them would understate the pass.
+    const after = { llm: usageOf(llm), rev: usageOf(verifyLlm), rw: usageOf(rewriteLlm) };
     sv.latencyMs = Date.now() - before.t;
+    const delta = (k: "inputTokens" | "outputTokens" | "requestCount") =>
+      after.llm[k] - before.llm[k] + (after.rev[k] - before.rev[k]) + (after.rw[k] - before.rw[k]);
     sv.tokensDelta = {
-      inputTokens: after.llm.inputTokens - before.llm.inputTokens + (after.rev.inputTokens - before.rev.inputTokens),
-      outputTokens: after.llm.outputTokens - before.llm.outputTokens + (after.rev.outputTokens - before.rev.outputTokens),
-      requestCount: after.llm.requestCount - before.llm.requestCount + (after.rev.requestCount - before.rev.requestCount),
+      inputTokens: delta("inputTokens"),
+      outputTokens: delta("outputTokens"),
+      requestCount: delta("requestCount"),
     };
     result.selfVerify = sv;
     result.reasons.push(
@@ -747,7 +811,10 @@ Delivery field meanings:
   // disturbed. Best-effort by default: a failure never blocks generation, and
   // surviving frames are marked needsHumanReview rather than dropped.
   try {
-    const antithesisLlm = getVerifyLLMProvider();
+    // The antithesis pass REWRITES dialogue, so it is the script_rewrite role —
+    // not the verifier. (In LLM_ROUTING_PROFILE=legacy that resolves to exactly
+    // the verifier configuration this call has always used.)
+    const antithesisLlm = getRoleLLMProvider("script_rewrite");
     const anti = await antithesisPassAndCorrect(finalSegments, {
       maxRounds: Number(process.env.SCRIPT_ANTITHESIS_ROUNDS) || 2,
       rewrite: (items) => rewriteLinesForGrounding(antithesisLlm, items, systemPrompt),
@@ -935,7 +1002,10 @@ Delivery field meanings:
   // counts produced episodes only) can advance the season. See the two-phase
   // commit note in showContinuityService.
   if (continuity) {
-    const claim = await reportContinuityClaim(llm, {
+    // Its own role: a literal transcript audit at temperature 0, not creative
+    // writing. Legacy keeps it on the script provider, which is the instance
+    // this call has always reused.
+    const claim = await reportContinuityClaim(getRoleLLMProvider("continuity_report"), {
       scriptText: plainText,
       runners: continuity.runners,
       log: (m) => result.reasons.push(m),

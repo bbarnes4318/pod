@@ -17,7 +17,7 @@ import { Worker, Job } from "bullmq";
 import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
-import { getLLMProvider } from "../providers/llm/factory";
+import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
 import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
@@ -1278,9 +1278,10 @@ Schema for each topic candidate in the array:
     const prompt = `Here is the current real-world sports evidence in the database. Analyze it and generate 10-20 debate topics:
 ${JSON.stringify(serializedEvidence, null, 2)}`;
 
-    // Resolve LLM Provider
-    const llm = getLLMProvider();
-    
+    // Resolve the LLM for the topic_generation ROLE. Many candidates per run and
+    // strict structured output — never the slow, expensive script configuration.
+    const llm = getRoleLLMProvider("topic_generation");
+
     let llmResult: any;
     let parseErrorCount = 0;
     let providerError = null;
@@ -1291,6 +1292,13 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           prompt,
           systemPrompt,
           temperature: 0.25,
+          // Reject a response that carries no candidates at the provider edge,
+          // so the repair attempt happens before the validation loop below sees
+          // an empty batch and reports "0 topics inserted" as a normal outcome.
+          validate: (v) =>
+            Array.isArray((v as { topics?: unknown })?.topics)
+              ? null
+              : "Response is missing the required 'topics' array.",
         })
       );
     } catch (err: any) {
@@ -1650,11 +1658,15 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
 
 // Helper to classify sports topics using LLM (with heuristic fallback)
 async function classifyTopic(title: string, summary: string): Promise<string> {
-  if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+  // Ask ROUTING whether this role has a real model, not LLM_PROVIDER directly.
+  // Reading the global variable would send classification to the heuristic
+  // whenever a profile routes this role somewhere other than the global
+  // provider. In the legacy profile the answer is identical to the old check.
+  if (!roleHasRealProvider("topic_classification")) {
     return runHeuristicClassification(title, summary);
   }
 
-  const llm = getLLMProvider();
+  const llm = getRoleLLMProvider("topic_classification");
   const systemPrompt = `You are an expert sports media classifier. Classify the given sports topic into exactly one of these types:
 - game_preview
 - betting_market
@@ -1678,6 +1690,12 @@ Return valid JSON matching this schema:
         prompt,
         systemPrompt,
         temperature: 0.1,
+        // Classification is schema-validated. An invalid label falls through to
+        // the heuristic below — never to unconstrained creative prose.
+        validate: (v) =>
+          typeof (v as { classification?: unknown })?.classification === "string"
+            ? null
+            : "Response is missing the required 'classification' string.",
       })
     );
     const type = res.classification?.trim().toLowerCase();
@@ -2103,9 +2121,10 @@ Schema:
     const prompt = `Here is the current real-world sports topic and the supporting evidence records. Prepare the structured research brief:
 ${JSON.stringify(serializedEvidence, null, 2)}`;
 
-    // Resolve LLM Provider
-    const llm = getLLMProvider();
-    
+    // Resolve the LLM for the research_brief ROLE: source consolidation and
+    // claim extraction with provenance — a reasoning job, not a writing job.
+    const llm = getRoleLLMProvider("research_brief");
+
     let llmResult: any;
     // DURABLE-EVIDENCE PRECHECK. The brief is rejected at the end if nothing
     // durable was cited, and routed research is stripped before that decision.

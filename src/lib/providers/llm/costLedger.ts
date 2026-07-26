@@ -29,8 +29,36 @@ export interface LlmCallRecord {
   tkCacheRead: number;
   /** Cache-write input tokens (Anthropic cache_creation_input_tokens). */
   tkCacheWrite: number;
+  /** Provider-reported reasoning tokens. 0 when the provider reports none —
+   *  never inferred from output length. */
+  tkReasoning: number;
   durationMs: number;
   at: string; // ISO timestamp
+  // ---- role-based routing attribution (all optional: a direct provider call
+  // that was not routed by role records nothing here rather than a guess) ----
+  /** LLMRole this call served. */
+  role?: string;
+  /** LLM_ROUTING_PROFILE in force. */
+  profile?: string;
+  /** Which resolution rung produced this provider/model. */
+  candidateSource?: string;
+  /** HTTP attempts made for this call, including the first. */
+  attempts?: number;
+  /** Retries of a transient failure against this same provider/model. */
+  retries?: number;
+  /** How many EARLIER candidates in the role chain failed before this one ran. */
+  fallbacks?: number;
+  /** Structured-output repair requests made for this call (0 or 1). */
+  repairs?: number;
+  /** Did the call ultimately succeed? Failures are recorded too. */
+  ok?: boolean;
+  /** Failure category when ok === false. */
+  failure?: string;
+  /** Whether reasoning was requested. The reasoning TEXT is never stored. */
+  reasoningRequested?: boolean;
+  /** USD estimate, or null when the endpoint is free/unpriced or no rate is
+   *  configured. NEVER a fabricated number. */
+  estimatedCostUsd?: number | null;
 }
 
 export interface LlmStageAggregate {
@@ -41,10 +69,45 @@ export interface LlmStageAggregate {
   tkOut: number;
   tkCacheRead: number;
   tkCacheWrite: number;
+  tkReasoning: number;
   wallMs: number;
+  /** Roles observed in this stage (empty for unrouted direct calls). */
+  roles: string[];
+  retries: number;
+  fallbacks: number;
+  repairs: number;
+  failures: number;
+  /** Sum of the priced calls only; null when nothing in the stage was priced. */
+  estimatedCostUsd: number | null;
 }
 
 const stageStorage = new AsyncLocalStorage<string>();
+
+/**
+ * Role attribution for the calls inside one routed attempt.
+ *
+ * Carried in AsyncLocalStorage for the same reason the stage label is: it must
+ * survive async boundaries and stay correct when several episodes are in flight
+ * in the same worker process. Passing it through the provider constructor would
+ * mislabel concurrent calls that share a cached provider instance.
+ */
+export interface LlmAttribution {
+  role: string;
+  profile: string;
+  candidateSource: string;
+  /** How many earlier candidates in the role chain already failed. */
+  fallbacks: number;
+}
+
+const attributionStorage = new AsyncLocalStorage<LlmAttribution>();
+
+export function withLlmAttribution<T>(attr: LlmAttribution, fn: () => T): T {
+  return attributionStorage.run(attr, fn);
+}
+
+export function currentLlmAttribution(): LlmAttribution | undefined {
+  return attributionStorage.getStore();
+}
 
 let nextId = 1;
 let entries: LlmCallRecord[] = [];
@@ -61,6 +124,33 @@ export function currentLlmStage(): string {
   return stageStorage.getStore() || "unlabeled";
 }
 
+/**
+ * Per-1M-token rates, supplied by the OPERATOR. Deliberately empty by default:
+ * a hosted trial endpoint has no price, and inventing a rate for a paid one
+ * produces a confident dollar figure that is simply wrong. Configure
+ * LLM_PRICE_<PROVIDER>_IN / _OUT (USD per 1M tokens) to get estimates.
+ */
+function rateFor(provider: string): { in: number; out: number } | null {
+  const p = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const inRate = Number(process.env[`LLM_PRICE_${p}_IN`]);
+  const outRate = Number(process.env[`LLM_PRICE_${p}_OUT`]);
+  if (!Number.isFinite(inRate) || !Number.isFinite(outRate)) return null;
+  return { in: inRate, out: outRate };
+}
+
+/** USD estimate, or null when the endpoint is unpriced or no rate is configured. */
+export function estimateCostUsd(
+  provider: string,
+  tkIn: number,
+  tkOut: number,
+  unpriced: boolean
+): number | null {
+  if (unpriced) return null;
+  const rate = rateFor(provider);
+  if (!rate) return null;
+  return (tkIn * rate.in + tkOut * rate.out) / 1_000_000;
+}
+
 export function recordLlmCall(rec: {
   provider: string;
   model: string;
@@ -68,9 +158,22 @@ export function recordLlmCall(rec: {
   tkOut: number;
   tkCacheRead?: number;
   tkCacheWrite?: number;
+  tkReasoning?: number;
   durationMs: number;
   stage?: string;
+  role?: string;
+  profile?: string;
+  candidateSource?: string;
+  attempts?: number;
+  retries?: number;
+  fallbacks?: number;
+  repairs?: number;
+  ok?: boolean;
+  failure?: string;
+  reasoningRequested?: boolean;
+  estimatedCostUsd?: number | null;
 }): void {
+  const attr = currentLlmAttribution();
   const entry: LlmCallRecord = {
     id: nextId++,
     stage: rec.stage ?? currentLlmStage(),
@@ -80,14 +183,31 @@ export function recordLlmCall(rec: {
     tkOut: rec.tkOut || 0,
     tkCacheRead: rec.tkCacheRead || 0,
     tkCacheWrite: rec.tkCacheWrite || 0,
+    tkReasoning: rec.tkReasoning || 0,
     durationMs: Math.round(rec.durationMs),
     at: new Date().toISOString(),
+    role: rec.role ?? attr?.role,
+    profile: rec.profile ?? attr?.profile,
+    candidateSource: rec.candidateSource ?? attr?.candidateSource,
+    attempts: rec.attempts,
+    retries: rec.retries,
+    fallbacks: rec.fallbacks ?? attr?.fallbacks,
+    repairs: rec.repairs,
+    ok: rec.ok,
+    failure: rec.failure,
+    reasoningRequested: rec.reasoningRequested,
+    estimatedCostUsd: rec.estimatedCostUsd ?? null,
   };
   entries.push(entry);
   if (entries.length > MAX_ENTRIES) entries = entries.slice(-Math.floor(MAX_ENTRIES / 2));
   console.log(
-    `[LLMCost] stage=${entry.stage} provider=${entry.provider} model=${entry.model} ` +
-      `in=${entry.tkIn} out=${entry.tkOut} cacheRead=${entry.tkCacheRead} cacheWrite=${entry.tkCacheWrite} ms=${entry.durationMs}`
+    `[LLMCost] stage=${entry.stage}${entry.role ? ` role=${entry.role}` : ""}` +
+      `${entry.profile ? ` profile=${entry.profile}` : ""} provider=${entry.provider} model=${entry.model} ` +
+      `in=${entry.tkIn} out=${entry.tkOut} cacheRead=${entry.tkCacheRead} cacheWrite=${entry.tkCacheWrite} ` +
+      `reasoning=${entry.tkReasoning} ms=${entry.durationMs}` +
+      `${entry.retries ? ` retries=${entry.retries}` : ""}${entry.fallbacks ? ` fallbacks=${entry.fallbacks}` : ""}` +
+      `${entry.repairs ? ` repairs=${entry.repairs}` : ""}${entry.ok === false ? ` FAILED=${entry.failure}` : ""}` +
+      `${entry.estimatedCostUsd === null ? " cost=unpriced" : ` cost=$${entry.estimatedCostUsd?.toFixed(4)}`}`
   );
 }
 
@@ -99,7 +219,7 @@ export function llmCostMark(): number {
 /** Per-stage aggregates for every call recorded at/after `mark`, plus raw calls. */
 export function llmCostSince(mark: number): {
   stages: LlmStageAggregate[];
-  totals: Omit<LlmStageAggregate, "stage" | "models">;
+  totals: Omit<LlmStageAggregate, "stage" | "models" | "roles">;
   callCount: number;
 } {
   const relevant = entries.filter((e) => e.id >= mark);
@@ -113,15 +233,33 @@ export function llmCostSince(mark: number): {
       tkOut: 0,
       tkCacheRead: 0,
       tkCacheWrite: 0,
+      tkReasoning: 0,
       wallMs: 0,
+      roles: [],
+      retries: 0,
+      fallbacks: 0,
+      repairs: 0,
+      failures: 0,
+      estimatedCostUsd: null,
     };
     if (!agg.models.includes(`${e.provider}/${e.model}`)) agg.models.push(`${e.provider}/${e.model}`);
+    if (e.role && !agg.roles.includes(e.role)) agg.roles.push(e.role);
     agg.calls++;
     agg.tkIn += e.tkIn;
     agg.tkOut += e.tkOut;
     agg.tkCacheRead += e.tkCacheRead;
     agg.tkCacheWrite += e.tkCacheWrite;
+    agg.tkReasoning += e.tkReasoning;
     agg.wallMs += e.durationMs;
+    agg.retries += e.retries || 0;
+    agg.fallbacks += e.fallbacks || 0;
+    agg.repairs += e.repairs || 0;
+    if (e.ok === false) agg.failures++;
+    // null stays null until at least one PRICED call lands, so an unpriced
+    // stage reports "unpriced" rather than a confident $0.00.
+    if (typeof e.estimatedCostUsd === "number") {
+      agg.estimatedCostUsd = (agg.estimatedCostUsd ?? 0) + e.estimatedCostUsd;
+    }
     byStage.set(e.stage, agg);
   }
   const stages = [...byStage.values()].sort((a, b) => b.tkIn + b.tkOut - (a.tkIn + a.tkOut));
@@ -132,9 +270,31 @@ export function llmCostSince(mark: number): {
       tkOut: t.tkOut + s.tkOut,
       tkCacheRead: t.tkCacheRead + s.tkCacheRead,
       tkCacheWrite: t.tkCacheWrite + s.tkCacheWrite,
+      tkReasoning: t.tkReasoning + s.tkReasoning,
       wallMs: t.wallMs + s.wallMs,
+      retries: t.retries + s.retries,
+      fallbacks: t.fallbacks + s.fallbacks,
+      repairs: t.repairs + s.repairs,
+      failures: t.failures + s.failures,
+      estimatedCostUsd:
+        typeof s.estimatedCostUsd === "number"
+          ? (t.estimatedCostUsd ?? 0) + s.estimatedCostUsd
+          : t.estimatedCostUsd,
     }),
-    { calls: 0, tkIn: 0, tkOut: 0, tkCacheRead: 0, tkCacheWrite: 0, wallMs: 0 }
+    {
+      calls: 0,
+      tkIn: 0,
+      tkOut: 0,
+      tkCacheRead: 0,
+      tkCacheWrite: 0,
+      tkReasoning: 0,
+      wallMs: 0,
+      retries: 0,
+      fallbacks: 0,
+      repairs: 0,
+      failures: 0,
+      estimatedCostUsd: null as number | null,
+    }
   );
   return { stages, totals, callCount: relevant.length };
 }
