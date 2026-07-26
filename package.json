@@ -65,6 +65,7 @@
     "test:fact-numbers": "tsx src/scripts/testFactNumbers.ts",
     "test:self-verify": "tsx src/scripts/testSelfVerify.ts",
     "test:antithesis": "tsx src/scripts/testAntithesis.ts",
+    "test:natural-conversation": "tsx --conditions=react-server src/scripts/testNaturalConversationEngine.ts",
     "sweep:prompt-antithesis": "tsx src/scripts/sweepPromptAntithesis.ts",
     "test:evidence-context": "tsx src/scripts/testEvidenceContext.ts",
     "test:compliance": "tsx src/scripts/testCompliance.ts",
