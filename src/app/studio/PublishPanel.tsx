@@ -146,13 +146,24 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
           <div className="factPill fact-ok" style={{ alignSelf: "flex-start" }}><span className="factGlyph" aria-hidden="true">✓</span>Published & live on the feed</div>
         ) : (
           <>
-            <button className="btnPrimary" disabled={busy === "publish"} onClick={() => run("publish", () => publishOwnedEpisode(episodeId))}>
-              {busy === "publish" ? "Publishing…" : "Publish to feed"}
+            {/* The button reflects the server gate rather than contradicting it.
+                It used to be permanently enabled beside the words "Publish is
+                blocked", so the only way to learn you couldn't publish was to
+                press a live-looking button and read the failure. */}
+            <button
+              className="btnPrimary"
+              data-testid="publish-to-feed"
+              disabled={busy === "publish" || !st.canPublish}
+              onClick={() => run("publish", () => publishOwnedEpisode(episodeId))}
+            >
+              {busy === "publish" ? "Publishing…" : st.canPublish ? "Publish to feed" : "Publish to feed — blocked"}
             </button>
-            {reasons && reasons.length > 0 && (
-              <div className="gateReasons" role="status">
-                <strong>Publish blocked:</strong>
-                <ul className="createReasons">{reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
+            {(reasons?.length ? reasons : st.publishBlockers).length > 0 && (
+              <div className="gateReasons" role="status" data-testid="publish-blockers">
+                <strong>{reasons?.length ? "Publish blocked:" : "Before you can publish:"}</strong>
+                <ul className="createReasons">
+                  {(reasons?.length ? reasons : st.publishBlockers).map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
               </div>
             )}
             <p className="stageHint" style={{ margin: 0 }}>Enforces the fact-check gate and, for betting content, the responsible-gambling gate — server-side.</p>

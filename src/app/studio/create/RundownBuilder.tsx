@@ -38,12 +38,15 @@ const STEPS: { key: RundownStep; label: string }[] = [
 ];
 const PROD_STYLES = [{ k: "clean", l: "Clean" }, { k: "light", l: "Light" }, { k: "full", l: "Full" }];
 const SFX = [{ k: "subtle", l: "Subtle" }, { k: "medium", l: "Balanced" }, { k: "hype", l: "Hype" }];
-const TTS = [{ k: "", l: "Auto (host default)" }, { k: "elevenlabs", l: "ElevenLabs" }, { k: "cartesia", l: "Cartesia" }, { k: "openai", l: "OpenAI" }, { k: "fish", l: "Fish Audio" }];
+// Engine choices come from the SERVER, which knows which providers this
+// deployment actually has credentials for. Hard-coding the list meant three of
+// four options could only fail later, after the script was already paid for.
+export interface TtsEngineChoice { key: string; label: string; available: boolean; reason?: string }
 
 type CreateResult = Awaited<ReturnType<typeof createStudioEpisode>>;
 
 export default function RundownBuilder({
-  podcasts, initialTopics, hosts, initialDraft, maxTopics, seedTopicId,
+  podcasts, initialTopics, hosts, initialDraft, maxTopics, seedTopicId, ttsEngines,
 }: {
   podcasts: BuilderPodcast[];
   initialTopics: StudioTopicVM[];
@@ -51,6 +54,7 @@ export default function RundownBuilder({
   initialDraft: RundownDraftState | null;
   maxTopics: number;
   seedTopicId?: string | null;
+  ttsEngines: TtsEngineChoice[];
 }) {
   const d = initialDraft;
   // ?topic= is honoured even when a draft exists: the seed MERGES into the
@@ -581,7 +585,11 @@ export default function RundownBuilder({
           <div className="segRow">{SFX.map((s) => <button key={s.k} type="button" className={`segBtn${sfxDensity === s.k ? " on" : ""}`} aria-pressed={sfxDensity === s.k} onClick={() => setSfxDensity(s.k)}>{s.l}</button>)}</div>
           <div className="fieldLabel" style={{ marginTop: "0.8rem" }}>TTS engine</div>
           <select className="input" value={ttsProvider} onChange={(e) => { setTtsProvider(e.target.value); setVoicePicks({}); }}>
-            {TTS.map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
+            {ttsEngines.map((t) => (
+              <option key={t.key} value={t.key} disabled={!t.available}>
+                {t.label}{t.available ? "" : ` — ${t.reason ?? "unavailable"}`}
+              </option>
+            ))}
           </select>
           {ttsProvider && hosts.filter((h) => hostIds.includes(h.id)).map((h) => (
             <div key={h.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
@@ -771,7 +779,18 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
 
   return (
     <div className="studioCard">
-      <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎬 Episode created</h2>
+      {/* "🎬 Episode created" alone read as DONE. Nothing is running at this
+          point — the episode is a draft and the studio is waiting for the
+          customer to press Start. In the audit run that headline cost 25 minutes
+          of watching a static screen for progress that was never coming. The
+          heading now names the state, and the line below says what has to happen
+          next in the same breath. */}
+      <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎬 Rundown locked — not started yet</h2>
+      <div className="createAlert" role="status" data-testid="not-started-notice" style={{ marginBottom: "0.8rem" }}>
+        <strong>Nothing is generating yet.</strong> Your episode is saved as a draft. Press
+        <strong> Start the debate</strong> below to begin writing the script — it takes several minutes
+        and runs on our servers, so you can close the tab and come back.
+      </div>
       {result.draftCleanupWarning && <div className="createAlert" role="status" data-testid="draft-warning" style={{ marginBottom: "0.6rem" }}>{result.draftCleanupWarning}</div>}
       {reduced && (
         <div className="createAlert" role="status" data-testid="reduced-notice" style={{ marginBottom: "0.8rem" }}>

@@ -119,7 +119,8 @@
     "test:production-chain": "tsx --conditions=react-server src/scripts/testProductionChain.ts",
     "test:betting-frame": "tsx --conditions=react-server src/scripts/testBettingFrame.ts",
     "analyze:topic-bias": "tsx --conditions=react-server src/scripts/analyzeTopicBias.ts",
-    "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts"
+    "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts",
+    "test:honest-controls": "tsx --conditions=react-server src/scripts/testHonestControls.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

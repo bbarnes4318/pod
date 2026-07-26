@@ -784,6 +784,7 @@ export async function getPublishState(episodeId: string) {
     where: { id: episodeId },
     include: {
       podcast: { select: { verticals: true } },
+      scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true } },
       topics: { orderBy: { orderIndex: "asc" }, include: { topic: { select: { title: true, summary: true, leagueId: true, bettingRelevanceScore: true } } } },
     },
   });
@@ -798,11 +799,37 @@ export async function getPublishState(episodeId: string) {
   });
   const marketingText = [ep.title, ep.rssSummary, ep.description, ep.longShowNotes].filter(Boolean).join("\n");
   const compliance = checkGamblingCompliance({ betting, showNotes: ep.longShowNotes ?? null, marketingText });
+
+  // Run the SAME server-side gate the publish action enforces, read-only, so the
+  // panel can show what is blocking BEFORE the customer presses a live-looking
+  // button. Previously the reasons only appeared after a failed attempt, so the
+  // page rendered "Publish is blocked … 31 unresolved claims" beside an enabled
+  // "Publish to feed" — a correct guard the screen contradicted.
+  let publishBlockers: string[] = [];
+  let canPublish = false;
+  const latestScriptId = ep.scripts?.[0]?.id ?? null;
+  if (ep.status === "published") {
+    canPublish = false;
+  } else if (!latestScriptId) {
+    publishBlockers = ["There's no script yet."];
+  } else {
+    try {
+      const gate = await validateEpisodeForRss(latestScriptId, "publish");
+      canPublish = !!gate.eligible;
+      publishBlockers = gate.eligible ? [] : (gate.errorReasons || []).slice(0, 12);
+    } catch (err: any) {
+      // Never let a gate read blank the panel; report honestly instead.
+      publishBlockers = [`Couldn't check publish readiness: ${err?.message || "unknown error"}`];
+    }
+  }
+
   return {
     ok: true as const,
     title: ep.title,
     status: ep.status,
     published: ep.status === "published",
+    canPublish,
+    publishBlockers,
     podcastId: ep.podcastId,
     betting,
     compliance,

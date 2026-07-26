@@ -8,6 +8,7 @@ import { getStudioPodcastsFor, type StudioCtx } from "@/lib/services/studioActio
 import { MAX_TOPICS_PER_EPISODE } from "@/lib/services/episodeCreation";
 import type { PrismaClient } from "@prisma/client";
 import RundownBuilder from "./RundownBuilder";
+import { ttsEngineOptions } from "@/lib/providers/tts/availability";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,10 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         initialDraft={draft}
         maxTopics={MAX_TOPICS_PER_EPISODE}
         seedTopicId={seedTopicId ?? null}
+        // Only engines this deployment holds credentials for are selectable —
+        // the list used to be hard-coded, so three of four choices could only
+        // fail after the customer had paid for a script.
+        ttsEngines={ttsEngineOptions()}
       />
     </div>
   );
