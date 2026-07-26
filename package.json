@@ -122,7 +122,8 @@
     "analyze:topic-bias": "tsx --conditions=react-server src/scripts/analyzeTopicBias.ts",
     "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts",
     "test:honest-controls": "tsx --conditions=react-server src/scripts/testHonestControls.ts",
-    "test:scene-voiced-assets": "tsx --conditions=react-server src/scripts/testSceneVoicedAssets.ts"
+    "test:scene-voiced-assets": "tsx --conditions=react-server src/scripts/testSceneVoicedAssets.ts",
+    "test:published-artifacts": "tsx --conditions=react-server src/scripts/testPublishedArtifacts.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

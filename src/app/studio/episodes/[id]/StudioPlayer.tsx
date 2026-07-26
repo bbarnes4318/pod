@@ -85,8 +85,27 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
   const [decoded, setDecoded] = useState(false);
 
   // ---- Decode real waveform (best effort) ----
+  //
+  // Only attempted for SAME-ORIGIN audio. Masters live in object storage on a
+  // different host that serves no Access-Control-Allow-Origin header, so this
+  // fetch could never succeed there — it failed on every single page load and
+  // logged two console errors ("Access to fetch at …" + "net::ERR_FAILED")
+  // while the catch below silently fell back to the pseudo waveform. The
+  // fallback was already the real behaviour; all the request added was noise in
+  // the console of anyone debugging something else.
+  //
+  // If a same-origin streaming proxy is added later this will light up on its
+  // own — the check is on the URL, not on a feature flag.
   useEffect(() => {
     let cancelled = false;
+    const sameOrigin = (() => {
+      try {
+        return new URL(audioUrl, window.location.href).origin === window.location.origin;
+      } catch {
+        return false;
+      }
+    })();
+    if (!sameOrigin) return;
     (async () => {
       try {
         const res = await fetch(audioUrl, { mode: "cors" });

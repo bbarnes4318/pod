@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { formatChapterTime } from "../chapterTime";
 import { getStorageProvider } from "../providers/storage/factory";
 import { getLLMProvider } from "../providers/llm/factory";
 import { withLlmStage } from "../providers/llm/costLedger";
@@ -544,15 +545,9 @@ export async function generateEpisodeContentAssets(input: {
   const calculatedDurationSeconds = Math.round(currentTimeMs / 1000);
   const finalDurationSeconds = episode.durationSeconds || calculatedDurationSeconds;
 
-  function formatTime(sec: number): string {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = sec % 60;
-    if (h > 0) {
-      return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-    }
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  }
+  // Chapter/duration stamps live in lib/chapterTime so they can be tested
+  // against real values instead of a copy — see testPublishedArtifacts.
+  const formatTime = formatChapterTime;
 
   const durationStr = formatTime(finalDurationSeconds);
 
