@@ -1,4 +1,9 @@
 import { getRedisUrl, getNewsProvider } from "@/lib/env";
+import {
+  SUPPORTED_LLM_PROVIDERS,
+  isSupportedLLMProvider,
+  resolveConfiguredLLMProviders,
+} from "@/lib/providers/llm/factory";
 
 export interface EnvCheck {
   key: string;
@@ -52,6 +57,12 @@ const ENV_SNAPSHOT: Record<string, string | undefined> = {
   FISH_HOST_B_VOICE_ID: process.env.FISH_HOST_B_VOICE_ID,
   FISH_MODEL: process.env.FISH_MODEL,
   FISH_SCENE_MODEL: process.env.FISH_SCENE_MODEL,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GEMINI_MAX_RETRIES: process.env.GEMINI_MAX_RETRIES,
+  GEMINI_MODEL: process.env.GEMINI_MODEL,
+  GEMINI_REQUEST_TIMEOUT_MS: process.env.GEMINI_REQUEST_TIMEOUT_MS,
+  GEMINI_THINKING_HEADROOM_TOKENS: process.env.GEMINI_THINKING_HEADROOM_TOKENS,
+  GEMINI_THINKING_LEVEL: process.env.GEMINI_THINKING_LEVEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
   NEWS_PROVIDER: process.env.NEWS_PROVIDER,
   NEWS_RSS_FEEDS: process.env.NEWS_RSS_FEEDS,
@@ -71,6 +82,10 @@ const ENV_SNAPSHOT: Record<string, string | undefined> = {
   S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY,
   SCRIPT_LLM_MODEL: process.env.SCRIPT_LLM_MODEL,
   SCRIPT_LLM_PROVIDER: process.env.SCRIPT_LLM_PROVIDER,
+  FACTCHECK_LLM_MODEL: process.env.FACTCHECK_LLM_MODEL,
+  FACTCHECK_LLM_PROVIDER: process.env.FACTCHECK_LLM_PROVIDER,
+  VERIFY_LLM_PROVIDER: process.env.VERIFY_LLM_PROVIDER,
+  VERIFY_MODEL: process.env.VERIFY_MODEL,
   SPORTSDATAIO_API_KEY: process.env.SPORTSDATAIO_API_KEY,
   SPORTS_PROVIDER: process.env.SPORTS_PROVIDER,
   STORAGE_PROVIDER: process.env.STORAGE_PROVIDER,
@@ -187,13 +202,25 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   checkRequired("S3_SECRET_ACCESS_KEY", true);
   checkRequired("S3_PUBLIC_BASE_URL");
 
-  // 4. LLM — validate the keys the CONFIGURED provider actually needs. The
-  // chain is SCRIPT_LLM_PROVIDER (script writing) > LLM_PROVIDER (everything
-  // else), so both are resolved and every provider in play gets checked.
+  // 4. LLM — validate the keys the CONFIGURED providers actually need, and ONLY
+  // those. Four roles can each point at a different provider (global, script
+  // writer, fact-checker, verifier), they inherit from each other, and a mixed
+  // configuration is normal. Resolving them through the factory's own helper is
+  // what keeps this list from drifting from what the pipeline actually builds.
+  //
+  // Requiring credentials for a provider no configured stage uses is not
+  // "safer" — it makes the audit fail on a correct deployment, which trains
+  // operators to ignore it.
   checkRequired("LLM_PROVIDER");
-  const baseLlm = (process.env.LLM_PROVIDER || "").trim().toLowerCase();
-  const scriptLlm = (process.env.SCRIPT_LLM_PROVIDER || baseLlm).trim().toLowerCase();
-  const llmProviders = new Set([baseLlm, scriptLlm].filter(Boolean));
+  const { byRole, providers: llmProviders } = resolveConfiguredLLMProviders();
+
+  if (llmProviders.has("gemini")) {
+    checkRequired("GEMINI_API_KEY", true);
+    // GEMINI_MODEL has a working code default (gemini-3.6-flash), so an unset
+    // value is legitimate — but pinning it is what stops a Google default
+    // change from silently altering output, so it is surfaced.
+    checkOptional("GEMINI_MODEL");
+  }
   if (llmProviders.has("anthropic")) {
     checkRequired("ANTHROPIC_API_KEY", true);
     checkRequired("ANTHROPIC_MODEL");
@@ -202,8 +229,30 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checkRequired("OPENAI_API_KEY", true);
     checkRequired("OPENAI_MODEL");
   }
+  // An unrecognised provider name is worse than a missing one: getLLMProvider
+  // throws on it at call time, mid-pipeline, after the run has already started.
+  for (const [role, cfg] of Object.entries(byRole)) {
+    if (cfg.provider && !isSupportedLLMProvider(cfg.provider)) {
+      checks.push({
+        key: `LLM provider (${role})`,
+        status: "fail",
+        value: cfg.provider,
+        message: `'${cfg.provider}' is not a supported provider. Supported: ${SUPPORTED_LLM_PROVIDERS.join(", ")}.`,
+      });
+    }
+  }
   if (llmProviders.has("stub")) {
-    checks.push({ key: "LLM_PROVIDER", status: "fail", value: "stub", message: "LLM_PROVIDER=stub is not a real provider — set anthropic in production." });
+    const stubRoles = Object.entries(byRole)
+      .filter(([, cfg]) => cfg.provider === "stub")
+      .map(([role]) => role);
+    checks.push({
+      key: "LLM_PROVIDER",
+      status: "fail",
+      value: "stub",
+      message:
+        `stub is not a real provider and resolves for: ${stubRoles.join(", ")}. ` +
+        `Set a real provider (gemini, anthropic, or openai) in production.`,
+    });
   }
 
   // 5. Providers Specifics

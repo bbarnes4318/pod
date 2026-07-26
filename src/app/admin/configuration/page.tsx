@@ -2,6 +2,7 @@ import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
 import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus, getResearchProviderStatus, getBosonTtsStatus } from "@/lib/env";
 import { resolveEpisodeCast } from "@/lib/services/hostCasting";
+import { resolveConfiguredLLMProviders } from "@/lib/providers/llm/factory";
 
 export const dynamic = "force-dynamic";
 
@@ -39,12 +40,22 @@ export default async function ConfigurationPage() {
   // the distinction that a per-key MISSING/CONFIGURED readout cannot make.
   const visibleEnvCount = Object.keys(process.env).length;
 
-  // Providers this project actually uses. Previously this list showed OpenAI
-  // and Gemini — neither is used by the pipeline (Gemini has no adapter at
-  // all) — while omitting Fish, the live voice engine, so an operator
-  // checking the Fish key found nothing on the page to check.
+  // Which LLM provider each ROLE actually resolves to, from the same helper the
+  // factory uses. A per-key MISSING/CONFIGURED list cannot answer the question
+  // an operator is really asking ("what is writing my scripts right now?"),
+  // because four roles inherit from each other — so the roles are shown
+  // explicitly alongside the keys.
+  const llmRoles = resolveConfiguredLLMProviders().byRole;
+  const roleLabel = (cfg: { provider: string; model?: string }) =>
+    cfg.provider ? `${cfg.provider}${cfg.model ? ` / ${cfg.model}` : " / (provider default)"}` : "NOT SET";
+
+  // Providers this project actually uses. This list is deliberately exhaustive
+  // for LLMs: hiding a provider that is still wired (Anthropic is the rollback
+  // target) makes the page lie about what a redeploy could switch to.
   const providerApis = [
-    { name: "Anthropic API Key (ANTHROPIC_API_KEY) — all LLM stages", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
+    { name: "Gemini API Key (GEMINI_API_KEY) — LLM", value: maskSecret(process.env.GEMINI_API_KEY) },
+    { name: "Anthropic API Key (ANTHROPIC_API_KEY) — LLM / rollback target", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
+    { name: "OpenAI API Key (OPENAI_API_KEY) — optional LLM fallback", value: maskSecret(process.env.OPENAI_API_KEY) },
     { name: "Fish Audio API Key (FISH_API_KEY) — voice engine", value: maskSecret(process.env.FISH_API_KEY) },
     { name: "ElevenLabs API Key (fallback)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
     { name: "Cartesia API Key (fallback)", value: maskSecret(process.env.CARTESIA_API_KEY) },
@@ -183,6 +194,48 @@ export default async function ConfigurationPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* Which provider each LLM ROLE resolves to. A key being present does
+            NOT mean it is in use, and a role can inherit from another — so the
+            resolved answer is shown rather than left to be inferred. */}
+        <div className="panel">
+          <div className="panelHeader">
+            <h3 className="panelTitle">LLM Roles (resolved)</h3>
+          </div>
+          <div className="panelContent">
+            <table className="dataTable">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Provider / model</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Global (topics, briefs, classification, assets) — <code>LLM_PROVIDER</code></td>
+                  <td><code>{roleLabel(llmRoles.global)}</code></td>
+                </tr>
+                <tr>
+                  <td>Script writer — <code>SCRIPT_LLM_PROVIDER</code></td>
+                  <td><code>{roleLabel(llmRoles.script)}</code></td>
+                </tr>
+                <tr>
+                  <td>Fact-checker — <code>FACTCHECK_LLM_PROVIDER</code></td>
+                  <td><code>{roleLabel(llmRoles.factcheck)}</code></td>
+                </tr>
+                <tr>
+                  <td>Verifier / grounding rewrites — <code>VERIFY_LLM_PROVIDER</code></td>
+                  <td><code>{roleLabel(llmRoles.verify)}</code></td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="pageDesc" style={{ marginTop: "0.75rem" }}>
+              Roles inherit: verifier &larr; fact-checker &larr; script writer &larr; global. Any role may be
+              pointed at <code>gemini</code>, <code>anthropic</code>, or <code>openai</code> independently —
+              switching providers is an environment change on both the web and worker services, not a code change.
+            </p>
           </div>
         </div>
 
