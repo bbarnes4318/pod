@@ -1053,8 +1053,12 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
   });
 
   try {
-    // 1. Stub LLM Guard: Must throw error and abort
-    if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+    // 1. Stub LLM Guard: Must throw error and abort.
+    // Asks ROUTING, not LLM_PROVIDER: under a profile that routes this role to
+    // NVIDIA or Z.ai, LLM_PROVIDER may legitimately be unset, and aborting the
+    // job on that basis would refuse work the configuration can actually do. In
+    // the legacy profile the answer is identical to the old check.
+    if (!roleHasRealProvider("topic_generation")) {
       const errorMsg = "LLM provider is stub. Real topic generation disabled.";
       console.warn(`[Worker] ${errorMsg}`);
       await db.jobLog.update({
@@ -1876,8 +1880,9 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       }
     }
 
-    // Guard against stub LLM provider
-    if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+    // Guard against a stub LLM provider — routing-aware, for the same reason as
+    // the topic-generation guard above.
+    if (!roleHasRealProvider("research_brief")) {
       const errorMsg = "LLM provider is stub. Real research brief generation disabled.";
       console.warn(`[Worker] ${errorMsg}`);
       await db.jobLog.update({

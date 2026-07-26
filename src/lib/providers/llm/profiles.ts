@@ -103,8 +103,9 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
   }
 }
 
-/** Every role on Z.ai's free general-purpose API. */
-function freeIndependentChain(_role: LLMRole): ProfileRoleChain {
+/** Every role on Z.ai's free general-purpose API — deliberately role-agnostic:
+ *  the point of this profile is to test one provider across the whole chain. */
+function freeIndependentChain(): ProfileRoleChain {
   return [ZAI_FLASH()];
 }
 
@@ -113,7 +114,7 @@ export function profileChainFor(profile: RoutingProfile, role: LLMRole): Profile
     case "frontier_development":
       return frontierChain(role);
     case "free_independent":
-      return freeIndependentChain(role);
+      return freeIndependentChain();
     case "legacy":
     case "custom":
       // No profile-supplied candidates: legacy resolves to today's grouped

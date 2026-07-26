@@ -1,6 +1,11 @@
 import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "../db";
-import { getRoleLLMProvider, resolveScriptChallenger, roleProviderLabel } from "../providers/llm/routing";
+import {
+  getRoleLLMProvider,
+  resolveScriptChallenger,
+  roleHasRealProvider,
+  roleProviderLabel,
+} from "../providers/llm/routing";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { reviewFactualLinesForRewrite } from "./semanticReview";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
@@ -199,8 +204,12 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   const nextVersion = existingScripts.length > 0 ? existingScripts[0].version + 1 : 1;
   result.version = nextVersion;
 
-  // 5. Guard against stub LLM provider
-  if (process.env.LLM_PROVIDER?.toLowerCase() === "stub" || !process.env.LLM_PROVIDER) {
+  // 5. Guard against a stub LLM provider. Asks ROUTING about the role that
+  // actually writes the dialogue: under a profile that routes script_movement to
+  // NVIDIA or Z.ai, LLM_PROVIDER may legitimately be unset, and refusing on that
+  // basis would block generation the configuration can perform. In the legacy
+  // profile the answer is identical to the old check.
+  if (!roleHasRealProvider("script_movement")) {
     const msg = "LLM provider is stub. Real script generation disabled.";
     result.reasons.push(msg);
     throw new Error(msg);

@@ -1,4 +1,14 @@
 import { getRedisUrl, getNewsProvider } from "@/lib/env";
+import {
+  RoleRouteReport,
+  credentialVarFor,
+  legacyFallbackAllowed,
+  providerCredentialPresent,
+  providersInActiveRouting,
+  roleRouteReport,
+} from "@/lib/providers/llm/routing";
+import { activeRoutingProfile, routingProfileIsUnrecognized } from "@/lib/providers/llm/profiles";
+import { activeDeploymentStage, stageAdvisory } from "@/lib/providers/llm/deploymentStage";
 
 export interface EnvCheck {
   key: string;
@@ -53,6 +63,18 @@ const ENV_SNAPSHOT: Record<string, string | undefined> = {
   FISH_MODEL: process.env.FISH_MODEL,
   FISH_SCENE_MODEL: process.env.FISH_SCENE_MODEL,
   LLM_PROVIDER: process.env.LLM_PROVIDER,
+  LLM_MODEL: process.env.LLM_MODEL,
+  // Role-based routing. Same bundling rule as everything else in this snapshot:
+  // a literal reference here is what lets the web app see a worker-set variable.
+  LLM_ROUTING_PROFILE: process.env.LLM_ROUTING_PROFILE,
+  LLM_ALLOW_LEGACY_FALLBACK: process.env.LLM_ALLOW_LEGACY_FALLBACK,
+  APP_DEPLOYMENT_STAGE: process.env.APP_DEPLOYMENT_STAGE,
+  NVIDIA_API_KEY: process.env.NVIDIA_API_KEY,
+  NVIDIA_BASE_URL: process.env.NVIDIA_BASE_URL,
+  ZAI_API_KEY: process.env.ZAI_API_KEY,
+  ZAI_BASE_URL: process.env.ZAI_BASE_URL,
+  VERIFY_LLM_PROVIDER: process.env.VERIFY_LLM_PROVIDER,
+  VERIFY_MODEL: process.env.VERIFY_MODEL,
   NEWS_PROVIDER: process.env.NEWS_PROVIDER,
   NEWS_RSS_FEEDS: process.env.NEWS_RSS_FEEDS,
   NODE_ENV: process.env.NODE_ENV,
@@ -206,6 +228,10 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
     checks.push({ key: "LLM_PROVIDER", status: "fail", value: "stub", message: "LLM_PROVIDER=stub is not a real provider — set anthropic in production." });
   }
 
+  // 4b. ROLE-BASED ROUTING. Validates the credentials the ACTIVE profile needs
+  // and reports the resolved role map's health. Never prints a credential.
+  checks.push(...getLlmRoutingChecks());
+
   // 5. Providers Specifics
   const ttsProvider = (process.env.TTS_PROVIDER || "fish").trim().toLowerCase();
   checkRequired("TTS_PROVIDER");
@@ -345,6 +371,152 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   checkOptional("DEEPGRAM_API_KEY", true);
   checkOptional("CARTESIA_API_KEY", true);
   checkOptional("PODCAST_IMAGE_URL");
+
+  return checks;
+}
+
+export interface LlmRoutingReadiness {
+  profile: string;
+  stage: string;
+  /** Advisory for hosted trial endpoints at APP_DEPLOYMENT_STAGE=live. */
+  advisory: string | null;
+  /** Whether paid Anthropic/OpenAI fallback may be used. */
+  paidFallbackAllowed: boolean;
+  /** One row per role: primary / secondary / legacy backup / status. */
+  roles: RoleRouteReport[];
+  /** Providers the active profile would actually call. */
+  providers: string[];
+}
+
+/**
+ * The resolved role map, for the readiness API and the admin configuration page.
+ *
+ * Reports only NAMES and verdicts — a credential's presence, never its value.
+ */
+export function getLlmRoutingReadiness(): LlmRoutingReadiness {
+  const providers = providersInActiveRouting();
+  const advisory = stageAdvisory(providers);
+  return {
+    profile: activeRoutingProfile(),
+    stage: activeDeploymentStage(),
+    advisory: advisory.message,
+    paidFallbackAllowed: legacyFallbackAllowed(),
+    roles: roleRouteReport(),
+    providers,
+  };
+}
+
+/**
+ * Readiness checks for role-based routing.
+ *
+ * Deliberate severities:
+ *  - A missing credential for a provider the ACTIVE profile calls is a FAIL:
+ *    that role will burn its way down the chain on every request.
+ *  - APP_DEPLOYMENT_STAGE=live with hosted trial endpoints is a WARNING and
+ *    nothing more. The launch decision is the operator's; this code never
+ *    disables or re-routes a provider on its own.
+ *  - An unrecognized LLM_ROUTING_PROFILE value is a FAIL, because it silently
+ *    resolves to legacy and an operator who typed "frontier-development"
+ *    (hyphen) would otherwise believe the new routing was live.
+ */
+export function getLlmRoutingChecks(): EnvCheck[] {
+  const checks: EnvCheck[] = [];
+  const profile = activeRoutingProfile();
+  const stage = activeDeploymentStage();
+
+  const bad = routingProfileIsUnrecognized();
+  if (bad.unrecognized) {
+    checks.push({
+      key: "LLM_ROUTING_PROFILE",
+      status: "fail",
+      value: bad.raw,
+      message:
+        `'${bad.raw}' is not a routing profile, so routing fell back to 'legacy'. ` +
+        `Valid values: legacy, frontier_development, free_independent, custom.`,
+    });
+  } else {
+    checks.push({
+      key: "LLM_ROUTING_PROFILE",
+      status: "pass",
+      value: profile,
+      message:
+        profile === "legacy"
+          ? "Legacy routing: every role uses the existing LLM_* / SCRIPT_LLM_* / VERIFY_* configuration, exactly as before."
+          : `Role-based routing active under the '${profile}' profile.`,
+    });
+  }
+
+  checks.push({
+    key: "APP_DEPLOYMENT_STAGE",
+    status: "pass",
+    value: stage,
+    message:
+      stage === "live"
+        ? "Live stage: hosted trial endpoints are still permitted; see the advisory in the routing panel."
+        : `${stage}: hosted NVIDIA NIM and Z.ai endpoints are fully permitted.`,
+  });
+
+  checks.push({
+    key: "LLM_ALLOW_LEGACY_FALLBACK",
+    status: "pass",
+    value: legacyFallbackAllowed() ? "true (default)" : "false",
+    message: legacyFallbackAllowed()
+      ? "Paid Anthropic/OpenAI fallback is permitted after the free candidates fail. Every paid fallback is logged and ledgered."
+      : "Paid fallback is FORBIDDEN — a role that exhausts its free candidates fails instead of incurring cost.",
+  });
+
+  // Credentials for the providers this profile actually calls.
+  for (const provider of providersInActiveRouting()) {
+    if (provider === "stub") continue;
+    const key = credentialVarFor(provider);
+    const present = providerCredentialPresent(provider);
+    checks.push({
+      key,
+      status: present ? "pass" : "fail",
+      value: present ? maskSecretValue(process.env[key]) : "MISSING",
+      message: present
+        ? undefined
+        : `The '${profile}' profile routes at least one role to ${provider}, but ${key} is not set (or is a placeholder). ` +
+          `Those roles will fall through to their next candidate on every request.`,
+    });
+  }
+
+  // Role map health, summarized. The full per-role table is in the panel.
+  const roles = roleRouteReport().filter((r) => r.hasCallSite);
+  const unroutable = roles.filter((r) => r.status === "unroutable");
+  const degraded = roles.filter((r) => r.status === "degraded");
+  if (unroutable.length > 0) {
+    checks.push({
+      key: "LLM_ROLE_MAP",
+      status: "fail",
+      value: `${unroutable.length} UNROUTABLE`,
+      message: `No usable candidate for: ${unroutable.map((r) => r.role).join(", ")}.`,
+    });
+  } else if (degraded.length > 0) {
+    checks.push({
+      key: "LLM_ROLE_MAP",
+      status: "warning",
+      value: `${degraded.length} degraded`,
+      message: `Running on a reduced candidate chain: ${degraded.map((r) => r.role).join(", ")}.`,
+    });
+  } else {
+    checks.push({
+      key: "LLM_ROLE_MAP",
+      status: "pass",
+      value: `${roles.length} roles ready`,
+      message: `Every wired role has a usable provider under the '${profile}' profile.`,
+    });
+  }
+
+  const advisory = stageAdvisory(providersInActiveRouting());
+  if (advisory.message) {
+    checks.push({
+      key: "LLM_TRIAL_ENDPOINTS",
+      status: "warning",
+      value: "ADVISORY",
+      message: advisory.message,
+    });
+  }
 
   return checks;
 }

@@ -104,19 +104,24 @@ const SNAPSHOT: Record<string, string | undefined> = {
 };
 
 /**
- * Read a routing variable. Prefers the live process value (so a test or a
- * worker that mutates process.env at runtime is honored), then the statically
- * bundled snapshot (so the web bundle can see worker-only keys).
+ * Read a routing variable.
  *
- * Empty strings normalize to undefined: `SCRIPT_LLM_PROVIDER=` in a compose
- * file means "unset", not "a provider named empty string".
+ * `process.env` is the runtime truth when it HAS the key, including when the
+ * value is empty — an operator who blanked a variable means "unset", not "fall
+ * back to whatever was baked in at build time". The static snapshot is consulted
+ * only for keys the bundler dropped entirely, which is the web-bundle case this
+ * module exists for.
+ *
+ * Empty strings normalize to undefined: `SCRIPT_LLM_PROVIDER=` in a compose file
+ * means unset, not "a provider named empty string".
  */
 export function readRoutingEnv(key: string): string | undefined {
-  const live = process.env[key];
-  if (live !== undefined && live !== "") return live;
+  if (Object.prototype.hasOwnProperty.call(process.env, key)) {
+    const live = process.env[key];
+    return live && live !== "" ? live : undefined;
+  }
   const snap = SNAPSHOT[key];
-  if (snap !== undefined && snap !== "") return snap;
-  return undefined;
+  return snap && snap !== "" ? snap : undefined;
 }
 
 /** Every key this module statically references. Used by the routing tests. */

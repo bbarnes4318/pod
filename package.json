@@ -123,7 +123,11 @@
     "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts",
     "test:honest-controls": "tsx --conditions=react-server src/scripts/testHonestControls.ts",
     "test:scene-voiced-assets": "tsx --conditions=react-server src/scripts/testSceneVoicedAssets.ts",
-    "test:published-artifacts": "tsx --conditions=react-server src/scripts/testPublishedArtifacts.ts"
+    "test:published-artifacts": "tsx --conditions=react-server src/scripts/testPublishedArtifacts.ts",
+    "test:llm-routing": "tsx --conditions=react-server src/scripts/testLlmRouting.ts",
+    "test:nvidia-provider": "tsx --conditions=react-server src/scripts/testNvidiaProvider.ts",
+    "test:zai-provider": "tsx --conditions=react-server src/scripts/testZaiProvider.ts",
+    "test:role-experiments": "tsx --conditions=react-server src/scripts/testRoleExperiments.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

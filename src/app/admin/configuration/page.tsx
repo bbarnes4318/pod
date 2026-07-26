@@ -2,6 +2,7 @@ import React from "react";
 import { runProductionReadinessAudit } from "@/lib/services/finalQaService";
 import { getOddsApiKeyStatus, getRssFeedStatus, getRedisStatus, getResearchProviderStatus, getBosonTtsStatus } from "@/lib/env";
 import { resolveEpisodeCast } from "@/lib/services/hostCasting";
+import { getLlmRoutingReadiness } from "@/lib/services/productionEnvService";
 
 export const dynamic = "force-dynamic";
 
@@ -43,8 +44,22 @@ export default async function ConfigurationPage() {
   // and Gemini — neither is used by the pipeline (Gemini has no adapter at
   // all) — while omitting Fish, the live voice engine, so an operator
   // checking the Fish key found nothing on the page to check.
+  // Resolved LLM role map. Names and verdicts only — this helper never returns
+  // a credential value, and the table below never renders one.
+  const routing = getLlmRoutingReadiness();
+  const routingStatusClass = (status: string) =>
+    status === "ready"
+      ? "badgeCompleted"
+      : status === "degraded"
+      ? "badgeRunning"
+      : status === "unroutable"
+      ? "badgeFailed"
+      : "badge";
+
   const providerApis = [
-    { name: "Anthropic API Key (ANTHROPIC_API_KEY) — all LLM stages", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
+    { name: "Anthropic API Key (ANTHROPIC_API_KEY) — legacy/paid LLM backup", value: maskSecret(process.env.ANTHROPIC_API_KEY) },
+    { name: "NVIDIA NIM API Key (NVIDIA_API_KEY) — frontier development primaries", value: maskSecret(process.env.NVIDIA_API_KEY) },
+    { name: "Z.ai API Key (ZAI_API_KEY) — independent free provider", value: maskSecret(process.env.ZAI_API_KEY) },
     { name: "Fish Audio API Key (FISH_API_KEY) — voice engine", value: maskSecret(process.env.FISH_API_KEY) },
     { name: "ElevenLabs API Key (fallback)", value: maskSecret(process.env.ELEVENLABS_API_KEY) },
     { name: "Cartesia API Key (fallback)", value: maskSecret(process.env.CARTESIA_API_KEY) },
@@ -63,6 +78,88 @@ export default async function ConfigurationPage() {
           <p className="pageDesc">
             Read-only environment status, service provider diagnostics, and production safety audits.
           </p>
+        </div>
+      </div>
+
+      {/* LLM role routing — which model plays each production role */}
+      <div className="panel">
+        <div className="panelHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          <h3 className="panelTitle">LLM Role Routing</h3>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <span className="badge badgeCompleted" style={{ fontSize: "0.75rem" }}>
+              profile: {routing.profile}
+            </span>
+            <span className={`badge ${routing.stage === "live" ? "badgeRunning" : "badgeCompleted"}`} style={{ fontSize: "0.75rem" }}>
+              stage: {routing.stage}
+            </span>
+            <span className={`badge ${routing.paidFallbackAllowed ? "badgeRunning" : "badgeCompleted"}`} style={{ fontSize: "0.75rem" }}>
+              paid fallback: {routing.paidFallbackAllowed ? "allowed" : "forbidden"}
+            </span>
+          </div>
+        </div>
+        <div className="panelContent" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>
+            {routing.profile === "legacy"
+              ? "Legacy routing: every role uses the existing LLM_* / SCRIPT_LLM_* / VERIFY_* configuration, exactly as before this feature shipped."
+              : "Each role resolves in order: role override → profile primary → secondary → tertiary → role-appropriate existing provider."}{" "}
+            Set <code>LLM_ROUTING_PROFILE=legacy</code> and redeploy web + worker to roll back with one variable.
+          </p>
+
+          {routing.advisory && (
+            <div
+              style={{
+                padding: "0.75rem 1rem",
+                border: "1px solid var(--warning-color)",
+                borderRadius: "6px",
+                backgroundColor: "var(--bg-primary)",
+                color: "var(--warning-color)",
+                fontSize: "0.85rem",
+              }}
+            >
+              <strong>Trial endpoint advisory: </strong>
+              {routing.advisory}
+            </div>
+          )}
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--text-secondary)", textTransform: "uppercase", fontSize: "0.7rem" }}>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Role</th>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Primary</th>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Secondary</th>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Legacy backup</th>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {routing.roles.map((r) => (
+                  <tr key={r.role}>
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", color: "var(--text-primary)" }}>
+                      <div style={{ fontWeight: 600 }}>{r.label}</div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--text-secondary)" }}>{r.role}</div>
+                      {r.override && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--accent-color)" }}>override: {r.override}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.primary}</td>
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.secondary}</td>
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.legacyBackup}</td>
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>
+                      <span className={`badge ${routingStatusClass(r.status)}`} style={{ fontSize: "0.7rem" }}>
+                        {r.status === "not-wired" ? "no LLM call yet" : r.status}
+                      </span>
+                      {r.notes.length > 0 && (
+                        <div style={{ marginTop: "0.35rem", fontSize: "0.7rem", color: "var(--text-secondary)" }}>
+                          {r.notes.join(" ")}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 

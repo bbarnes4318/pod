@@ -277,7 +277,10 @@ export const ROLE_DEFINITIONS: Record<LLMRole, RoleDefinition> = {
     reasoning: "on",
     temperature: 0,
     userFacingDialogue: false,
-    callSites: ["src/scripts/testRoleExperiments.ts → quality-judge (development)"],
+    callSites: [
+      "src/lib/services/scriptQualityJudge.ts → quality:judge",
+      "src/scripts/testRoleExperiments.ts (development harness)",
+    ],
   },
 };
 
