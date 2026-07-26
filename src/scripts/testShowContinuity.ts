@@ -20,6 +20,7 @@ import {
   type ContinuityState,
 } from "../lib/services/showContinuity";
 import { readFileSync } from "node:fs";
+import { reportContinuityClaim } from "../lib/services/continuityReport";
 import { join } from "node:path";
 import {
   checkContinuity,
@@ -44,6 +45,18 @@ function check(name: string, fn: () => void) {
     failed++;
   }
 }
+async function checkAsync(name: string, fn: () => Promise<void>) {
+  try {
+    await fn();
+    console.log(`  ✓ ${name}`);
+    passed++;
+  } catch (err) {
+    console.log(`  ✗ ${name}
+      ${err instanceof Error ? err.message : String(err)}`);
+    failed++;
+  }
+}
+
 function assert(cond: boolean, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
@@ -393,5 +406,70 @@ check("kill switch: the flag is read, and only 'false' disables injection", () =
   assert(!enabledFor("false"), "'false' must turn continuity OFF");
 });
 
-console.log(`\n${passed} passed, ${failed} failed`);
-if (failed > 0) process.exit(1);
+// --- A BAD CONTINUITY REPORT MUST NEVER FAIL AN EPISODE --------------------
+//
+// The continuity engine is layered on top of the show. It is not allowed to
+// become a new way for an episode to die. Every failure mode below must
+// resolve to null — a non-event — and never a throw.
+
+const fakeLlm = (behavior: "ok" | "throw" | "garbage" | "partial" | "unknown-keys" | "not-object") => ({
+  name: "fake",
+  generateText: async () => "",
+  generateStructuredOutput: async () => {
+    if (behavior === "throw") throw new Error("provider exploded");
+    if (behavior === "garbage") return { attendanceClaimed: "not a number", weSaidCount: "many", unityBeatPresent: "yes" };
+    if (behavior === "partial") return { unityBeatPresent: true, weSaidCount: 99, wolverineUsed: "Marcus Ludd" };
+    if (behavior === "unknown-keys") return { unityBeatPresent: true, phantomFansTotal: 999999, somethingInvented: true };
+    if (behavior === "not-object") return "a bare string";
+    return { unityBeatPresent: true, weSaidCount: 2, wolverineUsed: "Marcus Ludd", attendanceClaimed: 6492, attendanceReal: 5200 };
+  },
+});
+
+const reportWith = async (behavior: Parameters<typeof fakeLlm>[0]) =>
+  reportContinuityClaim(fakeLlm(behavior) as never, {
+    scriptText: "ZABALA:\nline\n\nMULKEY:\nline",
+    runners: eligibleRunners(state()),
+  });
+
+void (async () => {
+  await checkAsync("report: a well-formed claim is returned", async () => {
+    const r = await reportWith("ok");
+    assert(r !== null, "a valid report must come back");
+    assert(r!.weSaidCount === 2 && r!.wolverineUsed === "Marcus Ludd", `unexpected claim: ${JSON.stringify(r)}`);
+  });
+
+  await checkAsync("report: a provider THROW is a non-event, not an outage", async () => {
+    const r = await reportWith("throw");
+    assert(r === null, "a provider failure must return null rather than propagate");
+  });
+
+  await checkAsync("report: wholly garbage values are discarded, not thrown", async () => {
+    const r = await reportWith("garbage");
+    assert(r === null || r.weSaidCount === 0, `garbage must not reach state, got ${JSON.stringify(r)}`);
+  });
+
+  await checkAsync("report: a non-object response is a non-event", async () => {
+    assert((await reportWith("not-object")) === null, "a bare string must not throw");
+  });
+
+  await checkAsync("report: ONE bad field is dropped, the rest of the claim survives", async () => {
+    // weSaidCount 99 is out of range; unityBeatPresent and wolverineUsed are fine.
+    const r = await reportWith("partial");
+    assert(r !== null, "a single bad field must not discard the whole report");
+    assert(r!.weSaidCount === 0, `the invalid count must fall back to the default, got ${r!.weSaidCount}`);
+    assert(r!.unityBeatPresent === true && r!.wolverineUsed === "Marcus Ludd", "valid fields must survive the salvage");
+  });
+
+  await checkAsync("report: invented keys cannot smuggle an absolute value into state", async () => {
+    const r = await reportWith("unknown-keys");
+    assert(r !== null, "unknown keys should be dropped, not fatal");
+    assert(!("phantomFansTotal" in (r as object)), "an absolute value must never survive into the claim");
+    assert(!("somethingInvented" in (r as object)), "unknown keys must be stripped");
+    // And folding it changes nothing it should not.
+    const folded = nextContinuityState(state({ phantomFansTotal: 41_000 }), r!);
+    assert(folded.phantomFansTotal === 41_000, `an invented total must not move state, got ${folded.phantomFansTotal}`);
+  });
+
+  console.log(`\n${passed} passed, ${failed} failed`);
+  if (failed > 0) process.exit(1);
+})();

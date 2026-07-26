@@ -64,7 +64,12 @@ import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./c
 import { resolveEpisodeCast, makeCastMatchers } from "./hostCasting";
 import { getShowFormat } from "../formats/showFormatRegistry";
 import { formatPromptPieces, castPersonaBlocks } from "../formats/formatScriptPrompts";
-import { continuityForGeneration, composeGenerationSystemPrompt } from "./showContinuityService";
+import {
+  continuityForGeneration,
+  composeGenerationSystemPrompt,
+  recordEpisodeContinuityClaim,
+} from "./showContinuityService";
+import { reportContinuityClaim } from "./continuityReport";
 import { castBalanceGateMessage, checkFormatStructure } from "../formats/formatScriptValidation";
 import type { AiHost } from "@prisma/client";
 
@@ -914,6 +919,46 @@ Delivery field meanings:
     const msg = "Validation failed: Generated plainText is empty.";
     result.reasons.push(msg);
     throw new Error(msg);
+  }
+
+  // 12b. CONTINUITY REPORT — ask the model what its own episode actually did,
+  // and record the claim on the EPISODE.
+  //
+  // This is deliberately outside every throw path above. A missing or malformed
+  // report is a NON-EVENT: reportContinuityClaim never throws and returns null
+  // on any failure, and recordEpisodeContinuityClaim only stores a claim that
+  // passes the guards. The continuity engine is layered on top of the show and
+  // is not permitted to become a new way for an episode to die.
+  //
+  // Recording here rather than at the fact-check gate is safe because nothing
+  // GLOBAL moves yet — the claim sits on the episode, and only the fold (which
+  // counts produced episodes only) can advance the season. See the two-phase
+  // commit note in showContinuityService.
+  if (continuity) {
+    const claim = await reportContinuityClaim(llm, {
+      scriptText: plainText,
+      runners: continuity.runners,
+      log: (m) => result.reasons.push(m),
+    });
+    if (claim) {
+      console.debug(`[Continuity] episode=${ep.id} returned claim: ${JSON.stringify(claim)}`);
+      const recorded = await recordEpisodeContinuityClaim(ep.id, claim);
+      if (recorded.ok) {
+        result.reasons.push(
+          `Continuity claim recorded: ${claim.wolverineUsed ?? "no Wolverine"}, ` +
+            `${claim.weSaidCount} "we", attendance ${claim.attendanceClaimed ?? "—"}/${claim.attendanceReal ?? "—"}, ` +
+            `unity beat ${claim.unityBeatPresent ? "present" : "MISSING"}.`
+        );
+      } else {
+        // The script violated continuity. Say so loudly — it is a quality
+        // signal for the reviewer — but do NOT fail generation over it.
+        result.reasons.push(
+          `Continuity claim REJECTED (${recorded.violations.length} violation(s)); the episode is unaffected and the season does not advance: ` +
+            recorded.violations.map((v) => `${v.rule} — ${v.detail}`).join(" | ")
+        );
+        console.warn(`[Continuity] episode=${ep.id} claim rejected:`, recorded.violations);
+      }
+    }
   }
 
   // 13. Save atomically in a Prisma Transaction
