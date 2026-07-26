@@ -84,17 +84,53 @@ async function main() {
       );
     });
 
-    await check("seat order: Zabala intensity 8 outranks Mulkey 7", async () => {
+    // Seating is decided by intensityLevel DESC (hostCasting.ts) plus an
+    // explicit chair-A swap (hostCastingShared.ts). The gap is what pins Zabala
+    // to seat A on every episode that does not pin hostIds — raising Mulkey
+    // above her would silently move him into chair A, so this is a structural
+    // assertion, not a taste one.
+    await check("seat order: Zabala intensity 8 outranks Mulkey 6 by at least 2", async () => {
       const z = first.find((h) => h.slug === "bernie-line-two");
       const m = first.find((h) => h.slug === "dutch-attendance");
       assert(z?.intensityLevel === 8, `Zabala intensity is ${z?.intensityLevel}`);
-      assert(m?.intensityLevel === 7, `Mulkey intensity is ${m?.intensityLevel}`);
+      assert(m?.intensityLevel === 6, `Mulkey intensity is ${m?.intensityLevel}`);
+      assert(
+        (z!.intensityLevel - m!.intensityLevel) >= 2,
+        `chairs must differ by at least 2, got ${z!.intensityLevel} vs ${m!.intensityLevel}`
+      );
     });
 
-    await check("Mulkey carries a valid 32-hex Fish reference id", async () => {
+    // Mulkey's loudness lives in the performance profile, NOT in
+    // intensityLevel. A silently-derived profile (the failure mode when the
+    // stored one does not parse) would give him baselineIntensity 4 /
+    // peakIntensity 6 and slower_quieter anger — quieter than Zabala and
+    // acoustically identical to a calm analyst. Pin the authored values.
+    await check("Mulkey's authored performance profile survives the write", async () => {
+      const m = first.find((h) => h.slug === "dutch-attendance");
+      const p: any = m?.performanceProfile;
+      assert(p && typeof p === "object", "Mulkey has no stored performance profile");
+      assert(p.angerStyle === "louder_slower", `angerStyle is '${p.angerStyle}', expected louder_slower`);
+      assert(p.baselineIntensity === 8, `baselineIntensity is ${p.baselineIntensity}, expected 8`);
+      assert(p.peakIntensity === 10, `peakIntensity is ${p.peakIntensity}, expected 10`);
+      assert(p.sarcasmBehavior === "never", `sarcasmBehavior is '${p.sarcasmBehavior}'`);
+      assert(p.preferredPauseStyle === "spacious", `preferredPauseStyle is '${p.preferredPauseStyle}'`);
+      assert(p.maxEscalationPace < p.baselinePace, "pace inversion lost: he must slow DOWN under pressure");
+      // The pair must not share a behavioral value where a contrast exists.
+      const z: any = first.find((h) => h.slug === "bernie-line-two")?.performanceProfile;
+      assert(z.angerStyle !== p.angerStyle, "both hosts share an anger signature — no acoustic separation");
+      assert(z.preferredPauseStyle !== p.preferredPauseStyle, "both hosts share a pause style");
+    });
+
+    await check("Mulkey's voice is either a real 32-hex Fish id or the publish-blocking placeholder", async () => {
       const m = first.find((h) => h.slug === "dutch-attendance");
       assert(m?.ttsProvider === "fish", `provider is ${m?.ttsProvider}`);
-      assert(/^[0-9a-f]{32}$/i.test(m?.ttsVoiceId ?? ""), `voice id '${m?.ttsVoiceId}' is not 32-hex`);
+      const v = m?.ttsVoiceId ?? "";
+      const real = /^[0-9a-f]{32}$/i.test(v);
+      const placeholder = /^PLACEHOLDER[_-]/i.test(v);
+      assert(real || placeholder, `voice id '${v}' is neither a 32-hex Fish id nor a recognised placeholder`);
+      // A placeholder must NOT look like a valid provider id, or the publish
+      // gate would never see it and a wrong voice would ship.
+      if (placeholder) assert(!real, "the placeholder must not be mistakable for a real reference id");
     });
 
     execSync("npx tsx prisma/seed.ts", { env, stdio: ["ignore", "pipe", "pipe"] });

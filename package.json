@@ -57,6 +57,7 @@
     "demo:post-tts-sound-direction": "tsx --conditions=react-server src/scripts/produceLocalPostTtsDemo.ts",
     "test:host-casting": "tsx --conditions=react-server src/scripts/testHostCasting.ts",
     "test:seed": "tsx --conditions=react-server src/scripts/testSeedIdempotency.ts",
+    "test:cast-guards": "tsx src/scripts/testCastGuards.ts",
     "test:pause-variety": "tsx src/scripts/testPauseVariety.ts",
     "test:host-fit": "tsx src/scripts/testHostFitCasting.ts",
     "test:factcheck-semantic": "tsx --conditions=react-server src/scripts/testSemanticFactCheck.ts",

@@ -94,7 +94,7 @@ export interface ScenePerformanceContext {
    *  "slower_quieter" = anger lands as slow, quiet precision). Adapters map
    *  this to genuinely different delivery cues so two heated hosts never get
    *  the same treatment. */
-  angerStyle?: "louder_faster" | "slower_quieter";
+  angerStyle?: "louder_faster" | "slower_quieter" | "louder_slower";
   /** Max inline delivery cues per utterance the adapter may emit. */
   maxCueDensity: number;
   /** Versioned performance profile snapshot (validated; may be defaults). */

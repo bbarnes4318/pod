@@ -37,6 +37,19 @@ const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
   dismissive: "[flat, slow, done with this]",
 };
 
+/** Heated cues for a host whose volume goes UP while pace goes DOWN — the
+ *  trained-projection voice that stretches words and holds terminals under
+ *  pressure rather than accelerating. Distinct from BOTH other sets: the hot
+ *  set is loud-and-fast, the slow/quiet set drops volume as well as pace. This
+ *  is the one that keeps two loud hosts legible in mono — they differ in pace
+ *  direction, not volume. */
+const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
+  heated: "[loud and slow, stretching every word]",
+  excited: "[booming, unhurried, savoring it]",
+  incredulous: "[loud disbelief, drawn out]",
+  dismissive: "[loud, flat, dragging the words]",
+};
+
 export interface FishScenePayload {
   url: string;
   model: string;
@@ -86,7 +99,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
   }
 
   const cueCapByHost = new Map<string, number>();
-  const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter">();
+  const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter" | "louder_slower">();
   for (const c of input.cast) {
     cueCapByHost.set(c.speakerHostId, Math.max(0, Math.min(2, c.maxCueDensity)));
     angerStyleByHost.set(c.speakerHostId, c.angerStyle ?? "louder_faster");
@@ -129,16 +142,20 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
 
     // Scene-level accent: exactly one line in the scene may open with a
     // tone cue — controlled variation instead of stamping every hot line.
-    // The cue direction follows the SPEAKER's anger signature: a
-    // louder_faster host gets the hot cue; a slower_quieter host's anger
-    // lands as slow, cold precision — opposite directions keep a heated
-    // stretch legible even in mono.
+    // The cue direction follows the SPEAKER's anger signature. Three distinct
+    // sets, because volume and pace move independently: louder_faster gets the
+    // hot cue, slower_quieter lands as slow cold precision, louder_slower stays
+    // loud but stretches. Differing directions keep a heated stretch legible
+    // even in mono — including when both hosts are loud.
     if (u.lineIndex === accentLineIndex && cueCount === 0 && cap > 0) {
       const tone = (u.tone || "").toLowerCase();
-      const slowQuiet = angerStyleByHost.get(u.speakerHostId) === "slower_quieter";
-      const cue = slowQuiet
-        ? SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
-        : TONE_TO_FISH_CUE[tone];
+      const anger = angerStyleByHost.get(u.speakerHostId) ?? "louder_faster";
+      const cue =
+        anger === "slower_quieter"
+          ? SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
+          : anger === "louder_slower"
+            ? LOUD_SLOW_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
+            : TONE_TO_FISH_CUE[tone];
       if (cue) {
         openers.push(cue);
         cueCount++;

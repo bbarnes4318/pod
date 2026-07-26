@@ -5,6 +5,7 @@
 
 import { buildElevenLabsDialoguePayload, synthesizeElevenLabsDialogueScene } from "../lib/providers/tts/elevenlabsDialogue";
 import { buildFishScenePayload } from "../lib/providers/tts/fishDialogue";
+import { extractFishCues } from "../lib/providers/tts/fishFormat";
 import { getTtsProviderCapabilities, providerSupportsSceneRendering } from "../lib/providers/tts/capabilities";
 import { SceneGenerationError, type DialogueSceneInput } from "../lib/providers/tts/sceneTypes";
 import { decideSceneEligibility, readRenderModeSetting, readSceneProviderAllowlist, stableSceneSeed } from "../lib/services/ttsSceneService";
@@ -280,6 +281,83 @@ async function main() {
     assert(prof.angerStyle === "slower_quieter", "gravelly/unhurried style must derive slower_quieter");
     const dir = buildPerformanceDirection({ formatId: "two_host_debate", roleId: "chair_b", host: { name: "Sonny" }, profile: prof, sceneType: "argument_escalation" });
     assert(/SLOWER and QUIETER/i.test(dir), "direction must state the downward anger signature");
+  });
+
+  check("three anger signatures produce three DISTINCT cue sets (louder_slower is not the hot default)", () => {
+    // Volume and pace are independent axes. louder_slower must not collapse
+    // into either neighbour: widening the enum without a third branch would
+    // silently drop it to the louder_faster `else` and the inversion — the
+    // whole reason two loud hosts stay legible in mono — would not happen.
+    const cueFor = (anger: "louder_faster" | "slower_quieter" | "louder_slower") => {
+      const input = sceneInput();
+      input.utterances = [
+        { lineIndex: 0, speakerHostId: "hB", speakerName: "B", seatIndex: 1, voiceId: FISH_B, spokenText: "You weren't in the room!", tone: "heated", energy: "high" },
+        { lineIndex: 1, speakerHostId: "hA", speakerName: "A", seatIndex: 0, voiceId: FISH_A, spokenText: "Calm reply.", tone: "analytical", energy: "low" },
+      ];
+      input.cast = [
+        { speakerHostId: "hA", formatRoleId: "chair_a", direction: "", intensityLevel: 8, angerStyle: "louder_faster", maxCueDensity: 1, profileVersion: 1 },
+        { speakerHostId: "hB", formatRoleId: "chair_b", direction: "", intensityLevel: 6, angerStyle: anger, maxCueDensity: 1, profileVersion: 1 },
+      ];
+      const cues = extractFishCues(buildFishScenePayload(input).body.text);
+      assert(cues.length > 0, `${anger} produced no cue at all`);
+      return cues.join(" ");
+    };
+
+    const hot = cueFor("louder_faster");
+    const cold = cueFor("slower_quieter");
+    const loudSlow = cueFor("louder_slower");
+
+    assert(hot !== cold && cold !== loudSlow && hot !== loudSlow,
+      `all three anger signatures must differ — got hot=${hot} cold=${cold} loudSlow=${loudSlow}`);
+    // extractFishCues returns cue text WITHOUT the surrounding brackets.
+    assert(hot === "angry", `louder_faster should get the hot cue, got ${hot}`);
+    assert(loudSlow !== "angry", `louder_slower must NOT fall through to the hot cue, got ${loudSlow}`);
+    // The defining property: loud is retained, pace is not.
+    assert(/loud|booming/i.test(loudSlow), `louder_slower must stay loud, got ${loudSlow}`);
+    assert(/slow|stretch|unhurried|drawn out|dragging/i.test(loudSlow), `louder_slower must slow down, got ${loudSlow}`);
+    assert(!/quiet/i.test(loudSlow), `louder_slower must not go quiet — that's slower_quieter, got ${loudSlow}`);
+
+    // Derivation reads volume and pace independently.
+    assert(
+      deriveProfileFromHostFields({ speakingStyle: "ENORMOUS trained projection, stretched vowels, louder and SLOWER under pressure", intensityLevel: 6 }).angerStyle === "louder_slower",
+      "a loud AND slow style must derive louder_slower, not slower_quieter on the 'slow' match alone"
+    );
+    assert(
+      deriveProfileFromHostFields({ speakingStyle: "low, gravelly, unhurried, deadpan", intensityLevel: 6 }).angerStyle === "slower_quieter",
+      "a slow-but-not-loud style must still derive slower_quieter"
+    );
+
+    // Direction text carries the third signature too.
+    const dir = buildPerformanceDirection({
+      formatId: "two_host_debate", roleId: "chair_b", host: { name: "Dutch" },
+      profile: deriveProfileFromHostFields({ speakingStyle: "enormous projection, stretched long, louder and slower", intensityLevel: 6 }),
+      sceneType: "argument_escalation",
+    });
+    assert(/LOUDER and SLOWER/i.test(dir), `direction must state the loud-slow signature, got: ${dir}`);
+  });
+
+  check("an invalid performance profile is REJECTED at write time, never silently replaced", async () => {
+    const { parseHostPerformanceProfileForWrite, resolveHostPerformanceProfile } = await import("../lib/hosts/performanceProfile");
+    const good = deriveProfileFromHostFields({ speakingStyle: "loud", intensityLevel: 9 });
+
+    assert(parseHostPerformanceProfileForWrite(good).ok, "a valid profile must be accepted for write");
+
+    // One bad enum string — the exact failure that shipped a character inverted.
+    const bad = { ...good, angerStyle: "louder_slowerr" };
+    const rejected = parseHostPerformanceProfileForWrite(bad);
+    assert(!rejected.ok, "an invalid enum must be REJECTED at write time, not silently replaced");
+    assert(
+      !rejected.ok && rejected.issues.some((i) => i.includes("angerStyle")),
+      `the rejection must name the offending field, got: ${!rejected.ok ? rejected.issues.join("; ") : ""}`
+    );
+
+    assert(!parseHostPerformanceProfileForWrite(null).ok, "a missing profile is not writable");
+    assert(!parseHostPerformanceProfileForWrite({ version: 99 }).ok, "a wrong-version profile is not writable");
+
+    // And the runtime resolver still degrades safely for a host that genuinely
+    // has no authored profile — absence and invalidity are different cases.
+    const absent = resolveHostPerformanceProfile(null, { speakingStyle: "loud", intensityLevel: 9 });
+    assert(absent.source === "derived", "an absent profile must still derive rather than throw");
   });
 
   check("The Room rule: stale-info admission is validated, not hoped for", async () => {
