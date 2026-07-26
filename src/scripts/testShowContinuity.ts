@@ -19,8 +19,11 @@ import {
   rateLimitCooldown,
   type ContinuityState,
 } from "../lib/services/showContinuity";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   checkContinuity,
+  composeGenerationSystemPrompt,
   continuityUpdateSchema,
   findHoytContradiction,
   nextContinuityState,
@@ -324,6 +327,70 @@ check("rate-limit windows survive a re-fold with the same episode indices", () =
   assert(JSON.stringify(folded.nuclearOptionFirings) === JSON.stringify([3, 7]), `firings must be stamped with stable indices, got ${JSON.stringify(folded.nuclearOptionFirings)}`);
   // 25 episodes in, both firings are outside the 20-window → available again.
   assert(rateLimitAllows(folded, "nuclearOption"), "old firings must age out of the window after a re-fold");
+});
+
+// --- THE PROMPT ACTUALLY REACHES THE MODEL ---------------------------------
+//
+// The defect this section exists for: the composed prompt was computed and
+// never passed, so continuity injection was dead code — and all 27 tests below
+// still passed, because not one of them asserted the prompt reaches the LLM.
+// no-unused-vars caught it by luck.
+//
+// Two layers. The unit test pins the composition (including that the kill
+// switch is a BYTE-IDENTICAL no-op). The structural test reads the call sites,
+// because the failure mode is "the wiring was never connected" and there is no
+// injection seam in scriptService to capture a real call at — the stub LLM
+// provider throws by design rather than recording. A structural assertion is
+// the right tool for a wiring defect; it fails on exactly the edit that half-
+// applies.
+
+check("composition: the block is present when injected, and the kill switch is byte-identical", () => {
+  const base = "SYSTEM PROMPT BODY";
+  const block = renderContinuityBlock(eligibleRunners(state({ episodeCount: 5, phantomFansTotal: 41_000 })));
+
+  const withBlock = composeGenerationSystemPrompt(base, block);
+  assert(withBlock.includes(block), "the continuity block must be present in the composed prompt");
+  assert(withBlock.includes(base), "the base prompt must survive composition");
+  assert(withBlock.startsWith(base), "continuity is APPENDED — the base prompt leads");
+
+  // Kill switch OFF, and the standalone-episode path, both pass null.
+  const without = composeGenerationSystemPrompt(base, null);
+  assert(without === base, "with no continuity the prompt must be BYTE-IDENTICAL to the base — a kill switch that alters the prompt is not a kill switch");
+});
+
+check("wiring: every generation call site sends the CONTINUITY-COMPOSED prompt", () => {
+  const src = readFileSync(join(__dirname, "..", "lib", "services", "scriptService.ts"), "utf8");
+
+  // The composed variable must exist and be built through the one composer.
+  assert(/const systemPromptWithContinuity = composeGenerationSystemPrompt\(/.test(src),
+    "scriptService must build the generation prompt through composeGenerationSystemPrompt");
+
+  // Both LLM entry points must receive it. These are the two call sites that
+  // actually send a prompt to the model: the outline-driven path and the
+  // single-shot fallback. An episode that falls back must not silently lose
+  // its running bits.
+  const outlineCall = /generateOutlineDrivenScript\(llm,\s*\{\s*systemPrompt:\s*systemPromptWithContinuity/;
+  assert(outlineCall.test(src), "the outline-driven generation call must send systemPromptWithContinuity");
+
+  const fallbackBlock = src.slice(src.indexOf("script:single-shot-fallback"));
+  const fallbackHead = fallbackBlock.slice(0, 600);
+  assert(/systemPrompt:\s*systemPromptWithContinuity/.test(fallbackHead),
+    "the single-shot fallback must also send systemPromptWithContinuity");
+
+  // And the plain prompt must NOT be what generation receives.
+  assert(!/generateOutlineDrivenScript\(llm,\s*\{\s*systemPrompt,/.test(src),
+    "generation must not receive the un-composed prompt");
+});
+
+check("kill switch: the flag is read, and only 'false' disables injection", () => {
+  const src = readFileSync(join(__dirname, "..", "lib", "services", "scriptService.ts"), "utf8");
+  assert(/process\.env\.CONTINUITY_INJECTION !== "false"/.test(src),
+    "CONTINUITY_INJECTION must gate the injection, defaulting to ON so an unset env behaves as today");
+  // Default-on: an unset or arbitrary value must NOT disable it.
+  const enabledFor = (v: string | undefined) => v !== "false";
+  assert(enabledFor(undefined), "unset must leave continuity ON");
+  assert(enabledFor("true"), "'true' must leave continuity ON");
+  assert(!enabledFor("false"), "'false' must turn continuity OFF");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,6 +1,7 @@
 "use server";
 
 import { requireAdmin } from "@/lib/adminAuth";
+import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { db } from "@/lib/db";
 import { queueFinalAudioStitchJob } from "@/lib/queue/podcastQueue";
 import {
@@ -121,13 +122,6 @@ export async function fetchFinalAudioEligibility(scriptId: string) {
     // An already-produced episode (audio_ready or any later stage — content_ready,
     // publish_ready, published) has all its voices and is eligible for a forced
     // re-mix, e.g. adding music to a finished episode. Only pre-audio states block.
-    const PRODUCED_OR_LATER = new Set([
-      "audio_ready",
-      "content_generating",
-      "content_ready",
-      "publish_ready",
-      "published",
-    ]);
     if (
       episode.status !== "audio_segments_ready" &&
       episode.status !== "audio_stitching" &&

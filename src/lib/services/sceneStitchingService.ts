@@ -13,6 +13,7 @@
 // production planner. Scene mode uses this dedicated, simpler assembler.
 
 import { db } from "@/lib/db";
+import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import fs from "fs";
 import path from "path";
@@ -153,7 +154,6 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     if (episodeRow.status === "audio_stitching") {
       throw new Error("Episode is already audio_stitching.");
     }
-    const PRODUCED_OR_LATER = new Set(["audio_ready", "content_generating", "content_ready", "publish_ready", "published"]);
     if (episodeRow.status === "audio_ready" && !forceRegenerate) {
       const output = { episodeId: episodeRow.id, scriptId, finalStatus: "skipped", finalAudioUrl: episodeRow.audioUrl, reasons: ["Final audio already exists and forceRegenerate is false."] };
       await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "skipped", output: output as never } });

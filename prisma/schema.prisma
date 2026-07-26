@@ -621,7 +621,17 @@ model Episode {
   id                          String               @id @default(uuid())
   title                       String
   slug                        String               @unique
-  status                      String // "draft" | "queued" | "generating" | "completed" | "failed"
+  // Canonical ladder + the produced-or-later boundary live in
+  // src/lib/episodeStatus.ts (EPISODE_STATUS_LADDER / PRODUCED_OR_LATER).
+  // In pipeline order:
+  //   draft -> script_draft -> fact_checked -> script_approved ->
+  //   audio_segments_ready -> audio_stitching -> audio_ready ->
+  //   content_generating -> content_ready -> publish_ready -> published
+  // plus "failed", which is off-ladder and reachable from anywhere.
+  // There is NO "completed" Episode status. The previous comment here claimed
+  // one, and that error propagated into a design decision before anyone
+  // checked. Import the constant; never re-derive this list from a literal.
+  status                      String
   description                 String?
   longShowNotes               String?
   durationSeconds             Int?

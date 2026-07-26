@@ -14,6 +14,7 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import {
   ARC_BEATS,
   AUTHORED_ARC_LENGTH,
@@ -437,26 +438,20 @@ export function nextContinuityState(
 // ---------------------------------------------------------------------------
 
 /**
- * The real terminal boundary. NOTE: there is no "completed" Episode status —
- * the schema comment saying so is stale. The pipeline runs
- *   draft → scripting → script_draft → fact_checked → script_approved →
- *   audio_segments_ready → audio_stitching → audio_ready → content_generating
- *   → content_ready → publish_ready → published
- * and "the audio exists, so this episode is going to be heard" is `audio_ready`
- * or later. This mirrors PRODUCED_OR_LATER in sceneStitchingService, which is
- * the codebase's existing name for the same idea.
+ * The terminal boundary continuity commits on: the final audio exists, so this
+ * episode is going to be heard.
  *
- * Deliberately NOT `published`: publishing is an operator decision, and gating
- * narrative progression on it would let unpublished episodes pile up and
- * re-deliver the same arc beat, producing near-duplicate episodes.
+ * This is NOT a copy of the produced-or-later set — it IS that set, imported
+ * from the single canonical definition in @/lib/episodeStatus. Season
+ * progression depends on this boundary, and a duplicated literal would fail
+ * silently in both directions: add a status to the ladder and continuity either
+ * commits too early or stops committing, with nothing raised.
+ *
+ * Deliberately NOT gated on `published`: publishing is an operator decision,
+ * and gating narrative progression on it would let unpublished episodes pile up
+ * and re-deliver the same arc beat, producing near-duplicate episodes.
  */
-export const CONTINUITY_COMMITTED_STATUSES = [
-  "audio_ready",
-  "content_generating",
-  "content_ready",
-  "publish_ready",
-  "published",
-] as const;
+export const CONTINUITY_COMMITTED_STATUSES = [...PRODUCED_OR_LATER] as const;
 
 /**
  * PHASE 1. Record what this episode claimed. Validates against the state the
@@ -598,6 +593,23 @@ export function normalizeForCompare(s: ContinuityState): ContinuityState {
     wagerLeader: s.wagerLeader,
     wagerPot: s.wagerPot,
   };
+}
+
+/**
+ * The single place the generation system prompt is composed.
+ *
+ * Exists so the composition is testable and so there is exactly ONE way to
+ * build the prompt that goes to the model. A previous edit left the composed
+ * prompt computed but unused at both call sites, and every test still passed
+ * because none of them asserted the prompt reaches the LLM.
+ *
+ * `null` block (kill switch off, or a standalone episode with no podcast)
+ * returns the base prompt BYTE-IDENTICALLY — that identity is what makes the
+ * kill switch a true no-op rather than a subtly different prompt.
+ */
+export function composeGenerationSystemPrompt(base: string, continuityBlock: string | null): string {
+  if (!continuityBlock) return base;
+  return `${base}\n\n${continuityBlock}`;
 }
 
 /** Convenience: state + this episode's eligible runners + the prompt block. */

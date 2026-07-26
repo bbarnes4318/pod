@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { commitContinuity } from "./showContinuityService";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import fs from "fs";
@@ -418,13 +419,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // "add music to a finished episode" works. The episode's later status is
     // preserved after the re-stitch (see finalEpisodeStatus below), so a re-mix
     // never knocks a published episode back to audio_ready.
-    const PRODUCED_OR_LATER = new Set([
-      "audio_ready",
-      "content_generating",
-      "content_ready",
-      "publish_ready",
-      "published",
-    ]);
     if (
       episode.status !== "audio_segments_ready" &&
       episode.status !== "fact_checked" &&

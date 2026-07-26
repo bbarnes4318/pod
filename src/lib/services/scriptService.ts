@@ -64,7 +64,7 @@ import { findRumorKeyword, isGenuineFactualAssertion, RUMOR_KEYWORDS } from "./c
 import { resolveEpisodeCast, makeCastMatchers } from "./hostCasting";
 import { getShowFormat } from "../formats/showFormatRegistry";
 import { formatPromptPieces, castPersonaBlocks } from "../formats/formatScriptPrompts";
-import { continuityForGeneration } from "./showContinuityService";
+import { continuityForGeneration, composeGenerationSystemPrompt } from "./showContinuityService";
 import { castBalanceGateMessage, checkFormatStructure } from "../formats/formatScriptValidation";
 import type { AiHost } from "@prisma/client";
 
@@ -416,9 +416,10 @@ Delivery field meanings:
   // identical to `systemPrompt` and generation is exactly what it is today.
   const continuityEnabled = process.env.CONTINUITY_INJECTION !== "false";
   const continuity = continuityEnabled ? await continuityForGeneration(ep.podcastId) : null;
-  const systemPromptWithContinuity = continuity
-    ? `${systemPrompt}\n\n${continuity.promptBlock}`
-    : systemPrompt;
+  const systemPromptWithContinuity = composeGenerationSystemPrompt(
+    systemPrompt,
+    continuity?.promptBlock ?? null
+  );
 
   if (continuity) {
     // Debug-level, keyed to the episode: when a runner misfires this is how you
