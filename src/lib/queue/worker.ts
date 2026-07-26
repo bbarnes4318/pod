@@ -31,6 +31,8 @@ import {
   queueContentAssetGenerationJob,
 } from "./podcastQueue";
 import { nextProductionJobFor } from "@/lib/createFlow";
+import { classifyTopicFrame } from "@/lib/services/bettingFrame";
+import { bettingQuotaState, admitsBetting, poolBettingPercent, BETTING_QUOTA, BETTING_WINDOW_DAYS } from "@/lib/services/bettingQuota";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
@@ -1235,6 +1237,25 @@ Rules:
 - Do not copy full copyrighted article summaries or texts.
 - If evidence is weak, lower scores. Prefer argument potential over boring facts.
 
+THE FRAME RULE — this is the most important instruction here.
+This show is about PEOPLE AND CONSEQUENCES: a person, a decision, a career, a
+job on the line, a grudge, something that happened to somebody. It is not a
+handicapping show.
+
+- Odds, spreads, totals, moneylines and run lines may appear as a SUPPORTING
+  FACT inside a topic ("the market moved after the injury news").
+- Odds must NEVER be the FRAME of a topic. Do not build a debate out of whether
+  a number is right, whether a line is disrespectful, whether something is worth
+  laying, or what the market is saying. "Is this line begging you to take
+  Denver?" and "Are the 49ers worth laying 3.5?" are exactly what NOT to write.
+- The evidence you are given is dominated by odds records — far more of them
+  than news. That is an artefact of how the data is collected, NOT a signal that
+  odds are what fans argue about. Do not let their volume steer the topics.
+  Reach past them to the human story the numbers are attached to.
+- Every title must name a person, a team's decision, or a consequence someone
+  lives with. If you cannot state who is affected and how, the topic is not
+  ready.
+
 You must return a JSON object containing a 'topics' array of 10-20 candidates.
 Schema for each topic candidate in the array:
 {
@@ -1302,8 +1323,16 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     let leagueMismatchCount = 0;
     let skippedWeakEvidenceCount = 0;
     let belowScoreCount = 0;
+    let bettingOverQuotaCount = 0;
 
     const skippedRecordsReasonSummary: string[] = [];
+
+    // Read the rolling-window usage ONCE per batch, then track admissions
+    // locally — re-querying per topic would let a batch admit several before the
+    // first one's row is visible to the next count.
+    const quota = await bettingQuotaState();
+    const bettingUsedInWindow = quota.used;
+    let bettingAdmittedThisBatch = 0;
 
     const topicsList = llmResult?.topics || [];
 
@@ -1442,12 +1471,23 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       const bettingRelevance = Math.max(1, Math.min(100, Number(topic.bettingRelevanceScore) || 50));
       const recency = Math.max(1, Math.min(100, Number(topic.recencyScore) || 50));
 
-      // Server-side debateScore formula:
+      // Server-side debateScore formula.
+      //
+      // bettingRelevance used to carry 0.20 here — the same weight as star power
+      // and recency, second only to controversy. The Board ranks by debateScore,
+      // so the product was literally ordering its front page 20% by how
+      // betting-relevant a story was, which is not what the show is about.
+      // Measured on the live pool: betting-framed topics were 25% of briefed
+      // candidates but 40% of the top 20.
+      //
+      // Its weight is redistributed to controversy and recency — the two axes
+      // that actually track "people are arguing about this right now". The field
+      // is still stored and still shown, because a betting angle is real
+      // information about a story; it just no longer decides the ranking.
       const debateScore =
-        controversy * 0.30 +
+        controversy * 0.40 +
         starPower * 0.20 +
-        bettingRelevance * 0.20 +
-        recency * 0.20 +
+        recency * 0.30 +
         evidenceStrengthScore * 0.10;
 
       // Honor the operator's "Minimum Debate Score" (previously accepted from
@@ -1488,6 +1528,21 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
         continue;
       }
 
+      // THE BETTING QUOTA, enforced HERE — at generation, before the row exists.
+      // Filtering the picker instead would leave the generator producing odds
+      // topics and merely hide them, which is how this regressed before.
+      const frame = classifyTopicFrame({ title: topic.title, summary: topic.summary });
+      if (frame.frame === "betting" && !admitsBetting(bettingUsedInWindow, bettingAdmittedThisBatch)) {
+        bettingOverQuotaCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(
+          `Topic '${topic.title}' skipped: betting-framed and the quota of ${BETTING_QUOTA} per ${BETTING_WINDOW_DAYS} rolling days is already used ` +
+            `(${bettingUsedInWindow} existing + ${bettingAdmittedThisBatch} this batch). Odds may be a fact inside a topic, never its frame.`
+        );
+        continue;
+      }
+      if (frame.frame === "betting") bettingAdmittedThisBatch++;
+
       // Save valid TopicCandidate
       const createdTopic = await db.topicCandidate.create({
         data: {
@@ -1502,6 +1557,9 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           debateScore,
           evidenceIds: validEvidence as any,
           status: "pending",
+          frame: frame.frame,
+          frameScore: frame.score,
+          frameSignals: frame.signals as any,
         },
       });
       insertedTopicIds.push(createdTopic.id);
@@ -1554,6 +1612,17 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       // all, so it belongs in the job's own output, not just the console.
       briefJobsQueued,
       briefEnqueueErrors: briefEnqueueErrors.slice(0, 5),
+      // THE STANDING POOL-COMPOSITION CHECK. Reported on every generation run so
+      // a betting regression is visible immediately instead of being
+      // rediscovered by reading the board months later.
+      bettingFrame: {
+        admittedThisBatch: bettingAdmittedThisBatch,
+        overQuotaRejected: bettingOverQuotaCount,
+        usedInWindowBefore: bettingUsedInWindow,
+        quota: BETTING_QUOTA,
+        windowDays: BETTING_WINDOW_DAYS,
+        poolBettingPercent: await poolBettingPercent(),
+      },
     };
 
     await db.jobLog.update({

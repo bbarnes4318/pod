@@ -116,12 +116,15 @@
     "test:episode-status": "tsx src/scripts/testEpisodeStatus.ts",
     "test:ledger": "tsx --conditions=react-server src/scripts/testLedger.ts",
     "test:pipeline-chaining": "tsx src/scripts/testPipelineChaining.ts",
-    "test:production-chain": "tsx --conditions=react-server src/scripts/testProductionChain.ts"
+    "test:production-chain": "tsx --conditions=react-server src/scripts/testProductionChain.ts",
+    "test:betting-frame": "tsx --conditions=react-server src/scripts/testBettingFrame.ts",
+    "analyze:topic-bias": "tsx --conditions=react-server src/scripts/analyzeTopicBias.ts",
+    "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
     "@aws-sdk/client-s3": "^3.714.0",
-    "@prisma/client": "^6.1.0",
+    "@prisma/client": "^6.19.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
