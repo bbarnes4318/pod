@@ -100,7 +100,7 @@ const BRIEF_SCHEMA = `{
   "mainAngle": "...", "whyMattersNow": "...",
   "keyFactsContext": [ { "text": "specific fact with numbers/names (quotes <= 20 words, attributed)", "evidenceRefs": [ { "type": "newsItem", "id": "news-<index>" } ], "confidence": "high" | "medium" } ],
   "onAirTalkingPoints": [ { "text": "...", "evidenceRefs": [ { "type": "newsItem", "id": "news-<index>" } ] } ],
-  "counterArguments": [ { "host": "Zabala" | "Meachum", "claim": "..." } ],
+  "counterArguments": [ { "host": "Zabala" | "Mulkey", "claim": "..." } ],
   "contrarianAngle": "...", "strongestDebateQuestion": "...", "suggestedHostTake": "...",
   "argumentForHostA": "...", "argumentForHostB": "...",
   "sourceIds": [ { "type": "newsItem", "id": "news-<index>" } ]
@@ -153,7 +153,7 @@ function topicPromptBlock(idx: number, topic: any, brief: any, rich: boolean): s
   }
   lines.push(
     `Zabala Debate Stance: ${brief.argumentForHostA || ""}`,
-    `Meachum Debate Stance: ${brief.argumentForHostB || ""}`,
+    `Mulkey Debate Stance: ${brief.argumentForHostB || ""}`,
     `Key Grounded Facts: ${JSON.stringify(rich ? brief.keyFactsContext || [] : brief.facts || [])}`,
     `On-Air Talking Points: ${JSON.stringify(rich ? brief.onAirTalkingPoints || [] : brief.stats || [])}`,
     `Suggested Counter-arguments: ${JSON.stringify(brief.counterArguments || [])}`,
@@ -169,7 +169,7 @@ async function generateAndScore(label: string, topicsPrompts: string, systemProm
   const llm = getScriptLLMProvider();
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
-      speakerNames: ["Zabala", "Meachum"],
+      speakerNames: ["Zabala", "Mulkey"],
     systemPrompt,
     episodeTitle: `Real-material test (${label})`,
     topicsPrompts,

@@ -267,10 +267,13 @@ export function validateScriptContent(
       summary.reasons.push(`Factual evidence coverage is ${summary.evidenceCoveragePercent}%, which is under the required 90%.`);
     }
 
-    // PERSONA-DEVICE RULE ("The Room" rule, Host Bible v2): a host whose
-    // argument patterns declare a once-per-episode stale-info admission (e.g.
-    // Otis Kemp — "Admit — at least once — that his information is out of
+    // PERSONA-DEVICE RULE ("The Room" rule): a host whose argument patterns
+    // declare a once-per-episode stale-info admission (e.g. an insider whose
+    // pattern reads "Admit — at least once — that his information is out of
     // date") must actually deliver that admission somewhere in the episode.
+    // Opt-in by construction: the loop below skips any host who declares no
+    // such device, so it lies dormant for rosters that don't use one (the
+    // current Zabala/Mulkey pair does not).
     // Enforced here, not hoped for in the prompt: the admission is what keeps
     // an insider character credible instead of an oracle. Only fires when the
     // caller supplies argumentPatterns for the cast (all production callers do).

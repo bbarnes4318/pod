@@ -9,21 +9,22 @@ const RETIRED_HOST_SLUGS = [
   "margo-the-receipt",
   "max-voltage",
   "dr-linebreak",
-  // Seat B until Meachum replaced him. See docs/PODCAST_CONFIGURATION.md.
   "otis-laminate",
+  // Seat B until Mulkey replaced him. See docs/PODCAST_CONFIGURATION.md.
+  "ray-forty-one",
 ];
 
 async function main() {
   console.log("Seeding AI Host personalities (Host Bible v3 — the customer and the official)...");
 
   // Host Bible v3 (docs: CHARACTERS.md). Seat A stays Zabala, the outsider who
-  // paid for every seat. Seat B is now Meachum, twenty-two years inside the
+  // paid for every seat. Seat B is now Mulkey, twenty-two years inside the
   // whistle, who holds the rulebook and answers to nobody's press release.
   // Both can use stats, both can use emotion, both can be wrong, escalation
   // runs from either chair. Zabala MUST be index 0 (seat A / higher
   // intensity); the 8/7 gap is deliberate — wide enough for the pipeline's
   // A/B chair convention, narrow enough that seat B can genuinely escalate.
-  // Fish voice ids: pass FISH_ZABALA_VOICE_ID / FISH_MEACHUM_VOICE_ID (32-hex)
+  // Fish voice ids: pass FISH_ZABALA_VOICE_ID / FISH_MULKEY_VOICE_ID (32-hex)
   // when the blended voices are ready; until then the gender-matched working
   // voices keep the pipeline shippable.
   const zabalaProfile = {
@@ -45,7 +46,7 @@ async function main() {
     prohibitedTraits: ["deference to sources", "insider hedging"],
     providerOverrides: {},
   };
-  const meachumProfile = {
+  const mulkeyProfile = {
     version: 1,
     baselinePace: 1.0,
     maxEscalationPace: 1.2,
@@ -96,8 +97,8 @@ async function main() {
       isActive: true,
     },
     {
-      name: 'Ray "Forty-One" Meachum',
-      slug: "ray-forty-one",
+      name: 'Dutch "Attendance" Mulkey',
+      slug: "dutch-attendance",
       role: "Twenty-two-year official, finally unmuzzled",
       worldview:
         "There is a correct answer on every play and almost nobody in this conversation wants it. Players lie about contact. Coaches work the officials on purpose and call it competitiveness. Owners hang their own people out in a press release by Tuesday. Fans are the loudest and least accountable people in the building and they have convinced themselves they are the victims. I am the only one here with a rulebook. WANTS: to be told once, by anyone, that he got a call right. AVOIDS: the fact that he is still arguing about one play from years ago that nobody else remembers.",
@@ -116,14 +117,14 @@ async function main() {
       ],
       bannedPhrases: ["Let them play", "The refs decided the game", "In real time it's a hard call", "No comment", "With all due respect"],
       ttsProvider: "fish",
-      // Male-register working voice until the blended Meachum voice exists.
+      // Male-register working voice until the blended Mulkey voice exists.
       // Seat-keyed FISH_HOST_B_VOICE_ID overrides this without a reseed.
-      ttsVoiceId: process.env.FISH_MEACHUM_VOICE_ID || "36780e7121b84d5c9c24cbd2f15eaaa4",
+      ttsVoiceId: process.env.FISH_MULKEY_VOICE_ID || "36780e7121b84d5c9c24cbd2f15eaaa4",
       intensityLevel: 7,
       voiceSource: "cloned",
       voiceProvenanceNote:
         "Blended synthetic profile. No single identifiable broadcaster. Record consent/license id here before publish.",
-      performanceProfile: meachumProfile,
+      performanceProfile: mulkeyProfile,
       isActive: true,
     },
   ];

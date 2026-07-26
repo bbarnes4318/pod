@@ -79,20 +79,20 @@ async function main() {
       assert(live.length === 2, `expected 2 castable hosts, got ${live.length}`);
       const slugs = live.map((h) => h.slug).sort();
       assert(
-        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "ray-forty-one"]),
+        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "dutch-attendance"]),
         `castable roster is ${slugs.join(", ")}`
       );
     });
 
-    await check("seat order: Zabala intensity 8 outranks Meachum 7", async () => {
+    await check("seat order: Zabala intensity 8 outranks Mulkey 7", async () => {
       const z = first.find((h) => h.slug === "bernie-line-two");
-      const m = first.find((h) => h.slug === "ray-forty-one");
+      const m = first.find((h) => h.slug === "dutch-attendance");
       assert(z?.intensityLevel === 8, `Zabala intensity is ${z?.intensityLevel}`);
-      assert(m?.intensityLevel === 7, `Meachum intensity is ${m?.intensityLevel}`);
+      assert(m?.intensityLevel === 7, `Mulkey intensity is ${m?.intensityLevel}`);
     });
 
-    await check("Meachum carries a valid 32-hex Fish reference id", async () => {
-      const m = first.find((h) => h.slug === "ray-forty-one");
+    await check("Mulkey carries a valid 32-hex Fish reference id", async () => {
+      const m = first.find((h) => h.slug === "dutch-attendance");
       assert(m?.ttsProvider === "fish", `provider is ${m?.ttsProvider}`);
       assert(/^[0-9a-f]{32}$/i.test(m?.ttsVoiceId ?? ""), `voice id '${m?.ttsVoiceId}' is not 32-hex`);
     });
@@ -145,7 +145,7 @@ async function main() {
       const cast = await resolveEpisodeHosts({ hostIds: [] });
       const slugs = [cast.hostA.slug, cast.hostB.slug].sort();
       assert(
-        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "ray-forty-one"]),
+        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "dutch-attendance"]),
         `auto-cast picked ${slugs.join(", ")}`
       );
     });

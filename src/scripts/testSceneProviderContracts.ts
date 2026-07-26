@@ -259,7 +259,7 @@ async function main() {
 
   check("opposite anger signatures: slower_quieter host gets cold/quiet cues, never [angry]", () => {
     const input = sceneInput();
-    // Kemp-style speaker: heated line, anger goes DOWN.
+    // Downward-anger speaker: heated line, anger goes DOWN.
     input.utterances = [
       { lineIndex: 0, speakerHostId: "hB", speakerName: "B", seatIndex: 1, voiceId: FISH_B, spokenText: "You weren't in the room!", tone: "heated", energy: "high" },
       { lineIndex: 1, speakerHostId: "hA", speakerName: "A", seatIndex: 0, voiceId: FISH_A, spokenText: "Calm reply.", tone: "analytical", energy: "low" },
@@ -278,7 +278,7 @@ async function main() {
     // Directions carry the signature too.
     const prof = deriveProfileFromHostFields({ speakingStyle: "low, gravelly, unhurried, deadpan", intensityLevel: 6 });
     assert(prof.angerStyle === "slower_quieter", "gravelly/unhurried style must derive slower_quieter");
-    const dir = buildPerformanceDirection({ formatId: "two_host_debate", roleId: "chair_b", host: { name: "Otis" }, profile: prof, sceneType: "argument_escalation" });
+    const dir = buildPerformanceDirection({ formatId: "two_host_debate", roleId: "chair_b", host: { name: "Sonny" }, profile: prof, sceneType: "argument_escalation" });
     assert(/SLOWER and QUIETER/i.test(dir), "direction must state the downward anger signature");
   });
 
@@ -286,16 +286,16 @@ async function main() {
     const { validateScriptContent } = await import("../lib/services/scriptValidation");
     const cast = [
       { id: "hA", name: "Bernadette Zabala" },
-      { id: "hB", name: "Otis Kemp", argumentPatterns: ["Admit — at least once — that his information is out of date"] },
+      { id: "hB", name: "Sonny Ledger", argumentPatterns: ["Admit — at least once — that his information is out of date"] },
     ];
-    const mkContent = (kempLine: string) => ({
+    const mkContent = (insiderLine: string) => ({
       segments: [{
         type: "topic",
         lines: Array.from({ length: 40 }, (_, i) => ({
           lineIndex: i,
-          speakerName: i % 2 === 0 ? "Bernadette Zabala" : "Otis Kemp",
+          speakerName: i % 2 === 0 ? "Bernadette Zabala" : "Sonny Ledger",
           speakerHostId: i % 2 === 0 ? "hA" : "hB",
-          text: i === 1 ? kempLine : "Just an opinion line with no factual claim at all.",
+          text: i === 1 ? insiderLine : "Just an opinion line with no factual claim at all.",
           tone: "analytical",
           evidenceRefs: [],
           isFactualClaim: false,
