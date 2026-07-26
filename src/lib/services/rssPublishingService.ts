@@ -220,12 +220,39 @@ export async function validateEpisodeForRss(
           errorReasons.push("Script contains no dialogue lines.");
         } else {
           let segmentsValidationPassed = true;
-          
+
+          // SCENE-VOICED EPISODES HAVE NO PER-LINE AudioSegment ROWS.
+          //
+          // The two voicing paths write to two different tables: legacy writes
+          // AudioSegment, scene mode writes DialogueSceneAudio. This gate only
+          // knew about the first, so a fully voiced, mixed, finished episode was
+          // reported as missing EVERY line's audio — 95 blockers on an episode
+          // whose 11m23s master exists and plays. The point of the gate is "does
+          // the audio exist and is it ready", and for a scene-voiced episode the
+          // answer lives in the other table.
+          const sceneRows = await db.dialogueSceneAudio.findMany({
+            where: { scriptId: script.id },
+            select: { status: true, audioUrl: true },
+          });
+          const sceneVoiced = script.audioSegments.length === 0 && sceneRows.length > 0;
+
+          if (sceneVoiced) {
+            const notReady = sceneRows.filter((s) => s.status !== "ready");
+            const noUrl = sceneRows.filter((s) => !s.audioUrl || !s.audioUrl.trim());
+            if (notReady.length > 0) {
+              segmentsValidationPassed = false;
+              errorReasons.push(`${notReady.length} of ${sceneRows.length} dialogue scenes are not ready.`);
+            }
+            if (noUrl.length > 0) {
+              segmentsValidationPassed = false;
+              errorReasons.push(`${noUrl.length} of ${sceneRows.length} dialogue scenes have no audio file.`);
+            }
+          } else {
           for (const line of scriptLines) {
             const matches = script.audioSegments.filter(
               (as) => as.lineIndex === line.lineIndex
             );
-            
+
             if (matches.length === 0) {
               segmentsValidationPassed = false;
               errorReasons.push(`Dialogue line ${line.lineIndex} is missing an AudioSegment.`);
@@ -244,7 +271,8 @@ export async function validateEpisodeForRss(
               }
             }
           }
-          
+          }
+
           if (segmentsValidationPassed) {
             checks.allAudioSegmentsReady = true;
           }

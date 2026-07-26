@@ -86,5 +86,30 @@ check("approximate timestamps are still reported as approximate", () => {
     "exactness must still be derived from real durations — a scene-voiced episode has none, so it stays approximate");
 });
 
+// ---------------------------------------------------------------------------
+// The PUBLISH GATE had its own copy of the same AudioSegment-only assumption.
+// Verified in the browser on the finished episode: the panel listed 95 blockers,
+// "Dialogue line 0 is missing an AudioSegment" through line 94, on an episode
+// whose 11m23s master exists and plays in that same page's player.
+// ---------------------------------------------------------------------------
+const rss = readFileSync(join(__dirname, "..", "lib", "services", "rssPublishingService.ts"), "utf8");
+
+check("the publish gate knows about scene-voiced episodes", () => {
+  assert(/dialogueSceneAudio\.findMany/.test(rss),
+    "the gate must read the scene table, not only AudioSegment");
+  assert(/const sceneVoiced =/.test(rss), "there must be an explicit scene-voiced branch");
+});
+
+check("the publish gate still checks that scene audio is REALLY ready", () => {
+  // Skipping the check entirely would turn a correct gate into a rubber stamp.
+  assert(/dialogue scenes are not ready/.test(rss), "scene status must still be verified");
+  assert(/dialogue scenes have no audio file/.test(rss), "scene audioUrl must still be verified");
+});
+
+check("the legacy per-line gate is untouched for legacy episodes", () => {
+  assert(/is missing an AudioSegment/.test(rss),
+    "a legacy episode with a genuinely missing line must still be blocked");
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
