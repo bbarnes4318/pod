@@ -66,6 +66,19 @@ check("the scene-voiced path is announced, not silent", () => {
   assert(/approximate/i.test(svc), "the log must say the timestamps are estimated");
 });
 
+check("no downstream code dereferences a per-line row that cannot exist", () => {
+  // Skipping the guard at the top is only half the fix — the transcript JSON
+  // then read matchingSeg.id and died with "Cannot read properties of undefined
+  // (reading 'id')" on the SECOND run. Every read of a per-line row after the
+  // scene-voiced skip must tolerate its absence.
+  assert(/audioSegmentId: matchingSeg \? matchingSeg\.id : null/.test(svc),
+    "the transcript's audioSegmentId must be nullable — it is a provenance pointer, not content");
+  // The other three reads were already optional-chained or truthiness-guarded;
+  // assert they stay that way.
+  assert(/let dur = as\?\.durationMs \|\| 0;/.test(svc), "duration read must stay optional-chained");
+  assert(/return as && as\.durationMs && as\.durationMs > 0;/.test(svc), "exactness check must stay guarded");
+});
+
 check("approximate timestamps are still reported as approximate", () => {
   // The honesty guarantee: estimated chapters must not claim to be exact.
   assert(/timestampsApproximate/.test(svc), "the flag must still exist");
