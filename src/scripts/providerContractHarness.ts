@@ -32,6 +32,14 @@ export interface HarnessConfig {
   build: (model?: string) => LLMProvider;
   /** Extra env this provider needs for the mocked tests. */
   env: Record<string, string>;
+  /** Whether this model's ID was confirmed against the official catalog. */
+  expectCatalogVerified: boolean;
+  /**
+   * Model-specific request assertions. Given the body of a structured call with
+   * reasoning ON and with reasoning OFF, throw if the shape is wrong. This is
+   * where "Nemotron must use enable_thinking, not thinking" is enforced.
+   */
+  assertRequestShape?: (bodies: { reasoningOn: any; reasoningOff: any }) => void;
 }
 
 interface Captured {
@@ -238,12 +246,27 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
     assert(captured[0].body.max_tokens === 16000, `max_tokens was changed to ${captured[0].body.max_tokens}`);
   });
 
-  await checkAsync("the capability record is honest about being unverified", async () => {
+  await checkAsync("catalog verification and LIVE verification are separate claims", async () => {
     const caps = modelCapabilities(cfg.provider, cfg.model);
     assert(caps.provider === cfg.provider, `capability record has the wrong provider: ${caps.provider}`);
-    assert(caps.verified === false, "this model's record claims to be verified — it has not been probed");
-    assert(caps.maximumOutputTokens === undefined, "an unverified output cap must be unknown, not guessed");
+    assert(
+      caps.catalogVerified === cfg.expectCatalogVerified,
+      `catalogVerified should be ${cfg.expectCatalogVerified} for ${cfg.model}, got ${caps.catalogVerified}`
+    );
+    // Nothing in this repository has called these endpoints yet.
+    assert(
+      caps.liveContractVerified === false,
+      "liveContractVerified must stay false until a live probe actually succeeds"
+    );
+    assert(
+      caps.maximumOutputTokens === undefined,
+      "an ENFORCEABLE output cap must be unknown until probed — a model-card figure belongs in documentedMaximumOutputTokens"
+    );
     assert(caps.unpriced === true, "a free trial endpoint must be marked unpriced");
+    assert(
+      caps.provenance.limits.length > 20,
+      "every record must say where its limit claim came from"
+    );
   });
 
   // ---------------------------------------------------------------- structured failures
@@ -267,7 +290,7 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
       err = e;
     }
     assert(err instanceof LlmProviderError, `expected LlmProviderError, got ${err?.name}`);
-    assert(err.category === "structured_output", err.category);
+    assert(err.category === "structured_output_invalid_after_repair", err.category);
     assert(/repair attempt also failed/.test(err.message), err.message);
     assert(captured.length === 2, `expected 2 requests, got ${captured.length}`);
   });
@@ -381,7 +404,7 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
     } finally {
       setEnv({ [`${cfg.provider.toUpperCase()}_MAX_RETRIES`]: "0" });
     }
-    assert(err?.category === "invalid_authentication", `expected invalid_authentication, got ${err?.category}`);
+    assert(err?.category === "authentication_failed", `expected authentication_failed, got ${err?.category}`);
     assert(captured.length === 1, `an auth failure must not be retried; saw ${captured.length} attempts`);
   });
 
@@ -462,7 +485,7 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
     } finally {
       setEnv({ [cfg.apiKeyVar]: TEST_KEY });
     }
-    assert(err?.category === "missing_credentials", `expected missing_credentials, got ${err?.category}`);
+    assert(err?.category === "missing_api_key", `expected missing_api_key, got ${err?.category}`);
     assert(err.message.includes(cfg.apiKeyVar), `must name ${cfg.apiKeyVar}: ${err.message}`);
   });
 
@@ -476,7 +499,7 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
     } finally {
       setEnv({ [cfg.apiKeyVar]: TEST_KEY });
     }
-    assert(err?.category === "missing_credentials", `expected missing_credentials, got ${err?.category}`);
+    assert(err?.category === "missing_api_key", `expected missing_api_key, got ${err?.category}`);
     assert(/placeholder/.test(err.message), err.message);
   });
 
@@ -505,27 +528,88 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
 
   // ---------------------------------------------------------------- downgrade
 
-  await checkAsync("a 400 on an unsupported parameter narrows the request once and re-sends", async () => {
+  await checkAsync("a 400 that NAMES a field narrows the request once and re-sends", async () => {
+    // Find a field this model actually sends, rather than assuming response_format
+    // (which is deliberately NOT sent to models whose native support is unconfirmed).
+    mock(() => chat('{"ok":true}'));
+    await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x", reasoning: "on" });
+    const field = ["chat_template_kwargs", "thinking", "reasoning_effort", "reasoning_budget", "response_format"].find(
+      (f) => captured[0].body[f] !== undefined
+    );
+    if (!field) {
+      // Kimi sends no optional fields at all — nothing to downgrade, which is
+      // itself the correct behavior and is asserted by the shape test.
+      console.log(`      (skipped: ${cfg.model} sends no downgradeable field, which is correct for it)`);
+      return;
+    }
     mock((body, call) => {
-      if (call === 0) {
-        assert(body.response_format !== undefined, "the first attempt should have carried response_format");
-        return json({ error: "response_format is not supported for this model" }, 400);
-      }
-      assert(body.response_format === undefined, "the retry must have dropped the unsupported field");
+      if (call === 0) return json({ error: `${field} is not supported for this model` }, 400);
+      assert(body[field] === undefined, `the retry must have dropped '${field}'`);
       return chat('{"ok":true}');
     });
-    const res = await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x" });
+    const res = await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x", reasoning: "on" });
     assert(res.ok === true, JSON.stringify(res));
     assert(captured.length === 2, `expected 2 requests, got ${captured.length}`);
   });
 
-  await checkAsync("reasoning=off does not send an enabled reasoning flag", async () => {
+  await checkAsync("an AMBIGUOUS 400 strips nothing and does not retry", async () => {
+    mock(() => json({ error: "unsupported parameter in request" }, 400));
+    let err: any = null;
+    try {
+      await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x", reasoning: "on" });
+    } catch (e) {
+      err = e;
+    }
+    assert(err?.category === "unsupported_parameter", `expected unsupported_parameter, got ${err?.category}`);
+    assert(
+      captured.length === 1,
+      `an ambiguous 400 must not license guessing which field to strip; saw ${captured.length} attempts`
+    );
+  });
+
+  await checkAsync("reasoning=off never sends an enabled reasoning flag", async () => {
     mock(() => chat("ok"));
     await cfg.build(cfg.model).generateText({ prompt: "x", reasoning: "off" });
     const body = captured[0].body;
     const enabled =
-      body.chat_template_kwargs?.thinking === true || body.thinking?.type === "enabled";
+      body.chat_template_kwargs?.thinking === true ||
+      body.chat_template_kwargs?.enable_thinking === true ||
+      body.thinking?.type === "enabled" ||
+      body.reasoning_effort !== undefined;
     assert(!enabled, `reasoning was enabled when the role asked for it off: ${JSON.stringify(body)}`);
+  });
+
+  await checkAsync("model-specific request shape is correct for this exact model", async () => {
+    if (!cfg.assertRequestShape) {
+      throw new Error(`no assertRequestShape supplied for ${cfg.model} — every probed model needs one`);
+    }
+    mock(() => chat('{"ok":true}'));
+    await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x", reasoning: "on", maxTokens: 4000 });
+    const reasoningOn = captured[0].body;
+    mock(() => chat('{"ok":true}'));
+    await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x", reasoning: "off", maxTokens: 4000 });
+    const reasoningOff = captured[0].body;
+    cfg.assertRequestShape({ reasoningOn, reasoningOff });
+  });
+
+  await checkAsync("structured output uses the mode this model actually supports", async () => {
+    const caps = modelCapabilities(cfg.provider, cfg.model);
+    mock(() => chat('{"ok":true}'));
+    await cfg.build(cfg.model).generateStructuredOutput<any>({ prompt: "x" });
+    const rf = captured[0].body.response_format;
+    if (caps.supportsNativeJsonSchema || caps.supportsNativeJsonObject) {
+      assert(rf !== undefined, "a model with native JSON support should have been sent response_format");
+    } else {
+      assert(
+        rf === undefined,
+        `response_format must NOT be sent to a model whose native support is unconfirmed: ${JSON.stringify(rf)}`
+      );
+      const system = String(captured[0].body.messages[0]?.content || "");
+      assert(
+        /single valid JSON object/.test(system),
+        "prompt-enforced mode must carry the JSON instruction in the system message"
+      );
+    }
   });
 
   // ---------------------------------------------------------------- live probe

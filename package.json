@@ -127,7 +127,8 @@
     "test:llm-routing": "tsx --conditions=react-server src/scripts/testLlmRouting.ts",
     "test:nvidia-provider": "tsx --conditions=react-server src/scripts/testNvidiaProvider.ts",
     "test:zai-provider": "tsx --conditions=react-server src/scripts/testZaiProvider.ts",
-    "test:role-experiments": "tsx --conditions=react-server src/scripts/testRoleExperiments.ts"
+    "test:role-experiments": "tsx --conditions=react-server src/scripts/testRoleExperiments.ts",
+    "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

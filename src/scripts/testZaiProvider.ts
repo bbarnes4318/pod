@@ -45,6 +45,20 @@ async function main(): Promise<void> {
         ZAI_MAX_RETRIES: "0",
         ZAI_REQUEST_TIMEOUT_MS: "240000",
       },
+      // Z.ai's catalog was NOT confirmed as part of this work — unlike the six
+      // NVIDIA ids, which were. Reported as such rather than assumed.
+      expectCatalogVerified: false,
+      assertRequestShape: ({ reasoningOn, reasoningOff }) => {
+        const bad = (m: string) => {
+          throw new Error(m);
+        };
+        if (reasoningOn.thinking?.type !== "enabled") bad("zai: expected top-level thinking={type:'enabled'}");
+        if (reasoningOff.thinking?.type !== "disabled") bad("zai: expected thinking={type:'disabled'} when off");
+        if (reasoningOn.chat_template_kwargs !== undefined) {
+          bad("zai: chat_template_kwargs is NVIDIA NIM's field, not Z.ai's");
+        }
+        if (reasoningOn.reasoning_budget !== undefined) bad("zai: reasoning_budget is Nemotron's field");
+      },
     },
     { live: LIVE }
   );

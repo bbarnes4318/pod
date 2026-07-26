@@ -21,18 +21,28 @@ import { ALL_ROLES, ROLE_DEFINITIONS, LLMRole } from "../lib/providers/llm/roles
 import {
   RoutedLLMProvider,
   candidateKey,
+  endpointIdentity,
   getRoleLLMProvider,
   isPaidProvider,
   legacyFallbackAllowed,
+  legacyFallbackExplicit,
+  normalizedBaseUrl,
   resolveRolePlan,
   resolveScriptChallenger,
   roleHasRealProvider,
   roleRouteReport,
 } from "../lib/providers/llm/routing";
+import { fallbackDecision } from "../lib/providers/llm/fallbackPolicy";
+import { LlmProviderError } from "../lib/providers/llm/errors";
 import { activeRoutingProfile } from "../lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "../lib/providers/llm/deploymentStage";
 import { routingEnvKeys, roleOverrideKeys } from "../lib/providers/llm/routingEnv";
-import { resolveMaxTokens, modelCapabilities, UnsupportedOutputLimitError } from "../lib/providers/llm/capabilities";
+import {
+  resolveMaxTokens,
+  modelCapabilities,
+  verificationState,
+  UnsupportedOutputLimitError,
+} from "../lib/providers/llm/capabilities";
 import { llmCostMark, llmCostSince, recordLlmCall, withLlmAttribution } from "../lib/providers/llm/costLedger";
 import { AnthropicLLMProvider } from "../lib/providers/llm/anthropic";
 import { OpenAILLMProvider } from "../lib/providers/llm/openai";
@@ -122,14 +132,27 @@ const CURRENT_PROD_ENV = {
   SCRIPT_LLM_MODEL: "claude-opus-5",
 };
 
+/**
+ * Frontier profile in RESILIENT mode: paid fallback explicitly enabled, which is
+ * what a full-pipeline development run wants. Note this now has to be SET — the
+ * default is comparison mode (paid fallback forbidden), so a test that wants the
+ * paid rung must ask for it.
+ */
 const FRONTIER_ENV = {
   ...CURRENT_PROD_ENV,
   LLM_ROUTING_PROFILE: "frontier_development",
   APP_DEPLOYMENT_STAGE: "development",
+  LLM_ALLOW_LEGACY_FALLBACK: "true",
   NVIDIA_API_KEY: "nvapi-test-key-value-1234567890",
   ZAI_API_KEY: "zai-test-key-value-1234567890",
   NVIDIA_MAX_RETRIES: "0",
   ZAI_MAX_RETRIES: "0",
+};
+
+/** The same profile in the DEFAULT comparison mode: no paid fallback at all. */
+const FRONTIER_COMPARISON_ENV: Record<string, string | undefined> = {
+  ...FRONTIER_ENV,
+  LLM_ALLOW_LEGACY_FALLBACK: undefined,
 };
 
 // ---------------------------------------------------------------- mock transport
@@ -584,9 +607,10 @@ async function fallbackTests(): Promise<void> {
           message = err.message;
         }
         assert(
-          message.includes("LLM_ALLOW_LEGACY_FALLBACK=false"),
+          message.includes("LLM_ALLOW_LEGACY_FALLBACK"),
           `the error must name the suppression: ${message}`
         );
+        assert(message.includes("suppressed"), `the error must say what was suppressed: ${message}`);
         assert(
           !m.captured.some((c) => c.url.includes(ANTHROPIC_HOST)),
           "a paid provider was called while paid fallback was forbidden"
@@ -597,11 +621,95 @@ async function fallbackTests(): Promise<void> {
     });
   });
 
-  await checkAsync("paid fallback IS used when allowed (the default)", async () => {
+  await checkAsync("paid fallback is FORBIDDEN BY DEFAULT (comparison mode)", async () => {
+    // The default flipped deliberately: while candidate models are being
+    // measured, a quiet paid fallback makes a failing free model look like a
+    // working one, and the A/B number you end up trusting came from Anthropic.
+    await withEnvAsync(FRONTIER_COMPARISON_ENV, async () => {
+      assert(!legacyFallbackAllowed(), "the DEFAULT must forbid paid fallback");
+      assert(!legacyFallbackExplicit(), "an unset variable is not an explicit decision");
+      const plan = resolveRolePlan("script_movement");
+      assert(
+        plan.candidates.every((c) => !isPaidProvider(c.provider)),
+        `a paid candidate survived by default: ${plan.candidates.map(candidateKey).join(", ")}`
+      );
+      assert(plan.suppressedPaid.length > 0, "the suppressed paid candidate must still be reported");
+    });
+  });
+
+  await checkAsync("paid fallback IS used when explicitly enabled (resilient mode)", async () => {
     await withEnvAsync(FRONTIER_ENV, async () => {
-      assert(legacyFallbackAllowed(), "default must allow paid fallback");
+      assert(legacyFallbackAllowed(), "LLM_ALLOW_LEGACY_FALLBACK=true must allow paid fallback");
+      assert(legacyFallbackExplicit(), "an explicitly set variable must read as explicit");
       const plan = resolveRolePlan("show_notes");
       assert(plan.candidates.some((c) => c.paid), "expected a paid backup in the chain");
+    });
+  });
+
+  await checkAsync("a CONFIGURATION failure cannot silently cross into a paid provider", async () => {
+    // Missing NVIDIA key + missing Z.ai key, paid fallback NOT explicitly set.
+    // The paid candidate must not be used to paper over the misconfiguration.
+    await withEnvAsync(
+      { ...FRONTIER_COMPARISON_ENV, NVIDIA_API_KEY: undefined, ZAI_API_KEY: undefined },
+      async () => {
+        const m = mockFetch([
+          {
+            match: ANTHROPIC_HOST,
+            respond: () => {
+              throw new Error("Anthropic must NOT be called for a configuration failure");
+            },
+          },
+        ]);
+        try {
+          let message = "";
+          try {
+            await getRoleLLMProvider("research_brief").generateStructuredOutput<any>({ prompt: "x" });
+            assert(false, "expected the role to fail rather than spend money");
+          } catch (err: any) {
+            message = err.message;
+          }
+          assert(message.includes("NVIDIA_API_KEY"), `the original configuration failure must stay visible: ${message}`);
+          assert(
+            !m.captured.some((c) => c.url.includes(ANTHROPIC_HOST)),
+            "a paid provider was called to work around a configuration failure"
+          );
+        } finally {
+          m.restore();
+        }
+      }
+    );
+  });
+
+  await checkAsync("a missing optional NVIDIA key may advance to Z.ai", async () => {
+    await withEnvAsync({ ...FRONTIER_COMPARISON_ENV, NVIDIA_API_KEY: undefined }, async () => {
+      const m = mockFetch([{ match: ZAI_HOST, respond: () => oaiOk('{"from":"zai"}') }]);
+      try {
+        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        assert(res.from === "zai", `expected the Z.ai result, got ${JSON.stringify(res)}`);
+      } finally {
+        m.restore();
+      }
+    });
+  });
+
+  await checkAsync("an authentication failure stays visible in the final error", async () => {
+    await withEnvAsync({ ...FRONTIER_COMPARISON_ENV, ZAI_API_KEY: undefined }, async () => {
+      const m = mockFetch([{ match: NVIDIA_HOST, respond: () => jsonResponse({ error: "invalid api key" }, 401) }]);
+      try {
+        let message = "";
+        try {
+          await getRoleLLMProvider("fact_check").generateStructuredOutput<any>({ prompt: "x" });
+        } catch (err: any) {
+          message = err.message;
+        }
+        assert(
+          message.includes("authentication_failed"),
+          `the auth failure category must survive to the final error: ${message}`
+        );
+        assert(message.includes("HTTP 401"), `the status must survive too: ${message}`);
+      } finally {
+        m.restore();
+      }
     });
   });
 
@@ -635,7 +743,7 @@ async function fallbackTests(): Promise<void> {
         } catch (err: any) {
           message = err.message;
         }
-        assert(message.includes("invalid_authentication"), `NVIDIA's category missing: ${message}`);
+        assert(message.includes("authentication_failed"), `NVIDIA's category missing: ${message}`);
         assert(message.includes("quota_exhausted"), `Z.ai's quota category missing: ${message}`);
         assert(message.includes("ANTHROPIC_API_KEY"), `the absent Anthropic key must be visible: ${message}`);
       } finally {
@@ -844,11 +952,23 @@ function parityTests(): void {
 function limitAndLedgerTests(): void {
   console.log("\nOutput limits and the cost ledger:");
 
-  check("a 16,000-token request stays 16,000 on an unverified model", () => {
+  check("a 16,000-token request stays 16,000 on a live-untested model", () => {
     const caps = modelCapabilities("nvidia", "mistralai/mistral-medium-3.5-128b");
-    assert(caps.verified === false, "this model should be marked unverified");
-    assert(caps.maximumOutputTokens === undefined, "an unverified cap must be UNKNOWN, not a guess");
+    assert(caps.catalogVerified === true, "this model's ID is confirmed in NVIDIA's catalog");
+    assert(caps.liveContractVerified === false, "nothing in this repo has called it live yet");
+    assert(caps.maximumOutputTokens === undefined, "an unprobed cap must be UNKNOWN, not a guess");
     assert(resolveMaxTokens(caps, 16000) === 16000, "the caller's allowance was altered");
+  });
+
+  check("a documented output limit is informational and never shrinks a request", () => {
+    // A number copied off a model card is not a measurement. The enforceable
+    // field stays undefined until a probe sets it.
+    const caps = {
+      ...modelCapabilities("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
+      documentedMaximumOutputTokens: 4096,
+    };
+    assert(caps.maximumOutputTokens === undefined, "documented != enforceable");
+    assert(resolveMaxTokens(caps, 16000) === 16000, "a documented figure must not shrink the request");
   });
 
   check("an unknown limit never shrinks any request", () => {
@@ -858,8 +978,12 @@ function limitAndLedgerTests(): void {
     }
   });
 
-  check("a CONFIRMED limit rejects loudly instead of shrinking", () => {
-    const caps = { ...modelCapabilities("zai", "glm-4.7-flash"), maximumOutputTokens: 8192, verified: true };
+  check("a LIVE-VERIFIED limit rejects loudly instead of shrinking", () => {
+    const caps = {
+      ...modelCapabilities("zai", "glm-4.7-flash"),
+      maximumOutputTokens: 8192,
+      liveContractVerified: true,
+    };
     let err: unknown = null;
     try {
       resolveMaxTokens(caps, 16000);
@@ -1094,6 +1218,401 @@ async function challengerTests(): Promise<void> {
   });
 }
 
+// ================================================================ 10b. category-aware fallback
+
+async function categoryPolicyTests(): Promise<void> {
+  console.log("\nCategory-aware fallback policy:");
+
+  const free = { provider: "nvidia", model: "m", paid: false, source: "profile_primary" };
+  const freeNext = { provider: "zai", model: "z", paid: false, source: "profile_secondary" };
+  const paidNext = { provider: "anthropic", model: "claude-opus-5", paid: true, source: "legacy_backup" };
+  const allowExplicit = { paidFallbackAllowed: true, paidFallbackExplicit: true };
+  const allowDefault = { paidFallbackAllowed: true, paidFallbackExplicit: false };
+  const forbid = { paidFallbackAllowed: false, paidFallbackExplicit: true };
+
+  const err = (category: string) =>
+    new LlmProviderError({ provider: "nvidia", model: "m", category: category as never, message: "x" });
+
+  check("TERMINAL categories stop the chain even with a candidate available", () => {
+    for (const category of [
+      "safety_refusal",
+      "invalid_application_schema",
+      "programming_error",
+      "unsupported_role",
+      "prompt_policy_violation",
+      "data_validation_bug",
+    ]) {
+      const d = fallbackDecision(err(category), free, freeNext, allowExplicit);
+      assert(d.verdict === "stop", `${category} should stop, got ${d.verdict}`);
+      assert(d.category === category, `${category} category was lost: ${d.category}`);
+      assert(d.reason.length > 20, `${category}: a stop needs a stated reason`);
+    }
+  });
+
+  check("RECOVERABLE categories advance to the next candidate", () => {
+    for (const category of [
+      "rate_limited",
+      "temporary_unavailable",
+      "network_error",
+      "timeout",
+      "provider_internal_error",
+      "model_temporarily_unavailable",
+      "empty_response",
+      "output_limit",
+      "structured_output_invalid_after_repair",
+      "quota_exhausted",
+    ]) {
+      const d = fallbackDecision(err(category), free, freeNext, forbid);
+      assert(d.verdict === "continue", `${category} should continue, got ${d.verdict}: ${d.reason}`);
+    }
+  });
+
+  check("a CONFIGURATION failure may advance to a FREE candidate", () => {
+    for (const category of ["missing_api_key", "authentication_failed", "invalid_model", "unsupported_parameter"]) {
+      const d = fallbackDecision(err(category), free, freeNext, forbid);
+      assert(d.verdict === "continue", `${category} should advance among free candidates: ${d.reason}`);
+      assert(/still reported|not resolved/i.test(d.reason), `${category}: the failure must remain reported`);
+    }
+  });
+
+  check("a CONFIGURATION failure may NOT cross into paid on a default-enabled flag", () => {
+    const d = fallbackDecision(err("missing_api_key"), free, paidNext, allowDefault);
+    assert(d.verdict === "stop", `expected stop, got ${d.verdict}: ${d.reason}`);
+    assert(/explicitly/i.test(d.reason), `the reason must say the flag was not explicit: ${d.reason}`);
+  });
+
+  check("a CONFIGURATION failure MAY cross into paid when explicitly enabled", () => {
+    const d = fallbackDecision(err("authentication_failed"), free, paidNext, allowExplicit);
+    assert(d.verdict === "continue", `expected continue, got ${d.verdict}: ${d.reason}`);
+    assert(/original failure remains/i.test(d.reason), `the original failure must stay visible: ${d.reason}`);
+  });
+
+  check("an exhausted chain stops and still names the category", () => {
+    const d = fallbackDecision(err("rate_limited"), free, undefined, allowExplicit);
+    assert(d.verdict === "stop", "no candidate left means stop");
+    assert(d.category === "rate_limited", d.category);
+  });
+
+  await checkAsync("a SAFETY REFUSAL stops the chain — later candidates are never called", async () => {
+    await withEnvAsync(FRONTIER_ENV, async () => {
+      const m = mockFetch([
+        {
+          match: NVIDIA_HOST,
+          respond: (body) =>
+            String(body.model).includes("mistral")
+              ? jsonResponse({
+                  choices: [{ finish_reason: "stop", message: { refusal: "I cannot write that." } }],
+                  usage: { prompt_tokens: 1, completion_tokens: 0 },
+                })
+              : jsonResponse({ error: "should not be reached" }, 500),
+        },
+        { match: ZAI_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
+        { match: ANTHROPIC_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
+      ]);
+      try {
+        let err: any = null;
+        try {
+          await getRoleLLMProvider("script_movement").generateStructuredOutput<any>({ prompt: "x" });
+        } catch (e) {
+          err = e;
+        }
+        assert(err?.category === "safety_refusal", `expected safety_refusal, got ${err?.category}`);
+        assert(m.captured.length === 1, `expected exactly ONE request, saw ${m.captured.length}`);
+        assert(
+          !m.captured.some((c) => c.url.includes(ZAI_HOST) || c.url.includes(ANTHROPIC_HOST)),
+          "a refusal must not be retried on other providers"
+        );
+      } finally {
+        m.restore();
+      }
+    });
+  });
+
+  await checkAsync("an INVALID APPLICATION SCHEMA stops the chain", async () => {
+    await withEnvAsync(FRONTIER_ENV, async () => {
+      // An invalid json_schema is our own defect. Only a model with native schema
+      // support is sent one, so use OpenAI here.
+      const m = mockFetch([
+        {
+          match: OPENAI_HOST,
+          respond: () => jsonResponse({ error: { message: "Invalid schema for response_format" } }, 400),
+        },
+        { match: ANTHROPIC_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
+      ]);
+      try {
+        await withEnvAsync(
+          {
+            ...FRONTIER_ENV,
+            LLM_ROUTING_PROFILE: "custom",
+            OPENAI_API_KEY: "sk-openai-test-key-1234567890",
+            SHOW_NOTES_LLM_PROVIDER: "openai",
+            SHOW_NOTES_LLM_MODEL: "gpt-4o-mini",
+          },
+          async () => {
+            let err: any = null;
+            try {
+              await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({
+                prompt: "x",
+                jsonSchema: { type: "object", properties: { a: { type: "nonsense" } }, required: ["a"] },
+              });
+            } catch (e) {
+              err = e;
+            }
+            assert(
+              err?.category === "invalid_application_schema",
+              `expected invalid_application_schema, got ${err?.category}: ${err?.message}`
+            );
+            assert(
+              !m.captured.some((c) => c.url.includes(ANTHROPIC_HOST)),
+              "our own bad schema must not be retried against a paid provider"
+            );
+          }
+        );
+      } finally {
+        m.restore();
+      }
+    });
+  });
+
+  await checkAsync("a PROGRAMMING ERROR (unknown provider) stops the chain", async () => {
+    await withEnvAsync(
+      { ...FRONTIER_ENV, LLM_ROUTING_PROFILE: "custom", SHOW_NOTES_LLM_PROVIDER: "not-a-provider" },
+      async () => {
+        const m = mockFetch([
+          { match: ANTHROPIC_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
+        ]);
+        try {
+          let err: any = null;
+          try {
+            await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+          } catch (e) {
+            err = e;
+          }
+          assert(err?.category === "programming_error", `expected programming_error, got ${err?.category}`);
+          assert(m.captured.length === 0, "an unbuildable provider must not trigger any HTTP call");
+        } finally {
+          m.restore();
+        }
+      }
+    );
+  });
+
+  await checkAsync("a RATE LIMIT advances to the next candidate", async () => {
+    await withEnvAsync(FRONTIER_ENV, async () => {
+      const m = mockFetch([
+        { match: NVIDIA_HOST, respond: () => jsonResponse({ error: "too many requests" }, 429) },
+        { match: ZAI_HOST, respond: () => oaiOk('{"from":"zai"}') },
+      ]);
+      try {
+        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        assert(res.from === "zai", `expected the Z.ai result, got ${JSON.stringify(res)}`);
+      } finally {
+        m.restore();
+      }
+    });
+  });
+
+  await checkAsync("a provider TIMEOUT advances to the next candidate", async () => {
+    await withEnvAsync({ ...FRONTIER_ENV, NVIDIA_REQUEST_TIMEOUT_MS: "50" }, async () => {
+      const realFetchLocal = globalThis.fetch;
+      globalThis.fetch = (async (input: any, init?: any) => {
+        const url = String(typeof input === "string" ? input : input?.url ?? input);
+        if (url.includes(NVIDIA_HOST)) {
+          return new Promise((_res, rej) => {
+            init?.signal?.addEventListener("abort", () => {
+              const e = new Error("aborted");
+              e.name = "AbortError";
+              rej(e);
+            });
+          });
+        }
+        return oaiOk('{"from":"zai"}');
+      }) as typeof fetch;
+      try {
+        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        assert(res.from === "zai", `expected the Z.ai result after a timeout, got ${JSON.stringify(res)}`);
+      } finally {
+        globalThis.fetch = realFetchLocal;
+      }
+    });
+  });
+
+  await checkAsync("malformed JSON advances ONLY after the one repair attempt also fails", async () => {
+    await withEnvAsync(FRONTIER_ENV, async () => {
+      let nvidiaCalls = 0;
+      const m = mockFetch([
+        {
+          match: NVIDIA_HOST,
+          respond: () => {
+            nvidiaCalls++;
+            return oaiOk("not json at all");
+          },
+        },
+        { match: ZAI_HOST, respond: () => oaiOk('{"from":"zai"}') },
+      ]);
+      try {
+        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        assert(res.from === "zai", `expected the fallback result, got ${JSON.stringify(res)}`);
+        assert(
+          nvidiaCalls === 2,
+          `the primary must get exactly one repair attempt before fallback; saw ${nvidiaCalls} call(s)`
+        );
+      } finally {
+        m.restore();
+      }
+    });
+  });
+
+  await checkAsync("a repaired-successfully response does NOT fall back", async () => {
+    await withEnvAsync(FRONTIER_ENV, async () => {
+      let nvidiaCalls = 0;
+      const m = mockFetch([
+        {
+          match: NVIDIA_HOST,
+          respond: () => {
+            nvidiaCalls++;
+            return nvidiaCalls === 1 ? oaiOk("nope") : oaiOk('{"from":"nvidia-after-repair"}');
+          },
+        },
+        { match: ZAI_HOST, respond: () => { throw new Error("must not fall back after a successful repair"); } },
+      ]);
+      try {
+        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        assert(res.from === "nvidia-after-repair", JSON.stringify(res));
+        assert(nvidiaCalls === 2, `expected 2 primary calls, saw ${nvidiaCalls}`);
+      } finally {
+        m.restore();
+      }
+    });
+  });
+}
+
+// ================================================================ 10c. endpoint identity
+
+function endpointIdentityTests(): void {
+  console.log("\nTrue endpoint identity:");
+
+  check("identity is provider + normalized base URL + model", () => {
+    withEnv(FRONTIER_ENV, () => {
+      const id = endpointIdentity({ provider: "nvidia", model: "a/b" });
+      assert(id.startsWith("nvidia|"), id);
+      assert(id.includes("integrate.api.nvidia.com"), `the base URL must be part of identity: ${id}`);
+      assert(id.endsWith("|a/b"), id);
+    });
+  });
+
+  check("base-URL spellings that mean the same endpoint normalize together", () => {
+    const variants = [
+      "https://integrate.api.nvidia.com/v1",
+      "https://integrate.api.nvidia.com/v1/",
+      "https://INTEGRATE.API.NVIDIA.COM/v1///",
+      "https://integrate.api.nvidia.com:443/v1",
+    ];
+    const ids = variants.map((v) =>
+      withEnv({ ...FRONTIER_ENV, NVIDIA_BASE_URL: v }, () => endpointIdentity({ provider: "nvidia", model: "m" }))
+    );
+    assert(new Set(ids).size === 1, `these spellings should be ONE endpoint: ${ids.join(" | ")}`);
+  });
+
+  check("a DIFFERENT base URL is a different endpoint, even for the same model", () => {
+    const a = withEnv(FRONTIER_ENV, () => endpointIdentity({ provider: "nvidia", model: "m" }));
+    const b = withEnv({ ...FRONTIER_ENV, NVIDIA_BASE_URL: "https://my-self-hosted-nim.internal/v1" }, () =>
+      endpointIdentity({ provider: "nvidia", model: "m" })
+    );
+    assert(a !== b, "provider/model alone is NOT endpoint identity — the base URL must count");
+  });
+
+  check("an alias cannot make the chain attempt the same endpoint twice", () => {
+    // The override names the profile primary with a differently-cased model, and
+    // the legacy backup is pointed at the same provider/model as the tertiary.
+    withEnv(
+      {
+        ...FRONTIER_ENV,
+        SCRIPT_MOVEMENT_LLM_PROVIDER: "NVIDIA",
+        SCRIPT_MOVEMENT_LLM_MODEL: "MistralAI/Mistral-Medium-3.5-128B",
+      },
+      () => {
+        const plan = resolveRolePlan("script_movement");
+        const ids = plan.candidates.map(endpointIdentity);
+        assert(new Set(ids).size === ids.length, `the same endpoint appears twice: ${ids.join(" | ")}`);
+        const mistralAttempts = ids.filter((i) => i.includes("mistral-medium-3.5")).length;
+        assert(mistralAttempts === 1, `one endpoint, one attempt — saw ${mistralAttempts}`);
+      }
+    );
+  });
+
+  check("every role's chain is endpoint-unique in every profile", () => {
+    for (const profile of ["legacy", "frontier_development", "free_independent", "custom"]) {
+      withEnv({ ...FRONTIER_ENV, LLM_ROUTING_PROFILE: profile }, () => {
+        for (const role of ALL_ROLES) {
+          const ids = resolveRolePlan(role).candidates.map(endpointIdentity);
+          assert(new Set(ids).size === ids.length, `${profile}/${role}: duplicate endpoint`);
+        }
+      });
+    }
+  });
+
+  check("normalizedBaseUrl never returns a credential", () => {
+    withEnv(FRONTIER_ENV, () => {
+      for (const p of ["nvidia", "zai", "anthropic", "openai", "stub"]) {
+        const url = normalizedBaseUrl(p);
+        assert(!url.includes(FRONTIER_ENV.NVIDIA_API_KEY), "credential leaked into the endpoint identity");
+        assert(!url.includes(FRONTIER_ENV.ZAI_API_KEY), "credential leaked into the endpoint identity");
+      }
+    });
+  });
+}
+
+// ================================================================ 10d. verification display
+
+function verificationDisplayTests(): void {
+  console.log("\nCatalog vs live verification:");
+
+  check("the two verification claims are reported separately per candidate", () => {
+    withEnv(FRONTIER_ENV, () => {
+      const row = roleRouteReport().find((r) => r.role === "script_movement")!;
+      const nvidiaCandidate = row.candidates.find((c) => c.key.startsWith("nvidia/"))!;
+      assert(nvidiaCandidate.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
+      assert(nvidiaCandidate.liveContractVerified === false, "nothing here has called it live");
+      assert(
+        nvidiaCandidate.verification === "catalog-verified-live-untested",
+        `expected catalog-verified-live-untested, got ${nvidiaCandidate.verification}`
+      );
+    });
+  });
+
+  check("the three readiness states are all representable", () => {
+    const states = new Set([
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")),
+      verificationState(modelCapabilities("anthropic", "claude-sonnet-5")),
+      verificationState(modelCapabilities("zai", "glm-4.7-flash")),
+    ]);
+    assert(states.has("catalog-verified-live-untested"), "NVIDIA models are catalog-only");
+    assert(states.has("live-contract-verified"), "the in-production Anthropic models are live-verified");
+    assert(states.has("catalog-unavailable"), "Z.ai's catalog was not confirmed in this work");
+  });
+
+  check("readiness notes distinguish catalog-only from catalog-unavailable", () => {
+    withEnv(FRONTIER_ENV, () => {
+      const notes = roleRouteReport()
+        .filter((r) => r.hasCallSite)
+        .flatMap((r) => r.notes)
+        .join(" ");
+      assert(/LIVE CONTRACT UNTESTED/.test(notes), `expected a catalog-only note: ${notes.slice(0, 300)}`);
+      assert(/Catalog\/model unavailable/.test(notes), `expected an unconfirmed-catalog note: ${notes.slice(0, 300)}`);
+    });
+  });
+
+  check("a catalog-verified model is never described as validated", () => {
+    const caps = modelCapabilities("nvidia", "mistralai/mistral-medium-3.5-128b");
+    assert(caps.catalogVerified && !caps.liveContractVerified, "expected the catalog-only state");
+    assert(
+      caps.provenance.requestFields.length > 20 && caps.provenance.limits.length > 20,
+      "a catalog-only record must state what is still unverified"
+    );
+  });
+}
+
 // ================================================================ 11. source contracts
 
 function sourceContractTests(): void {
@@ -1154,6 +1673,9 @@ async function main(): Promise<void> {
   stageTests();
   parityTests();
   limitAndLedgerTests();
+  await categoryPolicyTests();
+  endpointIdentityTests();
+  verificationDisplayTests();
   roleDefinitionTests();
   await challengerTests();
   sourceContractTests();

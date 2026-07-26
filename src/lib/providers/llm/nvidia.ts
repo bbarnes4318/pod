@@ -21,6 +21,7 @@ import {
   requireApiKey,
 } from "./openaiCompatible";
 import { MODEL_IDS } from "./capabilities";
+import { ShapeContext, ShapeResult, shapeNvidiaRequest } from "./nvidiaRequestProfiles";
 import { readRoutingEnv } from "./routingEnv";
 
 export const NVIDIA_DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
@@ -41,14 +42,21 @@ export class NvidiaNimLLMProvider extends OpenAICompatibleLLMProvider {
       ),
       timeoutMs: numberFromEnv("NVIDIA_REQUEST_TIMEOUT_MS", 240_000),
       maxRetries: numberFromEnv("NVIDIA_MAX_RETRIES", 2),
-      // Declared, unverified: NIM reasoning models are driven through the chat
-      // template rather than a top-level field. If a model rejects it, the base
-      // class drops the field once and re-sends (recorded as a parameter
-      // downgrade, never as a transient retry).
-      reasoningSpelling: "chat_template_kwargs",
       unpriced: true,
     };
     super(config);
+  }
+
+  /**
+   * Per-MODEL request shaping. NVIDIA's hosted models do not share one
+   * reasoning contract — DeepSeek takes `chat_template_kwargs.thinking` with a
+   * nested `reasoning_effort`, Nemotron takes `chat_template_kwargs.enable_thinking`
+   * with a top-level `reasoning_budget`, Mistral takes a top-level
+   * `reasoning_effort`, Kimi advertises none, and GLM-5.2's hosted controls are
+   * unconfirmed. See nvidiaRequestProfiles.ts.
+   */
+  protected shapeModelFields(ctx: ShapeContext): ShapeResult {
+    return shapeNvidiaRequest(ctx);
   }
 }
 

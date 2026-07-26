@@ -51,7 +51,7 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `SCRIPT_LLM_MODEL` | Model for script outline + acts (the quality-critical stage) | `claude-opus-5` |
 | `LLM_ROUTING_PROFILE` | Role-based routing profile: `legacy` \| `frontier_development` \| `free_independent` \| `custom`. **`legacy` is the default and the one-variable rollback** — see [LLM_ROLE_ROUTING.md](./LLM_ROLE_ROUTING.md) | `legacy` |
 | `APP_DEPLOYMENT_STAGE` | `development` \| `staging` \| `live`. Governs the hosted-trial-endpoint advisory. NOT `NODE_ENV` — a development deployment still builds for production | `development` |
-| `LLM_ALLOW_LEGACY_FALLBACK` | May a role fall back to paid Anthropic/OpenAI after its free candidates fail? Default `true`; every paid fallback is logged and ledgered | `true` |
+| `LLM_ALLOW_LEGACY_FALLBACK` | May a role fall back to paid Anthropic/OpenAI after its free candidates fail? **Default `false`** = comparison mode: a role that exhausts its free candidates fails, so an A/B result measures the candidate rather than Anthropic. `true` = resilient mode for full-pipeline runs; every paid call is audited in the log. A *configuration* failure can only cross into paid when this is set explicitly | `false` |
 | `NVIDIA_API_KEY` | NVIDIA NIM credential — required only when a profile routes a role to `nvidia` | `nvapi-...` |
 | `ZAI_API_KEY` | Z.ai **general-purpose** API credential (not the coding plan) — required only when a profile routes a role to `zai` | `...` |
 | `TTS_PROVIDER` | Speech synthesis provider | `fish` |

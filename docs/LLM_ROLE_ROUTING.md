@@ -109,6 +109,80 @@ records.
 Z.ai's **general-purpose** API — not the coding-plan endpoint, which is a
 different product with a different shape.
 
+### 3b. Capability registry: catalog vs LIVE verification
+
+One `verified` flag conflated two very different claims and made both useless.
+There are now two:
+
+| Field | Claim | Current state |
+|---|---|---|
+| `catalogVerified` | the model ID and its documented availability were confirmed from the official provider catalog | **true** for all six NVIDIA models; **false** for Z.ai (its catalog was not confirmed in this work) |
+| `liveContractVerified` | this repository called the model successfully with the current key and adapter, and a probe recorded which fields it accepted | **false everywhere** — no live request has been made |
+
+A model can be catalog-verified and still have entirely unverified request
+parameters. That is the normal starting state, and it is what readiness reports.
+
+Two hard rules follow:
+
+- **Output limits are enforceable only when live-verified.** A number copied off a
+  model card lives in `documentedMaximumOutputTokens`, which is informational and
+  can never shrink a request. `maximumOutputTokens` is set only by a probe. So the
+  16,000-token movement allowance passes through untouched today, and only a
+  *measured* cap can ever reject it (loudly — see §6).
+- **`provenance` records where every claim came from** (`catalog`, `requestFields`,
+  `limits`), so nobody has to guess later which numbers were measured and which
+  were read.
+
+Readiness distinguishes exactly three states: `catalog-verified-live-untested`,
+`live-contract-verified`, `catalog-unavailable`.
+
+### 3c. Per-MODEL NVIDIA request shaping
+
+A provider-wide `reasoningSpelling` was wrong. NVIDIA's hosted models do not share
+one reasoning contract, so each gets a typed profile with its own shaping function
+(`nvidiaRequestProfiles.ts`), selected by `requestParameterProfile`:
+
+| Profile | Models | Reasoning ON sends | Reasoning OFF sends |
+|---|---|---|---|
+| `deepseek-v4` | DeepSeek V4 Flash + Pro | `chat_template_kwargs: { thinking: true, reasoning_effort: <level> }` — effort **nested** | `chat_template_kwargs: { thinking: false }` |
+| `nemotron-3-ultra` | Nemotron 3 Ultra | `chat_template_kwargs: { enable_thinking: true }` + **top-level** `reasoning_budget` | `chat_template_kwargs: { enable_thinking: false }` |
+| `mistral-medium-3-5` | Mistral Medium 3.5 | **top-level** `reasoning_effort` | *nothing* |
+| `kimi-k2-6` | Kimi K2.6 | *nothing* | *nothing* |
+| `glm-5-2` | GLM-5.2 via NVIDIA | *nothing* | *nothing* |
+| `generic-nim` | any unregistered NVIDIA model | *nothing* | *nothing* |
+
+Corrections and deliberate choices baked in here:
+
+- **DeepSeek V4 Flash is a reasoning model.** The previous registry declared it
+  incapable of thinking. Fixed; both Flash and Pro take the same shape.
+- **Nemotron is never sent DeepSeek's `thinking` alias.** Nothing proves it accepts
+  it, and NVIDIA's own example for this model uses `enable_thinking`. Note that
+  *other* Nemotron variants use different controls again (the self-hosted NIM docs
+  show `max_thinking_tokens` and env switches for Nano/Super) — which is why the
+  record is keyed to this exact model, not to "nemotron".
+- **Mistral keeps reasoning OFF for dialogue.** Its production job here is the
+  16,000-token movement call; adding hidden reasoning overhead to every one of
+  those is a real cost and latency change, and no application-specific experiment
+  has justified it yet.
+- **Kimi gets no `response_format` and no reasoning field**, because NVIDIA's
+  deployment information advertises neither.
+- **GLM-5.2's hosted controls are unconfirmed**, so no reasoning field is sent.
+  Reusing DeepSeek's or Nemotron's fields because all three are reasoning models
+  would be a guess. The role's reasoning *intent* is recorded in diagnostics, and
+  no run may claim it reasoned unless the response actually returns reasoning
+  content.
+
+Nemotron's thinking budget is configurable per role family
+(`NVIDIA_NEMOTRON_REASONING_BUDGET_RESEARCH` / `_VERIFY` / `_JUDGE`, with
+`NVIDIA_NEMOTRON_REASONING_BUDGET` as the fallback, default 4096), clamped to the
+documented 256–16384 range, and **capped to half the caller's `max_tokens`** so a
+1,200-token continuity call can never spend its whole allowance thinking and
+return no answer.
+
+One documented NIM quirk is respected throughout: the `developer` role combined
+with `chat_template_kwargs` produces 500s, so the system prompt always goes in the
+`system` role.
+
 ---
 
 ## 4. `frontier_development` role map
@@ -173,9 +247,15 @@ Current repository values: `LLM_PROVIDER=anthropic`,
 
 Implemented once, in `routing.ts`. No service duplicates any part of it.
 
-- **Loop-proof**: candidates are de-duplicated by `provider/model` before the
-  chain runs, so an alias (an override that names the primary, a legacy backup
-  identical to the tertiary) can never re-run an endpoint or cycle.
+- **Loop-proof, by TRUE ENDPOINT IDENTITY**: candidates are de-duplicated on
+  `provider | normalizedBaseUrl | model` before the chain runs. Provider/model
+  alone is *not* endpoint identity — with a custom `NVIDIA_BASE_URL` or
+  `ZAI_BASE_URL`, two candidates can name the same provider and model while
+  pointing at different services, and two differently-spelled base URLs can
+  reach the same one. Normalization folds trailing slashes, case and default
+  ports, so an alias (an override that names the primary in different case, a
+  legacy backup identical to the tertiary) can never re-run one endpoint or
+  cycle, while a genuinely different endpoint stays a separate attempt.
 - **Legacy is a bypass, not a chain**: `legacy` + no override returns the exact
   provider instance the old code built — same class, same eager construction,
   same construction-time errors, no wrapper.
@@ -220,9 +300,37 @@ the caller passed:
 
 ## 7. Structured output
 
-`structured.ts` rejects rather than salvages whenever salvage would be a guess:
+Support is **three separate questions per model**, not one:
 
-1. provider JSON mode when the model supports it, plus instruction-based forcing;
+| Capability | Meaning |
+|---|---|
+| `supportsNativeJsonSchema` | accepts `response_format: { type: "json_schema", … }` |
+| `supportsNativeJsonObject` | accepts `response_format: { type: "json_object" }` |
+| `supportsPromptEnforcedJson` | reliably returns JSON when the prompt demands it |
+
+Mode selection (`structuredOutputMode`):
+
+```
+native JSON schema supported AND a schema exists  -> json_schema mode
+else native JSON-object mode supported            -> json_object mode
+else                                              -> send NO response_format;
+                                                     enforce JSON in the prompt;
+                                                     parse and validate strictly
+```
+
+Every NVIDIA model currently declares **no** native support, so the default path
+sends no `response_format` at all. That is deliberate: the documentation does not
+confirm native support for these models, provoking a 400 once per process to
+discover something the docs already imply is wasteful, and prompt-enforced JSON
+plus the strict parser is the mechanism the Anthropic provider has always used —
+proven in this application, not merely permissible. A probe can upgrade a record.
+
+**A successful prompt-enforced JSON response is not evidence of native JSON
+support.** Only the probe's explicit native-mode test can set those flags.
+
+`structured.ts` then rejects rather than salvages whenever salvage would be a guess:
+
+1. the mode above, plus instruction-based forcing;
 2. the caller's real schema, when one exists (`semanticReview` passes a genuine
    `jsonSchema`), used for required-array checks;
 3. caller-supplied structural validators at the provider edge — `validateScriptShape`
@@ -248,46 +356,88 @@ descriptions, TTS input, parsed structured output, or any user-facing text.
   separately by `extractContent()`; both public entry points discard them.
 - The JSON parser is handed **only** the answer text, so reasoning cannot enter
   structured application data.
-- Recorded: whether reasoning was requested, the provider-reported reasoning
-  token count, and the call duration. The reasoning **text** is not logged unless
-  an operator sets `LLM_LOG_REASONING=true` for a debugging session.
+- Recorded as **two separate facts**: `reasoningRequested` (what we asked for) and
+  `reasoningReturned` (whether the response actually carried reasoning content),
+  plus the provider-reported reasoning token count and the call duration. Asking
+  for reasoning is not evidence that any occurred — a role must never be reported
+  as having reasoned because it requested it. When reasoning is requested and none
+  comes back, the log says so explicitly.
+- The reasoning **text** is not logged unless an operator sets
+  `LLM_LOG_REASONING=true` for a debugging session.
 - A reasoning model that spends its whole allowance thinking and returns an empty
   answer is reported as exactly that, not as an empty success.
 
 ---
 
-## 9. Retry and fallback
+## 9. Retry and CATEGORY-AWARE fallback
 
-Retried against the same model: 408, 409, 425, 429 (rate-limit shaped), 5xx,
-connection resets, DNS failures, aborts/timeouts, empty responses. Exponential
-backoff (base 3ⁿ, capped 30 s), ±30 % jitter, `Retry-After` honored,
-`AbortController` timeout, bounded attempt count.
+The failure's **category** decides what happens next. `errors.ts` classifies;
+`fallbackPolicy.ts` decides; `routing.ts` obeys. Nothing else makes this call.
 
-**Not** transient — no same-model retry, category preserved through the fallback:
-missing API key, invalid authentication, invalid model id, invalid application
-schema, unsupported request parameter, safety refusal, hard quota exhaustion,
-programming error.
+Advancing after *every* caught error — the original behavior — is wrong twice
+over. It buried real defects (a bad application schema failed identically on four
+providers before surfacing) and it spent money quietly (a configuration mistake
+walked into the paid provider, the episode "succeeded", and the misconfiguration
+stayed invisible).
 
-One deliberate exception: a 400 that names an unsupported *request field* is a
-capability-registry defect, so the field is dropped once and the request is
-re-sent, logged and counted as a **parameter downgrade** (never as a transient
-retry). This is what keeps an unverified capability record from failing a role
-outright — and it tells you exactly which registry entry to fix.
+| Group | Categories | Same-model retry | Next candidate |
+|---|---|---|---|
+| Recoverable | `rate_limited`, `temporary_unavailable`, `network_error`, `timeout`, `provider_internal_error`, `model_temporarily_unavailable` | yes | yes |
+| Recoverable, no retry | `empty_response`, `output_limit`, `structured_output_invalid_after_repair`, `quota_exhausted` | no | yes |
+| **Terminal** | `invalid_application_schema`, `programming_error`, `unsupported_role`, `safety_refusal`, `prompt_policy_violation`, `data_validation_bug` | no | **no — the chain STOPS** |
+| Configuration | `missing_api_key`, `authentication_failed`, `invalid_model`, `unsupported_parameter` | no | free candidates only (see below) |
+
+`quota_exhausted` is separated from `rate_limited` on purpose: a spent free-tier
+allowance does not refill in two seconds, so retrying is waste while falling
+through is exactly right.
+
+When a terminal category stops the chain, the ORIGINAL error's category, provider
+and model are preserved on the way out — a safety refusal is reported as a safety
+refusal, not as a generic routing failure.
+
+Retry mechanics for the recoverable set: exponential backoff (base 3ⁿ, capped
+30 s), ±30 % jitter, `Retry-After` honored, `AbortController` timeout, bounded
+attempt count.
+
+The pre-existing Anthropic and OpenAI providers throw plain `Error`s and are
+deliberately left untouched, so `categoryOf()` parses their messages into the
+same taxonomy. Without that, every legacy-provider failure classified as
+"unknown" and the router treated all of them as recoverable.
+
+### Parameter downgrade — narrow, and not the normal path
+
+A 400 that **specifically names** a request field we sent is a capability-registry
+defect: the field is dropped for the process, the request is re-sent **once**, and
+it is counted as a **parameter downgrade**, never as a transient retry. An
+**ambiguous** 400 strips nothing — guessing which field to remove is worse than
+failing, and the log says so.
+
+Because the registry now declares each model's real support (§3), the normal path
+never provokes such a 400 at all. A downgrade firing is a signal that a capability
+record is wrong, not routine operation.
 
 ### Paid fallback control
 
-`LLM_ALLOW_LEGACY_FALLBACK` — **default `true`**.
+`LLM_ALLOW_LEGACY_FALLBACK` — **default `false`**.
 
-- `true`: after the free candidates fail, the role-appropriate existing provider
-  runs. Every such call logs `[LLMRouting] PAID FALLBACK` with the role and model
-  and lands in the ledger. Nothing is silent.
-- `false`: NVIDIA may fall back to Z.ai and Z.ai to another configured free
-  model, but Anthropic/OpenAI are never invoked automatically; the role fails
-  instead, and the error names what was suppressed.
+| Value | Mode | Behavior |
+|---|---|---|
+| `false` (default) | **Comparison** | A role that exhausts its free candidates FAILS. Anthropic/OpenAI are never invoked automatically. The error names what was suppressed. |
+| `true` | **Resilient** | After the free candidates fail, the role-appropriate existing provider runs. For full-pipeline runs where finishing the episode matters more than isolating the candidate. |
 
-The default is `true` because the legacy providers are the safety net that keeps
-an episode from dying on a rate-limited trial endpoint. That is a cost decision,
-so it is stated here rather than buried.
+The default is `false` for measurement integrity: while candidates are being
+evaluated, a quiet paid fallback makes a failing free model look like a working
+one — the episode completes, the A/B table fills in, and the number you end up
+trusting was produced by Anthropic.
+
+Two extra rules:
+
+- A **configuration** failure may advance among free candidates, but crossing into
+  a paid provider to paper one over requires `LLM_ALLOW_LEGACY_FALLBACK` to be set
+  **explicitly** to `true`. An inherited default is not consent.
+- Every paid fallback logs a full audit record before the call: role, which free
+  candidates failed, their failure categories, the paid provider and model, and
+  why paid fallback was permitted.
 
 ---
 
@@ -343,6 +493,19 @@ Statuses: `ready`, `degraded` (running on a reduced chain), `unroutable` (no
 usable candidate), `no LLM call yet` (the role is declared but deterministic
 today).
 
+Model verification is reported **separately from role status**, in the three states
+from §3b, both per candidate and as an `LLM_MODEL_VERIFICATION` roll-up:
+
+- *catalog verified, live contract untested* — the ID is confirmed, its request
+  parameters are not. This is the current state of every NVIDIA model.
+- *live contract verified* — called successfully from this repository.
+- *catalog/model unavailable* — the ID has not been confirmed against the catalog.
+  This is the current state of the Z.ai model.
+
+A role can therefore be `ready` (a credential is present, a chain exists) while
+every model in it is still live-untested. Those are different questions and the
+readout keeps them apart, so "ready" never reads as "validated".
+
 ---
 
 ## 13. Web/worker agreement
@@ -358,19 +521,91 @@ key is present in that snapshot.
 
 ---
 
-## 14. Development experiments
+## 14. Live contract probe, then role experiments
+
+**The order matters.** A quality comparison against a model whose request contract
+was never verified measures the adapter as much as the model. So:
+
+### Step 1 — establish the contract
+
+```bash
+npm run probe:llm-contract -- --provider nvidia
+```
+
+```bash
+npm run probe:llm-contract -- --provider zai
+```
+
+Probes each configured model **independently** (they do not share a reasoning
+contract, so one model's success says nothing about its siblings) and answers the
+17 contract questions per model: model ID accepted, system prompt accepted, plain
+text response, `max_tokens` accepted, temperature, seed, thinking enable, thinking
+disable, `reasoning_effort` (**tested nested AND top-level, separately** — that
+placement is the specific ambiguity the documentation left), `reasoning_budget`,
+native JSON-object mode, native JSON-schema mode, reasoning returned separately,
+usage field names, finish-reason field, a structured response without native JSON
+mode, and a 16,000-token allowance.
+
+The allowance test **requests** `max_tokens: 16000` with a one-sentence answer
+instruction; it never generates 16,000 tokens to test a parameter.
+
+Writes `artifacts/<provider>-contract-report.json` and `.md`, and prints the exact
+recommended registry changes. It **never edits source** — auto-writing capability
+records from provider responses is how a transient 400 becomes a permanent lie. An
+`error` verdict (rate limit, outage) is never grounds for changing a flag, and a
+model that fails the plain-request probe has every later question recorded as
+`skipped` rather than as a capability answer.
+
+### Step 2 — compare per role
 
 ```bash
 npm run test:role-experiments -- --experiment dialogue
+```
+
+```bash
 npm run test:role-experiments -- --experiment outline
+```
+
+```bash
 npm run test:role-experiments -- --experiment verification
 ```
 
 Targeted per-role comparisons on this application's real work, not generic
-benchmarks. Every candidate receives byte-identical inputs — same research
-packet, outline, character definitions, previous-movement context, target length,
-prompt, schema and output allowance. Incomplete or failed generations are
-reported as failures, never hidden or silently retried into a win.
+benchmarks. Candidates are instantiated **directly, bypassing the router**, so a
+candidate's failure is recorded as that candidate's failure rather than being
+silently substituted by a fallback.
+
+**Dialogue** runs each candidate through **three episode situations**, because
+dialogue models fail differently depending on what the scene asks for:
+
+| Situation | What it tests |
+|---|---|
+| Evidence-heavy disagreement | arguing from a dense fact set without fabricating a number, while keeping two positions distinct |
+| Emotional / character-revealing | letting a disagreement expose something personal without collapsing into therapy-speak |
+| Fast, humorous | holding a comic rhythm without stapling jokes on or writing essay sentences |
+
+Identical per candidate: research packet, outline (one shared outline model),
+character definitions, continuity state, previous-movement transcript, target
+duration, prompt version, 16,000-token allowance, schema and validation rules.
+Measured: completion rate, valid-JSON rate, repair rate, retries, latency, token
+usage, the deterministic score, and judge axes for host distinctness,
+conversational causality, generic filler, mechanical alternation, repetition,
+character consistency, evidence grounding, movement continuity and spoken
+naturalness — plus how often the judge says both hosts sound like one model.
+
+**Verification** uses a seeded set covering every required category with ground
+truth: supported fact, contradicted fact, unsupported fact, reasonable inference,
+opinion, prediction, rhetorical exaggeration, character violation, continuity
+violation, duplicate argument, correct numerical claim, incorrect numerical claim
+and an unsafe claim. It reports precision, recall, **false-positive rate**,
+false-negative rate, schema completion and latency. False positives are weighted
+heavily in the read-out: an overactive verifier rewrites valid dialogue, which
+damages the show while looking like diligence.
+
+Every result row carries the model's verification state (`live-verified` /
+`catalog-only` / `unconfirmed`), so a quality number is never read without knowing
+whether the contract behind it was ever tested. Incomplete or failed generations
+are reported as failures, never hidden or silently retried into a win.
 
 The in-pipeline dialogue challenger (`SCRIPT_CHALLENGER_ENABLED=true`,
 `SCRIPT_CHALLENGER_PROVIDER`, `SCRIPT_CHALLENGER_MODEL`) generates each movement
@@ -379,13 +614,25 @@ the episode — one episode is written by one dialogue model.
 
 ### Promotion rule
 
-The initial assignments in `profiles.ts` are defaults, not verdicts. A candidate
-keeps or takes a role only when it completes the required JSON reliably, supports
-the required output length, matches or beats the incumbent on role-specific
-quality, adds no unacceptable latency, and does not drive up retry/fallback
-rates. Any assignment changed by test evidence must be documented in the profile
-map with the evidence that changed it. The deterministic scorer
-(`episodeQualityService`) is not to be rewritten to make a new profile win.
+The initial assignments in `profiles.ts` are **defaults, not verdicts**, and the
+profile order is not to change until the tests above are complete.
+
+A model may retain or take a primary role only when it:
+
+1. accepts the real request contract (step 1 above);
+2. reliably completes the required JSON;
+3. accepts the required output allowance;
+4. meets or exceeds the incumbent on role-specific quality;
+5. does not introduce unacceptable latency;
+6. does not require frequent repair;
+7. does not trigger frequent fallback;
+8. does not materially damage character voice or factual accuracy.
+
+A model that fails these stays **integrated as an optional candidate** but must not
+remain the default primary merely because the original specification named it. Any
+assignment changed by evidence must be documented in the profile map with the
+evidence that changed it, and the deterministic scorer (`episodeQualityService`) is
+never to be rewritten to make a new profile win.
 
 ---
 

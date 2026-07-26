@@ -54,8 +54,12 @@ export interface LlmCallRecord {
   ok?: boolean;
   /** Failure category when ok === false. */
   failure?: string;
-  /** Whether reasoning was requested. The reasoning TEXT is never stored. */
+  /** Whether reasoning was REQUESTED. The reasoning TEXT is never stored. */
   reasoningRequested?: boolean;
+  /** Whether the response actually carried separate reasoning content. Distinct
+   *  from `reasoningRequested` on purpose: asking is not evidence of reasoning,
+   *  and a role must never be reported as having reasoned because it asked to. */
+  reasoningReturned?: boolean;
   /** USD estimate, or null when the endpoint is free/unpriced or no rate is
    *  configured. NEVER a fabricated number. */
   estimatedCostUsd?: number | null;
@@ -171,6 +175,7 @@ export function recordLlmCall(rec: {
   ok?: boolean;
   failure?: string;
   reasoningRequested?: boolean;
+  reasoningReturned?: boolean;
   estimatedCostUsd?: number | null;
 }): void {
   const attr = currentLlmAttribution();
@@ -196,6 +201,7 @@ export function recordLlmCall(rec: {
     ok: rec.ok,
     failure: rec.failure,
     reasoningRequested: rec.reasoningRequested,
+    reasoningReturned: rec.reasoningReturned,
     estimatedCostUsd: rec.estimatedCostUsd ?? null,
   };
   entries.push(entry);

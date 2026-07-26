@@ -8,6 +8,9 @@ export interface GenerateTextOptions {
   cacheableContext?: string;
   temperature?: number;
   maxTokens?: number;
+  /** Determinism seed, sent only to models whose capability record declares
+   *  seed support. Silently omitted elsewhere rather than risking a 400. */
+  seed?: number;
   /** Reasoning posture the CALLER wants. Providers translate it into their own
    *  spelling, or ignore it when the model has no reasoning mode. Reasoning
    *  content is always separated from the answer — it never reaches dialogue,

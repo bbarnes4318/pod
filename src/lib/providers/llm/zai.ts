@@ -20,6 +20,7 @@ import {
   requireApiKey,
 } from "./openaiCompatible";
 import { MODEL_IDS } from "./capabilities";
+import { ShapeContext, ShapeResult, shapeZaiRequest } from "./nvidiaRequestProfiles";
 import { readRoutingEnv } from "./routingEnv";
 
 export const ZAI_DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4";
@@ -39,12 +40,14 @@ export class ZaiLLMProvider extends OpenAICompatibleLLMProvider {
       ),
       timeoutMs: numberFromEnv("ZAI_REQUEST_TIMEOUT_MS", 240_000),
       maxRetries: numberFromEnv("ZAI_MAX_RETRIES", 2),
-      // GLM models take a top-level thinking object. Declared, unverified —
-      // dropped and re-sent once if the endpoint rejects it.
-      reasoningSpelling: "thinking_object",
       unpriced: true,
     };
     super(config);
+  }
+
+  /** GLM's top-level thinking object — a different vendor, a different contract. */
+  protected shapeModelFields(ctx: ShapeContext): ShapeResult {
+    return shapeZaiRequest(ctx);
   }
 }
 

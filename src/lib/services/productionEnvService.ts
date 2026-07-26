@@ -3,10 +3,12 @@ import {
   RoleRouteReport,
   credentialVarFor,
   legacyFallbackAllowed,
+  legacyFallbackExplicit,
   providerCredentialPresent,
   providersInActiveRouting,
   roleRouteReport,
 } from "@/lib/providers/llm/routing";
+import { modelCapabilities } from "@/lib/providers/llm/capabilities";
 import { activeRoutingProfile, routingProfileIsUnrecognized } from "@/lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "@/lib/providers/llm/deploymentStage";
 
@@ -456,13 +458,18 @@ export function getLlmRoutingChecks(): EnvCheck[] {
         : `${stage}: hosted NVIDIA NIM and Z.ai endpoints are fully permitted.`,
   });
 
+  // Paid fallback: FORBIDDEN by default. Reported with which mode is in force,
+  // because the two modes answer different questions and mixing them up is how a
+  // model-comparison run ends up measuring Anthropic.
+  const paidAllowed = legacyFallbackAllowed();
+  const paidExplicit = legacyFallbackExplicit();
   checks.push({
     key: "LLM_ALLOW_LEGACY_FALLBACK",
     status: "pass",
-    value: legacyFallbackAllowed() ? "true (default)" : "false",
-    message: legacyFallbackAllowed()
-      ? "Paid Anthropic/OpenAI fallback is permitted after the free candidates fail. Every paid fallback is logged and ledgered."
-      : "Paid fallback is FORBIDDEN — a role that exhausts its free candidates fails instead of incurring cost.",
+    value: paidAllowed ? "true (resilient mode)" : paidExplicit ? "false (comparison mode)" : "unset → false (comparison mode, default)",
+    message: paidAllowed
+      ? "RESILIENT MODE: after the free candidates fail, the role-appropriate paid provider runs. Every paid call is logged with a full audit record. Use this for full-pipeline runs where finishing the episode matters more than isolating the candidate."
+      : "COMPARISON MODE (default): a role that exhausts its free candidates FAILS instead of being quietly rescued by Anthropic. This is what makes an A/B result trustworthy. Set LLM_ALLOW_LEGACY_FALLBACK=true for resilient runs.",
   });
 
   // Credentials for the providers this profile actually calls.
@@ -505,6 +512,50 @@ export function getLlmRoutingChecks(): EnvCheck[] {
       status: "pass",
       value: `${roles.length} roles ready`,
       message: `Every wired role has a usable provider under the '${profile}' profile.`,
+    });
+  }
+
+  // Catalog verification vs LIVE verification, reported separately. A
+  // catalog-verified model with unverified request parameters is the normal
+  // starting state and must not read as "validated".
+  const routedModels = new Map<string, ReturnType<typeof modelCapabilities>>();
+  for (const r of roleRouteReport()) {
+    for (const c of r.candidates) {
+      const [provider, ...rest] = c.key.split("/");
+      const model = rest.join("/");
+      if (!model || model === "(provider-default)") continue;
+      routedModels.set(c.key, modelCapabilities(provider, model));
+    }
+  }
+  const liveVerified = [...routedModels.values()].filter((c) => c.liveContractVerified);
+  const catalogOnly = [...routedModels.entries()].filter(
+    ([, c]) => c.catalogVerified && !c.liveContractVerified
+  );
+  const noCatalog = [...routedModels.entries()].filter(([, c]) => !c.catalogVerified);
+  if (catalogOnly.length > 0 || noCatalog.length > 0) {
+    checks.push({
+      key: "LLM_MODEL_VERIFICATION",
+      status: "warning",
+      value: `${liveVerified.length} live-verified, ${catalogOnly.length} catalog-only, ${noCatalog.length} unconfirmed`,
+      message:
+        (catalogOnly.length
+          ? `Catalog verified but LIVE CONTRACT UNTESTED (request parameters unconfirmed from this repository): ${catalogOnly
+              .map(([k]) => k)
+              .join(", ")}. `
+          : "") +
+        (noCatalog.length
+          ? `Catalog/model unavailable — ID not confirmed against the provider catalog: ${noCatalog
+              .map(([k]) => k)
+              .join(", ")}. `
+          : "") +
+        "Run `npm run probe:llm-contract` with credentials to establish live verification. No model should be treated as validated until it has been called successfully.",
+    });
+  } else {
+    checks.push({
+      key: "LLM_MODEL_VERIFICATION",
+      status: "pass",
+      value: `${liveVerified.length} live-verified`,
+      message: "Every routed model has been called successfully from this repository.",
     });
   }
 

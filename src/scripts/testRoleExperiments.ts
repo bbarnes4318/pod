@@ -8,22 +8,22 @@
 //
 // This is NOT "two arbitrary models across the whole pipeline". Each experiment
 // isolates ONE role and gives every candidate byte-identical inputs, because a
-// comparison where the inputs differ tells you nothing:
+// comparison whose inputs differ measures nothing.
 //
-//   dialogue      same research packet, outline, character prompt, previous
-//                 movement context, target length, prompt, schema, token
-//                 allowance — only the model changes.
-//   outline       same evidence and episode requirements.
-//   verification  the same seeded defect set, with ground truth, so false
-//                 positives and false negatives are both measurable.
+// Candidates are instantiated DIRECTLY, bypassing the router, so a candidate's
+// failure is recorded as that candidate's failure. Routing's fallback would
+// quietly substitute another model and the table would then describe the wrong
+// one. (This is also why paid fallback now defaults to forbidden — see
+// routing.ts legacyFallbackAllowed.)
 //
 // HONESTY RULES BUILT IN:
 //   - a candidate with no credential is reported SKIPPED, never as a low score;
 //   - an incomplete or failed generation is reported as a FAILURE with its
 //     error, never quietly retried into a win or dropped from the table;
 //   - the deterministic scorer is used as-is and is never re-tuned here;
-//   - the LLM judge is a separate column from the deterministic score, so you
-//     can see when they disagree.
+//   - the LLM judge is a separate column from the deterministic score, so a
+//     disagreement between them is visible;
+//   - no model may judge its own output.
 
 import fs from "fs";
 import path from "path";
@@ -34,13 +34,21 @@ dotenv.config();
 
 import { LLMProvider } from "../lib/providers/llm/interface";
 import { instantiateProvider, providerCredentialPresent, resolveLegacyFamily } from "../lib/providers/llm/routing";
-import { MODEL_IDS } from "../lib/providers/llm/capabilities";
+import { MODEL_IDS, modelCapabilities, verificationState } from "../lib/providers/llm/capabilities";
+import { llmCostMark, llmCostSince } from "../lib/providers/llm/costLedger";
 import { generateOutlineDrivenScript } from "../lib/services/scriptOutlineEngine";
 import { assessScriptQuality } from "../lib/services/scriptQualityJudge";
 import { dedupeScriptSegments, normalizeLineIndexes, findRepetitions } from "../lib/services/scriptRepetition";
 import { runSemanticReview } from "../lib/services/semanticReview";
-
-// ---------------------------------------------------------------- CLI
+import {
+  HOST_NAMES,
+  PERSONA_PROMPT,
+  SEEDED_LINES,
+  SITUATIONS,
+  VERIFICATION_CATEGORIES,
+  VERIFICATION_EVIDENCE,
+  VERIFICATION_UNSAFE_CLAIMS,
+} from "./roleExperimentFixtures";
 
 const argv = process.argv.slice(2);
 const flag = (name: string): string | undefined => {
@@ -49,7 +57,7 @@ const flag = (name: string): string | undefined => {
 };
 const DRY_RUN = argv.includes("--dry-run");
 const WHICH = (flag("experiment") || "all").toLowerCase();
-const OUT_DIR = path.join(process.cwd(), "samples");
+const ARTIFACT_DIR = path.join(process.cwd(), "artifacts");
 
 let failures = 0;
 
@@ -122,53 +130,21 @@ function resolveCandidates(candidates: Candidate[]): Resolved[] {
   });
 }
 
-// ---------------------------------------------------------------- shared inputs
-
-/**
- * The FIXED experiment packet. Checked into the repo as a fixture rather than
- * fetched live, because a live fetch would hand each run different source
- * material and make two runs incomparable. Live-material runs belong in
- * `npm run test:model-ab`, which exists for that.
- */
-const PERSONA_PROMPT = `You are writing dialogue for "Take Machine", a two-host sports debate podcast.
-
-ZABALA — Bernadette "Line Two" Zabala. Former talk-radio call screener. Structural, procedural, keeps receipts, distrusts narrative. Speaks in short declaratives and asks one precise question too many. Never raises her voice; lands the knife quietly.
-
-MULKEY — Dutch "Attendance" Mulkey. Ex-minor-league promotions guy. Sentimental, anecdotal, inflates his own numbers, changes the subject when cornered. Long looping sentences, sudden specificity when he is telling the truth.
-
-HOW REAL PODCAST SPEECH WORKS
-Write spoken language, not prose. No greetings, no episode summary, no signposting.`;
-
-const EVIDENCE_PACKET = `
-Topic #1: Should a 3-1 team fire the coordinator who built its only losing quarter?
-Sport/League: Football / NFL
-Main Angle: The Ridgeline Foxes are 3-1 but their defense allowed 24 points in the fourth quarter of Week 4 alone.
-Why It Matters RIGHT NOW: Ownership meets Thursday; the coordinator's contract has a Friday option date.
-Strongest Debate Question: Does one collapsed quarter justify firing the person who built four winning ones?
-Zabala Debate Stance: Process over outcome — the fourth-quarter scheme was identical to the three that worked; the sample is one quarter.
-Mulkey Debate Stance: Perception is the product — a fanbase that watched a 17-point lead die does not care about sample size.
-Key Grounded Facts: [
-  {"text":"Ridgeline is 3-1 after four games.","evidenceRefs":[{"type":"newsItem","id":"news-1"}],"confidence":"high"},
-  {"text":"Ridgeline allowed 24 points in the fourth quarter of Week 4.","evidenceRefs":[{"type":"newsItem","id":"news-1"}],"confidence":"high"},
-  {"text":"Coordinator Ray Aldana has a contract option that must be exercised Friday.","evidenceRefs":[{"type":"newsItem","id":"news-2"}],"confidence":"high"},
-  {"text":"Ridgeline led 24-7 entering the fourth quarter of Week 4.","evidenceRefs":[{"type":"newsItem","id":"news-1"}],"confidence":"high"},
-  {"text":"Aldana's units ranked 6th in points allowed over the prior two seasons.","evidenceRefs":[{"type":"newsItem","id":"news-2"}],"confidence":"medium"},
-  {"text":"Ownership scheduled a football-operations meeting for Thursday.","evidenceRefs":[{"type":"newsItem","id":"news-2"}],"confidence":"high"}
-]
-On-Air Talking Points: [{"text":"A 17-point fourth-quarter lead evaporated in twelve minutes.","evidenceRefs":[{"type":"newsItem","id":"news-1"}]}]
-Suggested Counter-arguments: [{"host":"Zabala","claim":"One quarter is not a body of evidence."},{"host":"Mulkey","claim":"The option date, not the film, is what forces this."}]
-Unsafe Claims (DO NOT USE AS FACTS OR TRUTHS): ["Aldana has already been told he is being let go."]
-`;
-
-const EPISODE_TITLE = "Role experiment — the Aldana option";
-const HOST_NAMES = ["Zabala", "Mulkey"];
+/** Verification state of a candidate's model, printed alongside every result. */
+function verificationLabel(c: Candidate): string {
+  if (!c.model) return "n/a";
+  const state = verificationState(modelCapabilities(c.provider, c.model));
+  return state === "live-contract-verified"
+    ? "live-verified"
+    : state === "catalog-verified-live-untested"
+    ? "catalog-only"
+    : "unconfirmed";
+}
 
 // ---------------------------------------------------------------- reporting
 
 function table(rows: Record<string, string | number>[], columns: string[]): void {
-  const widths = columns.map((c) =>
-    Math.max(c.length, ...rows.map((r) => String(r[c] ?? "").length))
-  );
+  const widths = columns.map((c) => Math.max(c.length, ...rows.map((r) => String(r[c] ?? "").length)));
   const line = (cells: (string | number)[]) =>
     cells.map((cell, i) => String(cell ?? "").padEnd(widths[i])).join("  ");
   console.log(line(columns));
@@ -177,105 +153,234 @@ function table(rows: Record<string, string | number>[], columns: string[]): void
 }
 
 function writeArtifact(name: string, data: unknown): void {
-  fs.mkdirSync(OUT_DIR, { recursive: true });
-  const p = path.join(OUT_DIR, name);
+  fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
+  const p = path.join(ARTIFACT_DIR, name);
   fs.writeFileSync(p, JSON.stringify(data, null, 2));
   console.log(`\n  artifact: ${p}`);
 }
 
+/** Ledger delta for one candidate run: tokens, repairs, retries. */
+function ledgerDelta(mark: number) {
+  const { totals } = llmCostSince(mark);
+  return {
+    tkIn: totals.tkIn,
+    tkOut: totals.tkOut,
+    tkReasoning: totals.tkReasoning,
+    calls: totals.calls,
+    repairs: totals.repairs,
+    retries: totals.retries,
+    failures: totals.failures,
+  };
+}
+
 // ---------------------------------------------------------------- dialogue
+
+interface DialogueRun {
+  situation: string;
+  candidate: string;
+  verification: string;
+  status: string;
+  error?: string;
+  lines: number;
+  words: number;
+  validJson: boolean;
+  repairs: number;
+  retries: number;
+  tkIn: number;
+  tkOut: number;
+  seconds: number;
+  deterministic?: number;
+  judgeOverall?: number;
+  judgeAxes?: Record<string, number>;
+  oneVoice?: boolean;
+  repetitionPct?: number;
+}
 
 async function dialogueExperiment(): Promise<void> {
   console.log("\n=== DIALOGUE EXPERIMENT (role: script_movement) ===");
-  console.log("Identical outline, evidence, character prompt, word target and 16,000-token allowance for every candidate.\n");
+  console.log(
+    "Three episode situations x every candidate. Identical outline, evidence, character prompt, continuity\n" +
+      "state, previous-movement transcript, target duration, prompt, schema and 16,000-token allowance.\n"
+  );
 
   const resolved = resolveCandidates(DIALOGUE_CANDIDATES());
   // One outline model for ALL candidates, so the dialogue comparison is not
   // contaminated by different episode plans.
   const outlineHost = resolved.find((r) => r.provider);
-  const rows: Record<string, string | number>[] = [];
+  // The judge is a model that is NOT a dialogue candidate wherever possible.
+  const judgeResolved = resolveCandidates([nv(MODEL_IDS.nvidia.nemotron)])[0];
+
+  const runs: DialogueRun[] = [];
   const artifacts: unknown[] = [];
 
-  const judgeCandidate = resolved.find(
-    (r) => r.provider && r.candidate.provider === "nvidia" && r.candidate.model === MODEL_IDS.nvidia.nemotron
-  );
-  const judge = judgeCandidate?.provider ?? null;
+  for (const situation of SITUATIONS) {
+    console.log(`\n--- ${situation.label} ---`);
+    console.log(`    testing: ${situation.tests}`);
+    for (const r of resolved) {
+      if (!r.provider) {
+        runs.push({
+          situation: situation.key,
+          candidate: r.candidate.label,
+          verification: verificationLabel(r.candidate),
+          status: `SKIPPED (${r.skipReason})`,
+          lines: 0,
+          words: 0,
+          validJson: false,
+          repairs: 0,
+          retries: 0,
+          tkIn: 0,
+          tkOut: 0,
+          seconds: 0,
+        });
+        continue;
+      }
 
-  for (const r of resolved) {
-    if (!r.provider) {
-      rows.push({ candidate: r.candidate.label, status: `SKIPPED (${r.skipReason})`, lines: "—", words: "—", rep: "—", det: "—", judge: "—", secs: "—" });
-      continue;
-    }
-    const startedAt = Date.now();
-    try {
-      const out = await generateOutlineDrivenScript(r.provider, {
-        systemPrompt: PERSONA_PROMPT,
-        episodeTitle: EPISODE_TITLE,
-        topicsPrompts: EVIDENCE_PACKET,
-        targetDuration: 10,
-        version: 1,
-        temperature: 0.85,
-        // The production allowance, unchanged. A candidate that cannot honor it
-        // is a finding, not something to work around.
-        maxTokens: 16000,
-        speakerNames: HOST_NAMES,
-        // Same outline model for everyone.
-        outlineLlm: outlineHost?.provider ?? r.provider,
-        log: () => {},
-      });
-      const { segments } = dedupeScriptSegments(out.segments);
-      normalizeLineIndexes(segments);
-      const texts: string[] = [];
-      for (const seg of segments) for (const l of seg.lines || []) texts.push(String(l.text || ""));
-      const rep = findRepetitions(texts);
-      const assessed = await assessScriptQuality(
-        // Never let a candidate judge itself.
-        judge && judge !== r.provider ? judge : null,
-        segments,
-        { episodeTitle: EPISODE_TITLE, hostNames: HOST_NAMES, evidenceSummary: EVIDENCE_PACKET }
-      );
-      rows.push({
-        candidate: r.candidate.label,
-        status: "ok",
-        lines: assessed.lineCount,
-        words: assessed.wordCount,
-        rep: `${(rep.repetitionRatio * 100).toFixed(1)}%`,
-        det: `${assessed.deterministic.total}/100`,
-        judge: assessed.judge ? `${assessed.judge.overall}/100${assessed.judge.bothHostsSoundLikeOneModel ? " ONE-VOICE" : ""}` : `n/a (${assessed.judgeError ?? "no judge"})`,
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
-      });
-      artifacts.push({ candidate: r.candidate.label, segments, assessment: assessed });
-    } catch (err: any) {
-      failures++;
-      rows.push({
-        candidate: r.candidate.label,
-        status: `FAILED: ${(err?.message || String(err)).slice(0, 90)}`,
-        lines: 0,
-        words: 0,
-        rep: "—",
-        det: "—",
-        judge: "—",
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
-      });
-      artifacts.push({ candidate: r.candidate.label, error: err?.message || String(err) });
+      const mark = llmCostMark();
+      const startedAt = Date.now();
+      try {
+        const out = await generateOutlineDrivenScript(r.provider, {
+          systemPrompt: `${PERSONA_PROMPT}\n\n=== CARRIED-IN STATE ===\n${situation.continuityState}\n\n=== PREVIOUS MOVEMENT ===\n${situation.previousMovement}`,
+          episodeTitle: situation.episodeTitle,
+          topicsPrompts: situation.topicsPrompts,
+          targetDuration: situation.targetDuration,
+          version: 1,
+          temperature: 0.85,
+          // The production allowance, unchanged. A candidate that cannot honor it
+          // is a finding, not something to work around.
+          maxTokens: 16000,
+          speakerNames: HOST_NAMES,
+          outlineLlm: outlineHost?.provider ?? r.provider,
+          log: () => {},
+        });
+        const { segments } = dedupeScriptSegments(out.segments);
+        normalizeLineIndexes(segments);
+        const texts: string[] = [];
+        for (const seg of segments) for (const l of seg.lines || []) texts.push(String(l.text || ""));
+        const rep = findRepetitions(texts);
+        const assessed = await assessScriptQuality(
+          judgeResolved.provider && judgeResolved.provider !== r.provider ? judgeResolved.provider : null,
+          segments,
+          {
+            episodeTitle: situation.episodeTitle,
+            hostNames: HOST_NAMES,
+            evidenceSummary: situation.topicsPrompts,
+          }
+        );
+        const delta = ledgerDelta(mark);
+        runs.push({
+          situation: situation.key,
+          candidate: r.candidate.label,
+          verification: verificationLabel(r.candidate),
+          status: "ok",
+          lines: assessed.lineCount,
+          words: assessed.wordCount,
+          validJson: true,
+          repairs: delta.repairs,
+          retries: delta.retries,
+          tkIn: delta.tkIn,
+          tkOut: delta.tkOut,
+          seconds: Math.round((Date.now() - startedAt) / 1000),
+          deterministic: assessed.deterministic.total,
+          judgeOverall: assessed.judge?.overall,
+          judgeAxes: assessed.judge?.axes,
+          oneVoice: assessed.judge?.bothHostsSoundLikeOneModel,
+          repetitionPct: Number((rep.repetitionRatio * 100).toFixed(1)),
+        });
+        artifacts.push({ situation: situation.key, candidate: r.candidate.label, segments, assessment: assessed });
+        console.log(`    ${r.candidate.label}: ${assessed.lineCount} lines, det ${assessed.deterministic.total}/100`);
+      } catch (err: any) {
+        failures++;
+        const delta = ledgerDelta(mark);
+        runs.push({
+          situation: situation.key,
+          candidate: r.candidate.label,
+          verification: verificationLabel(r.candidate),
+          status: "FAILED",
+          error: (err?.message || String(err)).slice(0, 300),
+          lines: 0,
+          words: 0,
+          validJson: false,
+          repairs: delta.repairs,
+          retries: delta.retries,
+          tkIn: delta.tkIn,
+          tkOut: delta.tkOut,
+          seconds: Math.round((Date.now() - startedAt) / 1000),
+        });
+        artifacts.push({ situation: situation.key, candidate: r.candidate.label, error: err?.message || String(err) });
+        console.log(`    ${r.candidate.label}: FAILED — ${(err?.message || "").slice(0, 120)}`);
+      }
     }
   }
 
-  table(rows, ["candidate", "status", "lines", "words", "rep", "det", "judge", "secs"]);
-  writeArtifact("role-experiment-dialogue.json", { experiment: "dialogue", rows, artifacts });
+  // Per-candidate rollup across all three situations: completion and valid-JSON
+  // rates only mean something across a set.
+  const byCandidate = new Map<string, DialogueRun[]>();
+  for (const run of runs) {
+    if (!byCandidate.has(run.candidate)) byCandidate.set(run.candidate, []);
+    byCandidate.get(run.candidate)!.push(run);
+  }
+  const rollup = [...byCandidate.entries()].map(([candidate, rs]) => {
+    const attempted = rs.filter((r) => !r.status.startsWith("SKIPPED"));
+    const ok = rs.filter((r) => r.status === "ok");
+    const judged = ok.filter((r) => typeof r.judgeOverall === "number");
+    const avg = (pick: (r: DialogueRun) => number | undefined) => {
+      const vals = ok.map(pick).filter((v): v is number => typeof v === "number");
+      return vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : "—";
+    };
+    const axis = (name: string) => {
+      const vals = judged.map((r) => r.judgeAxes?.[name]).filter((v): v is number => typeof v === "number");
+      return vals.length ? (vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(1) : "—";
+    };
+    return {
+      candidate,
+      verify: rs[0].verification,
+      completion: attempted.length ? `${ok.length}/${attempted.length}` : "0/0 (skipped)",
+      validJson: attempted.length ? `${ok.filter((r) => r.validJson).length}/${attempted.length}` : "—",
+      repairs: rs.reduce((s, r) => s + r.repairs, 0),
+      det: avg((r) => r.deterministic),
+      judge: avg((r) => r.judgeOverall),
+      distinct: axis("hostDistinctness"),
+      causal: axis("conversationalCausality"),
+      filler: axis("genericFiller"),
+      mech: axis("mechanicalAlternation"),
+      repeat: axis("repetition"),
+      character: axis("characterConsistency"),
+      grounding: axis("evidenceGrounding"),
+      continuity: axis("movementContinuity"),
+      natural: axis("spokenNaturalness"),
+      oneVoice: judged.length ? `${judged.filter((r) => r.oneVoice).length}/${judged.length}` : "—",
+      secs: avg((r) => r.seconds),
+      tkOut: rs.reduce((s, r) => s + r.tkOut, 0),
+    };
+  });
+
+  console.log("\nPer-candidate rollup across all three situations (judge axes 0-10, higher is better):");
+  table(rollup, [
+    "candidate", "verify", "completion", "validJson", "repairs", "det", "judge",
+    "distinct", "causal", "filler", "mech", "repeat", "character", "grounding",
+    "continuity", "natural", "oneVoice", "secs", "tkOut",
+  ]);
+
+  console.log("\nPer-situation detail:");
+  table(
+    runs.map((r) => ({
+      situation: r.situation,
+      candidate: r.candidate,
+      status: r.status + (r.error ? `: ${r.error.slice(0, 60)}` : ""),
+      lines: r.lines,
+      words: r.words,
+      rep: r.repetitionPct !== undefined ? `${r.repetitionPct}%` : "—",
+      det: r.deterministic ?? "—",
+      judge: r.judgeOverall ?? "—",
+      secs: r.seconds,
+    })),
+    ["situation", "candidate", "status", "lines", "words", "rep", "det", "judge", "secs"]
+  );
+
+  writeArtifact("role-experiment-dialogue.json", { experiment: "dialogue", runs, rollup, artifacts });
 }
 
 // ---------------------------------------------------------------- outline
-
-const OUTLINE_PROMPT = `You are showrunning episode "${EPISODE_TITLE}" (roughly 10 minutes).
-
-TOPICS & EVIDENCE:
-${EVIDENCE_PACKET}
-
-Build a SMALL story spine, not a rundown checklist. Use 6 to 8 beats. Beat 1 is a cold open already in motion; the final beat is a closing payoff. Organize around ONE unresolved central question. Every beat must change something. Plan at least one genuine position shift. Assign each evidence fact to at most one beat.
-
-Return valid JSON only:
-{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open|intro|topic|transition|closing", "title": "...", "goal": "what changes", "angle": "specific pressure/question", "factRefs": [], "escalation": "...", "callback": "optional" } ] }`;
 
 async function outlineExperiment(): Promise<void> {
   console.log("\n=== OUTLINE EXPERIMENT (role: script_outline) ===");
@@ -284,12 +389,30 @@ async function outlineExperiment(): Promise<void> {
   const resolved = resolveCandidates(OUTLINE_CANDIDATES());
   const rows: Record<string, string | number>[] = [];
   const artifacts: unknown[] = [];
+  const situation = SITUATIONS[0];
+
+  const OUTLINE_PROMPT = `You are showrunning episode "${situation.episodeTitle}" (roughly ${situation.targetDuration} minutes).
+
+TOPICS & EVIDENCE:
+${situation.topicsPrompts}
+
+Build a SMALL story spine, not a rundown checklist. Use 6 to 8 beats. Beat 1 is a cold open already in motion; the final beat is a closing payoff. Organize around ONE unresolved central question. Every beat must change something. Plan at least one genuine position shift. Assign each evidence fact to at most one beat. A callback note is allowed only when a concrete earlier phrase could naturally return.
+
+Return valid JSON only:
+{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open|intro|topic|transition|closing", "title": "...", "goal": "what changes", "angle": "specific pressure/question", "factRefs": [{"type":"newsItem","id":"news-1"}], "escalation": "...", "callback": "optional concrete phrase" } ] }`;
 
   for (const r of resolved) {
     if (!r.provider) {
-      rows.push({ candidate: r.candidate.label, status: `SKIPPED (${r.skipReason})`, beats: "—", facts: "—", dupFacts: "—", shifts: "—", coldOpen: "—", payoff: "—", secs: "—" });
+      rows.push({
+        candidate: r.candidate.label,
+        verify: verificationLabel(r.candidate),
+        status: `SKIPPED (${r.skipReason})`,
+        beats: "—", movements: "—", facts: "—", dupFacts: "—", shifts: "—",
+        escalation: "—", callbacks: "—", coldOpen: "—", payoff: "—", repairs: "—", secs: "—",
+      });
       continue;
     }
+    const mark = llmCostMark();
     const startedAt = Date.now();
     try {
       const res = await r.provider.generateStructuredOutput<any>({
@@ -302,78 +425,71 @@ async function outlineExperiment(): Promise<void> {
           Array.isArray((v as { beats?: unknown })?.beats) ? null : "Outline is missing the required 'beats' array.",
       });
       const beats: any[] = Array.isArray(res?.beats) ? res.beats : [];
-      // Structural measures only — no rubric invented to favor any candidate.
       const refKeys = beats.flatMap((b) =>
         (Array.isArray(b?.factRefs) ? b.factRefs : []).map((f: any) => `${f?.type}:${f?.id}`)
       );
+      // Structural measures only — no rubric invented to favor any candidate.
       const dupFacts = refKeys.length - new Set(refKeys).size;
-      const shifts = beats.filter((b) => /shift|change|concede|admit|reverse/i.test(`${b?.goal} ${b?.escalation}`)).length;
+      const shifts = beats.filter((b) => /shift|change|concede|admit|reverse|gives? up|backs? down/i.test(`${b?.goal} ${b?.escalation}`)).length;
+      const escalations = beats.filter((b) => typeof b?.escalation === "string" && b.escalation.trim().length > 8).length;
+      const callbacks = beats.filter((b) => typeof b?.callback === "string" && b.callback.trim().length > 3).length;
+      // Three-movement architecture: the engine splits the spine into three, so a
+      // spine that cannot be split into three non-empty parts is a structural miss.
+      const movements = beats.length >= 4 ? 3 : 1;
+      const delta = ledgerDelta(mark);
       rows.push({
         candidate: r.candidate.label,
+        verify: verificationLabel(r.candidate),
         status: beats.length >= 5 ? "ok" : `INCOMPLETE (${beats.length} beats, 5 required)`,
         beats: beats.length,
+        movements,
         facts: new Set(refKeys).size,
         dupFacts,
         shifts,
+        escalation: escalations,
+        callbacks,
         coldOpen: beats[0]?.segmentType === "cold_open" ? "yes" : "no",
         payoff: beats[beats.length - 1]?.segmentType === "closing" ? "yes" : "no",
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
+        repairs: delta.repairs,
+        secs: Math.round((Date.now() - startedAt) / 1000),
       });
       if (beats.length < 5) failures++;
       artifacts.push({ candidate: r.candidate.label, beats });
     } catch (err: any) {
       failures++;
+      const delta = ledgerDelta(mark);
       rows.push({
         candidate: r.candidate.label,
-        status: `FAILED: ${(err?.message || String(err)).slice(0, 90)}`,
-        beats: 0, facts: "—", dupFacts: "—", shifts: "—", coldOpen: "—", payoff: "—",
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
+        verify: verificationLabel(r.candidate),
+        status: `FAILED: ${(err?.message || String(err)).slice(0, 80)}`,
+        beats: 0, movements: 0, facts: "—", dupFacts: "—", shifts: "—",
+        escalation: "—", callbacks: "—", coldOpen: "—", payoff: "—",
+        repairs: delta.repairs,
+        secs: Math.round((Date.now() - startedAt) / 1000),
       });
       artifacts.push({ candidate: r.candidate.label, error: err?.message || String(err) });
     }
   }
 
-  table(rows, ["candidate", "status", "beats", "facts", "dupFacts", "shifts", "coldOpen", "payoff", "secs"]);
+  table(rows, [
+    "candidate", "verify", "status", "beats", "movements", "facts", "dupFacts",
+    "shifts", "escalation", "callbacks", "coldOpen", "payoff", "repairs", "secs",
+  ]);
+  console.log("\n  dupFacts = the same evidence ref assigned to more than one beat (repetition risk).");
   writeArtifact("role-experiment-outline.json", { experiment: "outline", rows, artifacts });
 }
 
 // ---------------------------------------------------------------- verification
 
-/**
- * SEEDED DEFECT SET with ground truth. `shouldFlag: true` lines contain a real
- * problem; `shouldFlag: false` lines are legitimate speech that a trigger-happy
- * verifier wrongly fails. Both directions matter: a checker that flags
- * everything is as useless as one that flags nothing.
- */
-const SEEDED_LINES: {
-  lineIndex: number;
-  speakerName: string;
-  text: string;
-  isFactualClaim: boolean;
-  tone: string;
-  shouldFlag: boolean;
-  defect: string;
-}[] = [
-  { lineIndex: 0, speakerName: "Zabala", text: "They're 3-1. That's the whole record, four games.", isFactualClaim: true, tone: "analytical", shouldFlag: false, defect: "supported fact" },
-  { lineIndex: 1, speakerName: "Mulkey", text: "Aldana's units finished second in points allowed two years running.", isFactualClaim: true, tone: "incredulous", shouldFlag: true, defect: "UNSUPPORTED number — evidence says 6th, not 2nd" },
-  { lineIndex: 2, speakerName: "Zabala", text: "Twenty-four points in one quarter after leading 24-7.", isFactualClaim: true, tone: "analytical", shouldFlag: false, defect: "supported fact" },
-  { lineIndex: 3, speakerName: "Mulkey", text: "I think they keep him, and I think it costs them the division.", isFactualClaim: false, tone: "reflective", shouldFlag: false, defect: "OPINION / prediction — must not be failed as a factual error" },
-  { lineIndex: 4, speakerName: "Zabala", text: "If the option date weren't Friday nobody would be having this conversation.", isFactualClaim: false, tone: "dismissive", shouldFlag: false, defect: "REASONABLE INFERENCE from a supported fact" },
-  { lineIndex: 5, speakerName: "Mulkey", text: "Sources tell me he's already been informed he's gone.", isFactualClaim: true, tone: "excited", shouldFlag: true, defect: "UNSAFE claim — explicitly listed as unusable" },
-  { lineIndex: 6, speakerName: "Zabala", text: "They're 2-2, which is exactly the problem.", isFactualClaim: true, tone: "analytical", shouldFlag: true, defect: "CONTRADICTION — contradicts line 0 and the evidence" },
-  { lineIndex: 7, speakerName: "Mulkey", text: "Twenty-four points in one quarter after leading 24-7. That's the whole story.", isFactualClaim: true, tone: "heated", shouldFlag: true, defect: "REPETITION of line 2, verbatim" },
-  { lineIndex: 8, speakerName: "Zabala", text: "Honestly I don't care about the process, just fire somebody and let's move on.", isFactualClaim: false, tone: "dismissive", shouldFlag: true, defect: "CHARACTER VIOLATION — Zabala is the process host" },
-  { lineIndex: 9, speakerName: "Mulkey", text: "Ownership meets Thursday, so the film has one more week to matter.", isFactualClaim: true, tone: "setup", shouldFlag: true, defect: "CONTINUITY ERROR — Thursday precedes the Friday option date, so there is no extra week" },
-];
-
-const EVIDENCE_PANEL = [
-  "news-1: Ridgeline is 3-1 after four games. Ridgeline allowed 24 points in the fourth quarter of Week 4 after leading 24-7 entering it.",
-  "news-2: Coordinator Ray Aldana has a contract option that must be exercised Friday. Aldana's units ranked 6th in points allowed over the prior two seasons. Ownership scheduled a football-operations meeting for Thursday.",
-];
-
 async function verificationExperiment(): Promise<void> {
   console.log("\n=== VERIFICATION EXPERIMENT (roles: script_verification / fact_check) ===");
-  console.log(`Seeded set: ${SEEDED_LINES.length} lines, ${SEEDED_LINES.filter((l) => l.shouldFlag).length} genuinely defective, ${SEEDED_LINES.filter((l) => !l.shouldFlag).length} legitimate.\n`);
+  const mustFlag = SEEDED_LINES.filter((l) => l.shouldFlag);
+  const mustNotFlag = SEEDED_LINES.filter((l) => !l.shouldFlag);
+  console.log(
+    `Seeded set: ${SEEDED_LINES.length} lines across ${VERIFICATION_CATEGORIES.length} labelled categories — ` +
+      `${mustFlag.length} genuinely defective, ${mustNotFlag.length} legitimate.\n` +
+      `False positives are weighted heavily in the read-out: an overactive verifier rewrites valid dialogue.\n`
+  );
 
   const resolved = resolveCandidates(VERIFICATION_CANDIDATES());
   const rows: Record<string, string | number>[] = [];
@@ -381,9 +497,16 @@ async function verificationExperiment(): Promise<void> {
 
   for (const r of resolved) {
     if (!r.provider) {
-      rows.push({ candidate: r.candidate.label, status: `SKIPPED (${r.skipReason})`, caught: "—", missed: "—", falsePos: "—", precision: "—", recall: "—", secs: "—" });
+      rows.push({
+        candidate: r.candidate.label,
+        verify: verificationLabel(r.candidate),
+        status: `SKIPPED (${r.skipReason})`,
+        schema: "—", caught: "—", missed: "—", falsePos: "—",
+        precision: "—", recall: "—", fpRate: "—", fnRate: "—", secs: "—",
+      });
       continue;
     }
+    const mark = llmCostMark();
     const startedAt = Date.now();
     try {
       const result = await runSemanticReview(r.provider, {
@@ -393,11 +516,11 @@ async function verificationExperiment(): Promise<void> {
           text: l.text,
           isFactualClaim: l.isFactualClaim,
           tone: l.tone,
-          isInterruption: false,
+          isInterruption: l.isInterruption === true,
           isFragment: false,
         })),
-        evidencePanelItems: EVIDENCE_PANEL,
-        unsafeClaims: ["Aldana has already been told he is being let go."],
+        evidencePanelItems: VERIFICATION_EVIDENCE,
+        unsafeClaims: VERIFICATION_UNSAFE_CLAIMS,
         rumorKeywords: ["sources tell me", "sources say", "i'm hearing"],
       });
 
@@ -405,46 +528,77 @@ async function verificationExperiment(): Promise<void> {
       for (const lr of Array.isArray(result?.lineResults) ? result.lineResults : []) {
         if (lr?.status === "unsupported" || lr?.status === "needs_review") flagged.add(Number(lr.lineIndex));
       }
-      const truePos = SEEDED_LINES.filter((l) => l.shouldFlag && flagged.has(l.lineIndex));
-      const falseNeg = SEEDED_LINES.filter((l) => l.shouldFlag && !flagged.has(l.lineIndex));
-      const falsePos = SEEDED_LINES.filter((l) => !l.shouldFlag && flagged.has(l.lineIndex));
+      const truePos = mustFlag.filter((l) => flagged.has(l.lineIndex));
+      const falseNeg = mustFlag.filter((l) => !flagged.has(l.lineIndex));
+      const falsePos = mustNotFlag.filter((l) => flagged.has(l.lineIndex));
       const precision = truePos.length + falsePos.length > 0 ? truePos.length / (truePos.length + falsePos.length) : 0;
-      const recall = truePos.length / SEEDED_LINES.filter((l) => l.shouldFlag).length;
+      const recall = truePos.length / mustFlag.length;
+      const fpRate = falsePos.length / mustNotFlag.length;
+      const fnRate = falseNeg.length / mustFlag.length;
+      // Schema completion: did every line come back with an auditable verdict?
+      const returned = new Set(
+        (Array.isArray(result?.lineResults) ? result.lineResults : []).map((lr: any) => Number(lr?.lineIndex))
+      );
+      const schemaPct = Math.round((SEEDED_LINES.filter((l) => returned.has(l.lineIndex)).length / SEEDED_LINES.length) * 100);
+      const delta = ledgerDelta(mark);
 
       rows.push({
         candidate: r.candidate.label,
+        verify: verificationLabel(r.candidate),
         status: "ok",
+        schema: `${schemaPct}%`,
         caught: truePos.length,
         missed: falseNeg.length,
         falsePos: falsePos.length,
         precision: `${(precision * 100).toFixed(0)}%`,
         recall: `${(recall * 100).toFixed(0)}%`,
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
+        fpRate: `${(fpRate * 100).toFixed(0)}%`,
+        fnRate: `${(fnRate * 100).toFixed(0)}%`,
+        secs: Math.round((Date.now() - startedAt) / 1000),
       });
       artifacts.push({
         candidate: r.candidate.label,
-        missed: falseNeg.map((l) => ({ line: l.lineIndex, defect: l.defect })),
-        falsePositives: falsePos.map((l) => ({ line: l.lineIndex, why: l.defect })),
+        repairs: delta.repairs,
+        missed: falseNeg.map((l) => ({ line: l.lineIndex, category: l.category, note: l.note })),
+        falsePositives: falsePos.map((l) => ({ line: l.lineIndex, category: l.category, note: l.note })),
+        byCategory: VERIFICATION_CATEGORIES.map((cat) => {
+          const lines = SEEDED_LINES.filter((l) => l.category === cat);
+          const correct = lines.filter((l) => flagged.has(l.lineIndex) === l.shouldFlag).length;
+          return { category: cat, correct, total: lines.length };
+        }),
         raw: result,
       });
     } catch (err: any) {
       failures++;
       rows.push({
         candidate: r.candidate.label,
-        status: `FAILED: ${(err?.message || String(err)).slice(0, 90)}`,
-        caught: 0, missed: "—", falsePos: "—", precision: "—", recall: "—",
-        secs: ((Date.now() - startedAt) / 1000).toFixed(0),
+        verify: verificationLabel(r.candidate),
+        status: `FAILED: ${(err?.message || String(err)).slice(0, 80)}`,
+        schema: "0%", caught: 0, missed: "—", falsePos: "—",
+        precision: "—", recall: "—", fpRate: "—", fnRate: "—",
+        secs: Math.round((Date.now() - startedAt) / 1000),
       });
       artifacts.push({ candidate: r.candidate.label, error: err?.message || String(err) });
     }
   }
 
-  table(rows, ["candidate", "status", "caught", "missed", "falsePos", "precision", "recall", "secs"]);
-  console.log("\n  Ground truth (what a good verifier must catch):");
-  for (const l of SEEDED_LINES.filter((x) => x.shouldFlag)) console.log(`    line ${l.lineIndex}: ${l.defect}`);
-  console.log("  Must NOT be flagged:");
-  for (const l of SEEDED_LINES.filter((x) => !x.shouldFlag)) console.log(`    line ${l.lineIndex}: ${l.defect}`);
-  writeArtifact("role-experiment-verification.json", { experiment: "verification", rows, artifacts, groundTruth: SEEDED_LINES });
+  table(rows, [
+    "candidate", "verify", "status", "schema", "caught", "missed", "falsePos",
+    "precision", "recall", "fpRate", "fnRate", "secs",
+  ]);
+
+  console.log("\n  Ground truth — must be flagged:");
+  for (const l of mustFlag) console.log(`    line ${String(l.lineIndex).padStart(2)} [${l.category}] ${l.note}`);
+  console.log("  Ground truth — must NOT be flagged:");
+  for (const l of mustNotFlag) console.log(`    line ${String(l.lineIndex).padStart(2)} [${l.category}] ${l.note}`);
+
+  writeArtifact("role-experiment-verification.json", {
+    experiment: "verification",
+    categories: VERIFICATION_CATEGORIES,
+    rows,
+    artifacts,
+    groundTruth: SEEDED_LINES,
+  });
 }
 
 // ---------------------------------------------------------------- main
@@ -452,7 +606,7 @@ async function verificationExperiment(): Promise<void> {
 async function main(): Promise<void> {
   console.log("Role experiments — one role at a time, identical inputs per candidate.");
   if (DRY_RUN) {
-    console.log("\n--dry-run: no API calls. Every candidate is reported SKIPPED. This verifies the harness wiring only.");
+    console.log("\n--dry-run: no API calls. Every candidate is reported SKIPPED. This verifies harness wiring only.");
   }
 
   if (WHICH === "all" || WHICH === "dialogue") await dialogueExperiment();
@@ -464,9 +618,18 @@ async function main(): Promise<void> {
       `A failure here is a RESULT — it means that model could not do this role's job on this application's real work.`
   );
   console.log(
-    "PROMOTION RULE: keep the current assignment unless a candidate completes the required JSON reliably, honors the\n" +
-      "required output length, matches or beats the incumbent on role-specific quality, adds no unacceptable latency, and\n" +
-      "does not raise retry/fallback rates. Document any change in src/lib/providers/llm/profiles.ts with the evidence."
+    "\nPROMOTION RULE — a model may retain or take a primary role ONLY if it:\n" +
+      "  1. accepts the real request contract (see `npm run probe:llm-contract`),\n" +
+      "  2. reliably completes the required JSON,\n" +
+      "  3. accepts the required output allowance,\n" +
+      "  4. meets or exceeds the incumbent on role-specific quality,\n" +
+      "  5. does not introduce unacceptable latency,\n" +
+      "  6. does not require frequent repair,\n" +
+      "  7. does not trigger frequent fallback,\n" +
+      "  8. does not materially damage character voice or factual accuracy.\n" +
+      "A model that fails these stays INTEGRATED as an optional candidate but must not remain the default\n" +
+      "primary merely because the original specification named it. Document any change in profiles.ts with\n" +
+      "the evidence that justified it."
   );
 }
 

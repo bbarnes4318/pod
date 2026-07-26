@@ -24,8 +24,11 @@ import { LLMProvider, GenerateStructuredOutputOptions, GenerateTextOptions, LLMU
 import { LLMRole, LegacyFamily, ROLE_DEFINITIONS, ALL_ROLES, roleDefinition } from "./roles";
 import { RoutingProfile, activeRoutingProfile, profileChainFor } from "./profiles";
 import { readRoutingEnv, roleOverrideKeys } from "./routingEnv";
-import { LlmProviderError, describeFailure } from "./errors";
-import { modelCapabilities } from "./capabilities";
+import { LlmErrorCategory, LlmProviderError, categoryOf, describeFailure } from "./errors";
+import { fallbackDecision, formatPaidFallbackAudit } from "./fallbackPolicy";
+import { VerificationState, modelCapabilities, verificationState } from "./capabilities";
+import { NVIDIA_DEFAULT_BASE_URL } from "./nvidia";
+import { ZAI_DEFAULT_BASE_URL } from "./zai";
 import { withLlmAttribution } from "./costLedger";
 import { StubLLMProvider } from "./stub";
 import { OpenAILLMProvider } from "./openai";
@@ -68,18 +71,34 @@ export function isPaidProvider(provider: string): boolean {
 /**
  * Paid Anthropic/OpenAI fallback control.
  *
- * DEFAULT: allowed. Rationale, stated plainly because it is a cost decision:
- * the legacy providers are the safety net that keeps an episode from dying when
- * a free trial endpoint is rate-limited, and the two recommended configurations
- * both set this true. Nothing is silent — every paid fallback logs a
- * `PAID FALLBACK` warning and lands in the cost ledger with its role, provider
- * and model. Set LLM_ALLOW_LEGACY_FALLBACK=false to forbid it outright, after
- * which a role exhausts its free candidates and fails instead.
+ * DEFAULT: FORBIDDEN. This is a deliberate change from "allowed by default",
+ * and the reason is measurement integrity: while candidate models are being
+ * evaluated, a quiet paid fallback makes a failing free model look like a
+ * working one. The episode completes, the A/B table fills in, and the number you
+ * end up trusting was produced by Anthropic. A comparison run must measure the
+ * candidate or fail loudly.
+ *
+ *   LLM_ALLOW_LEGACY_FALLBACK=false   (default) COMPARISON MODE — a role that
+ *                                     exhausts its free candidates fails, and the
+ *                                     failure is the result.
+ *   LLM_ALLOW_LEGACY_FALLBACK=true    RESILIENT MODE — for full-pipeline runs
+ *                                     where finishing the episode matters more
+ *                                     than isolating the candidate. Every paid
+ *                                     call is logged with a full audit record.
  */
 export function legacyFallbackAllowed(): boolean {
   const raw = (readRoutingEnv("LLM_ALLOW_LEGACY_FALLBACK") || "").trim().toLowerCase();
-  if (raw === "false" || raw === "0" || raw === "no") return false;
-  return true;
+  return raw === "true" || raw === "1" || raw === "yes";
+}
+
+/**
+ * Did the operator set LLM_ALLOW_LEGACY_FALLBACK explicitly?
+ *
+ * Used only for CONFIGURATION failures: spending money to paper over a missing
+ * key or a wrong model id needs a deliberate choice, never an inherited default.
+ */
+export function legacyFallbackExplicit(): boolean {
+  return (readRoutingEnv("LLM_ALLOW_LEGACY_FALLBACK") || "").trim() !== "";
 }
 
 // ---------------------------------------------------------------- legacy config
@@ -189,12 +208,15 @@ export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile)
     paid: isPaidProvider(backup.provider),
   });
 
-  // De-duplicate by endpoint identity: an alias must not create a second
-  // attempt against the same provider/model, and cannot form a loop.
+  // De-duplicate by TRUE ENDPOINT IDENTITY — provider + normalized base URL +
+  // model. Provider/model alone was not endpoint identity: with custom base URLs
+  // two candidates can name the same provider and model while pointing at
+  // different services (and, conversely, an alias can reach the same service).
+  // Keying on the endpoint is what actually makes a loop impossible.
   const seen = new Set<string>();
   const deduped: RoleCandidate[] = [];
   for (const c of raw) {
-    const key = candidateKey(c);
+    const key = endpointIdentity(c);
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(c);
@@ -216,8 +238,49 @@ export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile)
   return { role, profile, candidates, suppressedPaid, isLegacyBypass: false };
 }
 
+/** Display label for a candidate: `provider/model`. Not an identity key. */
 export function candidateKey(c: { provider: string; model?: string }): string {
   return `${c.provider}/${c.model ?? "(provider-default)"}`.toLowerCase();
+}
+
+/** Where a provider's requests actually go, normalized for comparison. */
+export function normalizedBaseUrl(provider: string): string {
+  const p = provider.toLowerCase();
+  const raw =
+    p === "nvidia"
+      ? readRoutingEnv("NVIDIA_BASE_URL") || NVIDIA_DEFAULT_BASE_URL
+      : p === "zai"
+      ? readRoutingEnv("ZAI_BASE_URL") || ZAI_DEFAULT_BASE_URL
+      : p === "anthropic"
+      ? "https://api.anthropic.com/v1"
+      : p === "openai"
+      ? "https://api.openai.com/v1"
+      : "(none)";
+  // Normalize so trailing slashes, case and a default port cannot make one
+  // endpoint look like two.
+  try {
+    const u = new URL(raw);
+    const port = u.port && u.port !== (u.protocol === "https:" ? "443" : "80") ? `:${u.port}` : "";
+    return `${u.protocol}//${u.hostname.toLowerCase()}${port}${u.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return raw.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
+/**
+ * TRUE endpoint identity: provider + normalized base URL + model.
+ *
+ * Two candidates with this key equal are the same HTTP call to the same service
+ * for the same model, however they were spelled. This is the key the chain
+ * de-duplicates on, so no alias can make the router attempt one endpoint twice
+ * or cycle between two names for it.
+ */
+export function endpointIdentity(c: { provider: string; model?: string }): string {
+  return [
+    c.provider.toLowerCase(),
+    normalizedBaseUrl(c.provider),
+    (c.model ?? "(provider-default)").toLowerCase(),
+  ].join("|");
 }
 
 // ---------------------------------------------------------------- instantiation
@@ -236,10 +299,12 @@ export function instantiateProvider(provider: string, model?: string): LLMProvid
     case "stub":
       return new StubLLMProvider();
     default:
+      // A provider name nothing can build is a configuration/programming defect,
+      // not something another model fixes — it stops the chain.
       throw new LlmProviderError({
         provider,
         model: model || "(default)",
-        category: "invalid_request",
+        category: "programming_error",
         message:
           `[LLMRouting] Unknown provider '${provider}'. Supported: nvidia, zai, anthropic, openai, stub.`,
       });
@@ -299,33 +364,75 @@ export class RoutedLLMProvider implements LLMProvider {
     };
   }
 
+  /**
+   * Run the chain, consulting the FALLBACK POLICY after every failure.
+   *
+   * The old loop advanced after any caught error. That buried real defects (a bad
+   * application schema failed identically on four providers before surfacing) and
+   * it spent money quietly (a configuration mistake walked into the paid provider
+   * and the episode "succeeded"). Now the failure's CATEGORY decides, and when it
+   * says stop, the first failure is what the caller sees.
+   */
   private async run<T>(
     options: GenerateStructuredOutputOptions | GenerateTextOptions,
     invoke: (p: LLMProvider, o: any) => Promise<T>
   ): Promise<T> {
     const opts = this.withRoleDefaults(options as GenerateStructuredOutputOptions);
     const failures: string[] = [];
+    const categories: LlmErrorCategory[] = [];
+    const failedFree: string[] = [];
+    const policyCtx = {
+      paidFallbackAllowed: legacyFallbackAllowed(),
+      paidFallbackExplicit: legacyFallbackExplicit(),
+    };
     let fallbacks = 0;
+    let stoppedEarly: { error: unknown; reason: string } | null = null;
 
-    for (const candidate of this.plan.candidates) {
+    for (let i = 0; i < this.plan.candidates.length; i++) {
+      const candidate = this.plan.candidates[i];
+      const next = this.plan.candidates[i + 1];
       const key = candidateKey(candidate);
+      const identity = endpointIdentity(candidate);
+
       let provider: LLMProvider;
       try {
-        provider = this.instances.get(key) ?? instantiateProvider(candidate.provider, candidate.model);
-        this.instances.set(key, provider);
+        provider =
+          this.instances.get(identity) ?? instantiateProvider(candidate.provider, candidate.model);
+        this.instances.set(identity, provider);
       } catch (err) {
-        // A missing credential is a configuration defect, not a flaky call —
-        // its category stays visible in the aggregated error.
+        // Construction failures are configuration failures (a missing key, an
+        // unbuildable provider). They go through the same policy — including the
+        // rule that a config failure may not silently cross into a paid provider.
+        const decision = fallbackDecision(err, candidate, next, policyCtx);
         failures.push(`${key} [${candidate.source}] not usable: ${describeFailure(err)}`);
+        categories.push(decision.category);
+        if (!candidate.paid) failedFree.push(key);
+        console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
+        // Only a decision that DECLINED an available candidate is "stopping
+        // early". Running out of candidates is exhaustion, and gets the
+        // exhaustion message below with the whole list.
+        if (decision.verdict === "stop" && next) {
+          stoppedEarly = { error: err, reason: decision.reason };
+          break;
+        }
         fallbacks++;
         continue;
       }
 
+      // Paid calls are audited BEFORE they happen, with the whole story: which
+      // free candidates failed, with which categories, and why this was allowed.
       if (candidate.paid && candidate.source !== "role_override" && fallbacks > 0) {
         console.warn(
-          `[LLMRouting] PAID FALLBACK: role=${this.plan.role} is falling back to ${key} after ` +
-            `${fallbacks} free candidate(s) failed. This request incurs cost. ` +
-            `Set LLM_ALLOW_LEGACY_FALLBACK=false to forbid it.`
+          formatPaidFallbackAudit({
+            role: this.plan.role,
+            failedFreeCandidates: failedFree,
+            failureCategories: categories.map(String),
+            paidProvider: candidate.provider,
+            paidModel: candidate.model ?? "(provider-default)",
+            reasonPermitted: policyCtx.paidFallbackExplicit
+              ? "LLM_ALLOW_LEGACY_FALLBACK=true was set explicitly (resilient mode)"
+              : "LLM_ALLOW_LEGACY_FALLBACK is true",
+          })
         );
       }
 
@@ -340,24 +447,47 @@ export class RoutedLLMProvider implements LLMProvider {
           () => invoke(provider, opts)
         );
       } catch (err) {
-        failures.push(`${key} [${candidate.source}] failed: ${describeFailure(err)}`);
+        const decision = fallbackDecision(err, candidate, next, policyCtx);
+        failures.push(`${key} [${candidate.source}] failed (${decision.category}): ${describeFailure(err)}`);
+        categories.push(decision.category);
+        if (!candidate.paid) failedFree.push(key);
+        console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
+        if (decision.verdict === "stop" && next) {
+          stoppedEarly = { error: err, reason: decision.reason };
+          break;
+        }
         fallbacks++;
-        console.warn(
-          `[LLMRouting] role=${this.plan.role} candidate ${key} (${candidate.source}) failed; ` +
-            `${this.plan.candidates.length - fallbacks} candidate(s) left.`
-        );
       }
     }
 
     const suppressed = this.plan.suppressedPaid.length
-      ? ` Paid fallback is DISABLED (LLM_ALLOW_LEGACY_FALLBACK=false), which suppressed: ${this.plan.suppressedPaid
-          .map(candidateKey)
-          .join(", ")}.`
+      ? ` Paid fallback is DISABLED (LLM_ALLOW_LEGACY_FALLBACK=${
+          readRoutingEnv("LLM_ALLOW_LEGACY_FALLBACK") ?? "unset, default false"
+        }), which suppressed: ${this.plan.suppressedPaid.map(candidateKey).join(", ")}. ` +
+        `That is comparison mode working as intended — the candidate failed and was not quietly rescued.`
       : "";
+
+    if (stoppedEarly) {
+      // Preserve the original error's category. Re-labelling a safety refusal or
+      // a schema defect as a generic routing failure is how the actual cause gets
+      // lost between here and the job log.
+      const original = stoppedEarly.error;
+      const category = categoryOf(original);
+      throw new LlmProviderError({
+        provider: original instanceof LlmProviderError ? original.provider : "routing",
+        model: original instanceof LlmProviderError ? original.model : this.plan.role,
+        category,
+        message:
+          `[LLMRouting] Role '${this.plan.role}' STOPPED at ${failures.length} candidate(s) under profile ` +
+          `'${this.plan.profile}'. ${stoppedEarly.reason}\n  - ${failures.join("\n  - ")}${suppressed}`,
+        cause: original,
+      });
+    }
+
     throw new LlmProviderError({
       provider: "routing",
       model: this.plan.role,
-      category: "unknown",
+      category: categories[categories.length - 1] ?? "unknown",
       message:
         `[LLMRouting] Every candidate for role '${this.plan.role}' failed under profile ` +
         `'${this.plan.profile}':\n  - ${failures.join("\n  - ")}${suppressed}`,
@@ -437,7 +567,19 @@ export interface RoleRouteReport {
   legacyBackup: string;
   /** Rung 1, when an operator set one. */
   override: string | null;
-  candidates: { key: string; source: CandidateSource; paid: boolean; verified: boolean }[];
+  candidates: {
+    key: string;
+    source: CandidateSource;
+    paid: boolean;
+    /** True endpoint identity (provider|normalizedBaseUrl|model). */
+    endpoint: string;
+    /** Model ID confirmed against the provider's official catalog. */
+    catalogVerified: boolean;
+    /** Successfully called from this repository with the current adapter. */
+    liveContractVerified: boolean;
+    /** The three readiness states, already resolved. */
+    verification: VerificationState;
+  }[];
   suppressedPaid: string[];
   /** "ready" | "degraded" | "unroutable" | "not-wired" */
   status: "ready" | "degraded" | "unroutable" | "not-wired";
@@ -469,12 +611,28 @@ export function roleRouteReport(profileOverride?: RoutingProfile): RoleRouteRepo
         `Paid fallback disabled: ${plan.suppressedPaid.map(candidateKey).join(", ")} will not be called.`
       );
     }
-    const unverified = plan.candidates.filter(
-      (c) => c.model && !modelCapabilities(c.provider, c.model).verified
+    // Catalog verification and LIVE verification are separate claims, reported
+    // separately. A catalog-verified model can still have entirely unverified
+    // request parameters, and conflating the two is what let "verified" mean
+    // nothing useful.
+    const catalogOnly = plan.candidates.filter((c) => {
+      if (!c.model) return false;
+      const caps = modelCapabilities(c.provider, c.model);
+      return caps.catalogVerified && !caps.liveContractVerified;
+    });
+    const notInCatalog = plan.candidates.filter(
+      (c) => c.model && !modelCapabilities(c.provider, c.model).catalogVerified
     );
-    if (unverified.length) {
+    if (catalogOnly.length) {
       notes.push(
-        `Declared but not yet verified against the live catalog: ${unverified.map(candidateKey).join(", ")}.`
+        `Catalog verified, LIVE CONTRACT UNTESTED (request parameters unconfirmed from this repo): ` +
+          `${catalogOnly.map(candidateKey).join(", ")}. Run \`npm run probe:llm-contract\`.`
+      );
+    }
+    if (notInCatalog.length) {
+      notes.push(
+        `Catalog/model unavailable — ID not confirmed against the provider catalog: ` +
+          `${notInCatalog.map(candidateKey).join(", ")}.`
       );
     }
     if (def.callSites.length === 0) {
@@ -499,12 +657,18 @@ export function roleRouteReport(profileOverride?: RoutingProfile): RoleRouteRepo
       tertiary: byS("profile_tertiary")[0] ?? "—",
       legacyBackup: byS("legacy_backup")[0] ?? "—",
       override: byS("role_override")[0] ?? null,
-      candidates: plan.candidates.map((c) => ({
-        key: candidateKey(c),
-        source: c.source,
-        paid: c.paid,
-        verified: c.model ? modelCapabilities(c.provider, c.model).verified : true,
-      })),
+      candidates: plan.candidates.map((c) => {
+        const caps = modelCapabilities(c.provider, c.model ?? "");
+        return {
+          key: candidateKey(c),
+          source: c.source,
+          paid: c.paid,
+          endpoint: endpointIdentity(c),
+          catalogVerified: caps.catalogVerified,
+          liveContractVerified: caps.liveContractVerified,
+          verification: verificationState(caps),
+        };
+      }),
       suppressedPaid: plan.suppressedPaid.map(candidateKey),
       status,
       notes,

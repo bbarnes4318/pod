@@ -5,17 +5,19 @@
 // because the ledger, the readiness map and every cost question depend on
 // knowing which service actually ran the request.
 //
-// Subclasses supply only what genuinely differs: base URL, credential variable,
-// provider name, default model, request-parameter shaping, reasoning spelling,
-// and retry/timeout defaults. Everything below is protocol behavior:
+// What lives here is protocol behavior only:
 //
-//   - capability-filtered request bodies (no invented fields, nothing that the
-//     model's registry record says it rejects)
+//   - capability-filtered request bodies; MODEL-specific fields come from the
+//     subclass's shaping strategy (see nvidiaRequestProfiles.ts), never from a
+//     provider-wide guess
+//   - structured output requested in the mode the model actually supports:
+//     native JSON schema > native JSON object > prompt-enforced + strict parse
 //   - the caller's output allowance preserved (a 16,000-token movement request
 //     leaves here as 16,000)
-//   - reasoning content SEPARATED from the answer and never returned to callers
-//   - structured output parsed strictly, with ONE repair attempt
-//   - retries only for genuinely transient failures, with exponential backoff,
+//   - reasoning content SEPARATED from the answer and never returned to callers,
+//     and only reported as having happened when the response really carried it
+//   - one structured-output repair attempt, then the routing layer decides
+//   - retries only for genuinely transient categories, with exponential backoff,
 //     jitter, Retry-After and a hard AbortController timeout
 //   - credentials redacted from every message this class produces
 
@@ -25,24 +27,25 @@ import {
   LLMProvider,
   LLMUsage,
 } from "./interface";
-import { estimateCostUsd, recordLlmCall } from "./costLedger";
-import { ModelCapabilities, modelCapabilities, resolveMaxTokens } from "./capabilities";
+import { currentLlmAttribution, estimateCostUsd, recordLlmCall } from "./costLedger";
+import {
+  ModelCapabilities,
+  modelCapabilities,
+  resolveMaxTokens,
+  structuredOutputMode,
+} from "./capabilities";
 import {
   LlmProviderError,
   categorizeHttpFailure,
   categorizeNetworkFailure,
   describeFailure,
+  namedUnsupportedField,
   redactSecrets,
 } from "./errors";
-import {
-  StructuredOutputError,
-  buildRepairPrompt,
-  parseStructuredResponse,
-} from "./structured";
+import { StructuredOutputError, buildRepairPrompt, parseStructuredResponse } from "./structured";
+import { ShapeContext, ShapeResult } from "./nvidiaRequestProfiles";
 import { readRoutingEnv } from "./routingEnv";
-
-/** How this provider spells "think" / "don't think" on the request. */
-export type ReasoningSpelling = "none" | "chat_template_kwargs" | "thinking_object";
+import { LLMRole } from "./roles";
 
 export interface OpenAICompatibleConfig {
   provider: string;
@@ -51,7 +54,6 @@ export interface OpenAICompatibleConfig {
   apiKey: string;
   timeoutMs: number;
   maxRetries: number;
-  reasoningSpelling: ReasoningSpelling;
   extraHeaders?: Record<string, string>;
   /** Free/trial endpoint — cost is reported as null, never estimated. */
   unpriced: boolean;
@@ -60,14 +62,30 @@ export interface OpenAICompatibleConfig {
 const JSON_INSTRUCTION =
   "CRITICAL: Respond with a single valid JSON object and nothing else. Start your response with '{' immediately — no markdown code fences, no preamble, no commentary after the closing '}'.";
 
+/** Fields the one-time downgrade is allowed to remove, if a provider names one. */
+const DOWNGRADEABLE_FIELDS = [
+  "response_format",
+  "chat_template_kwargs",
+  "reasoning_budget",
+  "reasoning_effort",
+  "thinking",
+  "seed",
+];
+
 export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
   readonly name: string;
   protected readonly model: string;
   protected readonly config: OpenAICompatibleConfig;
   protected readonly caps: ModelCapabilities;
-  private usage: LLMUsage = { inputTokens: 0, outputTokens: 0, requestCount: 0, reasoningTokens: 0, cachedInputTokens: 0 };
-  /** Set when a 400 proved a registry field wrong; the narrowed shape is reused. */
-  private downgradedParams = new Set<string>();
+  private usage: LLMUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    requestCount: 0,
+    reasoningTokens: 0,
+    cachedInputTokens: 0,
+  };
+  /** Fields a provider specifically rejected; dropped for this instance's life. */
+  private downgradedFields = new Set<string>();
 
   protected constructor(config: OpenAICompatibleConfig) {
     this.config = config;
@@ -76,19 +94,29 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     this.caps = modelCapabilities(config.provider, config.model);
   }
 
+  /**
+   * Model-specific request fields. Implemented per provider (and, for NVIDIA,
+   * per MODEL via a typed profile) so no vendor's reasoning spelling is ever
+   * sent to a model that has not documented it.
+   */
+  protected abstract shapeModelFields(ctx: ShapeContext): ShapeResult;
+
   getAccumulatedUsage(): LLMUsage {
     return { ...this.usage };
   }
 
-  /** `provider/model`, for logs and errors. */
+  /** The capability record this instance is operating under. */
+  get capabilities(): ModelCapabilities {
+    return this.caps;
+  }
+
   protected label(): string {
     return `${this.name}/${this.model}`;
   }
 
   /** Chat-completions URL beneath the configured base URL. */
   protected endpoint(): string {
-    const base = this.config.baseUrl.replace(/\/+$/, "");
-    return `${base}/chat/completions`;
+    return `${this.config.baseUrl.replace(/\/+$/, "")}/chat/completions`;
   }
 
   protected headers(): Record<string, string> {
@@ -102,6 +130,11 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
 
   // ---------------------------------------------------------------- request
 
+  /**
+   * Messages. The system prompt always goes in the `system` role: NIM returns
+   * 500s when the `developer` role is combined with chat_template_kwargs, and
+   * this provider sends chat_template_kwargs for several models.
+   */
   private buildMessages(options: GenerateTextOptions, systemSuffix?: string): any[] {
     const messages: any[] = [];
     const systemParts = [options.systemPrompt, options.cacheableContext, systemSuffix].filter(Boolean);
@@ -109,8 +142,10 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       if (this.caps.supportsSystemPrompt) {
         messages.push({ role: "system", content: systemParts.join("\n\n") });
       } else {
-        // No system role: prepend it to the user turn rather than dropping it.
-        messages.push({ role: "user", content: `${systemParts.join("\n\n")}\n\n---\n\n${options.prompt}` });
+        messages.push({
+          role: "user",
+          content: `${systemParts.join("\n\n")}\n\n---\n\n${options.prompt}`,
+        });
         return messages;
       }
     }
@@ -118,71 +153,64 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     return messages;
   }
 
-  /**
-   * Translate the caller's reasoning posture into this provider's spelling.
-   *
-   * Only sent when the model's capability record says it has a reasoning mode.
-   * The exact field names for the currently-unverified hosted models are
-   * DECLARED, not confirmed — if the provider answers 400 "unsupported
-   * parameter", the field is dropped for the rest of this instance's life and
-   * the request is retried once (recorded as a parameter downgrade, not as a
-   * transient retry).
-   */
-  protected applyReasoning(body: Record<string, any>, wantsReasoning: boolean): void {
-    if (!this.caps.supportsThinking) return;
-    if (this.downgradedParams.has("reasoning")) return;
-    switch (this.config.reasoningSpelling) {
-      case "chat_template_kwargs":
-        body.chat_template_kwargs = { ...(body.chat_template_kwargs || {}), thinking: wantsReasoning };
-        return;
-      case "thinking_object":
-        body.thinking = { type: wantsReasoning ? "enabled" : "disabled" };
-        return;
-      case "none":
-        return;
-    }
-  }
-
-  /** Provider/model-specific request shaping. Subclasses may extend. */
-  protected shapeBody(body: Record<string, any>): Record<string, any> {
-    return body;
-  }
-
   private buildBody(
     options: GenerateStructuredOutputOptions,
     kind: "text" | "structured"
-  ): Record<string, any> {
+  ): { body: Record<string, any>; shaping: ShapeResult; jsonEnforcedInPrompt: boolean } {
+    const mode = kind === "structured" ? structuredOutputMode(this.caps, !!options.jsonSchema) : null;
+    // Prompt-enforced JSON is the only mode that needs the instruction, but the
+    // instruction is harmless and cheap insurance in native modes too — the
+    // Anthropic provider has always belt-and-braced it the same way.
+    const needsInstruction = kind === "structured";
+
     const body: Record<string, any> = {
       model: this.model,
-      messages: this.buildMessages(options, kind === "structured" ? JSON_INSTRUCTION : undefined),
+      messages: this.buildMessages(options, needsInstruction ? JSON_INSTRUCTION : undefined),
       stream: false,
     };
 
-    // Output allowance: preserved exactly unless a CONFIRMED cap is exceeded,
-    // which throws rather than silently shrinking the request.
+    // Output allowance: preserved exactly unless a LIVE-VERIFIED cap is
+    // exceeded, which throws rather than silently shrinking the request.
     const maxTokens = resolveMaxTokens(this.caps, options.maxTokens);
     if (maxTokens !== undefined) body.max_tokens = maxTokens;
 
-    // Sampling: only for models that accept it.
     if (!this.caps.rejectsSampling && options.temperature !== undefined) {
       body.temperature = options.temperature;
     }
+    if (options.seed !== undefined && this.caps.supportsSeed && !this.downgradedFields.has("seed")) {
+      body.seed = options.seed;
+    }
 
-    if (kind === "structured" && !this.downgradedParams.has("response_format")) {
-      if (this.caps.supportsStructuredOutput && options.jsonSchema) {
+    // Structured output, in the mode this MODEL supports.
+    if (
+      kind === "structured" &&
+      !this.downgradedFields.has("response_format") &&
+      mode !== "prompt-enforced"
+    ) {
+      if (mode === "native-json-schema") {
         body.response_format = {
           type: "json_schema",
           json_schema: { name: "application_schema", schema: options.jsonSchema, strict: false },
         };
-      } else if (this.caps.supportsJsonObjectMode) {
+      } else {
         body.response_format = { type: "json_object" };
       }
     }
 
-    const wantsReasoning = (options.reasoning ?? "off") === "on";
-    this.applyReasoning(body, wantsReasoning);
+    // Model-specific fields (reasoning, and anything else a profile adds).
+    const attribution = currentLlmAttribution();
+    const shaping = this.shapeModelFields({
+      wantsReasoning: (options.reasoning ?? "off") === "on",
+      role: attribution?.role as LLMRole | undefined,
+      maxTokens,
+      caps: this.caps,
+    });
+    for (const [key, value] of Object.entries(shaping.fields)) {
+      if (this.downgradedFields.has(key)) continue;
+      body[key] = value;
+    }
 
-    return this.shapeBody(body);
+    return { body, shaping, jsonEnforcedInPrompt: mode === "prompt-enforced" };
   }
 
   // ---------------------------------------------------------------- response
@@ -205,7 +233,6 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         : null;
 
     let text = typeof message.content === "string" ? message.content : "";
-    // Some OpenAI-compatible servers return content as an array of parts.
     if (!text && Array.isArray(message.content)) {
       text = message.content
         .filter((p: any) => p?.type === "text" || typeof p?.text === "string")
@@ -223,17 +250,16 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     }
 
     if (!text.trim()) {
-      // A reasoning-only response with an empty answer is a real failure mode on
-      // reasoning models that ran out of budget before writing the answer.
-      const hint =
-        reasoning && finish === "length"
-          ? " The model spent its entire output allowance on reasoning and never produced an answer — raise maxTokens or route this role to a non-reasoning model."
-          : "";
+      const spentOnThinking = reasoning && finish === "length";
       throw new LlmProviderError({
         provider: this.name,
         model: this.model,
-        category: finish === "length" ? "output_limit" : "transient",
-        message: `[${this.label()}] Empty response content (finish_reason: ${finish ?? "unknown"}).${hint}`,
+        category: finish === "length" ? "output_limit" : "empty_response",
+        message:
+          `[${this.label()}] Empty answer content (finish_reason: ${finish ?? "unknown"}).` +
+          (spentOnThinking
+            ? " The model spent its entire output allowance on reasoning and never produced an answer — lower the reasoning budget, raise maxTokens, or route this role to a non-reasoning model."
+            : ""),
       });
     }
 
@@ -243,15 +269,19 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
   private recordUsage(
     data: any,
     durationMs: number,
-    meta: { attempts: number; retries: number; repairs: number; reasoningRequested: boolean }
+    meta: {
+      attempts: number;
+      retries: number;
+      repairs: number;
+      reasoningRequested: boolean;
+      reasoningReturned: boolean;
+    }
   ): void {
     const u = data?.usage;
     if (!u) return;
     const cached = u.prompt_tokens_details?.cached_tokens || 0;
     const reasoningTokens =
-      u.completion_tokens_details?.reasoning_tokens ||
-      u.reasoning_tokens ||
-      0;
+      u.completion_tokens_details?.reasoning_tokens || u.reasoning_tokens || 0;
     const tkIn = Math.max(0, (u.prompt_tokens || 0) - cached);
     const tkOut = u.completion_tokens || 0;
 
@@ -273,7 +303,10 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       retries: meta.retries,
       repairs: meta.repairs,
       ok: true,
+      // Requested vs actually returned are different facts and are recorded as
+      // such: a role must not be able to claim it reasoned because it asked to.
       reasoningRequested: meta.reasoningRequested,
+      reasoningReturned: meta.reasoningReturned,
       estimatedCostUsd: estimateCostUsd(this.name, tkIn, tkOut, this.config.unpriced),
     });
   }
@@ -295,8 +328,7 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       ok: false,
       failure: err instanceof LlmProviderError ? err.category : "unknown",
       reasoningRequested: meta.reasoningRequested,
-      // No tokens were billed for a failed call we can account for; a real
-      // charge on a failed request is not something the provider reports.
+      reasoningReturned: false,
       estimatedCostUsd: null,
     });
     console.warn(`[${this.name}] call failed — ${describeFailure(err)}`);
@@ -308,22 +340,21 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     const retryAfter = Number(retryAfterHeader);
     if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 60_000);
     const base = Math.min(1000 * Math.pow(3, attempt), 30_000);
-    // Jitter: several worker jobs failing on the same upstream blip must not
-    // all come back at the same instant.
+    // Jitter: several worker jobs failing on the same upstream blip must not all
+    // come back at the same instant.
     return Math.round(base * (0.7 + Math.random() * 0.6));
   }
 
   /**
-   * One HTTP round trip with retries. Returns the parsed JSON body.
-   *
-   * `state` accumulates attempt/retry counts for the ledger, and carries the
-   * parameter-downgrade signal back to the caller so the body can be rebuilt.
+   * One HTTP round trip with retries. Returns the parsed body, or null when a
+   * request field was specifically rejected and the caller should rebuild.
    */
   private async request(
     body: Record<string, any>,
     state: { attempts: number; retries: number; downgraded: string | null }
   ): Promise<any> {
     let lastErr: unknown = null;
+    const sentFields = Object.keys(body);
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
       state.attempts++;
@@ -337,27 +368,33 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           signal: controller.signal,
         });
 
-        if (response.ok) {
-          return await response.json();
-        }
+        if (response.ok) return await response.json();
 
         const errorText = redactSecrets(await response.text().catch(() => ""));
-        const category = categorizeHttpFailure(response.status, errorText);
+        const category = categorizeHttpFailure(response.status, errorText, sentFields);
 
-        // An unsupported-parameter 400 is a REGISTRY defect, not a flaky
-        // upstream. Narrow the request once and let the caller re-send; the
-        // original category stays in the log so the cause is visible.
+        // NARROW downgrade, and only when the provider NAMES a field we sent.
+        // This exists to survive provider drift, not as a normal operating path —
+        // the registry already declares what each model supports, so a downgrade
+        // firing is a signal that a registry record is wrong. An AMBIGUOUS 400
+        // never strips anything.
         if (category === "unsupported_parameter") {
-          const field = this.unsupportedField(errorText, body);
-          if (field && !this.downgradedParams.has(field)) {
-            this.downgradedParams.add(field);
-            state.downgraded = field;
+          const named = namedUnsupportedField(errorText, DOWNGRADEABLE_FIELDS.filter((f) => f in body));
+          if (named && !this.downgradedFields.has(named)) {
+            this.downgradedFields.add(named);
+            state.downgraded = named;
             console.warn(
-              `[${this.name}] ${this.model} rejected '${field}' (HTTP 400). Dropping it for this process and re-sending. ` +
-                `Update the capability registry in src/lib/providers/llm/capabilities.ts. Provider said: ${errorText.slice(0, 200)}`
+              `[${this.name}] ${this.model} specifically rejected '${named}' (HTTP 400). Dropping it for this ` +
+                `process and re-sending ONCE. The capability registry in capabilities.ts should be corrected — ` +
+                `provider said: ${errorText.slice(0, 200)}`
             );
-            return null; // caller rebuilds the body and calls request() again
+            return null;
           }
+          console.warn(
+            `[${this.name}] ${this.model} returned an unsupported-parameter 400 that names no field we sent. ` +
+              `Nothing was stripped — guessing which field to remove would be worse than failing. ` +
+              `Body: ${errorText.slice(0, 200)}`
+          );
         }
 
         const err = new LlmProviderError({
@@ -371,8 +408,8 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         lastErr = err;
         const delay = this.backoffMs(attempt, response.headers.get("retry-after"));
         console.warn(
-          `[${this.name}] ${response.status} on ${this.model} — retrying in ${Math.round(delay / 1000)}s ` +
-            `(attempt ${attempt + 1}/${this.config.maxRetries}).`
+          `[${this.name}] ${response.status} (${category}) on ${this.model} — retrying in ` +
+            `${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${this.config.maxRetries}).`
         );
         state.retries++;
         await sleep(delay);
@@ -384,7 +421,7 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           model: this.model,
           category,
           message:
-            category === "transient" && err?.name === "AbortError"
+            category === "timeout" && err?.name === "AbortError"
               ? `[${this.label()}] Request timed out after ${this.config.timeoutMs}ms.`
               : `[${this.label()}] ${describeFailure(err)}`,
           cause: err,
@@ -408,59 +445,51 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         });
   }
 
-  /** Which request field a 400 body is complaining about, if it names one. */
-  private unsupportedField(errorText: string, body: Record<string, any>): string | null {
-    const t = errorText.toLowerCase();
-    for (const field of ["response_format", "chat_template_kwargs", "thinking", "reasoning", "seed", "max_tokens"]) {
-      if (field in body && t.includes(field)) {
-        return field === "chat_template_kwargs" || field === "thinking" ? "reasoning" : field;
-      }
-    }
-    // A generic unsupported-parameter complaint while reasoning is in play is
-    // most often the reasoning field, which is the one we declared unverified.
-    if (body.chat_template_kwargs || body.thinking) return "reasoning";
-    if (body.response_format) return "response_format";
-    return null;
-  }
-
-  /** request() but transparently re-sends once after a parameter downgrade. */
+  /** request() but rebuilds and re-sends ONCE after a named-field downgrade. */
   private async requestWithDowngrade(
-    build: () => Record<string, any>,
+    build: () => { body: Record<string, any>; shaping: ShapeResult; jsonEnforcedInPrompt: boolean },
     state: { attempts: number; retries: number; downgraded: string | null }
-  ): Promise<any> {
-    let data = await this.request(build(), state);
+  ): Promise<{ data: any; shaping: ShapeResult }> {
+    let built = build();
+    let data = await this.request(built.body, state);
     if (data === null) {
-      // A field was dropped from the registry-derived body; rebuild and re-send.
-      data = await this.request(build(), state);
+      built = build();
+      data = await this.request(built.body, state);
       if (data === null) {
         throw new LlmProviderError({
           provider: this.name,
           model: this.model,
           category: "unsupported_parameter",
-          message: `[${this.label()}] Provider rejected request parameters twice; giving up rather than guessing further.`,
+          message:
+            `[${this.label()}] Provider rejected named request fields twice; giving up rather than guessing further. ` +
+            `Correct the capability record for this model.`,
         });
       }
     }
-    return data;
+    return { data, shaping: built.shaping };
   }
 
   // ---------------------------------------------------------------- public API
 
   async generateText(options: GenerateTextOptions): Promise<string> {
-    const reasoningRequested = (options.reasoning ?? "off") === "on";
+    const wantsReasoning = (options.reasoning ?? "off") === "on";
     const state = { attempts: 0, retries: 0, downgraded: null as string | null };
     const startedAt = Date.now();
     console.log(`[${this.name}] Requesting completion via model: ${this.model}`);
     try {
-      const data = await this.requestWithDowngrade(() => this.buildBody(options, "text"), state);
+      const { data, shaping } = await this.requestWithDowngrade(
+        () => this.buildBody(options as GenerateStructuredOutputOptions, "text"),
+        state
+      );
       const { text, reasoning } = this.extractContent(data);
+      this.logShaping(shaping, reasoning);
       this.recordUsage(data, Date.now() - startedAt, {
         attempts: state.attempts,
         retries: state.retries,
         repairs: 0,
-        reasoningRequested,
+        reasoningRequested: shaping.diagnostics.reasoningRequested,
+        reasoningReturned: reasoning !== null,
       });
-      this.logReasoningPresence(reasoning);
       // Only the ANSWER is returned. Reasoning is dropped here, at the edge.
       return text;
     } catch (err) {
@@ -468,36 +497,59 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         attempts: state.attempts,
         retries: state.retries,
         repairs: 0,
-        reasoningRequested,
+        reasoningRequested: wantsReasoning,
       });
       throw err;
     }
   }
 
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
-    const reasoningRequested = (options.reasoning ?? "off") === "on";
-    const repairEnabled = (readRoutingEnv("LLM_STRUCTURED_REPAIR_ENABLED") || "true").toLowerCase() !== "false";
+    const wantsReasoning = (options.reasoning ?? "off") === "on";
+    const repairEnabled =
+      (readRoutingEnv("LLM_STRUCTURED_REPAIR_ENABLED") || "true").toLowerCase() !== "false";
     const state = { attempts: 0, retries: 0, downgraded: null as string | null };
     const startedAt = Date.now();
     let repairs = 0;
-    console.log(`[${this.name}] Requesting structured output (JSON forced) via model: ${this.model}`);
+    const mode = structuredOutputMode(this.caps, !!options.jsonSchema);
+    console.log(
+      `[${this.name}] Requesting structured output (${mode}) via model: ${this.model}`
+    );
 
     const attemptOnce = async (opts: GenerateStructuredOutputOptions): Promise<T> => {
-      const data = await this.requestWithDowngrade(() => this.buildBody(opts, "structured"), state);
+      const { data, shaping } = await this.requestWithDowngrade(
+        () => this.buildBody(opts, "structured"),
+        state
+      );
       const { text, reasoning } = this.extractContent(data);
-      this.logReasoningPresence(reasoning);
-      // Reasoning is NOT passed to the parser — parsing it would be the exact
-      // path by which private reasoning leaks into structured application data.
-      const parsed = parseStructuredResponse<T>(text, {
-        jsonSchema: opts.jsonSchema,
-        validate: opts.validate,
-        label: this.label(),
-      });
+      this.logShaping(shaping, reasoning);
+      // Reasoning is NOT passed to the parser — that would be the exact path by
+      // which private reasoning leaks into structured application data.
+      let parsed: T;
+      try {
+        parsed = parseStructuredResponse<T>(text, {
+          jsonSchema: opts.jsonSchema,
+          validate: opts.validate,
+          label: this.label(),
+        });
+      } catch (err) {
+        if (err instanceof StructuredOutputError) throw err;
+        // The caller's validator itself threw — that is our bug, not the model's.
+        throw new LlmProviderError({
+          provider: this.name,
+          model: this.model,
+          category: "data_validation_bug",
+          message:
+            `[${this.label()}] The caller's structured-output validator threw: ${describeFailure(err)}. ` +
+            `This is an application defect, not a provider failure — no other model will fix it.`,
+          cause: err,
+        });
+      }
       this.recordUsage(data, Date.now() - startedAt, {
         attempts: state.attempts,
         retries: state.retries,
         repairs,
-        reasoningRequested,
+        reasoningRequested: shaping.diagnostics.reasoningRequested,
+        reasoningReturned: reasoning !== null,
       });
       return parsed;
     };
@@ -505,13 +557,12 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     try {
       return await attemptOnce(options);
     } catch (firstErr) {
-      const repairable = firstErr instanceof StructuredOutputError && repairEnabled;
-      if (!repairable) {
+      if (!(firstErr instanceof StructuredOutputError) || !repairEnabled) {
         this.recordFailure(Date.now() - startedAt, firstErr, {
           attempts: state.attempts,
           retries: state.retries,
           repairs,
-          reasoningRequested,
+          reasoningRequested: wantsReasoning,
         });
         throw firstErr;
       }
@@ -522,24 +573,24 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           `Excerpt: ${firstErr.excerpt.slice(0, 200)}`
       );
       try {
-        return await attemptOnce({
-          ...options,
-          prompt: buildRepairPrompt(options.prompt, firstErr),
-        });
+        return await attemptOnce({ ...options, prompt: buildRepairPrompt(options.prompt, firstErr) });
       } catch (repairErr) {
         this.recordFailure(Date.now() - startedAt, repairErr, {
           attempts: state.attempts,
           retries: state.retries,
           repairs,
-          reasoningRequested,
+          reasoningRequested: wantsReasoning,
         });
-        // Surface BOTH: the routing layer decides to fall back knowing the
-        // repair was attempted and what the original defect was.
-        const detail = repairErr instanceof StructuredOutputError ? repairErr.kind : describeFailure(repairErr);
+        // A validator bug or a policy refusal during the repair keeps ITS
+        // category — those stop the chain, and mislabelling them as a structured
+        // failure would send the router hunting through three more models.
+        if (repairErr instanceof LlmProviderError && repairErr.category !== "unknown") throw repairErr;
+        const detail =
+          repairErr instanceof StructuredOutputError ? repairErr.kind : describeFailure(repairErr);
         throw new LlmProviderError({
           provider: this.name,
           model: this.model,
-          category: "structured_output",
+          category: "structured_output_invalid_after_repair",
           message:
             `[${this.label()}] Structured output failed (${firstErr.kind}) and the single repair attempt also failed ` +
             `(${detail}). No partial result was returned.`,
@@ -550,16 +601,29 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
   }
 
   /**
-   * Record only THAT reasoning happened. The text itself is never logged unless
-   * an operator deliberately turns it on for a debugging session.
+   * Log what was actually sent, and what actually came back.
+   *
+   * Reasoning is reported as having HAPPENED only when the response carried it —
+   * asking for reasoning is not evidence that any occurred, and a role map that
+   * claims otherwise is how "the outline ran with reasoning" becomes untrue.
    */
-  private logReasoningPresence(reasoning: string | null): void {
+  private logShaping(shaping: ShapeResult, reasoning: string | null): void {
+    const requested = shaping.diagnostics.reasoningRequested;
+    if (requested && !reasoning) {
+      console.log(
+        `[${this.name}] ${shaping.diagnostics.note} — NOTE: reasoning was requested but the response returned ` +
+          `no separate reasoning content, so this call must not be reported as having reasoned.`
+      );
+    } else if (shaping.diagnostics.note) {
+      console.debug(`[${this.name}] ${shaping.diagnostics.note}`);
+    }
     if (!reasoning) return;
-    const logIt = (readRoutingEnv("LLM_LOG_REASONING") || "").toLowerCase() === "true";
-    if (logIt) {
+    if ((readRoutingEnv("LLM_LOG_REASONING") || "").toLowerCase() === "true") {
       console.debug(`[${this.name}] reasoning (${reasoning.length} chars): ${reasoning.slice(0, 2000)}`);
     } else {
-      console.log(`[${this.name}] model returned separate reasoning content (${reasoning.length} chars, not logged).`);
+      console.log(
+        `[${this.name}] model returned separate reasoning content (${reasoning.length} chars, not logged).`
+      );
     }
   }
 }
@@ -586,7 +650,7 @@ export function requireApiKey(
     throw new LlmProviderError({
       provider,
       model: "(unresolved)",
-      category: "missing_credentials",
+      category: "missing_api_key",
       message:
         `[${provider}] ${envVar} is ${value ? "still a placeholder" : "not set"}. ` +
         `${humanName} cannot be used until it is configured. ${setupHint}`,
