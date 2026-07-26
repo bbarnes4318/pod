@@ -26,10 +26,40 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import * as dotenv from "dotenv";
 
-dotenv.config({ path: path.join(process.cwd(), ".env.coolify.local") });
-dotenv.config();
+/**
+ * Load env from this checkout AND from the main worktree.
+ *
+ * `.env` / `.env.coolify.local` are gitignored, so a `git worktree` checkout
+ * does not have them — only the main working copy does. Loading from cwd alone
+ * makes every script run inside a worktree report a missing API key that has
+ * been configured for months. `--git-common-dir` resolves to the ONE shared
+ * `.git`, whose parent is the main worktree, in both a worktree and a normal
+ * clone. dotenv never overwrites an already-set var, so the local checkout
+ * still wins where it has its own value.
+ */
+function loadEnv() {
+  const roots = [process.cwd()];
+  try {
+    const commonDir = execSync("git rev-parse --path-format=absolute --git-common-dir", {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const mainRoot = path.dirname(commonDir);
+    if (mainRoot && mainRoot !== process.cwd()) roots.push(mainRoot);
+  } catch {
+    // Not a git checkout — cwd is all there is.
+  }
+  for (const root of roots) {
+    for (const file of [".env.coolify.local", ".env.local", ".env"]) {
+      const full = path.join(root, file);
+      if (fs.existsSync(full)) dotenv.config({ path: full });
+    }
+  }
+}
+loadEnv();
 
 import { SEED_HOSTS } from "../lib/hosts/roster";
 import { getShowFormat, DEFAULT_FORMAT_ID } from "../lib/formats/showFormatRegistry";
