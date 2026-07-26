@@ -608,7 +608,12 @@ export async function generateEpisodeContentAssets(input: {
         tone: line.tone,
         startTimeSeconds: Math.round(timing.startTimeMs / 100) / 10,
         endTimeSeconds: Math.round(timing.endTimeMs / 100) / 10,
-        audioSegmentId: matchingSeg.id,
+        // Null on a scene-voiced episode: those have no per-line AudioSegment
+        // rows at all (the audio lives in DialogueSceneAudio). The transcript
+        // JSON is still complete and correctly timed — this field is a
+        // provenance pointer, not content — so it is omitted rather than
+        // crashing the stage on a finished episode.
+        audioSegmentId: matchingSeg ? matchingSeg.id : null,
         durationMs: timing.durationMs,
       });
     }
