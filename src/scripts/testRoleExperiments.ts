@@ -44,15 +44,20 @@ import { llmCostMark, llmCostSince } from "../lib/providers/llm/costLedger";
 import { generateOutlineDrivenScript } from "../lib/services/scriptOutlineEngine";
 import { assessScriptQuality } from "../lib/services/scriptQualityJudge";
 import { dedupeScriptSegments, normalizeLineIndexes, findRepetitions } from "../lib/services/scriptRepetition";
-import { runSemanticReview } from "../lib/services/semanticReview";
+import { buildSemanticReviewPrompt, runSemanticReview } from "../lib/services/semanticReview";
 import {
+  FACT_CHECK_SCOPE_LINES,
   HOST_NAMES,
+  OUT_OF_SCOPE_DEFECTS,
   PERSONA_PROMPT,
+  SCOPE_BY_CATEGORY,
   SEEDED_LINES,
+  type SeededLine,
   SITUATIONS,
   VERIFICATION_CATEGORIES,
   VERIFICATION_EVIDENCE,
   VERIFICATION_UNSAFE_CLAIMS,
+  scopeOf,
 } from "./roleExperimentFixtures";
 
 const argv = process.argv.slice(2);
@@ -547,13 +552,42 @@ Return valid JSON only:
 
 // ---------------------------------------------------------------- verification
 
+/**
+ * Top-level fields the reviewer's own schema declares required. Read off
+ * buildSemanticReviewPrompt so this can never drift from the production
+ * contract — a schema verdict computed from a stale hand-copied list would be
+ * exactly the kind of invented metric this experiment is being fixed to remove.
+ */
+function requiredTopLevelFields(): string[] {
+  const { jsonSchema } = buildSemanticReviewPrompt({
+    reviewLines: [],
+    evidencePanelItems: [],
+    unsafeClaims: [],
+    rumorKeywords: [],
+  });
+  return Array.isArray(jsonSchema?.required) ? (jsonSchema.required as string[]) : [];
+}
+
 async function verificationExperiment(): Promise<void> {
   console.log("\n=== VERIFICATION EXPERIMENT (roles: script_verification / fact_check) ===");
-  const mustFlag = SEEDED_LINES.filter((l) => l.shouldFlag);
-  const mustNotFlag = SEEDED_LINES.filter((l) => !l.shouldFlag);
+
+  // SCOPED GROUND TRUTH. The reviewer under test is the semantic FACT-CHECK
+  // reviewer, and its prompt forbids it from flagging non-factual lines and
+  // tells it to omit supported ones. It is therefore scored ONLY on defects
+  // its production contract makes it responsible for. Defects owned by the
+  // repetition checker and by character/continuity validation stay visible in
+  // the read-out, reported as not_applicable — never as false negatives.
+  const inScope = FACT_CHECK_SCOPE_LINES;
+  const mustFlag = inScope.filter((l) => l.shouldFlag);
+  const mustNotFlag = inScope.filter((l) => !l.shouldFlag);
+  const requiredFields = requiredTopLevelFields();
+
   console.log(
-    `Seeded set: ${SEEDED_LINES.length} lines across ${VERIFICATION_CATEGORIES.length} labelled categories — ` +
-      `${mustFlag.length} genuinely defective, ${mustNotFlag.length} legitimate.\n` +
+    `Seeded set: ${SEEDED_LINES.length} lines across ${VERIFICATION_CATEGORIES.length} labelled categories.\n` +
+      `In scope for the fact-check contract: ${inScope.length} lines — ${mustFlag.length} genuinely defective, ` +
+      `${mustNotFlag.length} legitimate.\n` +
+      `Out of scope (other pipeline stages own these, scored not_applicable): ` +
+      `${OUT_OF_SCOPE_DEFECTS.map((l) => `line ${l.lineIndex} [${l.category}] → ${scopeOf(l)}`).join(", ")}\n` +
       `False positives are weighted heavily in the read-out: an overactive verifier rewrites valid dialogue.\n`
   );
 
@@ -568,8 +602,9 @@ async function verificationExperiment(): Promise<void> {
         candidate: r.candidate.label,
         verify: verificationLabel(r.candidate),
         status: `SKIPPED (${r.skipReason})`,
-        schema: "—", caught: "—", missed: "—", falsePos: "—",
-        precision: "—", recall: "—", fpRate: "—", fnRate: "—", secs: "—",
+        validResponseSchema: "—", requiredTopLevelFieldsPresent: "—", returnedFindings: "—",
+        caught: "—", missed: "—", notApplicable: OUT_OF_SCOPE_DEFECTS.length, falsePos: "—",
+        precision: "—", recall: "—", falsePositiveRate: "—", falseNegativeRate: "—", secs: "—",
       });
       continue;
     }
@@ -591,47 +626,80 @@ async function verificationExperiment(): Promise<void> {
         rumorKeywords: ["sources tell me", "sources say", "i'm hearing"],
       });
 
+      const findings = Array.isArray(result?.lineResults) ? result.lineResults : [];
       const flagged = new Set<number>();
-      for (const lr of Array.isArray(result?.lineResults) ? result.lineResults : []) {
+      for (const lr of findings) {
         if (lr?.status === "unsupported" || lr?.status === "needs_review") flagged.add(Number(lr.lineIndex));
       }
+
+      // Scored ONLY over the fact-check contract's own lines.
       const truePos = mustFlag.filter((l) => flagged.has(l.lineIndex));
       const falseNeg = mustFlag.filter((l) => !flagged.has(l.lineIndex));
       const falsePos = mustNotFlag.filter((l) => flagged.has(l.lineIndex));
       const precision = truePos.length + falsePos.length > 0 ? truePos.length / (truePos.length + falsePos.length) : 0;
-      const recall = truePos.length / mustFlag.length;
-      const fpRate = falsePos.length / mustNotFlag.length;
-      const fnRate = falseNeg.length / mustFlag.length;
-      // Schema completion: did every line come back with an auditable verdict?
-      const returned = new Set(
-        (Array.isArray(result?.lineResults) ? result.lineResults : []).map((lr: any) => Number(lr?.lineIndex))
+      const recall = mustFlag.length > 0 ? truePos.length / mustFlag.length : 0;
+      const fpRate = mustNotFlag.length > 0 ? falsePos.length / mustNotFlag.length : 0;
+      const fnRate = mustFlag.length > 0 ? falseNeg.length / mustFlag.length : 0;
+
+      // Out-of-scope defects: recorded, never counted against the reviewer.
+      // Whether it happened to flag one is informational only.
+      const notApplicable = OUT_OF_SCOPE_DEFECTS.map((l) => ({
+        line: l.lineIndex,
+        category: l.category,
+        ownedBy: scopeOf(l),
+        result: "not_applicable" as const,
+        incidentallyFlagged: flagged.has(l.lineIndex),
+        note: l.note,
+      }));
+
+      // SCHEMA CONFORMANCE — replaces the old "schema" column, which measured
+      // what fraction of all 14 seeded lines came back and so scored a
+      // perfectly-obedient reviewer at ~36%. The production prompt tells the
+      // model to return flagged lines ONLY and omit supported ones, so an
+      // omitted line is compliance, not a schema defect. What actually matters
+      // is whether the envelope parsed and carried its required fields.
+      const validResponseSchema =
+        result != null && typeof result === "object" && Array.isArray(result.lineResults);
+      const missingFields = requiredFields.filter(
+        (f) => !(result != null && typeof result === "object" && f in result)
       );
-      const schemaPct = Math.round((SEEDED_LINES.filter((l) => returned.has(l.lineIndex)).length / SEEDED_LINES.length) * 100);
       const delta = ledgerDelta(mark);
 
       rows.push({
         candidate: r.candidate.label,
         verify: verificationLabel(r.candidate),
         status: "ok",
-        schema: `${schemaPct}%`,
-        caught: truePos.length,
+        validResponseSchema: validResponseSchema ? "yes" : "no",
+        requiredTopLevelFieldsPresent: `${requiredFields.length - missingFields.length}/${requiredFields.length}`,
+        returnedFindings: findings.length,
+        caught: `${truePos.length}/${mustFlag.length}`,
         missed: falseNeg.length,
+        notApplicable: notApplicable.length,
         falsePos: falsePos.length,
         precision: `${(precision * 100).toFixed(0)}%`,
         recall: `${(recall * 100).toFixed(0)}%`,
-        fpRate: `${(fpRate * 100).toFixed(0)}%`,
-        fnRate: `${(fnRate * 100).toFixed(0)}%`,
+        falsePositiveRate: `${(fpRate * 100).toFixed(0)}%`,
+        falseNegativeRate: `${(fnRate * 100).toFixed(0)}%`,
         secs: Math.round((Date.now() - startedAt) / 1000),
       });
       artifacts.push({
         candidate: r.candidate.label,
         repairs: delta.repairs,
+        scoredScope: "fact_check",
+        validResponseSchema,
+        missingTopLevelFields: missingFields,
+        returnedFindings: findings.length,
         missed: falseNeg.map((l) => ({ line: l.lineIndex, category: l.category, note: l.note })),
         falsePositives: falsePos.map((l) => ({ line: l.lineIndex, category: l.category, note: l.note })),
+        notApplicable,
         byCategory: VERIFICATION_CATEGORIES.map((cat) => {
           const lines = SEEDED_LINES.filter((l) => l.category === cat);
+          const scope = SCOPE_BY_CATEGORY[cat as SeededLine["category"]];
+          if (scope !== "fact_check") {
+            return { category: cat, scope, result: "not_applicable", total: lines.length };
+          }
           const correct = lines.filter((l) => flagged.has(l.lineIndex) === l.shouldFlag).length;
-          return { category: cat, correct, total: lines.length };
+          return { category: cat, scope, correct, total: lines.length };
         }),
         raw: result,
       });
@@ -641,8 +709,9 @@ async function verificationExperiment(): Promise<void> {
         candidate: r.candidate.label,
         verify: verificationLabel(r.candidate),
         status: `FAILED: ${(err?.message || String(err)).slice(0, 80)}`,
-        schema: "0%", caught: 0, missed: "—", falsePos: "—",
-        precision: "—", recall: "—", fpRate: "—", fnRate: "—",
+        validResponseSchema: "no", requiredTopLevelFieldsPresent: "—", returnedFindings: "—",
+        caught: "—", missed: "—", notApplicable: OUT_OF_SCOPE_DEFECTS.length, falsePos: "—",
+        precision: "—", recall: "—", falsePositiveRate: "—", falseNegativeRate: "—",
         secs: Math.round((Date.now() - startedAt) / 1000),
       });
       artifacts.push({ candidate: r.candidate.label, error: err?.message || String(err) });
@@ -650,21 +719,37 @@ async function verificationExperiment(): Promise<void> {
   }
 
   table(rows, [
-    "candidate", "verify", "status", "schema", "caught", "missed", "falsePos",
-    "precision", "recall", "fpRate", "fnRate", "secs",
+    "candidate", "verify", "status",
+    "validResponseSchema", "requiredTopLevelFieldsPresent", "returnedFindings",
+    "caught", "missed", "notApplicable", "falsePos",
+    "precision", "recall", "falsePositiveRate", "falseNegativeRate", "secs",
   ]);
 
-  console.log("\n  Ground truth — must be flagged:");
+  console.log("\n  Ground truth — IN SCOPE (fact_check), must be flagged:");
   for (const l of mustFlag) console.log(`    line ${String(l.lineIndex).padStart(2)} [${l.category}] ${l.note}`);
-  console.log("  Ground truth — must NOT be flagged:");
+  console.log("  Ground truth — IN SCOPE (fact_check), must NOT be flagged:");
   for (const l of mustNotFlag) console.log(`    line ${String(l.lineIndex).padStart(2)} [${l.category}] ${l.note}`);
+  console.log("  OUT OF SCOPE — real defects owned by another stage, scored not_applicable:");
+  for (const l of OUT_OF_SCOPE_DEFECTS) {
+    console.log(`    line ${String(l.lineIndex).padStart(2)} [${l.category}] owned by ${scopeOf(l)} — ${l.note}`);
+  }
 
   writeArtifact("role-experiment-verification.json", {
     experiment: "verification",
+    scoredScope: "fact_check",
+    scopeByCategory: SCOPE_BY_CATEGORY,
     categories: VERIFICATION_CATEGORIES,
+    inScopeMustFlag: mustFlag.map((l) => ({ line: l.lineIndex, category: l.category })),
+    inScopeMustNotFlag: mustNotFlag.map((l) => ({ line: l.lineIndex, category: l.category })),
+    outOfScope: OUT_OF_SCOPE_DEFECTS.map((l) => ({
+      line: l.lineIndex,
+      category: l.category,
+      ownedBy: scopeOf(l),
+      result: "not_applicable",
+    })),
     rows,
     artifacts,
-    groundTruth: SEEDED_LINES,
+    groundTruth: SEEDED_LINES.map((l) => ({ ...l, scope: scopeOf(l) })),
   });
 }
 

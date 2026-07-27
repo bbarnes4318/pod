@@ -128,6 +128,8 @@
     "test:nvidia-provider": "tsx --conditions=react-server src/scripts/testNvidiaProvider.ts",
     "test:zai-provider": "tsx --conditions=react-server src/scripts/testZaiProvider.ts",
     "test:role-experiments": "tsx --conditions=react-server src/scripts/testRoleExperiments.ts",
+    "test:verification-scoring": "tsx --conditions=react-server src/scripts/testVerificationScoring.ts",
+    "rescore:verification": "tsx --conditions=react-server src/scripts/rescoreVerificationArtifact.ts",
     "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts"
   },
   "dependencies": {

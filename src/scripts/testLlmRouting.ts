@@ -1732,11 +1732,14 @@ function verifiedProfileTests(): void {
         topic_ranking: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         research_brief: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        script_outline: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        script_movement: [`nvidia/${MODEL_IDS.nvidia.mistral}`, zai],
-        script_verification: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        script_rewrite: [`nvidia/${MODEL_IDS.nvidia.mistral}`, zai],
-        fact_check: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        // The five MEASURED roles — ordered by the role experiments, not by
+        // intent. Changing one of these lines means overriding a measurement,
+        // so the evidence in profiles.ts has to change with it.
+        script_outline: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        script_movement: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        script_rewrite: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
         continuity_report: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, zai],
         show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
         episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
@@ -1754,9 +1757,27 @@ function verifiedProfileTests(): void {
     });
   });
 
+  check("Z.ai is absent from both verification chains", () => {
+    // Not a quality judgement: GLM-4.7 Flash's verification response omitted
+    // required top-level fields even after a repair pass. A reviewer that
+    // cannot return its verdict cannot gate a publish, so it must not appear
+    // in the chain at any position.
+    withEnv(VERIFIED_ENV, () => {
+      for (const role of ["script_verification", "fact_check"] as LLMRole[]) {
+        for (const c of resolveRolePlan(role).candidates) {
+          if (c.source === "legacy_backup") continue;
+          assert(c.provider !== "zai", `${role}: Z.ai must not be in the verification chain (${candidateKey(c)})`);
+        }
+      }
+    });
+  });
+
   check("Z.ai-primary roles request reasoning OFF", () => {
     // The probe proved GLM-4.7 Flash reasons by default and can spend a whole
     // small allowance on it. The cheap high-volume roles must not inherit that.
+    // script_movement/script_rewrite are Z.ai-primary on measured quality but
+    // are deliberately NOT in this list: dialogue is where reasoning earns its
+    // cost, and the 143 s average was measured with it on.
     for (const role of ["topic_generation", "topic_classification", "show_notes", "episode_metadata"] as LLMRole[]) {
       assert(
         ROLE_DEFINITIONS[role].reasoning === "off",

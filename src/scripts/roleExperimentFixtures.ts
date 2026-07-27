@@ -350,3 +350,61 @@ export const SEEDED_LINES: SeededLine[] = [
 ];
 
 export const VERIFICATION_CATEGORIES = [...new Set(SEEDED_LINES.map((l) => l.category))];
+
+// ------------------------------------------------- pipeline-stage ownership
+//
+// The seeded set deliberately covers defects from THREE different pipeline
+// stages. Scoring the semantic fact-check reviewer against all of them is a
+// category error: it is contractually forbidden from flagging most of them.
+// See semanticReview.ts buildSemanticReviewPrompt:
+//   rule 1 — "ONLY evaluate lines where isFactualClaim is true"
+//   rule 2 — "Non-factual lines are supported by default — NEVER flag them"
+// A reviewer that obeys its own prompt MUST leave the out-of-scope defects
+// alone, so counting them as misses measures obedience and calls it failure.
+//
+// Ownership below is derived from which stage can actually decide the defect:
+
+export type VerificationScope = "fact_check" | "repetition" | "character_continuity";
+
+export const SCOPE_BY_CATEGORY: Record<SeededLine["category"], VerificationScope> = {
+  // Decidable against the evidence packet alone — the fact-check contract.
+  supported_fact: "fact_check",
+  correct_numerical_claim: "fact_check",
+  incorrect_numerical_claim: "fact_check",
+  unsupported_fact: "fact_check",
+  contradicted_fact: "fact_check",
+  unsafe_claim: "fact_check",
+  // Must-NOT-flag controls. These are in scope precisely because the reviewer
+  // is the stage that has to hold its fire on them; flagging one is a real
+  // false positive against its own contract.
+  reasonable_inference: "fact_check",
+  prediction: "fact_check",
+  rhetorical_exaggeration: "fact_check",
+  opinion: "fact_check",
+  // Line 12 is a factual claim (isFactualClaim:true) whose defect is decidable
+  // purely from the evidence packet's own dates — news-2 puts the ownership
+  // meeting Thursday and the option deadline Friday, so "one more week" is
+  // contradicted by the evidence, not by show continuity. It is named
+  // "continuity_violation" but it is an evidence-grounded factual error and
+  // the reviewer is the stage that owns it.
+  continuity_violation: "fact_check",
+  // Line 10 repeats line 1 verbatim. The CLAIM is true and evidence-supported;
+  // the defect is that it is said twice. Only a reviewer holding the whole
+  // transcript can see that, and the fact-checker is handed lines to verify
+  // one claim at a time. Owned by scriptRepetition (findRepetitions).
+  duplicate_argument: "repetition",
+  // Line 11 is isFactualClaim:false — rule 2 forbids flagging it outright. The
+  // defect is that the line belongs to the other host's persona, which needs
+  // the persona sheet the fact-check prompt is never given.
+  character_violation: "character_continuity",
+};
+
+export function scopeOf(line: SeededLine): VerificationScope {
+  return SCOPE_BY_CATEGORY[line.category];
+}
+
+/** Lines the semantic fact-check reviewer is actually contracted to judge. */
+export const FACT_CHECK_SCOPE_LINES = SEEDED_LINES.filter((l) => scopeOf(l) === "fact_check");
+
+/** Real defects, but owned by another pipeline stage: not_applicable, not misses. */
+export const OUT_OF_SCOPE_DEFECTS = SEEDED_LINES.filter((l) => l.shouldFlag && scopeOf(l) !== "fact_check");

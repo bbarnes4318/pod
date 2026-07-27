@@ -150,6 +150,60 @@ function freeIndependentChain(): ProfileRoleChain {
 }
 
 /**
+ * ROLE-EXPERIMENT FINDINGS — `npm run test:role-experiments`
+ * (artifacts/role-experiment-{dialogue,outline,verification}.json)
+ *
+ * These are measurements, not preferences. Five roles below are now set by
+ * them; the rest still rest on contract-probe reachability alone and say so.
+ *
+ * DIALOGUE (role: script_movement / script_rewrite)
+ *   Z.ai GLM-4.7 Flash   judge 79, average episode 143 s
+ *   Mistral Medium 3.5   judge 76, average episode 536 s
+ *   Z.ai wins on both axes at once, and the latency gap is the decisive one:
+ *   movements are SEQUENTIAL, so 536 s is a nine-minute floor per episode
+ *   against Z.ai's two and a half. Mistral drops to secondary — it is retained
+ *   rather than removed because it is a different family from Z.ai, so it is a
+ *   real fallback rather than a second copy of the same failure mode. This
+ *   reverses the contract-probe-era assignment; finding #1 below predicted it.
+ *
+ * OUTLINE (role: script_outline)
+ *   Nemotron 3 Ultra     7 beats, 3 position shifts,  21 s
+ *   GLM-5.2              7 beats, 2 position shifts, 118 s
+ *   Z.ai GLM-4.7 Flash   6 beats, 1 position shift,   35 s
+ *   Nemotron produces the strongest structure AND is five times faster than
+ *   GLM-5.2, so it takes the role GLM-5.2 held on intent alone. Position shifts
+ *   are the discriminator here: an outline with one shift is a topic list.
+ *
+ * VERIFICATION (roles: script_verification / fact_check)
+ *   Nemotron 3 Ultra     5/5 in-scope defects, 0 false positives,  13 s
+ *   DeepSeek V4 Pro      4/7 raw, 0 false positives,              468 s
+ *   Z.ai GLM-4.7 Flash   structured response FAILED after one repair
+ *
+ *   SCORING NOTE, and it changed the answer. The seeded set carries defects
+ *   from three pipeline stages. Only five of its seven are inside the semantic
+ *   reviewer's production contract; `duplicate_argument` belongs to the
+ *   repetition checker and `character_violation` to character/continuity
+ *   validation, and the reviewer's own prompt forbids it from flagging the
+ *   latter at all. Nemotron's "5/7" was 5/5 on its actual job with a clean
+ *   false-positive record — see SCOPE_BY_CATEGORY in roleExperimentFixtures.ts.
+ *   DeepSeek's corrected in-scope count is NOT recorded here: which of its
+ *   three misses were out-of-scope is only decidable from the stored raw
+ *   response, so run `npm run rescore:verification` against the existing
+ *   artifact rather than assuming. It does not change this assignment — 468 s
+ *   against 13 s decides the order on its own, and DeepSeek is retained as
+ *   secondary because it produced zero false positives, which is the failure
+ *   mode that damages a script.
+ *
+ *   Z.ai is deliberately absent from BOTH verification chains. Its response
+ *   omitted required top-level fields even after a repair pass: a schema
+ *   failure, not a quality score. A reviewer that cannot return its verdict
+ *   cannot gate a publish.
+ *
+ * Each chain still ends in the role-appropriate legacy provider as the paid
+ * backup — appended by routing, not listed here.
+ */
+
+/**
  * VERIFIED DEVELOPMENT — the observed-working map.
  *
  * Built ONLY from models that passed the live contract probe of 2026-07-26:
@@ -158,11 +212,14 @@ function freeIndependentChain(): ProfileRoleChain {
  * account) appear nowhere, so no production-chain run wastes an attempt failing
  * its way down to a usable model.
  *
- * THIS IS TEMPORARY AND IT IS NOT A VERDICT. It says "these endpoints work",
- * not "these are the best models for these jobs". Nothing here has been through
- * a role-quality experiment yet. `frontier_development` is kept alongside it as
- * the documented INTENT, so the two questions — what we want vs what this account
- * can currently reach — stay separately readable.
+ * Reachability is no longer the only evidence behind it. The five roles covered
+ * by the role experiments — script_movement, script_rewrite, script_outline,
+ * script_verification, fact_check — are now ordered by measured quality and
+ * latency (see the findings block above). The remaining roles still rest on
+ * contract acceptance alone and are marked as such; they are unproven, not
+ * endorsed. `frontier_development` is kept alongside this as the documented
+ * INTENT, so what we wanted and what measurement produced stay separately
+ * readable.
  *
  * Z.ai is primary for the cheap high-volume roles, and the probe result behind
  * that choice matters: GLM-4.7 Flash reasons by default and will spend an entire
@@ -171,6 +228,7 @@ function freeIndependentChain(): ProfileRoleChain {
  */
 function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
+    // ---- roles below rest on contract reachability only; no quality experiment
     // Cheap, high-volume, structured. Reasoning explicitly off (roles.ts).
     case "topic_generation":
       return [ZAI_FLASH(), NV.glm()];
@@ -180,27 +238,14 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     case "episode_metadata":
       return [ZAI_FLASH(), NV.mistral()];
 
-    // Judgement under comparison, and conversational architecture.
+    // Judgement under comparison.
     case "topic_ranking":
-    case "script_outline":
       return [NV.glm(), NV.nemotron()];
 
     // Long-context consolidation and traceable extraction.
     case "research_brief":
     case "evidence_extraction":
       return [NV.deepseekPro(), NV.nemotron()];
-
-    // Grading against evidence, independent of the writer.
-    case "script_verification":
-    case "fact_check":
-      return [NV.deepseekPro(), NV.nemotron()];
-
-    // Creative dialogue. Kimi was the intended secondary and is 404 here, so
-    // Z.ai backs it up instead — which also means this role has exactly two
-    // usable free candidates. See the latency warning above.
-    case "script_movement":
-    case "script_rewrite":
-      return [NV.mistral(), ZAI_FLASH()];
 
     // Literal transcript audit.
     case "continuity_report":
@@ -209,6 +254,25 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // Never shares a model with script_movement.
     case "quality_judge":
       return [NV.nemotron(), NV.glm()];
+
+    // ---- roles below are MEASURED (see the findings block above)
+
+    // Outline: Nemotron 7 beats / 3 shifts / 21 s beat GLM-5.2's 7 / 2 / 118 s.
+    case "script_outline":
+      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
+
+    // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s. Mistral is
+    // kept as a different-family fallback, not as a co-primary.
+    case "script_movement":
+    case "script_rewrite":
+      return [ZAI_FLASH(), NV.mistral()];
+
+    // Grading against evidence, independent of the writer. Nemotron: 5/5
+    // in-scope, 0 false positives, 13 s. DeepSeek: 0 false positives but 468 s.
+    // Z.ai is excluded — its structured response failed after repair.
+    case "script_verification":
+    case "fact_check":
+      return [NV.nemotron(), NV.deepseekPro()];
   }
 }
 
