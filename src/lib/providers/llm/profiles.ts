@@ -16,14 +16,20 @@
 // Model ids are resolved through env so a catalog rename never requires a code
 // change. See capabilities.ts for the verified/unverified honesty rule.
 
-import { MODEL_IDS } from "./capabilities";
+import { MODEL_IDS, isRoutableByDefault, modelCapabilities } from "./capabilities";
 import { ALL_ROLES, LLMRole } from "./roles";
 import { readRoutingEnv } from "./routingEnv";
 
-export type RoutingProfile = "legacy" | "frontier_development" | "free_independent" | "custom";
+export type RoutingProfile =
+  | "legacy"
+  | "verified_development"
+  | "frontier_development"
+  | "free_independent"
+  | "custom";
 
 export const ROUTING_PROFILES: RoutingProfile[] = [
   "legacy",
+  "verified_development",
   "frontier_development",
   "free_independent",
   "custom",
@@ -143,8 +149,78 @@ function freeIndependentChain(): ProfileRoleChain {
   return [ZAI_FLASH()];
 }
 
-export function profileChainFor(profile: RoutingProfile, role: LLMRole): ProfileRoleChain {
+/**
+ * VERIFIED DEVELOPMENT — the observed-working map.
+ *
+ * Built ONLY from models that passed the live contract probe of 2026-07-26:
+ * DeepSeek V4 Pro, Nemotron 3 Ultra, GLM-5.2 (via NVIDIA), Mistral Medium 3.5 and
+ * Z.ai GLM-4.7 Flash. DeepSeek V4 Flash (503) and Kimi K2.6 (404 for this
+ * account) appear nowhere, so no production-chain run wastes an attempt failing
+ * its way down to a usable model.
+ *
+ * THIS IS TEMPORARY AND IT IS NOT A VERDICT. It says "these endpoints work",
+ * not "these are the best models for these jobs". Nothing here has been through
+ * a role-quality experiment yet. `frontier_development` is kept alongside it as
+ * the documented INTENT, so the two questions — what we want vs what this account
+ * can currently reach — stay separately readable.
+ *
+ * Z.ai is primary for the cheap high-volume roles, and the probe result behind
+ * that choice matters: GLM-4.7 Flash reasons by default and will spend an entire
+ * small allowance doing it, so those roles set reasoning OFF explicitly and the
+ * zai profile sends the disable control rather than relying on a default.
+ */
+function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
+  switch (role) {
+    // Cheap, high-volume, structured. Reasoning explicitly off (roles.ts).
+    case "topic_generation":
+      return [ZAI_FLASH(), NV.glm()];
+    case "topic_classification":
+    case "show_notes":
+      return [ZAI_FLASH(), NV.deepseekPro()];
+    case "episode_metadata":
+      return [ZAI_FLASH(), NV.mistral()];
+
+    // Judgement under comparison, and conversational architecture.
+    case "topic_ranking":
+    case "script_outline":
+      return [NV.glm(), NV.nemotron()];
+
+    // Long-context consolidation and traceable extraction.
+    case "research_brief":
+    case "evidence_extraction":
+      return [NV.deepseekPro(), NV.nemotron()];
+
+    // Grading against evidence, independent of the writer.
+    case "script_verification":
+    case "fact_check":
+      return [NV.deepseekPro(), NV.nemotron()];
+
+    // Creative dialogue. Kimi was the intended secondary and is 404 here, so
+    // Z.ai backs it up instead — which also means this role has exactly two
+    // usable free candidates. See the latency warning above.
+    case "script_movement":
+    case "script_rewrite":
+      return [NV.mistral(), ZAI_FLASH()];
+
+    // Literal transcript audit.
+    case "continuity_report":
+      return [NV.deepseekPro(), ZAI_FLASH()];
+
+    // Never shares a model with script_movement.
+    case "quality_judge":
+      return [NV.nemotron(), NV.glm()];
+  }
+}
+
+/**
+ * The chain a profile DECLARES for a role, before availability filtering.
+ * Exposed so readiness can show what a profile intends alongside what it can
+ * actually run.
+ */
+export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole): ProfileRoleChain {
   switch (profile) {
+    case "verified_development":
+      return verifiedDevelopmentChain(role);
     case "frontier_development":
       return frontierChain(role);
     case "free_independent":
@@ -155,6 +231,60 @@ export function profileChainFor(profile: RoutingProfile, role: LLMRole): Profile
       // configuration; custom resolves to explicit role overrides.
       return [];
   }
+}
+
+/** A candidate the availability filter removed, and why. */
+export interface FilteredCandidate {
+  ref: ProviderModelRef;
+  availability: string;
+  reason: string;
+}
+
+/**
+ * The chain a profile can actually RUN: declared, minus anything a live probe
+ * showed this account cannot reach.
+ *
+ * Filtering here rather than at call time is the point. A 503-limited or
+ * 404-for-this-account model left in the chain costs a real attempt on every
+ * single request — and on a role whose primary already takes 30-88s, burning
+ * attempts before reaching a usable model makes every production-chain test
+ * slower and every failure harder to read.
+ *
+ * The model is NOT deleted and its integration is untouched: an explicit role
+ * override still reaches it (see routing.ts), which is how it gets retested. It
+ * comes back to the default profiles when its capability record says
+ * availability: "available" — i.e. when a probe passes.
+ */
+export function profileChainFor(
+  profile: RoutingProfile,
+  role: LLMRole
+): ProfileRoleChain {
+  return filterProfileChain(profile, role).usable;
+}
+
+export function filterProfileChain(
+  profile: RoutingProfile,
+  role: LLMRole
+): { usable: ProfileRoleChain; filtered: FilteredCandidate[] } {
+  const declared = declaredProfileChainFor(profile, role);
+  const usable: ProfileRoleChain = [];
+  const filtered: FilteredCandidate[] = [];
+  for (const ref of declared) {
+    const caps = modelCapabilities(ref.provider, ref.model);
+    if (isRoutableByDefault(caps)) {
+      usable.push(ref);
+      continue;
+    }
+    filtered.push({
+      ref,
+      availability: caps.availability,
+      reason:
+        caps.availability === "unavailable-for-account"
+          ? "the model ID does not resolve for the credential in use (404) — reachable only via an explicit role override"
+          : "the endpoint would not serve this account (503 capacity) — reachable only via an explicit role override",
+    });
+  }
+  return { usable, filtered };
 }
 
 /** The configured profile. Unset or unrecognized → legacy. */

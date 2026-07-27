@@ -46,6 +46,22 @@ export interface OutlineDrivenArgs {
   challengerLlm?: LLMProvider;
   /** Label for the challenger in logs, e.g. "nvidia/moonshotai/kimi-k2.6". */
   challengerLabel?: string;
+  /**
+   * Called as each movement completes, with the wall time SINCE THE CALL BEGAN.
+   *
+   * Exists so a comparison can report time-to-first-completed-movement, which is
+   * the number that actually matters for a slow dialogue model: an episode that
+   * needs three sequential movements at 80s each is a different product decision
+   * from one that needs three at 8s, and a single total hides which movement was
+   * slow.
+   */
+  onMovementComplete?: (info: {
+    movement: number;
+    msSinceStart: number;
+    msForMovement: number;
+    lines: number;
+    words: number;
+  }) => void;
   log: (msg: string) => void;
 }
 
@@ -132,6 +148,7 @@ export async function generateOutlineDrivenScript(
   const beats = await generateEpisodeOutline(outlineLlm, args, creativeSystemPrompt);
   args.log(`Story spine: ${beats.length} beats across three conversational movements.`);
   const challengerResults: ChallengerMovementResult[] = [];
+  const startedAt = Date.now();
 
   const acts = groupIntoMovements(beats);
   const rawSegments: any[] = [];
@@ -169,6 +186,7 @@ export async function generateOutlineDrivenScript(
 
     let result: { segments: any[]; stateAfter: ConversationState } | null = null;
     let lastErr: any = null;
+    const movementStartedAt = Date.now();
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         result = await generateActSegments(llm, actArgs);
@@ -232,6 +250,14 @@ export async function generateOutlineDrivenScript(
     if (claimsSoFar.length > 80) claimsSoFar.splice(0, claimsSoFar.length - 80);
     state = normalizeState(result.stateAfter, state);
     rawSegments.push(...result.segments);
+
+    args.onMovementComplete?.({
+      movement: actIdx + 1,
+      msSinceStart: Date.now() - startedAt,
+      msForMovement: Date.now() - movementStartedAt,
+      lines: result.segments.reduce((n: number, s: any) => n + (Array.isArray(s?.lines) ? s.lines.length : 0), 0),
+      words: movementWords,
+    });
 
     args.log(
       `Movement ${actIdx + 1}/${acts.length}: ${movementWords} words; state=${state.emotionalTemperature}; unresolved=${state.unresolvedThreads.length}.`

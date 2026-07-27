@@ -8,7 +8,7 @@ import {
   providersInActiveRouting,
   roleRouteReport,
 } from "@/lib/providers/llm/routing";
-import { modelCapabilities } from "@/lib/providers/llm/capabilities";
+import { modelCapabilities, verificationState } from "@/lib/providers/llm/capabilities";
 import { activeRoutingProfile, routingProfileIsUnrecognized } from "@/lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "@/lib/providers/llm/deploymentStage";
 
@@ -520,6 +520,13 @@ export function getLlmRoutingChecks(): EnvCheck[] {
   // starting state and must not read as "validated".
   const routedModels = new Map<string, ReturnType<typeof modelCapabilities>>();
   for (const r of roleRouteReport()) {
+    // Include the models the availability filter REMOVED, or the census would
+    // report "0 unreachable" precisely because they were taken out of the chains.
+    for (const f of r.filteredUnavailable) {
+      const [provider, ...rest] = f.key.split("/");
+      const model = rest.join("/");
+      if (model) routedModels.set(f.key, modelCapabilities(provider, model));
+    }
     for (const c of r.candidates) {
       const [provider, ...rest] = c.key.split("/");
       const model = rest.join("/");
@@ -527,37 +534,53 @@ export function getLlmRoutingChecks(): EnvCheck[] {
       routedModels.set(c.key, modelCapabilities(provider, model));
     }
   }
-  const liveVerified = [...routedModels.values()].filter((c) => c.liveContractVerified);
-  const catalogOnly = [...routedModels.entries()].filter(
-    ([, c]) => c.catalogVerified && !c.liveContractVerified
-  );
-  const noCatalog = [...routedModels.entries()].filter(([, c]) => !c.catalogVerified);
-  if (catalogOnly.length > 0 || noCatalog.length > 0) {
-    checks.push({
-      key: "LLM_MODEL_VERIFICATION",
-      status: "warning",
-      value: `${liveVerified.length} live-verified, ${catalogOnly.length} catalog-only, ${noCatalog.length} unconfirmed`,
-      message:
-        (catalogOnly.length
-          ? `Catalog verified but LIVE CONTRACT UNTESTED (request parameters unconfirmed from this repository): ${catalogOnly
-              .map(([k]) => k)
-              .join(", ")}. `
-          : "") +
-        (noCatalog.length
-          ? `Catalog/model unavailable — ID not confirmed against the provider catalog: ${noCatalog
-              .map(([k]) => k)
-              .join(", ")}. `
-          : "") +
-        "Run `npm run probe:llm-contract` with credentials to establish live verification. No model should be treated as validated until it has been called successfully.",
-    });
-  } else {
-    checks.push({
-      key: "LLM_MODEL_VERIFICATION",
-      status: "pass",
-      value: `${liveVerified.length} live-verified`,
-      message: "Every routed model has been called successfully from this repository.",
-    });
+  // The FIVE states, reported separately. "the endpoint answered" and "the model
+  // is good at its job" are different claims and are never merged here.
+  const byState = new Map<string, string[]>();
+  for (const [key, caps] of routedModels.entries()) {
+    const state = verificationState(caps);
+    if (!byState.has(state)) byState.set(state, []);
+    byState.get(state)!.push(key);
   }
+  const inState = (state: string) => byState.get(state) ?? [];
+  const validated = inState("live-contract-passed");
+  const untested = inState("not-quality-tested");
+  const catalogOnly = inState("catalog-available");
+  const liveFailed = inState("live-contract-failed");
+  const noAccount = inState("unavailable-for-account");
+
+  const detail =
+    (validated.length ? `LIVE CONTRACT PASSED and quality-tested: ${validated.join(", ")}. ` : "") +
+    (untested.length
+      ? `LIVE CONTRACT PASSED but NOT YET QUALITY-TESTED — the endpoint and its request fields work; nothing has ` +
+        `measured whether the model is good at its role: ${untested.join(", ")}. `
+      : "") +
+    (catalogOnly.length
+      ? `CATALOG AVAILABLE, live contract never attempted: ${catalogOnly.join(", ")}. `
+      : "") +
+    (liveFailed.length
+      ? `LIVE CONTRACT FAILED (the endpoint would not serve this account) — REMOVED from the default chains, reachable ` +
+        `only via an explicit role override: ${liveFailed.join(", ")}. `
+      : "") +
+    (noAccount.length
+      ? `UNAVAILABLE FOR THIS ACCOUNT (the ID does not resolve for the credential in use) — REMOVED from the default ` +
+        `chains, reachable only via an explicit role override: ${noAccount.join(", ")}. `
+      : "");
+
+  checks.push({
+    key: "LLM_MODEL_VERIFICATION",
+    status:
+      liveFailed.length > 0 || noAccount.length > 0 || untested.length > 0 || catalogOnly.length > 0
+        ? "warning"
+        : "pass",
+    value:
+      `${validated.length} live+quality, ${untested.length} live but untested, ` +
+      `${catalogOnly.length} catalog-only, ${liveFailed.length + noAccount.length} unreachable`,
+    message:
+      detail +
+      "Re-run `npm run probe:llm-contract` after a credential rotation, and `npm run test:role-experiments` to turn " +
+      '"live but untested" into quality evidence. A model is never "validated" on an HTTP 200 alone.',
+  });
 
   const advisory = stageAdvisory(providersInActiveRouting());
   if (advisory.message) {

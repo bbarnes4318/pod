@@ -57,6 +57,29 @@ export interface ModelCapabilities {
   /** Successfully called from this repo with the current key and adapter. */
   liveContractVerified: boolean;
 
+  /**
+   * Can the DEFAULT profile chains use this model right now?
+   *
+   *   available              reachable; routable by default.
+   *   capacity-limited       the endpoint exists but would not serve us (503
+   *                          ResourceExhausted). Not a capability fault.
+   *   unavailable-for-account the id does not resolve for the key in use (404).
+   *
+   * Anything other than `available` is FILTERED OUT of every profile chain, so a
+   * production-chain run does not burn a slow attempt failing its way down to a
+   * usable model. Integration support is untouched: an explicit role override
+   * still reaches the model, which is how it gets retested. It returns to the
+   * default profiles only when a live contract probe passes.
+   */
+  availability: "available" | "capacity-limited" | "unavailable-for-account";
+
+  /**
+   * Has a role-quality experiment produced evidence for this model in this
+   * application? Live contract acceptance is NOT quality evidence — a model that
+   * returns HTTP 200 can still write dialogue nobody wants to hear.
+   */
+  qualityTested: boolean;
+
   /** ENFORCEABLE limits. Set only by a live probe — never from a model card. */
   contextWindow?: number;
   maximumOutputTokens?: number;
@@ -99,27 +122,64 @@ export interface ModelCapabilities {
   };
 }
 
-/** The three states readiness must be able to distinguish. */
+/**
+ * The states readiness must distinguish. Deliberately five, not three: "the
+ * endpoint answered" and "this model is any good at its job" are different
+ * questions, and so are "the catalog lists it" and "this account can reach it".
+ */
 export type VerificationState =
-  | "catalog-verified-live-untested"
-  | "live-contract-verified"
-  | "catalog-unavailable";
+  | "catalog-available"
+  | "live-contract-passed"
+  | "live-contract-failed"
+  | "unavailable-for-account"
+  | "not-quality-tested";
 
 export function verificationState(caps: ModelCapabilities): VerificationState {
-  if (caps.liveContractVerified) return "live-contract-verified";
-  if (caps.catalogVerified) return "catalog-verified-live-untested";
-  return "catalog-unavailable";
+  if (caps.availability === "unavailable-for-account") return "unavailable-for-account";
+  if (caps.availability === "capacity-limited") return "live-contract-failed";
+  if (caps.liveContractVerified) {
+    // The endpoint works. Whether the MODEL works for its role is a separate
+    // claim, and until an experiment says so, this is the honest state.
+    return caps.qualityTested ? "live-contract-passed" : "not-quality-tested";
+  }
+  if (caps.catalogVerified) return "catalog-available";
+  return "unavailable-for-account";
 }
 
 export function describeVerificationState(state: VerificationState): string {
   switch (state) {
-    case "live-contract-verified":
-      return "Live contract verified — called successfully from this repository.";
-    case "catalog-verified-live-untested":
-      return "Catalog verified, live contract untested — the model ID is confirmed, its request parameters are not.";
-    case "catalog-unavailable":
-      return "Catalog/model unavailable — the ID has not been confirmed against the provider catalog.";
+    case "catalog-available":
+      return "Catalog available — the ID is confirmed in the provider catalog, but no live request has been made from this repository.";
+    case "live-contract-passed":
+      return "Live contract passed AND role-quality tested — called successfully, and an experiment has produced quality evidence.";
+    case "not-quality-tested":
+      return "Live contract passed, NOT yet quality-tested — the endpoint and its request fields work; nothing has measured whether the model is good at this role.";
+    case "live-contract-failed":
+      return "Live contract FAILED — the endpoint exists but would not serve this account (capacity). Removed from the default profile chains until a probe passes.";
+    case "unavailable-for-account":
+      return "Unavailable for the current account — the ID does not resolve for the key in use. Removed from the default profile chains; reachable only via an explicit role override.";
   }
+}
+
+/** Short label for tables. */
+export function shortVerificationLabel(state: VerificationState): string {
+  switch (state) {
+    case "catalog-available":
+      return "catalog-only";
+    case "live-contract-passed":
+      return "live+quality";
+    case "not-quality-tested":
+      return "live, untested";
+    case "live-contract-failed":
+      return "LIVE FAILED";
+    case "unavailable-for-account":
+      return "UNAVAILABLE";
+  }
+}
+
+/** May the default profile chains route to this model? */
+export function isRoutableByDefault(caps: ModelCapabilities): boolean {
+  return caps.availability === "available";
 }
 
 /**
@@ -177,6 +237,8 @@ function nvidiaBase(model: string, profile: RequestParameterProfile): ModelCapab
     model,
     catalogVerified: true,
     liveContractVerified: false,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: true,
@@ -215,6 +277,10 @@ const REGISTRY: ModelCapabilities[] = [
     // so those roles should expect to fall through to their next candidate
     // under load.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekFlash, "deepseek-v4"),
+    // FILTERED OUT of the default profile chains: every probe request got a 503.
+    // Reachable through an explicit role override for retesting, and it returns
+    // to the defaults when a live contract probe passes.
+    availability: "capacity-limited",
     supportsThinking: true,
     supportsReasoningEffort: true,
     provenance: {
@@ -231,6 +297,8 @@ const REGISTRY: ModelCapabilities[] = [
     // LIVE VERIFIED, and the cleanest of the six.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekPro, "deepseek-v4"),
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsThinking: true,
     supportsReasoningEffort: true,
     // Observed, so now declared. The request path uses these.
@@ -266,6 +334,8 @@ const REGISTRY: ModelCapabilities[] = [
     // Sending DeepSeek's alias to Nemotron would have been a hard failure.
     ...nvidiaBase(MODEL_IDS.nvidia.nemotron, "nemotron-3-ultra"),
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsThinking: true,
     supportsReasoningBudget: true,
     reasoningBudgetRange: [256, 16384],
@@ -303,6 +373,8 @@ const REGISTRY: ModelCapabilities[] = [
     // shaping function now sends it — see nvidiaRequestProfiles.ts.
     ...nvidiaBase(MODEL_IDS.nvidia.glm, "glm-5-2"),
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsThinking: true,
     supportsReasoningEffort: true,
     supportsNativeJsonObject: true,
@@ -341,6 +413,8 @@ const REGISTRY: ModelCapabilities[] = [
     // keeping it as the dialogue primary.
     ...nvidiaBase(MODEL_IDS.nvidia.mistral, "mistral-medium-3-5"),
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsReasoningEffort: true,
     supportsNativeJsonObject: true,
     supportsNativeJsonSchema: true,
@@ -379,6 +453,11 @@ const REGISTRY: ModelCapabilities[] = [
     // NVIDIA account, or point NVIDIA_MODEL_KIMI at an id this account can reach.
     ...nvidiaBase(MODEL_IDS.nvidia.kimi, "kimi-k2-6"),
     catalogVerified: false,
+    // FILTERED OUT of the default profile chains: 404 for this account. Still
+    // fully integrated — an explicit SCRIPT_MOVEMENT_LLM_PROVIDER=nvidia with
+    // SCRIPT_MOVEMENT_LLM_MODEL=moonshotai/kimi-k2.6 still reaches it, which is
+    // how it gets retested once account access is sorted.
+    availability: "unavailable-for-account",
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsThinking: false,
@@ -404,6 +483,8 @@ const REGISTRY: ModelCapabilities[] = [
     // The model answered a real request, so it exists and the id is right.
     catalogVerified: true,
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     // DELIBERATELY NOT UPGRADED, against the probe's own recommendation.
     //
     // Z.ai returned 200 for EVERY parameter tried, including
@@ -455,6 +536,8 @@ const REGISTRY: ModelCapabilities[] = [
     model: "claude-opus-5",
     catalogVerified: true,
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: true,
@@ -479,6 +562,8 @@ const REGISTRY: ModelCapabilities[] = [
     model: "claude-sonnet-5",
     catalogVerified: true,
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: true,
@@ -504,6 +589,8 @@ const REGISTRY: ModelCapabilities[] = [
     model: "gpt-4o-mini",
     catalogVerified: true,
     liveContractVerified: false,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: true,
     supportsNativeJsonSchema: true,
     supportsPromptEnforcedJson: true,
@@ -528,6 +615,8 @@ const REGISTRY: ModelCapabilities[] = [
     model: "stub",
     catalogVerified: true,
     liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: false,
@@ -584,6 +673,8 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       model,
       catalogVerified: false,
       liveContractVerified: false,
+      availability: "available",
+      qualityTested: false,
       supportsNativeJsonObject: false,
       supportsNativeJsonSchema: false,
       supportsPromptEnforcedJson: true,
@@ -610,6 +701,8 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       model,
       catalogVerified: false,
       liveContractVerified: false,
+      availability: "available",
+      qualityTested: false,
       supportsNativeJsonObject: false,
       supportsNativeJsonSchema: false,
       supportsPromptEnforcedJson: true,
@@ -633,6 +726,8 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       model,
       catalogVerified: false,
       liveContractVerified: false,
+      availability: "available",
+      qualityTested: false,
       supportsNativeJsonObject: true,
       supportsNativeJsonSchema: true,
       supportsPromptEnforcedJson: true,
@@ -652,6 +747,8 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
     model,
     catalogVerified: false,
     liveContractVerified: false,
+    availability: "available",
+    qualityTested: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: false,

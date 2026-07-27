@@ -46,6 +46,17 @@ export interface ShapeResult {
   /** Fields to merge into the request body. */
   fields: Record<string, unknown>;
   /**
+   * Extra output allowance to add for a model whose REASONING is billed against
+   * max_tokens. Raises the ceiling only; actual output is whatever the model
+   * produces. Without it, enabling reasoning on such a model silently converts a
+   * working call into an empty answer — which the Z.ai probe demonstrated by
+   * spending all 128 tokens on reasoning and returning nothing.
+   *
+   * Same mechanism the Anthropic provider has used for adaptive thinking since
+   * before this feature (LLM_THINKING_HEADROOM_TOKENS).
+   */
+  maxTokensAdd?: number;
+  /**
    * What this shaping actually did, for diagnostics. A run may only CLAIM it
    * reasoned when `reasoningRequested` is true AND the response comes back with
    * reasoning content — see the provider's reasoning bookkeeping.
@@ -276,18 +287,58 @@ export function shapeNvidiaRequest(ctx: ShapeContext): ShapeResult {
   return strategy(ctx);
 }
 
-/** Z.ai GLM shaping. Kept separate: a different vendor, a different contract. */
+/**
+ * Z.ai GLM shaping. Kept separate: a different vendor, a different contract.
+ *
+ * THE FINDING THAT SHAPES THIS FUNCTION: the live probe showed GLM-4.7 Flash
+ * REASONS BY DEFAULT and will spend the entire output allowance doing it. On a
+ * 128-token request it returned finish_reason=length, completion_tokens=128, all
+ * 128 of them reasoning_tokens, and EMPTY content. So:
+ *
+ *   reasoning OFF  send the disable control explicitly — leaving it unset means
+ *                  the model's default (reasoning ON) wins, which is how a
+ *                  cheap classification call turns into an empty answer.
+ *   reasoning ON   add answer headroom, because the thinking is billed against
+ *                  the same budget as the answer.
+ *
+ * And a claim this function is careful NOT to make: Z.ai accepted an invented
+ * parameter during the probe, so it does not validate unknown fields. The
+ * disable control being ACCEPTED is therefore not evidence that it was honored.
+ * Only the returned output can show that — the provider checks for empty content
+ * and reports output_limit rather than treating it as success.
+ */
 export function shapeZaiRequest(ctx: ShapeContext): ShapeResult {
   if (!ctx.caps.supportsThinking) {
     return NO_FIELDS("zai-glm: thinking not declared for this model, so no reasoning field is sent.");
   }
+
+  if (!ctx.wantsReasoning) {
+    return {
+      fields: { thinking: { type: "disabled" } },
+      diagnostics: {
+        reasoningRequested: false,
+        note:
+          "zai-glm: top-level thinking={type:'disabled'}, sent EXPLICITLY because this model reasons by default and would " +
+          "otherwise consume the whole allowance and return nothing. NOT CONFIRMED HONORED: this endpoint accepts unknown " +
+          "fields, so acceptance proves nothing — the check that matters is whether content came back, which the provider " +
+          "enforces.",
+      },
+    };
+  }
+
+  // Reasoning wanted: reserve room for the answer. Half the caller's allowance,
+  // floored so a small request still has somewhere to put an answer.
+  const configured = Number(readRoutingEnv("ZAI_REASONING_HEADROOM_TOKENS"));
+  const headroom = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2048;
   return {
-    fields: { thinking: { type: ctx.wantsReasoning ? "enabled" : "disabled" } },
+    fields: { thinking: { type: "enabled" } },
+    maxTokensAdd: headroom,
     diagnostics: {
-      reasoningRequested: ctx.wantsReasoning,
+      reasoningRequested: true,
       note:
-        `zai-glm: top-level thinking={type:'${ctx.wantsReasoning ? "enabled" : "disabled"}'}. Documented by Z.ai for GLM, ` +
-        `live-unverified from this repository; a named-field 400 downgrades it once.`,
+        `zai-glm: top-level thinking={type:'enabled'} with +${headroom} tokens of answer headroom, because this model bills ` +
+        `reasoning against max_tokens and was observed spending an entire small allowance on it. A reasoning-only response ` +
+        `is still reported as output_limit rather than as an empty success.`,
     },
   };
 }

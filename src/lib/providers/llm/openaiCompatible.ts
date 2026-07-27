@@ -210,6 +210,21 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       body[key] = value;
     }
 
+    // Answer headroom for models that bill reasoning against max_tokens. This
+    // raises the CEILING only — billed output is whatever the model produces —
+    // and it is the difference between a reasoning-on call returning an answer
+    // and returning nothing but thoughts.
+    if (shaping.maxTokensAdd && body.max_tokens !== undefined) {
+      const withHeadroom = body.max_tokens + shaping.maxTokensAdd;
+      // If a cap has actually been MEASURED, our own addition is what gets
+      // clamped — never the caller's request, which resolveMaxTokens already
+      // validated above.
+      body.max_tokens =
+        this.caps.maximumOutputTokens !== undefined
+          ? Math.min(withHeadroom, this.caps.maximumOutputTokens)
+          : withHeadroom;
+    }
+
     return { body, shaping, jsonEnforcedInPrompt: mode === "prompt-enforced" };
   }
 

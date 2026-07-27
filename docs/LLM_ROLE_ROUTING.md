@@ -222,7 +222,67 @@ with `chat_template_kwargs` produces 500s, so the system prompt always goes in t
 
 ---
 
-## 4. `frontier_development` role map
+## 4. `verified_development` role map — the observed-working profile
+
+**Use this for development.** Built ONLY from models that passed the live contract
+probe. It is a statement about which endpoints work, **not** a verdict on which
+models are best — nothing here has been through a role-quality experiment.
+
+| Role | Primary | Secondary | Legacy backup |
+|---|---|---|---|
+| Topic generation | `zai/glm-4.7-flash` *(reasoning off)* | `nvidia/z-ai/glm-5.2` | global |
+| Topic classification | `zai/glm-4.7-flash` *(reasoning off)* | `nvidia/deepseek-ai/deepseek-v4-pro` | global |
+| Topic ranking | `nvidia/z-ai/glm-5.2` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | global |
+| Research brief | `nvidia/deepseek-ai/deepseek-v4-pro` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | global |
+| Evidence extraction | `nvidia/deepseek-ai/deepseek-v4-pro` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | global |
+| Script outline | `nvidia/z-ai/glm-5.2` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | script |
+| **Script movement** | `nvidia/mistralai/mistral-medium-3.5-128b` | `zai/glm-4.7-flash` | script |
+| Script verification | `nvidia/deepseek-ai/deepseek-v4-pro` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | verify |
+| Script rewrite | `nvidia/mistralai/mistral-medium-3.5-128b` | `zai/glm-4.7-flash` | script |
+| Fact-check | `nvidia/deepseek-ai/deepseek-v4-pro` | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | verify |
+| Continuity report | `nvidia/deepseek-ai/deepseek-v4-pro` | `zai/glm-4.7-flash` | verify |
+| Show notes | `zai/glm-4.7-flash` *(reasoning off)* | `nvidia/deepseek-ai/deepseek-v4-pro` | global |
+| Episode metadata | `zai/glm-4.7-flash` *(reasoning off)* | `nvidia/mistralai/mistral-medium-3.5-128b` | global |
+| Quality judge | `nvidia/nvidia/nemotron-3-ultra-550b-a55b` | `nvidia/z-ai/glm-5.2` | verify (Anthropic, explicit only) |
+
+The Z.ai-primary roles all declare `reasoning: "off"` in `roles.ts`, and the
+`zai-glm` profile sends the disable control **explicitly** — because the probe
+showed GLM-4.7 Flash reasons by default and will spend a whole small allowance
+doing it. Leaving the flag unset would let the model's default win.
+
+### The availability filter
+
+Two models are excluded from **every** default profile chain, not just this one:
+
+| Model | State | Observation |
+|---|---|---|
+| `deepseek-ai/deepseek-v4-flash` | `capacity-limited` | `503 ResourceExhausted (48/48)` on every probe request |
+| `moonshotai/kimi-k2.6` | `unavailable-for-account` | `404 Not found for account` |
+
+Filtering happens in `filterProfileChain()`, before the chain runs. Leaving a
+503-limited or 404 model in place costs a real attempt on **every request** — and
+on a role whose primary already takes 30–88 s, burning attempts before reaching a
+usable model makes every production-chain run slower and every failure harder to
+read.
+
+Nothing is deleted. Their capability records, providers and integration are
+intact, and an **explicit role override still reaches them** — that is the retest
+path, and routing logs a warning saying so:
+
+```env
+SCRIPT_MOVEMENT_LLM_PROVIDER=nvidia
+SCRIPT_MOVEMENT_LLM_MODEL=moonshotai/kimi-k2.6
+```
+
+A model returns to the default profiles only when its capability record says
+`availability: "available"` — i.e. when a live contract probe passes.
+
+`frontier_development` is kept unchanged as the **documented intent**, so what we
+want stays readable next to what this account can currently reach. Its declared
+chain still names Kimi; its runnable chain does not, and `filteredUnavailable`
+reports the difference per role.
+
+## 5. `frontier_development` role map (documented intent)
 
 Recommended while the application is in development.
 
@@ -271,7 +331,7 @@ Current repository values: `LLM_PROVIDER=anthropic`,
 
 ---
 
-## 5. Precedence
+## 6. Precedence
 
 ```
 1. explicit role override      <PREFIX>_LLM_PROVIDER / <PREFIX>_LLM_MODEL
@@ -301,7 +361,7 @@ Implemented once, in `routing.ts`. No service duplicates any part of it.
 
 ---
 
-## 6. Role parameters
+## 7. Role parameters
 
 Per role, applied only where the model accepts them and never overriding a value
 the caller passed:
@@ -335,7 +395,7 @@ the caller passed:
 
 ---
 
-## 7. Structured output
+## 8. Structured output
 
 Support is **three separate questions per model**, not one:
 
@@ -384,7 +444,7 @@ No application schema was weakened to make a model pass.
 
 ---
 
-## 8. Reasoning content
+## 9. Reasoning content
 
 Reasoning never reaches dialogue, script segments, show notes, episode
 descriptions, TTS input, parsed structured output, or any user-facing text.
@@ -406,7 +466,7 @@ descriptions, TTS input, parsed structured output, or any user-facing text.
 
 ---
 
-## 9. Retry and CATEGORY-AWARE fallback
+## 10. Retry and CATEGORY-AWARE fallback
 
 The failure's **category** decides what happens next. `errors.ts` classifies;
 `fallbackPolicy.ts` decides; `routing.ts` obeys. Nothing else makes this call.
@@ -478,7 +538,7 @@ Two extra rules:
 
 ---
 
-## 10. Cost and usage ledger
+## 11. Cost and usage ledger
 
 `recordLlmCall` now records, per call: role, profile, candidate source, provider,
 model, input tokens, cached input tokens, reasoning tokens, output tokens,
@@ -494,7 +554,7 @@ Two honesty rules:
 
 ---
 
-## 11. Deployment stage
+## 12. Deployment stage
 
 `APP_DEPLOYMENT_STAGE` = `development` | `staging` | `live`, defaulting to
 `development`.
@@ -511,7 +571,7 @@ exactly the environments it is for.
 
 ---
 
-## 12. Readiness display
+## 13. Readiness display
 
 The resolved role map appears in three places, all credential-free:
 
@@ -530,14 +590,136 @@ Statuses: `ready`, `degraded` (running on a reduced chain), `unroutable` (no
 usable candidate), `no LLM call yet` (the role is declared but deterministic
 today).
 
-Model verification is reported **separately from role status**, in the three states
-from §3b, both per candidate and as an `LLM_MODEL_VERIFICATION` roll-up:
+Model verification is reported **separately from role status**, in FIVE states,
+both per candidate and as an `LLM_MODEL_VERIFICATION` roll-up:
 
-- *catalog verified, live contract untested* — the ID is confirmed, its request
-  parameters are not. This is the current state of every NVIDIA model.
-- *live contract verified* — called successfully from this repository.
-- *catalog/model unavailable* — the ID has not been confirmed against the catalog.
-  This is the current state of the Z.ai model.
+| State | Meaning | Current members |
+|---|---|---|
+| `catalog-available` | the ID is in the catalog; no live request attempted | — |
+| `not-quality-tested` | live contract PASSED; nothing has measured role quality | all five reachable models |
+| `live-contract-passed` | live contract passed AND quality-tested | none yet |
+| `live-contract-failed` | endpoint would not serve this account (503) | `deepseek-v4-flash` |
+| `unavailable-for-account` | the ID does not resolve for this credential (404) | `kimi-k2.6` |
+
+The distinction that matters most is `not-quality-tested` vs `live-contract-passed`:
+an HTTP 200 says the endpoint works, not that the model writes a podcast anyone
+wants to hear. Nothing reaches `live-contract-passed` until
+`npm run test:role-experiments` produces evidence.
+
+Role experiments — one role at a time, identical inputs per candidate.
+
+=== DIALOGUE EXPERIMENT (role: script_movement) ===
+Three episode situations x every candidate. Identical outline, evidence, character prompt, continuity
+state, previous-movement transcript, target duration, prompt, schema and 16,000-token allowance.
+
+
+  EXCLUDED — endpoint unreachable, NOT a quality judgement:
+    nvidia/deepseek-ai/deepseek-v4-flash         capacity-limited: 503 ResourceExhausted — the endpoint would not serve this account
+    nvidia/moonshotai/kimi-k2.6                  unavailable-for-account: 404 Not found for this account — the ID does not resolve for the credential in use
+
+--- Evidence-heavy disagreement ---
+    testing: Can the model argue from a dense fact set without fabricating a number, and keep two positions distinct while both cite the same evidence?
+
+--- Emotional / character-revealing disagreement ---
+    testing: Can the model let a disagreement expose something personal without collapsing into therapy-speak, and keep the two voices asymmetric when the scene is quiet?
+
+--- Fast, humorous sports discussion ---
+    testing: Can the model hold a comic rhythm — short turns, interruptions, a callback that lands — without stapling jokes on or writing essay sentences?
+
+Per-candidate rollup across all three situations (judge axes 0-10, higher is better):
+candidate                                 verify          completion     validJson  repairs  det  judge  distinct  causal  filler  mech  repeat  character  grounding  continuity  natural  oneVoice  firstMv  secs  tkOut
+----------------------------------------  --------------  -------------  ---------  -------  ---  -----  --------  ------  ------  ----  ------  ---------  ---------  ----------  -------  --------  -------  ----  -----
+nvidia/mistralai/mistral-medium-3.5-128b  live, untested  0/0 (skipped)  —          0        —    —      —         —       —       —     —       —          —          —           —        —         —        —     0    
+zai/glm-4.7-flash                         live, untested  0/0 (skipped)  —          0        —    —      —         —       —       —     —       —          —          —           —        —         —        —     0    
+stub/(provider default) [incumbent]       n/a             0/0 (skipped)  —          0        —    —      —         —       —       —     —       —          —          —           —        —         —        —     0    
+
+  firstMv = seconds to the FIRST completed movement; secs = the full three-movement episode.
+  Movements are SEQUENTIAL, so a slow model multiplies — judge latency on firstMv x3, not on one prompt.
+
+Per-situation detail:
+situation            candidate                                 status                                           lines  words  rep  det  judge  secs
+-------------------  ----------------------------------------  -----------------------------------------------  -----  -----  ---  ---  -----  ----
+evidence_heavy       nvidia/mistralai/mistral-medium-3.5-128b  SKIPPED (no credential for nvidia)               0      0      —    —    —      0   
+evidence_heavy       zai/glm-4.7-flash                         SKIPPED (no credential for zai)                  0      0      —    —    —      0   
+evidence_heavy       stub/(provider default) [incumbent]       SKIPPED (resolves to stub — nothing to measure)  0      0      —    —    —      0   
+character_revealing  nvidia/mistralai/mistral-medium-3.5-128b  SKIPPED (no credential for nvidia)               0      0      —    —    —      0   
+character_revealing  zai/glm-4.7-flash                         SKIPPED (no credential for zai)                  0      0      —    —    —      0   
+character_revealing  stub/(provider default) [incumbent]       SKIPPED (resolves to stub — nothing to measure)  0      0      —    —    —      0   
+fast_humorous        nvidia/mistralai/mistral-medium-3.5-128b  SKIPPED (no credential for nvidia)               0      0      —    —    —      0   
+fast_humorous        zai/glm-4.7-flash                         SKIPPED (no credential for zai)                  0      0      —    —    —      0   
+fast_humorous        stub/(provider default) [incumbent]       SKIPPED (resolves to stub — nothing to measure)  0      0      —    —    —      0   
+
+  artifact: C:\pod\.claude\worktrees\pod-role-based-llm-routing-a82ae4rtifacts
+ole-experiment-dialogue.json
+
+=== OUTLINE EXPERIMENT (role: script_outline) ===
+Same evidence and episode requirements for every candidate; 7,000-token outline allowance.
+
+
+  EXCLUDED — endpoint unreachable, NOT a quality judgement:
+    nvidia/deepseek-ai/deepseek-v4-flash         capacity-limited: 503 ResourceExhausted — the endpoint would not serve this account
+    nvidia/moonshotai/kimi-k2.6                  unavailable-for-account: 404 Not found for this account — the ID does not resolve for the credential in use
+candidate                                 verify          status                                           beats  movements  facts  dupFacts  shifts  escalation  callbacks  coldOpen  payoff  repairs  secs
+----------------------------------------  --------------  -----------------------------------------------  -----  ---------  -----  --------  ------  ----------  ---------  --------  ------  -------  ----
+nvidia/z-ai/glm-5.2                       live, untested  SKIPPED (no credential for nvidia)               —      —          —      —         —       —           —          —         —       —        —   
+nvidia/nvidia/nemotron-3-ultra-550b-a55b  live, untested  SKIPPED (no credential for nvidia)               —      —          —      —         —       —           —          —         —       —        —   
+zai/glm-4.7-flash                         live, untested  SKIPPED (no credential for zai)                  —      —          —      —         —       —           —          —         —       —        —   
+stub/(provider default) [incumbent]       n/a             SKIPPED (resolves to stub — nothing to measure)  —      —          —      —         —       —           —          —         —       —        —   
+
+  dupFacts = the same evidence ref assigned to more than one beat (repetition risk).
+
+  artifact: C:\pod\.claude\worktrees\pod-role-based-llm-routing-a82ae4rtifacts
+ole-experiment-outline.json
+
+=== VERIFICATION EXPERIMENT (roles: script_verification / fact_check) ===
+Seeded set: 14 lines across 13 labelled categories — 7 genuinely defective, 7 legitimate.
+False positives are weighted heavily in the read-out: an overactive verifier rewrites valid dialogue.
+
+
+  EXCLUDED — endpoint unreachable, NOT a quality judgement:
+    nvidia/deepseek-ai/deepseek-v4-flash         capacity-limited: 503 ResourceExhausted — the endpoint would not serve this account
+    nvidia/moonshotai/kimi-k2.6                  unavailable-for-account: 404 Not found for this account — the ID does not resolve for the credential in use
+candidate                                 verify          status                                           schema  caught  missed  falsePos  precision  recall  fpRate  fnRate  secs
+----------------------------------------  --------------  -----------------------------------------------  ------  ------  ------  --------  ---------  ------  ------  ------  ----
+nvidia/deepseek-ai/deepseek-v4-pro        live, untested  SKIPPED (no credential for nvidia)               —       —       —       —         —          —       —       —       —   
+nvidia/nvidia/nemotron-3-ultra-550b-a55b  live, untested  SKIPPED (no credential for nvidia)               —       —       —       —         —          —       —       —       —   
+zai/glm-4.7-flash                         live, untested  SKIPPED (no credential for zai)                  —       —       —       —         —          —       —       —       —   
+stub/(provider default) [incumbent]       n/a             SKIPPED (resolves to stub — nothing to measure)  —       —       —       —         —          —       —       —       —   
+
+  Ground truth — must be flagged:
+    line  2 [incorrect_numerical_claim] Evidence says 6th, not 2nd. A verifier must catch the wrong figure.
+    line  3 [unsupported_fact] 31 points appears nowhere in the evidence (the real figure is 24).
+    line  4 [contradicted_fact] Contradicts line 0 and the evidence outright.
+    line  9 [unsafe_claim] Explicitly listed as an unusable claim, and dressed as sourced reporting.
+    line 10 [duplicate_argument] Verbatim repeat of line 1 — the same argument made twice.
+    line 11 [character_violation] Zabala is the process host; this is Mulkey's position in her mouth.
+    line 12 [continuity_violation] Thursday precedes the Friday option date, so there is no extra week.
+  Ground truth — must NOT be flagged:
+    line  0 [supported_fact] Directly supported by news-1.
+    line  1 [correct_numerical_claim] 19 snaps is exactly what news-1 says.
+    line  5 [reasonable_inference] An inference drawn from a supported fact. Must NOT be failed.
+    line  6 [prediction] A prediction. Must NOT be treated as a factual error.
+    line  7 [rhetorical_exaggeration] Obvious hyperbole in a debate show. Flagging it is a false positive.
+    line  8 [opinion] Opinion, in character. Must NOT be failed.
+    line 13 [supported_fact] Supported by inj-1. A verifier that misses this evidence will false-positive it.
+
+  artifact: C:\pod\.claude\worktrees\pod-role-based-llm-routing-a82ae4rtifacts
+ole-experiment-verification.json
+
+0 candidate run(s) failed or came back incomplete. A failure here is a RESULT — it means that model could not do this role's job on this application's real work.
+
+PROMOTION RULE — a model may retain or take a primary role ONLY if it:
+  1. accepts the real request contract (see `npm run probe:llm-contract`),
+  2. reliably completes the required JSON,
+  3. accepts the required output allowance,
+  4. meets or exceeds the incumbent on role-specific quality,
+  5. does not introduce unacceptable latency,
+  6. does not require frequent repair,
+  7. does not trigger frequent fallback,
+  8. does not materially damage character voice or factual accuracy.
+A model that fails these stays INTEGRATED as an optional candidate but must not remain the default
+primary merely because the original specification named it. Document any change in profiles.ts with
+the evidence that justified it. produces evidence.
 
 A role can therefore be `ready` (a credential is present, a chain exists) while
 every model in it is still live-untested. Those are different questions and the
@@ -545,7 +727,7 @@ readout keeps them apart, so "ready" never reads as "validated".
 
 ---
 
-## 13. Web/worker agreement
+## 14. Web/worker agreement
 
 `routingEnv.ts` holds a **statically-referenced** snapshot of every routing
 variable. Next.js inlines `process.env` at build time, and a computed read
@@ -558,7 +740,7 @@ key is present in that snapshot.
 
 ---
 
-## 14. Live contract probe, then role experiments
+## 15. Live contract probe, then role experiments
 
 **The order matters.** A quality comparison against a model whose request contract
 was never verified measures the adapter as much as the model. So:
@@ -673,7 +855,7 @@ never to be rewritten to make a new profile win.
 
 ---
 
-## 15. Rollback — one variable
+## 16. Rollback — one variable
 
 ```env
 LLM_ROUTING_PROFILE=legacy

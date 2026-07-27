@@ -164,6 +164,16 @@ async function rawCall(
 
 const SHORT = "Answer in one short sentence.";
 
+/**
+ * Minimum output allowance for probe requests.
+ *
+ * The first run used 128 and produced a MISLEADING failure: Z.ai GLM-4.7 Flash
+ * reasons by default, spent all 128 tokens thinking, and returned empty content —
+ * which looks like a broken model rather than a small budget. A probe must not
+ * manufacture the failure it is measuring.
+ */
+const PROBE_MAX_TOKENS = 1024;
+
 function baseBody(model: string, prompt: string, extra: Record<string, unknown> = {}) {
   return {
     model,
@@ -171,7 +181,7 @@ function baseBody(model: string, prompt: string, extra: Record<string, unknown> 
       { role: "system", content: "You are terse. You follow instructions exactly." },
       { role: "user", content: prompt },
     ],
-    max_tokens: 128,
+    max_tokens: PROBE_MAX_TOKENS,
     stream: false,
     ...extra,
   };
@@ -331,7 +341,7 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
   );
 
   // 4. max_tokens accepted (small value).
-  add("4.max_tokens", "Requested max_tokens accepted", await rawCall(provider, baseBody(model, `Say hi. ${SHORT}`, { max_tokens: 64 })));
+  add("4.max_tokens", "Requested max_tokens accepted", await rawCall(provider, baseBody(model, `Say hi. ${SHORT}`, { max_tokens: 512 })));
 
   // 5. temperature.
   add("5.temperature", "temperature accepted", await rawCall(provider, baseBody(model, `Say hi. ${SHORT}`, { temperature: 0.7 })));
@@ -360,7 +370,10 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
     });
     if (r.verdict === "accepted") acceptedThinking.push(cand.id);
   }
-  report.learned.supportsThinking = acceptedThinking.length > 0;
+  // NOT recorded from acceptance. Probe 7b (controlled comparison) is what decides
+  // supportsThinking — an accepted-but-inert field is not a thinking mode, which is
+  // exactly what Mistral turned out to be.
+  report.learned.supportsThinking = false;
 
   for (const cand of [
     { id: "chat_template_kwargs.thinking=false", fields: { chat_template_kwargs: { thinking: false } } },
@@ -372,6 +385,59 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
       `Thinking DISABLE via ${cand.id}`,
       await rawCall(provider, baseBody(model, `Say hi. ${SHORT}`, cand.fields))
     );
+  }
+
+  // 7b. CONTROLLED COMPARISON — the only honest way to upgrade a thinking flag on
+  // an endpoint that does not validate parameters, and a stronger signal even on
+  // one that does. Enable vs disable, same prompt: if the reported reasoning
+  // tokens move, the field was HONORED, not merely accepted.
+  if (acceptedThinking.length > 0) {
+    const spelling = acceptedThinking[0];
+    const fieldsFor = (on: boolean): Record<string, unknown> =>
+      spelling === "thinking.type"
+        ? { thinking: { type: on ? "enabled" : "disabled" } }
+        : { chat_template_kwargs: { [spelling.split(".")[1]]: on } };
+    const prompt = `Which is larger, 9.9 or 9.11? ${SHORT}`;
+    const onCall = await rawCall(provider, baseBody(model, prompt, fieldsFor(true)));
+    const offCall = await rawCall(provider, baseBody(model, prompt, fieldsFor(false)));
+    const tokensOf = (c: RawCall) => {
+      const u = c.body?.usage ?? {};
+      return Number(u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0);
+    };
+    const reasoningOf = (c: RawCall) => {
+      const m = c.body?.choices?.[0]?.message ?? {};
+      return typeof m.reasoning_content === "string" ? m.reasoning_content.length : 0;
+    };
+    const onTokens = tokensOf(onCall);
+    const offTokens = tokensOf(offCall);
+    const onChars = reasoningOf(onCall);
+    const offChars = reasoningOf(offCall);
+    const honored = onCall.ok && offCall.ok && (onTokens > offTokens || onChars > offChars);
+    report.probes.push({
+      id: `7b.thinking_controlled[${spelling}]`,
+      question: `CONTROLLED — does toggling ${spelling} actually change the reasoning output?`,
+      verdict: onCall.ok && offCall.ok ? (honored ? "accepted" : "rejected") : "error",
+      detail: honored
+        ? `HONORED: reasoning tokens ${offTokens} (off) -> ${onTokens} (on); reasoning chars ${offChars} -> ${onChars}`
+        : onCall.ok && offCall.ok
+        ? `NOT HONORED: toggling changed nothing (tokens ${offTokens}/${onTokens}, chars ${offChars}/${onChars}). ` +
+          `The field is accepted but inert — do NOT record it as a working thinking mode.`
+        : `inconclusive: ${shortDetail(onCall.ok ? offCall : onCall)}`,
+      observed: {
+        reasoningTokensOn: onTokens,
+        reasoningTokensOff: offTokens,
+        reasoningCharsOn: onChars,
+        reasoningCharsOff: offChars,
+        contentEmptyOn: String(onCall.body?.choices?.[0]?.message?.content || "").trim().length === 0,
+      },
+      ms: onCall.ms + offCall.ms,
+    });
+    console.log(
+      `    ${honored ? "✓" : "✗"} 7b.thinking_controlled[${spelling}] ` +
+        `reasoning tokens off=${offTokens} on=${onTokens}`
+    );
+    // THIS is what upgrades supportsThinking — not the bare 200 above.
+    report.learned.supportsThinking = honored;
   }
 
   // 9. reasoning_effort — BOTH placements, separately. This is the exact
@@ -509,11 +575,16 @@ function recommendedRegistryDiff(reports: ModelReport[]): string[] {
     // accepting one. Recommending upgrades from those 200s would launder a guess
     // into a live-verified record.
     if (r.validatesParameters === false) {
+      const controlled = r.probes.find((p) => p.id.startsWith("7b.thinking_controlled"));
+      const controlledNote =
+        controlled && controlled.verdict === "accepted"
+          ? ` EXCEPTION: supportsThinking MAY be set true — probe 7b proved it by OUTPUT (${controlled.detail}).`
+          : "";
       lines.push(
         `${r.provider}/${r.model}: REACHED, but the endpoint ACCEPTED an invented parameter name — it does not validate ` +
           `unknown fields. Recommend liveContractVerified: false -> true ONLY, and NO request-field upgrades: a 200 here ` +
           `cannot distinguish "honored" from "silently ignored". Upgrade a field only on OBSERVED OUTPUT (e.g. ` +
-          `reasoning_content actually returned, or JSON returned when prose was requested).`
+          `reasoning_content actually returned, or JSON returned when prose was requested).` + controlledNote
       );
       continue;
     }

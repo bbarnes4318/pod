@@ -22,11 +22,17 @@
 
 import { LLMProvider, GenerateStructuredOutputOptions, GenerateTextOptions, LLMUsage } from "./interface";
 import { LLMRole, LegacyFamily, ROLE_DEFINITIONS, ALL_ROLES, roleDefinition } from "./roles";
-import { RoutingProfile, activeRoutingProfile, profileChainFor } from "./profiles";
+import { RoutingProfile, activeRoutingProfile, filterProfileChain } from "./profiles";
 import { readRoutingEnv, roleOverrideKeys } from "./routingEnv";
 import { LlmErrorCategory, LlmProviderError, categoryOf, describeFailure } from "./errors";
 import { fallbackDecision, formatPaidFallbackAudit } from "./fallbackPolicy";
-import { VerificationState, modelCapabilities, verificationState } from "./capabilities";
+import {
+  VerificationState,
+  isRoutableByDefault,
+  modelCapabilities,
+  shortVerificationLabel,
+  verificationState,
+} from "./capabilities";
 import { NVIDIA_DEFAULT_BASE_URL } from "./nvidia";
 import { ZAI_DEFAULT_BASE_URL } from "./zai";
 import { withLlmAttribution } from "./costLedger";
@@ -58,6 +64,11 @@ export interface RolePlan {
   candidates: RoleCandidate[];
   /** Removed because LLM_ALLOW_LEGACY_FALLBACK is false. */
   suppressedPaid: RoleCandidate[];
+  /**
+   * Declared by the profile but removed because a live probe showed this account
+   * cannot reach the model. Reported so the map never silently shrinks.
+   */
+  filteredUnavailable: { key: string; availability: string; reason: string }[];
   /** True when this plan is the untouched pre-feature behavior. */
   isLegacyBypass: boolean;
 }
@@ -155,9 +166,23 @@ function roleOverride(role: LLMRole): RoleCandidate | null {
   const { providerKey, modelKey } = roleOverrideKeys(role);
   const provider = readRoutingEnv(providerKey);
   if (!provider) return null;
+  const model = readRoutingEnv(modelKey);
+  // An override deliberately BYPASSES the availability filter — that is how a
+  // model removed from the default profiles gets retested. Say so, so nobody is
+  // surprised when the request fails the way the probe said it would.
+  if (model) {
+    const caps = modelCapabilities(provider.trim().toLowerCase(), model);
+    if (!isRoutableByDefault(caps)) {
+      console.warn(
+        `[LLMRouting] ${providerKey}=${provider}/${model} targets a model marked ` +
+          `'${caps.availability}' by the last live probe. The override is honored — this is the retest path — ` +
+          `but expect the failure the probe recorded until the model is reachable again.`
+      );
+    }
+  }
   return {
     provider: provider.trim().toLowerCase(),
-    model: readRoutingEnv(modelKey),
+    model,
     source: "role_override",
     paid: isPaidProvider(provider),
   };
@@ -181,6 +206,7 @@ export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile)
         { provider: legacy.provider, model: legacy.model, source: "legacy_backup", paid: isPaidProvider(legacy.provider) },
       ],
       suppressedPaid: [],
+      filteredUnavailable: [],
       isLegacyBypass: true,
     };
   }
@@ -188,7 +214,16 @@ export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile)
   const raw: RoleCandidate[] = [];
   if (override) raw.push(override);
 
-  profileChainFor(profile, role).forEach((ref, i) => {
+  // Availability filter: anything a live probe showed unreachable is dropped
+  // here rather than costing an attempt on every request. Reported, never silent.
+  const { usable, filtered } = filterProfileChain(profile, role);
+  const filteredUnavailable = filtered.map((f) => ({
+    key: candidateKey({ provider: f.ref.provider, model: f.ref.model }),
+    availability: f.availability,
+    reason: f.reason,
+  }));
+
+  usable.forEach((ref, i) => {
     raw.push({
       provider: ref.provider,
       model: ref.model,
@@ -235,7 +270,7 @@ export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile)
     candidates.push(c);
   }
 
-  return { role, profile, candidates, suppressedPaid, isLegacyBypass: false };
+  return { role, profile, candidates, suppressedPaid, filteredUnavailable, isLegacyBypass: false };
 }
 
 /** Display label for a candidate: `provider/model`. Not an identity key. */
@@ -567,6 +602,8 @@ export interface RoleRouteReport {
   legacyBackup: string;
   /** Rung 1, when an operator set one. */
   override: string | null;
+  /** Declared by the profile but removed as unreachable for this account. */
+  filteredUnavailable: { key: string; availability: string; reason: string }[];
   candidates: {
     key: string;
     source: CandidateSource;
@@ -577,8 +614,12 @@ export interface RoleRouteReport {
     catalogVerified: boolean;
     /** Successfully called from this repository with the current adapter. */
     liveContractVerified: boolean;
-    /** The three readiness states, already resolved. */
+    /** The readiness state, already resolved. */
     verification: VerificationState;
+    /** Short label for tables. */
+    verificationLabel: string;
+    /** Has a role-quality experiment produced evidence for this model? */
+    qualityTested: boolean;
   }[];
   suppressedPaid: string[];
   /** "ready" | "degraded" | "unroutable" | "not-wired" */
@@ -609,6 +650,11 @@ export function roleRouteReport(profileOverride?: RoutingProfile): RoleRouteRepo
     if (plan.suppressedPaid.length) {
       notes.push(
         `Paid fallback disabled: ${plan.suppressedPaid.map(candidateKey).join(", ")} will not be called.`
+      );
+    }
+    for (const f of plan.filteredUnavailable) {
+      notes.push(
+        `${f.key} is declared by this profile but REMOVED from the chain (${f.availability}): ${f.reason}.`
       );
     }
     // Catalog verification and LIVE verification are separate claims, reported
@@ -655,7 +701,11 @@ export function roleRouteReport(profileOverride?: RoutingProfile): RoleRouteRepo
       primary: byS("profile_primary")[0] ?? (plan.isLegacyBypass ? candidateKey(plan.candidates[0]) : "—"),
       secondary: byS("profile_secondary")[0] ?? "—",
       tertiary: byS("profile_tertiary")[0] ?? "—",
-      legacyBackup: byS("legacy_backup")[0] ?? "—",
+      // When paid fallback is off the backup is suppressed rather than absent —
+      // show it, marked, so the map still says what the role would fall back TO.
+      legacyBackup:
+        byS("legacy_backup")[0] ??
+        (plan.suppressedPaid.length ? `${candidateKey(plan.suppressedPaid[0])} (suppressed)` : "—"),
       override: byS("role_override")[0] ?? null,
       candidates: plan.candidates.map((c) => {
         const caps = modelCapabilities(c.provider, c.model ?? "");
@@ -667,9 +717,12 @@ export function roleRouteReport(profileOverride?: RoutingProfile): RoleRouteRepo
           catalogVerified: caps.catalogVerified,
           liveContractVerified: caps.liveContractVerified,
           verification: verificationState(caps),
+          verificationLabel: shortVerificationLabel(verificationState(caps)),
+          qualityTested: caps.qualityTested,
         };
       }),
       suppressedPaid: plan.suppressedPaid.map(candidateKey),
+      filteredUnavailable: plan.filteredUnavailable,
       status,
       notes,
       hasCallSite: def.callSites.length > 0,

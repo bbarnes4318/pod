@@ -34,10 +34,11 @@ import {
 } from "../lib/providers/llm/routing";
 import { fallbackDecision } from "../lib/providers/llm/fallbackPolicy";
 import { LlmProviderError } from "../lib/providers/llm/errors";
-import { activeRoutingProfile } from "../lib/providers/llm/profiles";
+import { activeRoutingProfile, declaredProfileChainFor } from "../lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "../lib/providers/llm/deploymentStage";
 import { routingEnvKeys, roleOverrideKeys } from "../lib/providers/llm/routingEnv";
 import {
+  MODEL_IDS,
   resolveMaxTokens,
   modelCapabilities,
   verificationState,
@@ -332,7 +333,10 @@ function profileTests(): void {
     });
   });
 
-  check("frontier primaries match the documented role map", () => {
+  check("frontier primaries match the documented role map (as DECLARED)", () => {
+    // Asserted against the DECLARED chain: frontier_development is the documented
+    // intent, and the availability filter can legitimately remove a model from
+    // what actually runs without changing what the profile means.
     withEnv(FRONTIER_ENV, () => {
       const expected: Partial<Record<LLMRole, string>> = {
         topic_generation: "nvidia/deepseek-ai/deepseek-v4-flash",
@@ -350,7 +354,8 @@ function profileTests(): void {
         quality_judge: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
       };
       for (const [role, want] of Object.entries(expected)) {
-        const got = candidateKey(resolveRolePlan(role as LLMRole).candidates[0]);
+        const declared = declaredProfileChainFor("frontier_development", role as LLMRole);
+        const got = `${declared[0].provider}/${declared[0].model}`.toLowerCase();
         assert(got === want, `${role}: expected ${want}, got ${got}`);
       }
     });
@@ -508,25 +513,25 @@ async function fallbackTests(): Promise<void> {
 
   await checkAsync("secondary runs after the primary fails", async () => {
     await withEnvAsync(FRONTIER_ENV, async () => {
-      let nvidiaCalls = 0;
+      // Kimi was the INTENDED secondary and is filtered out (404 for this
+      // account), so the RUNNABLE secondary is Z.ai. That substitution is the
+      // availability filter doing its job.
       const m = mockFetch([
-        {
-          match: NVIDIA_HOST,
-          respond: (body) => {
-            nvidiaCalls++;
-            // Fail the primary (mistral); succeed for the secondary (kimi).
-            if (String(body.model).includes("mistral")) return jsonResponse({ error: "upstream exploded" }, 500);
-            return oaiOk('{"segments":[{"lines":[{"text":"hi"}]}]}');
-          },
-        },
+        { match: NVIDIA_HOST, respond: () => jsonResponse({ error: "upstream exploded" }, 500) },
+        { match: ZAI_HOST, respond: () => oaiOk('{"segments":[{"lines":[{"text":"hi"}]}]}') },
       ]);
       try {
         const p = getRoleLLMProvider("script_movement");
         const res = await p.generateStructuredOutput<any>({ prompt: "x", maxTokens: 16000 });
         assert(Array.isArray(res.segments), "expected the secondary's result");
-        assert(nvidiaCalls >= 2, `expected the secondary to be attempted, saw ${nvidiaCalls} call(s)`);
-        const kimi = m.captured.find((c) => String(c.body?.model).includes("kimi"));
-        assert(!!kimi, `secondary model was never called: ${m.captured.map((c) => c.body?.model).join(", ")}`);
+        assert(
+          m.captured.some((c) => c.url.includes(ZAI_HOST)),
+          `the runnable secondary was never called: ${m.captured.map((c) => c.url).join(", ")}`
+        );
+        assert(
+          !m.captured.some((c) => String(c.body?.model).includes("kimi")),
+          "a filtered model must never be attempted"
+        );
       } finally {
         m.restore();
       }
@@ -684,7 +689,8 @@ async function fallbackTests(): Promise<void> {
     await withEnvAsync({ ...FRONTIER_COMPARISON_ENV, NVIDIA_API_KEY: undefined }, async () => {
       const m = mockFetch([{ match: ZAI_HOST, respond: () => oaiOk('{"from":"zai"}') }]);
       try {
-        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        // research_brief: nvidia primary -> nvidia secondary -> zai.
+        const res = await getRoleLLMProvider("research_brief").generateStructuredOutput<any>({ prompt: "x" });
         assert(res.from === "zai", `expected the Z.ai result, got ${JSON.stringify(res)}`);
       } finally {
         m.restore();
@@ -738,7 +744,8 @@ async function fallbackTests(): Promise<void> {
       try {
         let message = "";
         try {
-          await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+          // research_brief keeps an NVIDIA primary after availability filtering.
+          await getRoleLLMProvider("research_brief").generateStructuredOutput<any>({ prompt: "x" });
           assert(false, "expected a failure");
         } catch (err: any) {
           message = err.message;
@@ -1446,7 +1453,7 @@ async function categoryPolicyTests(): Promise<void> {
         return oaiOk('{"from":"zai"}');
       }) as typeof fetch;
       try {
-        const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
+        const res = await getRoleLLMProvider("research_brief").generateStructuredOutput<any>({ prompt: "x" });
         assert(res.from === "zai", `expected the Z.ai result after a timeout, got ${JSON.stringify(res)}`);
       } finally {
         globalThis.fetch = realFetchLocal;
@@ -1456,23 +1463,25 @@ async function categoryPolicyTests(): Promise<void> {
 
   await checkAsync("malformed JSON advances ONLY after the one repair attempt also fails", async () => {
     await withEnvAsync(FRONTIER_ENV, async () => {
-      let nvidiaCalls = 0;
+      // show_notes is Z.ai-primary in the runnable chain; the next candidate is
+      // the paid backup, which FRONTIER_ENV enables explicitly.
+      let primaryCalls = 0;
       const m = mockFetch([
         {
-          match: NVIDIA_HOST,
+          match: ZAI_HOST,
           respond: () => {
-            nvidiaCalls++;
+            primaryCalls++;
             return oaiOk("not json at all");
           },
         },
-        { match: ZAI_HOST, respond: () => oaiOk('{"from":"zai"}') },
+        { match: ANTHROPIC_HOST, respond: () => anthropicOk('{"from":"anthropic"}') },
       ]);
       try {
         const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
-        assert(res.from === "zai", `expected the fallback result, got ${JSON.stringify(res)}`);
+        assert(res.from === "anthropic", `expected the fallback result, got ${JSON.stringify(res)}`);
         assert(
-          nvidiaCalls === 2,
-          `the primary must get exactly one repair attempt before fallback; saw ${nvidiaCalls} call(s)`
+          primaryCalls === 2,
+          `the primary must get exactly one repair attempt before fallback; saw ${primaryCalls} call(s)`
         );
       } finally {
         m.restore();
@@ -1482,21 +1491,21 @@ async function categoryPolicyTests(): Promise<void> {
 
   await checkAsync("a repaired-successfully response does NOT fall back", async () => {
     await withEnvAsync(FRONTIER_ENV, async () => {
-      let nvidiaCalls = 0;
+      let primaryCalls = 0;
       const m = mockFetch([
         {
-          match: NVIDIA_HOST,
+          match: ZAI_HOST,
           respond: () => {
-            nvidiaCalls++;
-            return nvidiaCalls === 1 ? oaiOk("nope") : oaiOk('{"from":"nvidia-after-repair"}');
+            primaryCalls++;
+            return primaryCalls === 1 ? oaiOk("nope") : oaiOk('{"from":"primary-after-repair"}');
           },
         },
-        { match: ZAI_HOST, respond: () => { throw new Error("must not fall back after a successful repair"); } },
+        { match: ANTHROPIC_HOST, respond: () => { throw new Error("must not fall back after a successful repair"); } },
       ]);
       try {
         const res = await getRoleLLMProvider("show_notes").generateStructuredOutput<any>({ prompt: "x" });
-        assert(res.from === "nvidia-after-repair", JSON.stringify(res));
-        assert(nvidiaCalls === 2, `expected 2 primary calls, saw ${nvidiaCalls}`);
+        assert(res.from === "primary-after-repair", JSON.stringify(res));
+        assert(primaryCalls === 2, `expected 2 primary calls, saw ${primaryCalls}`);
       } finally {
         m.restore();
       }
@@ -1592,31 +1601,62 @@ function verificationDisplayTests(): void {
       const primary = row.candidates.find((c) => c.key.includes("mistral"))!;
       assert(primary.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
       assert(primary.liveContractVerified === true, "mistral answered the live probe");
-      assert(primary.verification === "live-contract-verified", primary.verification);
-      // Its secondary is kimi, which returned 404 for this account.
-      const secondary = row.candidates.find((c) => c.key.includes("kimi"))!;
-      assert(secondary.catalogVerified === false, "kimi 404'd for this account");
-      assert(secondary.verification === "catalog-unavailable", secondary.verification);
-      // The two claims are independent: same provider, different verdicts.
+      assert(primary.verification === "not-quality-tested", primary.verification);
+      assert(primary.verificationLabel === "live, untested", primary.verificationLabel);
       assert(
-        primary.verification !== secondary.verification,
-        "two candidates of the same provider must be able to hold different verification states"
+        primary.qualityTested === false,
+        "nothing has measured whether this model is GOOD at the role — only that the endpoint works"
       );
+      // Its secondary is kimi, which returned 404 for this account.
+      // Kimi is FILTERED OUT of the chain now (404 for this account), so it must
+      // not appear as a candidate at all — and it must be reported as removed.
+      assert(
+        !row.candidates.some((c) => c.key.includes("kimi")),
+        "an unreachable model must not remain an active candidate"
+      );
+      assert(
+        row.filteredUnavailable.some((f) => f.key.includes("kimi")),
+        "the removal must be REPORTED, never silent: " + JSON.stringify(row.filteredUnavailable)
+      );
+      // The two claims stay independent: the fallback is a different state again.
+      const fallback = row.candidates.find((c) => c.key.startsWith("zai/"))!;
+      assert(fallback !== undefined, "zai should have taken the vacated secondary slot");
     });
   });
 
   check("the three readiness states are all representable", () => {
-    const states = new Set([
-      // 503 on every probe — reachable one day, unverified today.
-      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash")),
-      // Answered the probe.
-      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")),
-      // 404 for this account.
-      verificationState(modelCapabilities("nvidia", "moonshotai/kimi-k2.6")),
-    ]);
-    assert(states.has("catalog-verified-live-untested"), "deepseek flash is catalog-only after its 503");
-    assert(states.has("live-contract-verified"), "deepseek pro answered the live probe");
-    assert(states.has("catalog-unavailable"), "kimi returned 404 for this account");
+    // All five states must be distinguishable, and each maps to a real observation.
+    assert(
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash")) === "live-contract-failed",
+      "deepseek flash: 503 capacity is a LIVE CONTRACT FAILURE, not merely untested"
+    );
+    assert(
+      verificationState(modelCapabilities("nvidia", "moonshotai/kimi-k2.6")) === "unavailable-for-account",
+      "kimi: 404 for this account"
+    );
+    assert(
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")) === "not-quality-tested",
+      "deepseek pro: the endpoint works, the model has not been quality-tested"
+    );
+    assert(
+      verificationState(modelCapabilities("nvidia", "some/model-nobody-registered")) === "unavailable-for-account",
+      "an unregistered model claims nothing"
+    );
+    assert(
+      verificationState({
+        ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        qualityTested: true,
+      }) === "live-contract-passed",
+      "quality-tested + live = the only state that means fully validated"
+    );
+    // catalog-available: live never attempted.
+    assert(
+      verificationState({
+        ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        liveContractVerified: false,
+      }) === "catalog-available",
+      "catalog listed, live never attempted"
+    );
   });
 
   check("readiness notes distinguish catalog-only from catalog-unavailable", () => {
@@ -1625,18 +1665,176 @@ function verificationDisplayTests(): void {
         .filter((r) => r.hasCallSite)
         .flatMap((r) => r.notes)
         .join(" ");
-      assert(/LIVE CONTRACT UNTESTED/.test(notes), `expected a catalog-only note: ${notes.slice(0, 300)}`);
-      assert(/Catalog\/model unavailable/.test(notes), `expected an unconfirmed-catalog note: ${notes.slice(0, 300)}`);
+      assert(
+        /REMOVED from the chain \(unavailable-for-account\)/.test(notes),
+        `a 404 model must be reported as removed: ${notes.slice(0, 400)}`
+      );
+      assert(
+        /REMOVED from the chain \(capacity-limited\)/.test(notes),
+        `a 503 model must be reported as removed: ${notes.slice(0, 400)}`
+      );
+      assert(
+        /does not resolve for the credential in use/.test(notes),
+        `the 404 reason must be stated: ${notes.slice(0, 400)}`
+      );
     });
   });
 
   check("a catalog-verified model is never described as validated", () => {
     const caps = modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash");
-    assert(caps.catalogVerified && !caps.liveContractVerified, "expected the catalog-only state");
+    assert(caps.catalogVerified && !caps.liveContractVerified, "expected the catalog-listed, live-failed state");
     assert(
       caps.provenance.requestFields.length > 20 && caps.provenance.limits.length > 20,
       "a catalog-only record must state what is still unverified"
     );
+  });
+}
+
+// ============================================ 10e. verified_development + availability
+
+function verifiedProfileTests(): void {
+  console.log("\nverified_development profile and the availability filter:");
+
+  const VERIFIED_ENV = { ...FRONTIER_ENV, LLM_ROUTING_PROFILE: "verified_development" };
+
+  check("it is a recognized profile and resolves every role", () => {
+    withEnv(VERIFIED_ENV, () => {
+      assert(activeRoutingProfile() === "verified_development", activeRoutingProfile());
+      for (const role of ALL_ROLES) {
+        const plan = resolveRolePlan(role);
+        assert(!plan.isLegacyBypass, `${role}: must not be a legacy bypass`);
+        assert(plan.candidates.length >= 2, `${role}: expected a chain, got ${plan.candidates.length}`);
+      }
+    });
+  });
+
+  check("it contains ONLY models that passed the live contract probe", () => {
+    withEnv(VERIFIED_ENV, () => {
+      for (const role of ALL_ROLES) {
+        for (const c of resolveRolePlan(role).candidates) {
+          if (c.source === "legacy_backup") continue; // the paid incumbent
+          const caps = modelCapabilities(c.provider, c.model ?? "");
+          assert(
+            caps.liveContractVerified === true,
+            `${role}: ${candidateKey(c)} is in the VERIFIED profile but has not passed a live probe`
+          );
+        }
+      }
+    });
+  });
+
+  check("the observed-working map matches what was asked for", () => {
+    withEnv(VERIFIED_ENV, () => {
+      const zai = `zai/${MODEL_IDS.zai.glmFlash}`;
+      const expected: Partial<Record<LLMRole, [string, string]>> = {
+        topic_generation: [zai, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        topic_classification: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        topic_ranking: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        research_brief: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        script_outline: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        script_movement: [`nvidia/${MODEL_IDS.nvidia.mistral}`, zai],
+        script_verification: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        script_rewrite: [`nvidia/${MODEL_IDS.nvidia.mistral}`, zai],
+        fact_check: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        continuity_report: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, zai],
+        show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        quality_judge: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+      };
+      for (const [role, [primary, secondary]] of Object.entries(expected)) {
+        const plan = resolveRolePlan(role as LLMRole);
+        assert(candidateKey(plan.candidates[0]) === primary, `${role} primary: ${candidateKey(plan.candidates[0])}`);
+        assert(candidateKey(plan.candidates[1]) === secondary, `${role} secondary: ${candidateKey(plan.candidates[1])}`);
+        assert(
+          plan.candidates[plan.candidates.length - 1].source === "legacy_backup",
+          `${role}: the existing provider must remain the backup`
+        );
+      }
+    });
+  });
+
+  check("Z.ai-primary roles request reasoning OFF", () => {
+    // The probe proved GLM-4.7 Flash reasons by default and can spend a whole
+    // small allowance on it. The cheap high-volume roles must not inherit that.
+    for (const role of ["topic_generation", "topic_classification", "show_notes", "episode_metadata"] as LLMRole[]) {
+      assert(
+        ROLE_DEFINITIONS[role].reasoning === "off",
+        `${role} is Z.ai-primary in the verified map and must request reasoning off`
+      );
+    }
+  });
+
+  check("unreachable models are filtered from EVERY profile, not just the verified one", () => {
+    for (const profile of ["verified_development", "frontier_development", "free_independent"]) {
+      withEnv({ ...FRONTIER_ENV, LLM_ROUTING_PROFILE: profile }, () => {
+        for (const role of ALL_ROLES) {
+          const plan = resolveRolePlan(role);
+          for (const c of plan.candidates) {
+            const caps = modelCapabilities(c.provider, c.model ?? "");
+            assert(
+              c.source === "legacy_backup" || caps.availability === "available",
+              `${profile}/${role}: ${candidateKey(c)} is ${caps.availability} and must not be an active candidate`
+            );
+          }
+        }
+      });
+    }
+  });
+
+  check("frontier_development keeps its DOCUMENTED intent even while filtered", () => {
+    withEnv({ ...FRONTIER_ENV, LLM_ROUTING_PROFILE: "frontier_development" }, () => {
+      // Declared: Kimi is still the intended dialogue secondary.
+      const declared = declaredProfileChainFor("frontier_development", "script_movement").map(
+        (r) => `${r.provider}/${r.model}`
+      );
+      assert(declared.some((d) => d.includes("kimi")), `intent lost: ${declared.join(", ")}`);
+      // Runnable: it is filtered out and the removal is reported.
+      const plan = resolveRolePlan("script_movement");
+      assert(!plan.candidates.some((c) => candidateKey(c).includes("kimi")), "must not be an active candidate");
+      assert(
+        plan.filteredUnavailable.some((f) => f.key.includes("kimi") && /404|does not resolve/.test(f.reason)),
+        `the reason must be stated: ${JSON.stringify(plan.filteredUnavailable)}`
+      );
+    });
+  });
+
+  check("an explicit role override still reaches a filtered model — the retest path", () => {
+    withEnv(
+      {
+        ...VERIFIED_ENV,
+        SCRIPT_MOVEMENT_LLM_PROVIDER: "nvidia",
+        SCRIPT_MOVEMENT_LLM_MODEL: MODEL_IDS.nvidia.kimi,
+      },
+      () => {
+        const plan = resolveRolePlan("script_movement");
+        assert(plan.candidates[0].source === "role_override", "the override must be honored");
+        assert(
+          candidateKey(plan.candidates[0]).includes("kimi"),
+          `the override must reach the filtered model: ${candidateKey(plan.candidates[0])}`
+        );
+      }
+    );
+  });
+
+  check("legacy is untouched by any of this", () => {
+    const pureLegacy = withEnv(CURRENT_PROD_ENV, () =>
+      ALL_ROLES.map((r) => candidateKey(resolveRolePlan(r).candidates[0]))
+    );
+    const rolledBack = withEnv({ ...VERIFIED_ENV, LLM_ROUTING_PROFILE: "legacy" }, () =>
+      ALL_ROLES.map((r) => candidateKey(resolveRolePlan(r).candidates[0]))
+    );
+    assert(
+      JSON.stringify(pureLegacy) === JSON.stringify(rolledBack),
+      "one-variable rollback from verified_development must restore legacy exactly"
+    );
+    withEnv({ ...VERIFIED_ENV, LLM_ROUTING_PROFILE: "legacy" }, () => {
+      assert(resolveRolePlan("script_movement").isLegacyBypass, "legacy must still bypass the router");
+      assert(
+        resolveRolePlan("script_movement").filteredUnavailable.length === 0,
+        "the availability filter must never touch legacy"
+      );
+    });
   });
 }
 
@@ -1703,6 +1901,7 @@ async function main(): Promise<void> {
   await categoryPolicyTests();
   endpointIdentityTests();
   verificationDisplayTests();
+  verifiedProfileTests();
   roleDefinitionTests();
   await challengerTests();
   sourceContractTests();

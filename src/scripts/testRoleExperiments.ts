@@ -34,7 +34,12 @@ dotenv.config();
 
 import { LLMProvider } from "../lib/providers/llm/interface";
 import { instantiateProvider, providerCredentialPresent, resolveLegacyFamily } from "../lib/providers/llm/routing";
-import { MODEL_IDS, modelCapabilities, verificationState } from "../lib/providers/llm/capabilities";
+import {
+  MODEL_IDS,
+  modelCapabilities,
+  shortVerificationLabel,
+  verificationState,
+} from "../lib/providers/llm/capabilities";
 import { llmCostMark, llmCostSince } from "../lib/providers/llm/costLedger";
 import { generateOutlineDrivenScript } from "../lib/services/scriptOutlineEngine";
 import { assessScriptQuality } from "../lib/services/scriptQualityJudge";
@@ -88,10 +93,32 @@ function incumbent(family: "script" | "verify"): Candidate {
 
 const DIALOGUE_CANDIDATES = (): Candidate[] => [
   nv(MODEL_IDS.nvidia.mistral),
-  nv(MODEL_IDS.nvidia.kimi),
   zaiFlash(),
   incumbent("script"),
 ];
+
+/**
+ * Models excluded from the comparison because their ENDPOINT is unreachable, not
+ * because their writing was judged. Reported separately and explicitly: listing
+ * Kimi among the creative candidates with a zero score would libel a model that
+ * never got to write a line.
+ */
+function unavailableCandidates(): { label: string; state: string; reason: string }[] {
+  const out: { label: string; state: string; reason: string }[] = [];
+  for (const model of Object.values(MODEL_IDS.nvidia)) {
+    const caps = modelCapabilities("nvidia", model);
+    if (caps.availability === "available") continue;
+    out.push({
+      label: `nvidia/${model}`,
+      state: caps.availability,
+      reason:
+        caps.availability === "unavailable-for-account"
+          ? "404 Not found for this account — the ID does not resolve for the credential in use"
+          : "503 ResourceExhausted — the endpoint would not serve this account",
+    });
+  }
+  return out;
+}
 
 const OUTLINE_CANDIDATES = (): Candidate[] => [
   nv(MODEL_IDS.nvidia.glm),
@@ -99,6 +126,14 @@ const OUTLINE_CANDIDATES = (): Candidate[] => [
   zaiFlash(),
   incumbent("script"),
 ];
+
+/** Print the unavailable set once per experiment, so it is never mistaken for a result. */
+function reportUnavailable(): void {
+  const unavailable = unavailableCandidates();
+  if (unavailable.length === 0) return;
+  console.log("\n  EXCLUDED — endpoint unreachable, NOT a quality judgement:");
+  for (const u of unavailable) console.log(`    ${u.label.padEnd(44)} ${u.state}: ${u.reason}`);
+}
 
 const VERIFICATION_CANDIDATES = (): Candidate[] => [
   nv(MODEL_IDS.nvidia.deepseekPro),
@@ -133,12 +168,7 @@ function resolveCandidates(candidates: Candidate[]): Resolved[] {
 /** Verification state of a candidate's model, printed alongside every result. */
 function verificationLabel(c: Candidate): string {
   if (!c.model) return "n/a";
-  const state = verificationState(modelCapabilities(c.provider, c.model));
-  return state === "live-contract-verified"
-    ? "live-verified"
-    : state === "catalog-verified-live-untested"
-    ? "catalog-only"
-    : "unconfirmed";
+  return shortVerificationLabel(verificationState(modelCapabilities(c.provider, c.model)));
 }
 
 // ---------------------------------------------------------------- reporting
@@ -189,6 +219,10 @@ interface DialogueRun {
   tkIn: number;
   tkOut: number;
   seconds: number;
+  /** Wall time until the FIRST movement completed — the number that matters most
+   *  for a slow model, because movements are sequential. */
+  firstMovementSeconds?: number;
+  perMovementSeconds?: number[];
   deterministic?: number;
   judgeOverall?: number;
   judgeAxes?: Record<string, number>;
@@ -203,6 +237,7 @@ async function dialogueExperiment(): Promise<void> {
       "state, previous-movement transcript, target duration, prompt, schema and 16,000-token allowance.\n"
   );
 
+  reportUnavailable();
   const resolved = resolveCandidates(DIALOGUE_CANDIDATES());
   // One outline model for ALL candidates, so the dialogue comparison is not
   // contaminated by different episode plans.
@@ -237,6 +272,7 @@ async function dialogueExperiment(): Promise<void> {
 
       const mark = llmCostMark();
       const startedAt = Date.now();
+      const movementTimings: { first?: number; each: number[] } = { each: [] };
       try {
         const out = await generateOutlineDrivenScript(r.provider, {
           systemPrompt: `${PERSONA_PROMPT}\n\n=== CARRIED-IN STATE ===\n${situation.continuityState}\n\n=== PREVIOUS MOVEMENT ===\n${situation.previousMovement}`,
@@ -250,6 +286,10 @@ async function dialogueExperiment(): Promise<void> {
           maxTokens: 16000,
           speakerNames: HOST_NAMES,
           outlineLlm: outlineHost?.provider ?? r.provider,
+          onMovementComplete: (info) => {
+            if (info.movement === 1) movementTimings.first = info.msSinceStart;
+            movementTimings.each.push(info.msForMovement);
+          },
           log: () => {},
         });
         const { segments } = dedupeScriptSegments(out.segments);
@@ -280,14 +320,34 @@ async function dialogueExperiment(): Promise<void> {
           tkIn: delta.tkIn,
           tkOut: delta.tkOut,
           seconds: Math.round((Date.now() - startedAt) / 1000),
+          firstMovementSeconds:
+            movementTimings.first !== undefined ? Math.round(movementTimings.first / 1000) : undefined,
+          perMovementSeconds: movementTimings.each.map((ms) => Math.round(ms / 1000)),
           deterministic: assessed.deterministic.total,
           judgeOverall: assessed.judge?.overall,
           judgeAxes: assessed.judge?.axes,
           oneVoice: assessed.judge?.bothHostsSoundLikeOneModel,
           repetitionPct: Number((rep.repetitionRatio * 100).toFixed(1)),
         });
-        artifacts.push({ situation: situation.key, candidate: r.candidate.label, segments, assessment: assessed });
-        console.log(`    ${r.candidate.label}: ${assessed.lineCount} lines, det ${assessed.deterministic.total}/100`);
+        artifacts.push({
+          situation: situation.key,
+          candidate: r.candidate.label,
+          // Representative excerpts sit at the TOP of each artifact entry: the
+          // point of a dialogue comparison is that a human reads the dialogue.
+          excerpts: assessed.excerpts,
+          judgeStrengths: assessed.judge?.strengths,
+          judgeWeaknesses: assessed.judge?.weaknesses,
+          judgeEvidenceQuotes: assessed.judge?.evidenceQuotes,
+          perMovementSeconds: movementTimings.each.map((ms) => Math.round(ms / 1000)),
+          segments,
+          assessment: assessed,
+        });
+        console.log(
+          `    ${r.candidate.label}: ${assessed.lineCount} lines, det ${assessed.deterministic.total}/100, ` +
+            `first movement ${movementTimings.first !== undefined ? Math.round(movementTimings.first / 1000) : "?"}s, ` +
+            `total ${Math.round((Date.now() - startedAt) / 1000)}s`
+        );
+        for (const line of assessed.excerpts.slice(0, 4)) console.log(`        | ${line.slice(0, 150)}`);
       } catch (err: any) {
         failures++;
         const delta = ledgerDelta(mark);
@@ -349,6 +409,7 @@ async function dialogueExperiment(): Promise<void> {
       continuity: axis("movementContinuity"),
       natural: axis("spokenNaturalness"),
       oneVoice: judged.length ? `${judged.filter((r) => r.oneVoice).length}/${judged.length}` : "—",
+      firstMv: avg((r) => r.firstMovementSeconds),
       secs: avg((r) => r.seconds),
       tkOut: rs.reduce((s, r) => s + r.tkOut, 0),
     };
@@ -358,8 +419,12 @@ async function dialogueExperiment(): Promise<void> {
   table(rollup, [
     "candidate", "verify", "completion", "validJson", "repairs", "det", "judge",
     "distinct", "causal", "filler", "mech", "repeat", "character", "grounding",
-    "continuity", "natural", "oneVoice", "secs", "tkOut",
+    "continuity", "natural", "oneVoice", "firstMv", "secs", "tkOut",
   ]);
+  console.log(
+    "\n  firstMv = seconds to the FIRST completed movement; secs = the full three-movement episode.\n" +
+      "  Movements are SEQUENTIAL, so a slow model multiplies — judge latency on firstMv x3, not on one prompt."
+  );
 
   console.log("\nPer-situation detail:");
   table(
@@ -386,6 +451,7 @@ async function outlineExperiment(): Promise<void> {
   console.log("\n=== OUTLINE EXPERIMENT (role: script_outline) ===");
   console.log("Same evidence and episode requirements for every candidate; 7,000-token outline allowance.\n");
 
+  reportUnavailable();
   const resolved = resolveCandidates(OUTLINE_CANDIDATES());
   const rows: Record<string, string | number>[] = [];
   const artifacts: unknown[] = [];
@@ -491,6 +557,7 @@ async function verificationExperiment(): Promise<void> {
       `False positives are weighted heavily in the read-out: an overactive verifier rewrites valid dialogue.\n`
   );
 
+  reportUnavailable();
   const resolved = resolveCandidates(VERIFICATION_CANDIDATES());
   const rows: Record<string, string | number>[] = [];
   const artifacts: unknown[] = [];

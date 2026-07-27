@@ -129,6 +129,7 @@ export default async function ConfigurationPage() {
                   <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Primary</th>
                   <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Secondary</th>
                   <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Legacy backup</th>
+                  <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Verification</th>
                   <th style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>Status</th>
                 </tr>
               </thead>
@@ -145,6 +146,37 @@ export default async function ConfigurationPage() {
                     <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.primary}</td>
                     <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.secondary}</td>
                     <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontFamily: "var(--font-mono)" }}>{r.legacyBackup}</td>
+                    {/* Verification is its OWN column: a role can be "ready" (a
+                        credential exists, a chain resolves) while every model in
+                        it is still live-untested or unreachable. Merging the two
+                        is how "ready" gets misread as "validated". */}
+                    <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)", fontSize: "0.7rem" }}>
+                      {r.candidates
+                        .filter((c) => c.source !== "legacy_backup")
+                        .map((c) => (
+                          <div key={c.key} style={{ whiteSpace: "nowrap" }}>
+                            <span
+                              style={{
+                                color:
+                                  c.verification === "live-contract-passed"
+                                    ? "var(--success-color, #2e7d32)"
+                                    : c.verification === "not-quality-tested"
+                                    ? "var(--warning-color)"
+                                    : c.verification === "catalog-available"
+                                    ? "var(--text-secondary)"
+                                    : "var(--error-color)",
+                              }}
+                            >
+                              {c.verificationLabel}
+                            </span>
+                          </div>
+                        ))}
+                      {r.filteredUnavailable.map((f) => (
+                        <div key={f.key} style={{ color: "var(--error-color)", whiteSpace: "nowrap" }}>
+                          {f.key.split("/").pop()}: {f.availability}
+                        </div>
+                      ))}
+                    </td>
                     <td style={{ padding: "0.5rem", borderBottom: "1px solid var(--border-color)" }}>
                       <span className={`badge ${routingStatusClass(r.status)}`} style={{ fontSize: "0.7rem" }}>
                         {r.status === "not-wired" ? "no LLM call yet" : r.status}
