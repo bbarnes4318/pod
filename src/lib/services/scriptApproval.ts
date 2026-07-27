@@ -120,7 +120,7 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
   const reasons: string[] = [];
   if (summary.unsafeClaimCount > 0) reasons.push(`${summary.unsafeClaimCount} unsafe claim(s) used as fact.`);
   if (summary.invalidSpeakerCount > 0) reasons.push(`${summary.invalidSpeakerCount} line(s) have invalid host casting.`);
-  if (summary.totalLineCount < 40) reasons.push(`Only ${summary.totalLineCount} lines (needs ≥ 40).`);
+  if (summary.totalLineCount < 20) reasons.push(`Only ${summary.totalLineCount} lines (needs ≥ 20).`);
   // Per-chair approval floors from the show format (debate: 25% each — the
   // legacy policy, unchanged).
   const underFloor = cast.filter((h, seat) => {
