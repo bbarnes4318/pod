@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { formatChapterTime } from "../chapterTime";
 import { getStorageProvider } from "../providers/storage/factory";
-import { getLLMProvider } from "../providers/llm/factory";
+import { getRoleLLMProvider, roleHasRealProvider, roleProviderLabel } from "../providers/llm/routing";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "./hostCasting";
 import { spawn } from "child_process";
@@ -645,16 +645,24 @@ export async function generateEpisodeContentAssets(input: {
     };
   });
 
-  // Generate show notes
+  // Generate show notes from the FINAL persisted script (script.plainText below
+  // is the approved, self-verified, antithesis-passed text — not the draft).
+  //
+  // An explicit providerOverride still wins, because callers use it to force the
+  // deterministic builder. Otherwise ask ROUTING whether the show_notes role has
+  // a real model: reading LLM_PROVIDER directly would silently fall back to the
+  // deterministic notes whenever a profile routes this role elsewhere.
   let showNotesJson: DeterministicShowNotes;
-  const llmProviderType = providerOverride || process.env.LLM_PROVIDER || "stub";
+  const useDeterministic = providerOverride
+    ? providerOverride.toLowerCase() === "stub"
+    : !roleHasRealProvider("show_notes");
 
-  if (llmProviderType.toLowerCase() === "stub") {
+  if (useDeterministic) {
     showNotesJson = buildDeterministicShowNotes(episode, script, hostA, hostB);
   } else {
     try {
-      const llm = getLLMProvider();
-      
+      const llm = getRoleLLMProvider("show_notes");
+
       const topicsEvidence = episode.topics.map((et: any) => {
         const rb = et.topic.researchBrief!;
         return {
@@ -939,7 +947,11 @@ Rules:
       topicCount: episode.topics.length,
       durationSeconds: finalDurationSeconds,
       timestampsApproximate,
-      generatedWithProvider: llmProviderType,
+      // Report what actually produced the notes, including the routed chain, so
+      // the artifact records the real provider rather than a global variable.
+      generatedWithProvider: useDeterministic
+        ? providerOverride || "stub"
+        : roleProviderLabel("show_notes"),
       reasons: ["Transcript and show notes generated and stored successfully."],
     };
   } catch (err: any) {

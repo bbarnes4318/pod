@@ -1,14 +1,24 @@
-// Script-model A/B: gpt-5.5 vs claude-opus-4-8 on the SAME episode.
+// Script-model A/B on the SAME episode, built from LIVE headlines.
 //
-//   npx tsx src/scripts/testModelAB.ts
+//   npm run test:model-ab
 //
-// Real RSS stories are fetched once, topics picked once, enriched briefs
-// built once (all with gpt-5.5, so the source material is identical), then
-// the identical outline-driven script engine runs twice — once per script
-// model. Both scripts are scored with the same rubric, and per-side token
-// usage/cost is reported.
+// Real RSS stories are fetched once, topics picked once, enriched briefs built
+// once (all by ONE prep model, so the source material is identical), then the
+// identical outline-driven script engine runs twice — once per script model.
+// Both scripts are scored with the same rubric, and per-side token usage is
+// reported.
 //
-// Requires OPENAI_API_KEY and ANTHROPIC_API_KEY (read from .env.coolify.local).
+// THIS SCRIPT IS THE LIVE-MATERIAL COMPARISON. For per-ROLE experiments on a
+// fixed packet (dialogue / outline / verification, with seeded ground truth for
+// the verifier), use:
+//
+//   npm run test:role-experiments -- --experiment dialogue
+//
+// Providers are configurable so this no longer hard-requires OpenAI. Defaults:
+// prep = the global legacy provider, side A = the current script model, side B =
+// the frontier dialogue primary (NVIDIA Mistral Medium 3.5). Override with
+// AB_PREP_PROVIDER / AB_PREP_MODEL, AB_A_PROVIDER / AB_A_MODEL, AB_B_PROVIDER /
+// AB_B_MODEL. A side whose credential is missing is reported as skipped.
 
 import fs from "fs";
 import path from "path";
@@ -22,6 +32,8 @@ import { scoreTopicTalkability } from "../lib/services/talkabilityService";
 import { dedupeScriptSegments, normalizeLineIndexes, findRepetitions } from "../lib/services/scriptRepetition";
 import { scoreScriptQuality } from "../lib/services/episodeQualityService";
 import { getLLMProvider } from "../lib/providers/llm/factory";
+import { providerCredentialPresent, resolveLegacyFamily } from "../lib/providers/llm/routing";
+import { MODEL_IDS } from "../lib/providers/llm/capabilities";
 import { LLMProvider } from "../lib/providers/llm/interface";
 import { generateOutlineDrivenScript } from "../lib/services/scriptOutlineEngine";
 
@@ -31,16 +43,53 @@ const FEEDS = (process.env.NEWS_RSS_FEEDS ||
   .map((s) => s.trim())
   .filter(Boolean);
 
-// $/1M tokens. Opus 4.8 prices are Anthropic's published rates.
-// gpt-5.5 rates are an assumption — override via env if yours differ.
-const PRICES: Record<string, { in: number; out: number; note: string }> = {
-  "claude-opus-4-8": { in: 5, out: 25, note: "published" },
-  "gpt-5.5": {
-    in: Number(process.env.GPT55_PRICE_IN) || 1.25,
-    out: Number(process.env.GPT55_PRICE_OUT) || 10,
-    note: process.env.GPT55_PRICE_IN ? "env-configured" : "assumed — set GPT55_PRICE_IN/OUT to correct",
-  },
-};
+// $/1M tokens, OPERATOR-SUPPLIED only: LLM_PRICE_<PROVIDER>_IN / _OUT. No rate
+// is hardcoded and none is guessed — an unpriced side reports tokens and
+// "unpriced" rather than a confident dollar figure that is simply wrong. Hosted
+// NVIDIA and Z.ai endpoints are free, so they are always unpriced.
+function priceFor(provider: string): { in: number; out: number } | null {
+  const p = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const inRate = Number(process.env[`LLM_PRICE_${p}_IN`]);
+  const outRate = Number(process.env[`LLM_PRICE_${p}_OUT`]);
+  if (!Number.isFinite(inRate) || !Number.isFinite(outRate)) return null;
+  return { in: inRate, out: outRate };
+}
+
+interface Side {
+  key: string;
+  label: string;
+  provider: string;
+  model?: string;
+}
+
+/** prep + the two script models, from env with sensible defaults. */
+function resolveSides(): { prep: Side; a: Side; b: Side } {
+  const globalCfg = resolveLegacyFamily("global");
+  const scriptCfg = resolveLegacyFamily("script");
+  const mk = (key: string, provider: string, model: string | undefined): Side => ({
+    key,
+    label: model ? `${provider}/${model}` : provider,
+    provider,
+    model,
+  });
+  return {
+    prep: mk(
+      "prep",
+      (process.env.AB_PREP_PROVIDER || globalCfg.provider).toLowerCase(),
+      process.env.AB_PREP_MODEL || globalCfg.model
+    ),
+    a: mk(
+      "a",
+      (process.env.AB_A_PROVIDER || scriptCfg.provider).toLowerCase(),
+      process.env.AB_A_MODEL || scriptCfg.model
+    ),
+    b: mk(
+      "b",
+      (process.env.AB_B_PROVIDER || "nvidia").toLowerCase(),
+      process.env.AB_B_MODEL || MODEL_IDS.nvidia.mistral
+    ),
+  };
+}
 
 interface FeedItem { index: number; title: string; description: string; link: string; pubDate: string; }
 
@@ -154,19 +203,32 @@ async function generateAndScore(label: string, llm: LLMProvider, topicsPrompts: 
   return { segments, quality, rep, seconds: Number(secs) };
 }
 
-function costOf(model: string, usage: { inputTokens: number; outputTokens: number }): { usd: number; note: string } {
-  const p = PRICES[model] || { in: 0, out: 0, note: "unknown model — tokens only" };
-  return { usd: (usage.inputTokens * p.in + usage.outputTokens * p.out) / 1_000_000, note: p.note };
+function costOf(side: Side, usage: { inputTokens: number; outputTokens: number }): { usd: number | null; note: string } {
+  const p = priceFor(side.provider);
+  if (!p) {
+    return { usd: null, note: `unpriced — set LLM_PRICE_${side.provider.toUpperCase()}_IN/_OUT for an estimate` };
+  }
+  return {
+    usd: (usage.inputTokens * p.in + usage.outputTokens * p.out) / 1_000_000,
+    note: "operator-configured rate",
+  };
+}
+
+function money(c: { usd: number | null; note: string }): string {
+  return c.usd === null ? `unpriced (${c.note})` : `$${c.usd.toFixed(3)} (${c.note})`;
 }
 
 async function main() {
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY.length < 20) {
-    console.error("OPENAI_API_KEY missing — cannot run the A/B.");
-    process.exit(1);
-  }
-  if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.length < 20) {
-    console.error("ANTHROPIC_API_KEY missing — cannot run the Opus side. Set it in .env.coolify.local and re-run.");
-    process.exit(1);
+  const sides = resolveSides();
+  for (const side of [sides.prep, sides.a, sides.b]) {
+    if (!providerCredentialPresent(side.provider)) {
+      const k = side.key.toUpperCase();
+      console.error(
+        `Cannot run: the ${side.key} side is ${side.label} but no usable credential is set for '${side.provider}'.\n` +
+          `Set it, or point this side elsewhere with AB_${k}_PROVIDER / AB_${k}_MODEL.`
+      );
+      process.exit(1);
+    }
   }
 
   const personaPrompt = fs.readFileSync(path.join(__dirname, "fixtures", "livePersonaPrompt.txt"), "utf8");
@@ -175,8 +237,8 @@ async function main() {
   const items = await fetchFeedItems();
   console.log(`    ${items.length} items. Sample: "${items[0]?.title}"`);
 
-  console.log("[2] Shared prep (gpt-5.5 for both sides): topics + enriched briefs...");
-  const prepLLM = getLLMProvider({ provider: "openai", model: "gpt-5.5" });
+  console.log(`[2] Shared prep (${sides.prep.label} for BOTH sides): topics + enriched briefs...`);
+  const prepLLM = getLLMProvider({ provider: sides.prep.provider, model: sides.prep.model });
   const topics = await pickTopics(prepLLM, items);
   topics.forEach((t, i) => console.log(`    ${i + 1}. ${t.title}`));
   const briefs: any[] = [];
@@ -188,36 +250,38 @@ async function main() {
   });
 
   console.log("[3] Generating the SAME episode with both script models...");
-  const gptLLM = getLLMProvider({ provider: "openai", model: "gpt-5.5" });
-  const gpt = await generateAndScore("gpt-5.5", gptLLM, topicsPrompts, personaPrompt);
+  const aLLM = getLLMProvider({ provider: sides.a.provider, model: sides.a.model });
+  const a = await generateAndScore(sides.a.label, aLLM, topicsPrompts, personaPrompt);
 
-  const opusLLM = getLLMProvider({ provider: "anthropic", model: "claude-opus-4-8" });
-  const opus = await generateAndScore("opus-4.8", opusLLM, topicsPrompts, personaPrompt);
+  const bLLM = getLLMProvider({ provider: sides.b.provider, model: sides.b.model });
+  const b = await generateAndScore(sides.b.label, bLLM, topicsPrompts, personaPrompt);
 
-  const gptUsage = gptLLM.getAccumulatedUsage!();
-  const opusUsage = opusLLM.getAccumulatedUsage!();
-  const gptCost = costOf("gpt-5.5", gptUsage);
-  const opusCost = costOf("claude-opus-4-8", opusUsage);
+  const aUsage = aLLM.getAccumulatedUsage!();
+  const bUsage = bLLM.getAccumulatedUsage!();
+  const aCost = costOf(sides.a, aUsage);
+  const bCost = costOf(sides.b, bUsage);
 
+  const w = Math.max(26, sides.a.label.length + 2);
   console.log("\n================= MODEL A/B RESULTS (same topics, same briefs, same engine) =================");
-  console.log(`${"AXIS".padEnd(14)}${"gpt-5.5".padEnd(12)}claude-opus-4-8`);
-  for (const axis of Object.keys(opus.quality.axes)) {
-    const g = (gpt.quality.axes as any)[axis];
-    const o = (opus.quality.axes as any)[axis];
-    console.log(`${axis.padEnd(14)}${`${g.score}/${g.max}`.padEnd(12)}${o.score}/${o.max}`);
+  console.log(`${"AXIS".padEnd(14)}${sides.a.label.padEnd(w)}${sides.b.label}`);
+  for (const axis of Object.keys(a.quality.axes)) {
+    const x = (a.quality.axes as any)[axis];
+    const y = (b.quality.axes as any)[axis];
+    console.log(`${axis.padEnd(14)}${`${x.score}/${x.max}`.padEnd(w)}${y.score}/${y.max}`);
   }
-  console.log(`${"TOTAL".padEnd(14)}${`${gpt.quality.total}/100`.padEnd(12)}${opus.quality.total}/100`);
-  console.log(`${"repetition".padEnd(14)}${`${(gpt.rep.repetitionRatio * 100).toFixed(1)}%`.padEnd(12)}${(opus.rep.repetitionRatio * 100).toFixed(1)}%`);
-  console.log(`${"gen time".padEnd(14)}${`${gpt.seconds}s`.padEnd(12)}${opus.seconds}s`);
-  console.log(`${"tokens in/out".padEnd(14)}${`${gptUsage.inputTokens}/${gptUsage.outputTokens}`.padEnd(12)}${opusUsage.inputTokens}/${opusUsage.outputTokens}`);
-  console.log(`${"script cost".padEnd(14)}${`$${gptCost.usd.toFixed(3)} (${gptCost.note})`.padEnd(24)}$${opusCost.usd.toFixed(3)} (${opusCost.note})`);
+  console.log(`${"TOTAL".padEnd(14)}${`${a.quality.total}/100`.padEnd(w)}${b.quality.total}/100`);
+  console.log(`${"repetition".padEnd(14)}${`${(a.rep.repetitionRatio * 100).toFixed(1)}%`.padEnd(w)}${(b.rep.repetitionRatio * 100).toFixed(1)}%`);
+  console.log(`${"gen time".padEnd(14)}${`${a.seconds}s`.padEnd(w)}${b.seconds}s`);
+  console.log(`${"tokens in/out".padEnd(14)}${`${aUsage.inputTokens}/${aUsage.outputTokens}`.padEnd(w)}${bUsage.inputTokens}/${bUsage.outputTokens}`);
+  console.log(`${"script cost".padEnd(14)}${money(aCost).padEnd(w)}${money(bCost)}`);
 
   const outPath = path.join(process.cwd(), "samples", "model-ab-results.json");
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, JSON.stringify({
     topics,
-    gpt55: { quality: gpt.quality, usage: gptUsage, costUsd: gptCost.usd, segments: gpt.segments },
-    opus48: { quality: opus.quality, usage: opusUsage, costUsd: opusCost.usd, segments: opus.segments },
+    prep: sides.prep.label,
+    sideA: { label: sides.a.label, quality: a.quality, usage: aUsage, costUsd: aCost.usd, segments: a.segments },
+    sideB: { label: sides.b.label, quality: b.quality, usage: bUsage, costUsd: bCost.usd, segments: b.segments },
   }, null, 2));
   console.log(`\nFull transcripts + scores: ${outPath}`);
 }

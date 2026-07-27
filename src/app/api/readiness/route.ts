@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getRedisStatus } from "@/lib/env";
 import { execSync } from "child_process";
-import { getRequiredProductionEnvChecklist, validateProviderSelection } from "@/lib/services/productionEnvService";
+import {
+  getLlmRoutingReadiness,
+  getRequiredProductionEnvChecklist,
+  validateProviderSelection,
+} from "@/lib/services/productionEnvService";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +71,35 @@ export async function GET() {
     } else {
       checks.push({ name: "provider_selection", status: "pass", message: "Production-ready provider settings selected." });
     }
+
+    // 4b. LLM role routing. The resolved role map travels with readiness so an
+    // operator can confirm that web and worker agree on which model plays each
+    // role WITHOUT reading any credential. Values here are provider/model names
+    // and verdicts only.
+    const routing = getLlmRoutingReadiness();
+    const wired = routing.roles.filter((r) => r.hasCallSite);
+    const unroutable = wired.filter((r) => r.status === "unroutable");
+    const degraded = wired.filter((r) => r.status === "degraded");
+    checks.push({
+      name: "llm_role_routing",
+      status: unroutable.length > 0 ? "fail" : degraded.length > 0 || routing.advisory ? "warning" : "pass",
+      message:
+        `profile=${routing.profile} stage=${routing.stage} ` +
+        `paidFallback=${routing.paidFallbackAllowed ? "allowed" : "forbidden"} — ` +
+        `${wired.length - unroutable.length - degraded.length} ready, ${degraded.length} degraded, ` +
+        `${unroutable.length} unroutable.`,
+      advisory: routing.advisory ?? undefined,
+      detail: wired.map((r) => ({
+        role: r.role,
+        primary: r.primary,
+        secondary: r.secondary,
+        tertiary: r.tertiary,
+        legacyBackup: r.legacyBackup,
+        override: r.override,
+        status: r.status,
+        notes: r.notes,
+      })),
+    });
 
     // 5. ffmpeg / ffprobe checks
     let ffmpegOk = false;

@@ -1,6 +1,6 @@
 import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "@/lib/db";
-import { getVerifyLLMProvider, resolveVerifyLLMConfig } from "@/lib/providers/llm/factory";
+import { getRoleLLMProvider, roleHasRealProvider, roleProviderLabel } from "@/lib/providers/llm/routing";
 import { withLlmStage } from "@/lib/providers/llm/costLedger";
 import { stripAudioTags } from "@/lib/audio/speechText";
 import { resolveEpisodeHosts, makeSpeakerMatchers } from "@/lib/services/hostCasting";
@@ -523,17 +523,16 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     hostBShare >= 25 &&
     script.plainText.trim().length > 0;
 
-  // 6. Layer 2: LLM semantic review. Runs on the VERIFY model (structured
-  // grading against supplied evidence — not creative work): VERIFY_LLM_* >
-  // the factcheck chain (FACTCHECK_LLM_* > SCRIPT_LLM_* > LLM_PROVIDER),
-  // defaulting to claude-sonnet-5 on Anthropic chains. Stub only when the
-  // whole chain is unset.
-  const llmConfig = resolveVerifyLLMConfig();
-  const isStub = llmConfig.provider === "stub";
-  const llmLabel = llmConfig.model ? `${llmConfig.provider}/${llmConfig.model}` : llmConfig.provider;
+  // 6. Layer 2: LLM semantic review, on the fact_check ROLE. Structured grading
+  // against supplied evidence — never a creative configuration. In
+  // LLM_ROUTING_PROFILE=legacy this resolves to exactly the old chain:
+  // VERIFY_LLM_* > FACTCHECK_LLM_* > SCRIPT_LLM_* > LLM_PROVIDER, defaulting to
+  // claude-sonnet-5 on Anthropic chains. Stub only when the whole chain is unset.
+  const isStub = !roleHasRealProvider("fact_check");
+  const llmLabel = roleProviderLabel("fact_check");
   let semanticStatus: "passed" | "failed" | "needs_review" = "passed";
   let semanticSummary = isStub
-    ? "Skipped semantic review: no LLM provider configured (FACTCHECK_LLM_PROVIDER, SCRIPT_LLM_PROVIDER, and LLM_PROVIDER are all unset or 'stub')."
+    ? "Skipped semantic review: the fact_check role has no real provider (every candidate resolves to 'stub' — check LLM_ROUTING_PROFILE, FACT_CHECK_LLM_PROVIDER, VERIFY_LLM_PROVIDER, FACTCHECK_LLM_PROVIDER, SCRIPT_LLM_PROVIDER and LLM_PROVIDER)."
     : `Semantic review (${llmLabel}) skipped because deterministic checks failed.`;
   let semanticLineResults: any[] = [];
   let providerName = isStub ? "deterministic" : llmLabel;
@@ -548,7 +547,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
 
   if (!isStub && deterministicPassed) {
     try {
-      const provider = getVerifyLLMProvider();
+      const provider = getRoleLLMProvider("fact_check");
 
       // Give the reviewer each line already classified, with the conversational
       // context (tone / interruption / fragment) that identifies banter — rather

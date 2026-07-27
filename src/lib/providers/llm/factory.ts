@@ -2,6 +2,8 @@ import { LLMProvider } from "./interface";
 import { StubLLMProvider } from "./stub";
 import { OpenAILLMProvider } from "./openai";
 import { AnthropicLLMProvider } from "./anthropic";
+import { NvidiaNimLLMProvider } from "./nvidia";
+import { ZaiLLMProvider } from "./zai";
 
 export function getLLMProvider(opts: { provider?: string; model?: string } = {}): LLMProvider {
   const providerType = (opts.provider || process.env.LLM_PROVIDER || "stub").toLowerCase();
@@ -11,11 +13,22 @@ export function getLLMProvider(opts: { provider?: string; model?: string } = {})
       return new OpenAILLMProvider(opts.model);
     case "anthropic":
       return new AnthropicLLMProvider(opts.model);
+    // NVIDIA NIM and Z.ai share the OpenAI wire protocol but are their OWN
+    // providers: each records its own name in the cost ledger, carries its own
+    // credential and timeout configuration, and has its own capability records.
+    // Never fold them into the "openai" case.
+    case "nvidia":
+      return new NvidiaNimLLMProvider(opts.model);
+    case "zai":
+      return new ZaiLLMProvider(opts.model);
     case "stub":
     default:
       return new StubLLMProvider();
   }
 }
+
+/** Providers this factory can build. */
+export const SUPPORTED_LLM_PROVIDERS = ["nvidia", "zai", "anthropic", "openai", "stub"] as const;
 
 /**
  * LLM used for script WRITING specifically. Dialogue quality is extremely
@@ -81,5 +94,17 @@ export function getVerifyLLMProvider(): LLMProvider {
   const cfg = resolveVerifyLLMConfig();
   return getLLMProvider({ provider: cfg.provider, model: cfg.model });
 }
+
+/**
+ * Role-based routing is the preferred entry point for new call sites; these
+ * grouped helpers remain because they ARE the legacy contract.
+ *
+ *   getRoleLLMProvider("script_movement")   // routed, profile-aware
+ *   getScriptLLMProvider()                  // SCRIPT_LLM_* only
+ *
+ * See routing.ts for the resolution order and roles.ts for the role list.
+ */
+export { getRoleLLMProvider, resolveRolePlan, roleRouteReport } from "./routing";
+export type { LLMRole } from "./roles";
 
 export default getLLMProvider;

@@ -51,6 +51,12 @@ next-env.d.ts
 !/samples/planner-variety/
 ingest-assets/
 
+# LLM contract-probe and role-experiment reports. Machine-generated per run and
+# specific to whoever's credentials produced them — a committed copy would be
+# read as a durable result long after it stopped being true. Regenerate with
+# `npm run probe:llm-contract` / `npm run test:role-experiments`.
+/artifacts/*
+
 # Epidemic ingest runtime report (contains prod asset ids)
 ingest-report.json
 _es_payload.json
