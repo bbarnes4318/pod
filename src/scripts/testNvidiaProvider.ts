@@ -132,15 +132,26 @@ const SHAPE_ASSERTIONS: Record<string, (b: { reasoningOn: any; reasoningOff: any
     }
   },
   [MODEL_IDS.nvidia.glm]: ({ reasoningOn, reasoningOff }) => {
+    // Live-verified 2026-07-26: chat_template_kwargs.thinking is accepted AND the
+    // response returned reasoning_content, so this model now gets a real control.
+    assert(reasoningOn.chat_template_kwargs?.thinking === true, "glm-5.2: expected chat_template_kwargs.thinking=true");
+    assert(
+      typeof reasoningOn.chat_template_kwargs?.reasoning_effort === "string",
+      "glm-5.2: reasoning_effort is nested, as verified"
+    );
+    assert(reasoningOff.chat_template_kwargs?.thinking === false, "glm-5.2: reasoning off must send thinking=false");
     for (const [label, body] of [["reasoning on", reasoningOn], ["reasoning off", reasoningOff]] as const) {
+      // The probe 400'd on reasoning_budget for this model even though Nemotron
+      // accepts it — two reasoning models, two contracts.
       assert(
-        body.chat_template_kwargs === undefined &&
-          body.thinking === undefined &&
-          body.reasoning_effort === undefined &&
-          body.reasoning_budget === undefined,
-        `glm-5.2 (${label}): hosted reasoning controls are unconfirmed, so no reasoning field may be sent — ` +
-          `reusing DeepSeek's or Nemotron's fields would be a guess`
+        body.reasoning_budget === undefined,
+        `glm-5.2 (${label}): reasoning_budget is REJECTED by this model (400) — it is Nemotron's field, not GLM's`
       );
+      assert(
+        body.chat_template_kwargs?.enable_thinking === undefined,
+        `glm-5.2 (${label}): enable_thinking is Nemotron's key`
+      );
+      assert(body.thinking === undefined, `glm-5.2 (${label}): the top-level thinking object is Z.ai's shape`);
     }
   },
 };
@@ -333,12 +344,77 @@ function registryCorrectionChecks(): void {
     assert(kimi.supportsPromptEnforcedJson === true, "prompt-enforced JSON is how Kimi returns structure");
   });
 
-  check("all six routed NVIDIA models are catalog-verified but live-untested", () => {
-    for (const model of Object.values(MODEL_IDS.nvidia)) {
+  // The live probe run of 2026-07-26 (artifacts/nvidia-contract-report.json).
+  // These assertions pin what was ACTUALLY observed, so a future edit that
+  // upgrades a record without a probe to justify it fails here.
+  check("the registry matches the live probe: 4 verified, 2 unreachable", () => {
+    const verified = [
+      MODEL_IDS.nvidia.deepseekPro,
+      MODEL_IDS.nvidia.nemotron,
+      MODEL_IDS.nvidia.glm,
+      MODEL_IDS.nvidia.mistral,
+    ];
+    for (const model of verified) {
       const caps = modelCapabilities("nvidia", model);
       assert(caps.catalogVerified === true, `${model}: should be catalog verified`);
-      assert(caps.liveContractVerified === false, `${model}: nothing here has called it live`);
+      assert(caps.liveContractVerified === true, `${model}: answered the live probe`);
+      assert(
+        caps.maximumOutputTokens === undefined,
+        `${model}: being callable does NOT establish an output ceiling — the enforceable cap must stay unknown`
+      );
     }
+
+    // 503 ResourceExhausted (worker 48/48) — capacity, not capability. Catalog
+    // stands; nothing else may be concluded.
+    const flash = modelCapabilities("nvidia", MODEL_IDS.nvidia.deepseekFlash);
+    assert(flash.catalogVerified === true, "deepseek flash: a 503 does not invalidate the catalog entry");
+    assert(flash.liveContractVerified === false, "deepseek flash: never answered, so not live-verified");
+
+    // 404 "Not found for account" — the id does not resolve for this key.
+    const kimi = modelCapabilities("nvidia", MODEL_IDS.nvidia.kimi);
+    assert(kimi.catalogVerified === false, "kimi: 404 for this account means catalog-unavailable, not assumed present");
+    assert(kimi.liveContractVerified === false, "kimi: never answered");
+  });
+
+  check("probe findings that contradict the docs are recorded per model", () => {
+    // reasoning_budget: Nemotron yes, DeepSeek and GLM no — observed 400s.
+    assert(modelCapabilities("nvidia", MODEL_IDS.nvidia.nemotron).supportsReasoningBudget === true, "nemotron budget");
+    assert(modelCapabilities("nvidia", MODEL_IDS.nvidia.deepseekPro).supportsReasoningBudget === false, "deepseek budget");
+    assert(modelCapabilities("nvidia", MODEL_IDS.nvidia.glm).supportsReasoningBudget === false, "glm budget");
+
+    // Mistral accepted a `thinking` object but returned NO reasoning content, so
+    // an accepted-but-inert field must not read as a thinking mode.
+    const mistral = modelCapabilities("nvidia", MODEL_IDS.nvidia.mistral);
+    assert(
+      mistral.supportsThinking === false,
+      "mistral: acceptance without observed reasoning output is not evidence of a thinking mode"
+    );
+    assert(/chat_template is not supported/.test(mistral.provenance.requestFields), "mistral: record the 400 we observed");
+    assert(/latency|30-88s|s for/i.test(mistral.provenance.requestFields + mistral.provenance.limits), "mistral: record the latency");
+
+    // Native JSON was observed working on all four reachable models.
+    for (const model of [MODEL_IDS.nvidia.deepseekPro, MODEL_IDS.nvidia.nemotron, MODEL_IDS.nvidia.glm, MODEL_IDS.nvidia.mistral]) {
+      const caps = modelCapabilities("nvidia", model);
+      assert(caps.supportsNativeJsonObject === true, `${model}: json_object was observed working`);
+      assert(caps.supportsNativeJsonSchema === true, `${model}: json_schema was observed working`);
+    }
+  });
+
+  check("Z.ai flags were NOT upgraded from acceptance on a lenient endpoint", () => {
+    // Z.ai returned 200 for chat_template_kwargs — an NVIDIA-only field — so it
+    // does not validate unknown parameters and a 200 there proves nothing.
+    const zai = modelCapabilities("zai", MODEL_IDS.zai.glmFlash);
+    assert(zai.liveContractVerified === true, "zai answered a live request");
+    assert(zai.supportsNativeJsonObject === false, "zai: acceptance on a lenient endpoint is not evidence");
+    assert(zai.supportsNativeJsonSchema === false, "zai: acceptance on a lenient endpoint is not evidence");
+    assert(zai.supportsReasoningBudget === false, "zai: it accepted Nemotron's field too — that is leniency, not support");
+    assert(zai.supportsSeed === false, "zai: not upgraded from a bare 200");
+    // Confirmed by OUTPUT, not acceptance: reasoning_content came back.
+    assert(zai.supportsThinking === true, "zai: reasoning_content was observed in the response");
+    assert(
+      /reasons by default|EMPTY/i.test(zai.provenance.limits),
+      "zai: the empty-answer / reasons-by-default finding must be recorded"
+    );
   });
 }
 
@@ -357,6 +433,7 @@ async function main(): Promise<void> {
       build: (model?: string) => new NvidiaNimLLMProvider(model),
       env: NV_ENV,
       expectCatalogVerified: true,
+      expectLiveContractVerified: true,
       assertRequestShape: SHAPE_ASSERTIONS[MODEL_IDS.nvidia.mistral],
     },
     { live: LIVE }

@@ -114,13 +114,48 @@ different product with a different shape.
 One `verified` flag conflated two very different claims and made both useless.
 There are now two:
 
-| Field | Claim | Current state |
-|---|---|---|
-| `catalogVerified` | the model ID and its documented availability were confirmed from the official provider catalog | **true** for all six NVIDIA models; **false** for Z.ai (its catalog was not confirmed in this work) |
-| `liveContractVerified` | this repository called the model successfully with the current key and adapter, and a probe recorded which fields it accepted | **false everywhere** — no live request has been made |
+| Field | Claim |
+|---|---|
+| `catalogVerified` | the model ID and its documented availability were confirmed from the official provider catalog |
+| `liveContractVerified` | this repository called the model successfully with the current key and adapter, and a probe recorded which fields it accepted |
 
 A model can be catalog-verified and still have entirely unverified request
 parameters. That is the normal starting state, and it is what readiness reports.
+
+### State after the live probe of 2026-07-26
+
+| Model | Catalog | Live contract | What the probe found |
+|---|---|---|---|
+| `deepseek-ai/deepseek-v4-pro` | ✅ | ✅ | cleanest of the six; native JSON + seed work; `reasoning_budget` rejected; `reasoning_content` returned |
+| `nvidia/nemotron-3-ultra-550b-a55b` | ✅ | ✅ | `enable_thinking` + top-level `reasoning_budget` accepted; **top-level `thinking` rejected**; reasoning-separation probe hit a 503, so unknown |
+| `z-ai/glm-5.2` | ✅ | ✅ | reasoning **confirmed by output** (`reasoning_content`); `reasoning_budget` rejected — not Nemotron's contract |
+| `mistralai/mistral-medium-3.5-128b` | ✅ | ✅ | **rejects `chat_template_kwargs` entirely**; only top-level `reasoning_effort` works; **30–88 s latency** |
+| `deepseek-ai/deepseek-v4-flash` | ✅ | ❌ | `503 ResourceExhausted (48/48)` on every attempt — capacity, not capability |
+| `moonshotai/kimi-k2.6` | ❌ | ❌ | `404 Not found for account` — the ID does not resolve for this key |
+| `zai/glm-4.7-flash` | ✅ | ✅ | answered, **but accepted an invented parameter** — see below |
+
+Two findings changed how the registry is written:
+
+- **Mistral rejects `chat_template_kwargs`** (*"chat_template is not supported for
+  Mistral tokenizers"*). The original provider-wide `reasoningSpelling:
+  "chat_template_kwargs"` would have 400'd **every Mistral call**. The per-model
+  split fixed a real breakage.
+- **Z.ai does not validate unknown parameters.** It returned 200 for
+  `chat_template_kwargs` — a field only NVIDIA's NIM transport implements. On such
+  an endpoint a 200 cannot distinguish *honored* from *silently ignored*, so its
+  `json` / `seed` / `effort` / `budget` flags were **not** upgraded despite the
+  probe recommending it. Only claims provable from **output** were taken:
+  `reasoning_content` is genuinely returned. The probe now runs a leniency control
+  (an invented parameter name) so a future run can tell the two cases apart, and
+  suppresses the capability columns for any endpoint that fails it.
+
+And one operational finding worth knowing before you route anything to Z.ai: **it
+reasons by default and will spend the entire allowance doing it.** On a
+128-token probe it returned `finish_reason: length`, `completion_tokens: 128` of
+which `reasoning_tokens: 128`, and **empty content**. Our provider reports that as
+`output_limit` with the "spent its entire allowance on reasoning" message rather
+than as an empty success, and the `zai-glm` profile sends
+`thinking: { type: "disabled" }` explicitly for roles that don't want it.
 
 Two hard rules follow:
 
@@ -148,7 +183,7 @@ one reasoning contract, so each gets a typed profile with its own shaping functi
 | `nemotron-3-ultra` | Nemotron 3 Ultra | `chat_template_kwargs: { enable_thinking: true }` + **top-level** `reasoning_budget` | `chat_template_kwargs: { enable_thinking: false }` |
 | `mistral-medium-3-5` | Mistral Medium 3.5 | **top-level** `reasoning_effort` | *nothing* |
 | `kimi-k2-6` | Kimi K2.6 | *nothing* | *nothing* |
-| `glm-5-2` | GLM-5.2 via NVIDIA | *nothing* | *nothing* |
+| `glm-5-2` | GLM-5.2 via NVIDIA | `chat_template_kwargs: { thinking: true, reasoning_effort: <level> }` — **verified**, no budget | `chat_template_kwargs: { thinking: false }` |
 | `generic-nim` | any unregistered NVIDIA model | *nothing* | *nothing* |
 
 Corrections and deliberate choices baked in here:
@@ -166,11 +201,13 @@ Corrections and deliberate choices baked in here:
   has justified it yet.
 - **Kimi gets no `response_format` and no reasoning field**, because NVIDIA's
   deployment information advertises neither.
-- **GLM-5.2's hosted controls are unconfirmed**, so no reasoning field is sent.
-  Reusing DeepSeek's or Nemotron's fields because all three are reasoning models
-  would be a guess. The role's reasoning *intent* is recorded in diagnostics, and
-  no run may claim it reasoned unless the response actually returns reasoning
-  content.
+- **GLM-5.2 was unconfirmed and is now verified.** The probe accepted
+  `chat_template_kwargs.thinking` *and* the response came back with
+  `reasoning_content`, so it reasons for real and the profile now sends the
+  control. `reasoning_budget` is still omitted — this model 400s on it while
+  Nemotron accepts it, which is precisely the guess the per-model split refused
+  to make. A run still only claims it reasoned when the response actually
+  returns reasoning content.
 
 Nemotron's thinking budget is configurable per role family
 (`NVIDIA_NEMOTRON_REASONING_BUDGET_RESEARCH` / `_VERIFY` / `_JUDGE`, with

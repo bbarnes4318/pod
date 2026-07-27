@@ -953,11 +953,28 @@ function limitAndLedgerTests(): void {
   console.log("\nOutput limits and the cost ledger:");
 
   check("a 16,000-token request stays 16,000 on a live-untested model", () => {
-    const caps = modelCapabilities("nvidia", "mistralai/mistral-medium-3.5-128b");
+    // deepseek-v4-flash: the 2026-07-26 probe never reached it (503 worker 48/48).
+    const caps = modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash");
     assert(caps.catalogVerified === true, "this model's ID is confirmed in NVIDIA's catalog");
-    assert(caps.liveContractVerified === false, "nothing in this repo has called it live yet");
+    assert(caps.liveContractVerified === false, "the probe never reached it, so it is not live-verified");
     assert(caps.maximumOutputTokens === undefined, "an unprobed cap must be UNKNOWN, not a guess");
     assert(resolveMaxTokens(caps, 16000) === 16000, "the caller's allowance was altered");
+  });
+
+  check("being LIVE-VERIFIED still does not create an enforceable output cap", () => {
+    // Four models answered the probe. Answering proves the endpoint works; it
+    // says nothing about the ceiling, so 16,000 must still pass through.
+    for (const model of [
+      "deepseek-ai/deepseek-v4-pro",
+      "nvidia/nemotron-3-ultra-550b-a55b",
+      "z-ai/glm-5.2",
+      "mistralai/mistral-medium-3.5-128b",
+    ]) {
+      const caps = modelCapabilities("nvidia", model);
+      assert(caps.liveContractVerified === true, model + ": answered the live probe");
+      assert(caps.maximumOutputTokens === undefined, model + ": callable != a measured ceiling");
+      assert(resolveMaxTokens(caps, 16000) === 16000, model + ": the allowance was altered");
+    }
   });
 
   check("a documented output limit is informational and never shrinks a request", () => {
@@ -1571,25 +1588,35 @@ function verificationDisplayTests(): void {
   check("the two verification claims are reported separately per candidate", () => {
     withEnv(FRONTIER_ENV, () => {
       const row = roleRouteReport().find((r) => r.role === "script_movement")!;
-      const nvidiaCandidate = row.candidates.find((c) => c.key.startsWith("nvidia/"))!;
-      assert(nvidiaCandidate.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
-      assert(nvidiaCandidate.liveContractVerified === false, "nothing here has called it live");
+      // script_movement primary is mistral, which the probe DID reach.
+      const primary = row.candidates.find((c) => c.key.includes("mistral"))!;
+      assert(primary.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
+      assert(primary.liveContractVerified === true, "mistral answered the live probe");
+      assert(primary.verification === "live-contract-verified", primary.verification);
+      // Its secondary is kimi, which returned 404 for this account.
+      const secondary = row.candidates.find((c) => c.key.includes("kimi"))!;
+      assert(secondary.catalogVerified === false, "kimi 404'd for this account");
+      assert(secondary.verification === "catalog-unavailable", secondary.verification);
+      // The two claims are independent: same provider, different verdicts.
       assert(
-        nvidiaCandidate.verification === "catalog-verified-live-untested",
-        `expected catalog-verified-live-untested, got ${nvidiaCandidate.verification}`
+        primary.verification !== secondary.verification,
+        "two candidates of the same provider must be able to hold different verification states"
       );
     });
   });
 
   check("the three readiness states are all representable", () => {
     const states = new Set([
+      // 503 on every probe — reachable one day, unverified today.
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash")),
+      // Answered the probe.
       verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")),
-      verificationState(modelCapabilities("anthropic", "claude-sonnet-5")),
-      verificationState(modelCapabilities("zai", "glm-4.7-flash")),
+      // 404 for this account.
+      verificationState(modelCapabilities("nvidia", "moonshotai/kimi-k2.6")),
     ]);
-    assert(states.has("catalog-verified-live-untested"), "NVIDIA models are catalog-only");
-    assert(states.has("live-contract-verified"), "the in-production Anthropic models are live-verified");
-    assert(states.has("catalog-unavailable"), "Z.ai's catalog was not confirmed in this work");
+    assert(states.has("catalog-verified-live-untested"), "deepseek flash is catalog-only after its 503");
+    assert(states.has("live-contract-verified"), "deepseek pro answered the live probe");
+    assert(states.has("catalog-unavailable"), "kimi returned 404 for this account");
   });
 
   check("readiness notes distinguish catalog-only from catalog-unavailable", () => {
@@ -1604,7 +1631,7 @@ function verificationDisplayTests(): void {
   });
 
   check("a catalog-verified model is never described as validated", () => {
-    const caps = modelCapabilities("nvidia", "mistralai/mistral-medium-3.5-128b");
+    const caps = modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-flash");
     assert(caps.catalogVerified && !caps.liveContractVerified, "expected the catalog-only state");
     assert(
       caps.provenance.requestFields.length > 20 && caps.provenance.limits.length > 20,

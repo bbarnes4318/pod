@@ -56,6 +56,40 @@ const ZAI_FLASH = (): ProviderModelRef => ({
 });
 
 /**
+ * LIVE CONTRACT FINDINGS — 2026-07-26 (artifacts/*-contract-report.json)
+ *
+ * The map below is UNCHANGED from the specification's initial assignments,
+ * deliberately: promotion requires role-specific comparative evidence and none
+ * exists yet (`npm run test:role-experiments` has not been run against these
+ * models). But the contract probe surfaced three things that the dialogue
+ * decision will have to answer, recorded here so they are read at the point of
+ * decision rather than buried in a report:
+ *
+ * 1. MISTRAL MEDIUM 3.5 IS SLOW. 30-88 seconds for one-sentence answers
+ *    (66s, 88s, 55s, 58s, 34s, 77s, 66s, 30s, 82s). It holds script_movement,
+ *    where the real call is a 16,000-token movement, three per episode. This is
+ *    promotion-rule violation #5 (unacceptable latency) on its face and is the
+ *    strongest argument against keeping it primary. Do not resolve this by
+ *    guessing — run the dialogue experiment and read the latency column.
+ *
+ * 2. KIMI K2.6 IS NOT AVAILABLE to the NVIDIA account in use: 404 "Not found
+ *    for account". It is the SECONDARY for script_movement, script_rewrite and
+ *    episode_metadata and the default SCRIPT_CHALLENGER_MODEL. Until access is
+ *    sorted (or NVIDIA_MODEL_KIMI is pointed elsewhere), the dialogue chain is
+ *    effectively mistral -> zai, with Kimi contributing a wasted attempt that
+ *    routing correctly classifies as a configuration failure.
+ *
+ * 3. DEEPSEEK V4 FLASH WAS RATE-LIMITED throughout (503 ResourceExhausted,
+ *    worker 48/48). It is primary for topic generation, topic classification,
+ *    show notes and continuity, so those roles should be expected to fall
+ *    through to Z.ai under load. Not a capability problem — a capacity one.
+ *
+ * Also verified and already reflected in capabilities.ts: native JSON works on
+ * all four reachable NVIDIA models, GLM-5.2 genuinely reasons (reasoning_content
+ * observed), and reasoning_budget is Nemotron's alone.
+ */
+
+/**
  * Frontier development map. Read as: strongest appropriate model per job.
  * Rationale per role lives in roles.ts (`purpose`).
  */

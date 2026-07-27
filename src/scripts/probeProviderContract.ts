@@ -75,6 +75,22 @@ interface ModelReport {
   learned: Partial<ModelCapabilities>;
   /** Did the model answer a plain request at all? */
   reachable: boolean;
+  /**
+   * Does this endpoint REJECT an invented parameter name?
+   *
+   * This is the control that makes every other acceptance meaningful. An endpoint
+   * that 400s on `__probe_unsupported_parameter__` validates its input, so a 200
+   * elsewhere is real evidence the field is understood. An endpoint that accepts
+   * the invented name ignores unknown parameters, and then a 200 cannot tell
+   * "honored" from "silently dropped" — so no capability flag may be upgraded
+   * from acceptance alone.
+   *
+   * The 2026-07-26 run needed this: NVIDIA hard-400s unknown fields, while Z.ai
+   * returned 200 for chat_template_kwargs, a field only NVIDIA implements.
+   */
+  validatesParameters: boolean | null;
+  /** Did the plain request return an EMPTY answer despite HTTP 200? */
+  emptyAnswerOnPlainRequest: boolean;
 }
 
 // ---------------------------------------------------------------- transport
@@ -186,6 +202,8 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
     probes: [],
     learned: {},
     reachable: false,
+    validatesParameters: null,
+    emptyAnswerOnPlainRequest: false,
   };
 
   const add = (
@@ -200,7 +218,12 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
       verdict: verdictOf(call),
       status: call.status || undefined,
       detail: shortDetail(call),
-      observed,
+      // Observations are recorded ONLY from a successful call. A failed call has
+      // no message to inspect, and attaching an empty observation to it reads
+      // later as "the model returned no reasoning fields" when the truth is "the
+      // model returned nothing at all" — which is how a 503 turns into a false
+      // capability conclusion.
+      observed: call.ok ? observed : undefined,
       ms: call.ms,
     };
     report.probes.push(r);
@@ -220,6 +243,51 @@ async function probeModel(provider: ProviderName, model: string): Promise<ModelR
     usageFields: plain.ok ? Object.keys(plain.body?.usage ?? {}).join(",") : undefined,
   });
   report.reachable = plainProbe.verdict === "accepted";
+  if (report.reachable) {
+    const answer = String(plain.body?.choices?.[0]?.message?.content || "");
+    report.emptyAnswerOnPlainRequest = answer.trim().length === 0;
+    if (report.emptyAnswerOnPlainRequest) {
+      const u = plain.body?.usage ?? {};
+      const reasoningTokens = u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;
+      add(
+        "0.empty_answer_warning",
+        "HTTP 200 but the answer was EMPTY",
+        plain,
+        {
+          finish_reason: plain.body?.choices?.[0]?.finish_reason ?? null,
+          completion_tokens: u.completion_tokens ?? null,
+          reasoning_tokens: reasoningTokens,
+          note:
+            "The request succeeded and produced NO answer. If reasoning_tokens accounts for the whole completion, this model " +
+            "reasons by default and consumed the entire allowance — it needs a larger max_tokens or thinking disabled. " +
+            "Treating this as a success would be wrong.",
+        }
+      );
+    }
+  }
+
+  // CONTROL: does this endpoint validate parameters at all? Everything below is
+  // interpreted through the answer. Run it before the capability questions so the
+  // report reads in the right order.
+  if (report.reachable) {
+    const control = await rawCall(
+      provider,
+      baseBody(model, `Say hi. ${SHORT}`, { __probe_unsupported_parameter__: "control" })
+    );
+    const controlProbe = add(
+      "0.validates_parameters",
+      "CONTROL — is an INVENTED parameter name rejected? (if not, every acceptance below is uninformative)",
+      control,
+      { verdictMeaning: control.ok ? "endpoint IGNORES unknown parameters" : "endpoint VALIDATES parameters" }
+    );
+    report.validatesParameters = controlProbe.verdict === "rejected";
+    if (!report.validatesParameters) {
+      console.log(
+        `      NOTE: ${model} accepted an invented parameter — it does not validate unknown fields, so no capability ` +
+          `flag may be upgraded from a 200 alone.`
+      );
+    }
+  }
 
   if (!report.reachable) {
     // Everything after this would report a model-availability problem as a
@@ -436,6 +504,20 @@ function recommendedRegistryDiff(reports: ModelReport[]): string[] {
       );
       continue;
     }
+
+    // An endpoint that ignores unknown parameters cannot tell us anything by
+    // accepting one. Recommending upgrades from those 200s would launder a guess
+    // into a live-verified record.
+    if (r.validatesParameters === false) {
+      lines.push(
+        `${r.provider}/${r.model}: REACHED, but the endpoint ACCEPTED an invented parameter name — it does not validate ` +
+          `unknown fields. Recommend liveContractVerified: false -> true ONLY, and NO request-field upgrades: a 200 here ` +
+          `cannot distinguish "honored" from "silently ignored". Upgrade a field only on OBSERVED OUTPUT (e.g. ` +
+          `reasoning_content actually returned, or JSON returned when prose was requested).`
+      );
+      continue;
+    }
+
     cmp("supportsThinking", r.learned.supportsThinking);
     cmp("supportsReasoningEffort", r.learned.supportsReasoningEffort);
     cmp("supportsReasoningBudget", r.learned.supportsReasoningBudget);
@@ -443,6 +525,11 @@ function recommendedRegistryDiff(reports: ModelReport[]): string[] {
     cmp("supportsNativeJsonSchema", r.learned.supportsNativeJsonSchema);
     cmp("supportsSeed", r.learned.supportsSeed);
     changes.push(`  liveContractVerified: false -> true`);
+    if (r.emptyAnswerOnPlainRequest) {
+      changes.push(
+        `  (WARNING: the plain request returned an EMPTY answer — see probe 0.empty_answer_warning before trusting this model)`
+      );
+    }
     lines.push(`${r.provider}/${r.model}:\n${changes.join("\n")}`);
   }
   return lines;
@@ -463,17 +550,26 @@ function toMarkdown(reports: ModelReport[], provider: ProviderName): string {
     "",
     "A successful prompt-enforced JSON response is NOT evidence that native JSON mode works.",
     "",
+    "A `Validates` column of **no** means the endpoint accepted an invented parameter name.",
+    "Every acceptance for that model is then uninformative, and no capability flag may be",
+    "upgraded from it — only from observed OUTPUT.",
+    "",
     "## Summary",
     "",
-    "| Model | Reachable | Thinking | Effort | Budget | JSON object | JSON schema | Seed |",
-    "|---|---|---|---|---|---|---|---|",
+    "| Model | Reachable | Validates | Empty answer | Thinking | Effort | Budget | JSON object | JSON schema | Seed |",
+    "|---|---|---|---|---|---|---|---|---|---|",
   ];
-  const y = (v: unknown) => (v === undefined ? "—" : v ? "yes" : "no");
+  const y = (v: unknown) => (v === undefined || v === null ? "—" : v ? "yes" : "no");
   for (const r of reports) {
+    // Suppress the capability columns entirely for a lenient endpoint: printing
+    // "yes" there would be read as a finding.
+    const lenient = r.validatesParameters === false;
+    const cap = (v: unknown) => (lenient ? "*uninformative*" : y(v));
     out.push(
-      `| \`${r.model}\` | ${r.reachable ? "yes" : "**NO**"} | ${y(r.learned.supportsThinking)} | ` +
-        `${y(r.learned.supportsReasoningEffort)} | ${y(r.learned.supportsReasoningBudget)} | ` +
-        `${y(r.learned.supportsNativeJsonObject)} | ${y(r.learned.supportsNativeJsonSchema)} | ${y(r.learned.supportsSeed)} |`
+      `| \`${r.model}\` | ${r.reachable ? "yes" : "**NO**"} | ${r.validatesParameters === null ? "—" : r.validatesParameters ? "yes" : "**no**"} | ` +
+        `${r.emptyAnswerOnPlainRequest ? "**YES**" : "no"} | ${cap(r.learned.supportsThinking)} | ` +
+        `${cap(r.learned.supportsReasoningEffort)} | ${cap(r.learned.supportsReasoningBudget)} | ` +
+        `${cap(r.learned.supportsNativeJsonObject)} | ${cap(r.learned.supportsNativeJsonSchema)} | ${cap(r.learned.supportsSeed)} |`
     );
   }
   for (const r of reports) {

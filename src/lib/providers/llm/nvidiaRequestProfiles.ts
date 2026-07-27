@@ -210,18 +210,32 @@ function shapeKimiK26(): ShapeResult {
 }
 
 function shapeGlm52(ctx: ShapeContext): ShapeResult {
-  // Reasoning INTENT is recorded so diagnostics stay truthful, but no unverified
-  // field is sent. Whether the model reasoned is decided by the response, not by
-  // what we hoped for.
+  // The live probe (2026-07-26) settled what documentation could not:
+  // chat_template_kwargs.thinking is accepted AND the response comes back with
+  // message.reasoning_content — reasoning genuinely runs. So this model now gets
+  // a real reasoning control instead of the empty shape it had while unconfirmed.
+  //
+  // `reasoning_budget` is NOT sent: the probe rejected it with a 400 here, even
+  // though Nemotron accepts it. Both are reasoning models; they are not the same
+  // contract, which is the whole reason these are separate functions.
+  if (!ctx.wantsReasoning) {
+    return {
+      fields: { chat_template_kwargs: { thinking: false } },
+      diagnostics: {
+        reasoningRequested: false,
+        note: "glm-5-2: chat_template_kwargs.thinking=false (reasoning explicitly disabled).",
+      },
+    };
+  }
+  const effort = effortFor(ctx.role);
   return {
-    fields: {},
+    fields: { chat_template_kwargs: { thinking: true, reasoning_effort: effort } },
     diagnostics: {
-      reasoningRequested: false,
+      reasoningRequested: true,
       note:
-        `glm-5-2 (via NVIDIA): role intent was reasoning=${ctx.wantsReasoning ? "on" : "off"}, but the hosted reasoning ` +
-        `controls are NOT confirmed, so no thinking/effort/budget field is sent. Reusing DeepSeek's or Nemotron's fields ` +
-        `because all three are reasoning models would be a guess. Reasoning is reported only if the response returns ` +
-        `reasoning content.`,
+        `glm-5-2: chat_template_kwargs.thinking=true with nested reasoning_effort='${effort}' — both live-verified as ` +
+        `accepted, and reasoning_content was observed in the response. reasoning_budget is deliberately omitted (this model ` +
+        `400s on it, unlike Nemotron).`,
     },
   };
 }

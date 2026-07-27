@@ -45,9 +45,12 @@ async function main(): Promise<void> {
         ZAI_MAX_RETRIES: "0",
         ZAI_REQUEST_TIMEOUT_MS: "240000",
       },
-      // Z.ai's catalog was NOT confirmed as part of this work — unlike the six
-      // NVIDIA ids, which were. Reported as such rather than assumed.
-      expectCatalogVerified: false,
+      // Live-verified 2026-07-26: it answered a real request, so the id and the
+      // general-purpose endpoint are confirmed. But it also accepted an
+      // NVIDIA-only field, so its capability flags were NOT upgraded from mere
+      // acceptance — see the leniency note in capabilities.ts.
+      expectCatalogVerified: true,
+      expectLiveContractVerified: true,
       assertRequestShape: ({ reasoningOn, reasoningOff }) => {
         const bad = (m: string) => {
           throw new Error(m);

@@ -34,6 +34,8 @@ export interface HarnessConfig {
   env: Record<string, string>;
   /** Whether this model's ID was confirmed against the official catalog. */
   expectCatalogVerified: boolean;
+  /** Whether a live probe has actually succeeded against this model. */
+  expectLiveContractVerified: boolean;
   /**
    * Model-specific request assertions. Given the body of a structured call with
    * reasoning ON and with reasoning OFF, throw if the shape is wrong. This is
@@ -253,11 +255,14 @@ export async function runProviderContract(cfg: HarnessConfig, opts: { live: bool
       caps.catalogVerified === cfg.expectCatalogVerified,
       `catalogVerified should be ${cfg.expectCatalogVerified} for ${cfg.model}, got ${caps.catalogVerified}`
     );
-    // Nothing in this repository has called these endpoints yet.
     assert(
-      caps.liveContractVerified === false,
-      "liveContractVerified must stay false until a live probe actually succeeds"
+      caps.liveContractVerified === cfg.expectLiveContractVerified,
+      `liveContractVerified should be ${cfg.expectLiveContractVerified} for ${cfg.model}, got ${caps.liveContractVerified}. ` +
+        `This flag may only be true when a live probe actually succeeded against this model.`
     );
+    // The rule that matters most survives live verification: being able to CALL a
+    // model does not establish its output ceiling, so the enforceable cap stays
+    // unknown until something measures it.
     assert(
       caps.maximumOutputTokens === undefined,
       "an ENFORCEABLE output cap must be unknown until probed — a model-card figure belongs in documentedMaximumOutputTokens"

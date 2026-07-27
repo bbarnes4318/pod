@@ -151,6 +151,24 @@ const LIMITS_UNPROBED =
 const NVIDIA_STRUCTURED_UNCONFIRMED =
   "Native response_format support is NOT confirmed for this model on the hosted endpoint, so it is declared false and the request omits response_format entirely. JSON is enforced through the prompt and validated by the strict parser (the same mechanism the Anthropic provider has always used). A probe may upgrade this.";
 
+/**
+ * The live contract probe run whose observations set the `liveContractVerified`
+ * records below. Named so a future reader knows which run to re-do rather than
+ * trusting a stale flag.
+ *
+ * `npm run probe:llm-contract`, 2026-07-26, integrate.api.nvidia.com/v1 and
+ * api.z.ai/api/paas/v4. Full observations in artifacts/*-contract-report.json.
+ *
+ * IMPORTANT on how to read a 200: NVIDIA NIM validates request parameters
+ * STRICTLY — it hard-400s `reasoning_budget` on DeepSeek/GLM and top-level
+ * `thinking` on Nemotron — so an accepted parameter there is real evidence.
+ * Z.ai does NOT appear to validate: it returned 200 for `chat_template_kwargs`,
+ * a field that only exists in NVIDIA's NIM transport and that Z.ai has no reason
+ * to implement. On a lenient endpoint a 200 cannot distinguish "honored" from
+ * "silently ignored", so Z.ai's flags were NOT upgraded from acceptance alone.
+ */
+const PROBE_RUN = "live probe 2026-07-26";
+
 // ---------------------------------------------------------------------------
 
 function nvidiaBase(model: string, profile: RequestParameterProfile): ModelCapabilities {
@@ -186,28 +204,50 @@ const REGISTRY: ModelCapabilities[] = [
   // The previous registry declared Flash incapable of thinking. That was wrong:
   // both Flash and Pro are reasoning models and take the same shape.
   {
+    // NOT live-verified: every probe in the 2026-07-26 run got
+    // `503 ResourceExhausted: Worker local total request limit reached (48/48)`
+    // on the very first plain request. That is free-tier CAPACITY, not a
+    // capability answer, so no request-field flag was changed from it — the
+    // documented shape stands and the model stays catalog-verified.
+    //
+    // Operationally significant: this model is the primary for topic
+    // generation, topic classification, show notes and the continuity report,
+    // so those roles should expect to fall through to their next candidate
+    // under load.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekFlash, "deepseek-v4"),
     supportsThinking: true,
     supportsReasoningEffort: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
-        "Reasoning enabled via chat_template_kwargs.thinking, with reasoning_effort INSIDE chat_template_kwargs, per NVIDIA's documented example. " +
-        "The nesting of reasoning_effort is the specific thing the live probe re-checks (it tests both nested and top-level placement). " +
-        NVIDIA_STRUCTURED_UNCONFIRMED,
+        "Reasoning enabled via chat_template_kwargs.thinking, with reasoning_effort INSIDE chat_template_kwargs, per NVIDIA's " +
+        "documented example. UNVERIFIED: the " + PROBE_RUN + " could not reach this model (503 ResourceExhausted, worker limit " +
+        "48/48) so nothing was observed. Its sibling deepseek-v4-pro — same profile — verified cleanly, which is suggestive but " +
+        "not proof. " + NVIDIA_STRUCTURED_UNCONFIRMED,
       limits: LIMITS_UNPROBED,
     },
   },
   {
+    // LIVE VERIFIED, and the cleanest of the six.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekPro, "deepseek-v4"),
+    liveContractVerified: true,
     supportsThinking: true,
     supportsReasoningEffort: true,
+    // Observed, so now declared. The request path uses these.
+    supportsNativeJsonObject: true,
+    supportsNativeJsonSchema: true,
+    supportsSeed: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
-        "Same documented shape as DeepSeek V4 Flash: chat_template_kwargs.thinking + nested reasoning_effort. " +
-        NVIDIA_STRUCTURED_UNCONFIRMED,
-      limits: LIMITS_UNPROBED,
+        PROBE_RUN + ": chat_template_kwargs.thinking accepted; reasoning_effort accepted BOTH nested and top-level (we send the " +
+        "documented nested form); `reasoning_budget` REJECTED (400 Unsupported parameter) — that is Nemotron's field, and the " +
+        "per-model split is confirmed correct. response_format json_object AND json_schema both accepted and honored (returned " +
+        '{"ok":true}). seed accepted. Reasoning comes back SEPARATELY in message.reasoning_content (message keys: ' +
+        "content, role, reasoning_content) and the answer text was clean — the reasoning/answer split works as designed.",
+      limits:
+        "max_tokens 16000 was ACCEPTED (a one-sentence answer was requested; only the allowance was tested). That is not a " +
+        "measured ceiling, so maximumOutputTokens stays undefined and no caller request is ever shrunk. " + LIMITS_UNPROBED,
     },
   },
 
@@ -220,20 +260,32 @@ const REGISTRY: ModelCapabilities[] = [
   // and env-var switches for Nano/Super), which is why this record is keyed to
   // this exact model rather than to "nemotron".
   {
+    // LIVE VERIFIED. The probe also settled the thing this record exists to get
+    // right: top-level `thinking` is REJECTED here (400) while
+    // chat_template_kwargs.enable_thinking and reasoning_budget are accepted.
+    // Sending DeepSeek's alias to Nemotron would have been a hard failure.
     ...nvidiaBase(MODEL_IDS.nvidia.nemotron, "nemotron-3-ultra"),
+    liveContractVerified: true,
     supportsThinking: true,
     supportsReasoningBudget: true,
     reasoningBudgetRange: [256, 16384],
     documentedContextWindow: 1_000_000,
+    supportsReasoningEffort: true,
+    supportsNativeJsonObject: true,
+    supportsNativeJsonSchema: true,
+    supportsSeed: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
-        "Reasoning enabled via chat_template_kwargs.enable_thinking with a TOP-LEVEL reasoning_budget, per NVIDIA's documented example. " +
-        "Documented budget range 256-16384. DeepSeek's `thinking` alias is deliberately never sent here. " +
-        NVIDIA_STRUCTURED_UNCONFIRMED,
+        PROBE_RUN + ": chat_template_kwargs.enable_thinking accepted (true and false); top-level `thinking` REJECTED with " +
+        "400 `Unsupported parameter(s): thinking` — DeepSeek's alias is genuinely wrong for this model and is never sent. " +
+        "Top-level reasoning_budget accepted. reasoning_effort accepted, though we drive depth with the budget (its documented " +
+        "control) rather than both. response_format json_object AND json_schema accepted and honored. seed accepted. " +
+        "STILL UNVERIFIED: whether reasoning returns separately — that probe hit a 503, so nothing was observed and no claim " +
+        "is made either way.",
       limits:
-        "Context window 1M tokens is DOCUMENTED, not measured, and is recorded in documentedContextWindow only. " +
-        LIMITS_UNPROBED,
+        "max_tokens 16000 accepted. Context window 1M tokens is DOCUMENTED, not measured, and lives in " +
+        "documentedContextWindow only. " + LIMITS_UNPROBED,
     },
   },
 
@@ -244,15 +296,27 @@ const REGISTRY: ModelCapabilities[] = [
   // are sent. The role's reasoning INTENT is still recorded in diagnostics, and
   // no run may claim it reasoned unless the response carries reasoning content.
   {
+    // LIVE VERIFIED, and this record changed the most. The pre-probe version sent
+    // NO reasoning field because the hosted controls were unconfirmed. The probe
+    // confirmed them: chat_template_kwargs.thinking is accepted AND the response
+    // came back with message.reasoning_content, so reasoning genuinely runs. The
+    // shaping function now sends it — see nvidiaRequestProfiles.ts.
     ...nvidiaBase(MODEL_IDS.nvidia.glm, "glm-5-2"),
+    liveContractVerified: true,
+    supportsThinking: true,
+    supportsReasoningEffort: true,
+    supportsNativeJsonObject: true,
+    supportsNativeJsonSchema: true,
+    supportsSeed: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
-        "Hosted reasoning controls NOT confirmed. No thinking/effort/budget field is sent — reusing Nemotron's or DeepSeek's " +
-        "fields because all three are reasoning models would be a guess. The role's reasoning intent is recorded in " +
-        "diagnostics only, and reasoning is reported as having run only when the response actually returns reasoning content. " +
-        NVIDIA_STRUCTURED_UNCONFIRMED,
-      limits: LIMITS_UNPROBED,
+        PROBE_RUN + ": chat_template_kwargs.thinking accepted (true and false) and the response returned " +
+        "message.reasoning_content — reasoning is real, not just an accepted field. reasoning_effort accepted nested and " +
+        "top-level. `reasoning_budget` REJECTED (400 Unsupported parameter), so this is NOT Nemotron's contract despite both " +
+        "being reasoning models — exactly the guess the per-model split refused to make. response_format json_object AND " +
+        "json_schema accepted and honored. seed accepted.",
+      limits: "max_tokens 16000 accepted. " + LIMITS_UNPROBED,
     },
   },
 
@@ -263,16 +327,36 @@ const REGISTRY: ModelCapabilities[] = [
   // cost and latency change that no application-specific experiment has
   // justified yet. See profiles.ts / roles.ts (script_movement.reasoning=off).
   {
+    // LIVE VERIFIED — and it vindicated the per-model split loudly. This model
+    // REJECTS chat_template_kwargs outright ("chat_template is not supported for
+    // Mistral tokenizers"), so the original provider-wide
+    // reasoningSpelling: "chat_template_kwargs" would have 400'd every single
+    // Mistral call. Only the top-level form works.
+    //
+    // LATENCY WARNING, and it matters for the role it holds: the probe measured
+    // 30-88s for ONE-SENTENCE answers (66s, 88s, 55s, 58s, 34s, 77s, 66s, 30s,
+    // 82s). This model is the current script_movement primary, where the real
+    // call is a 16,000-token movement, three per episode. See the promotion note
+    // in profiles.ts — this is unresolved and is the strongest argument against
+    // keeping it as the dialogue primary.
     ...nvidiaBase(MODEL_IDS.nvidia.mistral, "mistral-medium-3-5"),
+    liveContractVerified: true,
     supportsReasoningEffort: true,
+    supportsNativeJsonObject: true,
+    supportsNativeJsonSchema: true,
+    supportsSeed: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
-        "A TOP-LEVEL reasoning_effort is documented for this model (not nested in chat_template_kwargs). " +
-        "It is NOT sent for dialogue: the dialogue roles request reasoning=off, so no reasoning field goes out on the " +
-        "16,000-token movement call. " +
-        NVIDIA_STRUCTURED_UNCONFIRMED,
-      limits: LIMITS_UNPROBED,
+        PROBE_RUN + ": EVERY chat_template_kwargs variant REJECTED with 400 `chat_template is not supported for Mistral " +
+        "tokenizers` — so nested reasoning_effort and reasoning_budget are impossible here, and a provider-wide " +
+        "chat_template_kwargs spelling would have broken every call. TOP-LEVEL reasoning_effort accepted. A top-level " +
+        "`thinking` object was also accepted, but the response carried NO reasoning content and message.reasoning was empty, " +
+        "so supportsThinking stays FALSE: an accepted-but-inert field is not a thinking mode. response_format json_object AND " +
+        "json_schema accepted and honored. seed accepted. Note the response shape differs from its siblings (extra " +
+        "stop_reason/token_ids keys, prompt_tokens_details: null) — the usage parser tolerates both.",
+      limits:
+        "max_tokens 16000 accepted (in 82s for a one-sentence answer). " + LIMITS_UNPROBED,
     },
   },
 
@@ -282,18 +366,33 @@ const REGISTRY: ModelCapabilities[] = [
   // never sent. A successful prompt-enforced JSON response is NOT evidence that
   // native JSON mode works — only the probe's explicit native-mode test is.
   {
+    // NOT AVAILABLE to this account. The probe got
+    //   404 Not Found — "Function '23d4f03a-…': Not found for account '…'"
+    // on the plain request, so catalogVerified is FALSE: whatever the catalog
+    // listing says, this endpoint does not resolve for the key in use. Request-
+    // field flags are unchanged (an unreachable probe answers nothing).
+    //
+    // This is a routing problem, not a footnote: Kimi is the SECONDARY for
+    // script_movement, script_rewrite and episode_metadata, and the default
+    // SCRIPT_CHALLENGER_MODEL. With Mistral slow and Kimi 404, the dialogue role
+    // has exactly one usable free candidate (Z.ai). Check model access on the
+    // NVIDIA account, or point NVIDIA_MODEL_KIMI at an id this account can reach.
     ...nvidiaBase(MODEL_IDS.nvidia.kimi, "kimi-k2-6"),
+    catalogVerified: false,
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsThinking: false,
     supportsPromptEnforcedJson: true,
     provenance: {
-      catalog: CATALOG_NVIDIA,
+      catalog:
+        PROBE_RUN + ": 404 `Not found for account` — the id does not resolve for the NVIDIA key in use, so this model is " +
+        "reported as catalog-unavailable rather than assumed present. Re-check entitlement or override NVIDIA_MODEL_KIMI.",
       requestFields:
-        "NVIDIA's deployment information advertises neither native structured output nor reasoning support for this model. " +
-        "response_format is never sent; JSON is enforced in the prompt, parsed strictly, validated against the full " +
-        "application structure, and given one repair attempt before fallback. A successful prompt-enforced JSON response " +
-        "does not upgrade supportsNativeJsonObject — only the probe's explicit native-mode test can.",
+        "UNVERIFIED — the model was unreachable, so nothing was observed. NVIDIA's deployment information advertises neither " +
+        "native structured output nor reasoning support, which is why both stay false and response_format is never sent. " +
+        "JSON would be enforced in the prompt, parsed strictly, validated against the full application structure, and given " +
+        "one repair attempt before fallback. A successful prompt-enforced response never upgrades supportsNativeJsonObject — " +
+        "only the probe's explicit native-mode test can.",
       limits: LIMITS_UNPROBED,
     },
   },
@@ -302,14 +401,29 @@ const REGISTRY: ModelCapabilities[] = [
   {
     provider: "zai",
     model: MODEL_IDS.zai.glmFlash,
-    // Not confirmed against Z.ai's catalog as part of this work — unlike the
-    // NVIDIA ids, which were. Reported as catalog-unavailable rather than
-    // assumed present.
-    catalogVerified: false,
-    liveContractVerified: false,
+    // The model answered a real request, so it exists and the id is right.
+    catalogVerified: true,
+    liveContractVerified: true,
+    // DELIBERATELY NOT UPGRADED, against the probe's own recommendation.
+    //
+    // Z.ai returned 200 for EVERY parameter tried, including
+    // `chat_template_kwargs` — a field that exists only in NVIDIA's NIM
+    // transport and that Z.ai has no reason to implement. That is the signature
+    // of an endpoint which ignores unknown parameters rather than validating
+    // them, and on such an endpoint a 200 cannot distinguish "honored" from
+    // "silently dropped". Upgrading these flags from acceptance alone would put
+    // a guess in the registry wearing a live-verified badge, which is the exact
+    // failure this split was built to prevent.
+    //
+    // The probe now runs a leniency control (an invented parameter name) so a
+    // future run can tell the two cases apart. Until that comes back strict,
+    // these stay false and the prompt-enforced path — which is OBSERVED to work
+    // here — keeps doing the job.
     supportsNativeJsonObject: false,
     supportsNativeJsonSchema: false,
     supportsPromptEnforcedJson: true,
+    // Confirmed by OUTPUT, not by acceptance: the response carried
+    // message.reasoning_content, so thinking genuinely runs on this model.
     supportsThinking: true,
     supportsReasoningEffort: false,
     supportsReasoningBudget: false,
@@ -319,13 +433,19 @@ const REGISTRY: ModelCapabilities[] = [
     requestParameterProfile: "zai-glm",
     unpriced: true,
     provenance: {
-      catalog:
-        "NOT confirmed against Z.ai's published catalog in this work. Treated as catalog-unavailable until probed.",
+      catalog: PROBE_RUN + ": answered a live request at https://api.z.ai/api/paas/v4 — the id and the general-purpose endpoint are confirmed.",
       requestFields:
-        "GLM models take a top-level thinking object ({ type: 'enabled' | 'disabled' }). Documented by Z.ai for GLM but not " +
-        "confirmed by a live probe from this repository; a named-field 400 downgrades it once. " +
-        "Native response_format support is unconfirmed, so JSON is prompt-enforced and strictly parsed.",
-      limits: LIMITS_UNPROBED,
+        PROBE_RUN + ": every parameter tried returned 200, INCLUDING chat_template_kwargs (an NVIDIA-only field). This endpoint " +
+        "appears not to validate unknown parameters, so acceptance proves nothing and json/seed/effort/budget flags were NOT " +
+        "upgraded. What IS proven from output: message.reasoning_content is returned, so reasoning runs; and prompt-enforced " +
+        'JSON works (returned {"sport":"football","ok":true}). The top-level thinking object is sent as documented.',
+      limits:
+        "IMPORTANT, OBSERVED: this model REASONS BY DEFAULT and will spend the whole allowance doing it. On the plain probe " +
+        "(max_tokens 128) it returned finish_reason=length with completion_tokens 128 of which reasoning_tokens 128, and " +
+        "content EMPTY. So a small max_tokens yields no answer at all — our provider reports that as `output_limit` with the " +
+        "'spent its entire allowance on reasoning' message rather than as an empty success, and the zai profile sends " +
+        "thinking={type:'disabled'} explicitly for roles that do not want it. Give this model room, or turn thinking off. " +
+        "max_tokens 16000 accepted (254 completion tokens for a one-sentence answer). " + LIMITS_UNPROBED,
     },
   },
 
