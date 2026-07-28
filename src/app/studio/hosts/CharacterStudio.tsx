@@ -175,7 +175,7 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
       audioRef.current.src = result.audioDataUrl;
       await audioRef.current.play().catch(() => undefined);
       setMessage("Playing this host in normal conversation.");
-    } else setError(result.error || "Couldn't play this voice.");
+    } else setError("error" in result ? result.error : "Couldn't play this voice.");
     setBusy(null);
   };
 
@@ -396,7 +396,7 @@ function HostEditor({ mode, host, accent, onClose }: {
       previewAudioRef.current.src = result.audioDataUrl;
       await previewAudioRef.current.play().catch(() => undefined);
       setMessage("Playing this host with the selected behavior.");
-    } else setError(result.error || "Could not make the preview.");
+    } else setError("error" in result ? result.error : "Could not make the preview.");
     setBusy(null);
   };
 
