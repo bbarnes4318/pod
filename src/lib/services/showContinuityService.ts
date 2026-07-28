@@ -19,6 +19,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { decodeShowForgeState, renderShowForgePrompt } from "@/lib/shows/showForge";
+import { frozenShowForgeForGeneration } from "@/lib/shows/showForgeAssignmentService";
 import {
   EMPTY_CONTEXT,
   EMPTY_CONTINUITY,
@@ -431,8 +432,10 @@ export function composeGenerationSystemPrompt(base: string, continuityBlock: str
  *  - the generic Show Forge bible/season arc authored by the customer; and
  *  - the legacy evidence-checked Cal/Zabala continuity devices.
  *
- * Both are composed at the single existing prompt boundary. Old podcasts with a
- * normal scriptStyle string remain byte-for-byte on the legacy path.
+ * A real episode first reserves and freezes its Show Forge beat inside that
+ * episode's immutable configuration snapshot. The current podcast config is
+ * only a fallback for test doubles or legacy generation paths that cannot be
+ * matched to a draft episode.
  */
 export async function continuityForGeneration(
   podcastId: string | null | undefined,
@@ -442,18 +445,32 @@ export async function continuityForGeneration(
   if (!row || !podcastId) return null;
   const opportunities = continuityOpportunities(row as ContinuityState, ctx);
   const legacyBlock = renderContinuityBlock(opportunities);
-  const editorial = await db.podcastEditorialConfig.findUnique({
-    where: { podcastId },
-    select: { scriptStyle: true },
-  }).catch(() => null);
-  const decoded = decodeShowForgeState(editorial?.scriptStyle);
-  const showForge = decoded.state ? renderShowForgePrompt(decoded.state, opportunities.episodeIndex) : null;
+
+  const frozen = await frozenShowForgeForGeneration(podcastId, ctx.topicText || "").catch((error) => {
+    console.error(`[ShowForge] Failed to reserve a frozen episode beat for podcast ${podcastId}: ${(error as Error).message}`);
+    return null;
+  });
+
+  let showForge: { prompt: string; assignment: unknown } | null = frozen
+    ? { prompt: frozen.prompt, assignment: frozen.assignment }
+    : null;
+  if (!showForge) {
+    const editorial = await db.podcastEditorialConfig.findUnique({
+      where: { podcastId },
+      select: { scriptStyle: true },
+    }).catch(() => null);
+    const decoded = decodeShowForgeState(editorial?.scriptStyle);
+    const rendered = decoded.state ? renderShowForgePrompt(decoded.state, opportunities.episodeIndex) : null;
+    showForge = rendered ? { prompt: rendered.prompt, assignment: rendered.assignment } : null;
+  }
+
   const promptBlock = showForge ? `${showForge.prompt}\n\n${legacyBlock}` : legacyBlock;
   return {
     state: row as ContinuityState,
     context: ctx,
     opportunities,
     showForgeAssignment: showForge?.assignment ?? null,
+    showForgeExecution: frozen?.execution ?? null,
     promptBlock,
   };
 }
