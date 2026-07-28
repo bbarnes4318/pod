@@ -1,0 +1,38 @@
+name: Real Podcast Quality
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/takemachine?schema=public
+      REDIS_URL: redis://localhost:6379
+      LLM_PROVIDER: stub
+      TTS_PROVIDER: stub
+      STORAGE_PROVIDER: stub
+      SCRIPT_QUALITY_GATE_STRICT: "false"
+      TTS_PERFORMANCE_QA_STRICT: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Real podcast quality regression
+        run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
+      - name: Production build contract
+        run: npm run build
