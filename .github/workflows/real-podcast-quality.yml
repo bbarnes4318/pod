@@ -34,5 +34,7 @@ jobs:
         run: npx tsc --noEmit
       - name: Real podcast quality regression
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
+      - name: Script queue identity regression
+        run: npx tsx --conditions=react-server src/scripts/testScriptQueueTracking.ts
       - name: Production build contract
         run: npm run build
