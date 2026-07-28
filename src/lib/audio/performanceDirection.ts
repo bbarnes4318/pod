@@ -8,21 +8,28 @@
 //   - the current scene type and the speaker's function in it.
 //
 // The compiled string is ONLY sent to engines whose verified capabilities
-// declare supportsNaturalLanguageDirection (OpenAI `instructions`). For every
-// other engine the structured context (intensity ceiling, cue budget) is what
-// the adapter consumes. Pure + deterministic; unit-tested.
+// declare supportsNaturalLanguageDirection (OpenAI `instructions`). Fish also
+// distills the Delivery style sentence into a short inline scene cue; it must
+// never replace a character with a generic chair-A/chair-B temperament.
 
 import { getShowFormat } from "@/lib/formats/showFormatRegistry";
 import type { DialogueSceneType } from "@/lib/providers/tts/sceneTypes";
 import type { HostPerformanceProfile } from "@/lib/hosts/performanceProfile";
 
-export const PERFORMANCE_DIRECTION_VERSION = 1;
+export const PERFORMANCE_DIRECTION_VERSION = 2;
 
-/** What this chair is DOING in the conversation — the verb, not the persona. */
+/** What this chair is DOING in the conversation — the verb, not the persona.
+ *
+ * IMPORTANT: chair assignment must never invent temperament. The previous
+ * chair_b direction called every second host an "analytical counterweight" who
+ * should hold emotion back. That overrode every authored seat-B character and
+ * is why roster after roster sounded like the same calm script reader. Both
+ * debate chairs are now equal protagonists; their actual contrast comes from
+ * the host profile, not their array index. */
 const ROLE_FUNCTION: Record<string, string> = {
   // two_host_debate
-  chair_a: "You drive the argument: push your take, react in the moment, and challenge your co-host directly.",
-  chair_b: "You are the analytical counterweight: listen, correct with evidence, and let genuine emotion through only when a point actually lands.",
+  chair_a: "You are an equal protagonist in the argument. Push your own agenda, answer what your co-host actually said, and let your authored personality decide how pressure sounds.",
+  chair_b: "You are an equal protagonist in the argument, never the designated analyst, fact-checker, calm one, or straight man. Push your own agenda, attack from your own worldview, and let your authored personality decide how pressure sounds.",
   // solo_commentary
   anchor: "You are alone with the listener: direct address, varied energy, no dialogue mannerisms.",
   // sports_radio
