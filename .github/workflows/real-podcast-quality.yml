@@ -45,5 +45,7 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
       - name: Script queue identity regression
         run: npx tsx --conditions=react-server src/scripts/testScriptQueueTracking.ts
+      - name: Cal performance regression
+        run: npx tsx --conditions=react-server src/scripts/testCalPerformanceV2.ts
       - name: Production build contract
         run: npm run build
