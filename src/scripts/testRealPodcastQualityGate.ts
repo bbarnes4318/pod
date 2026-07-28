@@ -3,6 +3,7 @@ import { scoreConversationContinuity } from "../lib/services/scriptConversationD
 import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";
 import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";
 import { scoreScriptQuality } from "../lib/services/episodeQualityService";
+import { evaluateMovementQuality } from "../lib/services/scriptMovementQuality";
 
 const priorFishSceneModel = process.env.FISH_SCENE_MODEL;
 const priorFishModel = process.env.FISH_MODEL;
@@ -56,9 +57,6 @@ assert.ok(connectedScore.score >= 78, `connected exchange scored only ${connecte
 assert.ok(connectedScore.responsiveSwitchRatio >= 0.66);
 assert.ok(connectedScore.sameSpeakerBuilds >= 1);
 
-// Script scoring must distinguish an editorial miss from a catastrophic draft.
-// The coherent exchange has no formal cold open/closing and should retain those
-// warnings, but it must not trigger a full BullMQ regeneration.
 const priorStrict = process.env.SCRIPT_QUALITY_GATE_STRICT;
 const priorConversationGate = process.env.SCRIPT_CONVERSATION_GATE;
 process.env.SCRIPT_QUALITY_GATE_STRICT = "true";
@@ -75,6 +73,70 @@ if (priorStrict === undefined) delete process.env.SCRIPT_QUALITY_GATE_STRICT;
 else process.env.SCRIPT_QUALITY_GATE_STRICT = priorStrict;
 if (priorConversationGate === undefined) delete process.env.SCRIPT_CONVERSATION_GATE;
 else process.env.SCRIPT_CONVERSATION_GATE = priorConversationGate;
+
+const shortMovement = evaluateMovementQuality({
+  softWordTarget: 520,
+  segments: [{
+    type: "topic",
+    lines: [
+      { speakerName: "A", text: "The coach lost control because nobody trusted the fourth-quarter plan." },
+      { speakerName: "B", text: "That still ignores how the veterans stopped executing basic assignments." },
+      { speakerName: "A", text: "And blaming them publicly made the fracture impossible to hide." },
+    ],
+  }],
+});
+assert.equal(shortMovement.passed, false);
+assert.ok(shortMovement.failures.some((failure) => /requires at least/.test(failure)));
+
+const repeatedMovement = evaluateMovementQuality({
+  softWordTarget: 180,
+  segments: [{
+    type: "topic",
+    lines: Array.from({ length: 10 }, (_, index) => ({
+      speakerName: index % 2 === 0 ? "A" : "B",
+      text: "The coach lost the locker room because the veterans stopped trusting every decision he made during the fourth quarter collapse.",
+    })),
+  }],
+});
+assert.equal(repeatedMovement.passed, false);
+assert.ok(repeatedMovement.failures.some((failure) => /repeat an earlier point/.test(failure)));
+
+const mechanicalMovement = evaluateMovementQuality({
+  softWordTarget: 180,
+  segments: [{
+    type: "topic",
+    lines: [
+      { speakerName: "A", text: "The fourth-quarter collapse exposed a staff that had no answer once the opponent changed its coverage and increased pressure." },
+      { speakerName: "B", text: "The players still missed protections they had practiced all week, so blaming the sideline alone lets the veterans escape responsibility." },
+      { speakerName: "A", text: "Publicly attacking those veterans created a second crisis because the coach turned a tactical failure into a question of trust." },
+      { speakerName: "B", text: "Trust was already damaged when experienced players ignored the adjustment and repeated the same mistake on consecutive possessions." },
+      { speakerName: "A", text: "That explanation assumes defiance when confusion is more likely, especially after the communication system failed under crowd noise." },
+      { speakerName: "B", text: "Confusion cannot explain every missed assignment because several breakdowns happened after timeouts with the entire unit standing together." },
+      { speakerName: "A", text: "Then the real question is why the staff left the same vulnerable protection in place after seeing it fail repeatedly." },
+      { speakerName: "B", text: "And the answer may be that neither the coaches nor the veterans trusted the alternative enough to commit under pressure." },
+    ],
+  }],
+});
+assert.equal(mechanicalMovement.passed, false);
+assert.ok(mechanicalMovement.failures.some((failure) => /mechanical turn shape/.test(failure)));
+
+const healthyMovement = evaluateMovementQuality({
+  softWordTarget: 180,
+  segments: [{
+    type: "topic",
+    lines: [
+      { speakerName: "A", text: "The fourth-quarter collapse exposed a staff with no answer once the opponent changed coverage and brought pressure through the middle." },
+      { speakerName: "B", text: "No, that lets the veterans disappear. They missed protections they had practiced all week, and the quarterback recognized the pressure late." },
+      { speakerName: "B", text: "The sideline can call the right adjustment, but it cannot force five experienced players to communicate when the stadium gets loud." },
+      { speakerName: "A", text: "You are assuming they understood the adjustment. The first breakdown looked like defiance; the next two looked like players hearing different calls." },
+      { speakerName: "A", text: "That matters because confusion points back to preparation, while defiance means the coach had already lost authority before kickoff." },
+      { speakerName: "B", text: "Fair. But after the timeout they still repeated it, and that is where your preparation defense starts falling apart." },
+      { speakerName: "A", text: "It does not fall apart; it gets uglier. A timeout should solve confusion, so repeating the mistake suggests nobody trusted the correction." },
+      { speakerName: "B", text: "There is the real failure: not one bad protection, but a room where the correction carried no authority when pressure arrived." },
+    ],
+  }],
+});
+assert.equal(healthyMovement.passed, true, healthyMovement.failures.join("; "));
 
 const flatMetrics: SpokenPerformanceQaMetrics = {
   durationSec: 48,
@@ -130,4 +192,14 @@ assert.equal(aliveQa.passed, true, `alive performance was rejected: ${aliveQa.fa
 assert.ok(aliveQa.score >= 80);
 
 console.log("Real podcast quality gate regression: PASS");
-console.log({ disconnectedScore, connectedScore, borderlineReport, flatQa, aliveQa });
+console.log({
+  disconnectedScore,
+  connectedScore,
+  borderlineReport,
+  shortMovement,
+  repeatedMovement,
+  mechanicalMovement,
+  healthyMovement,
+  flatQa,
+  aliveQa,
+});
