@@ -11,9 +11,10 @@ permissions:
 jobs:
   quality-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       NODE_ENV: test
+      NEXT_TELEMETRY_DISABLED: "1"
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/takemachine?schema=public
       REDIS_URL: redis://localhost:6379
       LLM_PROVIDER: stub
@@ -33,3 +34,5 @@ jobs:
         run: npx tsc --noEmit
       - name: Real podcast quality regression
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
+      - name: Production build contract
+        run: npm run build
