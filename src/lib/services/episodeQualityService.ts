@@ -1,10 +1,9 @@
 // Episode script quality rubric and production gate.
 //
-// A script is not good because it contains podcast-shaped metadata. The gate
-// below grades causal conversation, answer-to-question continuity, character
-// asymmetry, episode length and dramatic movement. In production a failing
-// script throws HERE, before scriptService writes it to the database; BullMQ's
-// normal retry produces a fresh draft instead of advancing bad material.
+// The scorer remains deliberately demanding, but the publishing gate is now
+// fail-closed only for catastrophic defects. Editorial weaknesses are retained
+// on the script as warnings so the operator can see them without BullMQ blindly
+// regenerating the same episode against a stack of overlapping thresholds.
 
 import { stripAudioTags } from "../audio/speechText";
 import { findRepetitions } from "./scriptRepetition";
@@ -31,6 +30,7 @@ export interface ScriptQualityReport {
     enforced: boolean;
     passed: boolean;
     failures: string[];
+    warnings: string[];
   };
 }
 
@@ -167,7 +167,6 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
   const wordCount = allWords.length;
   const hosts = [...new Set(lines.map((line) => line.speakerName).filter(Boolean))];
 
-  // Repetition — obvious duplicate phrasing or repeated takes.
   const repetitionReport = findRepetitions(lines.map((line) => line.text));
   const repetitionScore = Math.round(25 * Math.max(0, 1 - repetitionReport.repetitionRatio * 5));
   const repetition: QualityAxis = {
@@ -176,7 +175,6 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     detail: `${repetitionReport.repeats.length} near-duplicate line(s) of ${repetitionReport.totalLines} (${(repetitionReport.repetitionRatio * 100).toFixed(1)}%)`,
   };
 
-  // Specificity — grounded details without canned filler.
   const numberHits = lines.reduce((sum, line) => sum + (line.spoken.match(/\b(\d[\d,.]*|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|dozen|half|double|triple)\b/gi) || []).length, 0);
   const properNouns = lines.reduce((sum, line) => sum + (line.spoken.match(/\b[A-Z][a-z]{2,}\b/g) || []).length, 0);
   const evidenceLines = lines.filter((line) => line.evidenceRefs.length > 0).length;
@@ -191,7 +189,6 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     detail: `${numberHits} number refs, ${properNouns} proper nouns, ${evidenceLines}/${lineCount} evidence-backed lines, ${fillerHits} canned filler hit(s)`,
   };
 
-  // Personality — the two hosts must not be the same prose engine with two IDs.
   const vocabularyDivergence = pairwiseVocabularyDivergence(lines, hosts);
   const averageLengthByHost = new Map<string, number>();
   const highEnergyByHost = new Map<string, number>();
@@ -221,8 +218,6 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     detail: `vocabulary divergence ${(vocabularyDivergence * 100).toFixed(0)}%, line-shape contrast ${(lengthContrast * 100).toFixed(0)}%, energy contrast ${(energyContrast * 100).toFixed(0)}%`,
   };
 
-  // Flow — use the dedicated continuity gate, segment by segment, so a topic
-  // transition does not receive free credit for being lexically unrelated.
   const conversation = scoreConversationContinuity(content?.segments || []);
   const flowScore = Math.round(Math.max(0, Math.min(20,
     conversation.score * 0.16 + conversation.questionResponseRatio * 2 +
@@ -234,14 +229,13 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     detail: `${conversation.score}/100 conversation score, ${(conversation.responsiveSwitchRatio * 100).toFixed(0)}% responsive speaker switches, ${conversation.disconnectedSwitches} disconnected switch(es), ${conversation.unansweredQuestions}/${conversation.questionCount} unanswered question(s), ${(conversation.strictAlternationRatio * 100).toFixed(0)}% strict alternation`,
   };
 
-  // Arc — an episode must open with tension, move somebody, and land something.
   const segmentTypes = (content?.segments || []).map((segment: any) => String(segment?.type || ""));
   const hasColdOpen = segmentTypes[0] === "cold_open";
   const hasClosing = segmentTypes[segmentTypes.length - 1] === "closing";
   const opening = lines.slice(0, 5).map((line) => line.spoken).join(" ");
   const closing = lines.slice(-5).map((line) => line.spoken).join(" ");
   const coldStartsWithoutMeta = hasColdOpen && !META_OPENERS.some((pattern) => pattern.test(lines[0]?.spoken || ""));
-  const openingTension = /[?]|(can'?t|won'?t|wrong|problem|why|how|what|cost|risk|lost|dead|fired|lied|refuse|absurd)/i.test(opening);
+  const openingTension = /[?]|\b(can'?t|won'?t|wrong|problem|why|how|what|cost|risk|lost|dead|fired|lied|refuse|absurd)\b/i.test(opening);
   const stakes = lines.filter((line) => STAKES_MARKERS.test(line.spoken)).length;
   const shifts = lines.filter((line) => SHIFT_MARKERS.test(line.spoken)).length;
   const closingEcho = opening && closing ? overlap(opening, closing) >= 0.07 : false;
@@ -259,7 +253,6 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
     detail: `cold hook=${coldStartsWithoutMeta}, opening tension=${openingTension}, position shifts=${shifts}, stake lines=${stakes}, closing payoff echo=${closingEcho}`,
   };
 
-  // Delivery metadata is evidence only when it varies with restraint.
   const interruptions = lines.filter((line) => line.isInterruption).length;
   const highRatio = lines.filter((line) => line.energy === "high").length / lineCount;
   const reactionRatio = lines.filter((line) => words(line.spoken).length <= 6).length / lineCount;
@@ -279,23 +272,37 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
   };
 
   const total = repetition.score + specificity.score + personality.score + flow.score + arc.score + delivery.score;
+  const warnings: string[] = [];
   const failures: string[] = [];
   const targetMinutes = Math.max(1, Number(content?.estimatedDurationMinutes) || 0);
   const minimumWords = Math.round(targetMinutes * 105);
+  const catastrophicWordFloor = Math.round(minimumWords * 0.72);
 
-  if (conversation.score < 78) failures.push(`conversation continuity ${conversation.score}/100 is below 78`);
-  if (conversation.speakerSwitches >= 5 && conversation.responsiveSwitchRatio < 0.66) failures.push(`only ${Math.round(conversation.responsiveSwitchRatio * 100)}% of speaker switches answer the preceding turn`);
-  if (conversation.disconnectedSwitches > Math.max(2, Math.floor(conversation.speakerSwitches * 0.18))) failures.push(`${conversation.disconnectedSwitches} speaker switches begin a separate thought`);
-  if (conversation.questionCount >= 2 && conversation.questionResponseRatio < 0.70) failures.push(`${conversation.unansweredQuestions} direct question(s) go unanswered`);
-  if (conversation.strictAlternationRatio > 0.94 && conversation.sameSpeakerBuilds < 2) failures.push(`mechanical ping-pong: ${Math.round(conversation.strictAlternationRatio * 100)}% of adjacent lines alternate speakers`);
-  if (wordCount < minimumWords) failures.push(`${wordCount} spoken words cannot sustain the requested ${targetMinutes}-minute episode (minimum ${minimumWords})`);
-  if (flow.score < 14) failures.push(`flow score ${flow.score}/20 is below 14`);
-  if (hosts.length >= 2 && personality.score < 9) failures.push(`host differentiation ${personality.score}/15 is below 9`);
-  if (arc.score < 8) failures.push(`dramatic arc ${arc.score}/15 is below 8`);
-  if (total < 76) failures.push(`overall script quality ${total}/100 is below 76`);
+  // Editorial targets remain visible and measurable. They no longer create an
+  // infinite retry loop when the script is coherent but misses one heuristic.
+  if (conversation.score < 78) warnings.push(`conversation continuity ${conversation.score}/100 is below the 78 editorial target`);
+  if (conversation.speakerSwitches >= 5 && conversation.responsiveSwitchRatio < 0.66) warnings.push(`only ${Math.round(conversation.responsiveSwitchRatio * 100)}% of speaker switches answer the preceding turn`);
+  if (conversation.disconnectedSwitches > Math.max(2, Math.floor(conversation.speakerSwitches * 0.18))) warnings.push(`${conversation.disconnectedSwitches} speaker switches may begin a separate thought`);
+  if (conversation.questionCount >= 2 && conversation.questionResponseRatio < 0.70) warnings.push(`${conversation.unansweredQuestions} direct question(s) may go unanswered`);
+  if (conversation.strictAlternationRatio > 0.94 && conversation.sameSpeakerBuilds < 2) warnings.push(`mechanical ping-pong risk: ${Math.round(conversation.strictAlternationRatio * 100)}% of adjacent lines alternate speakers`);
+  if (wordCount < minimumWords) warnings.push(`${wordCount} spoken words are below the ${minimumWords}-word duration target for ${targetMinutes} minutes`);
+  if (flow.score < 14) warnings.push(`flow score ${flow.score}/20 is below the 14 editorial target`);
+  if (hosts.length >= 2 && personality.score < 9) warnings.push(`host differentiation ${personality.score}/15 is below the 9 editorial target`);
+  if (arc.score < 8) warnings.push(`dramatic arc ${arc.score}/15 is below the 8 editorial target`);
+  if (total < 76) warnings.push(`overall script quality ${total}/100 is below the 76 editorial target`);
+
+  // Hard failures are reserved for drafts that are plainly unusable. These are
+  // intentionally far below the editorial targets and are independent signals,
+  // not several restatements of the same slightly-low score.
+  if (conversation.score < 55) failures.push(`catastrophic conversation continuity ${conversation.score}/100 is below 55`);
+  if (conversation.speakerSwitches >= 5 && conversation.responsiveSwitchRatio < 0.40) failures.push(`only ${Math.round(conversation.responsiveSwitchRatio * 100)}% of speaker switches respond to the preceding turn`);
+  if (conversation.disconnectedSwitches > Math.max(5, Math.floor(conversation.speakerSwitches * 0.42))) failures.push(`${conversation.disconnectedSwitches} of ${conversation.speakerSwitches} speaker switches are disconnected`);
+  if (conversation.questionCount >= 3 && conversation.questionResponseRatio < 0.40) failures.push(`${conversation.unansweredQuestions} of ${conversation.questionCount} direct questions go unanswered`);
+  if (wordCount < catastrophicWordFloor) failures.push(`${wordCount} spoken words are below the catastrophic duration floor of ${catastrophicWordFloor}`);
+  if (total < 58) failures.push(`overall script quality ${total}/100 is below the catastrophic floor of 58`);
 
   const enforced = enforceInProduction();
-  const gate = { enforced, passed: failures.length === 0, failures };
+  const gate = { enforced, passed: failures.length === 0, failures, warnings };
   const report: ScriptQualityReport = {
     total,
     axes: { repetition, specificity, personality, flow, arc, delivery },
@@ -305,8 +312,8 @@ export function scoreScriptQuality(content: any): ScriptQualityReport {
 
   if (enforced && failures.length > 0) {
     throw new Error(
-      `Script quality gate rejected this draft before save: ${failures.join("; ")}. ` +
-      `A new generation attempt is required; this script was not persisted.`
+      `Script quality gate rejected a catastrophically bad draft before save: ${failures.join("; ")}. ` +
+      `Editorial warnings: ${warnings.join("; ") || "none"}.`
     );
   }
 
