@@ -1,0 +1,128 @@
+name: Apply Fish model hotfix
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/correct-fish-model-main.yml']
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Correct unsupported Fish model assumption
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          fish = Path('src/lib/providers/tts/fishDialogue.ts')
+          text = fish.read_text()
+          text = text.replace('// Fish Audio S2-Pro multi-speaker scene adapter.', '// Fish Audio S2.1 Pro / S2-Pro multi-speaker scene adapter.')
+          old = '''function resolveFishSceneModel(): string {
+            const model = (process.env.FISH_SCENE_MODEL || "s2-pro").trim();
+            const allowUnverified = process.env.FISH_ALLOW_UNVERIFIED_SCENE_MODEL === "true";
+            if (model !== "s2-pro" && !allowUnverified) {
+              throw new SceneGenerationError(
+                "unsupported_model",
+                `Fish multi-speaker publishing requires the documented 's2-pro' model; got '${model}'. ` +
+                `Set FISH_SCENE_MODEL=s2-pro. FISH_ALLOW_UNVERIFIED_SCENE_MODEL=true is preview-only and disables this safety gate.`
+              );
+            }
+            return model;
+          }'''
+          new = '''export function resolveFishSceneModel(): string {
+            const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro-free").trim();
+            if (!/^s2(?:[.-]|$)/i.test(model)) {
+              throw new SceneGenerationError(
+                "unsupported_model",
+                `Fish multi-speaker publishing requires an S2-family model; got '${model}'.`
+              );
+            }
+            return model;
+          }'''
+          if old not in text:
+            raise SystemExit('expected resolveFishSceneModel block not found')
+          fish.write_text(text.replace(old, new))
+
+          env = Path('.env.coolify.example')
+          env_text = env.read_text()
+          old_env = '''# FISH_MODEL is used by isolated line previews/auditions and may remain cheaper.
+          FISH_MODEL=s2.1-pro-free
+          # Final multi-speaker publishing requires Fish's documented production dialogue
+          # model. The worker rejects an unverified alias instead of publishing bad audio.
+          FISH_SCENE_MODEL=s2-pro
+          # Generate several complete performances and select only the strongest candidate
+          # that passes raw-speech dynamics and pacing QA.
+          FISH_PERFORMANCE_CANDIDATES=3
+          FISH_SCENE_CHUNK_LENGTH=300
+          TTS_PERFORMANCE_QA_STRICT=true
+          # Preview-only emergency override. Never enable in production.
+          FISH_ALLOW_UNVERIFIED_SCENE_MODEL=false'''
+          new_env = '''# Fish states that s2.1-pro-free uses the S2.1 Pro model weights and infrastructure.
+          # The free-tier differences are service terms (SLA, latency, retention and
+          # commercial conditions), not a documented audio-quality downgrade.
+          FISH_MODEL=s2.1-pro-free
+          FISH_SCENE_MODEL=s2.1-pro-free
+          # Generate several complete performances and select only the strongest candidate
+          # that passes raw-speech dynamics, phrase-pitch and pacing QA.
+          FISH_PERFORMANCE_CANDIDATES=3
+          FISH_SCENE_CHUNK_LENGTH=300
+          TTS_PERFORMANCE_QA_STRICT=true'''
+          if old_env not in env_text:
+            raise SystemExit('expected Coolify Fish model block not found')
+          env.write_text(env_text.replace(old_env, new_env))
+
+          test = Path('src/scripts/testRealPodcastQualityGate.ts')
+          test_text = test.read_text()
+          import_line = 'import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";'
+          if import_line not in test_text:
+            test_text = test_text.replace(
+              'import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";',
+              'import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";\n' + import_line
+            )
+          marker = 'const disconnected = ['
+          model_test = '''const priorFishSceneModel = process.env.FISH_SCENE_MODEL;
+          const priorFishModel = process.env.FISH_MODEL;
+          process.env.FISH_SCENE_MODEL = "s2.1-pro-free";
+          assert.equal(resolveFishSceneModel(), "s2.1-pro-free");
+          process.env.FISH_SCENE_MODEL = "s2-pro";
+          assert.equal(resolveFishSceneModel(), "s2-pro");
+          process.env.FISH_SCENE_MODEL = "s1";
+          assert.throws(() => resolveFishSceneModel(), /S2-family/);
+          if (priorFishSceneModel === undefined) delete process.env.FISH_SCENE_MODEL;
+          else process.env.FISH_SCENE_MODEL = priorFishSceneModel;
+          if (priorFishModel === undefined) delete process.env.FISH_MODEL;
+          else process.env.FISH_MODEL = priorFishModel;
+
+          '''
+          if model_test not in test_text:
+            if marker not in test_text:
+              raise SystemExit('test insertion marker not found')
+            test_text = test_text.replace(marker, model_test + marker, 1)
+          test.write_text(test_text)
+
+          Path('.github/workflows/correct-fish-model-main.yml').unlink()
+          PY
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx tsc --noEmit
+      - run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
+      - run: npm run build
+      - name: Commit verified hotfix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: keep S2.1 Pro free and judge rendered quality"
+          git push origin HEAD:main
