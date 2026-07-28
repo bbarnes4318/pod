@@ -1,4 +1,4 @@
-// Fish Audio S2-Pro multi-speaker scene adapter.
+// Fish Audio S2.1 Pro / S2-Pro multi-speaker scene adapter.
 //
 // Production rule: provider success is not performance success. Each scene is
 // rendered several times, analyzed while it is still RAW speech, and only the
@@ -91,14 +91,12 @@ function productionStrict(): boolean {
   return process.env.NODE_ENV === "production";
 }
 
-function resolveFishSceneModel(): string {
-  const model = (process.env.FISH_SCENE_MODEL || "s2-pro").trim();
-  const allowUnverified = process.env.FISH_ALLOW_UNVERIFIED_SCENE_MODEL === "true";
-  if (model !== "s2-pro" && !allowUnverified) {
+export function resolveFishSceneModel(): string {
+  const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro-free").trim();
+  if (!/^s2(?:[.-]|$)/i.test(model)) {
     throw new SceneGenerationError(
       "unsupported_model",
-      `Fish multi-speaker publishing requires the documented 's2-pro' model; got '${model}'. ` +
-      `Set FISH_SCENE_MODEL=s2-pro. FISH_ALLOW_UNVERIFIED_SCENE_MODEL=true is preview-only and disables this safety gate.`
+      `Fish multi-speaker publishing requires an S2-family model; got '${model}'.`
     );
   }
   return model;
