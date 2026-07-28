@@ -12,6 +12,7 @@ import {
   templateBible,
   type ShowForgeState,
 } from "../lib/shows/showForge";
+import { showForgeSequenceId } from "../lib/shows/showForgeAssignmentService";
 
 let passed = 0;
 let failed = 0;
@@ -87,6 +88,22 @@ async function main() {
     assert(sequence.map((beat) => beat.beatTitle).join(",") === "A1,B1,A2,B2", `unexpected storyline order: ${sequence.map((beat) => beat.beatTitle).join(",")}`);
   });
 
+  await check("storyline sequence identity ignores cosmetic edits but changes with the authored arc", () => {
+    const state = defaultShowForgeState();
+    state.storylines = [{
+      id: "arc", title: "Trust", premise: "Trust moves.", status: "active", priority: 3, featuredHostIds: [],
+      beats: [{ title: "Plant", direction: "Plant it." }, { title: "Pay", direction: "Pay it off." }],
+    }];
+    const first = showForgeSequenceId(state);
+    const cosmetic: ShowForgeState = { ...state, bible: { ...state.bible, tone: "cinematic" } };
+    assert(showForgeSequenceId(cosmetic) === first, "a tone edit incorrectly restarted story progression");
+    const changed: ShowForgeState = {
+      ...state,
+      storylines: [{ ...state.storylines[0], beats: [...state.storylines[0].beats, { title: "Resolve", direction: "Resolve the chapter." }] }],
+    };
+    assert(showForgeSequenceId(changed) !== first, "an authored beat change did not create a new sequence");
+  });
+
   await check("writer prompt receives the show promise, episode DNA, arc beat, and factual boundary", () => {
     const base = defaultShowForgeState();
     const state: ShowForgeState = {
@@ -127,12 +144,20 @@ async function main() {
 
   await check("the real script compositor loads and injects Show Forge state", () => {
     const service = source("lib/services/showContinuityService.ts");
-    assert(service.includes("decodeShowForgeState"), "production prompt does not load the show bible");
-    assert(service.includes("renderShowForgePrompt"), "production prompt does not render the show bible");
+    assert(service.includes("frozenShowForgeForGeneration"), "production prompt does not reserve a frozen episode beat");
     assert(service.includes("showForge.prompt"), "rendered Show Forge prompt is not composed into generation");
     const script = source("lib/services/scriptService.ts");
     assert(script.includes("continuityForGeneration"), "script generation does not call the continuity compositor");
     assert(script.includes("continuity?.promptBlock"), "composed show prompt does not reach the script system prompt");
+  });
+
+  await check("storyline reservations are atomic, episode-frozen, and retry-stable", () => {
+    const reservation = source("lib/shows/showForgeAssignmentService.ts");
+    assert(reservation.includes("pg_advisory_xact_lock"), "concurrent episode builds are not serialized");
+    assert(reservation.includes("showForgeExecution"), "the assigned beat is not stored on the episode snapshot");
+    assert(reservation.includes("configurationSnapshot: updatedSnapshot"), "the frozen execution record is not persisted");
+    assert(reservation.includes("if (existing && existing.sequenceId === sequenceId)"), "a retry would not reuse its original assignment");
+    assert(reservation.includes("decodeShowForgeState(initialSnapshot?.editorial?.scriptStyle)"), "assignment does not read the episode's frozen show bible");
   });
 
   await check("show headquarters surfaces promise, upcoming movement, arcs, episodes, and editing", () => {
