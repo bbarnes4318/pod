@@ -1,19 +1,15 @@
 // Outline-driven progressive script generation.
 //
-// The previous engine treated natural conversation as a checklist: a target
-// number of lines, scheduled interruptions, required reaction fragments and
-// metadata variety. That produced scripts which *displayed* human mannerisms
-// without the conversational cause-and-effect that makes people sound alive.
-//
-// This version plans a small story spine, writes three large movements, and
-// carries relationship state between calls. Word-count ranges are soft; line
-// counts are never targeted. Delivery metadata describes what naturally
-// happened in the dialogue instead of driving the writing.
+// Each movement is generated, measured, and—when necessary—repaired in place
+// before the expensive whole-episode verification stages run. A provider may
+// return perfectly valid JSON that is still far too short, repetitive, or
+// mechanically shaped; structural validity alone is not movement completion.
 
 import { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
 import { RewriteContext } from "./scriptSelfVerify";
+import { evaluateMovementQuality, type MovementQualityReport } from "./scriptMovementQuality";
 
 export interface OutlineBeat {
   beatIndex: number;
@@ -35,26 +31,10 @@ export interface OutlineDrivenArgs {
   version: number;
   temperature: number;
   maxTokens: number;
-  /** The cast host names in seat order (1-4) — the only valid speakerName values. */
   speakerNames: string[];
-  /** Model for the OUTLINE call (script_outline role). Defaults to the movement
-   *  model when absent, which is what the single-provider callers rely on. */
   outlineLlm?: LLMProvider;
-  /** Second dialogue model for a challenger comparison run. When present, each
-   *  movement is generated twice from IDENTICAL inputs and both results are
-   *  reported; the challenger's segments are NEVER mixed into the episode. */
   challengerLlm?: LLMProvider;
-  /** Label for the challenger in logs, e.g. "nvidia/moonshotai/kimi-k2.6". */
   challengerLabel?: string;
-  /**
-   * Called as each movement completes, with the wall time SINCE THE CALL BEGAN.
-   *
-   * Exists so a comparison can report time-to-first-completed-movement, which is
-   * the number that actually matters for a slow dialogue model: an episode that
-   * needs three sequential movements at 80s each is a different product decision
-   * from one that needs three at 8s, and a single total hides which movement was
-   * slow.
-   */
   onMovementComplete?: (info: {
     movement: number;
     msSinceStart: number;
@@ -65,27 +45,20 @@ export interface OutlineDrivenArgs {
   log: (msg: string) => void;
 }
 
-/**
- * Structural check for a generated script object, applied at the provider edge
- * so a broken shape triggers the one allowed repair (and then the role's next
- * model) instead of surfacing three services later as a mysteriously short
- * episode. Returns an error message, or null when the shape is usable.
- */
 export function validateScriptShape(value: unknown): string | null {
   const segments = (value as { segments?: unknown })?.segments;
   if (!Array.isArray(segments)) return "Response is missing the required 'segments' array.";
   if (segments.length === 0) return "Response contains zero segments.";
   let lines = 0;
-  for (const seg of segments) {
-    const segLines = (seg as { lines?: unknown })?.lines;
-    if (!Array.isArray(segLines)) return "A segment is missing its 'lines' array.";
-    lines += segLines.length;
+  for (const segment of segments) {
+    const segmentLines = (segment as { lines?: unknown })?.lines;
+    if (!Array.isArray(segmentLines)) return "A segment is missing its 'lines' array.";
+    lines += segmentLines.length;
   }
   if (lines === 0) return "Every segment is empty — the script has no lines.";
   return null;
 }
 
-/** One movement's result, plus which model produced it. */
 export interface ChallengerMovementResult {
   movement: number;
   label: string;
@@ -93,7 +66,6 @@ export interface ChallengerMovementResult {
   lines: number;
   words: number;
   ms: number;
-  /** Honest failure reporting — an incomplete generation is reported, not hidden. */
   error?: string;
   segments?: any[];
 }
@@ -114,11 +86,6 @@ const EMPTY_STATE: ConversationState = {
   relationshipChange: "Nothing has happened between the hosts yet.",
 };
 
-/**
- * Keep the actual cast/persona material and persistent-show continuity, while
- * dropping the giant mechanics checklist. Evidence and factual rules stay in
- * the act prompt, where they are concrete and relevant.
- */
 export function compactCreativeSystemPrompt(systemPrompt: string): string {
   const speechRulesAt = systemPrompt.indexOf("HOW REAL PODCAST SPEECH WORKS");
   const personaPrefix = (speechRulesAt >= 0 ? systemPrompt.slice(0, speechRulesAt) : systemPrompt).trim();
@@ -142,38 +109,33 @@ export async function generateOutlineDrivenScript(
   args: OutlineDrivenArgs
 ): Promise<{ segments: any[]; challenger?: ChallengerMovementResult[] }> {
   const creativeSystemPrompt = compactCreativeSystemPrompt(args.systemPrompt);
-  // The outline is its own role. A caller that passes only one provider (the
-  // A/B harness, the local test scripts) keeps the old single-model behavior.
   const outlineLlm = args.outlineLlm ?? llm;
   const beats = await generateEpisodeOutline(outlineLlm, args, creativeSystemPrompt);
   args.log(`Story spine: ${beats.length} beats across three conversational movements.`);
+
   const challengerResults: ChallengerMovementResult[] = [];
   const startedAt = Date.now();
-
   const acts = groupIntoMovements(beats);
   const rawSegments: any[] = [];
   const claimsSoFar: string[] = [];
+  const priorDialogueLines: string[] = [];
   const lastLines: { speakerName: string; text: string }[] = [];
   let state: ConversationState = { ...EMPTY_STATE };
   const totalWordTarget = Math.max(550, Math.round(args.targetDuration * 145));
+  const episodeMinimumWords = Math.max(500, Math.round(totalWordTarget * 0.82));
   let wordsWritten = 0;
 
-  for (let actIdx = 0; actIdx < acts.length; actIdx++) {
-    const remainingActs = acts.length - actIdx;
+  for (let actIndex = 0; actIndex < acts.length; actIndex++) {
+    const remainingActs = acts.length - actIndex;
     const remainingWords = Math.max(180, totalWordTarget - wordsWritten);
     const softWordTarget = Math.max(180, Math.round(remainingWords / remainingActs));
-
-    // IDENTICAL INPUTS for the primary and (optionally) the challenger: same
-    // outline, same evidence, same prior-movement context, same relationship
-    // state, same character prompt, same word target, same token allowance.
-    // Anything else would make the comparison meaningless.
     const actArgs: ActArgs = {
       creativeSystemPrompt,
       episodeTitle: args.episodeTitle,
       topicsPrompts: args.topicsPrompts,
       beats,
-      actBeats: acts[actIdx],
-      actNumber: actIdx + 1,
+      actBeats: acts[actIndex],
+      actNumber: actIndex + 1,
       actCount: acts.length,
       claimsSoFar,
       lastLines,
@@ -184,83 +146,112 @@ export async function generateOutlineDrivenScript(
       speakerNames: args.speakerNames,
     };
 
-    let result: { segments: any[]; stateAfter: ConversationState } | null = null;
-    let lastErr: any = null;
     const movementStartedAt = Date.now();
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        result = await generateActSegments(llm, actArgs);
-        break;
-      } catch (err: any) {
-        lastErr = err;
-        console.warn(`[ScriptOutline] Movement ${actIdx + 1} attempt ${attempt} failed: ${err.message}`);
-      }
-    }
-    if (!result) {
-      throw new Error(`Movement ${actIdx + 1} generation failed twice: ${lastErr?.message}`);
+    let result = await generateInitialMovement(llm, actArgs);
+    let quality = evaluateMovementQuality({
+      segments: result.segments,
+      softWordTarget,
+      priorClaims: priorDialogueLines,
+    });
+
+    for (let repairRound = 1; !quality.passed && repairRound <= 2; repairRound++) {
+      args.log(
+        `Movement ${actIndex + 1} repair ${repairRound}: ${quality.failures.join("; ")} ` +
+        `(words=${quality.words}/${quality.minimumWords}, repeats=${quality.repeatedCurrentLines}, alternation=${Math.round(quality.strictAlternationRatio * 100)}%).`
+      );
+      result = await repairActSegments(llm, actArgs, result, quality, repairRound);
+      quality = evaluateMovementQuality({
+        segments: result.segments,
+        softWordTarget,
+        priorClaims: priorDialogueLines,
+      });
     }
 
-    // Challenger run. Its output is SCORED and STORED, never spliced into this
-    // episode — one episode is written by one dialogue model.
+    if (!quality.passed) {
+      throw new Error(
+        `Movement ${actIndex + 1} remained unusable after two targeted repairs: ${quality.failures.join("; ")}. ` +
+        `The whole episode was not sent to verification.`
+      );
+    }
+
     if (args.challengerLlm) {
       const label = args.challengerLabel || "challenger";
-      const startedAt = Date.now();
+      const challengerStartedAt = Date.now();
       try {
-        const alt = await generateActSegments(args.challengerLlm, actArgs);
-        const stats = countMovement(alt.segments);
+        const alternate = await generateActSegments(args.challengerLlm, actArgs);
+        const alternateQuality = evaluateMovementQuality({
+          segments: alternate.segments,
+          softWordTarget,
+          priorClaims: priorDialogueLines,
+        });
+        if (!alternateQuality.passed) {
+          throw new Error(alternateQuality.failures.join("; "));
+        }
+        const stats = countMovement(alternate.segments);
         challengerResults.push({
-          movement: actIdx + 1,
+          movement: actIndex + 1,
           label,
           ok: true,
           lines: stats.lines,
           words: stats.words,
-          ms: Date.now() - startedAt,
-          segments: alt.segments,
+          ms: Date.now() - challengerStartedAt,
+          segments: alternate.segments,
         });
-        args.log(`Challenger ${label} movement ${actIdx + 1}: ${stats.lines} lines / ${stats.words} words.`);
-      } catch (err: any) {
-        // Reported, never swallowed: a challenger that cannot complete the
-        // movement is exactly the finding the comparison exists to produce.
+        args.log(`Challenger ${label} movement ${actIndex + 1}: ${stats.lines} lines / ${stats.words} words.`);
+      } catch (error: any) {
         challengerResults.push({
-          movement: actIdx + 1,
+          movement: actIndex + 1,
           label,
           ok: false,
           lines: 0,
           words: 0,
-          ms: Date.now() - startedAt,
-          error: err?.message || String(err),
+          ms: Date.now() - challengerStartedAt,
+          error: error?.message || String(error),
         });
-        args.log(`Challenger ${label} movement ${actIdx + 1} FAILED: ${err?.message}`);
+        args.log(`Challenger ${label} movement ${actIndex + 1} FAILED: ${error?.message || String(error)}`);
       }
     }
 
     let movementWords = 0;
-    for (const seg of result.segments) {
-      if (!seg || !Array.isArray(seg.lines)) continue;
-      for (const line of seg.lines) {
+    for (const segment of result.segments) {
+      if (!segment || !Array.isArray(segment.lines)) continue;
+      for (const line of segment.lines) {
         if (!line || typeof line.text !== "string") continue;
-        const spoken = stripAudioTags(line.text);
+        const spoken = stripAudioTags(line.text).trim();
+        if (!spoken) continue;
         movementWords += spoken.split(/\s+/).filter(Boolean).length;
         lastLines.push({ speakerName: line.speakerName, text: line.text });
+        priorDialogueLines.push(spoken.slice(0, 220));
         if (line.isFactualClaim || spoken.length > 65) claimsSoFar.push(spoken.slice(0, 180));
       }
     }
+
     wordsWritten += movementWords;
     while (lastLines.length > 18) lastLines.shift();
     if (claimsSoFar.length > 80) claimsSoFar.splice(0, claimsSoFar.length - 80);
+    if (priorDialogueLines.length > 140) priorDialogueLines.splice(0, priorDialogueLines.length - 140);
     state = normalizeState(result.stateAfter, state);
     rawSegments.push(...result.segments);
 
     args.onMovementComplete?.({
-      movement: actIdx + 1,
+      movement: actIndex + 1,
       msSinceStart: Date.now() - startedAt,
       msForMovement: Date.now() - movementStartedAt,
-      lines: result.segments.reduce((n: number, s: any) => n + (Array.isArray(s?.lines) ? s.lines.length : 0), 0),
+      lines: quality.lines,
       words: movementWords,
     });
 
     args.log(
-      `Movement ${actIdx + 1}/${acts.length}: ${movementWords} words; state=${state.emotionalTemperature}; unresolved=${state.unresolvedThreads.length}.`
+      `Movement ${actIndex + 1}/${acts.length}: ${movementWords} words; ` +
+      `repeats=${quality.repeatedCurrentLines}; alternation=${Math.round(quality.strictAlternationRatio * 100)}%; ` +
+      `state=${state.emotionalTemperature}; unresolved=${state.unresolvedThreads.length}.`
+    );
+  }
+
+  if (wordsWritten < episodeMinimumWords) {
+    throw new Error(
+      `Movement-level generation completed with only ${wordsWritten} spoken words; ` +
+      `the ${args.targetDuration}-minute episode requires at least ${episodeMinimumWords}.`
     );
   }
 
@@ -270,12 +261,33 @@ export async function generateOutlineDrivenScript(
   };
 }
 
-/** Lines and spoken words in a movement's segments. */
-function countMovement(segments: any[]): { lines: number; words: number } {
+async function generateInitialMovement(
+  llm: LLMProvider,
+  args: ActArgs
+): Promise<{ segments: any[]; stateAfter: ConversationState }> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      return await generateActSegments(llm, args);
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `[ScriptOutline] Movement ${args.actNumber} structural attempt ${attempt} failed: ` +
+        `${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  throw new Error(
+    `Movement ${args.actNumber} generation failed twice: ` +
+    `${lastError instanceof Error ? lastError.message : String(lastError)}`
+  );
+}
+
+export function countMovement(segments: any[]): { lines: number; words: number } {
   let lines = 0;
   let words = 0;
-  for (const seg of segments || []) {
-    for (const line of seg?.lines || []) {
+  for (const segment of segments || []) {
+    for (const line of segment?.lines || []) {
       if (!line || typeof line.text !== "string") continue;
       lines++;
       words += stripAudioTags(line.text).split(/\s+/).filter(Boolean).length;
@@ -294,22 +306,22 @@ function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
     body.slice(0, firstCut),
     body.slice(firstCut, secondCut),
     [...body.slice(secondCut), closing],
-  ].filter((a) => a.length > 0);
+  ].filter((movement) => movement.length > 0);
 }
 
 function normalizeState(value: any, previous: ConversationState): ConversationState {
-  const arr = (v: unknown) =>
-    Array.isArray(v)
-      ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).slice(0, 6)
+  const strings = (candidate: unknown) =>
+    Array.isArray(candidate)
+      ? candidate.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0).slice(0, 6)
       : [];
   const allowed = new Set(["cool", "warming", "hot", "settling"]);
   return {
     emotionalTemperature: allowed.has(value?.emotionalTemperature)
       ? value.emotionalTemperature
       : previous.emotionalTemperature,
-    unresolvedThreads: arr(value?.unresolvedThreads),
-    positionShifts: arr(value?.positionShifts),
-    callbacksAvailable: arr(value?.callbacksAvailable),
+    unresolvedThreads: strings(value?.unresolvedThreads),
+    positionShifts: strings(value?.positionShifts),
+    callbacksAvailable: strings(value?.callbacksAvailable),
     relationshipChange:
       typeof value?.relationshipChange === "string" && value.relationshipChange.trim()
         ? value.relationshipChange.trim().slice(0, 300)
@@ -317,40 +329,39 @@ function normalizeState(value: any, previous: ConversationState): ConversationSt
   };
 }
 
-/** Ask the model to rewrite ALL flagged ungrounded lines in ONE batched call. */
 export async function rewriteLinesForGrounding(
   llm: LLMProvider,
   items: RewriteContext[],
   systemPrompt: string
 ): Promise<Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>> {
-  const out = new Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>();
-  if (items.length === 0) return out;
+  const output = new Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>();
+  if (items.length === 0) return output;
 
-  const CHUNK = 15;
-  for (let i = 0; i < items.length; i += CHUNK) {
-    const chunk = items.slice(i, i + CHUNK);
-    const lineBlocks = chunk.map((ctx) => {
-      const figs = ctx.unsupportedFigures
+  const chunkSize = 15;
+  for (let index = 0; index < items.length; index += chunkSize) {
+    const chunk = items.slice(index, index + chunkSize);
+    const lineBlocks = chunk.map((context) => {
+      const figures = context.unsupportedFigures
         .map(
-          (f) =>
-            `  - "${f.surface}" (${f.value}) is NOT in the evidence${
-              f.evidenceSays.length ? `; the evidence's numbers are: ${f.evidenceSays.join(", ")}` : ""
+          (figure) =>
+            `  - "${figure.surface}" (${figure.value}) is NOT in the evidence${
+              figure.evidenceSays.length ? `; the evidence's numbers are: ${figure.evidenceSays.join(", ")}` : ""
             }`
         )
         .join("\n");
-      const attrs = ctx.unsupportedAttributions
-        .map((n) => `  - "${n}" is presented as saying/doing something specific, but is NOT in the evidence`)
+      const attributions = context.unsupportedAttributions
+        .map((name) => `  - "${name}" is presented as saying/doing something specific, but is NOT in the evidence`)
         .join("\n");
-      const semantic = ctx.semanticReason
-        ? `\n  SEMANTIC REVIEWER FLAG: ${ctx.semanticReason}`
+      const semantic = context.semanticReason
+        ? `\n  SEMANTIC REVIEWER FLAG: ${context.semanticReason}`
         : "";
-      return `LINE ${ctx.line.lineIndex} — SPEAKER: ${ctx.line.speakerName}
-  CURRENT TEXT: ${JSON.stringify(ctx.line.text)}
+      return `LINE ${context.line.lineIndex} — SPEAKER: ${context.line.speakerName}
+  CURRENT TEXT: ${JSON.stringify(context.line.text)}
   VIOLATIONS:
-${figs || "  (no figure violations)"}
-${attrs}${semantic}
+${figures || "  (no figure violations)"}
+${attributions}${semantic}
   EVIDENCE FOR THIS LINE:
-  ${ctx.evidenceText || "(no specific evidence — keep the point qualitative)"}`;
+  ${context.evidenceText || "(no specific evidence — keep the point qualitative)"}`;
     });
 
     const prompt = `Rewrite each listed line so every factual detail is supported, or make the line qualitative. Preserve the speaker's intent and the conversational action the line performs on the line before it. Do not polish it into an essay. Keep fragments, pressure, humor, and an ending em dash when present. Introduce no new fact and touch no unlisted line.
@@ -361,7 +372,7 @@ Return valid JSON only:
 { "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": [] } ] }`;
 
     try {
-      const res = await withLlmStage("script:selfverify-rewrite", () =>
+      const result = await withLlmStage("script:selfverify-rewrite", () =>
         llm.generateStructuredOutput<any>({
           prompt,
           systemPrompt,
@@ -369,22 +380,22 @@ Return valid JSON only:
           maxTokens: Math.min(300 * chunk.length + 600, 8000),
         })
       );
-      const rewrites = Array.isArray(res?.rewrites) ? res.rewrites : [];
-      const requested = new Set(chunk.map((c) => c.line.lineIndex));
-      for (const rw of rewrites) {
-        if (!requested.has(rw?.lineIndex)) continue;
-        if (typeof rw?.text !== "string" || !rw.text.trim()) continue;
-        out.set(rw.lineIndex, {
-          text: rw.text,
-          evidenceRefs: Array.isArray(rw.evidenceRefs) ? rw.evidenceRefs : undefined,
-          isFactualClaim: typeof rw.isFactualClaim === "boolean" ? rw.isFactualClaim : undefined,
+      const rewrites = Array.isArray(result?.rewrites) ? result.rewrites : [];
+      const requested = new Set(chunk.map((context) => context.line.lineIndex));
+      for (const rewrite of rewrites) {
+        if (!requested.has(rewrite?.lineIndex)) continue;
+        if (typeof rewrite?.text !== "string" || !rewrite.text.trim()) continue;
+        output.set(rewrite.lineIndex, {
+          text: rewrite.text,
+          evidenceRefs: Array.isArray(rewrite.evidenceRefs) ? rewrite.evidenceRefs : undefined,
+          isFactualClaim: typeof rewrite.isFactualClaim === "boolean" ? rewrite.isFactualClaim : undefined,
         });
       }
-    } catch (err: any) {
-      console.warn(`[SelfVerify] batched rewrite failed: ${err?.message}`);
+    } catch (error: any) {
+      console.warn(`[SelfVerify] batched rewrite failed: ${error?.message}`);
     }
   }
-  return out;
+  return output;
 }
 
 async function generateEpisodeOutline(
@@ -394,51 +405,47 @@ async function generateEpisodeOutline(
 ): Promise<OutlineBeat[]> {
   const prompt = [
     `You are showrunning episode "${args.episodeTitle}" (roughly ${args.targetDuration} minutes).`,
-    ``,
-    `TOPICS & EVIDENCE:`,
+    "",
+    "TOPICS & EVIDENCE:",
     args.topicsPrompts,
-    ``,
-    `Build a SMALL story spine, not a rundown checklist.`,
-    `- Use 6 to 8 beats total. Beat 1 is a cold open already in motion. The final beat is a closing payoff.`,
-    `- Organize the episode around one unresolved central question. Additional topics must deepen, complicate, or unexpectedly answer it; do not merely move to the next headline.`,
-    `- Every beat changes something: leverage, emotional temperature, a host's position, what the listener believes, or the relationship between the hosts.`,
-    `- Plan at least one genuine position shift or newly exposed stake. It may be small; it must be caused by the discussion, not scheduled as a ceremonial concession.`,
-    `- Assign each evidence fact to at most one beat. Facts are ammunition, not the plot.`,
-    `- Do not schedule jokes, filler, interruptions, tangents, catchphrases, callbacks, or audio tags. A callback note is allowed only when a concrete earlier phrase or image could naturally return.`,
-    `- Prefer fewer, deeper movements over exhaustive coverage. It is acceptable to leave a weak topic out.`,
-    ``,
-    `Return valid JSON only:`,
+    "",
+    "Build a SMALL story spine, not a rundown checklist.",
+    "- Use 6 to 8 beats total. Beat 1 is a cold open already in motion. The final beat is a closing payoff.",
+    "- Organize the episode around one unresolved central question. Additional topics must deepen, complicate, or unexpectedly answer it; do not merely move to the next headline.",
+    "- Every beat changes something: leverage, emotional temperature, a host's position, what the listener believes, or the relationship between the hosts.",
+    "- Plan at least one genuine position shift or newly exposed stake. It may be small; it must be caused by the discussion, not scheduled as a ceremonial concession.",
+    "- Assign each evidence fact to at most one beat. Facts are ammunition, not the plot.",
+    "- Do not schedule jokes, filler, interruptions, tangents, catchphrases, callbacks, or audio tags. A callback note is allowed only when a concrete earlier phrase or image could naturally return.",
+    "- Prefer fewer, deeper movements over exhaustive coverage. It is acceptable to leave a weak topic out.",
+    "",
+    "Return valid JSON only:",
     `{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open|intro|topic|transition|closing", "title": "...", "goal": "what changes", "angle": "specific pressure/question", "topicId": "optional", "factRefs": [], "escalation": "how stakes or understanding change", "callback": "optional concrete phrase/image" } ] }`,
   ].join("\n");
 
-  const res = await withLlmStage("script:outline", () =>
+  const result = await withLlmStage("script:outline", () =>
     llm.generateStructuredOutput<any>({
       prompt,
       systemPrompt: creativeSystemPrompt,
       temperature: Math.min(args.temperature, 0.7),
-      // The outline allowance stays at 7,000 — unchanged by role routing.
       maxTokens: Math.min(args.maxTokens, 7000),
-      // The outline is the plan every later movement is written against, so a
-      // beat-less outline is rejected at the edge rather than after the
-      // five-beat floor check below has already discarded the whole call.
-      validate: (v) =>
-        Array.isArray((v as { beats?: unknown })?.beats)
+      validate: (value) =>
+        Array.isArray((value as { beats?: unknown })?.beats)
           ? null
           : "Outline is missing the required 'beats' array.",
     })
   );
 
-  const beats: OutlineBeat[] = Array.isArray(res?.beats) ? res.beats.slice(0, 8) : [];
+  const beats: OutlineBeat[] = Array.isArray(result?.beats) ? result.beats.slice(0, 8) : [];
   if (beats.length < 5) throw new Error(`Outline returned only ${beats.length} beats.`);
-  beats.forEach((b, i) => (b.beatIndex = i));
+  beats.forEach((beat, index) => (beat.beatIndex = index));
   beats[0].segmentType = "cold_open";
   beats[beats.length - 1].segmentType = "closing";
 
   const seenFacts = new Set<string>();
   for (const beat of beats) {
-    beat.factRefs = (Array.isArray(beat.factRefs) ? beat.factRefs : []).filter((ref) => {
-      if (!ref || !ref.type || !ref.id) return false;
-      const key = `${ref.type}:${ref.id}`;
+    beat.factRefs = (Array.isArray(beat.factRefs) ? beat.factRefs : []).filter((reference) => {
+      if (!reference || !reference.type || !reference.id) return false;
+      const key = `${reference.type}:${reference.id}`;
       if (seenFacts.has(key)) return false;
       seenFacts.add(key);
       return true;
@@ -464,20 +471,37 @@ interface ActArgs {
   speakerNames: string[];
 }
 
+function actContext(args: ActArgs): {
+  outlineRecap: string;
+  beatsDetail: string;
+  claimsBlock: string;
+  lastExchange: string;
+} {
+  const firstNow = args.actBeats[0]?.beatIndex ?? 0;
+  const lastNow = args.actBeats[args.actBeats.length - 1]?.beatIndex ?? firstNow;
+  const outlineRecap = args.beats
+    .map((beat, index) => `${index < firstNow ? "[DONE]" : index > lastNow ? "[LATER]" : ">>> NOW"} ${index + 1}. ${beat.segmentType} — ${beat.title}: ${beat.angle}`)
+    .join("\n");
+  const beatsDetail = args.actBeats
+    .map((beat) => `Beat ${beat.beatIndex + 1} (${beat.segmentType}) — ${beat.title}\n  Change: ${beat.goal}\n  Pressure: ${beat.angle}\n  Escalation: ${beat.escalation || "n/a"}\n  Optional callback seed: ${beat.callback || "none"}\n  TopicId: ${beat.topicId || "n/a"}\n  Assigned facts: ${JSON.stringify(beat.factRefs)}`)
+    .join("\n\n");
+  const claimsBlock = args.claimsSoFar.length
+    ? args.claimsSoFar.map((claim) => `- ${claim}`).join("\n")
+    : "(nothing yet)";
+  const lastExchange = args.lastLines.length
+    ? args.lastLines.map((line) => `${line.speakerName}: ${line.text}`).join("\n")
+    : "(start cold, already in motion)";
+  return { outlineRecap, beatsDetail, claimsBlock, lastExchange };
+}
+
 async function generateActSegments(
   llm: LLMProvider,
   args: ActArgs
 ): Promise<{ segments: any[]; stateAfter: ConversationState }> {
-  const firstNow = args.actBeats[0]?.beatIndex ?? 0;
-  const lastNow = args.actBeats[args.actBeats.length - 1]?.beatIndex ?? firstNow;
-  const outlineRecap = args.beats
-    .map((b, i) => `${i < firstNow ? "[DONE]" : i > lastNow ? "[LATER]" : ">>> NOW"} ${i + 1}. ${b.segmentType} — ${b.title}: ${b.angle}`)
-    .join("\n");
-  const beatsDetail = args.actBeats
-    .map((b) => `Beat ${b.beatIndex + 1} (${b.segmentType}) — ${b.title}\n  Change: ${b.goal}\n  Pressure: ${b.angle}\n  Escalation: ${b.escalation || "n/a"}\n  Optional callback seed: ${b.callback || "none"}\n  TopicId: ${b.topicId || "n/a"}\n  Assigned facts: ${JSON.stringify(b.factRefs)}`)
-    .join("\n\n");
-  const claimsBlock = args.claimsSoFar.length ? args.claimsSoFar.map((c) => `- ${c}`).join("\n") : "(nothing yet)";
-  const lastExchange = args.lastLines.length ? args.lastLines.map((l) => `${l.speakerName}: ${l.text}`).join("\n") : "(start cold, already in motion)";
+  const { outlineRecap, beatsDetail, claimsBlock, lastExchange } = actContext(args);
+  const minimumWords = Math.max(160, Math.round(args.softWordTarget * 0.82));
+  const idealWords = Math.max(minimumWords, Math.round(args.softWordTarget));
+  const maximumWords = Math.max(idealWords + 80, Math.round(args.softWordTarget * 1.18));
 
   const prompt = `Write MOVEMENT ${args.actNumber} of ${args.actCount} of "${args.episodeTitle}".
 
@@ -499,12 +523,16 @@ ${claimsBlock}
 TOPIC EVIDENCE — only facts assigned to the current beats may be newly introduced:
 ${args.topicsPrompts}
 
-Write a continuous conversation of roughly ${Math.round(args.softWordTarget * 0.75)}-${Math.round(args.softWordTarget * 1.2)} spoken words. This is a soft range, never a reason to pad. End the movement when its change has landed.
+LENGTH CONTRACT:
+- Write at least ${minimumWords} spoken words and aim for roughly ${idealWords}.
+- Do not exceed roughly ${maximumWords} words.
+- The minimum is required. Do not stop merely because the headline take has been stated; deepen the human disagreement, consequence, uncertainty, and response until every assigned beat changes something.
+- Do not pad with recaps, repeated facts, generic filler, or a second version of the same point.
 
 NON-NEGOTIABLE CONVERSATIONAL TESTS:
 - Each turn must visibly respond to the previous turn. Generic lines that could be relocated fail.
-- Do not alternate mechanically. A speaker may hold the floor; the other may answer with one word, a question, silence implied by a pause, or a full counterargument.
-- Do not insert filler, false starts, interruptions, laughter, agreement, tangents, callbacks, catchphrases, or dramatic pauses because podcasts supposedly contain them. Include one only when this exact moment causes it.
+- Do not alternate mechanically. Let a host build a thought across consecutive lines when the pressure warrants it, and use short reactions only when they are specific to what was just said.
+- Do not insert filler, false starts, interruptions, laughter, agreement, tangents, callbacks, catchphrases, or dramatic pauses because podcasts supposedly contain them.
 - Do not force conflict. Curiosity, embarrassment, recognition, partial agreement, and a quiet correction can be more gripping than shouting.
 - Preserve asymmetry: the hosts have different motives, sentence shapes, vulnerabilities, and ways of avoiding a point.
 - A factual correction must still sound like a person answering a person, not a fact-check note.
@@ -523,7 +551,7 @@ Return valid JSON only:
       "lines": [
         {
           "lineIndex": 0,
-          "speakerName": ${args.speakerNames.map((n) => JSON.stringify(n)).join(" | ")},
+          "speakerName": ${args.speakerNames.map((name) => JSON.stringify(name)).join(" | ")},
           "text": "spoken words",
           "tone": "heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition",
           "energy": "low|medium|high",
@@ -545,21 +573,80 @@ Return valid JSON only:
   }
 }`;
 
-  const res = await withLlmStage("script:acts", () =>
+  const result = await withLlmStage("script:acts", () =>
     llm.generateStructuredOutput<any>({
       prompt,
       systemPrompt: args.creativeSystemPrompt,
       temperature: args.temperature,
-      // The caller's movement allowance, passed through untouched (16,000 in
-      // production). A provider that cannot honor it must fail loudly, not
-      // quietly return half a movement.
       maxTokens: args.maxTokens,
       validate: validateScriptShape,
     })
   );
 
-  const segments = Array.isArray(res?.segments) ? res.segments : [];
-  const lineCount = segments.reduce((n: number, s: any) => n + (Array.isArray(s?.lines) ? s.lines.length : 0), 0);
+  const segments = Array.isArray(result?.segments) ? result.segments : [];
+  const lineCount = segments.reduce(
+    (total: number, segment: any) => total + (Array.isArray(segment?.lines) ? segment.lines.length : 0),
+    0
+  );
   if (lineCount === 0) throw new Error("Movement returned zero lines.");
-  return { segments, stateAfter: normalizeState(res?.stateAfter, args.state) };
+  return { segments, stateAfter: normalizeState(result?.stateAfter, args.state) };
+}
+
+async function repairActSegments(
+  llm: LLMProvider,
+  args: ActArgs,
+  draft: { segments: any[]; stateAfter: ConversationState },
+  quality: MovementQualityReport,
+  repairRound: number
+): Promise<{ segments: any[]; stateAfter: ConversationState }> {
+  const { outlineRecap, beatsDetail, claimsBlock, lastExchange } = actContext(args);
+  const prompt = `Repair MOVEMENT ${args.actNumber} of ${args.actCount}. Return the entire corrected movement, not a patch.
+
+WHY THIS DRAFT FAILED:
+${quality.failures.map((failure) => `- ${failure}`).join("\n")}
+
+MEASURED DRAFT:
+- ${quality.words} spoken words; minimum ${quality.minimumWords}
+- ${quality.repeatedCurrentLines} repeated current line(s)
+- ${Math.round(quality.strictAlternationRatio * 100)}% strict speaker alternation
+- ${quality.sameSpeakerBuilds} same-speaker build(s)
+- ${Math.round(quality.shortReactionRatio * 100)}% short reactions
+
+REPAIR RULES:
+- Preserve the same assigned beats, speakers, evidence references, factual claims, and overall argument direction.
+- Reach at least ${quality.minimumWords} spoken words by deepening consequences, motives, uncertainty, rebuttals, and reactions—not by recapping or repeating facts.
+- Replace every duplicated or portable line with a response caused by the line before it.
+- Vary turn shape naturally. A host may continue for a second line; a short reaction must refer to the exact preceding point.
+- Add no new fact, number, date, quote, injury, transaction, result, or named-person action.
+- Keep this spoken and emotionally specific. Do not polish it into an essay.
+
+FULL STORY SPINE:
+${outlineRecap}
+
+BEATS FOR THIS MOVEMENT:
+${beatsDetail}
+
+LAST EXCHANGE BEFORE THIS MOVEMENT:
+${lastExchange}
+
+ALREADY ESTABLISHED — do not repeat:
+${claimsBlock}
+
+CURRENT DRAFT:
+${JSON.stringify(draft, null, 2)}
+
+Return valid JSON only with the same schema as the draft: { "segments": [...], "stateAfter": {...} }`;
+
+  const result = await withLlmStage("script:acts", () =>
+    llm.generateStructuredOutput<any>({
+      prompt,
+      systemPrompt: args.creativeSystemPrompt,
+      temperature: Math.max(0.45, args.temperature - repairRound * 0.08),
+      maxTokens: args.maxTokens,
+      validate: validateScriptShape,
+    })
+  );
+
+  const segments = Array.isArray(result?.segments) ? result.segments : [];
+  return { segments, stateAfter: normalizeState(result?.stateAfter, draft.stateAfter) };
 }
