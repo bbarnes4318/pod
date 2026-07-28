@@ -31,7 +31,16 @@ jobs:
       - run: npm ci
       - run: npx prisma generate
       - name: TypeScript
-        run: npx tsc --noEmit
+        run: |
+          set -o pipefail
+          npx tsc --noEmit 2>&1 | tee /tmp/typescript-errors.log
+      - name: Preserve TypeScript failure output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-errors
+          path: /tmp/typescript-errors.log
+          if-no-files-found: error
       - name: Real podcast quality regression
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
       - name: Script queue identity regression
