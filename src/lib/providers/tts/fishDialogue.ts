@@ -1,10 +1,12 @@
 // Fish Audio S2-Pro multi-speaker scene adapter.
 //
-// One request renders a whole conversation with <|speaker:N|> tags. Consecutive
-// stored JSON lines from the same host are collapsed into ONE speaker run so a
-// database/storage boundary cannot become an audible cadence reset.
+// Production rule: provider success is not performance success. Each scene is
+// rendered several times, analyzed while it is still RAW speech, and only the
+// strongest passing performance is returned. Flat/metronomic output never
+// reaches storage or the final stitcher.
 
 import { getFishApiKey } from "../../env";
+import { analyzeSpokenPerformanceBuffer, type SpokenPerformanceQaReport } from "../../audio/spokenPerformanceQa";
 import {
   DialogueSceneInput,
   DialogueSceneResult,
@@ -16,21 +18,27 @@ import { FISH_REFERENCE_ID_RE } from "./providerIds";
 import { SCRIPT_TAG_TO_FISH, TONE_TO_FISH_CUE } from "./fishFormat";
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
-const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
+const TAG_PATTERN = /\[([^\[\]]{1,80})\]/g;
 
 const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
-  heated: "[slow, quiet, cold and precise]",
-  excited: "[measured, intense, deliberate]",
+  heated: "[slower, quieter, cold and precise]",
+  excited: "[measured and intense, never rushed]",
   incredulous: "[quiet disbelief, unhurried]",
-  dismissive: "[flat, slow, done with this]",
+  dismissive: "[flat, slow, finished with this argument]",
 };
 
 const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
-  heated: "[loud and slow, stretching every word]",
-  excited: "[booming, unhurried, savoring it]",
+  heated: "[loud and slow, stretching the important words]",
+  excited: "[booming and unhurried, savoring it]",
   incredulous: "[loud disbelief, drawn out]",
   dismissive: "[loud, flat, dragging the words]",
 };
+
+interface FishProsody {
+  speed: number;
+  volume: number;
+  normalize_loudness: boolean;
+}
 
 export interface FishScenePayload {
   url: string;
@@ -39,161 +47,201 @@ export interface FishScenePayload {
     text: string;
     reference_id: string[];
     format: "mp3" | "wav";
-    mp3_bitrate?: number;
+    sample_rate: number;
+    mp3_bitrate?: 64 | 128 | 192;
     temperature: number;
     top_p: number;
+    prosody: FishProsody;
+    chunk_length: number;
+    normalize: boolean;
+    latency: "normal";
+    max_new_tokens: number;
+    repetition_penalty: number;
+    min_chunk_length: number;
+    condition_on_previous_chunks: boolean;
+    early_stop_threshold: number;
   };
   voiceOrder: string[];
   directionCues: Record<string, string>;
-  /** Number of provider speaker runs after adjacent same-host lines collapse. */
   speakerRunCount: number;
 }
 
-function lineHeat(u: { tone?: string; energy?: string }): number {
-  const e = u.energy === "high" ? 2 : u.energy === "medium" ? 1 : 0;
-  const hotTone = ["heated", "excited", "incredulous"].includes((u.tone || "").toLowerCase()) ? 2 : 0;
-  return e + hotTone;
+interface CandidateResult {
+  index: number;
+  audioBuffer: Buffer;
+  contentType: string;
+  qa: SpokenPerformanceQaReport;
+  temperature: number;
+  topP: number;
+  requestId?: string;
 }
 
-/** Distill the authored Delivery style into one short Fish control cue. */
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
+}
+
+function productionStrict(): boolean {
+  if (process.env.TTS_PERFORMANCE_QA_STRICT === "false") return false;
+  if (process.env.TTS_PERFORMANCE_QA_STRICT === "true") return true;
+  return process.env.NODE_ENV === "production";
+}
+
+function resolveFishSceneModel(): string {
+  const model = (process.env.FISH_SCENE_MODEL || "s2-pro").trim();
+  const allowUnverified = process.env.FISH_ALLOW_UNVERIFIED_SCENE_MODEL === "true";
+  if (model !== "s2-pro" && !allowUnverified) {
+    throw new SceneGenerationError(
+      "unsupported_model",
+      `Fish multi-speaker publishing requires the documented 's2-pro' model; got '${model}'. ` +
+      `Set FISH_SCENE_MODEL=s2-pro. FISH_ALLOW_UNVERIFIED_SCENE_MODEL=true is preview-only and disables this safety gate.`
+    );
+  }
+  return model;
+}
+
+function performanceCandidateCount(input: DialogueSceneInput): number {
+  const fallback = input.sceneType === "cold_open" || input.sceneType === "argument_escalation" ? 3 : 2;
+  return envInt("FISH_PERFORMANCE_CANDIDATES", fallback, 1, 4);
+}
+
+function lineHeat(u: { tone?: string; energy?: string }): number {
+  const energy = u.energy === "high" ? 2 : u.energy === "medium" ? 1 : 0;
+  const hotTone = ["heated", "excited", "incredulous", "dismissive"].includes((u.tone || "").toLowerCase()) ? 2 : 0;
+  return energy + hotTone;
+}
+
+/** Distill the authored delivery style into a compact Fish bracket cue. */
 export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | null {
   const direction = (ctx.direction || "").replace(/\s+/g, " ").trim();
   if (!direction) return null;
   const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|The disagreement|Mid-conversation|Your intensity|When genuinely|Never:)|$)/i);
   let style = (match?.[1] || "").trim();
   if (!style) return null;
-
   const firstSentence = style.match(/^(.{20,190}?[.!?])(?:\s|$)/)?.[1];
   style = (firstSentence || style).replace(/[.!?]+$/, "").trim();
-  if (style.length > 180) {
-    const cut = style.slice(0, 180);
+  if (style.length > 170) {
+    const cut = style.slice(0, 170);
     style = cut.slice(0, Math.max(40, cut.lastIndexOf(" "))).trim();
   }
-  return `[${style}; conversational, responsive, reacting in the moment]`;
+  return `[${style}; speaking to the other host, reacting in this moment, never reading]`;
 }
 
-/** Pure request builder (unit-tested without network). */
-export function buildFishScenePayload(input: DialogueSceneInput): FishScenePayload {
-  const model = (process.env.FISH_SCENE_MODEL || "s2.1-pro-free").trim();
+function emotionalCue(
+  tone: string,
+  anger: "louder_faster" | "slower_quieter" | "louder_slower"
+): string | null {
+  if (anger === "slower_quieter") return SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone] ?? null;
+  if (anger === "louder_slower") return LOUD_SLOW_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone] ?? null;
+  return TONE_TO_FISH_CUE[tone] ?? null;
+}
 
-  // Speaker index = order of first appearance in the scene.
+/** Pure request builder. Candidate sampling overrides are applied later. */
+export function buildFishScenePayload(input: DialogueSceneInput): FishScenePayload {
+  const model = resolveFishSceneModel();
   const voiceOrder: string[] = [];
   const speakerIndexByHost = new Map<string, number>();
-  for (const u of input.utterances) {
-    if (!speakerIndexByHost.has(u.speakerHostId)) {
-      if (!FISH_REFERENCE_ID_RE.test(u.voiceId)) {
-        throw new SceneGenerationError(
-          "invalid_voice",
-          `Line ${u.lineIndex}: '${u.voiceId || "(empty)"}' is not a valid 32-hex Fish reference id — a scene needs an explicit Fish voice per speaker.`
-        );
-      }
-      speakerIndexByHost.set(u.speakerHostId, voiceOrder.length);
-      voiceOrder.push(u.voiceId);
+  for (const utterance of input.utterances) {
+    if (speakerIndexByHost.has(utterance.speakerHostId)) continue;
+    if (!FISH_REFERENCE_ID_RE.test(utterance.voiceId)) {
+      throw new SceneGenerationError(
+        "invalid_voice",
+        `Line ${utterance.lineIndex}: '${utterance.voiceId || "(empty)"}' is not a valid 32-hex Fish reference id.`
+      );
     }
+    speakerIndexByHost.set(utterance.speakerHostId, voiceOrder.length);
+    voiceOrder.push(utterance.voiceId);
   }
 
   const cueCapByHost = new Map<string, number>();
   const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter" | "louder_slower">();
   const baselineCueByHost = new Map<string, string>();
   const directionCues: Record<string, string> = {};
-  for (const c of input.cast) {
-    cueCapByHost.set(c.speakerHostId, Math.max(0, Math.min(2, c.maxCueDensity)));
-    angerStyleByHost.set(c.speakerHostId, c.angerStyle ?? "louder_faster");
-    const cue = compactFishDeliveryCue(c);
-    if (cue) {
-      baselineCueByHost.set(c.speakerHostId, cue);
-      directionCues[c.speakerHostId] = cue;
+  for (const cast of input.cast) {
+    // Fish works best with sparse, meaningful bracket direction. Permit a
+    // baseline cue plus up to two genuine peak/turn cues per speaker per scene.
+    cueCapByHost.set(cast.speakerHostId, Math.max(1, Math.min(3, cast.maxCueDensity + 1)));
+    angerStyleByHost.set(cast.speakerHostId, cast.angerStyle ?? "louder_faster");
+    const baseline = compactFishDeliveryCue(cast);
+    if (baseline) {
+      baselineCueByHost.set(cast.speakerHostId, baseline);
+      directionCues[cast.speakerHostId] = baseline;
     }
   }
 
-  // Exactly one line may carry the scene's tone-derived emotional accent.
-  let accentLineIndex = -1;
-  let bestHeat = 0;
-  for (const u of input.utterances) {
-    const heat = lineHeat(u);
-    if (heat >= 3 && heat > bestHeat) {
-      bestHeat = heat;
-      accentLineIndex = u.lineIndex;
-    }
-  }
-
+  const cuesUsedByHost = new Map<string, number>();
   const baselineApplied = new Set<string>();
   const parts: string[] = [];
   let previousHostId: string | null = null;
 
-  for (const u of input.utterances) {
-    const idx = speakerIndexByHost.get(u.speakerHostId)!;
-    let cueCount = 0;
-    const cap = cueCapByHost.get(u.speakerHostId) ?? 1;
+  for (const utterance of input.utterances) {
+    const speakerIndex = speakerIndexByHost.get(utterance.speakerHostId)!;
+    const cap = cueCapByHost.get(utterance.speakerHostId) ?? 2;
+    let used = cuesUsedByHost.get(utterance.speakerHostId) ?? 0;
     const openers: string[] = [];
 
-    if (u.isInterruption && cap > 0) {
-      openers.push("[cutting in]");
-      cueCount++;
+    if (!baselineApplied.has(utterance.speakerHostId) && used < cap) {
+      const baseline = baselineCueByHost.get(utterance.speakerHostId);
+      if (baseline) {
+        openers.push(baseline);
+        baselineApplied.add(utterance.speakerHostId);
+        used++;
+      }
     }
 
-    const text = u.spokenText.replace(TAG_PATTERN, (_m, inner: string) => {
+    if (utterance.isInterruption && used < cap) {
+      openers.push("[cutting in because the last point cannot stand]");
+      used++;
+    }
+
+    const text = utterance.spokenText.replace(TAG_PATTERN, (_match, inner: string) => {
       const mapped = SCRIPT_TAG_TO_FISH[inner.trim().toLowerCase()];
-      if (mapped === undefined || mapped === null) return " ";
-      if (cueCount >= Math.max(cap, u.isInterruption ? 2 : cap)) return " ";
-      cueCount++;
+      if (mapped === undefined || mapped === null || used >= cap) return " ";
+      used++;
       return ` ${mapped} `;
     });
 
-    if (u.lineIndex === accentLineIndex && cueCount < cap && cap > 0) {
-      const tone = (u.tone || "").toLowerCase();
-      const anger = angerStyleByHost.get(u.speakerHostId) ?? "louder_faster";
-      const cue =
-        anger === "slower_quieter"
-          ? SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
-          : anger === "louder_slower"
-            ? LOUD_SLOW_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone]
-            : TONE_TO_FISH_CUE[tone];
+    // Use delivery direction at genuine peaks and sharp reactions, not once for
+    // the entire scene and not on every sentence.
+    if (used < cap && lineHeat(utterance) >= 3) {
+      const cue = emotionalCue(
+        (utterance.tone || "").toLowerCase(),
+        angerStyleByHost.get(utterance.speakerHostId) ?? "louder_faster"
+      );
       if (cue) {
         openers.push(cue);
-        cueCount++;
+        used++;
       }
     }
-
-    if (!baselineApplied.has(u.speakerHostId) && cueCount < cap && cap > 0) {
-      const baseline = baselineCueByHost.get(u.speakerHostId);
-      if (baseline) {
-        openers.push(baseline);
-        cueCount++;
-        baselineApplied.add(u.speakerHostId);
-      }
-    }
+    cuesUsedByHost.set(utterance.speakerHostId, used);
 
     const body = text.replace(/\s+/g, " ").trim();
     const rendered = `${openers.length ? `${openers.join(" ")} ` : ""}${body}`;
-
-    // The script stores lines for editing, evidence and approval. Fish should
-    // hear speaker TURNS. Adjacent lines by the same host stay under the same
-    // speaker tag unless a real segment/topic boundary starts a new run.
     const continuesSameRun =
-      previousHostId === u.speakerHostId &&
-      u.segmentBoundary !== "segment" &&
-      u.segmentBoundary !== "topic" &&
-      !u.isInterruption;
+      previousHostId === utterance.speakerHostId &&
+      utterance.segmentBoundary !== "segment" &&
+      utterance.segmentBoundary !== "topic" &&
+      !utterance.isInterruption;
 
-    if (continuesSameRun && parts.length > 0) {
-      parts[parts.length - 1] += ` ${rendered}`;
-    } else {
-      parts.push(`<|speaker:${idx}|>${rendered}`);
-    }
-    previousHostId = u.speakerHostId;
+    if (continuesSameRun && parts.length > 0) parts[parts.length - 1] += ` ${rendered}`;
+    else parts.push(`<|speaker:${speakerIndex}|>${rendered}`);
+    previousHostId = utterance.speakerHostId;
   }
 
-  const temps = input.cast
-    .map((c) => c.providerOverrides?.temperature)
-    .filter((t): t is number => typeof t === "number" && t >= 0 && t <= 1)
+  const temperatures = input.cast
+    .map((cast) => cast.providerOverrides?.temperature)
+    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
     .sort((a, b) => a - b);
   const topPs = input.cast
-    .map((c) => c.providerOverrides?.topP)
-    .filter((t): t is number => typeof t === "number" && t >= 0 && t <= 1)
+    .map((cast) => cast.providerOverrides?.topP)
+    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
     .sort((a, b) => a - b);
-
   const format = input.format === "wav" ? "wav" : "mp3";
+
   return {
     url: FISH_TTS_URL,
     model,
@@ -201,9 +249,19 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       text: parts.join(""),
       reference_id: voiceOrder,
       format,
-      ...(format === "mp3" ? { mp3_bitrate: 192 } : {}),
-      temperature: temps.length ? temps[Math.floor(temps.length / 2)] : 0.7,
-      top_p: topPs.length ? topPs[Math.floor(topPs.length / 2)] : 0.7,
+      sample_rate: 44100,
+      ...(format === "mp3" ? { mp3_bitrate: 192 as const } : {}),
+      temperature: temperatures.length ? temperatures[Math.floor(temperatures.length / 2)] : 0.78,
+      top_p: topPs.length ? topPs[Math.floor(topPs.length / 2)] : 0.82,
+      prosody: { speed: 1, volume: 0, normalize_loudness: true },
+      chunk_length: envInt("FISH_SCENE_CHUNK_LENGTH", 300, 100, 300),
+      normalize: true,
+      latency: "normal",
+      max_new_tokens: envInt("FISH_SCENE_MAX_NEW_TOKENS", 4096, 1024, 8192),
+      repetition_penalty: clamp(Number(process.env.FISH_SCENE_REPETITION_PENALTY) || 1.15, 1, 2),
+      min_chunk_length: envInt("FISH_SCENE_MIN_CHUNK_LENGTH", 80, 50, 300),
+      condition_on_previous_chunks: true,
+      early_stop_threshold: 1,
     },
     voiceOrder,
     directionCues,
@@ -211,17 +269,22 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
   };
 }
 
-/** Execute the scene request. Retries once on 429/5xx. */
-export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Promise<DialogueSceneResult> {
-  const apiKey = getFishApiKey();
-  if (!apiKey) throw new SceneGenerationError("authentication", "FISH_API_KEY is not configured.");
-
-  const payload = buildFishScenePayload(input);
-  const timeoutMs = parseInt(process.env.FISH_TTS_TIMEOUT_MS || "120000", 10);
+async function requestCandidate(
+  apiKey: string,
+  payload: FishScenePayload,
+  candidateIndex: number,
+  input: DialogueSceneInput
+): Promise<CandidateResult> {
+  const temperatureOffsets = [-0.04, 0.08, 0.16, -0.10];
+  const topPOffsets = [0, 0.06, -0.04, 0.10];
+  const temperature = clamp(payload.body.temperature + (temperatureOffsets[candidateIndex] ?? 0), 0.55, 0.98);
+  const topP = clamp(payload.body.top_p + (topPOffsets[candidateIndex] ?? 0), 0.60, 0.98);
+  const body = { ...payload.body, temperature, top_p: topP };
+  const timeoutMs = envInt("FISH_TTS_TIMEOUT_MS", 180000, 30000, 300000);
 
   const doFetch = async () => {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch(payload.url, {
         method: "POST",
@@ -230,11 +293,11 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
           "Content-Type": "application/json",
           model: payload.model,
         },
-        body: JSON.stringify(payload.body),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
     } finally {
-      clearTimeout(t);
+      clearTimeout(timer);
     }
   };
 
@@ -242,45 +305,112 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
   try {
     response = await doFetch();
     if (response.status === 429 || response.status >= 500) {
-      const retryAfter = parseFloat(response.headers.get("retry-after") || "0");
-      await new Promise((r) => setTimeout(r, retryAfter > 0 ? retryAfter * 1000 : 3000));
+      const retryAfter = Number(response.headers.get("retry-after") || 0);
+      await new Promise((resolve) => setTimeout(resolve, retryAfter > 0 ? retryAfter * 1000 : 3000));
       response = await doFetch();
     }
-  } catch (err) {
-    if ((err as Error)?.name === "AbortError") {
-      throw new SceneGenerationError("provider_unavailable", `Fish scene request timed out after ${timeoutMs}ms.`);
+  } catch (error) {
+    if ((error as Error)?.name === "AbortError") {
+      throw new SceneGenerationError("provider_unavailable", `Fish candidate ${candidateIndex} timed out after ${timeoutMs}ms.`);
     }
-    throw new SceneGenerationError("provider_unavailable", `Fish scene request failed: ${(err as Error).message}`);
+    throw new SceneGenerationError("provider_unavailable", `Fish candidate ${candidateIndex} failed: ${(error as Error).message}`);
   }
 
   if (!response.ok) {
-    const errText = await response.text().catch(() => "");
+    const errorText = await response.text().catch(() => "");
     throw new SceneGenerationError(
       categorizeHttpStatus(response.status),
-      `Fish Audio scene API error ${response.status}: ${errText.slice(0, 300)}`
+      `Fish Audio candidate ${candidateIndex} error ${response.status}: ${errorText.slice(0, 300)}`
     );
   }
 
   const audioBuffer = Buffer.from(await response.arrayBuffer());
-  if (audioBuffer.length === 0) {
-    throw new SceneGenerationError("empty_audio", "Fish Audio scene API returned an empty audio body.");
+  if (audioBuffer.length === 0) throw new SceneGenerationError("empty_audio", `Fish candidate ${candidateIndex} returned empty audio.`);
+
+  const qa = await analyzeSpokenPerformanceBuffer(audioBuffer, {
+    expectedTurnCount: payload.speakerRunCount,
+    sceneType: input.sceneType,
+    format: payload.body.format,
+    strict: productionStrict(),
+  });
+
+  return {
+    index: candidateIndex,
+    audioBuffer,
+    contentType: response.headers.get("content-type") || `audio/${payload.body.format}`,
+    qa,
+    temperature,
+    topP,
+    requestId: response.headers.get("request-id") || undefined,
+  };
+}
+
+/** Generate, audition and select a real performance—not merely valid bytes. */
+export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Promise<DialogueSceneResult> {
+  const apiKey = getFishApiKey();
+  if (!apiKey) throw new SceneGenerationError("authentication", "FISH_API_KEY is not configured.");
+  const payload = buildFishScenePayload(input);
+  const candidateCount = performanceCandidateCount(input);
+  const candidates: CandidateResult[] = [];
+  const errors: string[] = [];
+
+  for (let index = 0; index < candidateCount; index++) {
+    try {
+      const candidate = await requestCandidate(apiKey, payload, index, input);
+      candidates.push(candidate);
+      console.log(
+        `[FishPerformance] scene=${input.sceneIndex} candidate=${index} score=${candidate.qa.score}/100 ` +
+        `pass=${candidate.qa.passed} LRA=${candidate.qa.metrics.loudnessRangeLu ?? "n/a"} ` +
+        `pauseσ=${candidate.qa.metrics.pauseStdDevSec ?? "n/a"}`
+      );
+    } catch (error) {
+      errors.push(`candidate ${index}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const passing = candidates.filter((candidate) => candidate.qa.passed).sort((a, b) => b.qa.score - a.qa.score);
+  const selected = passing[0];
+  if (!selected) {
+    const reports = candidates.map((candidate) =>
+      `candidate ${candidate.index} ${candidate.qa.score}/100: ${candidate.qa.failures.join("; ") || "failed score floor"}`
+    );
+    throw new SceneGenerationError(
+      "quality_gate_failed",
+      `Fish produced no publishable performance for scene ${input.sceneIndex}. ` +
+      [...reports, ...errors].join(" | ").slice(0, 1200)
+    );
   }
 
   return {
-    audioBuffer,
-    contentType: response.headers.get("content-type") || `audio/${payload.body.format}`,
+    audioBuffer: selected.audioBuffer,
+    contentType: selected.contentType,
     renderUnit: "multi_speaker_scene",
     model: payload.model,
-    endpoint: "v1/tts (multi-speaker)",
+    endpoint: `v1/tts multi-speaker; best of ${candidateCount}`,
     providerMetadata: {
       voiceOrder: payload.voiceOrder,
-      temperature: payload.body.temperature,
-      topP: payload.body.top_p,
+      selectedCandidate: selected.index,
+      candidatesRequested: candidateCount,
+      candidatesCompleted: candidates.length,
+      candidateScores: candidates.map((candidate) => ({
+        index: candidate.index,
+        score: candidate.qa.score,
+        passed: candidate.qa.passed,
+        failures: candidate.qa.failures,
+        warnings: candidate.qa.warnings,
+        metrics: candidate.qa.metrics,
+        temperature: candidate.temperature,
+        topP: candidate.topP,
+      })),
+      selectedPerformanceQa: selected.qa,
+      temperature: selected.temperature,
+      topP: selected.topP,
       directionCues: payload.directionCues,
       speakerRunCount: payload.speakerRunCount,
       approvedUtteranceCount: input.utterances.length,
-      cuedTextPreview: payload.body.text.slice(0, 400),
+      cuedTextPreview: payload.body.text.slice(0, 500),
       characterCount: payload.body.text.length,
+      requestId: selected.requestId,
     },
   };
 }
