@@ -44,7 +44,7 @@ assert.ok(connectedScore.sameSpeakerBuilds >= 1);
 const flatMetrics: SpokenPerformanceQaMetrics = {
   durationSec: 48,
   integratedLufs: -16,
-  loudnessRangeLu: 1.7,
+  loudnessRangeLu: 4.9, // combined level variation alone must not save this
   truePeakDb: -1.2,
   pauseCount: 8,
   medianPauseSec: 0.4,
@@ -53,6 +53,11 @@ const flatMetrics: SpokenPerformanceQaMetrics = {
   pauseCoefficientOfVariation: 0.0875,
   narrowPauseRatio: 1,
   longestPauseSec: 0.46,
+  analyzedPhraseCount: 16,
+  terminalFallRatio: 0.875,
+  medianTerminalPitchChangeSemitones: -4.6,
+  medianPhrasePitchRangeSemitones: 0.8,
+  phraseEnergyCoefficientOfVariation: 0.12,
 };
 
 const aliveMetrics: SpokenPerformanceQaMetrics = {
@@ -67,6 +72,11 @@ const aliveMetrics: SpokenPerformanceQaMetrics = {
   pauseCoefficientOfVariation: 0.52,
   narrowPauseRatio: 0.44,
   longestPauseSec: 1.18,
+  analyzedPhraseCount: 15,
+  terminalFallRatio: 0.47,
+  medianTerminalPitchChangeSemitones: -0.6,
+  medianPhrasePitchRangeSemitones: 3.8,
+  phraseEnergyCoefficientOfVariation: 0.36,
 };
 
 const flatQa = scoreSpokenPerformanceMetrics(flatMetrics, {
@@ -79,8 +89,8 @@ const aliveQa = scoreSpokenPerformanceMetrics(aliveMetrics, {
   sceneType: "argument_escalation",
   strict: true,
 });
-assert.equal(flatQa.passed, false, "flat/metronomic audio must be rejected");
-assert.ok(flatQa.failures.some((failure) => /Flat vocal dynamics|Metronome pacing|cluster/.test(failure)));
+assert.equal(flatQa.passed, false, "flat/metronomic/read-aloud audio must be rejected");
+assert.ok(flatQa.failures.some((failure) => /Metronome pacing|cluster|terminal cadence|Monotone phrase/.test(failure)));
 assert.equal(aliveQa.passed, true, `alive performance was rejected: ${aliveQa.failures.join("; ")}`);
 assert.ok(aliveQa.score >= 80);
 
