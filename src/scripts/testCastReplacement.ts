@@ -8,8 +8,7 @@
 //      author copies. So the first half of this file is a repository search
 //      with an EXPLICIT allowlist: every surviving mention of the retired
 //      character is enumerated here with a reason, and a new one fails the
-//      build. "Grep found nothing" is not a test; "grep found exactly these
-//      seven things, and here is why each is allowed" is.
+//      build.
 //
 //   2. THE CHARACTER. Cal's performance profile is the part of him that reaches
 //      TTS, and every property that makes him a different person from his
@@ -44,13 +43,6 @@ const ROOT = join(__dirname, "..", "..");
 // 1. Repository search
 // ---------------------------------------------------------------------------
 
-/**
- * Anything that could bring the retired character or his running bits back.
- *
- * "attendance" alone is NOT here: it is an ordinary English word that appears in
- * unrelated grounding tests and format contracts, and banning it would train
- * whoever hits the failure to weaken the list. The bit-specific tokens are.
- */
 const BANNED = [
   "Mulkey",
   "dutch-attendance",
@@ -71,11 +63,6 @@ const BANNED = [
   "FISH_MULKEY_VOICE_ID",
 ];
 
-/**
- * Every file allowed to mention a banned token, with the reason and a hard cap
- * on how many lines may do so. A cap rather than a blanket exemption, because an
- * exempt file is exactly where dormant behavior would survive.
- */
 const ALLOWED: Array<{ path: string; maxLines: number; reason: string }> = [
   { path: "prisma/schema.prisma", maxLines: 14, reason: "the rollback archive table + the comments explaining what was dropped" },
   { path: "src/lib/hosts/roster.ts", maxLines: 5, reason: "the retired slug in RETIRED_HOST_SLUGS + the deprecated seat-B env fallback" },
@@ -85,16 +72,12 @@ const ALLOWED: Array<{ path: string; maxLines: number; reason: string }> = [
   { path: "src/scripts/testLedger.ts", maxLines: 3, reason: "proves a retired-shape claim contributes nothing" },
 ];
 
-/** Source trees that ship. Migration history is excluded by design — a migration
- *  is a record of what happened and MUST keep naming what it dropped. */
 const SCANNED_ROOTS = ["src", "prisma"];
 const SCANNED_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".json", ".css", ".txt", ".prisma"];
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    // Migration SQL is history. It is allowed — and required — to name what it
-    // archived and dropped, and it is never executed as application logic.
     if (entry === "migrations" || entry === "node_modules" || entry === ".next") continue;
     if (statSync(full).isDirectory()) walk(full, out);
     else if (SCANNED_EXTENSIONS.some((e) => entry.endsWith(e))) out.push(full);
@@ -121,21 +104,13 @@ check("no active production code can resurrect the retired character", () => {
     if (allowance && hits > 0) allowedCounts.set(rel, hits);
   }
 
-  assert(
-    offences.length === 0,
-    `the retired character survives in active code:\n      ${offences.join("\n      ")}`
-  );
+  assert(offences.length === 0, `the retired character survives in active code:\n      ${offences.join("\n      ")}`);
 
-  // The allowlist must be TIGHT. A file drifting past its cap means new retired
-  // material was added under an existing exemption, which is the loophole an
-  // allowlist exists to close.
   const overruns = ALLOWED.filter((a) => (allowedCounts.get(a.path) ?? 0) > a.maxLines).map(
     (a) => `${a.path}: ${allowedCounts.get(a.path)} lines, cap ${a.maxLines} (${a.reason})`
   );
   assert(overruns.length === 0, `an allowlisted file grew past its cap:\n      ${overruns.join("\n      ")}`);
 
-  // And a STALE exemption must be removed rather than left as a standing
-  // permission slip.
   const stale = ALLOWED.filter((a) => !allowedCounts.has(a.path)).map((a) => a.path);
   assert(stale.length === 0, `these files no longer need their exemption — delete it: ${stale.join(", ")}`);
 });
@@ -147,8 +122,6 @@ check("the retired seat-B env var survives ONLY as a marked deprecation", () => 
     "the deprecated fallback is gone entirely — that is a breaking change, not a cleanup; confirm it is intended"
   );
   assert(/DEPRECATED/.test(roster), "the fallback must be marked DEPRECATED in the source");
-  // It must be LAST among the env vars, so a correctly-configured environment
-  // never reaches it.
   const order = ["FISH_HOST_B_VOICE_ID", "FISH_CAL_MERCER_VOICE_ID", "FISH_MULKEY_VOICE_ID"].map((v) =>
     roster.indexOf(`env.${v}`)
   );
@@ -166,9 +139,6 @@ check("seat-B voice resolution prefers the seat var and preserves a working voic
   const legacy = resolveSeatBVoice(REAL, { FISH_MULKEY_VOICE_ID: "cccc" } as unknown as NodeJS.ProcessEnv);
   assert(legacy.voiceId === "cccc" && legacy.deprecated, "the deprecated var must still resolve, and say that it is deprecated");
 
-  // The one that matters in production: nothing set, a real voice already on the
-  // row. Overwriting it with the placeholder would block publishing and take a
-  // working show off the air to complete a character change.
   const preserved = resolveSeatBVoice(REAL, {} as unknown as NodeJS.ProcessEnv);
   assert(preserved.voiceId === REAL, `a working voice must be preserved, got ${preserved.voiceId}`);
 
@@ -208,9 +178,6 @@ check("Cal has a moderate baseline and a real lower register — he does not ope
 
 check("Cal can disagree without raising his volume — the mechanical guarantee", () => {
   const p = hostPerformanceProfileSchema.parse(CAL_PROFILE);
-  // Every adapter maps anger through this one field. If it ever becomes a
-  // "louder_" value, his most furious moment renders as shouting and the whole
-  // point of the recast is gone, silently, with every other test still passing.
   assert(p.angerStyle === "slower_quieter", `angerStyle is '${p.angerStyle}' — his anger must go DOWN`);
   assert(p.killShotBehavior === "measured", `killShotBehavior is '${p.killShotBehavior}'`);
   assert(p.interruptionBehavior !== "assertive", `interruptionBehavior is '${p.interruptionBehavior}' — he does not arrive on top`);
@@ -244,10 +211,11 @@ check("the two hosts never share a behavioral value where a contrast exists", ()
   assert(a.peakIntensity > b.peakIntensity, "seat B must not out-peak seat A");
 });
 
-check("Cal has NO catchphrases, and cannot be funny by repeating a line", () => {
-  assert(cal.catchphrases.length === 0, `Cal has catchphrases: ${JSON.stringify(cal.catchphrases)} — his humor must come from what he notices`);
-  // Zabala keeps hers; the rule is about him, not about the schema.
-  assert(zabala.catchphrases.length > 0, "Zabala's catchphrases were removed as collateral damage");
+check("neither active host can be funny by repeating a prewritten line", () => {
+  assert(cal.catchphrases.length === 0, `Cal has catchphrases: ${JSON.stringify(cal.catchphrases)}`);
+  assert(zabala.catchphrases.length === 0, `Zabala has catchphrases: ${JSON.stringify(zabala.catchphrases)}`);
+  assert(zabala.name === "Bernadette Zabala", `the production-label nickname survived in the active name: '${zabala.name}'`);
+  assert(zabala.bannedPhrases.some((p) => /line two/i.test(p)), "the literal Line Two artifact must be banned");
 });
 
 check("Cal has a desire, an avoidance, and an explicit synthetic-character boundary", () => {
@@ -268,8 +236,6 @@ check("Cal's banned phrases close the routes back to a device", () => {
 });
 
 check("Cal's argument patterns are ways of THINKING, not lines to deliver", () => {
-  // A pattern that reads as a quotable sentence becomes a catchphrase in three
-  // episodes. Each one must describe a move he makes.
   for (const p of cal.argumentPatterns) {
     assert(!/^["“]/.test(p.trim()), `argument pattern is a quoted line, not a move: ${p}`);
     assert(/^[A-Z][a-z]+/.test(p.trim()), `argument pattern should start with a verb describing the move: ${p}`);

@@ -55,12 +55,15 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
     }
 
     // The Fish formatting layer: tone/energy/interruption + [tags] become
-    // inline natural-language cues, capped at a human amount.
+    // inline natural-language cues, capped at a human amount. Crucially, the
+    // host direction now reaches this formatter so a quiet-under-pressure host
+    // is never told to build to a shout during a line-mode fallback.
     const cuedText = formatLineForFish({
       text: input.text,
       tone: input.tone,
       energy: input.energy,
       isInterruption: input.isInterruption,
+      voiceDirection: input.voiceDirection,
     });
 
     const body: Record<string, unknown> = {

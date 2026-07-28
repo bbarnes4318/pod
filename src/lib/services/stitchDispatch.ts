@@ -16,11 +16,22 @@ import {
 } from "@/lib/services/ttsSceneService";
 import type { TtsSegmentJobData, FinalAudioStitchJobData } from "@/lib/queue/podcastQueue";
 
+// Scene rendering was fully implemented but the unset-value default remained
+// `legacy_line`, so production continued making one Fish request per stored
+// script line. That is the exact mechanical, context-resetting delivery this
+// subsystem was built to replace. "auto" is now the runtime default: eligible
+// Fish/ElevenLabs casts render whole scenes; unsupported/mixed casts fall back
+// explicitly and record why. An operator may still force the old path with
+// TTS_RENDER_MODE=legacy_line.
+if (!process.env.TTS_RENDER_MODE?.trim()) {
+  process.env.TTS_RENDER_MODE = "auto";
+}
+
 /**
- * Voice a script. Scene mode is attempted only when the operator flag allows
- * it AND the job carries no line-level filters (a segmentRange/host-filtered
- * request is inherently a line-mode console operation). All fallback
- * decisions are recorded by the scene service itself.
+ * Voice a script. Scene mode is attempted when the operator flag allows it and
+ * the job carries no line-level filters (a segmentRange/host-filtered request
+ * is inherently a line-mode console operation). All fallback decisions are
+ * recorded by the scene service itself.
  */
 export async function dispatchTtsGeneration(data: TtsSegmentJobData) {
   const lineLevelRequest = !!data.segmentRange || !!data.hostId;
@@ -58,7 +69,7 @@ export async function dispatchFinalStitch(data: FinalAudioStitchJobData) {
  * Line-edit regeneration. Legacy episodes re-voice ONE line; scene episodes
  * truthfully regenerate the SMALLEST CONTAINING SCENE (an isolated line
  * cannot be re-performed without changing the conversation around it), then
- * re-stitch from unchanged scenes + the regenerated one.
+ * re-stitch from unchanged scenes + the regenerated scene.
  */
 export async function dispatchLineRegen(scriptId: string, lineIndex: number) {
   const script = await db.script.findUnique({
