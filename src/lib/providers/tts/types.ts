@@ -23,9 +23,16 @@ export interface SynthesizeSpeechInput {
   nextText?: string;
   /**
    * Short persona/delivery brief ("loud emotional sports host, mid-debate,
-   * fired up") for instruction-steered engines (OpenAI gpt-4o-mini-tts).
+   * fired up") for instruction-steered engines and Fish's cue formatter.
    */
   voiceDirection?: string;
+  /** Optional provider-neutral preview controls. Providers that do not expose
+   * these knobs may ignore them; Fish maps them directly to its documented
+   * prosody and sampling fields. */
+  speed?: number;
+  volume?: number;
+  temperature?: number;
+  topP?: number;
   format?: "mp3" | "wav";
 }
 
