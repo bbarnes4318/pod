@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
 import { scoreConversationContinuity } from "../lib/services/scriptConversationDirector";
 import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";
+import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";
+
+const priorFishSceneModel = process.env.FISH_SCENE_MODEL;
+const priorFishModel = process.env.FISH_MODEL;
+process.env.FISH_SCENE_MODEL = "s2.1-pro-free";
+assert.equal(resolveFishSceneModel(), "s2.1-pro-free");
+process.env.FISH_SCENE_MODEL = "s2-pro";
+assert.equal(resolveFishSceneModel(), "s2-pro");
+process.env.FISH_SCENE_MODEL = "s1";
+assert.throws(() => resolveFishSceneModel(), /S2-family/);
+if (priorFishSceneModel === undefined) delete process.env.FISH_SCENE_MODEL;
+else process.env.FISH_SCENE_MODEL = priorFishSceneModel;
+if (priorFishModel === undefined) delete process.env.FISH_MODEL;
+else process.env.FISH_MODEL = priorFishModel;
 
 const disconnected = [
   {
