@@ -1,7 +1,14 @@
 import { Queue } from "bullmq";
+import { db } from "../db";
 import { getRedisClient } from "../redis";
 import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 import type { EpisodeBuildInput } from "../services/episodeService";
+import {
+  SCRIPT_JOB_TYPE,
+  canUpdateQueuedScriptJob,
+  isPendingScriptJobState,
+  scriptGenerationJobId,
+} from "./scriptJobTracking";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -170,8 +177,66 @@ export interface ScriptGenJobData {
   maxWords?: number;
 }
 
+/**
+ * Queue script generation with an identity the operator can see immediately.
+ *
+ * Previous behavior created JobLog only inside the worker. Production runs with
+ * concurrency=1 therefore left every waiting script completely invisible while
+ * an older job appeared to be the "new" one. We now:
+ *   1. coalesce duplicate requests for the same episode;
+ *   2. update the payload while a request is still waiting;
+ *   3. create a queued JobLog before returning to the UI; and
+ *   4. turn an enqueue failure into a visible failed row.
+ */
 export async function queueScriptGenerationJob(data: ScriptGenJobData) {
-  return podcastQueue.add("generate:script", data);
+  const jobId = scriptGenerationJobId(data.episodeId);
+  const existing = await podcastQueue.getJob(jobId);
+
+  if (existing) {
+    const state = await existing.getState();
+    if (isPendingScriptJobState(state)) {
+      if (canUpdateQueuedScriptJob(state)) {
+        await existing.updateData(data);
+      }
+      return existing;
+    }
+
+    // removeOnFail=false intentionally preserves terminal failures for diagnosis.
+    // A deliberate retry must remove that terminal BullMQ record before reusing
+    // the per-episode id.
+    try {
+      await existing.remove();
+    } catch (err) {
+      const currentState = await existing.getState().catch(() => state);
+      if (isPendingScriptJobState(currentState)) return existing;
+      throw err;
+    }
+  }
+
+  const queuedAt = new Date().toISOString();
+  const queuedLog = await db.jobLog.create({
+    data: {
+      jobType: SCRIPT_JOB_TYPE,
+      status: "queued",
+      input: { ...data, queueJobId: jobId, queuedAt } as any,
+      output: { queueJobId: jobId, queueState: "queued" } as any,
+    },
+  });
+
+  try {
+    return await podcastQueue.add(SCRIPT_JOB_TYPE, data, { jobId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown queue error";
+    await db.jobLog.update({
+      where: { id: queuedLog.id },
+      data: {
+        status: "failed",
+        error: `Script generation could not be queued: ${message}`,
+        output: { queueJobId: jobId, queueState: "enqueue_failed" } as any,
+      },
+    });
+    throw err;
+  }
 }
 
 export interface FactCheckJobData {
@@ -260,4 +325,3 @@ export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
     jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
   });
 }
-
