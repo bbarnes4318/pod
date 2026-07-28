@@ -12,14 +12,11 @@ import { synthesizeFishDialogueScene } from "./fishDialogue";
 //
 // API: POST https://api.fish.audio/v1/tts
 //   - Authorization: Bearer FISH_API_KEY
-//   - model header selects the model (FISH_MODEL, default s2.1-pro-free —
-//     same model as s2.1-pro, $0 fair-use, no latency guarantee; switch the
-//     env var to s2.1-pro for production)
-//   - JSON body: { text, reference_id?, format, ... }
-//   - reference_id is the Fish voice/model id; per-host env overrides
-//     mirror the Boson provider's pattern.
+//   - model header selects the model
+//   - JSON body: { text, reference_id?, prosody, temperature, top_p, ... }
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
   public readonly name = "fish";
@@ -44,9 +41,6 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
     // Voice resolution: explicit voice id (episode/run override, host
     // default) wins; the SEAT-keyed env fallback comes next, ending at
     // FISH_TTS_VOICE; last resort is Fish's default voice (no reference_id).
-    // Fish reference ids are 32-hex; anything else (stub ids, ElevenLabs/Boson
-    // voice ids on a host whose engine was overridden at the episode level,
-    // bad env values) never goes out.
     const asFishId = (id?: string | null): string | undefined =>
       id && /^[0-9a-f]{32}$/i.test(id) ? id : undefined;
     let referenceId = asFishId(input.voiceId);
@@ -55,9 +49,9 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
     }
 
     // The Fish formatting layer: tone/energy/interruption + [tags] become
-    // inline natural-language cues, capped at a human amount. Crucially, the
-    // host direction now reaches this formatter so a quiet-under-pressure host
-    // is never told to build to a shout during a line-mode fallback.
+    // inline natural-language cues. The host direction reaches this formatter,
+    // while documented provider knobs below control global pace/volume and
+    // candidate variability for honest Host Studio previews.
     const cuedText = formatLineForFish({
       text: input.text,
       tone: input.tone,
@@ -66,9 +60,17 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
       voiceDirection: input.voiceDirection,
     });
 
+    const temperature = clamp(Number(input.temperature ?? 0.8), 0, 1);
+    const topP = clamp(Number(input.topP ?? 0.85), 0, 1);
+    const speed = clamp(Number(input.speed ?? 1), 0.5, 2);
+    const volume = clamp(Number(input.volume ?? 0), -20, 20);
     const body: Record<string, unknown> = {
       text: cuedText,
       format,
+      temperature,
+      top_p: topP,
+      prosody: { speed, volume, normalize_loudness: true },
+      normalize: true,
     };
     if (referenceId) body.reference_id = referenceId;
     if (format === "mp3") body.mp3_bitrate = 192;
@@ -114,7 +116,7 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
         return {
           audioBuffer,
           contentType: response.headers.get("content-type") || `audio/${format}`,
-          raw: { cuedText, model },
+          raw: { cuedText, model, temperature, topP, speed, volume },
         };
       } catch (err: any) {
         clearTimeout(timeoutId);
