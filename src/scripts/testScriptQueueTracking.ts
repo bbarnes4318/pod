@@ -31,6 +31,8 @@ const queue = src("lib/queue/podcastQueue.ts");
 const worker = src("lib/queue/worker.ts");
 const actions = src("app/app/create/actions.ts");
 const builder = src("app/studio/create/RundownBuilder.tsx");
+const jobLogsPage = src("app/admin/job-logs/page.tsx");
+const jobLogsRefresh = src("app/admin/job-logs/AutoRefresh.tsx");
 
 console.log("Script queue identity + submission visibility\n");
 
@@ -86,6 +88,15 @@ check("the worker's active JobLog preserves queueJobId and targetVersion", () =>
   const end = worker.indexOf("\nasync function ", start + 1);
   const body = worker.slice(start, end === -1 ? worker.length : end);
   assert(/input:\s*job\.data as any/.test(body), "worker running log must preserve the tracked job payload");
+});
+
+check("the operations page shows submitted jobs and refreshes without a manual reload", () => {
+  assert(jobLogsPage.includes('<option value="submitted">submitted</option>'), "submitted status filter missing");
+  assert(jobLogsPage.includes("Open this exact episode"), "episode identity is not explicit in the table");
+  assert(jobLogsPage.includes("queue: {queueJobId}"), "BullMQ queue identity is not displayed");
+  assert(jobLogsPage.includes("Waiting ${elapsedSeconds}s"), "submitted wait time is not displayed");
+  assert(jobLogsRefresh.includes("router.refresh()"), "job log page does not auto-refresh");
+  assert(jobLogsRefresh.includes("4000"), "job log refresh interval changed from four seconds");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
