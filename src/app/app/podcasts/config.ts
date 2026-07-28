@@ -1,5 +1,7 @@
-// Shared wizard/podcast constants — importable from both client components
+// Shared Show Forge / podcast constants — importable from both client components
 // and server actions (a "use server" file may only export async functions).
+
+import type { ShowForgeState } from "@/lib/shows/showForge";
 
 export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export const WEEKDAY_LABELS: Record<string, string> = {
@@ -19,4 +21,5 @@ export interface PodcastInput {
   teams: string[];
   segmentCount: number;
   hostIds: string[];
+  showForge: ShowForgeState;
 }
