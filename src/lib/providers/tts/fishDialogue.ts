@@ -1,22 +1,8 @@
 // Fish Audio S2-Pro multi-speaker scene adapter.
 //
-// Verified contract (docs/TTS_SCENE_CAPABILITIES.md — multi-speaker shape
-// verified through the indexed OFFICIAL docs; validated hard at runtime):
-//   POST https://api.fish.audio/v1/tts, `model` header (scene default:
-//   `s2-pro`, the SDK-canonical production id; override FISH_SCENE_MODEL).
-//   text  = whole dialogue with `<|speaker:N|>` tags marking each turn
-//   reference_id = ARRAY of 32-hex voice model ids; position == speaker index
-//
-// Cue policy (anti-mechanical, by design):
-//   - The approved text's own [tags] convert in place (same table as line mode).
-//   - The first uncued turn for each speaker receives ONE compact delivery cue
-//     distilled from that host's authored speaking style. The whole scene is
-//     still rendered in one request, so the model hears the exchange rather
-//     than resetting at every stored script line.
-//   - At most ONE scene-level accent cue is placed on the single hottest line,
-//     and only when the scene carries a real emotional peak. Interruptions keep
-//     their [cutting in] marker because turn-taking depends on it.
-//   - Per-utterance cue cap = the speaker's profile maxCueDensity.
+// One request renders a whole conversation with <|speaker:N|> tags. Consecutive
+// stored JSON lines from the same host are collapsed into ONE speaker run so a
+// database/storage boundary cannot become an audible cadence reset.
 
 import { getFishApiKey } from "../../env";
 import {
@@ -32,8 +18,6 @@ import { SCRIPT_TAG_TO_FISH, TONE_TO_FISH_CUE } from "./fishFormat";
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
 
-/** Heated cues for a host whose anger goes DOWN (slower, quieter, precise)
- * instead of up. Same hot tones, opposite delivery direction. */
 const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
   heated: "[slow, quiet, cold and precise]",
   excited: "[measured, intense, deliberate]",
@@ -41,9 +25,6 @@ const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
   dismissive: "[flat, slow, done with this]",
 };
 
-/** Heated cues for a host whose volume goes UP while pace goes DOWN — the
- * trained-projection voice that stretches words and holds terminals under
- * pressure rather than accelerating. */
 const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
   heated: "[loud and slow, stretching every word]",
   excited: "[booming, unhurried, savoring it]",
@@ -62,33 +43,26 @@ export interface FishScenePayload {
     temperature: number;
     top_p: number;
   };
-  /** Speaker-index order: voiceId per index (audit trail; matches reference_id). */
   voiceOrder: string[];
-  /** Safe audit trail: which compact direction cue was actually compiled. */
   directionCues: Record<string, string>;
+  /** Number of provider speaker runs after adjacent same-host lines collapse. */
+  speakerRunCount: number;
 }
 
-/** Heat score to pick the single scene line allowed a tone accent. */
 function lineHeat(u: { tone?: string; energy?: string }): number {
   const e = u.energy === "high" ? 2 : u.energy === "medium" ? 1 : 0;
   const hotTone = ["heated", "excited", "incredulous"].includes((u.tone || "").toLowerCase()) ? 2 : 0;
   return e + hotTone;
 }
 
-/** Extract only the authored Delivery style from the larger direction string.
- * Fish has no dedicated instruction parameter, so this becomes one short
- * bracket cue on the speaker's first natural turn. It is provider control text,
- * never listener-visible transcript text. */
+/** Distill the authored Delivery style into one short Fish control cue. */
 export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | null {
   const direction = (ctx.direction || "").replace(/\s+/g, " ").trim();
   if (!direction) return null;
-  const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|Your intensity|When genuinely|Never:)|$)/i);
+  const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|The disagreement|Mid-conversation|Your intensity|When genuinely|Never:)|$)/i);
   let style = (match?.[1] || "").trim();
   if (!style) return null;
 
-  // One cue should establish the register, not paste a character bible into the
-  // provider request. Prefer the first complete sentence; otherwise trim on a
-  // word boundary. The final clause explicitly asks for responsive speech.
   const firstSentence = style.match(/^(.{20,190}?[.!?])(?:\s|$)/)?.[1];
   style = (firstSentence || style).replace(/[.!?]+$/, "").trim();
   if (style.length > 180) {
@@ -100,12 +74,6 @@ export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | n
 
 /** Pure request builder (unit-tested without network). */
 export function buildFishScenePayload(input: DialogueSceneInput): FishScenePayload {
-  // Default is the FREE-TIER model. s2-pro (the SDK-canonical paid model)
-  // 402s on an account with no API credit — Fish bills API credit separately
-  // from platform credit — and the prod account hit exactly that: 17/17
-  // scenes failed on 2026-07-25. s2.1-pro-free renders multi-speaker scenes
-  // (verified live against the real API the same day). Funded accounts opt
-  // into the paid model with FISH_SCENE_MODEL=s2-pro.
   const model = (process.env.FISH_SCENE_MODEL || "s2.1-pro-free").trim();
 
   // Speaker index = order of first appearance in the scene.
@@ -138,7 +106,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     }
   }
 
-  // The ONE line (if any) allowed a tone-derived accent cue this scene.
+  // Exactly one line may carry the scene's tone-derived emotional accent.
   let accentLineIndex = -1;
   let bestHeat = 0;
   for (const u of input.utterances) {
@@ -151,21 +119,19 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
 
   const baselineApplied = new Set<string>();
   const parts: string[] = [];
+  let previousHostId: string | null = null;
+
   for (const u of input.utterances) {
     const idx = speakerIndexByHost.get(u.speakerHostId)!;
     let cueCount = 0;
     const cap = cueCapByHost.get(u.speakerHostId) ?? 1;
-
-    // Turn-taking first: an interruption marker outranks decorative cues —
-    // the model needs it to cut in, so it claims budget before anything else.
     const openers: string[] = [];
+
     if (u.isInterruption && cap > 0) {
       openers.push("[cutting in]");
       cueCount++;
     }
 
-    // Convert the approved text's own tags in place (same table as line
-    // mode), within whatever budget the turn-taking marker left.
     const text = u.spokenText.replace(TAG_PATTERN, (_m, inner: string) => {
       const mapped = SCRIPT_TAG_TO_FISH[inner.trim().toLowerCase()];
       if (mapped === undefined || mapped === null) return " ";
@@ -174,8 +140,6 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       return ` ${mapped} `;
     });
 
-    // Scene-level accent: exactly one line in the scene may open with a tone
-    // cue. The cue direction follows the SPEAKER's anger signature.
     if (u.lineIndex === accentLineIndex && cueCount < cap && cap > 0) {
       const tone = (u.tone || "").toLowerCase();
       const anger = angerStyleByHost.get(u.speakerHostId) ?? "louder_faster";
@@ -191,9 +155,6 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       }
     }
 
-    // Establish this speaker's authored register once per scene, on the first
-    // turn whose interruption/tag/accent did not already consume the cue budget.
-    // This is the missing bridge between the stored performance profile and Fish.
     if (!baselineApplied.has(u.speakerHostId) && cueCount < cap && cap > 0) {
       const baseline = baselineCueByHost.get(u.speakerHostId);
       if (baseline) {
@@ -204,10 +165,25 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     }
 
     const body = text.replace(/\s+/g, " ").trim();
-    parts.push(`<|speaker:${idx}|>${openers.length ? `${openers.join(" ")} ` : ""}${body}`);
+    const rendered = `${openers.length ? `${openers.join(" ")} ` : ""}${body}`;
+
+    // The script stores lines for editing, evidence and approval. Fish should
+    // hear speaker TURNS. Adjacent lines by the same host stay under the same
+    // speaker tag unless a real segment/topic boundary starts a new run.
+    const continuesSameRun =
+      previousHostId === u.speakerHostId &&
+      u.segmentBoundary !== "segment" &&
+      u.segmentBoundary !== "topic" &&
+      !u.isInterruption;
+
+    if (continuesSameRun && parts.length > 0) {
+      parts[parts.length - 1] += ` ${rendered}`;
+    } else {
+      parts.push(`<|speaker:${idx}|>${rendered}`);
+    }
+    previousHostId = u.speakerHostId;
   }
 
-  // Fish sampling knobs from the cast's profiles (median when configured).
   const temps = input.cast
     .map((c) => c.providerOverrides?.temperature)
     .filter((t): t is number => typeof t === "number" && t >= 0 && t <= 1)
@@ -231,6 +207,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     },
     voiceOrder,
     directionCues,
+    speakerRunCount: parts.length,
   };
 }
 
@@ -300,8 +277,8 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
       temperature: payload.body.temperature,
       topP: payload.body.top_p,
       directionCues: payload.directionCues,
-      // The exact provider text is auditable but must NEVER reach
-      // listener-visible surfaces; it lives only in safe metadata.
+      speakerRunCount: payload.speakerRunCount,
+      approvedUtteranceCount: input.utterances.length,
       cuedTextPreview: payload.body.text.slice(0, 400),
       characterCount: payload.body.text.length,
     },
