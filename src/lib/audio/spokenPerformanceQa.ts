@@ -87,14 +87,19 @@ export function scoreSpokenPerformanceMetrics(
   const highStakesScene = options.sceneType === "cold_open" || options.sceneType === "argument_escalation";
   let score = 100;
 
-  const minimumLra = highStakesScene ? 3.0 : substantialScene ? 2.6 : 1.8;
+  const minimumLra = highStakesScene ? 3.0 : substantialScene ? 2.6 : 1.2;
   if (metrics.loudnessRangeLu === null) {
     warnings.push("Loudness range could not be measured.");
     score -= 8;
   } else if (metrics.loudnessRangeLu < minimumLra) {
-    failures.push(`Flat vocal dynamics: ${metrics.loudnessRangeLu.toFixed(1)} LU LRA; minimum ${minimumLra.toFixed(1)} LU for this scene.`);
-    score -= 32;
-  } else if (metrics.loudnessRangeLu < minimumLra + 0.8) {
+    if (substantialScene || highStakesScene) {
+      failures.push(`Flat vocal dynamics: ${metrics.loudnessRangeLu.toFixed(1)} LU LRA; minimum ${minimumLra.toFixed(1)} LU for this scene.`);
+      score -= 32;
+    } else {
+      warnings.push(`Short scene has only ${metrics.loudnessRangeLu.toFixed(1)} LU of measurable dynamics.`);
+      score -= 8;
+    }
+  } else if ((substantialScene || highStakesScene) && metrics.loudnessRangeLu < minimumLra + 0.8) {
     warnings.push(`Limited vocal dynamics: ${metrics.loudnessRangeLu.toFixed(1)} LU LRA.`);
     score -= 9;
   } else {
@@ -144,7 +149,7 @@ export function scoreSpokenPerformanceMetrics(
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  const minimumScore = highStakesScene ? 80 : 75;
+  const minimumScore = highStakesScene ? 80 : substantialScene ? 75 : 65;
   if (strict && failures.length === 0 && score < minimumScore) {
     failures.push(`Performance score ${score}/100 is below the ${minimumScore}/100 publishing floor.`);
   }
