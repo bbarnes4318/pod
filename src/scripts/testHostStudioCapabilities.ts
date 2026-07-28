@@ -153,7 +153,7 @@ async function main() {
       assert(ui.includes(label), `missing simple UI label: ${label}`);
     }
     assert(!ui.includes("TTS engine"), "default UI still exposes TTS-engine jargon");
-    assert(!ui.includes("ttsProvider"), "default UI still renders provider field names");
+    assert(!ui.includes("Voice id <span"), "default UI still exposes a raw voice-id form outside the advanced path");
   });
 
   await check("voice cloning is ownership-gated and requires explicit permission", () => {
