@@ -33,7 +33,7 @@ function check(name: string, fn: () => void) {
 }
 
 const cal = SEED_HOSTS.find((host) => host.slug === "cal-red-eye-mercer");
-assert(cal, "Cal Mercer is missing from the active roster");
+assert(!!cal, "Cal Mercer is missing from the active roster");
 
 console.log("Cal Mercer performance v2\n");
 
@@ -64,12 +64,12 @@ check("the first speaking-style sentence is a direct Fish performance cue", () =
     formatRoleId: "chair_b",
     direction: `Delivery style: ${cal.speakingStyle} This is a conversation.`,
     intensityLevel: cal.intensityLevel,
-    angerStyle: CAL_PROFILE.angerStyle,
+    angerStyle: CAL_PROFILE.angerStyle as "slower_quieter",
     maxCueDensity: CAL_PROFILE.maxCueDensity,
     profileVersion: CAL_PROFILE.version,
     providerOverrides: CAL_PROFILE.providerOverrides.fish,
   });
-  assert(cue, "Fish cue was not produced");
+  assert(!!cue, "Fish cue was not produced");
   assert(/close-mic and brisk/i.test(cue), `Fish cue lost the intended delivery: ${cue}`);
   assert(/never polished, analytical, narrated, or announced/i.test(cue), `Fish cue lost the anti-robot guard: ${cue}`);
   assert(!/hotel bar|unhurried|intentional pause/i.test(cue), `retired restrained cue leaked through: ${cue}`);
