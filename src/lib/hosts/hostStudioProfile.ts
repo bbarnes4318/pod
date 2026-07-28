@@ -165,9 +165,9 @@ export function settingsFromHost(source: HostStudioSource): HostStudioSettings {
 }
 
 const energyMap = {
-  calm: { baseline: 3, peak: 6, words: "calm and grounded" },
-  conversational: { baseline: 5, peak: 8, words: "conversational and alive" },
-  big: { baseline: 6, peak: 9, words: "big, energetic, and emotionally present" },
+  calm: { baseline: 3, peak: 6, words: "calm and grounded", cue: "calm" },
+  conversational: { baseline: 5, peak: 8, words: "conversational and alive", cue: "conversational" },
+  big: { baseline: 6, peak: 9, words: "big, energetic, and emotionally present", cue: "high energy" },
 } as const;
 
 const paceMap = {
@@ -192,11 +192,17 @@ export function compileHostStudioProfile(input: HostStudioSettings): CompiledHos
   const energy = energyMap[settings.energy];
   const pace = paceMap[settings.pace];
   const humorWords = settings.humor === "serious" ? "serious, without forced jokes" : settings.humor === "playful" ? "openly playful" : "dryly funny";
+  const humorCue = settings.humor === "serious" ? "serious" : settings.humor === "playful" ? "playful" : "dry humor";
   const interruptionWords = settings.interruptions === "waits"
     ? "lets the other host finish"
     : settings.interruptions === "jumps_in"
       ? "jumps in when a point cannot stand"
       : "occasionally cuts in when the moment earns it";
+  const interruptionCue = settings.interruptions === "waits"
+    ? "waits for the other host"
+    : settings.interruptions === "jumps_in"
+      ? "jumps in naturally"
+      : "cuts in sometimes";
   const concessionWords = settings.concessions === "gracious"
     ? "concedes clearly when persuaded"
     : settings.concessions === "stubborn"
@@ -213,12 +219,14 @@ export function compileHostStudioProfile(input: HostStudioSettings): CompiledHos
       ? "lands a big theatrical finishing line only when the argument earns it"
       : "lands short, sharp finishing lines";
 
-  // Fish scene rendering distills the FIRST sentence into its per-speaker cue.
-  // Keep that sentence acoustic, compact, and explicit about not reading.
-  const firstSentence = `${pace.words}, ${energy.words}, ${humorWords}; speaks to the other host in the moment, ${interruptionWords}, and never reads or announces.`;
+  // Fish scene rendering distills the FIRST sentence into its per-speaker cue
+  // and caps it. Keep the acoustic sentence well under that limit so the most
+  // important guard — never reading or announcing — cannot be truncated.
+  const firstSentence = `${pace.words}; ${energy.cue}; ${humorCue}; ${interruptionCue}; talks to the other host, never reads or announces.`;
   const extra = settings.extraInstructions.trim();
   const speakingStyle = [
     firstSentence,
+    `${energy.words}; ${humorWords}; ${interruptionWords}.`,
     `${concessionWords}; ${finishWords}.`,
     pressureWords,
     extra,
