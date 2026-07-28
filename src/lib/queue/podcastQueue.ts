@@ -1,7 +1,9 @@
 import { Queue } from "bullmq";
 import { getRedisClient } from "../redis";
+import { db } from "../db";
 import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 import type { EpisodeBuildInput } from "../services/episodeService";
+import { scriptJobIsInFlight, scriptQueueIdentity } from "./scriptQueueIdentity";
 
 const QUEUE_NAME = "podcast-generation";
 
@@ -168,10 +170,96 @@ export interface ScriptGenJobData {
   scriptStyle?: "heated-debate" | "balanced-analysis" | "sports-radio";
   targetDurationMinutes?: number;
   maxWords?: number;
+  /** Deterministic BullMQ id persisted into both submission and running logs. */
+  queueJobId?: string;
+  /** Immutable audit row written the instant Studio submits the job. */
+  submissionLogId?: string;
+  /** Script version this click requested based on the database at submission. */
+  targetVersion?: number;
 }
 
+/**
+ * Submit one traceable, idempotent script generation request.
+ *
+ * Previously the only JobLog row was created INSIDE the worker handler. With a
+ * one-slot production worker, a newly-clicked episode therefore vanished until
+ * every older job ahead of it finished; the first visible row belonged to that
+ * older episode and looked like an episode-id mix-up. We now write a durable
+ * `submitted` audit row before adding to Redis and use a deterministic BullMQ
+ * id per episode/target version so repeat clicks reuse the same in-flight job.
+ *
+ * The worker still writes its normal `running` row when it becomes active. Both
+ * rows carry queueJobId/targetVersion, so the handoff is explicit without a
+ * schema migration or a risky rewrite of the large worker module.
+ */
 export async function queueScriptGenerationJob(data: ScriptGenJobData) {
-  return podcastQueue.add("generate:script", data);
+  const latest = await db.script.findFirst({
+    where: { episodeId: data.episodeId },
+    orderBy: { version: "desc" },
+    select: { version: true },
+  });
+  const identity = scriptQueueIdentity(data.episodeId, (latest?.version ?? 0) + 1);
+
+  // A second click for the same not-yet-written version must not create another
+  // expensive job or another misleading log row.
+  const existing = await podcastQueue.getJob(identity.jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (scriptJobIsInFlight(state)) return existing;
+    // Failed jobs are retained by policy. Remove the terminal record so an
+    // explicit retry can reuse the same deterministic identity.
+    try {
+      await existing.remove();
+    } catch {
+      const current = await existing.getState();
+      if (scriptJobIsInFlight(current)) return existing;
+      throw new Error(`Could not clear terminal script job ${identity.jobId} (state: ${current}).`);
+    }
+  }
+
+  const payload: ScriptGenJobData = {
+    ...data,
+    queueJobId: identity.jobId,
+    submissionLogId: identity.submissionLogId,
+    targetVersion: identity.targetVersion,
+  };
+  const submittedAt = new Date();
+
+  // `submitted` is an immutable enqueue event, not a claim that the worker has
+  // started. Once active, the worker creates a newer `running` row carrying the
+  // same queueJobId, so global Job Logs can no longer confuse queue order with
+  // episode identity.
+  await db.jobLog.upsert({
+    where: { id: identity.submissionLogId },
+    create: {
+      id: identity.submissionLogId,
+      jobType: "generate:script",
+      status: "submitted",
+      input: payload as any,
+      output: { queueJobId: identity.jobId, targetVersion: identity.targetVersion } as any,
+      createdAt: submittedAt,
+    },
+    update: {
+      status: "submitted",
+      input: payload as any,
+      output: { queueJobId: identity.jobId, targetVersion: identity.targetVersion } as any,
+      error: null,
+      createdAt: submittedAt,
+    },
+  });
+
+  try {
+    return await podcastQueue.add("generate:script", payload, { jobId: identity.jobId });
+  } catch (error) {
+    await db.jobLog.update({
+      where: { id: identity.submissionLogId },
+      data: {
+        status: "failed",
+        error: `Queue submission failed: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export interface FactCheckJobData {
@@ -260,4 +348,3 @@ export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
     jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
   });
 }
-
