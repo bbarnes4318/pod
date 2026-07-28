@@ -79,50 +79,53 @@ async function main() {
       assert(live.length === 2, `expected 2 castable hosts, got ${live.length}`);
       const slugs = live.map((h) => h.slug).sort();
       assert(
-        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "dutch-attendance"]),
+        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "cal-red-eye-mercer"]),
         `castable roster is ${slugs.join(", ")}`
       );
     });
 
     // Seating is decided by intensityLevel DESC (hostCasting.ts) plus an
     // explicit chair-A swap (hostCastingShared.ts). The gap is what pins Zabala
-    // to seat A on every episode that does not pin hostIds — raising Mulkey
+    // to seat A on every episode that does not pin hostIds — raising Mercer
     // above her would silently move him into chair A, so this is a structural
     // assertion, not a taste one.
-    await check("seat order: Zabala intensity 8 outranks Mulkey 6 by at least 2", async () => {
+    await check("seat order: Zabala intensity 8 outranks Mercer 5 by at least 2", async () => {
       const z = first.find((h) => h.slug === "bernie-line-two");
-      const m = first.find((h) => h.slug === "dutch-attendance");
+      const m = first.find((h) => h.slug === "cal-red-eye-mercer");
       assert(z?.intensityLevel === 8, `Zabala intensity is ${z?.intensityLevel}`);
-      assert(m?.intensityLevel === 6, `Mulkey intensity is ${m?.intensityLevel}`);
+      assert(m?.intensityLevel === 5, `Mercer intensity is ${m?.intensityLevel}`);
       assert(
         (z!.intensityLevel - m!.intensityLevel) >= 2,
         `chairs must differ by at least 2, got ${z!.intensityLevel} vs ${m!.intensityLevel}`
       );
     });
 
-    // Mulkey's loudness lives in the performance profile, NOT in
+    // Mercer's restraint lives in the performance profile, NOT in
     // intensityLevel. A silently-derived profile (the failure mode when the
-    // stored one does not parse) would give him baselineIntensity 4 /
-    // peakIntensity 6 and slower_quieter anger — quieter than Zabala and
-    // acoustically identical to a calm analyst. Pin the authored values.
-    await check("Mulkey's authored performance profile survives the write", async () => {
-      const m = first.find((h) => h.slug === "dutch-attendance");
+    // stored one does not parse) would read his rank rather than his style.
+    // Pin the authored values — angerStyle in particular, because it is the
+    // mechanical guarantee that his fury renders quieter instead of louder.
+    await check("Mercer's authored performance profile survives the write", async () => {
+      const m = first.find((h) => h.slug === "cal-red-eye-mercer");
       const p: any = m?.performanceProfile;
-      assert(p && typeof p === "object", "Mulkey has no stored performance profile");
-      assert(p.angerStyle === "louder_slower", `angerStyle is '${p.angerStyle}', expected louder_slower`);
-      assert(p.baselineIntensity === 8, `baselineIntensity is ${p.baselineIntensity}, expected 8`);
-      assert(p.peakIntensity === 10, `peakIntensity is ${p.peakIntensity}, expected 10`);
-      assert(p.sarcasmBehavior === "never", `sarcasmBehavior is '${p.sarcasmBehavior}'`);
-      assert(p.preferredPauseStyle === "spacious", `preferredPauseStyle is '${p.preferredPauseStyle}'`);
-      assert(p.maxEscalationPace < p.baselinePace, "pace inversion lost: he must slow DOWN under pressure");
+      assert(p && typeof p === "object", "Mercer has no stored performance profile");
+      assert(p.angerStyle === "slower_quieter", `angerStyle is '${p.angerStyle}', expected slower_quieter`);
+      assert(p.baselineIntensity === 4, `baselineIntensity is ${p.baselineIntensity}, expected 4`);
+      assert(p.peakIntensity === 7, `peakIntensity is ${p.peakIntensity}, expected 7`);
+      assert(p.baselineIntensity < p.peakIntensity, "he must open below his ceiling, not at it");
+      assert(p.laughBehavior === "rare", `laughBehavior is '${p.laughBehavior}' — never a performed laugh`);
+      assert(p.interruptionBehavior === "rare", `interruptionBehavior is '${p.interruptionBehavior}'`);
+      assert(p.maxEscalationPace > p.baselinePace, "he may pick up slightly; he never slows to a crawl");
+      assert(p.maxEscalationPace <= 1.15, `escalation ceiling ${p.maxEscalationPace} is a sprint, not a lean-in`);
       // The pair must not share a behavioral value where a contrast exists.
       const z: any = first.find((h) => h.slug === "bernie-line-two")?.performanceProfile;
       assert(z.angerStyle !== p.angerStyle, "both hosts share an anger signature — no acoustic separation");
       assert(z.preferredPauseStyle !== p.preferredPauseStyle, "both hosts share a pause style");
+      assert(z.peakIntensity > p.peakIntensity, "seat B must not out-peak seat A");
     });
 
-    await check("Mulkey's voice is either a real 32-hex Fish id or the publish-blocking placeholder", async () => {
-      const m = first.find((h) => h.slug === "dutch-attendance");
+    await check("Mercer's voice is either a real 32-hex Fish id or the publish-blocking placeholder", async () => {
+      const m = first.find((h) => h.slug === "cal-red-eye-mercer");
       assert(m?.ttsProvider === "fish", `provider is ${m?.ttsProvider}`);
       const v = m?.ttsVoiceId ?? "";
       const real = /^[0-9a-f]{32}$/i.test(v);
@@ -181,7 +184,7 @@ async function main() {
       const cast = await resolveEpisodeHosts({ hostIds: [] });
       const slugs = [cast.hostA.slug, cast.hostB.slug].sort();
       assert(
-        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "dutch-attendance"]),
+        JSON.stringify(slugs) === JSON.stringify(["bernie-line-two", "cal-red-eye-mercer"]),
         `auto-cast picked ${slugs.join(", ")}`
       );
     });

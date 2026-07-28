@@ -59,9 +59,10 @@ These variables **must** be present in the Coolify configuration. The applicatio
 | `FISH_MODEL` | Fish model for single lines + Character Studio auditions only. SDK-canonical ids are `s1` / `s2-pro`; `s2.1-pro-free` is the free-tier id from the official curl example. Optional — code defaults to `s2.1-pro-free` | leave unset |
 | `FISH_SCENE_MODEL` | Fish model for native multi-speaker scenes — the **primary** episode render path. `s2-pro` (paid, code default) and `s2.1-pro-free` (free tier) both render scenes — free-tier scene support verified live 2026-07-25. A 402 "Insufficient API credit" means Fish **API credit** (separate from platform credit) is unfunded: fund at fish.audio/app/developers or use the free model | `s2.1-pro-free` until API credit is funded |
 | `FISH_ZABALA_VOICE_ID` | Bernadette "Line Two" Zabala voice (seat A) — optional, read by the seed | 32-hex Fish reference ID |
-| `FISH_MULKEY_VOICE_ID` | Dutch "Attendance" Mulkey voice (seat B) — optional, read by the seed | 32-hex Fish reference ID |
+| `FISH_CAL_MERCER_VOICE_ID` | Cal "Red Eye" Mercer voice (seat B) — optional, read by the seed | 32-hex Fish reference ID |
+| `FISH_MULKEY_VOICE_ID` | **DEPRECATED** — the retired seat-B host's identity var. Read by the seed for ONE compatibility release so an un-updated environment does not fall to the publish-blocking placeholder. Set `FISH_HOST_B_VOICE_ID` and remove it | unset |
 | `FISH_HOST_A_VOICE_ID` | Seat A voice at synthesis time. No reseed needed; covers a missing or invalid seeded voice | 32-hex Fish reference ID |
-| `FISH_HOST_B_VOICE_ID` | Seat B voice at synthesis time | 32-hex Fish reference ID |
+| `FISH_HOST_B_VOICE_ID` | Seat B voice at synthesis time. **Cal Mercer has not been auditioned on the voice he inherited** — see [CAL_MERCER_VOICE_AUDITION.md](CAL_MERCER_VOICE_AUDITION.md) | 32-hex Fish reference ID |
 
 Voice fallbacks are keyed by **seat**, not by host name. Set the `HOST_A` /
 `HOST_B` pair on both the web and worker apps and a roster change can never

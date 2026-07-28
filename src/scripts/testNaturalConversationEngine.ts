@@ -118,13 +118,13 @@ Aim for 4-8 real interruptions. Use plenty of reaction fragments.
 GROUNDING RULES...
 
 === SHOW CONTINUITY (episode 4) ===
-REQUIRED THIS EPISODE:
-1. Preserve the attendance ledger.`;
+This show has a memory. Everything below is OPTIONAL.
+AVAILABLE THIS EPISODE — THE RED EYE FILE (this topic genuinely touches it):`;
 
 const compact = compactCreativeSystemPrompt(fullPrompt);
 assert.match(compact, /Bernadette Zabala/);
 assert.match(compact, /SHOW CONTINUITY/);
-assert.match(compact, /attendance ledger/);
+assert.match(compact, /THE RED EYE FILE/);
 assert.doesNotMatch(compact, /Aim for 4-8 real interruptions/);
 assert.doesNotMatch(compact, /Use plenty of reaction fragments/);
 assert.match(compact, /Every turn must be caused by what was just said/);

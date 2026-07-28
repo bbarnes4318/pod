@@ -1,14 +1,15 @@
-// Guards for the Zabala/Mulkey cast.
+// Guards for the Zabala/Mercer cast.
 //
-// Mulkey's defining rhetorical device is ESCALATING REPETITION — a name said
-// three times, louder each time, used as an argument. That is structurally
-// adjacent to the banned antithesis frame (both are two/three-part balanced
-// constructions), so the detector shipped in #53 is the thing most likely to
-// mistake his character for a defect and rewrite it away.
+// The antithesis detector (#53) rewrites lines built on a balanced "not X, but
+// Y" frame. Cal Mercer's defining rhetorical device — catching himself using
+// institutional language and correcting it mid-sentence — is structurally
+// adjacent to that frame: a self-correction states a thing and then replaces
+// it, which is two clauses in opposition. So the detector is the thing most
+// likely to mistake his character for a defect and rewrite it away.
 //
-// These assertions pin the boundary: repetition is not antithesis. If the
-// detector ever starts flagging his triples, that is a bug in the detector,
-// not a reason to change the character.
+// These assertions pin the boundary: self-correction is not antithesis. If the
+// detector ever starts flagging his mid-sentence repairs, that is a bug in the
+// detector, not a reason to change the character.
 
 import { findAntithesis } from "../lib/services/scriptAntithesis";
 import { deriveProfileFromHostFields } from "../lib/hosts/performanceProfile";
@@ -31,21 +32,22 @@ function assert(cond: boolean, msg: string): asserts cond {
   if (!cond) throw new Error(msg);
 }
 
-console.log("Cast guards: repetition vs antithesis\n");
+console.log("Cast guards: self-correction vs antithesis\n");
 
-// Every one of these is a real Mulkey device from the bible. None is an
+// Every one of these is a real Mercer device from the bible: he stops halfway
+// through a euphemism, names what he is doing, and starts again. None is an
 // antithesis. All must survive the rewrite loop untouched.
-const MULKEY_REPETITION = [
-  "Hoyt. HOYT. DUANE HOYT.",
-  "I was IN that building. IN it. I was IN THAT BUILDING.",
-  "He is no Duane Hoyt. HE IS NO DUANE HOYT.",
-  "Ladies and gentlemen — LADIES AND GENTLEMEN.",
-  "OH! Oh. OH!",
-  "Forty feet. FORTY FEET.",
-  "Six thousand, four hundred and NINE-ty-two.",
-  "That is a walk-up music problem. A walk-up music PROBLEM.",
-  "Nineteen years. Nineteen. Every home date.",
-  "Petey Vandersloot. Vandersloot! You do not forget a Vandersloot.",
+const MERCER_SELF_CORRECTION = [
+  "No — hold on. I'm doing it again. I'm explaining it like that excuses it.",
+  "They called it a communication issue. I called it a communication issue.",
+  "The room had concerns. God, listen to me.",
+  "It was a football deci— it was a decision made by four people who were scared.",
+  "I keep saying we. I wasn't we. I was in the hallway.",
+  "Everybody signed off. That's the sentence. I've said that sentence.",
+  "He wasn't a fit. Sorry. He was expensive and somebody needed a reason.",
+  "I'd like to tell you I said something. I nodded.",
+  "That's the public version.",
+  "You're right about the result. You're wrong about who paid for it.",
 ];
 
 // Controls: real antithesis. If these stop being caught the detector has been
@@ -57,15 +59,15 @@ const REAL_ANTITHESIS = [
   "Not a slump, a collapse.",
 ];
 
-check("Mulkey's escalating repetition is NEVER flagged as antithesis", () => {
+check("Mercer's mid-sentence self-correction is NEVER flagged as antithesis", () => {
   const wrong: string[] = [];
-  for (const line of MULKEY_REPETITION) {
+  for (const line of MERCER_SELF_CORRECTION) {
     const hits = findAntithesis(line);
     if (hits.length > 0) wrong.push(`${line}  → ${hits.map((h) => h.kind).join(",")}`);
   }
   assert(
     wrong.length === 0,
-    `the detector must not mistake repetition for antithesis, but flagged:\n      ${wrong.join("\n      ")}`
+    `the detector must not mistake self-correction for antithesis, but flagged:\n      ${wrong.join("\n      ")}`
   );
 });
 
@@ -77,11 +79,11 @@ check("the detector still catches genuine antithesis (control)", () => {
   );
 });
 
-check("a triple repeat carrying a real antithesis inside it is still caught", () => {
+check("a self-correction carrying a real antithesis inside it is still caught", () => {
   // The character device does not grant immunity: if he wraps a banned frame in
-  // repetition, the frame is still banned.
-  const hits = findAntithesis("HOYT. HOYT. That is not a receiver, that is a standard.");
-  assert(hits.length > 0, "repetition must not be usable as a wrapper to smuggle antithesis past the detector");
+  // a repair, the frame is still banned.
+  const hits = findAntithesis("Sorry — I'm doing it again. That is not a football decision, that is a payroll decision.");
+  assert(hits.length > 0, "a repair must not be usable as a wrapper to smuggle antithesis past the detector");
 });
 
 // --- performance energy is not seating rank --------------------------------
@@ -89,12 +91,16 @@ check("a triple repeat carrying a real antithesis inside it is still caught", ()
 // intensityLevel decides WHICH SEAT a host takes (hostCasting sorts by it).
 // Deriving performance energy from it put a loud character in a quiet
 // performance. Both directions are pinned: a loud style at a low rank must
-// stay big, and a reserved style at a high rank must stay small.
+// stay big, and a reserved style at a high rank must stay small. The second is
+// now the case that matters for the live roster — Cal is the reserved one, and
+// a derivation that read his rank instead of his style would hand him assertive
+// interruptions and a theatrical kill shot, which is the previous seat-B
+// character wearing his name.
 
 check("a LOUD style at intensity 5 derives assertive/natural/theatrical", () => {
   const p = deriveProfileFromHostFields({
     speakingStyle:
-      "ENORMOUS trained PA projection. Barked HAW of a laugh on top of his own punchlines. " +
+      "ENORMOUS trained PA projection. Barked laugh on top of his own punchlines. " +
       "Slaps the desk, whoops. Interrupts by out-volumeing, never by waiting. Louder and SLOWER under pressure.",
     intensityLevel: 5,
   });
@@ -113,6 +119,21 @@ check("a RESERVED style at intensity 8 still derives rare/measured", () => {
   assert(p.laughBehavior === "rare", `laughBehavior is '${p.laughBehavior}' — high rank must not force laughter`);
   assert(p.interruptionBehavior === "rare", `interruptionBehavior is '${p.interruptionBehavior}' — he waits for a gap`);
   assert(p.killShotBehavior === "measured", `killShotBehavior is '${p.killShotBehavior}' — understated and clinical`);
+});
+
+check("Mercer's OWN style text derives a quiet character even before his stored profile is read", () => {
+  // Belt and braces. The stored profile is authoritative, but if it ever failed
+  // to parse the runtime falls back to this derivation — and the fallback must
+  // not resurrect a shouting host. This is the exact style string from the seed.
+  const p = deriveProfileFromHostFields({
+    slug: "cal-red-eye-mercer",
+    intensityLevel: 5,
+    speakingStyle:
+      "Warm, low, close to the microphone — the register of someone telling you something in a half-empty hotel bar, not addressing a room. Unhurried but never sleepy. Dry humor, understatement, and the occasional self-own. He rarely raises his voice; when he is genuinely angry he gets QUIETER, shorter, and more exact.",
+  });
+  assert(p.angerStyle === "slower_quieter", `even the DERIVED profile must keep his anger going down, got '${p.angerStyle}'`);
+  assert(p.baselineIntensity < p.peakIntensity, "a derived profile must still open below its ceiling");
+  assert(p.peakIntensity <= 5, `a derived peak must not exceed his rank, got ${p.peakIntensity}`);
 });
 
 check("intensityLevel is still the fallback when the style text is silent", () => {

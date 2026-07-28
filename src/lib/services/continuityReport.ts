@@ -4,8 +4,8 @@
 // episode generation. The continuity engine is a feature layered on top of the
 // show; it is not allowed to become a new way for an episode to die. Every
 // failure path here — provider error, timeout, unparseable JSON, schema
-// violation, garbage values — logs and returns null. Absent means "no runners
-// fired this episode", not an outage.
+// violation, garbage values — logs and returns null. Absent means "no
+// continuity moved this episode", not an outage.
 //
 // This is a SEPARATE call rather than a field on the script's structured
 // output, deliberately. The script is generated act-by-act with retries and a
@@ -15,54 +15,72 @@
 // mode — it returns null — and the episode is untouched.
 //
 // The trust boundary is unchanged: the model REPORTS what it wrote, in flags,
-// bounded counts, and names from closed lists. continuityUpdateSchema remains
+// bounded counts, and values from closed lists. continuityUpdateSchema remains
 // the single validation point, and nextContinuityState decides what any of it
 // means for state.
 
 import type { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { continuityUpdateSchema, type ContinuityUpdate } from "./showContinuityService";
-import { DODGE_LADDER, type EligibleRunners } from "./showContinuity";
+import { LEDGER_PHRASES, type ContinuityOpportunities } from "./showContinuity";
 
 export interface ContinuityReportInput {
   /** The finished dialogue, speaker-prefixed, one line per line. */
   scriptText: string;
-  /** What this episode was TOLD it could use — the closed lists. */
-  runners: EligibleRunners;
+  /** What this episode was OFFERED — the closed lists. */
+  opportunities: ContinuityOpportunities;
   log?: (msg: string) => void;
 }
 
 function buildReportPrompt(input: ContinuityReportInput): string {
-  const r = input.runners;
+  const o = input.opportunities;
+  const knownPhrases = o.languageLedger.entries.map((e) => e.phrase);
   return [
     "Below is a finished episode of a sports-talk show. Report ONLY what actually happened in it.",
     "",
     "You are not writing anything. You are not deciding anything. You are reading a transcript and",
     "filling in a form about it. If something did not happen, say it did not happen — a false report",
     "is far worse than a negative one, because it silently corrupts the show's running continuity.",
+    "MOST EPISODES MOVE LITTLE OR NOTHING. An all-negative report is a completely normal answer and",
+    "is much better than a generous one.",
+    "",
+    "The two hosts are Zabala (the outsider, the paying customer's prosecutor) and Cal Mercer (the",
+    "former advance scout who spent years inside organizations).",
     "",
     "RULES:",
-    '- "attendanceClaimed" / "attendanceReal": the inflated crowd figure Mulkey announced and the real',
-    "  figure Zabala read back. Both null if the bit did not occur.",
-    '- "weSaidCount": how many times Mulkey said "we" about the Wolverines organisation. 0-3.',
-    `- "endedOnDodge": the last evasion he used, EXACTLY one of: ${DODGE_LADDER.join(" | ")}. null if none.`,
-    '- "topDodgeUncaught": true ONLY if he used the final rung and Zabala did not challenge it.',
-    '- "hoytBeatDelivered": true only if the Duane Hoyt beat actually landed in the dialogue.',
-    '- "hoytFactsAdded": any NEW settled fact about Duane Hoyt stated as true. Empty if none.',
-    `- "wolverineUsed": which teammate was invoked, EXACTLY one of: ${r.wolverine.eligible.join(" | ")}. null if none.`,
-    '- "arcBeatDelivered" / "badgeBeatDelivered": true only if that specific beat landed.',
-    '- "rateLimitedFired": which of nuclearOption | coldOpenFullRun | uncorrectedLedger occurred. Usually empty.',
-    '- "unityBeatPresent": true only if the two hosts genuinely united against the leak launderers.',
-    '- "wagerTerms" / "wagerLeader" / "wagerPotDelta": only if the standing wager was discussed.',
+    '- "redEyeLayerDelivered": true ONLY if Cal actually admitted something new about his own past —',
+    "  specifically about having helped an organization turn its failure into a story about a person.",
+    "  A general reference to having been inside, or to having seen this before, is NOT a layer.",
+    o.redEye.eligible
+      ? `  The layer this episode was offered: ${o.redEye.layer}`
+      : "  No layer was offered this episode, so this is almost certainly false.",
+    '- "redEyeDisclosure": if and only if the above is true, the NEW thing he admitted, in one sentence.',
+    '- "languageUsed": institutional phrases Cal reached for, with what he was covering. Only phrases he',
+    `  actually said. Typical examples: ${LEDGER_PHRASES.slice(0, 6).join(", ")}. Empty if none.`,
+    '- "languageResolved": phrases he explicitly took back ("rejected") or rewrote into a truer sentence',
+    '  ("revised") during this episode. Empty if none.',
+    knownPhrases.length
+      ? `- "languageRecalled": a phrase Zabala threw back at him from a PRIOR episode, exactly one of: ${knownPhrases.join(" | ")}. null if none.`
+      : '- "languageRecalled": null (nothing is on record yet).',
+    '- "positionsTaken": positions either host actually argued that a later episode could hold them to.',
+    '  Use host "cal" or "zabala", a short topicKey naming the subject, and one sentence for the position.',
+    '- "positionRecalled": a position from a PRIOR episode that either host brought back. null if none.',
+    '- "relationship": how the episode left them. "trustDelta" -2..2 (0 is normal).',
+    '  "calDisclosed" true if he gave up something he did not have to. "calRationalized" true if he hid',
+    "  behind process language. \"zabalaOverreached\" true if she flattened a complicated situation.",
+    '  "positionChangedBy" is who genuinely MOVED — "cal", "zabala", or "none". "openThread" is any',
+    "  interpersonal question left hanging, or null.",
     "",
     "Return ONLY this JSON object, with no commentary:",
     "{",
-    '  "attendanceClaimed": number|null, "attendanceReal": number|null,',
-    '  "weSaidCount": number, "endedOnDodge": string|null, "topDodgeUncaught": boolean,',
-    '  "hoytBeatDelivered": boolean, "hoytFactsAdded": string[],',
-    '  "wolverineUsed": string|null, "arcBeatDelivered": boolean, "badgeBeatDelivered": boolean,',
-    '  "rateLimitedFired": string[], "unityBeatPresent": boolean,',
-    '  "wagerTerms": string|null, "wagerLeader": string|null, "wagerPotDelta": number',
+    '  "redEyeLayerDelivered": boolean, "redEyeDisclosure": string|null,',
+    '  "languageUsed": [ { "phrase": "...", "context": "..." } ],',
+    '  "languageResolved": [ { "phrase": "...", "resolution": "rejected"|"revised" } ],',
+    '  "languageRecalled": string|null,',
+    '  "positionsTaken": [ { "host": "cal"|"zabala", "topicKey": "...", "position": "..." } ],',
+    '  "positionRecalled": { "host": "cal"|"zabala", "position": "..." }|null,',
+    '  "relationship": { "trustDelta": 0, "calDisclosed": false, "calRationalized": false,',
+    '                    "zabalaOverreached": false, "positionChangedBy": "none", "openThread": null }',
     "}",
     "",
     "=== EPISODE ===",

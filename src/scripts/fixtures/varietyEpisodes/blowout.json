@@ -7,7 +7,7 @@
       "title": "Cold open",
       "lines": [
         { "lineIndex": 0, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "One eighteen to ninety-seven. Section 122 paid ninety dollars a seat for that, and they were filing out with nine minutes left in the third.", "tone": "heated", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 1, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "Thirty-four to thirteen in the fourth quarter, Bernie. Thirty-four to thirteen. Say it out loud and try not to wince.", "tone": "incredulous", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+        { "lineIndex": 1, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "Thirty-four to thirteen in the fourth quarter, Bernie. Thirty-four to thirteen. Say it out loud and try not to wince.", "tone": "incredulous", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
       ]
     },
     {
@@ -15,26 +15,26 @@
       "title": "Show open",
       "lines": [
         { "lineIndex": 2, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "Welcome to the show, everybody. Tonight we are performing an autopsy, and the body is still warm.", "tone": "excited", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 3, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "And unlike most autopsies, the cause of death is not a mystery. We watched it happen possession by possession.", "tone": "amused", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+        { "lineIndex": 3, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "And unlike most autopsies, the cause of death is not a mystery. We watched it happen possession by possession.", "tone": "amused", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
       ]
     },
     {
       "type": "topic",
       "title": "The collapse itself",
       "lines": [
-        { "lineIndex": 4, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "They quit, Dutch. I am not supposed to say that on the air, but there is no other word. Grown professionals stopped running back on defense.", "tone": "heated", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 5, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "Eight straight empty possessions to open the fourth. Eight! You could hear the building change its mind in real time.", "tone": "incredulous", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 4, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "They quit, Cal. I am not supposed to say that on the air, but there is no other word. Grown professionals stopped running back on defense.", "tone": "heated", "energy": "high", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 5, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "Eight straight empty possessions to open the fourth. Eight! You could hear the building change its mind in real time.", "tone": "incredulous", "energy": "high", "pauseBefore": "none", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
         { "lineIndex": 6, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "And the bench! The bench was sitting there like they were waiting for a bus. Nobody stood up once in twelve minutes.", "tone": "heated", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 7, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "That is the loudest silence in sports, the bench that has already accepted the result with six minutes left.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
+        { "lineIndex": 7, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "That is the loudest silence in sports, the bench that has already accepted the result with six minutes left.", "tone": "amused", "energy": "high", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
       ]
     },
     {
       "type": "topic",
       "title": "What actually went wrong",
       "lines": [
-        { "lineIndex": 8, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "Now let us cool down and look at the film, because the collapse started way before the fourth. The spacing was broken from the opening tip.", "tone": "analytical", "energy": "medium", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 8, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "Now let us cool down and look at the film, because the collapse started way before the fourth. The spacing was broken from the opening tip.", "tone": "analytical", "energy": "medium", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
         { "lineIndex": 9, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "Fine, yes, the corner was empty all night. Every drive collapsed into three defenders because nobody held the weak side.", "tone": "analytical", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 10, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "And the switching scheme asked the big man to live on an island against guards. Somebody drew that up on a whiteboard in September and never took it back down.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 10, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "And the switching scheme asked the big man to live on an island against guards. Somebody drew that up on a whiteboard in September and never took it back down.", "tone": "measured", "energy": "low", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
         { "lineIndex": 11, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "So the effort died because the plan was already dead. That is the most damning version of this, honestly.", "tone": "measured", "energy": "medium", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
       ]
     },
@@ -42,9 +42,9 @@
       "type": "topic",
       "title": "Where they go from here",
       "lines": [
-        { "lineIndex": 12, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "The schedule does them no favors. Three road games against top-five offenses in the next eight days.", "tone": "measured", "energy": "low", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 12, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "The schedule does them no favors. Three road games against top-five offenses in the next eight days.", "tone": "measured", "energy": "low", "pauseBefore": "long", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
         { "lineIndex": 13, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "If they show up flat Thursday, then this is who they are. And I will say it Thursday night, on this microphone, at eleven.", "tone": "dismissive", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
-        { "lineIndex": 14, "speakerName": "Mulkey", "speakerHostId": "host-mulkey", "text": "And that is the quiet part of a blowout. It does not just cost you a game, it asks a question about the whole roster.", "tone": "somber", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
+        { "lineIndex": 14, "speakerName": "Mercer", "speakerHostId": "host-mercer", "text": "And that is the quiet part of a blowout. It does not just cost you a game, it asks a question about the whole roster.", "tone": "somber", "energy": "low", "pauseBefore": "breath", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false },
         { "lineIndex": 15, "speakerName": "Zabala", "speakerHostId": "host-zabala", "text": "We will be watching the answer on Thursday. That is the show. Go hug your bench players, folks.", "tone": "measured", "energy": "medium", "pauseBefore": "beat", "isInterruption": false, "evidenceRefs": [], "isFactualClaim": false, "needsHumanReview": false }
       ]
     }

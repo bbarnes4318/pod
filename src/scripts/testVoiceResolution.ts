@@ -72,10 +72,10 @@ const zabala: HostVoiceContext = {
   seatIndex: 0,
 };
 
-const mulkey: HostVoiceContext = {
+const mercer: HostVoiceContext = {
   id: "host-b-id",
-  slug: "dutch-attendance",
-  name: 'Dutch "Attendance" Mulkey',
+  slug: "cal-red-eye-mercer",
+  name: 'Cal "Red Eye" Mercer',
   ttsProvider: "elevenlabs",
   ttsVoiceId: ELEVEN_ID,
   seatIndex: 1,
@@ -224,8 +224,8 @@ check("Boson accepts a manual voice id and 'default'", () => {
   assertEqual(custom.voiceId, BOSON_ID, "custom voiceId");
   const dflt = resolveTtsProviderAndVoice({
     providerOverride: "boson",
-    runVoiceOverrides: { "dutch-attendance": { provider: "boson", voiceId: "default" } },
-    host: mulkey,
+    runVoiceOverrides: { "cal-red-eye-mercer": { provider: "boson", voiceId: "default" } },
+    host: mercer,
   });
   assertEqual(dflt.voiceId, "default", "default voiceId");
   assertEqual(dflt.voiceSource, "run_override", "voiceSource");
@@ -234,7 +234,7 @@ check("Boson accepts a manual voice id and 'default'", () => {
 check("per-host env fallback applies when no override/host voice matches", () => {
   clearVoiceEnv();
   process.env.BOSON_DR_LINEBREAK_VOICE_ID = "belinda";
-  const r = resolveTtsProviderAndVoice({ providerOverride: "boson", host: mulkey });
+  const r = resolveTtsProviderAndVoice({ providerOverride: "boson", host: mercer });
   assertEqual(r.voiceId, "belinda", "voiceId");
   assertEqual(r.voiceSource, "env_default", "voiceSource");
 });
@@ -333,12 +333,12 @@ check("a seat with no var of its own falls to shared AND warns", () => {
   const warnings = captureWarnings(() => {
     r = resolveTtsProviderAndVoice({
       providerOverride: "fish",
-      host: seated(1, { name: 'Dutch "Attendance" Mulkey', slug: "dutch-attendance" }),
+      host: seated(1, { name: 'Cal "Red Eye" Mercer', slug: "cal-red-eye-mercer" }),
     });
   });
   assertEqual(r?.voiceId, FISH_SHARED, "voiceId");
   assertEqual(warnings.length, 1, "warning count");
-  if (!warnings[0].includes("Mulkey")) throw new Error(`warning does not name the host: ${warnings[0]}`);
+  if (!warnings[0].includes("Mercer")) throw new Error(`warning does not name the host: ${warnings[0]}`);
   if (!warnings[0].includes("seat B")) throw new Error(`warning does not name the seat: ${warnings[0]}`);
   if (!warnings[0].includes("FISH_HOST_B_VOICE_ID")) {
     throw new Error(`warning does not name the fix: ${warnings[0]}`);
@@ -378,13 +378,13 @@ check("no voice anywhere warns before the engine default", () => {
   assertEqual(warnings.length, 1, "warning count");
 });
 
-console.log("Mulkey acceptance (the ticket's three bullets, offline):");
+console.log("Seat-B acceptance (the ticket's three bullets, offline):");
 
 const MEACHUM_OWN = "36780e7121b84d5c9c24cbd2f15eaaa4";
-const mulkeySeeded: HostVoiceContext = {
-  id: "mulkey-id",
-  slug: "dutch-attendance",
-  name: 'Dutch "Attendance" Mulkey',
+const mercerSeeded: HostVoiceContext = {
+  id: "mercer-id",
+  slug: "cal-red-eye-mercer",
+  name: 'Cal "Red Eye" Mercer',
   ttsProvider: "fish",
   ttsVoiceId: MEACHUM_OWN,
   seatIndex: 1,
@@ -392,7 +392,7 @@ const mulkeySeeded: HostVoiceContext = {
 
 check("his own reference id wins with FISH_TTS_VOICE unset", () => {
   clearVoiceEnv();
-  const r = resolveTtsProviderAndVoice({ providerOverride: "fish", host: mulkeySeeded });
+  const r = resolveTtsProviderAndVoice({ providerOverride: "fish", host: mercerSeeded });
   assertEqual(r.voiceId, MEACHUM_OWN, "voiceId");
   assertEqual(r.voiceSource, "host_default", "voiceSource");
 });
@@ -405,7 +405,7 @@ check("FISH_HOST_B_VOICE_ID set + his voice cleared resolves to seat B, no warni
   const warnings = captureWarnings(() => {
     r = resolveTtsProviderAndVoice({
       providerOverride: "fish",
-      host: { ...mulkeySeeded, ttsVoiceId: null },
+      host: { ...mercerSeeded, ttsVoiceId: null },
     });
   });
   assertEqual(r?.voiceId, FISH_B, "voiceId");
@@ -419,17 +419,17 @@ check("both unset falls to shared AND warns, naming him and seat B", () => {
   const warnings = captureWarnings(() => {
     r = resolveTtsProviderAndVoice({
       providerOverride: "fish",
-      host: { ...mulkeySeeded, ttsVoiceId: null },
+      host: { ...mercerSeeded, ttsVoiceId: null },
     });
   });
   assertEqual(r?.voiceId, FISH_SHARED, "voiceId");
   assertEqual(warnings.length, 1, "warning count");
-  if (!warnings[0].includes("Mulkey") || !warnings[0].includes("seat B")) {
+  if (!warnings[0].includes("Mercer") || !warnings[0].includes("seat B")) {
     throw new Error(`warning does not name host and seat: ${warnings[0]}`);
   }
 });
 
-check("Zabala and Mulkey never collapse onto the same Fish voice", () => {
+check("Zabala and Mercer never collapse onto the same Fish voice", () => {
   clearVoiceEnv();
   process.env.FISH_HOST_A_VOICE_ID = FISH_A;
   process.env.FISH_HOST_B_VOICE_ID = FISH_B;
@@ -439,7 +439,7 @@ check("Zabala and Mulkey never collapse onto the same Fish voice", () => {
   });
   const b = resolveTtsProviderAndVoice({
     providerOverride: "fish",
-    host: { ...mulkeySeeded, ttsVoiceId: null },
+    host: { ...mercerSeeded, ttsVoiceId: null },
   });
   if (a.voiceId === b.voiceId) throw new Error(`both chairs resolved to ${a.voiceId}`);
 });

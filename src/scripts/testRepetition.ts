@@ -35,7 +35,7 @@ const buggySegments = Array.from({ length: 4 }, (_, s) => ({
   title: `Segment ${s + 1}`,
   lines: Array.from({ length: 12 }, (_, i) => ({
     lineIndex: i, // <-- restarts per segment, as the model emits it
-    speakerName: i % 2 ? "Mulkey" : "Zabala",
+    speakerName: i % 2 ? "Mercer" : "Zabala",
     text: `Segment ${s + 1} line ${i + 1} unique content about play number ${s * 12 + i}.`,
   })),
 }));
@@ -75,9 +75,9 @@ const restated = {
       title: "t",
       lines: [
         { lineIndex: 0, speakerName: "Zabala", text: "The Wolves have lost five straight games and the coach is out of answers." },
-        { lineIndex: 1, speakerName: "Mulkey", text: "Their net rating in those five losses is historically bad for a two seed." },
+        { lineIndex: 1, speakerName: "Mercer", text: "Their net rating in those five losses is historically bad for a two seed." },
         { lineIndex: 2, speakerName: "Zabala", text: "Five straight losses for the Wolves, and the coach has zero answers left." }, // reworded repeat of 0
-        { lineIndex: 3, speakerName: "Mulkey", text: "The Wolves have lost five straight games and the coach is out of answers." }, // verbatim repeat of 0
+        { lineIndex: 3, speakerName: "Mercer", text: "The Wolves have lost five straight games and the coach is out of answers." }, // verbatim repeat of 0
         { lineIndex: 4, speakerName: "Zabala", text: "Meanwhile the backup point guard just dropped thirty in a quarter." },
       ],
     },
@@ -125,7 +125,7 @@ async function liveTest() {
   const llm = getScriptLLMProvider();
   const start = Date.now();
   const out = await generateOutlineDrivenScript(llm, {
-      speakerNames: ["Zabala", "Mulkey"],
+      speakerNames: ["Zabala", "Mercer"],
     systemPrompt,
     episodeTitle: "Live repetition regression test episode",
     topicsPrompts,

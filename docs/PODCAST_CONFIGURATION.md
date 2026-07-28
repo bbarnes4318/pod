@@ -15,7 +15,7 @@ Fish.
 | Seat | Host | Slug | Intensity |
 |------|------|------|-----------|
 | A (index 0) | Bernadette "Line Two" Zabala | `bernie-line-two` | 8 |
-| B (index 1) | Dutch "Attendance" Mulkey | `dutch-attendance` | 7 |
+| B (index 1) | Cal "Red Eye" Mercer | `cal-red-eye-mercer` | 5 |
 
 **Seat order is load-bearing.** `worker.ts` builds the research brief assuming
 seat B is the LOWER-intensity chair: the topic prompt asks why host A takes the
@@ -23,9 +23,12 @@ strong stance and why host B contradicts it from their own worldview. Swapping
 the array order in the seed inverts that brief without any error. Keep the
 higher-intensity host at index 0.
 
-The gap is deliberately narrow (8 vs 7). Wide enough for the pipeline's A/B
-chair convention, close enough that escalation can genuinely start from either
-chair.
+The gap (8 vs 5) is a SEATING key, not a volume rank. It is wide enough that
+seat A never flips, and nothing else reads it: how big each host performs lives
+in `performanceProfile`, which is what reaches TTS. Escalation genuinely starts
+from either chair — Zabala's goes up (louder, faster), Mercer's goes down
+(quieter, shorter, more exact), and `angerStyle` is what makes that real rather
+than a note in a prompt.
 
 Retired hosts are listed in `RETIRED_HOST_SLUGS` and archived, never deleted.
 `isArchived: true` removes a host from pickers and auto-casting;

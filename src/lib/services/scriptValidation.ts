@@ -273,7 +273,16 @@ export function validateScriptContent(
     // date") must actually deliver that admission somewhere in the episode.
     // Opt-in by construction: the loop below skips any host who declares no
     // such device, so it lies dormant for rosters that don't use one (the
-    // current Zabala/Mulkey pair does not).
+    // current Zabala/Mercer pair does not).
+    //
+    // Cal Mercer is an insider and this rule would fit him — but it is a
+    // MANDATORY once-per-episode line, which is the exact shape of thing his
+    // character was rebuilt to remove: a required admission becomes a verbal
+    // tic by the third episode. His non-omniscience is enforced structurally
+    // instead — every factual assertion needs an evidence ref like anyone
+    // else's, and "Trust me, I was there" / "I have sources" are in his banned
+    // phrases. If a future roster wants the device, declaring the pattern turns
+    // it back on with no code change.
     // Enforced here, not hoped for in the prompt: the admission is what keeps
     // an insider character credible instead of an oracle. Only fires when the
     // caller supplies argumentPatterns for the cast (all production callers do).

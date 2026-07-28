@@ -8,8 +8,8 @@ import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance"
 const PLACEHOLDER_VOICE_ID_RE = /^PLACEHOLDER[_-]/i;
 
 /** Seed-time voice env vars are keyed by host IDENTITY, and the key is not
- *  derivable from the slug (slug `dutch-attendance` is read from
- *  FISH_MULKEY_VOICE_ID). Rather than guess a name that does not exist, the
+ *  derivable from the slug (slug `cal-red-eye-mercer` is read from
+ *  FISH_CAL_MERCER_VOICE_ID). Rather than guess a name that does not exist, the
  *  blocker points at the seat-keyed overrides, which ARE positional and always
  *  correct, plus the doc that lists the identity vars. */
 const VOICE_ENV_HELP =

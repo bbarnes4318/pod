@@ -135,7 +135,7 @@ function main() {
   });
 
   // --- FIX 2: named-person attribution (Boone / Michael Kay cases) ---
-  const H = { checkAttributions: true, hostNames: ["Zabala", "Mulkey"] };
+  const H = { checkAttributions: true, hostNames: ["Zabala", "Mercer"] };
   check("attribution: invented quote 'Michael Kay's callin' it a disaster' FAILS", () => {
     const v = verifyClaimFigures("Even Michael Kay's callin' it a disaster down there.", "The team lost again at home; the fans booed.", H);
     assert(v.unsupportedAttributions.some((n) => /kay/i.test(n)), `expected Kay flagged, got ${JSON.stringify(v.unsupportedAttributions)}`);

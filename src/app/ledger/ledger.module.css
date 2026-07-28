@@ -163,6 +163,13 @@
   color: var(--text-secondary, #cbd5e1);
 }
 
+/* The phrase itself, verbatim — the row's subject, so it carries the emphasis. */
+.phrase {
+  color: var(--text-primary, #e2e8f0);
+  font-weight: 600;
+}
+
+/* A phrase he has since rejected or revised: the arc, made visible. */
 .phantom {
   color: var(--accent, #f97316);
   font-weight: 700;

@@ -2,17 +2,23 @@ import type { Metadata } from "next";
 import { getLedgerView } from "@/lib/services/ledgerView";
 import styles from "./ledger.module.css";
 
-// Public page — no auth. It is a running gag made visible to people who have
-// never heard an episode, which is the whole point of shipping it.
+// Public page — no auth. It is the show's running character arc made visible to
+// people who have never heard an episode, which is the whole point of shipping it.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "The Attendance Ledger | Take Machine",
+  title: "The Language Ledger | Take Machine",
   description:
-    "Every crowd figure Dutch \"Attendance\" Mulkey has announced, every real number Bernadette Zabala read back, and the running total of fans he has invented.",
+    "Every phrase Cal Mercer reached for when a story got uncomfortable, what he was covering when he said it, and the ones he has since taken back.",
 };
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+const STATUS_LABEL: Record<string, string> = {
+  used: "Still stands",
+  rejected: "Took it back",
+  revised: "Rewrote it",
+};
 
 export default async function LedgerPage() {
   const ledger = await getLedgerView();
@@ -20,16 +26,15 @@ export default async function LedgerPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <p className={styles.kicker}>The Attendance Ledger</p>
+        <p className={styles.kicker}>The Language Ledger</p>
         <h1 className={styles.title}>
-          {fmt(ledger.phantomTotal)}
-          <span className={styles.titleUnit}>phantom fans</span>
+          {fmt(ledger.phraseCount)}
+          <span className={styles.titleUnit}>phrases on record</span>
         </h1>
         <p className={styles.blurb}>
-          Dutch &ldquo;Attendance&rdquo; Mulkey spent nineteen years as the public-address voice of the
-          Wichita Wolverines. He announces crowd figures from two decades ago, unprompted, with
-          absurd precision. He has never once rounded, and he has never once been right.
-          Bernadette Zabala looks them up live.
+          Cal Mercer spent seventeen years inside sports organizations, and he learned the vocabulary
+          those rooms use when a decision goes wrong. Every time he reaches for one of those phrases
+          on this show, it goes here. Bernadette Zabala can bring any of them back.
         </p>
       </header>
 
@@ -39,47 +44,45 @@ export default async function LedgerPage() {
         <section className={styles.empty}>
           <p className={styles.emptyTitle}>The ledger is empty.</p>
           <p className={styles.emptyBody}>
-            No episode has recorded an attendance claim yet. Entries appear here once an episode is
-            produced and Mulkey has announced a figure Zabala could check.
+            No episode has recorded a phrase yet. Entries appear here once an episode is produced and
+            Cal has reached for language that covers something.
           </p>
         </section>
       ) : (
         <>
           <section className={styles.statRow}>
             <div className={styles.stat}>
-              <span className={styles.statValue}>{fmt(ledger.episodesWithClaim)}</span>
+              <span className={styles.statValue}>{fmt(ledger.episodesWithEntry)}</span>
               <span className={styles.statLabel}>episodes on record</span>
             </div>
-            {ledger.biggest && (
-              <div className={styles.stat}>
-                <span className={styles.statValue}>{fmt(ledger.biggest.phantom)}</span>
-                <span className={styles.statLabel}>biggest single invention</span>
-              </div>
-            )}
+            <div className={styles.stat}>
+              <span className={styles.statValue}>{fmt(ledger.takenBackCount)}</span>
+              <span className={styles.statLabel}>since taken back</span>
+            </div>
             <div className={styles.stat}>
               <span className={styles.statValue}>
-                {fmt(Math.round(ledger.phantomTotal / ledger.episodesWithClaim))}
+                {fmt(ledger.phraseCount - ledger.takenBackCount)}
               </span>
-              <span className={styles.statLabel}>average per episode</span>
+              <span className={styles.statLabel}>still standing</span>
             </div>
           </section>
 
           <div className={styles.tableWrap}>
             <table className={styles.table}>
               <caption className={styles.caption}>
-                Every figure he has announced, against the real gate.
+                Every phrase he reached for, and what it was covering.
               </caption>
               <thead>
                 <tr>
                   <th scope="col">Episode</th>
-                  <th scope="col" className={styles.num}>He announced</th>
-                  <th scope="col" className={styles.num}>Actually there</th>
-                  <th scope="col" className={styles.num}>Invented</th>
+                  <th scope="col">He said</th>
+                  <th scope="col">About</th>
+                  <th scope="col">Since</th>
                 </tr>
               </thead>
               <tbody>
-                {ledger.entries.map((e) => (
-                  <tr key={e.episodeId}>
+                {ledger.entries.map((e, i) => (
+                  <tr key={`${e.episodeId}-${i}`}>
                     <th scope="row" className={styles.epCell}>
                       <span className={styles.epTitle}>{e.episodeTitle}</span>
                       {e.publishedAt && (
@@ -88,20 +91,14 @@ export default async function LedgerPage() {
                         </time>
                       )}
                     </th>
-                    <td className={styles.num}>{fmt(e.claimed)}</td>
-                    <td className={`${styles.num} ${styles.real}`}>{fmt(e.real)}</td>
-                    <td className={`${styles.num} ${styles.phantom}`}>+{fmt(e.phantom)}</td>
+                    <td className={styles.phrase}>&ldquo;{e.phrase}&rdquo;</td>
+                    <td className={styles.real}>{e.context || "—"}</td>
+                    <td className={e.status === "used" ? styles.real : styles.phantom}>
+                      {STATUS_LABEL[e.status] ?? e.status}
+                    </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr>
-                  <th scope="row">Lifetime</th>
-                  <td className={styles.num} />
-                  <td className={styles.num} />
-                  <td className={`${styles.num} ${styles.phantom}`}>+{fmt(ledger.phantomTotal)}</td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </>

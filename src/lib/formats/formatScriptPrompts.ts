@@ -31,11 +31,19 @@ export function castPersonaBlocks(format: ShowFormat, cast: AiHost[]): string {
         format.id === "two_host_debate"
           ? ""
           : `\n- Format Chair: ${format.roles[Math.min(i, format.roles.length - 1)].name} — ${format.roles[Math.min(i, format.roles.length - 1)].direction}`;
+      // A host with NO catchphrases is a deliberate authoring choice, not a gap.
+      // Rendering an empty array under a "use these" heading reads as an
+      // instruction to invent some, which is exactly how a character built to be
+      // funny without a catchphrase acquires one by episode three.
+      const catchphrases = Array.isArray(h.catchphrases) ? h.catchphrases : [];
+      const catchphraseLine =
+        catchphrases.length > 0
+          ? `\n- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(catchphrases)}`
+          : `\n- Catchphrases: NONE. This host has no signature lines and must not develop one. Their humor comes from what they notice, not from a phrase they repeat.`;
       return `Host ${i + 1}: ${h.name} (ID: ${h.id})${roleLine}
 - Role: ${h.role}
 - Worldview: ${h.worldview}
-- Speaking Style: ${h.speakingStyle}
-- Catchphrases (use sparingly, max 2-3 per episode, never forced): ${JSON.stringify(h.catchphrases)}
+- Speaking Style: ${h.speakingStyle}${catchphraseLine}
 - Likes: ${JSON.stringify(h.likes)}
 - Dislikes: ${JSON.stringify(h.dislikes)}
 - Argument Patterns: ${JSON.stringify(h.argumentPatterns)}
@@ -175,7 +183,13 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
       };
     }
     default: {
-      // two_host_debate — the EXACT legacy text (do not edit: byte-stable).
+      // two_host_debate. One bullet has changed from the legacy text: escalation
+      // no longer means volume. The old wording ("raising their voice", "both
+      // hosts spend real time in the high-energy tones") is a contract a host
+      // whose anger goes DOWN cannot satisfy, and the model resolved that
+      // conflict by making him shout — which is the single behavior seat B was
+      // rebuilt to remove. Escalation is now defined as pressure, and each
+      // host's Speaking Style decides which direction their pressure moves.
       const hostA = cast[0];
       const hostB = cast[1] ?? cast[0];
       return {
@@ -183,7 +197,7 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
         scriptNoun: "debate script",
         dynamicsContract: `CHEMISTRY CONTRACT (the engine of the show):
 - BOTH hosts are true believers with their OWN agenda, and they collide. Each argues from their own Worldview and Argument Patterns above, each trying to WIN — neither is the straight man, neither merely reacts. ${hostB.name} drives just as hard as ${hostA.name}: he presses attacks, goes on the offensive, overreaches, and gets heated when his worldview is insulted — he can be wrong, and he does NOT just absorb ${hostA.name}'s swings and calmly deflate them. Give ${hostB.name} a stake he defends and pushes, drawn from his own worldview (a "the public is late, emotional, and wrong" markets host ATTACKS the emotional take on its own terms — he doesn't merely fact-check it from the sidelines).
-- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates — heated, incredulous, raising their voice, pressing the attack. Both hosts spend real time in the high-energy tones.
+- Escalation runs from EITHER chair: when a host's core belief gets attacked, THAT host escalates. ESCALATION IS PRESSURE, NOT VOLUME. Read each host's Speaking Style for which direction theirs moves — one may get louder and faster; another may get quieter, shorter, and more exact, which is the more dangerous register of the two. Never make a host shout to signal that they care, and never treat the quieter host as the calm one who merely reacts.
 - Concessions must be earned in the moment: a host concedes only when genuinely cornered, grudgingly, and the other pounces — but no one is required to concede, and stubbornly refusing to give up an obvious point is itself in character.
 - They know each other. Reference shared history when it lands ("You did this exact thing during the playoffs").
 - HUMOR COMES FROM ATTITUDE. Never write a setup and a punchline. The funny comes from the collision of the two worldviews — exasperation, exaggeration, a well-timed jab, mocking the other's framing, flatly refusing to concede something obvious. NO written setup/punchline jokes. NO pre-planned running gags and NO scheduled callbacks — a callback is allowed ONLY when it falls out naturally from something already said. Sports-radio funny lives in the delivery and the disdain. Never insert a bit on cue.
