@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { generateTtsSegments } from "@/lib/services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "@/lib/services/audioStitchingService";
 import { stitchSceneEpisodeAudio, isSceneRenderMode } from "@/lib/services/sceneStitchingService";
+import { assertSceneGenerationComplete } from "@/lib/audio/sceneGenerationOutcome";
 import {
   generateDialogueScenes,
   readRenderModeSetting,
@@ -50,6 +51,14 @@ export async function dispatchTtsGeneration(data: TtsSegmentJobData) {
     providerOverride: data.providerOverride,
     voiceOverrides: data.voiceOverrides,
   });
+
+  // A partial scene run is NOT a completed TTS stage. Throw before the worker
+  // can call chainProductionStage(): BullMQ retries this same bounded job, while
+  // generateDialogueScenes reuses every ready fingerprint and renders only the
+  // missing scenes. This prevents the old fact_checked -> TTS -> fact_checked
+  // self-chain from creating an unbounded stream of new TTS jobs.
+  assertSceneGenerationComplete(summary);
+
   return { pipeline: summary.mode, result: summary };
 }
 
