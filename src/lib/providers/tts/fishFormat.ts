@@ -20,6 +20,9 @@ export interface FishLineInput {
   energy?: "low" | "medium" | "high";
   /** True when this line cuts the previous speaker off. */
   isInterruption?: boolean;
+  /** Compiled host/scene direction. Used only to determine how pressure moves;
+   *  it is never inserted verbatim into the spoken transcript. */
+  voiceDirection?: string;
 }
 
 /**
@@ -69,10 +72,35 @@ export const TONE_TO_FISH_CUE: Record<string, string | null> = {
   transition: null,
 };
 
-/** Heated/excited lines at full energy get the shout build instead. */
-const HIGH_ENERGY_ESCALATION: Record<string, string> = {
-  heated: "[building to a shout]",
-  excited: "[building to a shout]",
+export type FishAngerStyle = "louder_faster" | "slower_quieter" | "louder_slower";
+
+/** Infer only the pressure DIRECTION from the compiled direction. The old
+ * formatter ignored the profile and ordered every high-energy host to build to
+ * a shout — including characters whose defining behavior was getting quieter. */
+export function inferFishAngerStyle(direction?: string): FishAngerStyle {
+  const d = (direction || "").toLowerCase();
+  if (/slower\s+and\s+quieter|slower and quieter|quieter.*more precise|never louder/.test(d)) {
+    return "slower_quieter";
+  }
+  if (/louder\s+and\s+slower|louder and slower|stretch words|hold the ends/.test(d)) {
+    return "louder_slower";
+  }
+  return "louder_faster";
+}
+
+const HIGH_ENERGY_BY_ANGER: Record<FishAngerStyle, Record<string, string>> = {
+  louder_faster: {
+    heated: "[sharper, faster, emotionally charged]",
+    excited: "[faster, energized, spontaneous]",
+  },
+  slower_quieter: {
+    heated: "[slower, quieter, cold and precise]",
+    excited: "[measured, intent, controlled]",
+  },
+  louder_slower: {
+    heated: "[louder and slower, stretching the important words]",
+    excited: "[booming but unhurried]",
+  },
 };
 
 const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
@@ -83,8 +111,7 @@ const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
  * Rules:
  *  1. Existing script [tags] convert IN PLACE to Fish natural-language cues.
  *  2. If (and only if) the line ends up with no cues, one tone-derived cue
- *     may open the line; high-energy heated/excited lines escalate to
- *     "[building to a shout]".
+ *     may open the line. High-energy direction follows the HOST profile.
  *  3. Interruptions open with [cutting in] (counts toward the cue budget).
  *  4. Never more than 2 cues total — humans don't perform every word.
  */
@@ -111,7 +138,8 @@ export function formatLineForFish(line: FishLineInput): string {
     cueCount++;
   }
   if (cueCount === 0) {
-    const escalated = line.energy === "high" ? HIGH_ENERGY_ESCALATION[line.tone || ""] : undefined;
+    const anger = inferFishAngerStyle(line.voiceDirection);
+    const escalated = line.energy === "high" ? HIGH_ENERGY_BY_ANGER[anger][line.tone || ""] : undefined;
     const cue = escalated ?? TONE_TO_FISH_CUE[line.tone || ""] ?? null;
     if (cue) {
       openers.push(cue);
