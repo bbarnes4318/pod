@@ -145,7 +145,9 @@ export async function createFishVoiceModel(
   form.append("tags", "host-studio");
   form.append("tags", input.sourceTag);
   for (const sample of samples) {
-    const blob = new Blob([sample.bytes], { type: sample.contentType || "audio/wav" });
+    const bytes = Uint8Array.from(sample.bytes);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const blob = new Blob([buffer], { type: sample.contentType || "audio/wav" });
     form.append("voices", blob, sample.filename || "voice-sample.wav");
     if (sample.transcript?.trim()) form.append("texts", sample.transcript.trim());
   }
