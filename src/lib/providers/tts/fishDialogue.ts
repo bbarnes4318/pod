@@ -9,10 +9,13 @@
 //
 // Cue policy (anti-mechanical, by design):
 //   - The approved text's own [tags] convert in place (same table as line mode).
-//   - NO per-line tone openers. At most ONE scene-level accent cue is placed,
-//     on the single hottest line of the scene, and only when the scene carries
-//     a real emotional peak. Interruptions keep their [cutting in] marker
-//     because turn-taking depends on it.
+//   - The first uncued turn for each speaker receives ONE compact delivery cue
+//     distilled from that host's authored speaking style. The whole scene is
+//     still rendered in one request, so the model hears the exchange rather
+//     than resetting at every stored script line.
+//   - At most ONE scene-level accent cue is placed on the single hottest line,
+//     and only when the scene carries a real emotional peak. Interruptions keep
+//     their [cutting in] marker because turn-taking depends on it.
 //   - Per-utterance cue cap = the speaker's profile maxCueDensity.
 
 import { getFishApiKey } from "../../env";
@@ -21,6 +24,7 @@ import {
   DialogueSceneResult,
   SceneGenerationError,
   categorizeHttpStatus,
+  type ScenePerformanceContext,
 } from "./sceneTypes";
 import { FISH_REFERENCE_ID_RE } from "./providerIds";
 import { SCRIPT_TAG_TO_FISH, TONE_TO_FISH_CUE } from "./fishFormat";
@@ -29,7 +33,7 @@ const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,40})\]/g;
 
 /** Heated cues for a host whose anger goes DOWN (slower, quieter, precise)
- *  instead of up. Same hot tones, opposite delivery direction. */
+ * instead of up. Same hot tones, opposite delivery direction. */
 const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
   heated: "[slow, quiet, cold and precise]",
   excited: "[measured, intense, deliberate]",
@@ -38,11 +42,8 @@ const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
 };
 
 /** Heated cues for a host whose volume goes UP while pace goes DOWN — the
- *  trained-projection voice that stretches words and holds terminals under
- *  pressure rather than accelerating. Distinct from BOTH other sets: the hot
- *  set is loud-and-fast, the slow/quiet set drops volume as well as pace. This
- *  is the one that keeps two loud hosts legible in mono — they differ in pace
- *  direction, not volume. */
+ * trained-projection voice that stretches words and holds terminals under
+ * pressure rather than accelerating. */
 const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
   heated: "[loud and slow, stretching every word]",
   excited: "[booming, unhurried, savoring it]",
@@ -63,6 +64,8 @@ export interface FishScenePayload {
   };
   /** Speaker-index order: voiceId per index (audit trail; matches reference_id). */
   voiceOrder: string[];
+  /** Safe audit trail: which compact direction cue was actually compiled. */
+  directionCues: Record<string, string>;
 }
 
 /** Heat score to pick the single scene line allowed a tone accent. */
@@ -70,6 +73,29 @@ function lineHeat(u: { tone?: string; energy?: string }): number {
   const e = u.energy === "high" ? 2 : u.energy === "medium" ? 1 : 0;
   const hotTone = ["heated", "excited", "incredulous"].includes((u.tone || "").toLowerCase()) ? 2 : 0;
   return e + hotTone;
+}
+
+/** Extract only the authored Delivery style from the larger direction string.
+ * Fish has no dedicated instruction parameter, so this becomes one short
+ * bracket cue on the speaker's first natural turn. It is provider control text,
+ * never listener-visible transcript text. */
+export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | null {
+  const direction = (ctx.direction || "").replace(/\s+/g, " ").trim();
+  if (!direction) return null;
+  const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|Your intensity|When genuinely|Never:)|$)/i);
+  let style = (match?.[1] || "").trim();
+  if (!style) return null;
+
+  // One cue should establish the register, not paste a character bible into the
+  // provider request. Prefer the first complete sentence; otherwise trim on a
+  // word boundary. The final clause explicitly asks for responsive speech.
+  const firstSentence = style.match(/^(.{20,190}?[.!?])(?:\s|$)/)?.[1];
+  style = (firstSentence || style).replace(/[.!?]+$/, "").trim();
+  if (style.length > 180) {
+    const cut = style.slice(0, 180);
+    style = cut.slice(0, Math.max(40, cut.lastIndexOf(" "))).trim();
+  }
+  return `[${style}; conversational, responsive, reacting in the moment]`;
 }
 
 /** Pure request builder (unit-tested without network). */
@@ -100,9 +126,16 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
 
   const cueCapByHost = new Map<string, number>();
   const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter" | "louder_slower">();
+  const baselineCueByHost = new Map<string, string>();
+  const directionCues: Record<string, string> = {};
   for (const c of input.cast) {
     cueCapByHost.set(c.speakerHostId, Math.max(0, Math.min(2, c.maxCueDensity)));
     angerStyleByHost.set(c.speakerHostId, c.angerStyle ?? "louder_faster");
+    const cue = compactFishDeliveryCue(c);
+    if (cue) {
+      baselineCueByHost.set(c.speakerHostId, cue);
+      directionCues[c.speakerHostId] = cue;
+    }
   }
 
   // The ONE line (if any) allowed a tone-derived accent cue this scene.
@@ -116,6 +149,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     }
   }
 
+  const baselineApplied = new Set<string>();
   const parts: string[] = [];
   for (const u of input.utterances) {
     const idx = speakerIndexByHost.get(u.speakerHostId)!;
@@ -140,14 +174,9 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       return ` ${mapped} `;
     });
 
-    // Scene-level accent: exactly one line in the scene may open with a
-    // tone cue — controlled variation instead of stamping every hot line.
-    // The cue direction follows the SPEAKER's anger signature. Three distinct
-    // sets, because volume and pace move independently: louder_faster gets the
-    // hot cue, slower_quieter lands as slow cold precision, louder_slower stays
-    // loud but stretches. Differing directions keep a heated stretch legible
-    // even in mono — including when both hosts are loud.
-    if (u.lineIndex === accentLineIndex && cueCount === 0 && cap > 0) {
+    // Scene-level accent: exactly one line in the scene may open with a tone
+    // cue. The cue direction follows the SPEAKER's anger signature.
+    if (u.lineIndex === accentLineIndex && cueCount < cap && cap > 0) {
       const tone = (u.tone || "").toLowerCase();
       const anger = angerStyleByHost.get(u.speakerHostId) ?? "louder_faster";
       const cue =
@@ -159,6 +188,18 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       if (cue) {
         openers.push(cue);
         cueCount++;
+      }
+    }
+
+    // Establish this speaker's authored register once per scene, on the first
+    // turn whose interruption/tag/accent did not already consume the cue budget.
+    // This is the missing bridge between the stored performance profile and Fish.
+    if (!baselineApplied.has(u.speakerHostId) && cueCount < cap && cap > 0) {
+      const baseline = baselineCueByHost.get(u.speakerHostId);
+      if (baseline) {
+        openers.push(baseline);
+        cueCount++;
+        baselineApplied.add(u.speakerHostId);
       }
     }
 
@@ -189,6 +230,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       top_p: topPs.length ? topPs[Math.floor(topPs.length / 2)] : 0.7,
     },
     voiceOrder,
+    directionCues,
   };
 }
 
@@ -257,6 +299,7 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
       voiceOrder: payload.voiceOrder,
       temperature: payload.body.temperature,
       topP: payload.body.top_p,
+      directionCues: payload.directionCues,
       // The exact provider text is auditable but must NEVER reach
       // listener-visible surfaces; it lives only in safe metadata.
       cuedTextPreview: payload.body.text.slice(0, 400),
