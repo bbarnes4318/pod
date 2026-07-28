@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { scoreConversationContinuity } from "../lib/services/scriptConversationDirector";
 import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";
 import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";
+import { scoreScriptQuality } from "../lib/services/episodeQualityService";
 
 const priorFishSceneModel = process.env.FISH_SCENE_MODEL;
 const priorFishModel = process.env.FISH_MODEL;
@@ -38,7 +39,7 @@ const connected = [
     lines: [
       { lineIndex: 0, speakerName: "A", text: "That coach lost the room the moment he blamed the players." },
       { lineIndex: 1, speakerName: "B", text: "No— you're skipping what the players did before he said it." },
-      { lineIndex: 2, speakerName: "B", text: "They quit on the fourth quarter, and he finally said the quiet part out loud." },
+      { lineIndex: 2, speakerName: "B", text: "They quit in the fourth quarter, and he finally said the quiet part out loud." },
       { lineIndex: 3, speakerName: "A", text: "You really think public humiliation fixes a team?" },
       { lineIndex: 4, speakerName: "B", text: "Fixes it? No. But your version lets every veteran walk away clean." },
       { lineIndex: 5, speakerName: "A", text: "Fine, the veterans own a piece. The coach still lit the match." },
@@ -55,10 +56,30 @@ assert.ok(connectedScore.score >= 78, `connected exchange scored only ${connecte
 assert.ok(connectedScore.responsiveSwitchRatio >= 0.66);
 assert.ok(connectedScore.sameSpeakerBuilds >= 1);
 
+// Script scoring must distinguish an editorial miss from a catastrophic draft.
+// The coherent exchange has no formal cold open/closing and should retain those
+// warnings, but it must not trigger a full BullMQ regeneration.
+const priorStrict = process.env.SCRIPT_QUALITY_GATE_STRICT;
+const priorConversationGate = process.env.SCRIPT_CONVERSATION_GATE;
+process.env.SCRIPT_QUALITY_GATE_STRICT = "true";
+process.env.SCRIPT_CONVERSATION_GATE = "true";
+const borderlineReport = scoreScriptQuality({ estimatedDurationMinutes: 1, segments: connected });
+assert.equal(borderlineReport.gate.passed, true, borderlineReport.gate.failures.join("; "));
+assert.ok(borderlineReport.gate.warnings.length > 0, "borderline draft should keep editorial warnings");
+assert.throws(
+  () => scoreScriptQuality({ estimatedDurationMinutes: 1, segments: disconnected }),
+  /catastrophically bad draft/,
+  "parallel monologues must still be blocked"
+);
+if (priorStrict === undefined) delete process.env.SCRIPT_QUALITY_GATE_STRICT;
+else process.env.SCRIPT_QUALITY_GATE_STRICT = priorStrict;
+if (priorConversationGate === undefined) delete process.env.SCRIPT_CONVERSATION_GATE;
+else process.env.SCRIPT_CONVERSATION_GATE = priorConversationGate;
+
 const flatMetrics: SpokenPerformanceQaMetrics = {
   durationSec: 48,
   integratedLufs: -16,
-  loudnessRangeLu: 4.9, // combined level variation alone must not save this
+  loudnessRangeLu: 4.9,
   truePeakDb: -1.2,
   pauseCount: 8,
   medianPauseSec: 0.4,
@@ -109,4 +130,4 @@ assert.equal(aliveQa.passed, true, `alive performance was rejected: ${aliveQa.fa
 assert.ok(aliveQa.score >= 80);
 
 console.log("Real podcast quality gate regression: PASS");
-console.log({ disconnectedScore, connectedScore, flatQa, aliveQa });
+console.log({ disconnectedScore, connectedScore, borderlineReport, flatQa, aliveQa });
