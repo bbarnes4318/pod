@@ -61,7 +61,7 @@ check("all BullMQ waiting/running states coalesce repeat clicks", () => {
 
 check("Studio hands the exact newly-created episode id to startDebate", () => {
   assert(/startDebate\(result\.episodeId\)/.test(builder), "ResultView must start the episode returned by creation");
-  assert(/queueScriptGenerationJob\(\{\s*episodeId,/s.test(actions), "startDebate must enqueue its episodeId unchanged");
+  assert(/queueScriptGenerationJob\(\{[\s\S]*?episodeId,/.test(actions), "startDebate must enqueue its episodeId unchanged");
 });
 
 check("submission is logged before Redis enqueue and includes the queue identity", () => {
