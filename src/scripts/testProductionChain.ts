@@ -18,6 +18,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { nextProductionJobFor, PRODUCTION_STAGES } from "../lib/createFlow";
+import {
+  assertSceneGenerationComplete,
+  PartialSceneGenerationError,
+} from "../lib/audio/sceneGenerationOutcome";
 import { EPISODE_STATUS_LADDER } from "../lib/episodeStatus";
 
 let passed = 0;
@@ -39,6 +43,7 @@ function assert(cond: boolean, msg: string): asserts cond {
 
 const src = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
 const worker = src("lib/queue/worker.ts");
+const dispatch = src("lib/services/stitchDispatch.ts");
 const console_ = src("app/studio/ProductionConsole.tsx");
 
 /** The body of a worker handler, so a match cannot come from elsewhere in the file. */
@@ -96,6 +101,44 @@ check("the worker actually calls the chain after fact-check, voices and mix", ()
   ] as const) {
     assert(/chainProductionStage\(/.test(handlerBody(handler)), `${handler} must chain — ${why}`);
   }
+});
+
+check("partial scene generation is rejected before the worker can chain", () => {
+  assert(/assertSceneGenerationComplete\(summary\)/.test(dispatch), "scene dispatch must enforce complete scene generation");
+  const guardAt = dispatch.indexOf("assertSceneGenerationComplete(summary)");
+  const returnAt = dispatch.indexOf("return { pipeline: summary.mode", guardAt);
+  assert(guardAt !== -1 && returnAt > guardAt, "the completeness guard must run before scene dispatch returns success");
+
+  let thrown: unknown = null;
+  try {
+    assertSceneGenerationComplete({
+      sceneCount: 11,
+      readyScenes: 9,
+      failedScenes: 2,
+      scenes: [
+        { sceneIndex: 4, lineRange: [24, 31], status: "failed", errorCategory: "quality_gate_failed" },
+        { sceneIndex: 8, lineRange: [47, 54], status: "failed", errorCategory: "quality_gate_failed" },
+      ],
+    });
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown instanceof PartialSceneGenerationError, "partial scene output must throw a typed retryable error");
+  assert(thrown.failedSceneIndexes.join(",") === "4,8", `expected failed scenes 4,8, got ${thrown.failedSceneIndexes.join(",")}`);
+  assert(/9 ready scene\(s\) are preserved/.test(thrown.message), "error must say ready scenes are preserved");
+  assert(/Final mixing is blocked/.test(thrown.message), "error must say mixing is blocked");
+});
+
+check("a complete scene generation passes the guard", () => {
+  assertSceneGenerationComplete({
+    sceneCount: 2,
+    readyScenes: 2,
+    failedScenes: 0,
+    scenes: [
+      { sceneIndex: 0, lineRange: [0, 3], status: "ready" },
+      { sceneIndex: 1, lineRange: [4, 7], status: "ready" },
+    ],
+  });
 });
 
 check("a chain failure is recorded, never swallowed", () => {
