@@ -140,6 +140,7 @@ async function main() {
       assert(actions.includes(marker), `podcast save is missing ${marker}`);
     }
     assert(actions.includes("db.$transaction"), "show creation is not transactional");
+    assert(actions.includes('revalidatePath("/studio/shows")'), "show mutations do not refresh the canonical Studio workspace");
   });
 
   await check("the real script compositor loads and injects Show Forge state", () => {
@@ -160,11 +161,13 @@ async function main() {
     assert(reservation.includes("decodeShowForgeState(initialSnapshot?.editorial?.scriptStyle)"), "assignment does not read the episode's frozen show bible");
   });
 
-  await check("show headquarters surfaces promise, upcoming movement, arcs, episodes, and editing", () => {
-    const page = source("app/app/podcasts/[id]/page.tsx");
+  await check("Studio show headquarters surfaces promise, upcoming movement, arcs, episodes, and editing", () => {
+    const page = source("app/studio/shows/[id]/page.tsx");
     for (const label of ["Show Headquarters", "The show promise", "Next storyline movement", "Storyline board", "Episodes in this show", "Edit in Show Forge"]) {
-      assert(page.includes(label), `show headquarters is missing: ${label}`);
+      assert(page.includes(label), `Studio show headquarters is missing: ${label}`);
     }
+    const legacy = source("app/app/podcasts/[id]/page.tsx");
+    assert(legacy.includes("/studio/shows/${id}"), "legacy show headquarters does not redirect into Studio");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

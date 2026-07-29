@@ -13,8 +13,8 @@ const NAV = [
     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="m10 9 5 3-5 3z" /></svg>,
   },
   {
-    href: "/app/podcasts", label: "Shows",
-    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" /><path d="M12 15.5V21" /></svg>,
+    href: "/studio", label: "Creator Studio", externalSurface: true,
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M8 14h3M14 14h2M8 17h8" /></svg>,
   },
   {
     href: "/app/topics", label: "Hot topics",
@@ -34,12 +34,12 @@ export default function AppNav() {
   const pathname = usePathname();
   return (
     <>
-      {NAV.map((n) => {
-        const active = n.exact ? pathname === n.href : pathname.startsWith(n.href);
+      {NAV.map((item) => {
+        const active = item.externalSurface ? false : item.exact ? pathname === item.href : pathname.startsWith(item.href);
         return (
-          <Link key={n.href} href={n.href} className={`uNavItem ${active ? "active" : ""}`}>
-            {n.icon}
-            {n.label}
+          <Link key={item.href} href={item.href} className={`uNavItem ${active ? "active" : ""}`}>
+            {item.icon}
+            {item.label}
           </Link>
         );
       })}
