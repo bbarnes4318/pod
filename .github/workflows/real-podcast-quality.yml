@@ -30,6 +30,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - name: Lint
+        run: npm run lint
       - name: TypeScript
         run: |
           set -o pipefail
@@ -55,3 +57,31 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testShowForgeDiscoverability.ts
       - name: Production build contract
         run: npm run build
+
+  studio-e2e:
+    needs: quality-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Authenticated Studio Playwright suite
+        run: npm run test:e2e
+      - name: Upload Studio screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-ui-artifacts
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
