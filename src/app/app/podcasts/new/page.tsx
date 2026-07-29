@@ -8,24 +8,19 @@ import { requireUserPage } from "@/lib/currentUser";
 export const dynamic = "force-dynamic";
 
 export default async function NewPodcastPage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
-  const user = await requireUserPage("/app/podcasts/new"); // creating a podcast requires an account
+  const user = await requireUserPage("/app/podcasts/new");
   const { topic: topicId } = await searchParams;
 
   const [hostsRaw, teamsRaw] = await Promise.all([
-    // Own + shared hosts only — never another account's roster.
     db.aiHost.findMany({ where: { isActive: true, isArchived: false, OR: [{ ownerId: user.id }, { ownerId: null }] }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }).catch(() => [] as any[]),
     db.team.findMany({ where: { id: { startsWith: "seed:" } }, orderBy: [{ leagueId: "asc" }, { name: "asc" }], select: { id: true, leagueId: true, name: true, city: true } }).catch(() => [] as any[]),
   ]);
 
-  // The DB catalog is the source of truth; fall back to the static seed so
-  // the wizard still works before the seed migration has run.
   const teams: WizardTeam[] = (teamsRaw.length > 0 ? teamsRaw : SEED_TEAMS).map((t: any) => ({
     id: t.id, leagueId: t.leagueId, name: t.name,
   }));
   const hosts: WizardHost[] = hostsRaw.map((h: any) => ({ id: h.id, name: h.name, role: h.role }));
 
-  // Pre-fill from a hot topic (PART 7 entry point): topic → vertical, any
-  // team named in the topic, and the topic title as the working name.
   let initial: WizardInitial | undefined;
   if (topicId) {
     const t = await db.topicCandidate
@@ -51,10 +46,18 @@ export default async function NewPodcastPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <div className="uTopbar">
-        <h1 className="uPageTitle">Create a podcast</h1>
+      <div className="uTopbar" data-testid="show-forge-header">
+        <div>
+          <div style={{ color: "var(--u-brand)", fontSize: "0.72rem", fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase", marginBottom: 5 }}>
+            Show Forge
+          </div>
+          <h1 className="uPageTitle">Build your show</h1>
+          <div style={{ color: "var(--u-ink-2)", fontSize: "0.83rem", marginTop: 5, maxWidth: 680, lineHeight: 1.45 }}>
+            Create the theme, listener promise, cast chemistry, episode rituals, and storylines that every future episode will follow.
+          </div>
+        </div>
       </div>
-      <div className="uContent" style={{ maxWidth: 720 }}>
+      <div className="uContent" style={{ maxWidth: 820 }}>
         <PodcastWizard hosts={hosts} teams={teams} initial={initial} />
       </div>
     </>

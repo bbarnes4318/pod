@@ -10,10 +10,6 @@ export const dynamic = "force-dynamic";
 
 export default async function PodcastsPage() {
   const user = await currentUser();
-  // Owner scoping is shared with every other owned surface (lib/ownerScope).
-  // This previously OR'd in `{ ownerId: null }` for ANY signed-in user, so every
-  // legacy pre-accounts podcast was listed — and editable — for every new signup.
-  // Legacy rows now belong to the operator only.
   const podcasts = await db.podcast
     .findMany({
       where: ownerScope(user),
@@ -25,19 +21,52 @@ export default async function PodcastsPage() {
   return (
     <>
       <div className="uTopbar">
-        <h1 className="uPageTitle">My podcasts</h1>
-        <Link href="/app/podcasts/new" className="uPlayLg" style={{ background: "var(--u-brand)", textDecoration: "none", padding: "0.6rem 1.3rem", fontSize: "0.86rem" }}>
-          ＋ New podcast
+        <div>
+          <h1 className="uPageTitle">Shows</h1>
+          <div style={{ color: "var(--u-ink-2)", fontSize: "0.82rem", marginTop: 4 }}>
+            Build a themed podcast with its own cast, rituals, recurring segments, and season storylines.
+          </div>
+        </div>
+        <Link
+          href="/app/podcasts/new"
+          className="uPlayLg"
+          data-testid="shows-open-show-forge"
+          style={{ background: "var(--u-brand)", textDecoration: "none", padding: "0.6rem 1.3rem", fontSize: "0.86rem" }}
+        >
+          ✦ Open Show Forge
         </Link>
       </div>
-      <div className="uContent" style={{ maxWidth: 860 }}>
+      <div className="uContent" style={{ maxWidth: 900 }}>
+        <div
+          data-testid="show-forge-product-banner"
+          style={{
+            marginBottom: "1.4rem",
+            padding: "1.2rem 1.3rem",
+            borderRadius: 18,
+            border: "1px solid var(--u-hairline-2)",
+            background: "linear-gradient(135deg, var(--u-brand-soft), var(--u-surface))",
+            display: "grid",
+            gap: 8,
+          }}
+        >
+          <div style={{ fontSize: "0.74rem", fontWeight: 900, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--u-brand)" }}>
+            Show Forge is live
+          </div>
+          <div style={{ fontSize: "1.12rem", fontWeight: 900, color: "var(--u-ink)" }}>
+            Create a real show—not just another isolated episode.
+          </div>
+          <div style={{ color: "var(--u-ink-2)", fontSize: "0.86rem", lineHeight: 1.55 }}>
+            Choose the show’s promise, assign Host Studio characters, create recurring segments, and map storylines that move across future episodes.
+          </div>
+        </div>
+
         {podcasts.length === 0 ? (
           <div style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--u-ink-2)" }}>
             <div style={{ fontSize: "2.2rem", marginBottom: "0.7rem" }}>🎙️</div>
-            <p style={{ fontWeight: 700, marginBottom: "0.4rem", color: "var(--u-ink)" }}>No podcasts yet</p>
-            <p style={{ fontSize: "0.88rem", marginBottom: "1.4rem" }}>Set one up once and Take Machine keeps the episodes coming.</p>
+            <p style={{ fontWeight: 800, marginBottom: "0.4rem", color: "var(--u-ink)" }}>No shows yet</p>
+            <p style={{ fontSize: "0.88rem", marginBottom: "1.4rem" }}>Build the creative world once, then let every episode belong to it.</p>
             <Link href="/app/podcasts/new" className="uPlayLg" style={{ background: "var(--u-brand)", textDecoration: "none" }}>
-              Create your first podcast
+              ✦ Build your first show
             </Link>
           </div>
         ) : (
@@ -60,7 +89,7 @@ export default async function PodcastsPage() {
                 <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexShrink: 0 }}>
                   <GenerateNowButton podcastId={p.id} />
                   <Link href={`/app/podcasts/${p.id}`} className="uRecordBtn" style={{ textDecoration: "none" }}>
-                    Manage →
+                    Open headquarters →
                   </Link>
                 </div>
               </div>
