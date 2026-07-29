@@ -5,6 +5,7 @@ import "./studio.css";
 import "./studio-production.css";
 import "./production-routes.css";
 import "./creation-production.css";
+import "./loading-production.css";
 import { requireUserPage } from "@/lib/currentUser";
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
