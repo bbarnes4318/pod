@@ -6,9 +6,8 @@ import { usePathname } from "next/navigation";
 import { logoutAction } from "@/lib/authActions";
 
 /* ------------------------------------------------------------------ *
- * Navigation model. "The Board · Create · Episodes · Hosts ·
- * Publishing · Settings" are the required primary destinations;
- * "Takes" is kept so the existing live page stays reachable.
+ * Navigation model. Studio owns the complete creator journey:
+ * Board · Shows · Create · Episodes · Takes · Hosts · Publishing.
  * ------------------------------------------------------------------ */
 type NavItem = { href: string; label: string; exact?: boolean; icon: React.ReactNode };
 
@@ -17,6 +16,11 @@ const I = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
       <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  ),
+  shows: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.25" /><path d="M12 15.25V21" />
     </svg>
   ),
   create: (
@@ -64,6 +68,7 @@ const I = {
 
 const NAV: NavItem[] = [
   { href: "/studio", label: "The Board", exact: true, icon: I.board },
+  { href: "/studio/shows", label: "Shows", icon: I.shows },
   { href: "/studio/create", label: "Create", icon: I.create },
   { href: "/studio/episodes", label: "Episodes", icon: I.episodes },
   { href: "/studio/takes", label: "Takes", icon: I.takes },
@@ -94,20 +99,17 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   const [menuOpen, setMenuOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
 
-  // Restore the rail preference after mount (avoids SSR hydration mismatch).
   useEffect(() => {
     try {
       if (localStorage.getItem(RAIL_KEY) === "1") setCollapsed(true);
     } catch {}
   }, []);
 
-  // Close the mobile drawer whenever the route changes.
   useEffect(() => {
     setMobileOpen(false);
     setMenuOpen(false);
   }, [pathname]);
 
-  // Dismiss the account menu on outside-click and Escape.
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
@@ -125,8 +127,8 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   }, [menuOpen]);
 
   const toggleRail = () => {
-    setCollapsed((c) => {
-      const next = !c;
+    setCollapsed((current) => {
+      const next = !current;
       try {
         localStorage.setItem(RAIL_KEY, next ? "1" : "0");
       } catch {}
@@ -138,31 +140,18 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
 
   return (
-    <div
-      className="studioShell"
-      data-collapsed={collapsed ? "true" : "false"}
-      data-mobile-open={mobileOpen ? "true" : "false"}
-    >
-      {/* ---------------- Left rail ---------------- */}
+    <div className="studioShell" data-collapsed={collapsed ? "true" : "false"} data-mobile-open={mobileOpen ? "true" : "false"}>
       <aside className="studioSidebar" aria-label="Studio navigation">
         <Link href="/studio" className="studioBrand" aria-label="Take Machine — Studio home">
           <span className="onAirDot" aria-hidden="true" />
-          <span className="studioBrandWord">
-            Take<em>Machine</em>
-          </span>
+          <span className="studioBrandWord">Take<em>Machine</em></span>
         </Link>
 
         <nav className="studioNavList" aria-label="Primary">
           {NAV.map((item) => {
             const active = isActive(item);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`studioNavLink${active ? " active" : ""}`}
-                aria-current={active ? "page" : undefined}
-                title={item.label}
-              >
+              <Link key={item.href} href={item.href} className={`studioNavLink${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={item.label}>
                 <span className="studioNavIcon">{item.icon}</span>
                 <span className="studioNavLabel">{item.label}</span>
               </Link>
@@ -170,72 +159,34 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
           })}
         </nav>
 
-        <button
-          type="button"
-          className="studioRailToggle"
-          onClick={toggleRail}
-          aria-pressed={collapsed}
-          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M15 6l-6 6 6 6" />
-          </svg>
+        <button type="button" className="studioRailToggle" onClick={toggleRail} aria-pressed={collapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
           <span className="studioRailToggleLabel">Collapse</span>
         </button>
       </aside>
 
-      {/* Mobile drawer scrim */}
-      {mobileOpen && (
-        <button
-          type="button"
-          className="studioScrim"
-          aria-label="Close navigation"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
+      {mobileOpen && <button type="button" className="studioScrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
 
-      {/* ---------------- Body ---------------- */}
       <div className="studioBody">
         <header className="studioTopbar">
           <div className="studioTopbarLeft">
-            <button
-              type="button"
-              className="studioHamburger"
-              aria-label="Open navigation"
-              aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen(true)}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+            <button type="button" className="studioHamburger" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
             </button>
-            <Link href="/studio" className="studioTopbarBrand" aria-label="Take Machine — Studio home">
-              <span className="onAirDot" aria-hidden="true" />
-              Take<em>Machine</em>
-            </Link>
+            <Link href="/studio" className="studioTopbarBrand" aria-label="Take Machine — Studio home"><span className="onAirDot" aria-hidden="true" />Take<em>Machine</em></Link>
           </div>
 
           <div className="studioTopbarRight">
             <Link href="/studio/create" className="studioGenerateBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" /></svg>
               <span className="studioGenerateLabel">Generate</span>
             </Link>
 
             <div className="studioAccount" ref={accountRef}>
-              <button
-                type="button"
-                className="studioAccountBtn"
-                aria-haspopup="menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((o) => !o)}
-              >
+              <button type="button" className="studioAccountBtn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
                 <span className="studioAvatar" aria-hidden="true">{initialsFor(user)}</span>
                 <span className="studioAccountName">{displayName}</span>
-                <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
+                <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
 
               {menuOpen && (
@@ -245,28 +196,20 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
                     <div className="studioAccountMenuSub">{user?.email ? "Signed in" : "Studio"}</div>
                   </div>
                   <Link href="/studio/settings" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5M18 6l-1.5 1.5M6 18l1.5-1.5" />
-                    </svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5M18 6l-1.5 1.5M6 18l1.5-1.5" /></svg>
                     Settings
                   </Link>
                   <Link href="/admin" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M7 14h4" />
-                    </svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M7 14h4" /></svg>
                     Ops Console
                   </Link>
                   <Link href="/app" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-                    </svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
                     Listener view
                   </Link>
                   <form action={logoutAction}>
                     <button type="submit" className="studioAccountMenuItem" role="menuitem">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
-                      </svg>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
                       Sign out
                     </button>
                   </form>
