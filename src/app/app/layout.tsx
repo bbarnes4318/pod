@@ -26,16 +26,16 @@ export default function UserAppLayout({ children }: { children: React.ReactNode 
 
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           <Link
-            href="/app/podcasts/new"
+            href="/studio"
             className="uCreateBtn"
-            data-testid="sidebar-show-forge"
+            data-testid="sidebar-open-studio"
             style={{ textDecoration: "none", justifyContent: "center" }}
           >
             <span>✦</span>
-            <span>Build a Show</span>
+            <span>Open Creator Studio</span>
           </Link>
           <Link
-            href="/app/create"
+            href="/studio/create"
             data-testid="sidebar-create-episode"
             style={{
               textDecoration: "none",
@@ -48,7 +48,7 @@ export default function UserAppLayout({ children }: { children: React.ReactNode 
               fontWeight: 750,
             }}
           >
-            ＋ Create one episode
+            ＋ Create an episode
           </Link>
         </div>
 
@@ -66,9 +66,9 @@ export default function UserAppLayout({ children }: { children: React.ReactNode 
             overflowWrap: "anywhere",
           }}
         >
-          <strong style={{ color: "var(--u-ink)" }}>Web build</strong>
+          <strong style={{ color: "var(--u-ink)" }}>Listener build</strong>
           <br />
-          {shortCommit} · Show Forge
+          {shortCommit}
         </div>
         <SidebarAccount />
       </aside>
