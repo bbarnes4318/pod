@@ -125,6 +125,16 @@ function canonicalRows(v: Validated) {
   };
 }
 
+function revalidateShowRoutes(podcastId?: string) {
+  revalidatePath("/studio/shows");
+  revalidatePath("/studio/create");
+  if (podcastId) revalidatePath(`/studio/shows/${podcastId}`);
+
+  // Keep legacy redirect routes warm during the transition.
+  revalidatePath("/app/podcasts");
+  if (podcastId) revalidatePath(`/app/podcasts/${podcastId}`);
+}
+
 export async function createPodcast(input: PodcastInput) {
   try {
     const user = await currentUser();
@@ -147,7 +157,7 @@ export async function createPodcast(input: PodcastInput) {
       return created;
     });
 
-    revalidatePath("/app/podcasts");
+    revalidateShowRoutes(podcast.id);
     return { success: true as const, podcastId: podcast.id };
   } catch (error) {
     return { success: false as const, error: error instanceof Error ? error.message : "Could not create the show." };
@@ -168,8 +178,9 @@ export async function generateEpisodesNow(podcastId: string) {
       jobId: `manual-${podcastId}-${stamp.slice(0, 19)}`,
     });
 
-    revalidatePath("/app/podcasts");
-    revalidatePath(`/app/podcasts/${podcastId}`);
+    revalidateShowRoutes(podcastId);
+    revalidatePath("/studio/episodes");
+    revalidatePath("/app/episodes");
     return { success: true as const, jobId: String(job.id) };
   } catch (error) {
     return { success: false as const, error: error instanceof Error ? error.message : "Could not queue the episode." };
@@ -207,8 +218,7 @@ export async function updatePodcast(id: string, input: PodcastInput) {
       await tx.showContinuity.upsert({ where: { podcastId: id }, create: { podcastId: id }, update: {} });
     });
 
-    revalidatePath("/app/podcasts");
-    revalidatePath(`/app/podcasts/${id}`);
+    revalidateShowRoutes(id);
     return { success: true as const, podcastId: id };
   } catch (error) {
     return { success: false as const, error: error instanceof Error ? error.message : "Could not save the show." };
