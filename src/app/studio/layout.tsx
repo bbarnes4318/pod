@@ -2,6 +2,7 @@ import React from "react";
 import { headers } from "next/headers";
 import StudioShell from "./StudioShell";
 import "./studio.css";
+import "./studio-production.css";
 import { requireUserPage } from "@/lib/currentUser";
 
 export default async function StudioLayout({ children }: { children: React.ReactNode }) {
@@ -12,5 +13,5 @@ export default async function StudioLayout({ children }: { children: React.React
   const dest = (await headers()).get("x-pathname") || "/studio";
   const user = await requireUserPage(dest);
 
-  return <StudioShell user={{ name: user.name, email: user.email }}>{children}</StudioShell>;
+  return <StudioShell user={{ name: user.name, email: user.email, role: user.role }}>{children}</StudioShell>;
 }
