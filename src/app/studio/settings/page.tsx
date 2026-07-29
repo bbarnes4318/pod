@@ -1,64 +1,30 @@
-import React from "react";
-import Link from "next/link";
+import { currentUser } from "@/lib/currentUser";
+import { AppPage, PageHeader, ButtonLink, Card, SectionHeader, StatusBadge } from "@/components/studio";
 
-export const metadata = {
-  title: "Settings — Take Machine Studio",
-};
+export const metadata = { title: "Settings — Take Machine Studio" };
 
-/* Settings is a shell page: it routes operators to the real
-   configuration surfaces rather than duplicating them. No data-model
-   changes, no secrets — just navigation into existing consoles. */
-const GROUPS: { title: string; links: { href: string; label: string; sub: string }[] }[] = [
-  {
-    title: "Production",
-    links: [
-      { href: "/studio/hosts", label: "Hosts & casting", sub: "Personas voicing each episode" },
-      { href: "/admin/voices", label: "Voices", sub: "TTS voice assignments" },
-      { href: "/admin/sound-design", label: "Sound design", sub: "Mix styles & bed levels" },
-      { href: "/admin/data-sources", label: "Data sources", sub: "Research & ingestion feeds" },
-    ],
-  },
-  {
-    title: "Distribution",
-    links: [
-      { href: "/studio/publish", label: "Publishing", sub: "Ship finished episodes" },
-      { href: "/admin/rss", label: "RSS & feeds", sub: "Podcast feed output" },
-    ],
-  },
-  {
-    title: "System",
-    links: [
-      { href: "/admin/configuration", label: "Configuration", sub: "Pipeline & environment" },
-      { href: "/admin/job-logs", label: "Job logs", sub: "Pipeline run diagnostics" },
-      { href: "/admin", label: "Ops Console", sub: "Full operator dashboard" },
-    ],
-  },
+const CUSTOMER_SECTIONS = [
+  { id: "hosts", title: "Hosts and casting", description: "Create the personalities assigned to your shows and episodes.", href: "/studio/hosts", action: "Manage hosts" },
+  { id: "voices", title: "Voices", description: "Design, clone, assign, and preview the voice attached to each host.", href: "/studio/hosts", action: "Open voice controls" },
+  { id: "sound", title: "Sound", description: "Manage a show’s music, transitions, beds, and sonic identity from its headquarters.", href: "/studio/shows", action: "Choose a show" },
+  { id: "sources", title: "Data sources", description: "Sports research and topic ingestion are managed by the production pipeline.", href: "/studio/takes", action: "Review incoming takes" },
+  { id: "publishing", title: "Publishing", description: "Review packaging status and release completed episodes.", href: "/studio/publish", action: "Open publishing" },
+  { id: "feeds", title: "RSS and feeds", description: "Verify the public feed and the episodes currently available to listeners.", href: "/rss", action: "Open public feed" },
+  { id: "workspace", title: "Account and workspace", description: "Review your workspace access, active plan, and usage.", href: "/studio/plan", action: "View plan and usage" },
+  { id: "billing", title: "Billing", description: "Plan changes and production allowances are managed from the Plan page.", href: "/studio/plan", action: "Manage plan" },
 ];
 
-export default function StudioSettingsPage() {
-  return (
-    <div className="fadeUp">
-      <h1 className="pageTitle">Settings</h1>
-      <p className="pageSub">
-        Studio preferences and the operator consoles that power production, distribution, and the
-        underlying pipeline.
-      </p>
+export default async function StudioSettingsPage({ searchParams }: { searchParams: Promise<{ section?: string }> }) {
+  const user = await currentUser();
+  const { section } = await searchParams;
+  const active = CUSTOMER_SECTIONS.find(item => item.id === section) || CUSTOMER_SECTIONS[0];
+  const isAdmin = user?.role === "ADMIN";
 
-      {GROUPS.map((group) => (
-        <section key={group.title}>
-          <div className="sectionHead">
-            <h2 className="sectionTitle">{group.title}</h2>
-          </div>
-          <div className="grid3">
-            {group.links.map((link) => (
-              <Link key={link.href} href={link.href} className="studioCard clickable" style={{ display: "block" }}>
-                <div className="epTitle">{link.label}</div>
-                <div className="epMeta" style={{ marginTop: "0.35rem" }}>{link.sub}</div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ))}
+  return <AppPage>
+    <PageHeader title="Settings" description="Customer workspace preferences stay separate from technical pipeline operations." />
+    <div className="settingsProductionLayout">
+      <nav className="settingsProductionNav" aria-label="Settings sections">{CUSTOMER_SECTIONS.map(item => <ButtonLink key={item.id} href={`/studio/settings?section=${item.id}`} variant={active.id === item.id ? "secondary" : "ghost"}>{item.title}</ButtonLink>)}{isAdmin && <div className="settingsAdminGroup"><span>Admin</span><ButtonLink href="/admin/job-logs" variant="ghost">Job logs</ButtonLink><ButtonLink href="/admin/configuration" variant="ghost">Pipeline configuration</ButtonLink><ButtonLink href="/admin" variant="ghost">Ops Console</ButtonLink></div>}</nav>
+      <Card className="settingsProductionPanel"><SectionHeader title={active.title} description={active.description} />{active.id === "sources" ? <div className="settingsStatus"><StatusBadge tone="success">Automatic</StatusBadge><p>The system’s active ingestion sources populate the Takes queue. Customer controls remain focused on selecting and producing stories rather than infrastructure.</p></div> : active.id === "feeds" ? <div className="settingsStatus"><StatusBadge tone="info">Public feed</StatusBadge><p>Open the feed to verify the current published output. Publishing controls remain on the Publishing page.</p></div> : <div className="settingsStatus"><p>This setting is managed in its dedicated Studio workspace so changes, loading states, validation, and success messages stay next to the affected content.</p></div>}<ButtonLink href={active.href} variant="primary">{active.action}</ButtonLink></Card>
     </div>
-  );
+  </AppPage>;
 }
