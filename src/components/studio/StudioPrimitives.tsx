@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ComponentProps, ReactNode } from "react";
+import { cloneElement, isValidElement, type ComponentProps, type ReactNode } from "react";
 import styles from "./StudioPrimitives.module.css";
 import { ResponsiveTabs } from "./ResponsiveTabs";
 
@@ -18,7 +18,13 @@ function buttonClass(variant: ButtonVariant, size: ButtonSize, iconOnly = false,
 export function Button({ variant = "secondary", size = "default", iconOnly = false, className = "", ...props }: ComponentProps<"button"> & { variant?: ButtonVariant; size?: ButtonSize; iconOnly?: boolean }) { return <button {...props} className={buttonClass(variant, size, iconOnly, className)} />; }
 export function ButtonLink({ href, variant = "secondary", size = "default", iconOnly = false, className = "", children, ...props }: ComponentProps<typeof Link> & { variant?: ButtonVariant; size?: ButtonSize; iconOnly?: boolean }) { return <Link {...props} href={href} className={buttonClass(variant, size, iconOnly, className)}>{children}</Link>; }
 export function IconButton(props: ComponentProps<"button">) { return <Button {...props} iconOnly />; }
-export function Field({ label, help, htmlFor, children }: { label: string; help?: string; htmlFor?: string; children: ReactNode }) { return <div className={styles.field}><label className={styles.label} htmlFor={htmlFor}>{label}</label>{children}{help && <p className={styles.help}>{help}</p>}</div>; }
+type LabelableChildProps = { "aria-label"?: string };
+export function Field({ label, help, htmlFor, children }: { label: string; help?: string; htmlFor?: string; children: ReactNode }) {
+  const control = !htmlFor && isValidElement<LabelableChildProps>(children) && !children.props["aria-label"]
+    ? cloneElement(children, { "aria-label": label })
+    : children;
+  return <div className={styles.field}><label className={styles.label} htmlFor={htmlFor}>{label}</label>{control}{help && <p className={styles.help}>{help}</p>}</div>;
+}
 export function Input({ className = "", ...props }: ComponentProps<"input">) { return <input {...props} className={`${styles.input} ${className}`.trim()} />; }
 export function Textarea({ className = "", ...props }: ComponentProps<"textarea">) { return <textarea {...props} className={`${styles.textarea} ${className}`.trim()} data-scroll-allow />; }
 export function Select({ className = "", ...props }: ComponentProps<"select">) { return <select {...props} className={`${styles.select} ${className}`.trim()} />; }
