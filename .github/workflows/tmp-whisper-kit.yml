@@ -1,4 +1,4 @@
-name: Temporary Whisper Kit
+name: Temporary Whisper Base Kit
 
 on:
   pull_request:
@@ -27,21 +27,21 @@ jobs:
             -DWHISPER_BUILD_EXAMPLES=ON
           cmake --build whisper.cpp/build --config Release -j 2
 
-      - name: Download English quantized model
+      - name: Download English base quantized model
         run: |
-          mkdir -p whisper-kit
+          mkdir -p whisper-base-kit
           curl -L --fail --retry 3 \
-            https://github.com/bnosac/audio.whisper/raw/refs/heads/master/inst/repo/ggml-tiny.en-q5_1.bin \
-            -o whisper-kit/ggml-tiny.en-q5_1.bin
-          cp whisper.cpp/build/bin/whisper-cli whisper-kit/
-          chmod +x whisper-kit/whisper-cli
-          file whisper-kit/whisper-cli
-          ls -lh whisper-kit
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en-q5_1.bin \
+            -o whisper-base-kit/ggml-base.en-q5_1.bin
+          cp whisper.cpp/build/bin/whisper-cli whisper-base-kit/
+          chmod +x whisper-base-kit/whisper-cli
+          file whisper-base-kit/whisper-cli
+          ls -lh whisper-base-kit
 
-      - name: Upload whisper kit
+      - name: Upload whisper base kit
         uses: actions/upload-artifact@v4
         with:
-          name: whisper-kit-linux-x64
-          path: whisper-kit/
+          name: whisper-base-kit-linux-x64
+          path: whisper-base-kit/
           retention-days: 1
           compression-level: 0
