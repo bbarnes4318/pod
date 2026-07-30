@@ -3,7 +3,7 @@ import { currentUser } from "@/lib/currentUser";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { fmtDate } from "../lib";
-import type { TopicEditorialStatus } from "@prisma/client";
+import type { Prisma, TopicEditorialStatus } from "@prisma/client";
 import { AppPage, PageHeader, ButtonLink, Toolbar, ToolbarGroup, SearchInput, Select, DataTable, RowTitle, TableRowActions, MobileList, Card, StatusBadge, ScoreDisplay, Pagination, EmptyState } from "@/components/studio";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +15,10 @@ export default async function TakesBoard({ searchParams }: { searchParams: Promi
   const q = (sp.q || "").trim();
   const sport = (sp.sport || "").trim();
   const league = (sp.league || "").trim();
-  const status = sp.status === "pending" || sp.status === "approved" ? sp.status : "all";
+  const status: TopicEditorialStatus | "all" = sp.status === "pending" || sp.status === "approved" ? sp.status : "all";
   const sort = sp.sort === "fresh" ? "fresh" : "score";
   const page = Math.max(1, Number.parseInt(sp.page || "1", 10) || 1);
-  const where = {
+  const where: Prisma.TopicCandidateWhereInput = {
     status: status === "all" ? { in: BOARD_STATUSES } : status,
     ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" as const } }, { summary: { contains: q, mode: "insensitive" as const } }] } : {}),
     ...(sport ? { sport: { equals: sport, mode: "insensitive" as const } } : {}),
