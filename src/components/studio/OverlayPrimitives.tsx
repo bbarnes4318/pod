@@ -6,27 +6,59 @@ import { Button, primitiveStyles as styles } from "./StudioPrimitives";
 function useOverlay(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
-    restoreRef.current = document.activeElement as HTMLElement | null;
+
+    const activeElement = document.activeElement;
+    restoreRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const panel = panelRef.current;
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter(node => !node.hasAttribute("disabled"));
     focusables()[0]?.focus();
+
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
       if (event.key !== "Tab") return;
       const nodes = focusables();
       if (!nodes.length) return;
       const first = nodes[0];
       const last = nodes[nodes.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener("keydown", key);
-    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", key); restoreRef.current?.focus(); };
-  }, [open, onClose]);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", key);
+      const restoreTarget = restoreRef.current;
+      restoreRef.current = null;
+      if (restoreTarget && document.contains(restoreTarget)) {
+        queueMicrotask(() => {
+          if (document.contains(restoreTarget)) restoreTarget.focus();
+        });
+      }
+    };
+  }, [open]);
+
   return panelRef;
 }
 
