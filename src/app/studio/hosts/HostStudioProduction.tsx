@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ROLE_PRESETS,
@@ -110,7 +110,7 @@ export default function HostStudioProduction({ hosts }: { hosts: StudioHostVM[] 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const editingHost = hosts.find(host => host.id === editingId) ?? null;
-  const closeEditor = () => { setCreating(false); setEditingId(null); };
+  const closeEditor = useCallback(() => { setCreating(false); setEditingId(null); }, []);
 
   return <AppPage>
     <PageHeader
