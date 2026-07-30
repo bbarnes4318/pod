@@ -284,11 +284,7 @@ export interface TtsSegmentJobData {
 }
 
 export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {
-  // Scene-mode QA now performs its own bounded targeted retries while this one
-  // job remains active. Override the queue-wide attempts=3 policy here so one
-  // stubborn scene cannot multiply three internal attempts into nine paid
-  // provider attempts or flash terminal failures between BullMQ retries.
-  return podcastQueue.add("tts:generate-segments", data, { attempts: 1 });
+  return podcastQueue.add("tts:generate-segments", data);
 }
 
 export interface FinalAudioStitchJobData {
