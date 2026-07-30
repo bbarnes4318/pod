@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { settingsFromHost } from "@/lib/hosts/hostStudioProfile";
-import CharacterStudio, { type StudioHostVM } from "./CharacterStudio";
+import HostStudioProduction, { type StudioHostVM } from "./HostStudioProduction";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +28,5 @@ export default async function HostsPage() {
       isActive: host.isActive, isArchived: host.isArchived, episodeCount, segmentCount, isShared: host.ownerId === null, ownedByMe, canEdit: ownedByMe || isAdmin,
     };
   }));
-  return <div className="hostStudioRoute"><CharacterStudio hosts={vms} /></div>;
+  return <HostStudioProduction hosts={vms} />;
 }
