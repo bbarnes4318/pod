@@ -28,5 +28,5 @@ export default async function NewStudioShowPage({ searchParams }: { searchParams
       prefillTopicTitle = topic.title;
     }
   }
-  return <AppPage><PageHeader title="Build a show" description="Create the promise, cast chemistry, episode DNA, storylines, and schedule that guide every future episode." breadcrumbs={[{ label: "Shows", href: "/studio/shows" }, { label: "New show" }]} /><ShowForgeWizard hosts={hosts} teams={teams} initial={initial} prefillTopicTitle={prefillTopicTitle} /></AppPage>;
+  return <AppPage><PageHeader title="Build a show" description="Build your show from theme, listener promise, cast chemistry, episode DNA, storylines, and schedule so every future episode belongs to one recognizable creative world." breadcrumbs={[{ label: "Shows", href: "/studio/shows" }, { label: "New show" }]} /><ShowForgeWizard hosts={hosts} teams={teams} initial={initial} prefillTopicTitle={prefillTopicTitle} /></AppPage>;
 }
