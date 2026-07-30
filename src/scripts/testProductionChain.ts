@@ -45,6 +45,7 @@ function assert(cond: boolean, msg: string): asserts cond {
 const src = (p: string) => readFileSync(join(__dirname, "..", p), "utf8");
 const worker = src("lib/queue/worker.ts");
 const dispatch = src("lib/services/stitchDispatch.ts");
+const queue = src("lib/queue/podcastQueue.ts");
 const console_ = src("app/studio/ProductionConsole.tsx");
 
 /** The body of a worker handler, so a match cannot come from elsewhere in the file. */
@@ -113,6 +114,15 @@ check("scene QA retries inside the active voice stage before it can fail", () =>
   const returnAt = dispatch.indexOf("return { pipeline: summary.mode", guardAt);
   assert(loopAt !== -1 && guardAt > loopAt, "the completeness guard must run after the internal retry loop");
   assert(returnAt > guardAt, "the completeness guard must run before scene dispatch returns success");
+});
+
+check("scene TTS uses one queue attempt containing its bounded internal attempts", () => {
+  const start = queue.indexOf("export async function queueTtsSegmentGenerationJob");
+  const end = queue.indexOf("export interface FinalAudioStitchJobData", start);
+  assert(start !== -1 && end > start, "TTS queue function not found");
+  const body = queue.slice(start, end);
+  assert(/tts:generate-segments/.test(body), "TTS queue function must enqueue the voice job");
+  assert(/attempts:\s*1/.test(body), "TTS must override the queue-wide retry count to prevent 3x3 attempts");
 });
 
 check("scene QA attempt configuration is bounded and safe", () => {
