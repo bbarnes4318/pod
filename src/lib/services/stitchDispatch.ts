@@ -5,12 +5,14 @@
 // current environment variables. Legacy episodes (null / "legacy_line")
 // keep the exact per-line pipeline; scene episodes use the scene assembler.
 
+import { UnrecoverableError } from "bullmq";
 import { db } from "@/lib/db";
 import { generateTtsSegments } from "@/lib/services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "@/lib/services/audioStitchingService";
 import { stitchSceneEpisodeAudio, isSceneRenderMode } from "@/lib/services/sceneStitchingService";
 import {
   assertSceneGenerationComplete,
+  PartialSceneGenerationError,
   readSceneQaAttemptLimit,
   sceneGenerationIsComplete,
 } from "@/lib/audio/sceneGenerationOutcome";
@@ -82,9 +84,19 @@ export async function dispatchTtsGeneration(data: TtsSegmentJobData) {
     });
   }
 
-  // A partial scene run is never allowed to chain into final mixing. This error
-  // is now raised only after the internal retry budget is actually exhausted.
-  assertSceneGenerationComplete(summary, qaAttempt);
+  // A partial scene run is never allowed to chain into final mixing. After the
+  // internal targeted budget is exhausted this is not helped by repeating the
+  // entire BullMQ job, so mark it unrecoverable. That prevents 3 queue attempts
+  // from multiplying 3 targeted attempts into 9 paid voice attempts. Other
+  // unexpected errors still use the queue's normal retry policy.
+  try {
+    assertSceneGenerationComplete(summary, qaAttempt);
+  } catch (error) {
+    if (error instanceof PartialSceneGenerationError) {
+      throw new UnrecoverableError(error.message);
+    }
+    throw error;
+  }
 
   return { pipeline: summary.mode, result: { ...summary, qaAttempts: qaAttempt } };
 }
