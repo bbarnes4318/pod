@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Button, primitiveStyles as styles } from "./StudioPrimitives";
 
 function useOverlay(open: boolean, onClose: () => void) {
@@ -32,14 +32,16 @@ function useOverlay(open: boolean, onClose: () => void) {
 
 export function Dialog({ open, onClose, title, description, children, footer }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
   const ref = useOverlay(open, onClose);
+  const titleId = useId();
   if (!open) return null;
-  return <div className={styles.dialogBackdrop} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div ref={ref} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="studio-dialog-title" data-scroll-allow><header className={styles.dialogHead}><div><strong id="studio-dialog-title">{title}</strong>{description && <p className={styles.help}>{description}</p>}</div><Button iconOnly variant="ghost" onClick={onClose} aria-label="Close dialog">×</Button></header><div className={styles.dialogBody}>{children}</div>{footer && <footer className={styles.dialogFoot}>{footer}</footer>}</div></div>;
+  return <div className={styles.dialogBackdrop} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div ref={ref} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} data-scroll-allow><header className={styles.dialogHead}><div><strong id={titleId}>{title}</strong>{description && <p className={styles.help}>{description}</p>}</div><Button iconOnly variant="ghost" onClick={onClose} aria-label="Close dialog">×</Button></header><div className={styles.dialogBody}>{children}</div>{footer && <footer className={styles.dialogFoot}>{footer}</footer>}</div></div>;
 }
 
 export function Drawer({ open, onClose, title, description, children, footer }: { open: boolean; onClose: () => void; title: string; description?: string; children: ReactNode; footer?: ReactNode }) {
   const ref = useOverlay(open, onClose);
+  const titleId = useId();
   if (!open) return null;
-  return <div className={styles.drawerBackdrop} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><aside ref={ref} className={styles.drawer} role="dialog" aria-modal="true" aria-labelledby="studio-drawer-title" data-scroll-allow><header className={styles.dialogHead}><div><strong id="studio-drawer-title">{title}</strong>{description && <p className={styles.help}>{description}</p>}</div><Button iconOnly variant="ghost" onClick={onClose} aria-label="Close drawer">×</Button></header><div className={styles.dialogBody}>{children}</div>{footer && <footer className={styles.dialogFoot}>{footer}</footer>}</aside></div>;
+  return <div className={styles.drawerBackdrop} role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><aside ref={ref} className={styles.drawer} role="dialog" aria-modal="true" aria-labelledby={titleId} data-scroll-allow><header className={styles.dialogHead}><div><strong id={titleId}>{title}</strong>{description && <p className={styles.help}>{description}</p>}</div><Button iconOnly variant="ghost" onClick={onClose} aria-label="Close drawer">×</Button></header><div className={styles.dialogBody}>{children}</div>{footer && <footer className={styles.dialogFoot}>{footer}</footer>}</aside></div>;
 }
 
 export function ConfirmDialog({ open, onClose, onConfirm, title, description, confirmLabel = "Confirm", destructive = false }: { open: boolean; onClose: () => void; onConfirm: () => void; title: string; description: string; confirmLabel?: string; destructive?: boolean }) {
