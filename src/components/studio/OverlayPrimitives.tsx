@@ -14,18 +14,23 @@ function useOverlay(open: boolean, onClose: () => void) {
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  // Remember focus while the overlay is closed. React can auto-focus a field
+  // inside the drawer before the open effect runs, so reading activeElement only
+  // after mount can lose the button that actually opened the overlay.
+  useEffect(() => {
+    const rememberOutsideFocus = (event: FocusEvent) => {
+      if (openRef.current) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) restoreRef.current = target;
+    };
+    document.addEventListener("focusin", rememberOutsideFocus, true);
+    return () => document.removeEventListener("focusin", rememberOutsideFocus, true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
 
     const panel = panelRef.current;
-    const activeElement = document.activeElement;
-    // React Strict Mode mounts, cleans up, and mounts effects again in development.
-    // Preserve the original trigger when the second effect sees focus already inside
-    // the overlay instead of replacing it with the drawer's close button.
-    if (!panel?.contains(activeElement)) {
-      restoreRef.current = activeElement instanceof HTMLElement ? activeElement : null;
-    }
-
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter(node => !node.hasAttribute("disabled"));
@@ -58,11 +63,10 @@ function useOverlay(open: boolean, onClose: () => void) {
       document.removeEventListener("keydown", key);
       const restoreTarget = restoreRef.current;
       queueMicrotask(() => {
-        // Skip the synthetic Strict Mode cleanup while the overlay is still open.
-        // Restore focus only after the real close render has committed.
+        // Skip React Strict Mode's synthetic cleanup while the overlay remains
+        // open. Restore only after the real close render has committed.
         if (!openRef.current && restoreTarget && document.contains(restoreTarget)) {
           restoreTarget.focus();
-          if (restoreRef.current === restoreTarget) restoreRef.current = null;
         }
       });
     };
