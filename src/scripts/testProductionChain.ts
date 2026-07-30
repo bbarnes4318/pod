@@ -21,6 +21,7 @@ import { nextProductionJobFor, PRODUCTION_STAGES } from "../lib/createFlow";
 import {
   assertSceneGenerationComplete,
   PartialSceneGenerationError,
+  readSceneQaAttemptLimit,
 } from "../lib/audio/sceneGenerationOutcome";
 import { EPISODE_STATUS_LADDER } from "../lib/episodeStatus";
 
@@ -103,30 +104,54 @@ check("the worker actually calls the chain after fact-check, voices and mix", ()
   }
 });
 
-check("partial scene generation is rejected before the worker can chain", () => {
-  assert(/assertSceneGenerationComplete\(summary\)/.test(dispatch), "scene dispatch must enforce complete scene generation");
-  const guardAt = dispatch.indexOf("assertSceneGenerationComplete(summary)");
+check("scene QA retries inside the active voice stage before it can fail", () => {
+  assert(/readSceneQaAttemptLimit\(\)/.test(dispatch), "scene dispatch must use a bounded internal QA attempt limit");
+  assert(/while \(!sceneGenerationIsComplete\(summary\) && qaAttempt < maxAttempts\)/.test(dispatch), "failed scenes must retry inside the active stage");
+  assert(/forceRegenerate: false/.test(dispatch), "retry passes must preserve ready scene fingerprints");
+  const loopAt = dispatch.indexOf("while (!sceneGenerationIsComplete(summary)");
+  const guardAt = dispatch.indexOf("assertSceneGenerationComplete(summary, qaAttempt)");
   const returnAt = dispatch.indexOf("return { pipeline: summary.mode", guardAt);
-  assert(guardAt !== -1 && returnAt > guardAt, "the completeness guard must run before scene dispatch returns success");
+  assert(loopAt !== -1 && guardAt > loopAt, "the completeness guard must run after the internal retry loop");
+  assert(returnAt > guardAt, "the completeness guard must run before scene dispatch returns success");
+});
 
+check("exhausted scene QA is unrecoverable, while unexpected TTS failures keep normal queue retries", () => {
+  assert(/import \{ UnrecoverableError \} from "bullmq"/.test(dispatch), "dispatch must use BullMQ's unrecoverable error for exhausted QA");
+  assert(/error instanceof PartialSceneGenerationError/.test(dispatch), "only the typed partial-scene outcome may stop queue retries");
+  assert(/throw new UnrecoverableError\(error\.message\)/.test(dispatch), "exhausted scene QA must not multiply into another full job retry");
+});
+
+check("scene QA attempt configuration is bounded and safe", () => {
+  assert(readSceneQaAttemptLimit("") === 3, "unset attempt limit should default to 3");
+  assert(readSceneQaAttemptLimit("0") === 1, "attempt limit must never drop below 1");
+  assert(readSceneQaAttemptLimit("99") === 5, "attempt limit must be capped at 5");
+  assert(readSceneQaAttemptLimit("garbage") === 3, "invalid attempt limit should use the default");
+});
+
+check("partial scene generation is rejected only after the retry budget is exhausted", () => {
   let thrown: unknown = null;
   try {
-    assertSceneGenerationComplete({
-      sceneCount: 11,
-      readyScenes: 9,
-      failedScenes: 2,
-      scenes: [
-        { sceneIndex: 4, lineRange: [24, 31], status: "failed", errorCategory: "quality_gate_failed" },
-        { sceneIndex: 8, lineRange: [47, 54], status: "failed", errorCategory: "quality_gate_failed" },
-      ],
-    });
+    assertSceneGenerationComplete(
+      {
+        sceneCount: 11,
+        readyScenes: 9,
+        failedScenes: 2,
+        scenes: [
+          { sceneIndex: 4, lineRange: [24, 31], status: "failed", errorCategory: "quality_gate_failed" },
+          { sceneIndex: 8, lineRange: [47, 54], status: "failed", errorCategory: "quality_gate_failed" },
+        ],
+      },
+      3
+    );
   } catch (err) {
     thrown = err;
   }
-  assert(thrown instanceof PartialSceneGenerationError, "partial scene output must throw a typed retryable error");
+  assert(thrown instanceof PartialSceneGenerationError, "partial scene output must throw a typed error after retries");
   assert(thrown.failedSceneIndexes.join(",") === "4,8", `expected failed scenes 4,8, got ${thrown.failedSceneIndexes.join(",")}`);
-  assert(/9 ready scene\(s\) are preserved/.test(thrown.message), "error must say ready scenes are preserved");
-  assert(/Final mixing is blocked/.test(thrown.message), "error must say mixing is blocked");
+  assert(thrown.attemptsMade === 3, `expected 3 attempts, got ${thrown.attemptsMade}`);
+  assert(/9 completed scenes are saved/.test(thrown.message), "error must say ready scenes are preserved");
+  assert(/only the failed scenes will be regenerated/.test(thrown.message), "error must explain the targeted retry");
+  assert(/Final mixing remains paused/.test(thrown.message), "error must say mixing is paused");
 });
 
 check("a complete scene generation passes the guard", () => {

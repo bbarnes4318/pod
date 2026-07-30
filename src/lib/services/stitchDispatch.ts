@@ -5,11 +5,17 @@
 // current environment variables. Legacy episodes (null / "legacy_line")
 // keep the exact per-line pipeline; scene episodes use the scene assembler.
 
+import { UnrecoverableError } from "bullmq";
 import { db } from "@/lib/db";
 import { generateTtsSegments } from "@/lib/services/ttsSegmentService";
 import { stitchFinalEpisodeAudio } from "@/lib/services/audioStitchingService";
 import { stitchSceneEpisodeAudio, isSceneRenderMode } from "@/lib/services/sceneStitchingService";
-import { assertSceneGenerationComplete } from "@/lib/audio/sceneGenerationOutcome";
+import {
+  assertSceneGenerationComplete,
+  PartialSceneGenerationError,
+  readSceneQaAttemptLimit,
+  sceneGenerationIsComplete,
+} from "@/lib/audio/sceneGenerationOutcome";
 import {
   generateDialogueScenes,
   readRenderModeSetting,
@@ -45,21 +51,54 @@ export async function dispatchTtsGeneration(data: TtsSegmentJobData) {
     }
     return { pipeline: "legacy_line" as const, result: res };
   }
-  const summary = await generateDialogueScenes({
+
+  // Retry scene-performance QA INSIDE this active worker stage. The prior
+  // implementation threw after the first rejected candidate and relied on
+  // BullMQ to retry the whole job. The worker immediately wrote that attempt as
+  // `failed`, so the customer saw a stopped episode even while another attempt
+  // was already scheduled. Keeping the bounded loop here makes the UI truthful:
+  // the Voices stage stays active, ready scene fingerprints are reused, and only
+  // the rejected scene is sent back to the provider.
+  const maxAttempts = readSceneQaAttemptLimit();
+  let qaAttempt = 1;
+  let summary = await generateDialogueScenes({
     scriptId: data.scriptId,
     forceRegenerate: data.forceRegenerate,
     providerOverride: data.providerOverride,
     voiceOverrides: data.voiceOverrides,
   });
 
-  // A partial scene run is NOT a completed TTS stage. Throw before the worker
-  // can call chainProductionStage(): BullMQ retries this same bounded job, while
-  // generateDialogueScenes reuses every ready fingerprint and renders only the
-  // missing scenes. This prevents the old fact_checked -> TTS -> fact_checked
-  // self-chain from creating an unbounded stream of new TTS jobs.
-  assertSceneGenerationComplete(summary);
+  while (!sceneGenerationIsComplete(summary) && qaAttempt < maxAttempts) {
+    console.warn(
+      `[TTS] Scene QA attempt ${qaAttempt}/${maxAttempts} left ${summary.failedScenes} failed scene(s); ` +
+        `retrying only the failed scene fingerprints.`
+    );
+    qaAttempt += 1;
+    summary = await generateDialogueScenes({
+      scriptId: data.scriptId,
+      // A user-requested full regeneration applies only to the first pass. Once
+      // that pass has produced ready scenes, retry passes must preserve them.
+      forceRegenerate: false,
+      providerOverride: data.providerOverride,
+      voiceOverrides: data.voiceOverrides,
+    });
+  }
 
-  return { pipeline: summary.mode, result: summary };
+  // A partial scene run is never allowed to chain into final mixing. After the
+  // internal targeted budget is exhausted this is not helped by repeating the
+  // entire BullMQ job, so mark it unrecoverable. That prevents 3 queue attempts
+  // from multiplying 3 targeted attempts into 9 paid voice attempts. Other
+  // unexpected errors still use the queue's normal retry policy.
+  try {
+    assertSceneGenerationComplete(summary, qaAttempt);
+  } catch (error) {
+    if (error instanceof PartialSceneGenerationError) {
+      throw new UnrecoverableError(error.message);
+    }
+    throw error;
+  }
+
+  return { pipeline: summary.mode, result: { ...summary, qaAttempts: qaAttempt } };
 }
 
 /** Stitch a script's final episode audio via the pipeline that VOICED it. */
