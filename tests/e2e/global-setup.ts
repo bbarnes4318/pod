@@ -96,6 +96,12 @@ export default async function globalSetup(_config: FullConfig) {
     const prisma = new PrismaClient({ datasourceUrl: dbUrl } as any);
     await prisma.$connect();
     await seed(prisma, bcrypt);
+    // The shared sound fixture starts with bookends disabled. Tests that need a
+    // required intro/outro enable them explicitly, so one intentional validation
+    // failure cannot poison every later Sound & Branding test in this serial run.
+    await prisma.podcastProductionConfig.create({
+      data: { podcastId: E2E.podcastId, defaultIntroEnabled: false, defaultOutroEnabled: false },
+    });
     await prisma.$disconnect();
 
     // Share the DB URL with the specs so they can assert against real rows.

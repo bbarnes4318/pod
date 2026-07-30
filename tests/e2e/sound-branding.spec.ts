@@ -1,8 +1,9 @@
-// Sound & Branding UI (PR 2): sonic identity, variant pools, preview resolution.
-// DB-only + UI — no LLM/TTS/network/paid APIs. Uses ORDINARY browser
+// Sound & Branding UI: sonic identity, variant pools, preview resolution.
+// DB-only + UI — no LLM/TTS/network/paid APIs. Uses ordinary browser
 // interactions only: real .click() / keyboard — never force:true,
-// dispatchEvent, or direct handler invocation. The persistent player bar is
-// visible throughout; the sticky action footer keeps Save/Preview clickable.
+// dispatchEvent, or direct handler invocation. Creator controls live in Studio,
+// so the tests validate the Studio sticky footer without requiring the listener
+// audio player.
 
 import { test, expect, type Page } from "@playwright/test";
 import { e2eDb, closeE2eDb } from "./db";
@@ -25,11 +26,9 @@ async function seedAssets() {
 }
 
 async function gotoSound(page: Page) {
-  await page.goto(`/app/podcasts/${E2E.podcastId}/sound`);
+  await page.goto(`/studio/shows/${E2E.podcastId}/sound`);
+  await expect(page.getByRole("heading", { name: /Sound & branding/i })).toBeVisible();
   await expect(page.getByTestId("sound-branding")).toBeVisible();
-  // The persistent player bar must be present so these tests genuinely prove
-  // the sticky footer keeps the actions clickable underneath it.
-  await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
 }
 
 test.afterAll(async () => { await closeE2eDb(); });
@@ -46,16 +45,14 @@ test.describe("Sound & Branding", () => {
     }
   });
 
-  // Runs on ALL projects (desktop + tablet + mobile): proves a NORMAL mouse
-  // click on Save works with the player bar visible on every viewport.
-  test("Blocker 1: Save is clickable with a normal click while the player bar is visible", async ({ page }) => {
+  // Runs on all projects: proves a normal mouse click on Save works in the
+  // Studio workspace on desktop, tablet, and mobile.
+  test("Blocker 1: Save is clickable with a normal click in Studio", async ({ page }) => {
     await seedAssets();
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
     await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
-    // No force, no dispatchEvent — an ordinary click. Passes strict actionability
-    // because the sticky footer sits above the fixed player; nothing intercepts.
     await page.getByTestId("sound-save").click();
     await expect(page.getByTestId("sound-status")).toContainText(/Saved|attention/i, { timeout: 15000 });
     await expect(page.getByTestId("sound-status")).toBeInViewport();
@@ -107,6 +104,7 @@ test.describe("Sound & Branding", () => {
     await e2eDb().podcastSoundAssignment.deleteMany({ where: { podcastId: E2E.podcastId } });
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
+    await page.getByTestId("intro-enabled").check();
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
     await page.getByTestId("pool-stinger-add").selectOption("e2e-sting-a");
     await page.getByTestId("sound-save").click();

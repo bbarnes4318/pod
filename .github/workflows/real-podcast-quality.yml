@@ -24,18 +24,26 @@ jobs:
       TTS_PERFORMANCE_QA_STRICT: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - name: Full repository lint baseline
+        continue-on-error: true
+        run: npm run lint
+      - name: Changed-file lint
+        run: npm run lint:changed -- origin/main
       - name: TypeScript
+        id: typescript
         run: |
           set -o pipefail
           npx tsc --noEmit 2>&1 | tee /tmp/typescript-errors.log
       - name: Preserve TypeScript failure output
-        if: failure()
+        if: steps.typescript.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: typescript-errors
@@ -55,3 +63,34 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testShowForgeDiscoverability.ts
       - name: Production build contract
         run: npm run build
+
+  studio-e2e:
+    needs: quality-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Install browser and audio test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          npx playwright install --with-deps chromium
+      - name: Authenticated Studio Playwright suite
+        run: npm run test:e2e
+      - name: Upload Studio screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-ui-artifacts
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore

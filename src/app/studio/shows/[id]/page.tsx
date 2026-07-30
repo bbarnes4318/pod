@@ -1,5 +1,3 @@
-import React from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { SEED_TEAMS } from "@/lib/data/teamSeed";
@@ -7,181 +5,49 @@ import { requireUserPage } from "@/lib/currentUser";
 import { canViewOwned } from "@/lib/ownerScope";
 import { friendlyStage } from "@/app/app/lib";
 import { WEEKDAY_LABELS } from "@/app/app/podcasts/config";
-import PodcastWizard, {
-  type WizardHost,
-  type WizardTeam,
-} from "@/app/app/podcasts/new/PodcastWizard";
-import {
-  decodeShowForgeState,
-  defaultShowForgeState,
-  storylineSequence,
-} from "@/lib/shows/showForge";
+import ShowForgeWizard, { type WizardHost, type WizardTeam } from "@/components/studio/ShowForgeWizard";
+import { decodeShowForgeState, defaultShowForgeState, storylineSequence } from "@/lib/shows/showForge";
 import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
+import { AppPage, PageHeader, ButtonLink, Card, StatusBadge, Section, SectionHeader, DataTable, RowTitle, TableRowActions, EmptyState } from "@/components/studio";
 
 export const dynamic = "force-dynamic";
-
 const PRODUCED = new Set(["audio_ready", "content_generating", "content_ready", "publish_ready", "published"]);
 
-export default async function StudioShowHeadquartersPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function StudioShowHeadquartersPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params;
+  const { edit } = await searchParams;
   const user = await requireUserPage(`/studio/shows/${id}`);
   const podcast = await db.podcast.findUnique({
     where: { id },
     include: {
       editorialConfig: true,
       productionConfig: true,
-      episodes: {
-        orderBy: { createdAt: "desc" },
-        take: 30,
-        select: { id: true, title: true, status: true, createdAt: true, audioUrl: true },
-      },
+      episodes: { orderBy: { createdAt: "desc" }, take: 30, select: { id: true, title: true, description: true, status: true, createdAt: true, updatedAt: true, audioUrl: true, durationSeconds: true } },
     },
   }).catch(() => null);
-
   if (!podcast || !canViewOwned(user, podcast)) notFound();
 
   const [hostsRaw, teamsRaw] = await Promise.all([
-    db.aiHost.findMany({
-      where: {
-        isActive: true,
-        isArchived: false,
-        OR: [{ ownerId: user.id }, { ownerId: null }],
-      },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, role: true },
-    }).catch(() => [] as any[]),
-    db.team.findMany({
-      where: { id: { startsWith: "seed:" } },
-      orderBy: [{ leagueId: "asc" }, { name: "asc" }],
-      select: { id: true, leagueId: true, name: true },
-    }).catch(() => [] as any[]),
+    db.aiHost.findMany({ where: { isActive: true, isArchived: false, OR: [{ ownerId: user.id }, { ownerId: null }] }, orderBy: { name: "asc" }, select: { id: true, name: true, role: true } }).catch(() => [] as any[]),
+    db.team.findMany({ where: { id: { startsWith: "seed:" } }, orderBy: [{ leagueId: "asc" }, { name: "asc" }], select: { id: true, leagueId: true, name: true } }).catch(() => [] as any[]),
   ]);
-
-  const teams: WizardTeam[] = (teamsRaw.length > 0 ? teamsRaw : SEED_TEAMS).map((team: any) => ({
-    id: team.id,
-    leagueId: team.leagueId,
-    name: team.name,
-  }));
-  const hosts: WizardHost[] = hostsRaw.map((host: any) => ({
-    id: host.id,
-    name: host.name,
-    role: host.role,
-  }));
-
+  const teams: WizardTeam[] = (teamsRaw.length > 0 ? teamsRaw : SEED_TEAMS).map((team: any) => ({ id: team.id, leagueId: team.leagueId, name: team.name }));
+  const hosts: WizardHost[] = hostsRaw.map((host: any) => ({ id: host.id, name: host.name, role: host.role }));
   const showForge = decodeShowForgeState(podcast.editorialConfig?.scriptStyle).state || defaultShowForgeState();
-  const hostIds = podcast.productionConfig?.hostIds?.length
-    ? podcast.productionConfig.hostIds
-    : podcast.hostIds;
-  const producedCount = podcast.episodes.filter((episode) => PRODUCED.has(episode.status)).length;
+  const hostIds = podcast.productionConfig?.hostIds?.length ? podcast.productionConfig.hostIds : podcast.hostIds;
+  const producedCount = podcast.episodes.filter(episode => PRODUCED.has(episode.status)).length;
   const nextBeat = storylineSequence(showForge.storylines)[producedCount] || null;
-  const cadence = podcast.cadence === "recurring"
-    ? podcast.scheduleDays.map((day) => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(" · ")
-    : "Manual releases";
+  const cadence = podcast.cadence === "recurring" ? podcast.scheduleDays.map(day => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(" · ") : "Manual releases";
+  const assignedNames = hosts.filter(host => hostIds.includes(host.id)).map(host => host.name).join(" + ") || "No hosts assigned";
 
-  return (
-    <div className="fadeUp">
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap", marginBottom: "1.35rem" }}>
-        <div>
-          <div style={{ color: "var(--accent)", fontSize: ".7rem", fontWeight: 900, letterSpacing: ".13em", textTransform: "uppercase", marginBottom: 5 }}>
-            Show Headquarters
-          </div>
-          <h1 className="pageTitle">{podcast.name}</h1>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-            <span className="statusPill statusPill--ok">{cadence}</span>
-            <span style={{ color: "var(--text-muted)", fontSize: ".78rem" }}>{showForge.bible.tone.replace(/_/g, " + ")}</span>
-            <Link href="/studio/shows" style={{ color: "var(--accent)", fontWeight: 700, fontSize: ".8rem" }}>← All shows</Link>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <Link href={`/studio/shows/${podcast.id}/sound`} className="btnGhost">Sound &amp; branding</Link>
-          <GenerateShowEpisodeButton podcastId={podcast.id} primary />
-        </div>
-      </header>
+  if (edit === "1") {
+    return <AppPage><PageHeader title={`Edit ${podcast.name}`} description="Update the show bible in a focused workspace. Existing episodes keep the configuration they were created with." breadcrumbs={[{ label: "Shows", href: "/studio/shows" }, { label: podcast.name, href: `/studio/shows/${podcast.id}` }, { label: "Edit" }]} actions={<ButtonLink href={`/studio/shows/${podcast.id}`} variant="ghost">Cancel</ButtonLink>} /><ShowForgeWizard hosts={hosts} teams={teams} podcastId={podcast.id} initial={{ name: podcast.name, cadence: podcast.cadence as "one_time" | "recurring", scheduleDays: podcast.scheduleDays, verticals: podcast.editorialConfig?.verticals || podcast.verticals, teams: podcast.editorialConfig?.teams || podcast.teams, segmentCount: podcast.editorialConfig?.segmentCount || podcast.segmentCount, hostIds, showForge }} /></AppPage>;
+  }
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(260px, .65fr)", gap: 14 }}>
-        <section className="studioCard" style={{ padding: "1.25rem" }}>
-          <div style={{ color: "var(--accent)", fontSize: ".68rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".1em" }}>The show promise</div>
-          <h2 style={{ margin: ".5rem 0", lineHeight: 1.25 }}>{showForge.bible.premise}</h2>
-          <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>{showForge.bible.audiencePromise}</p>
-          <p style={{ fontSize: ".84rem", lineHeight: 1.55, marginBottom: 0 }}><strong>Host chemistry:</strong> {showForge.bible.hostChemistry}</p>
-        </section>
-
-        <section className="studioCard" style={{ padding: "1.1rem" }}>
-          <div style={{ fontWeight: 850 }}>Next storyline movement</div>
-          {nextBeat ? (
-            <>
-              <div style={{ color: "var(--accent)", fontSize: ".72rem", fontWeight: 850, marginTop: ".8rem" }}>{nextBeat.storylineTitle}</div>
-              <div style={{ fontWeight: 850, marginTop: 5 }}>{nextBeat.beatTitle}</div>
-              <p style={{ color: "var(--text-secondary)", fontSize: ".78rem", lineHeight: 1.5, marginBottom: 0 }}>{nextBeat.beatDirection}</p>
-            </>
-          ) : (
-            <p style={{ color: "var(--text-secondary)", fontSize: ".8rem", lineHeight: 1.5 }}>
-              No season beat is due. The next episode stands alone inside the show bible.
-            </p>
-          )}
-        </section>
-      </div>
-
-      {showForge.storylines.length > 0 && (
-        <section style={{ marginTop: "1.7rem" }}>
-          <div className="sectionHead"><h2 className="sectionTitle">Storyline board</h2></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
-            {showForge.storylines.map((storyline) => (
-              <article key={storyline.id} className="studioCard" style={{ padding: "1rem" }}>
-                <strong>{storyline.title}</strong>
-                <p style={{ color: "var(--text-secondary)", fontSize: ".78rem", lineHeight: 1.5 }}>{storyline.premise}</p>
-                <span className="statusPill statusPill--warn">{storyline.beats.length} beats · {storyline.status}</span>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section style={{ marginTop: "1.8rem" }}>
-        <div className="sectionHead">
-          <h2 className="sectionTitle">Episodes in this show</h2>
-          <Link href="/studio/create" className="sectionAction">Build a rundown →</Link>
-        </div>
-        {podcast.episodes.length === 0 ? (
-          <div className="studioCard" style={{ padding: "1rem" }}>No episodes yet. Generate the premiere when the room is ready.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 9 }}>
-            {podcast.episodes.slice(0, 10).map((episode) => {
-              const stage = friendlyStage(episode.status);
-              return (
-                <Link key={episode.id} href={`/studio/episodes/${episode.id}`} className="studioCard clickable" style={{ textDecoration: "none", color: "inherit", padding: ".9rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
-                  <div>
-                    <div style={{ fontWeight: 850 }}>{episode.title}</div>
-                    <div style={{ color: "var(--text-muted)", fontSize: ".76rem", marginTop: 4 }}>{stage.label}</div>
-                  </div>
-                  <span className="btnGhost">{episode.audioUrl ? "Listen" : "Open"}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <details style={{ marginTop: "2rem" }}>
-        <summary className="btnGhost" style={{ cursor: "pointer", display: "inline-flex" }}>Edit in Show Forge</summary>
-        <div style={{ marginTop: "1rem" }}>
-          <PodcastWizard
-            hosts={hosts}
-            teams={teams}
-            podcastId={podcast.id}
-            initial={{
-              name: podcast.name,
-              cadence: podcast.cadence as "one_time" | "recurring",
-              scheduleDays: podcast.scheduleDays,
-              verticals: podcast.editorialConfig?.verticals || podcast.verticals,
-              teams: podcast.editorialConfig?.teams || podcast.teams,
-              segmentCount: podcast.editorialConfig?.segmentCount || podcast.segmentCount,
-              hostIds,
-              showForge,
-            }}
-          />
-        </div>
-      </details>
-    </div>
-  );
+  return <AppPage>
+    <PageHeader detail title={podcast.name} description={showForge.bible.audiencePromise} breadcrumbs={[{ label: "Shows", href: "/studio/shows" }, { label: podcast.name }]} actions={<><ButtonLink href={`/studio/shows/${podcast.id}/sound`} variant="secondary">Sound and branding</ButtonLink><ButtonLink href={`/studio/shows/${podcast.id}?edit=1`} variant="secondary">Edit in Show Forge</ButtonLink><GenerateShowEpisodeButton podcastId={podcast.id} primary /></>} />
+    <div className="showHeadquartersSummary"><Card className="showPromiseCard"><div className="showHeadquartersMeta"><StatusBadge tone="info">Show Headquarters</StatusBadge><StatusBadge tone={podcast.visibility === "public" ? "success" : "neutral"}>{podcast.visibility === "public" ? "Active" : "Private"}</StatusBadge><span>{cadence}</span><span>{assignedNames}</span></div><SectionHeader title="The show promise" /><h2>{showForge.bible.premise}</h2><p><strong>Host chemistry:</strong> {showForge.bible.hostChemistry}</p></Card><Card><SectionHeader title="Next storyline movement" />{nextBeat ? <div className="nextBeat"><StatusBadge tone="info">{nextBeat.storylineTitle}</StatusBadge><strong>{nextBeat.beatTitle}</strong><p>{nextBeat.beatDirection}</p></div> : <p className="settingsStatus">No season beat is due. The next episode stands alone inside the show bible.</p>}</Card></div>
+    {showForge.storylines.length > 0 && <Section><SectionHeader title="Storyline board" description="Active arcs are reserved across episodes without changing factual evidence." /><div className="storylineGrid">{showForge.storylines.map(storyline => <Card key={storyline.id}><div className="showHeadquartersMeta"><StatusBadge tone={storyline.status === "active" ? "info" : storyline.status === "resolved" ? "success" : "warning"}>{storyline.status}</StatusBadge><span>{storyline.beats.length} beats</span></div><h3>{storyline.title}</h3><p>{storyline.premise}</p></Card>)}</div></Section>}
+    <Section><SectionHeader title="Episodes in this show" description="Recent episodes and their current production stage." actions={<ButtonLink href={`/studio/create?show=${podcast.id}`} variant="link">Build a rundown</ButtonLink>} />{podcast.episodes.length === 0 ? <EmptyState title="No episodes yet" description="Generate the premiere when the cast and show bible are ready." /> : <DataTable label={`Episodes in ${podcast.name}`}><thead><tr><th>Episode</th><th>Status</th><th>Duration</th><th>Updated</th><th><span className="srOnly">Action</span></th></tr></thead><tbody>{podcast.episodes.slice(0, 15).map(episode => { const stage = friendlyStage(episode.status); return <tr key={episode.id}><td><RowTitle title={episode.title} subtitle={episode.description} /></td><td><StatusBadge tone={episode.status === "published" ? "success" : episode.status === "failed" ? "danger" : episode.audioUrl ? "live" : "info"}>{stage.label}</StatusBadge></td><td>{episode.durationSeconds ? `${Math.floor(episode.durationSeconds / 60)}:${String(episode.durationSeconds % 60).padStart(2, "0")}` : "—"}</td><td>{new Date(episode.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td><td><TableRowActions><ButtonLink href={`/studio/episodes/${episode.id}`} variant="ghost" size="compact">Open</ButtonLink></TableRowActions></td></tr>; })}</tbody></DataTable>}</Section>
+  </AppPage>;
 }
