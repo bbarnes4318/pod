@@ -10,12 +10,14 @@ const AVAILABLE = ["approved", "pending"] as const;
 const IN_PROGRESS = ["draft", "script_draft", "fact_checked", "script_approved", "audio_segments_ready", "audio_stitching", "content_generating"];
 const READY = ["audio_ready", "content_ready", "publish_ready"];
 
-function heatLabel(total: number) { return total >= 70 ? "Blazing" : total >= 45 ? "Hot" : "Warm"; }
 function toneFor(status: string): "neutral" | "success" | "warning" | "danger" | "info" | "live" { if (status === "published") return "success"; if (status === "failed") return "danger"; if (READY.includes(status)) return "live"; if (IN_PROGRESS.includes(status)) return "info"; return "neutral"; }
 
 export default async function StudioBoard() {
   const viewer = await currentUser();
   const owned = ownerScope(viewer);
+  // This is a force-dynamic server page. The rolling dashboard window must be
+  // resolved at request time rather than frozen at module load.
+  // eslint-disable-next-line react-hooks/purity
   const publishedSince = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const [takes, poolCount, inProgressCount, readyCount, publishedCount, recentEpisodes] = await Promise.all([
     db.topicCandidate.findMany({ where: { status: { in: [...AVAILABLE] } }, include: { researchBrief: true }, orderBy: { debateScore: "desc" }, take: 8 }),
