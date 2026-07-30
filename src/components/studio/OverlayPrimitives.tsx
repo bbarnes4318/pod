@@ -3,9 +3,41 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Button, primitiveStyles as styles } from "./StudioPrimitives";
 
+type FocusReturnDescriptor = {
+  tagName: string;
+  id: string;
+  ariaLabel: string;
+  text: string;
+};
+
+function describeFocusTarget(target: HTMLElement): FocusReturnDescriptor {
+  return {
+    tagName: target.tagName.toLowerCase(),
+    id: target.id,
+    ariaLabel: target.getAttribute("aria-label") ?? "",
+    text: (target.textContent ?? "").replace(/\s+/g, " ").trim(),
+  };
+}
+
+function resolveFocusTarget(target: HTMLElement | null, descriptor: FocusReturnDescriptor | null): HTMLElement | null {
+  if (target && document.contains(target)) return target;
+  if (!descriptor) return null;
+  if (descriptor.id) {
+    const byId = document.getElementById(descriptor.id);
+    if (byId) return byId;
+  }
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>(descriptor.tagName));
+  return candidates.find((candidate) => {
+    const ariaLabel = candidate.getAttribute("aria-label") ?? "";
+    const text = (candidate.textContent ?? "").replace(/\s+/g, " ").trim();
+    return ariaLabel === descriptor.ariaLabel && text === descriptor.text;
+  }) ?? null;
+}
+
 function useOverlay(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const restoreDescriptorRef = useRef<FocusReturnDescriptor | null>(null);
   const triggerCapturedRef = useRef(false);
   const onCloseRef = useRef(onClose);
 
@@ -16,25 +48,29 @@ function useOverlay(open: boolean, onClose: () => void) {
   // Capture the opener during the native capture phase, before React's onClick
   // changes state and before an auto-focused drawer control can steal the record.
   useEffect(() => {
+    const rememberTarget = (target: HTMLElement) => {
+      restoreRef.current = target;
+      restoreDescriptorRef.current = describeFocusTarget(target);
+      triggerCapturedRef.current = true;
+    };
     const rememberPointerTrigger = (event: Event) => {
       if (panelRef.current?.isConnected) return;
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      restoreRef.current = target.closest<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? target;
-      triggerCapturedRef.current = true;
+      rememberTarget(target.closest<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? target);
     };
     const rememberKeyboardTrigger = (event: KeyboardEvent) => {
       if (panelRef.current?.isConnected || !["Enter", " "].includes(event.key)) return;
       const target = document.activeElement;
-      if (target instanceof HTMLElement) {
-        restoreRef.current = target;
-        triggerCapturedRef.current = true;
-      }
+      if (target instanceof HTMLElement) rememberTarget(target);
     };
     const rememberOutsideFocus = (event: FocusEvent) => {
       if (panelRef.current?.isConnected || triggerCapturedRef.current) return;
       const target = event.target;
-      if (target instanceof HTMLElement) restoreRef.current = target;
+      if (target instanceof HTMLElement) {
+        restoreRef.current = target;
+        restoreDescriptorRef.current = describeFocusTarget(target);
+      }
     };
 
     document.addEventListener("pointerdown", rememberPointerTrigger, true);
@@ -84,11 +120,13 @@ function useOverlay(open: boolean, onClose: () => void) {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", key);
       const restoreTarget = restoreRef.current;
+      const restoreDescriptor = restoreDescriptorRef.current;
       queueMicrotask(() => {
         // React Strict Mode's synthetic cleanup leaves the panel connected. A
-        // real close removes it before this microtask runs.
+        // real close removes it before this microtask runs. The opener may have
+        // been reconciled to a new DOM node, so resolve its current equivalent.
         if (!panel?.isConnected) {
-          if (restoreTarget && document.contains(restoreTarget)) restoreTarget.focus();
+          resolveFocusTarget(restoreTarget, restoreDescriptor)?.focus();
           triggerCapturedRef.current = false;
         }
       });
