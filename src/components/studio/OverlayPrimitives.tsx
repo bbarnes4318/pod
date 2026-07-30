@@ -7,6 +7,8 @@ function useOverlay(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const openRef = useRef(open);
+  openRef.current = open;
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -15,12 +17,17 @@ function useOverlay(open: boolean, onClose: () => void) {
   useEffect(() => {
     if (!open) return;
 
+    const panel = panelRef.current;
     const activeElement = document.activeElement;
-    restoreRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    // React Strict Mode mounts, cleans up, and mounts effects again in development.
+    // Preserve the original trigger when the second effect sees focus already inside
+    // the overlay instead of replacing it with the drawer's close button.
+    if (!panel?.contains(activeElement)) {
+      restoreRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    }
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const panel = panelRef.current;
     const focusables = () => Array.from(panel?.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? []).filter(node => !node.hasAttribute("disabled"));
     focusables()[0]?.focus();
 
@@ -50,12 +57,14 @@ function useOverlay(open: boolean, onClose: () => void) {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", key);
       const restoreTarget = restoreRef.current;
-      restoreRef.current = null;
-      if (restoreTarget && document.contains(restoreTarget)) {
-        queueMicrotask(() => {
-          if (document.contains(restoreTarget)) restoreTarget.focus();
-        });
-      }
+      queueMicrotask(() => {
+        // Skip the synthetic Strict Mode cleanup while the overlay is still open.
+        // Restore focus only after the real close render has committed.
+        if (!openRef.current && restoreTarget && document.contains(restoreTarget)) {
+          restoreTarget.focus();
+          if (restoreRef.current === restoreTarget) restoreRef.current = null;
+        }
+      });
     };
   }, [open]);
 
