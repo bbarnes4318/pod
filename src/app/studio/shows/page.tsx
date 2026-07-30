@@ -23,7 +23,7 @@ export default async function StudioShowsPage() {
   const hostNames = new Map(hosts.map(host => [host.id, host.name]));
 
   return <AppPage>
-    <PageHeader title="Shows" description="Manage each show’s cast, creative rules, storylines, sound, schedule, and episode history." actions={<ButtonLink href="/studio/shows/new" variant="primary" size="prominent" data-testid="studio-open-show-forge">Build a show</ButtonLink>} />
+    <PageHeader title="Shows" description="Show Studio is where you manage each show’s cast, creative rules, storylines, sound, schedule, and episode history." actions={<ButtonLink href="/studio/shows/new" variant="primary" size="prominent" data-testid="studio-open-show-forge">Build a show</ButtonLink>} />
     {podcasts.length === 0 ? <EmptyState title="No shows yet" description="Build the show bible, assign hosts, and generate the premiere without leaving Studio." action={<ButtonLink href="/studio/shows/new" variant="primary">Build your first show</ButtonLink>} /> : <div className="showsProductionGrid">{podcasts.map(show => {
       const cadence = show.cadence === "recurring" ? show.scheduleDays.map(day => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(" · ") : "Manual releases";
       const assignedIds = show.productionConfig?.hostIds?.length ? show.productionConfig.hostIds : show.hostIds;
