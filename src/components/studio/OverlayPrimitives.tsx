@@ -7,8 +7,6 @@ function useOverlay(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
-  const openRef = useRef(open);
-  openRef.current = open;
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -19,7 +17,7 @@ function useOverlay(open: boolean, onClose: () => void) {
   // after mount can lose the button that actually opened the overlay.
   useEffect(() => {
     const rememberOutsideFocus = (event: FocusEvent) => {
-      if (openRef.current) return;
+      if (panelRef.current?.isConnected) return;
       const target = event.target;
       if (target instanceof HTMLElement) restoreRef.current = target;
     };
@@ -63,9 +61,9 @@ function useOverlay(open: boolean, onClose: () => void) {
       document.removeEventListener("keydown", key);
       const restoreTarget = restoreRef.current;
       queueMicrotask(() => {
-        // Skip React Strict Mode's synthetic cleanup while the overlay remains
-        // open. Restore only after the real close render has committed.
-        if (!openRef.current && restoreTarget && document.contains(restoreTarget)) {
+        // React Strict Mode's synthetic cleanup leaves the panel connected. A
+        // real close removes it before this microtask runs.
+        if (!panel?.isConnected && restoreTarget && document.contains(restoreTarget)) {
           restoreTarget.focus();
         }
       });
