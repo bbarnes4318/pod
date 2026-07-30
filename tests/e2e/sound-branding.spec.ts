@@ -104,6 +104,7 @@ test.describe("Sound & Branding", () => {
     await e2eDb().podcastSoundAssignment.deleteMany({ where: { podcastId: E2E.podcastId } });
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
+    await page.getByTestId("intro-enabled").check();
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
     await page.getByTestId("pool-stinger-add").selectOption("e2e-sting-a");
     await page.getByTestId("sound-save").click();
