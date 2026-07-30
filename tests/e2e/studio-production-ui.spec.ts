@@ -90,4 +90,25 @@ test.describe("production Studio shell", () => {
     await expect(page.getByText("Live summary")).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
   });
+
+  test("Host creation opens a focus-trapped drawer and restores focus", async ({ page }) => {
+    await page.goto("/studio/hosts");
+    const trigger = page.getByRole("button", { name: "Create a host", exact: true }).first();
+    await trigger.focus();
+    await trigger.click();
+
+    const drawer = page.getByRole("dialog", { name: "Create a host" });
+    await expect(drawer).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Host creation steps" })).toBeVisible();
+    await expect(page.getByText("Live summary")).toBeVisible();
+    await expect(page.locator("body")).toHaveCSS("overflow", "hidden");
+
+    const close = page.getByRole("button", { name: "Close drawer" });
+    await close.focus();
+    await page.keyboard.press("Tab");
+    await expect(drawer.locator(":focus")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(trigger).toBeFocused();
+  });
 });
