@@ -97,7 +97,7 @@ test.describe("production Studio shell", () => {
     await trigger.focus();
     await trigger.click();
 
-    const drawer = page.getByRole("dialog", { name: "Create a host" });
+    const drawer = page.getByRole("dialog", { name: "Create a host", exact: true });
     await expect(drawer).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Host creation steps" })).toBeVisible();
     await expect(page.getByText("Live summary")).toBeVisible();
