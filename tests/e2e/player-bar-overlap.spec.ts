@@ -24,9 +24,9 @@ test.describe("Studio action footer never covers a primary action", () => {
 
     await page.getByLabel("Show name").fill("Overlap Probe");
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Promise" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Promise", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "World" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "World", exact: true })).toBeVisible();
 
     // Two sports worlds render a deliberately long team list from the seed
     // catalog, exercising the sticky action footer on a page taller than the
@@ -46,6 +46,6 @@ test.describe("Studio action footer never covers a primary action", () => {
     // No force and no direct handler invocation: this is the exact click a
     // customer makes after choosing sports and teams.
     await forward.click({ timeout: 5000 });
-    await expect(page.getByRole("heading", { name: "Cast" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cast", exact: true })).toBeVisible();
   });
 });
