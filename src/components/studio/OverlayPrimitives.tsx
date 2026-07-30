@@ -6,23 +6,47 @@ import { Button, primitiveStyles as styles } from "./StudioPrimitives";
 function useOverlay(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const triggerCapturedRef = useRef(false);
   const onCloseRef = useRef(onClose);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Remember focus while the overlay is closed. React can auto-focus a field
-  // inside the drawer before the open effect runs, so reading activeElement only
-  // after mount can lose the button that actually opened the overlay.
+  // Capture the opener during the native capture phase, before React's onClick
+  // changes state and before an auto-focused drawer control can steal the record.
   useEffect(() => {
-    const rememberOutsideFocus = (event: FocusEvent) => {
+    const rememberPointerTrigger = (event: Event) => {
       if (panelRef.current?.isConnected) return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      restoreRef.current = target.closest<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])') ?? target;
+      triggerCapturedRef.current = true;
+    };
+    const rememberKeyboardTrigger = (event: KeyboardEvent) => {
+      if (panelRef.current?.isConnected || !["Enter", " "].includes(event.key)) return;
+      const target = document.activeElement;
+      if (target instanceof HTMLElement) {
+        restoreRef.current = target;
+        triggerCapturedRef.current = true;
+      }
+    };
+    const rememberOutsideFocus = (event: FocusEvent) => {
+      if (panelRef.current?.isConnected || triggerCapturedRef.current) return;
       const target = event.target;
       if (target instanceof HTMLElement) restoreRef.current = target;
     };
+
+    document.addEventListener("pointerdown", rememberPointerTrigger, true);
+    document.addEventListener("click", rememberPointerTrigger, true);
+    document.addEventListener("keydown", rememberKeyboardTrigger, true);
     document.addEventListener("focusin", rememberOutsideFocus, true);
-    return () => document.removeEventListener("focusin", rememberOutsideFocus, true);
+    return () => {
+      document.removeEventListener("pointerdown", rememberPointerTrigger, true);
+      document.removeEventListener("click", rememberPointerTrigger, true);
+      document.removeEventListener("keydown", rememberKeyboardTrigger, true);
+      document.removeEventListener("focusin", rememberOutsideFocus, true);
+    };
   }, []);
 
   useEffect(() => {
@@ -63,8 +87,9 @@ function useOverlay(open: boolean, onClose: () => void) {
       queueMicrotask(() => {
         // React Strict Mode's synthetic cleanup leaves the panel connected. A
         // real close removes it before this microtask runs.
-        if (!panel?.isConnected && restoreTarget && document.contains(restoreTarget)) {
-          restoreTarget.focus();
+        if (!panel?.isConnected) {
+          if (restoreTarget && document.contains(restoreTarget)) restoreTarget.focus();
+          triggerCapturedRef.current = false;
         }
       });
     };
