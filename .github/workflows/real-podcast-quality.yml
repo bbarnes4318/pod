@@ -53,5 +53,7 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testShowForgeCapabilities.ts
       - name: Show Forge discoverability regression
         run: npx tsx --conditions=react-server src/scripts/testShowForgeDiscoverability.ts
+      - name: Production chain and scene retry regression
+        run: npm run test:production-chain
       - name: Production build contract
         run: npm run build
