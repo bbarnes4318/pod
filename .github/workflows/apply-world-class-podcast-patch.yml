@@ -54,6 +54,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git restore --source=HEAD --staged --worktree .github/workflows/real-podcast-quality.yml .github/workflows/apply-world-class-podcast-patch.yml
           git add -A
-          git commit -m "feat: enforce world-class editorial and voice quality"
+          git commit -m "feat: enforce world-class editorial and voice quality [skip ci]"
           git push origin HEAD:agent/world-class-podcast-core
