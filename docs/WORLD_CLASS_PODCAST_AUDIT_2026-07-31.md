@@ -22,9 +22,9 @@ Every generated script stores its deterministic score, independent judge verdict
 
 Production renders several stochastic Text-to-Dialogue performances, analyzes raw dynamics and pacing, and selects the strongest passing candidate. Cold opens and escalation scenes receive the larger audition budget. Provider-native `voice_segments` timing is used when available.
 
-### Fish uses the current production S2 model contract
+### Fish uses the current production S2.1 model contract
 
-Scene rendering now defaults to `s2-pro`, while remaining overridable after a live provider test.
+Scene rendering now defaults to `s2.1-pro`, while remaining overridable after a live provider test.
 
 ### CI asserts the new hold behavior
 
