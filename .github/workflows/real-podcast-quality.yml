@@ -43,6 +43,8 @@ jobs:
           if-no-files-found: error
       - name: Real podcast quality regression
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
+      - name: Independent editorial gate regression
+        run: npm run test:editorial-gate
       - name: Script queue identity regression
         run: npx tsx --conditions=react-server src/scripts/testScriptQueueTracking.ts
       - name: Cal performance regression
