@@ -32,7 +32,7 @@ export function getTtsProviderCapabilities(providerId: string): TtsProviderCapab
         supportsSeed: true,          // best-effort determinism, 0..4294967295
         supportsMultipleCandidates: false,
         supportsWordTimestamps: true, // /v1/text-to-dialogue/with-timestamps (char alignment)
-        supportsSpeakerTimestamps: false, // alignment is unlabeled; we derive speakers from our own inputs
+        supportsSpeakerTimestamps: true, // Text-to-Dialogue timestamps include provider-labelled voice_segments
         supportsInlineDeliveryCues: true, // eleven_v3 audio tags
         supportsNaturalLanguageDirection: false, // no instruction field
         mixedSpeakerOutput: true,

@@ -21,17 +21,17 @@ const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,80})\]/g;
 
 const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
-  heated: "[slower, quieter, cold and precise]",
-  excited: "[measured and intense, never rushed]",
+  heated: "[slow, quiet, cold, precise]",
+  excited: "[measured, intense, controlled]",
   incredulous: "[quiet disbelief, unhurried]",
-  dismissive: "[flat, slow, finished with this argument]",
+  dismissive: "[flat, slow, finished]",
 };
 
 const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
-  heated: "[loud and slow, stretching the important words]",
-  excited: "[booming and unhurried, savoring it]",
+  heated: "[loud, slow, stretching words]",
+  excited: "[booming, slow, unhurried]",
   incredulous: "[loud disbelief, drawn out]",
-  dismissive: "[loud, flat, dragging the words]",
+  dismissive: "[loud, flat, dragging words]",
 };
 
 interface FishProsody {
@@ -92,7 +92,7 @@ function productionStrict(): boolean {
 }
 
 export function resolveFishSceneModel(): string {
-  const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro-free").trim();
+  const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro").trim();
   if (!/^s2(?:[.-]|$)/i.test(model)) {
     throw new SceneGenerationError(
       "unsupported_model",
@@ -176,6 +176,20 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
   const parts: string[] = [];
   let previousHostId: string | null = null;
 
+  // One authored emotional peak per scene. Per-host budgets allowed every hot
+  // speaker to receive a cue, which stamped synthetic emotion over the whole
+  // exchange. Pick the strongest line; on a tie, the later line wins so the
+  // performance can build rather than peak immediately.
+  let accentLineIndex: number | null = null;
+  let accentHeat = 2;
+  for (const utterance of input.utterances) {
+    const heat = lineHeat(utterance);
+    if (heat >= 3 && heat >= accentHeat) {
+      accentHeat = heat;
+      accentLineIndex = utterance.lineIndex;
+    }
+  }
+
   for (const utterance of input.utterances) {
     const speakerIndex = speakerIndexByHost.get(utterance.speakerHostId)!;
     const cap = cueCapByHost.get(utterance.speakerHostId) ?? 2;
@@ -192,7 +206,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     }
 
     if (utterance.isInterruption && used < cap) {
-      openers.push("[cutting in because the last point cannot stand]");
+      openers.push("[cutting in]");
       used++;
     }
 
@@ -205,7 +219,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
 
     // Use delivery direction at genuine peaks and sharp reactions, not once for
     // the entire scene and not on every sentence.
-    if (used < cap && lineHeat(utterance) >= 3) {
+    if (used < cap && utterance.lineIndex === accentLineIndex) {
       const cue = emotionalCue(
         (utterance.tone || "").toLowerCase(),
         angerStyleByHost.get(utterance.speakerHostId) ?? "louder_faster"

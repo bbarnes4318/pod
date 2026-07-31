@@ -36,6 +36,7 @@
     "migrate:legacy-formats": "tsx --conditions=react-server src/scripts/migrateLegacyPanelFormats.ts",
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
+    "test:editorial-gate": "tsx --conditions=react-server src/scripts/testScriptEditorialGate.ts",
     "sample:human-dialogue": "tsx --conditions=react-server src/scripts/produceHumanDialogueAudition.ts",
     "test:waveform-analysis": "tsx src/scripts/testWaveformAnalysis.ts",
     "test:sound-direction-policy": "tsx --conditions=react-server src/scripts/testSoundDirectionPolicy.ts",

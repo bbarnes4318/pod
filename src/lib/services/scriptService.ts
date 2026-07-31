@@ -22,6 +22,8 @@ import {
 } from "../audio/pauseTiming";
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
+import { assessScriptQuality } from "./scriptQualityJudge";
+import { evaluateScriptEditorialGate } from "./scriptEditorialGate";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
@@ -976,7 +978,18 @@ Delivery field meanings:
 
   // Attach the 0-100 quality score so every script carries its own rubric,
   // plus the source-material talkability that fed it (for regression tracking).
-  cleanContent.quality = scoreScriptQuality(cleanContent);
+  const qualityJudge = roleHasRealProvider("quality_judge")
+    ? getRoleLLMProvider("quality_judge")
+    : null;
+  const qualityReview = await assessScriptQuality(qualityJudge, finalSegments, {
+    episodeTitle: ep.title,
+    hostNames: speakers.hostNames,
+    evidenceSummary: result.evidenceAudit?.samples.slice(0, 40).join("\n"),
+  });
+  qualityReview.deterministic = scoreScriptQuality(cleanContent);
+  cleanContent.quality = qualityReview.deterministic;
+  cleanContent.qualityReview = qualityReview;
+  cleanContent.editorialGate = evaluateScriptEditorialGate(qualityReview);
   cleanContent.sourceTalkability = {
     average: Math.round(gate.avgTalkability),
     topics: gate.talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
@@ -984,8 +997,12 @@ Delivery field meanings:
   result.reasons.push(
     `Quality score: ${cleanContent.quality.total}/100 (${Object.entries(cleanContent.quality.axes)
       .map(([k, v]: [string, any]) => `${k} ${v.score}/${v.max}`)
-      .join(", ")})`
+      .join(", ")}); independent judge=${qualityReview.judge?.overall ?? "unavailable"}; ` +
+      `editorial decision=${cleanContent.editorialGate.decision} (${cleanContent.editorialGate.mode}).`
   );
+  if (cleanContent.editorialGate.reasons.length > 0) {
+    result.reasons.push(`Editorial gate: ${cleanContent.editorialGate.reasons.join(" | ")}`);
+  }
 
   // 12. Build PlainText from validated JSON content ONLY
   const plainText = finalSegments
@@ -1057,7 +1074,7 @@ Delivery field meanings:
         version: nextVersion,
         content: cleanContent as any,
         plainText,
-        status: "draft",
+        status: cleanContent.editorialGate.decision === "hold" ? "needs_revision" : "draft",
       },
     });
 
