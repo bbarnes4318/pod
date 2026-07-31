@@ -6,6 +6,7 @@ on:
       - agent/world-class-podcast-core
     paths:
       - scripts/apply-world-class-podcast-patch.mjs
+      - scripts/fix-fish-scene-direction-patch.mjs
       - .github/workflows/apply-world-class-podcast-patch.yml
   pull_request:
     branches:
@@ -13,6 +14,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - scripts/apply-world-class-podcast-patch.mjs
+      - scripts/fix-fish-scene-direction-patch.mjs
       - .github/workflows/apply-world-class-podcast-patch.yml
 
 permissions:
@@ -32,8 +34,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - name: Apply guarded source patch
-        run: node scripts/apply-world-class-podcast-patch.mjs
+      - name: Apply guarded source patches
+        run: |
+          node scripts/apply-world-class-podcast-patch.mjs
+          node scripts/fix-fish-scene-direction-patch.mjs
       - name: Install dependencies
         run: npm ci
       - name: Generate Prisma client
