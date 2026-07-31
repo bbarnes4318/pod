@@ -7,12 +7,20 @@ on:
     paths:
       - scripts/apply-world-class-podcast-patch.mjs
       - .github/workflows/apply-world-class-podcast-patch.yml
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    paths:
+      - scripts/apply-world-class-podcast-patch.mjs
+      - .github/workflows/apply-world-class-podcast-patch.yml
 
 permissions:
   contents: write
 
 jobs:
   patch-and-validate:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
