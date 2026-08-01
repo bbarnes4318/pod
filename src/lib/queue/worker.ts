@@ -43,7 +43,7 @@ import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
 import type { AiHost, Prisma } from "@prisma/client";
-import { podcastQueue } from "./podcastQueue";
+import { podcastQueue, BACKGROUND_QUEUE_NAME, PRODUCTION_QUEUE_NAME } from "./podcastQueue";
 
 /** Persona block for LLM prompts, built from a host's own profile record —
  *  so topic/brief seeding reflects whoever the show's active hosts are, not
@@ -81,8 +81,6 @@ import {
   ingestHourKey,
 } from "../services/sportsIngestSchedule";
 
-const QUEUE_NAME = "podcast-generation";
-
 console.log("--------------------------------------------------");
 console.log("TAKE MACHINE WORKER - INITIALIZING");
 // Build stamp: makes "is the correct code actually deployed?" a one-glance
@@ -98,7 +96,8 @@ console.log(
 // this line ships to shared logs. describeRedisConnection() returns host:port
 // only (see the redis-log-sanitization regression test).
 console.log(`Redis Connection: ${describeRedisConnection()}`);
-console.log(`Queue Name: ${QUEUE_NAME}`);
+console.log(`Background Queue: ${BACKGROUND_QUEUE_NAME}`);
+console.log(`Production Queue: ${PRODUCTION_QUEUE_NAME}`);
 console.log("--------------------------------------------------");
 
 // Sound-design starter pack ships with the app (like migrations): if the
@@ -175,71 +174,88 @@ const WORKER_CONCURRENCY = (() => {
   if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 8) return parsed;
   return process.env.NODE_ENV === "production" ? 1 : 2;
 })();
-console.log(`Worker Concurrency: ${WORKER_CONCURRENCY}`);
 
-// Initialize BullMQ Worker
-const worker = new Worker(
-  QUEUE_NAME,
-  async (job: Job) => {
-    if (job.name === "ingest:sports-data") {
-      return handleSportsIngestion(job as Job<IngestJobData>);
-    } else if (job.name === "generate:topics") {
-      return handleTopicGeneration(job as Job<TopicGenJobData>);
-    } else if (job.name === "generate:research-brief") {
-      return handleResearchBriefGeneration(job as Job<ResearchBriefJobData>);
-    } else if (job.name === "build:episode") {
-      return handleEpisodeBuilding(job as Job<EpisodeBuildJobData>);
-    } else if (job.name === "generate:script") {
-      return handleScriptGeneration(job as Job<ScriptGenJobData>);
-    } else if (job.name === "fact-check:script") {
-      return handleFactChecking(job as Job<FactCheckJobData>);
-    } else if (job.name === "tts:generate-segments") {
-      return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
-    } else if (job.name === "audio:stitch-final") {
-      return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
-    } else if (job.name === "audio:regenerate-line") {
-      return handleLineAudioRegen(job as Job<LineAudioRegenJobData>);
-    } else if (job.name === "content:generate-assets") {
-      return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
-    } else if (job.name === "social-clip:generate") {
-      return handleSocialClipGeneration(job as Job<SocialClipJobData>);
-    } else if (job.name === "scheduler:recurring-podcasts") {
-      return handleRecurringPodcastScheduler(job);
-    } else if (job.name === "scheduler:sports-ingest") {
-      return handleSportsIngestScheduler(job);
-    } else if (job.name === "scheduler:sports-news") {
-      return handleSportsNewsScheduler(job);
-    } else if (job.name === "scheduler:topics-generate") {
-      return handleTopicsGenerateScheduler(job);
-    } else if (job.name === "generate-podcast") {
-      return handlePodcastGeneration(job as Job<JobData>);
-    } else {
-      console.warn(`[Worker] Unknown job type received: ${job.name}`);
-      return { success: false, error: "Unknown job type" };
-    }
-  },
-  {
-    connection: getRedisClient() as any,
-    concurrency: WORKER_CONCURRENCY, // env-driven, bounded; prod default 1
+const PRODUCTION_WORKER_CONCURRENCY = (() => {
+  const parsed = Number.parseInt(process.env.PRODUCTION_WORKER_CONCURRENCY ?? "", 10);
+  if (Number.isFinite(parsed) && parsed >= 1 && parsed <= 4) return parsed;
+  return 1;
+})();
+
+console.log(`Background Worker Concurrency: ${WORKER_CONCURRENCY}`);
+console.log(`Production Worker Concurrency: ${PRODUCTION_WORKER_CONCURRENCY}`);
+
+async function processPodcastJob(job: Job) {
+  if (job.name === "ingest:sports-data") {
+    return handleSportsIngestion(job as Job<IngestJobData>);
+  } else if (job.name === "generate:topics") {
+    return handleTopicGeneration(job as Job<TopicGenJobData>);
+  } else if (job.name === "generate:research-brief") {
+    return handleResearchBriefGeneration(job as Job<ResearchBriefJobData>);
+  } else if (job.name === "build:episode") {
+    return handleEpisodeBuilding(job as Job<EpisodeBuildJobData>);
+  } else if (job.name === "generate:script") {
+    return handleScriptGeneration(job as Job<ScriptGenJobData>);
+  } else if (job.name === "fact-check:script") {
+    return handleFactChecking(job as Job<FactCheckJobData>);
+  } else if (job.name === "tts:generate-segments") {
+    return handleTtsSegmentGeneration(job as Job<TtsSegmentJobData>);
+  } else if (job.name === "audio:stitch-final") {
+    return handleFinalAudioStitching(job as Job<FinalAudioStitchJobData>);
+  } else if (job.name === "audio:regenerate-line") {
+    return handleLineAudioRegen(job as Job<LineAudioRegenJobData>);
+  } else if (job.name === "content:generate-assets") {
+    return handleContentAssetGeneration(job as Job<ContentAssetJobData>);
+  } else if (job.name === "social-clip:generate") {
+    return handleSocialClipGeneration(job as Job<SocialClipJobData>);
+  } else if (job.name === "scheduler:recurring-podcasts") {
+    return handleRecurringPodcastScheduler(job);
+  } else if (job.name === "scheduler:sports-ingest") {
+    return handleSportsIngestScheduler(job);
+  } else if (job.name === "scheduler:sports-news") {
+    return handleSportsNewsScheduler(job);
+  } else if (job.name === "scheduler:topics-generate") {
+    return handleTopicsGenerateScheduler(job);
+  } else if (job.name === "generate-podcast") {
+    return handlePodcastGeneration(job as Job<JobData>);
   }
-);
 
-// Worker Event Listeners
-worker.on("active", (job) => {
-  console.log(`[Worker] Job ${job.id} [${job.name}] became active`);
+  console.warn(`[Worker] Unknown job type received: ${job.name}`);
+  return { success: false, error: "Unknown job type" };
+}
+
+// Background automation and Studio production deliberately use independent
+// BullMQ queues. A provider timeout in research can occupy the background lane
+// without blocking an editor's script, fact-check, voice, mix, or publish job.
+const worker = new Worker(BACKGROUND_QUEUE_NAME, processPodcastJob, {
+  connection: getRedisClient() as any,
+  concurrency: WORKER_CONCURRENCY,
 });
 
-worker.on("completed", (job, result) => {
-  console.log(`[Worker] Job ${job.id} [${job.name}] completed. Result:`, result);
+const productionWorker = new Worker(PRODUCTION_QUEUE_NAME, processPodcastJob, {
+  connection: getRedisClient() as any,
+  concurrency: PRODUCTION_WORKER_CONCURRENCY,
 });
 
-worker.on("failed", (job, err) => {
-  console.error(`[Worker] Job ${job?.id} [${job?.name}] failed with error:`, err.message);
-});
+function attachWorkerListeners(queueWorker: Worker, lane: "background" | "production") {
+  queueWorker.on("active", (job) => {
+    console.log(`[Worker:${lane}] Job ${job.id} [${job.name}] became active`);
+  });
 
-worker.on("error", (err) => {
-  console.error("[Worker] Global worker error occurred:", err);
-});
+  queueWorker.on("completed", (job, result) => {
+    console.log(`[Worker:${lane}] Job ${job.id} [${job.name}] completed. Result:`, result);
+  });
+
+  queueWorker.on("failed", (job, err) => {
+    console.error(`[Worker:${lane}] Job ${job?.id} [${job?.name}] failed with error:`, err.message);
+  });
+
+  queueWorker.on("error", (err) => {
+    console.error(`[Worker:${lane}] Global worker error occurred:`, err);
+  });
+}
+
+attachWorkerListeners(worker, "background");
+attachWorkerListeners(productionWorker, "production");
 
 // Helper function to simulate background processing delay
 function simulateProgress(ms: number) {
@@ -3079,9 +3095,9 @@ async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
 
 // Graceful Shutdown
 const shutdown = async (signal: string) => {
-  console.log(`[Worker] Received ${signal}. Closing queue worker...`);
-  await worker.close();
-  console.log("[Worker] Queue worker closed. Exiting process.");
+  console.log(`[Worker] Received ${signal}. Closing queue workers...`);
+  await Promise.all([worker.close(), productionWorker.close()]);
+  console.log("[Worker] Queue workers closed. Exiting process.");
   process.exit(0);
 };
 

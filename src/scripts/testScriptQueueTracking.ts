@@ -68,7 +68,7 @@ check("Studio hands the exact newly-created episode id to startDebate", () => {
 
 check("submission is logged before Redis enqueue and includes the queue identity", () => {
   const upsertAt = queue.indexOf("await db.jobLog.upsert");
-  const addAt = queue.indexOf('podcastQueue.add("generate:script"', upsertAt);
+  const addAt = queue.indexOf('productionQueue.add("generate:script"', upsertAt);
   assert(upsertAt !== -1, "script submission must write a JobLog audit row");
   assert(addAt > upsertAt, "submission JobLog must be durable before Redis enqueue");
   assert(/status:\s*"submitted"/.test(queue), "the pre-worker state must say submitted, not running");
@@ -77,9 +77,17 @@ check("submission is logged before Redis enqueue and includes the queue identity
   assert(/submissionLogId:\s*identity\.submissionLogId/.test(queue), "payload must carry the submission audit id");
 });
 
-check("repeat clicks reuse an in-flight job instead of creating backlog duplicates", () => {
-  assert(/podcastQueue\.getJob\(identity\.jobId\)/.test(queue), "queue must look up the deterministic job first");
-  assert(/scriptJobIsInFlight\(state\)\) return existing/.test(queue), "in-flight duplicate must return the existing job");
+check("repeat clicks reuse production jobs and safely adopt legacy queue jobs", () => {
+  assert(/productionQueue\.getJob\(identity\.jobId\)/.test(queue),
+    "the production queue must look up the deterministic job first");
+  assert(/scriptJobIsInFlight\(state\)\) return existing/.test(queue),
+    "an in-flight production duplicate must return the existing job");
+  assert(/podcastQueue\.getJob\(identity\.jobId\)/.test(queue),
+    "the adoption bridge must inspect the legacy background queue");
+  assert(/state === "active"\) return legacy/.test(queue),
+    "an already-active legacy script must finish instead of being duplicated");
+  assert(/await legacy\.remove\(\)/.test(queue),
+    "a non-active legacy script must be removed before production enqueue");
 });
 
 check("the worker's active JobLog preserves queueJobId and targetVersion", () => {

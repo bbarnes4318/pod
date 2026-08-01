@@ -260,6 +260,50 @@ function run() {
     ok("the migration-adoption auditor is read-only");
   } catch (e) { bad("the migration-adoption auditor is read-only", e); }
 
+  try {
+    // Studio production must have a worker lane independent from scheduled
+    // ingestion/research. This is a runtime-availability contract: a provider
+    // timeout on a background brief must never make "Generate script" wait
+    // behind the automatic research backlog.
+    const queueSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "queue", "podcastQueue.ts"), "utf8");
+    const workerSrc = fs.readFileSync(path.join(ROOT, "src", "lib", "queue", "worker.ts"), "utf8");
+
+    assert(/BACKGROUND_QUEUE_NAME\s*=\s*"podcast-generation"/.test(queueSrc),
+      "the background queue must retain the deployed podcast-generation identity");
+    assert(/PRODUCTION_QUEUE_NAME\s*=\s*"podcast-production"/.test(queueSrc),
+      "Studio production must use its own podcast-production queue");
+
+    for (const jobName of [
+      "build:episode",
+      "generate:script",
+      "fact-check:script",
+      "tts:generate-segments",
+      "audio:stitch-final",
+      "audio:regenerate-line",
+      "content:generate-assets",
+      "social-clip:generate",
+    ]) {
+      assert(queueSrc.includes(`productionQueue.add("${jobName}"`),
+        `${jobName} must enqueue on the production lane`);
+    }
+
+    for (const jobName of ["ingest:sports-data", "generate:topics", "generate:research-brief"]) {
+      assert(queueSrc.includes(`podcastQueue.add("${jobName}"`),
+        `${jobName} must remain on the background lane`);
+    }
+
+    assert(/new Worker\(BACKGROUND_QUEUE_NAME,\s*processPodcastJob/.test(workerSrc),
+      "the worker process must consume the background queue");
+    assert(/new Worker\(PRODUCTION_QUEUE_NAME,\s*processPodcastJob/.test(workerSrc),
+      "the worker process must consume the production queue independently");
+    assert(/podcastQueue\.getJob\(identity\.jobId\)/.test(queueSrc),
+      "script retries must adopt or remove legacy jobs from the old queue");
+    assert(/Promise\.all\(\[worker\.close\(\), productionWorker\.close\(\)\]\)/.test(workerSrc),
+      "graceful shutdown must close both worker lanes");
+
+    ok("Studio production is isolated from scheduled research queue starvation");
+  } catch (e) { bad("Studio production is isolated from scheduled research queue starvation", e); }
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) {
     console.error(`\nDEPLOYMENT CONTRACT VIOLATED.\n      ${RULE}`);
