@@ -3,7 +3,7 @@
 // NETWORK-FREE: the one adapter execution test stubs global fetch.
 // Run: npm run test:scene-contracts
 
-import { buildElevenLabsDialoguePayload, synthesizeElevenLabsDialogueScene } from "../lib/providers/tts/elevenlabsDialogue";
+import { buildElevenLabsDialoguePayload, synthesizeElevenLabsDialogueScene, timingMapFromVoiceSegments } from "../lib/providers/tts/elevenlabsDialogue";
 import { buildFishScenePayload } from "../lib/providers/tts/fishDialogue";
 import { extractFishCues } from "../lib/providers/tts/fishFormat";
 import { getTtsProviderCapabilities, providerSupportsSceneRendering } from "../lib/providers/tts/capabilities";
@@ -80,6 +80,18 @@ async function main() {
     assert(pt.url.includes("/text-to-dialogue/with-timestamps"), "timestamps variant not used");
   });
 
+  check("Eleven provider voice_segments map directly to scripted turns", () => {
+    const input = sceneInput({ wantTimestamps: true });
+    const map = timingMapFromVoiceSegments(input, [
+      { voice_id: "elevenA", start_time_seconds: 0.1, end_time_seconds: 0.9, dialogue_input_index: 0 },
+      { voice_id: "elevenB", start_time_seconds: 1.0, end_time_seconds: 1.8, dialogue_input_index: 1 },
+      { voice_id: "elevenA", start_time_seconds: 1.9, end_time_seconds: 2.7, dialogue_input_index: 2 },
+    ]);
+    assert(!!map && map.utterances.length === 3, "expected all provider-labelled turns");
+    assert(map!.utterances[1].speakerHostId === "hB", "speaker label was not preserved");
+    assert(map!.utterances[2].startMs === 1900, "provider timing was not converted");
+  });
+
   check("Eleven scene mode does not send unsupported continuity/SSML fields", () => {
     const p = buildElevenLabsDialoguePayload(sceneInput());
     const json = JSON.stringify(p.body);
@@ -136,7 +148,7 @@ async function main() {
     const input = sceneInput();
     input.utterances = input.utterances.map((u) => ({ ...u, voiceId: u.speakerHostId === "hA" ? FISH_A : FISH_B }));
     const p = buildFishScenePayload(input);
-    assert(p.model === "s2.1-pro-free", `scene model default must be s2.1-pro-free (free tier; s2-pro 402s without API credit) (got ${p.model})`);
+    assert(p.model === "s2.1-pro", `scene model default must be the current production S2.1 model (got ${p.model})`);
     assert(Array.isArray(p.body.reference_id) && p.body.reference_id.length === 2, "reference_id must be a 2-entry array");
     assert(p.body.reference_id[0] === FISH_A && p.body.reference_id[1] === FISH_B, "reference order must match speaker indexes");
     assert(p.body.text.startsWith("<|speaker:0|>"), "text must open with speaker 0");
@@ -199,7 +211,7 @@ async function main() {
     }
     const el = getTtsProviderCapabilities("elevenlabs");
     assert(el.recommendedMaxCharacters === 2000 && el.maxSpeakers === 10, "elevenlabs documented limits wrong");
-    assert(el.supportsSeed && el.supportsWordTimestamps && !el.supportsContinuation, "elevenlabs capability flags wrong");
+    assert(el.supportsSeed && el.supportsWordTimestamps && el.supportsSpeakerTimestamps && !el.supportsContinuation, "elevenlabs capability flags wrong");
     const fish = getTtsProviderCapabilities("fish");
     assert(!fish.supportsSeed && !fish.supportsWordTimestamps, "fish capability flags wrong");
   });

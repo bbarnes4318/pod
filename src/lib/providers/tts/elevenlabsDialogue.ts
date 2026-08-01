@@ -22,6 +22,10 @@ import {
   SceneUtteranceTiming,
   categorizeHttpStatus,
 } from "./sceneTypes";
+import {
+  analyzeSpokenPerformanceBuffer,
+  type SpokenPerformanceQaReport,
+} from "../../audio/spokenPerformanceQa";
 
 const DIALOGUE_URL = "https://api.elevenlabs.io/v1/text-to-dialogue";
 
@@ -49,7 +53,6 @@ export function buildElevenLabsDialoguePayload(
     process.env.ELEVENLABS_MODEL ||
     "eleven_v3";
   if (!modelId.startsWith("eleven_v3")) {
-    // Text to Dialogue is a v3 capability; refuse to guess about other models.
     throw new SceneGenerationError(
       "unsupported_model",
       `ElevenLabs dialogue scenes require an eleven_v3 model (got '${modelId}'). Set ELEVENLABS_DIALOGUE_MODEL_ID.`
@@ -69,12 +72,8 @@ export function buildElevenLabsDialoguePayload(
     }
   }
 
-  // Approved text only. Existing [tags] pass through for v3; nothing injected.
   const inputs = input.utterances.map((u) => ({ text: u.spokenText, voice_id: u.voiceId }));
 
-  // Optional stability from the host performance profile — ONE scene-level
-  // value (the endpoint has a single settings object, not per-turn settings).
-  // We take the median of the cast's configured stabilities when any exist.
   const stabilities = input.cast
     .map((c) => c.providerOverrides?.stability)
     .filter((s): s is number => typeof s === "number" && s >= 0 && s <= 1)
@@ -97,18 +96,48 @@ export function buildElevenLabsDialoguePayload(
   };
 }
 
-interface AlignmentPayload {
+export interface AlignmentPayload {
   characters?: string[];
   character_start_times_seconds?: number[];
   character_end_times_seconds?: number[];
 }
+export interface VoiceSegmentPayload {
+  voice_id?: string;
+  start_time_seconds?: number;
+  end_time_seconds?: number;
+  dialogue_input_index?: number;
+}
 
-/**
- * Map the dialogue alignment (characters of the WHOLE scene in order) back to
- * per-utterance spans. Deterministic sequential matcher: we sent the turns,
- * so their concatenation must appear in order in the alignment stream. Fails
- * to null (→ timing_unavailable) rather than fabricating timing.
- */
+export function timingMapFromVoiceSegments(
+  input: DialogueSceneInput,
+  segments: VoiceSegmentPayload[] | null | undefined
+): SceneTimingMap | null {
+  if (!Array.isArray(segments) || segments.length === 0) return null;
+  const byIndex = new Map<number, VoiceSegmentPayload>();
+  for (const segment of segments) {
+    const index = Number(segment.dialogue_input_index);
+    if (!Number.isInteger(index) || index < 0 || index >= input.utterances.length) continue;
+    if (!Number.isFinite(Number(segment.start_time_seconds)) || !Number.isFinite(Number(segment.end_time_seconds))) continue;
+    if (Number(segment.end_time_seconds) <= Number(segment.start_time_seconds)) continue;
+    byIndex.set(index, segment);
+  }
+  if (byIndex.size !== input.utterances.length) return null;
+  const utterances: SceneUtteranceTiming[] = [];
+  for (let index = 0; index < input.utterances.length; index++) {
+    const source = input.utterances[index];
+    const segment = byIndex.get(index)!;
+    if (segment.voice_id && segment.voice_id !== source.voiceId) return null;
+    utterances.push({
+      lineIndex: source.lineIndex,
+      sceneId: input.sceneId,
+      startMs: Math.round(Number(segment.start_time_seconds) * 1000),
+      endMs: Math.round(Number(segment.end_time_seconds) * 1000),
+      speakerHostId: source.speakerHostId,
+    });
+  }
+  return { status: "provider_timestamps", utterances };
+}
+
 export function timingMapFromAlignment(
   input: DialogueSceneInput,
   alignment: AlignmentPayload | null | undefined
@@ -117,105 +146,176 @@ export function timingMapFromAlignment(
   const starts = alignment?.character_start_times_seconds;
   const ends = alignment?.character_end_times_seconds;
   if (!Array.isArray(chars) || !Array.isArray(starts) || !Array.isArray(ends)) return null;
-  if (chars.length === 0 || chars.length !== starts.length || chars.length !== ends.length) return null;
-
+  if (!chars.length || chars.length !== starts.length || chars.length !== ends.length) return null;
   const utterances: SceneUtteranceTiming[] = [];
   let cursor = 0;
-  const isSkippable = (c: string) => /\s/.test(c);
+  const skippable = (c: string) => /\s/.test(c);
   for (const u of input.utterances) {
     const target = u.spokenText;
     let ti = 0;
     let startSec: number | null = null;
     let endSec: number | null = null;
     while (ti < target.length && cursor < chars.length) {
-      const tc = target[ti];
-      const ac = chars[cursor];
+      const tc = target[ti], ac = chars[cursor];
       if (tc === ac) {
-        if (startSec === null && !isSkippable(tc)) startSec = starts[cursor];
-        if (!isSkippable(tc)) endSec = ends[cursor];
-        ti++;
-        cursor++;
-      } else if (isSkippable(tc)) {
-        ti++; // our whitespace the engine collapsed
-      } else if (isSkippable(ac)) {
-        cursor++; // engine-inserted spacing
-      } else {
-        // Real divergence (normalization) — advance the alignment stream; if
-        // we drift too far the whole map is abandoned below.
-        cursor++;
-      }
+        if (startSec === null && !skippable(tc)) startSec = starts[cursor];
+        if (!skippable(tc)) endSec = ends[cursor];
+        ti++; cursor++;
+      } else if (skippable(tc)) ti++;
+      else cursor++;
     }
-    if (ti < target.length * 0.8 || startSec === null || endSec === null) {
-      return null; // could not confidently place this utterance — no fake timing
-    }
+    if (ti < target.length * 0.8 || startSec === null || endSec === null) return null;
     utterances.push({
-      lineIndex: u.lineIndex,
-      sceneId: input.sceneId,
-      startMs: Math.round(startSec * 1000),
-      endMs: Math.round(endSec * 1000),
+      lineIndex: u.lineIndex, sceneId: input.sceneId,
+      startMs: Math.round(startSec * 1000), endMs: Math.round(endSec * 1000),
       speakerHostId: u.speakerHostId,
     });
   }
   return { status: "provider_timestamps", utterances };
 }
 
-/** Execute the scene request. Retries once on 429/5xx. */
+interface ElevenCandidate {
+  index: number;
+  audioBuffer: Buffer;
+  contentType: string;
+  timingMap?: SceneTimingMap;
+  seed?: number;
+  requestId?: string;
+  qa?: SpokenPerformanceQaReport;
+}
+function envInt(name: string, fallback: number, min: number, max: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, Math.floor(parsed))) : fallback;
+}
+function performanceQaEnabled(): boolean {
+  if (process.env.ELEVENLABS_PERFORMANCE_QA_ENABLED === "false") return false;
+  if (process.env.ELEVENLABS_PERFORMANCE_QA_ENABLED === "true") return true;
+  return process.env.NODE_ENV === "production";
+}
+function strictPerformanceQa(): boolean {
+  if (process.env.TTS_PERFORMANCE_QA_STRICT === "false") return false;
+  if (process.env.TTS_PERFORMANCE_QA_STRICT === "true") return true;
+  return process.env.NODE_ENV === "production";
+}
+function candidateCount(input: DialogueSceneInput): number {
+  if (!performanceQaEnabled()) return 1;
+  const fallback = input.sceneType === "cold_open" || input.sceneType === "argument_escalation" ? 3 : 2;
+  return envInt("ELEVENLABS_DIALOGUE_CANDIDATES", fallback, 1, 4);
+}
+function payloadForCandidate(input: DialogueSceneInput, index: number): ElevenLabsDialoguePayload {
+  const payload = buildElevenLabsDialoguePayload(input);
+  if (typeof payload.body.seed === "number") {
+    payload.body.seed = (payload.body.seed + index * 2654435761) >>> 0;
+  }
+  return payload;
+}
+async function requestCandidate(
+  apiKey: string, input: DialogueSceneInput, index: number, runQa: boolean
+): Promise<ElevenCandidate> {
+  const payload = payloadForCandidate(input, index);
+  const doFetch = () => fetch(payload.url, {
+    method: "POST",
+    headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(payload.body),
+  });
+  let response = await doFetch();
+  if (response.status === 429 || response.status >= 500) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    response = await doFetch();
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new SceneGenerationError(
+      categorizeHttpStatus(response.status),
+      `ElevenLabs dialogue candidate ${index} error ${response.status}: ${text.slice(0, 300)}`
+    );
+  }
+  let audioBuffer: Buffer;
+  let timingMap: SceneTimingMap | undefined;
+  let contentType = "audio/mpeg";
+  if (input.wantTimestamps) {
+    const json = await response.json() as {
+      audio_base64?: string;
+      alignment?: AlignmentPayload;
+      normalized_alignment?: AlignmentPayload;
+      voice_segments?: VoiceSegmentPayload[];
+    };
+    if (!json.audio_base64) throw new SceneGenerationError("empty_audio", `ElevenLabs candidate ${index} had no audio.`);
+    audioBuffer = Buffer.from(json.audio_base64, "base64");
+    timingMap = timingMapFromVoiceSegments(input, json.voice_segments)
+      ?? timingMapFromAlignment(input, json.alignment ?? json.normalized_alignment)
+      ?? undefined;
+  } else {
+    audioBuffer = Buffer.from(await response.arrayBuffer());
+    contentType = response.headers.get("content-type") || contentType;
+  }
+  if (!audioBuffer.length) throw new SceneGenerationError("empty_audio", `ElevenLabs candidate ${index} returned empty audio.`);
+  const qa = runQa ? await analyzeSpokenPerformanceBuffer(audioBuffer, {
+    expectedTurnCount: input.utterances.length,
+    sceneType: input.sceneType,
+    format: input.format === "wav" ? "wav" : "mp3",
+    strict: strictPerformanceQa(),
+  }) : undefined;
+  return {
+    index, audioBuffer, contentType, timingMap, seed: payload.body.seed,
+    requestId: response.headers.get("request-id") || undefined, qa,
+  };
+}
+
 export async function synthesizeElevenLabsDialogueScene(
   input: DialogueSceneInput
 ): Promise<DialogueSceneResult> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new SceneGenerationError("authentication", "ELEVENLABS_API_KEY is not configured.");
-
-  const payload = buildElevenLabsDialoguePayload(input);
-
-  const doFetch = () =>
-    fetch(payload.url, {
-      method: "POST",
-      headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify(payload.body),
-    });
-
-  let response = await doFetch();
-  if (response.status === 429 || response.status >= 500) {
-    await new Promise((r) => setTimeout(r, 2000));
-    response = await doFetch();
+  const runQa = performanceQaEnabled();
+  const requested = candidateCount(input);
+  const candidates: ElevenCandidate[] = [];
+  const errors: string[] = [];
+  for (let index = 0; index < requested; index++) {
+    try {
+      const candidate = await requestCandidate(apiKey, input, index, runQa);
+      candidates.push(candidate);
+      if (candidate.qa) {
+        console.log(`[ElevenPerformance] scene=${input.sceneIndex} candidate=${index} score=${candidate.qa.score}/100 pass=${candidate.qa.passed}`);
+      }
+    } catch (error) {
+      errors.push(`candidate ${index}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
+  const selected = runQa
+    ? candidates.filter((c) => c.qa?.passed).sort((a, b) => (b.qa?.score ?? 0) - (a.qa?.score ?? 0))[0]
+    : candidates[0];
+  if (!selected) {
+    const reports = candidates.map((c) =>
+      `candidate ${c.index} ${c.qa?.score ?? 0}/100: ${c.qa?.failures?.join("; ") || "failed performance floor"}`
+    );
     throw new SceneGenerationError(
-      categorizeHttpStatus(response.status),
-      `ElevenLabs dialogue API error ${response.status}: ${errText.slice(0, 300)}`
+      runQa ? "quality_gate_failed" : "provider_unavailable",
+      `ElevenLabs produced no publishable performance for scene ${input.sceneIndex}. ${[...reports, ...errors].join(" | ").slice(0, 1200)}`
     );
   }
-
-  let audioBuffer: Buffer;
-  let timingMap: SceneTimingMap | undefined;
-  let contentType = "audio/mpeg";
-  if (input.wantTimestamps) {
-    const json = (await response.json()) as { audio_base64?: string; alignment?: AlignmentPayload; normalized_alignment?: AlignmentPayload };
-    if (!json.audio_base64) throw new SceneGenerationError("empty_audio", "ElevenLabs dialogue timestamps response had no audio.");
-    audioBuffer = Buffer.from(json.audio_base64, "base64");
-    timingMap = timingMapFromAlignment(input, json.alignment ?? json.normalized_alignment) ?? undefined;
-  } else {
-    audioBuffer = Buffer.from(await response.arrayBuffer());
-    contentType = response.headers.get("content-type") || contentType;
-  }
-  if (audioBuffer.length === 0) {
-    throw new SceneGenerationError("empty_audio", "ElevenLabs dialogue API returned empty audio.");
-  }
-
+  const payload = buildElevenLabsDialoguePayload(input);
   return {
-    audioBuffer,
-    contentType,
+    audioBuffer: selected.audioBuffer,
+    contentType: selected.contentType,
     renderUnit: "multi_speaker_scene",
     model: payload.modelId,
-    endpoint: payload.endpoint,
-    seed: payload.body.seed,
-    timingMap,
+    endpoint: `${payload.endpoint}; best of ${requested}`,
+    seed: selected.seed,
+    timingMap: selected.timingMap,
     providerMetadata: {
-      requestId: response.headers.get("request-id") || undefined,
+      requestId: selected.requestId,
       voiceOrder: [...new Set(input.utterances.map((u) => u.voiceId))],
-      characterCount: input.utterances.reduce((a, u) => a + u.spokenText.length, 0),
+      characterCount: input.utterances.reduce((sum, u) => sum + u.spokenText.length, 0),
+      selectedCandidate: selected.index,
+      candidatesRequested: requested,
+      candidatesCompleted: candidates.length,
+      candidateScores: candidates.map((c) => ({
+        index: c.index, seed: c.seed, score: c.qa?.score, passed: c.qa?.passed,
+        failures: c.qa?.failures, warnings: c.qa?.warnings, metrics: c.qa?.metrics,
+      })),
+      selectedPerformanceQa: selected.qa,
+      timingSource: selected.timingMap ? "provider_voice_segments_or_alignment" : "unavailable",
     },
   };
 }

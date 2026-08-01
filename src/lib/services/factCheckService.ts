@@ -19,6 +19,7 @@ import {
 import { verifyLineAgainstEvidence } from "./factNumbers";
 import { collectReviewerEvidence, toEvidencePanel, evidenceFingerprint } from "./evidenceContext";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
+import { editorialGateBlocksDownstream } from "./scriptEditorialGate";
 
 // The SHARED list — this was three identical copies, which is precisely how
 // `topicSource` would have been added to the pipeline and silently stripped
@@ -104,6 +105,15 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
 
   if (!script.plainText || !script.plainText.trim()) {
     throw new Error("Script plainText transcript is empty.");
+  }
+
+  if (script.status !== "approved" && editorialGateBlocksDownstream(script.content)) {
+    const gate = (script.content as any).editorialGate;
+    throw new Error(
+      `Script is on editorial hold and cannot advance automatically: ${
+        Array.isArray(gate?.reasons) ? gate.reasons.join(" | ") : "listener-facing quality floor failed"
+      }. Approve it manually after editing, or set SCRIPT_EDITORIAL_HOLD_OVERRIDE=true for an audited emergency bypass.`
+    );
   }
 
   if (script.episode.topics.length === 0) {

@@ -325,7 +325,7 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
   const sceneModel = provider === "elevenlabs"
     ? (process.env.ELEVENLABS_DIALOGUE_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL || "eleven_v3")
     : provider === "fish"
-      ? (process.env.FISH_SCENE_MODEL || "s2.1-pro-free").trim() // free-tier default — must match fishDialogue.ts (s2-pro 402s without API credit)
+      ? (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro").trim() // official production default; override only after a live contract test
       : model;
   const wantTimestamps = provider === "elevenlabs" && process.env.ELEVENLABS_DIALOGUE_TIMESTAMPS !== "false";
 
