@@ -1,0 +1,62 @@
+name: Private Live Provider Canary
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_ENV: production
+      LLM_ROUTING_PROFILE: custom
+      SCRIPT_MOVEMENT_LLM_PROVIDER: ${{ secrets.CANARY_LLM_PROVIDER }}
+      SCRIPT_MOVEMENT_LLM_MODEL: ${{ secrets.CANARY_LLM_MODEL }}
+      QUALITY_JUDGE_LLM_PROVIDER: ${{ secrets.CANARY_JUDGE_PROVIDER }}
+      QUALITY_JUDGE_LLM_MODEL: ${{ secrets.CANARY_JUDGE_MODEL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
+      FISH_SCENE_MODEL: ${{ vars.FISH_SCENE_MODEL }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      CANARY_FISH_VOICE_A: ${{ secrets.CANARY_FISH_VOICE_A }}
+      CANARY_FISH_VOICE_B: ${{ secrets.CANARY_FISH_VOICE_B }}
+      CANARY_ELEVENLABS_VOICE_A: ${{ secrets.CANARY_ELEVENLABS_VOICE_A }}
+      CANARY_ELEVENLABS_VOICE_B: ${{ secrets.CANARY_ELEVENLABS_VOICE_B }}
+      TTS_PERFORMANCE_QA_STRICT: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - uses: actions/cache/restore@v4
+        with:
+          path: artifacts/live-provider-canary-baseline
+          key: live-canary-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: live-canary-${{ runner.os }}-
+      - name: Run real private canary
+        run: npm run canary:live-providers
+      - name: Stage next baseline
+        run: |
+          mkdir -p artifacts/live-provider-canary-baseline
+          cp artifacts/live-provider-canary/report.json artifacts/live-provider-canary-baseline/report.json
+      - uses: actions/cache/save@v4
+        if: success()
+        with:
+          path: artifacts/live-provider-canary-baseline
+          key: live-canary-${{ runner.os }}-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: private-live-provider-canary-${{ github.run_number }}
+          path: artifacts/live-provider-canary
+          retention-days: 14
+          if-no-files-found: error

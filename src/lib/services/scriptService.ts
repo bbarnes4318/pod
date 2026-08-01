@@ -116,6 +116,7 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   const ep = await db.episode.findUnique({
     where: { id: input.episodeId },
     include: {
+      podcast: { include: { editorialConfig: true } },
       topics: {
         include: {
           topic: {
@@ -517,6 +518,7 @@ Delivery field meanings:
       temperature,
       maxTokens,
       speakerNames: speakers.hostNames,
+      learningPolicy: ep.podcast?.editorialConfig?.learningPolicy ?? undefined,
       outlineLlm,
       challengerLlm: challenger?.provider,
       challengerLabel: challenger?.label,
@@ -958,6 +960,12 @@ Delivery field meanings:
       repetitionRemovedCount: dedup.removedCount,
       repetitionRatio: Number(dedup.report.repetitionRatio.toFixed(4)),
       requiresHumanReview: true,
+    },
+    creativePipeline: {
+      version: 1,
+      privateAgendas: Array.isArray(llmResult.privateAgendas) ? llmResult.privateAgendas : [],
+      characterWriterPasses: process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false",
+      coldOpenTournament: llmResult.coldOpenTournament ?? null,
     },
   };
 

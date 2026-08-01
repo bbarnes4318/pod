@@ -69,6 +69,33 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [open, setOpen] = useState(true);
+  const retentionSentRef = useRef<Set<string>>(new Set());
+  const sessionIdRef = useRef<string | null>(null);
+
+  const listenerSessionId = useCallback(() => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    try {
+      const existing = sessionStorage.getItem("tm.listenerSession");
+      const id = existing || crypto.randomUUID();
+      sessionStorage.setItem("tm.listenerSession", id);
+      sessionIdRef.current = id;
+      return id;
+    } catch {
+      sessionIdRef.current = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      return sessionIdRef.current;
+    }
+  }, []);
+
+  const sendRetention = useCallback((episodeId: string, milestone: string, positionSeconds: number, durationSeconds: number) => {
+    const key = `${episodeId}:${milestone}`;
+    if (retentionSentRef.current.has(key)) return;
+    retentionSentRef.current.add(key);
+    try {
+      const body = JSON.stringify({ episodeId, sessionId: listenerSessionId(), milestone, positionSeconds, durationSeconds });
+      if (navigator.sendBeacon) navigator.sendBeacon("/api/analytics/retention", new Blob([body], { type: "application/json" }));
+      else void fetch("/api/analytics/retention", { method: "POST", body, headers: { "Content-Type": "application/json" }, keepalive: true });
+    } catch { /* measurement must never break playback */ }
+  }, [listenerSessionId]);
 
   // Session-persisted open/closed state. Read in an effect (not lazy init)
   // so the SSR and first client render agree.
@@ -103,11 +130,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       else a.pause();
       return;
     }
+    if (track?.id && current >= 60) sendRetention(track.id, "next_episode", current, duration);
     setTrack(t);
     a.src = t.audioUrl;
     a.currentTime = 0;
     void a.play();
-  }, [track, setOpenPersist]);
+  }, [track, current, duration, sendRetention, setOpenPersist]);
 
   const toggle = useCallback(() => {
     const a = audioRef.current;
@@ -192,10 +220,22 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       <audio
         ref={audioRef}
         preload="metadata"
-        onPlay={() => { setPlaying(true); sendPlayBeacon(); }}
+        onPlay={() => {
+          setPlaying(true);
+          sendPlayBeacon();
+          if (track) sendRetention(track.id, "start", audioRef.current?.currentTime || 0, audioRef.current?.duration || 0);
+        }}
         onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+        onEnded={(e) => {
+          setPlaying(false);
+          if (track) sendRetention(track.id, "complete", e.currentTarget.duration || e.currentTarget.currentTime, e.currentTarget.duration || 0);
+        }}
+        onTimeUpdate={(e) => {
+          const at = e.currentTarget.currentTime;
+          const total = e.currentTarget.duration || 0;
+          setCurrent(at);
+          if (track) for (const seconds of [15, 60, 180]) if (at >= seconds) sendRetention(track.id, `${seconds}s`, at, total);
+        }}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
       />
 

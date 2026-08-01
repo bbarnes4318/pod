@@ -33,6 +33,7 @@ import {
 import { nextProductionJobFor } from "@/lib/createFlow";
 import { classifyTopicFrame } from "@/lib/services/bettingFrame";
 import { bettingQuotaState, admitsBetting, poolBettingPercent, BETTING_QUOTA, BETTING_WINDOW_DAYS } from "@/lib/services/bettingQuota";
+import { compositeTopicScore, scoreEditorialStory } from "@/lib/services/editorialStoryRanker";
 import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
@@ -1274,6 +1275,16 @@ Schema for each topic candidate in the array:
   "starPowerScore": 1-100,
   "bettingRelevanceScore": 1-100,
   "recencyScore": 1-100,
+  "editorialScores": {
+    "unresolvedUncertainty": 1-100,
+    "humanConsequence": 1-100,
+    "opposingInterpretations": 1-100,
+    "novelty": 1-100,
+    "revealPotential": 1-100,
+    "emotionalContradiction": 1-100,
+    "evidenceRichness": 1-100,
+    "positionChangePotential": 1-100
+  },
   "evidenceIds": [
     { "type": "game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat", "id": "matching-evidence-uuid-or-id" }
   ]
@@ -1483,7 +1494,9 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       const bettingRelevance = Math.max(1, Math.min(100, Number(topic.bettingRelevanceScore) || 50));
       const recency = Math.max(1, Math.min(100, Number(topic.recencyScore) || 50));
 
-      // Server-side debateScore formula.
+      // Server-side editorial ranking. The model supplies judgments, never the
+      // total or weights. This ranks stories with uncertainty, human cost,
+      // credible rival readings and reveal potential above loud headlines.
       //
       // bettingRelevance used to carry 0.20 here — the same weight as star power
       // and recency, second only to controversy. The Board ranks by debateScore,
@@ -1496,11 +1509,22 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       // that actually track "people are arguing about this right now". The field
       // is still stored and still shown, because a betting angle is real
       // information about a story; it just no longer decides the ranking.
-      const debateScore =
-        controversy * 0.40 +
-        starPower * 0.20 +
-        recency * 0.30 +
-        evidenceStrengthScore * 0.10;
+      const editorial = scoreEditorialStory({
+        ...(topic.editorialScores || {}),
+        evidenceRichness: Math.max(
+          Number(topic.editorialScores?.evidenceRichness) || 0,
+          evidenceStrengthScore
+        ),
+      });
+      const debateScore = compositeTopicScore({ editorial, recency, starPower, controversy });
+
+      if (editorial.holdReasons.length > 0 && editorial.total < 50) {
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(
+          `Topic '${topic.title}' rejected editorially (${editorial.total.toFixed(1)}): ${editorial.holdReasons.join(" ")}`
+        );
+        continue;
+      }
 
       // Honor the operator's "Minimum Debate Score" (previously accepted from
       // the form but never applied): drop candidates weaker than the requested
@@ -1567,6 +1591,8 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           bettingRelevanceScore: bettingRelevance,
           recencyScore: recency,
           debateScore,
+          editorialScore: editorial.total,
+          editorialScores: editorial as unknown as Prisma.InputJsonValue,
           evidenceIds: validEvidence as any,
           status: "pending",
           frame: frame.frame,

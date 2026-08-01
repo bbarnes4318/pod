@@ -10,7 +10,18 @@ This is not a toy prompt-to-audio application. It already contains evidence snap
 
 Its biggest weakness is more dangerous than missing features: **several of the strongest quality systems measure defects without controlling the production outcome.** A technically valid episode can pass even when the two hosts sound like one model, the opening has no retention power, or the selected voice performance is merely the first successful render.
 
-This branch makes the independent script judge produce a persisted editorial decision, allows a true hold to stop downstream production, corrects the Fish production model contract, and auditions ElevenLabs dialogue takes before selecting one.
+The first implementation branch made the independent script judge produce a persisted editorial decision, allowed a true hold to stop downstream production, and auditioned ElevenLabs dialogue takes before selecting one.
+
+## Implementation update — August 1, 2026
+
+- Fish scene generation preserves `s2.1-pro-free` as the default. The production upgrades are model-independent; `FISH_SCENE_MODEL_TIER=pro` or `FISH_SCENE_MODEL` is an explicit operator promotion.
+- Topic candidates now receive server-weighted eight-axis editorial scores, with weak consequential/evidence axes producing explainable holds.
+- The first 45 seconds now have a dedicated three-archetype text room and independent tournament. The winning text receives multi-take performance selection; voicing all three distinct texts before final selection remains a controlled next step because it changes the approved-script boundary.
+- Hosts receive separate private agendas and each character receives a separate final writer pass after structural repair.
+- Rendered scenes can run diarized transcript QA for word accuracy, meaning-bearing names/numbers, speaker attribution, and interruption timing.
+- A repeatable eight-scene, multi-minute blind voice-audition package is available.
+- A scheduled private live-provider canary exercises a real writer, independent judge, Fish, ElevenLabs, raw performance QA, and baseline drift checks without publishing.
+- Playback milestones feed a privacy-safe, bounded show policy. Learning waits for minimum sample sizes and may adjust only soft cold-open priors; it cannot rewrite evidence rules or host identity.
 
 ## P0 findings addressed
 
@@ -22,9 +33,9 @@ Every generated script stores its deterministic score, independent judge verdict
 
 Production renders several stochastic Text-to-Dialogue performances, analyzes raw dynamics and pacing, and selects the strongest passing candidate. Cold opens and escalation scenes receive the larger audition budget. Provider-native `voice_segments` timing is used when available.
 
-### Fish uses the current production S2.1 model contract
+### Fish keeps the free S2.1 contract while applying the production upgrades
 
-Scene rendering now defaults to `s2.1-pro`, while remaining overridable after a live provider test.
+Scene rendering defaults to `s2.1-pro-free`. Direction, sparse emotion cues, multi-take auditions, acoustic QA, and transcript QA do not require the paid model. Pro remains available only through an explicit tier/model override justified by blinded or canary evidence.
 
 ### CI asserts the new hold behavior
 

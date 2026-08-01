@@ -239,8 +239,8 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
   checkRequired("TTS_PROVIDER");
   if (ttsProvider === "fish") {
     checkRequired("FISH_API_KEY", true);
-    // Both model vars have working code defaults (FISH_MODEL -> s2.1-pro-free
-    // for single lines, FISH_SCENE_MODEL -> s2-pro for multi-speaker scenes),
+    // Both model vars have working code defaults (FISH_MODEL and scene
+    // generation both default to s2.1-pro-free; Pro is an explicit opt-in),
     // so leaving them unset is legitimate — warn, never fail.
     checkOptional("FISH_MODEL");
     checkOptional("FISH_SCENE_MODEL");

@@ -154,9 +154,11 @@ export function analyzeSceneAudioRows(opts: {
   push({
     name: "Transcript fidelity (names/numbers preserved)",
     kind: "transcript_fidelity",
-    status: opts.transcriptQaEnabled ? "warning" : "not_run",
-    value: opts.transcriptQaEnabled ? "configured but no verifier wired in this build" : "not_run (TTS_TRANSCRIPT_QA_ENABLED=false)",
-    detail: "Requires a configured external transcription service; reported as not_run when absent — NEVER as passed.",
+    status: "not_run",
+    value: opts.transcriptQaEnabled ? "deferred to downloaded-audio stitch gate" : "not_run (TTS_TRANSCRIPT_QA_ENABLED=false)",
+    detail: opts.transcriptQaEnabled
+      ? "The stitcher runs diarized transcript, critical-token, speaker-attribution and interruption QA after it downloads the real selected audio."
+      : "Requires a configured external transcription service; reported as not_run when absent — NEVER as passed.",
   });
 
   return { passed: checks.every((c) => c.status !== "fail"), checks };

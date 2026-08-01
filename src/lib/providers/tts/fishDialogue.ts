@@ -92,7 +92,12 @@ function productionStrict(): boolean {
 }
 
 export function resolveFishSceneModel(): string {
-  const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro").trim();
+  // Quality behavior (direction cues, multi-take auditions, acoustic and
+  // semantic QA) is model-independent. Keep Fish's free development model as
+  // the cost-safe default while allowing an explicit production promotion.
+  const tier = (process.env.FISH_SCENE_MODEL_TIER || "free").trim().toLowerCase();
+  const tierDefault = tier === "pro" ? "s2.1-pro" : "s2.1-pro-free";
+  const model = (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || tierDefault).trim();
   if (!/^s2(?:[.-]|$)/i.test(model)) {
     throw new SceneGenerationError(
       "unsupported_model",

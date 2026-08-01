@@ -324,6 +324,10 @@ model TopicCandidate {
   bettingRelevanceScore Float
   recencyScore          Float
   debateScore           Float
+  /// The eight-axis editorial judgment that produced editorialScore. Stored so
+  /// ranking changes are explainable and can be learned from retention later.
+  editorialScores       Json?
+  editorialScore        Float                @default(0)
   evidenceIds           Json // Structured logs linking back to Games/Stats/News
   // EDITORIAL READINESS ONLY — never a global usage flag. Usage is derived from
   // EpisodeTopic (a topic can be consumed by many users/podcasts/episodes).
@@ -349,6 +353,7 @@ model TopicCandidate {
   @@index([leagueId])
   @@index([status])
   @@index([createdAt])
+  @@index([editorialScore])
   // The quota query: betting-framed topics created inside a rolling window.
   @@index([frame, createdAt])
 }
@@ -491,6 +496,12 @@ model PodcastEditorialConfig {
   minDebateScore Int? // real TopicCandidate.debateScore floor; null = pipeline default
   scriptStyle    String? // Advanced Producer scriptStyle (real)
   maxWords       Int? // Advanced Producer maxWords (real)
+  // Closed-loop, bounded show-specific learning. Stores measured retention and
+  // soft cold-open archetype priors; never rewrites host identity or evidence
+  // rules, and every update is versioned/auditable.
+  learningPolicy        Json?
+  learningPolicyVersion Int      @default(1)
+  learningPolicyUpdatedAt DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }
@@ -708,6 +719,7 @@ model Episode {
   dialogueScenes              DialogueSceneAudio[]
 
   playEvents PlayEvent[]
+  listenerSignals ListenerSignal[]
 
   @@index([status])
   @@index([publishedAt])
@@ -1123,6 +1135,28 @@ model PlayEvent {
   @@unique([episodeId, clientHash, dayBucket, kind])
   @@index([ownerId, at])
   @@index([episodeId, kind])
+}
+
+// Privacy-safe playback milestones and blinded preference signals. No raw IP,
+// account id, cookie value or free-form listener text is stored.
+model ListenerSignal {
+  id                String   @id @default(uuid())
+  episodeId          String
+  ownerId            String?
+  sessionHash        String
+  milestone          String // start | 15s | 60s | 180s | complete | next_episode | cold_open_vote | sounds_human | host_distinguishable
+  positionSeconds    Int?
+  durationSeconds    Int?
+  value              Float?
+  coldOpenVariant    String?
+  metadata           Json?
+  at                 DateTime @default(now())
+  episode             Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, sessionHash, milestone])
+  @@index([episodeId, milestone])
+  @@index([ownerId, at])
+  @@index([coldOpenVariant, milestone])
 }
 
 // Auto social clip — a short vertical (9:16) captioned promo cut of an episode's
