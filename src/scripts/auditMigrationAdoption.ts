@@ -181,6 +181,15 @@ async function main() {
     } else if (unknown.length > 0) {
       verdict = "MANUAL DATABASE REVIEW REQUIRED";
       blockers.push(`The database records migration(s) this repository does not contain (${unknown.join(", ")}). It may belong to a different or newer deployment.`);
+    } else if (!emptyDb && failedInv.length > 0) {
+      verdict = "ADOPTION BLOCKED";
+      blockers.push(
+        `${failedInv.length} data invariant(s) FAIL: ${failedInv.map((i) => i.name).join(", ")}. ` +
+        `Migration history alone does not make an invalid production row safe.`
+      );
+    } else if (!emptyDb && inconclusive.length > 0) {
+      verdict = "ADOPTION BLOCKED";
+      blockers.push(`${inconclusive.length} invariant(s) could not be evaluated (${inconclusive.map((i) => i.name).join(", ")}).`);
     } else if (emptyDb) {
       verdict = "READY FOR MIGRATE DEPLOY";
     } else if (historyExists && missing.length === 0 && !drifted) {
