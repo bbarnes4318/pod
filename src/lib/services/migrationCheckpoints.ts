@@ -191,6 +191,11 @@ async function tableExists(db: InvariantDb, table: string): Promise<boolean> {
   return n > 0;
 }
 
+async function columnExists(db: InvariantDb, table: string, column: string): Promise<boolean> {
+  const n = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}' AND column_name='${column}'`);
+  return n > 0;
+}
+
 /**
  * Run every data invariant. READ ONLY — nothing here writes, and it must stay
  * that way: this runs against databases whose state we do not yet trust.
@@ -331,25 +336,35 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
 
   // --- 20260727010000 + 20260728170000: Cal identity/performance ----------
   if (await tableExists(db, "AiHost")) {
-    const dutch = await one(db, `SELECT COUNT(*)::int AS n FROM "AiHost" WHERE "slug"='dutch-attendance' AND "isArchived"=false`);
-    add("cal_host_identity_migrated", dutch === 0,
-      dutch > 0 ? `${dutch} active dutch-attendance host row(s) remain` : "no active retired Dutch identity remains");
+    const hasArchive = await columnExists(db, "AiHost", "isArchived");
+    if (hasArchive) {
+      const dutch = await one(db, `SELECT COUNT(*)::int AS n FROM "AiHost" WHERE "slug"='dutch-attendance' AND "isArchived"=false`);
+      add("cal_host_identity_migrated", dutch === 0,
+        dutch > 0 ? `${dutch} active dutch-attendance host row(s) remain` : "no active retired Dutch identity remains");
+    } else {
+      add("cal_host_identity_migrated", false, "AiHost.isArchived does not exist yet", true);
+    }
 
-    const calRows = await db.$queryRawUnsafe<Array<{ worldview: string; profile: unknown }>>(`
-      SELECT "worldview", "performanceProfile" AS profile FROM "AiHost" WHERE "slug"='cal-red-eye-mercer'`);
-    const cal = calRows[0];
-    // No Cal row means there was no row for either host migration to transform.
-    // That is valid on a fresh, unseeded database.
-    const calV2 = !cal || (
-      !cal.worldview.includes('PENDING SEED')
-      && typeof cal.profile === 'object'
-      && cal.profile !== null
-      && Number((cal.profile as Record<string, unknown>).baselinePace) === 1.08
-    );
-    add("cal_performance_v2_applied", calV2,
-      !cal ? "no Cal row exists; there was no host row to transform"
-      : calV2 ? "Cal carries the authored v2 performance profile"
-      : "Cal still carries a migration placeholder or a pre-v2 performance profile");
+    const hasProfile = await columnExists(db, "AiHost", "performanceProfile");
+    if (hasProfile) {
+      const calRows = await db.$queryRawUnsafe<Array<{ worldview: string; profile: unknown }>>(`
+        SELECT "worldview", "performanceProfile" AS profile FROM "AiHost" WHERE "slug"='cal-red-eye-mercer'`);
+      const cal = calRows[0];
+      // No Cal row means there was no row for either host migration to transform.
+      // That is valid on a fresh, unseeded database.
+      const calV2 = !cal || (
+        !cal.worldview.includes('PENDING SEED')
+        && typeof cal.profile === 'object'
+        && cal.profile !== null
+        && Number((cal.profile as Record<string, unknown>).baselinePace) === 1.08
+      );
+      add("cal_performance_v2_applied", calV2,
+        !cal ? "no Cal row exists; there was no host row to transform"
+        : calV2 ? "Cal carries the authored v2 performance profile"
+        : "Cal still carries a migration placeholder or a pre-v2 performance profile");
+    } else {
+      add("cal_performance_v2_applied", false, "AiHost.performanceProfile does not exist yet", true);
+    }
   } else {
     add("cal_host_identity_migrated", false, "AiHost does not exist", true);
     add("cal_performance_v2_applied", false, "AiHost does not exist", true);
