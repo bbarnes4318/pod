@@ -10,6 +10,13 @@ import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
 import { RewriteContext } from "./scriptSelfVerify";
 import { evaluateMovementQuality, type MovementQualityReport } from "./scriptMovementQuality";
+import {
+  generatePrivateHostAgendas,
+  rewriteMovementByCharacter,
+  runColdOpenTextTournament,
+  type ColdOpenTournamentResult,
+  type PrivateHostAgenda,
+} from "./scriptCreativePipeline";
 
 export interface OutlineBeat {
   beatIndex: number;
@@ -32,6 +39,7 @@ export interface OutlineDrivenArgs {
   temperature: number;
   maxTokens: number;
   speakerNames: string[];
+  learningPolicy?: unknown;
   outlineLlm?: LLMProvider;
   challengerLlm?: LLMProvider;
   challengerLabel?: string;
@@ -107,23 +115,56 @@ Write spoken language. No essay paragraphs, no debate-club signposting, no greet
 export async function generateOutlineDrivenScript(
   llm: LLMProvider,
   args: OutlineDrivenArgs
-): Promise<{ segments: any[]; challenger?: ChallengerMovementResult[] }> {
+): Promise<{
+  segments: any[];
+  challenger?: ChallengerMovementResult[];
+  privateAgendas: PrivateHostAgenda[];
+  coldOpenTournament: ColdOpenTournamentResult;
+}> {
   const creativeSystemPrompt = compactCreativeSystemPrompt(args.systemPrompt);
   const outlineLlm = args.outlineLlm ?? llm;
   const beats = await generateEpisodeOutline(outlineLlm, args, creativeSystemPrompt);
-  args.log(`Story spine: ${beats.length} beats across three conversational movements.`);
+  const privateAgendas = await generatePrivateHostAgendas({
+    llm: outlineLlm,
+    episodeTitle: args.episodeTitle,
+    speakerNames: args.speakerNames,
+    outline: beats,
+    topicsEvidence: args.topicsPrompts,
+    systemPrompt: creativeSystemPrompt,
+  });
+  const coldOpen = await runColdOpenTextTournament({
+    writer: llm,
+    judge: outlineLlm,
+    episodeTitle: args.episodeTitle,
+    coldOpenBeat: beats[0],
+    topicsEvidence: args.topicsPrompts,
+    speakerNames: args.speakerNames,
+    agendas: privateAgendas,
+    systemPrompt: creativeSystemPrompt,
+    learningPolicy: args.learningPolicy,
+  });
+  args.log(
+    `Story spine: ${beats.length} beats; private agendas for ${privateAgendas.length} hosts; ` +
+    `cold-open tournament selected ${coldOpen.tournament.selectedId} ` +
+    `(${coldOpen.tournament.variants.find((v) => v.id === coldOpen.tournament.selectedId)?.textScore ?? 0}/100).`
+  );
 
   const challengerResults: ChallengerMovementResult[] = [];
   const startedAt = Date.now();
-  const acts = groupIntoMovements(beats);
-  const rawSegments: any[] = [];
+  const acts = groupIntoMovements(beats.slice(1));
+  const rawSegments: any[] = [coldOpen.segment];
   const claimsSoFar: string[] = [];
-  const priorDialogueLines: string[] = [];
-  const lastLines: { speakerName: string; text: string }[] = [];
-  let state: ConversationState = { ...EMPTY_STATE };
+  const coldLines = coldOpen.segment.lines || [];
+  const priorDialogueLines: string[] = coldLines.map((line) => stripAudioTags(String(line.text || "")).trim()).filter(Boolean);
+  const lastLines: { speakerName: string; text: string }[] = coldLines.slice(-8).map((line) => ({ speakerName: line.speakerName, text: line.text }));
+  let state: ConversationState = {
+    ...EMPTY_STATE,
+    emotionalTemperature: "warming",
+    unresolvedThreads: [beats[0]?.angle || beats[0]?.goal || "The cold-open question remains unresolved."],
+  };
   const totalWordTarget = Math.max(550, Math.round(args.targetDuration * 145));
   const episodeMinimumWords = Math.max(500, Math.round(totalWordTarget * 0.82));
-  let wordsWritten = 0;
+  let wordsWritten = countMovement([coldOpen.segment]).words;
 
   for (let actIndex = 0; actIndex < acts.length; actIndex++) {
     const remainingActs = acts.length - actIndex;
@@ -144,6 +185,7 @@ export async function generateOutlineDrivenScript(
       temperature: args.temperature,
       maxTokens: args.maxTokens,
       speakerNames: args.speakerNames,
+      privateAgendas,
     };
 
     const movementStartedAt = Date.now();
@@ -172,6 +214,32 @@ export async function generateOutlineDrivenScript(
         `Movement ${actIndex + 1} remained unusable after two targeted repairs: ${quality.failures.join("; ")}. ` +
         `The whole episode was not sent to verification.`
       );
+    }
+
+    // Run the private character writers after structural repair. Otherwise a
+    // repair pass can silently overwrite the distinct character prose with a
+    // single-model house voice.
+    if (process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false") {
+      result = {
+        ...result,
+        segments: await rewriteMovementByCharacter({
+          llm,
+          segments: result.segments,
+          agendas: privateAgendas,
+          systemPrompt: creativeSystemPrompt,
+        }),
+      };
+      quality = evaluateMovementQuality({
+        segments: result.segments,
+        softWordTarget,
+        priorClaims: priorDialogueLines,
+      });
+      if (!quality.passed) {
+        throw new Error(
+          `Movement ${actIndex + 1} character-separated rewrite violated production structure: ${quality.failures.join("; ")}.`
+        );
+      }
+      args.log(`Movement ${actIndex + 1}: completed ${privateAgendas.length} character-separated writer pass(es).`);
     }
 
     if (args.challengerLlm) {
@@ -258,6 +326,8 @@ export async function generateOutlineDrivenScript(
   return {
     segments: rawSegments,
     challenger: challengerResults.length > 0 ? challengerResults : undefined,
+    privateAgendas,
+    coldOpenTournament: coldOpen.tournament,
   };
 }
 
@@ -469,6 +539,7 @@ interface ActArgs {
   temperature: number;
   maxTokens: number;
   speakerNames: string[];
+  privateAgendas: PrivateHostAgenda[];
 }
 
 function actContext(args: ActArgs): {
@@ -513,6 +584,10 @@ ${beatsDetail}
 
 CURRENT RELATIONSHIP / ARGUMENT STATE:
 ${JSON.stringify(args.state, null, 2)}
+
+PRIVATE HOST AGENDAS — keep them asymmetric; never have one host explain the
+other host's agenda or speak these labels aloud:
+${args.privateAgendas.map((agenda) => `${agenda.speakerName}: ${JSON.stringify(agenda)}`).join("\n")}
 
 LAST EXCHANGE — continue its emotional and conversational logic:
 ${lastExchange}

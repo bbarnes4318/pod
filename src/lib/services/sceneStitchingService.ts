@@ -29,6 +29,7 @@ import {
 import { DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS, DEFAULT_PAUSE_MS } from "@/lib/audio/pauseTiming";
 import { analyzeEpisodeAudio, type AudioQaReport, type ScriptedPause } from "@/lib/audio/audioQa";
 import { analyzeSceneAudioRows, type SceneQaReport } from "@/lib/audio/sceneAudioQa";
+import { runAudioSemanticQa, type AudioSemanticQaReport } from "@/lib/audio/audioSemanticQa";
 import { loadSoundDesignAssetSet } from "@/lib/services/audioStitchingService";
 import { parseEpisodeSoundDesign, isProductionStyle, type ProductionStyle, emptyAssetSet, type SoundDesignAssetSet, mixBedUnderForeground } from "@/lib/audio/soundDesign";
 import { loadScenePlanForScript } from "@/lib/services/ttsSceneService";
@@ -252,6 +253,49 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
       await standardizeSceneToWav(ffmpegPath, raw, wav, { sampleRate: targetSampleRate });
       const durationMs = await getFileDurationMs(ffprobePath, wav);
       sceneFiles.push({ row, filePath: wav, durationMs });
+    }
+
+    // 1b. Meaning-aware QA listens to the standardized scene, transcribes it
+    // with diarization, maps anonymous labels back to cast ids, and verifies
+    // the actual words, critical names/numbers, speaker ownership and cut-ins.
+    // Results live beside the provider audition metadata for postmortems.
+    const semanticQaReports: Array<{ sceneIndex: number; report: AudioSemanticQaReport }> = [];
+    if (process.env.TTS_TRANSCRIPT_QA_ENABLED === "true") {
+      const strictSemanticQa = process.env.TTS_TRANSCRIPT_QA_STRICT === "true" ||
+        (process.env.TTS_TRANSCRIPT_QA_STRICT !== "false" && process.env.NODE_ENV === "production");
+      for (const sf of sceneFiles) {
+        const planned = plan.scenes.find((scene) => scene.sceneIndex === sf.row.sceneIndex);
+        if (!planned) throw new Error(`No planned scene for semantic QA index ${sf.row.sceneIndex}.`);
+        try {
+          const report = await runAudioSemanticQa({
+            audio: fs.readFileSync(sf.filePath),
+            mimeType: "audio/wav",
+            expected: planned.lines.map((line) => ({
+              lineIndex: line.lineIndex,
+              speakerHostId: line.speakerHostId,
+              speakerName: line.speakerName,
+              text: line.text,
+              isInterruption: line.isInterruption,
+            })),
+          });
+          semanticQaReports.push({ sceneIndex: sf.row.sceneIndex, report });
+          await db.dialogueSceneAudio.update({
+            where: { id: sf.row.id },
+            data: { providerMetadata: { ...((sf.row.providerMetadata as Record<string, unknown> | null) || {}), semanticQa: report } as never },
+          });
+          console.log(
+            `[SceneStitcher][SemanticQA] ${report.status.toUpperCase()} scene ${sf.row.sceneIndex}: ` +
+            `WER=${report.wordErrorRate == null ? "n/a" : `${(report.wordErrorRate * 100).toFixed(1)}%`}, ` +
+            `speaker=${report.speakerAttributionErrorRate == null ? "n/a" : `${(report.speakerAttributionErrorRate * 100).toFixed(1)}%`}`
+          );
+          if (report.status === "fail" && strictSemanticQa) {
+            throw new Error(report.failures.join(" "));
+          }
+        } catch (error) {
+          if (strictSemanticQa) throw new Error(`Scene ${sf.row.sceneIndex} semantic audio QA failed: ${(error as Error).message}`);
+          console.warn(`[SceneStitcher][SemanticQA] scene ${sf.row.sceneIndex} not gated: ${(error as Error).message}`);
+        }
+      }
     }
 
     // 2. Intro resolution (theme asset, else legacy env URL).

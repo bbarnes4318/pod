@@ -43,6 +43,7 @@ import { buildPerformanceDirection } from "@/lib/audio/performanceDirection";
 import { resolveHostPerformanceProfile, PERFORMANCE_PROFILE_VERSION } from "@/lib/hosts/performanceProfile";
 import { resolveEpisodeCast } from "@/lib/services/hostCasting";
 import { generateTtsSegments } from "@/lib/services/ttsSegmentService";
+import { resolveFishSceneModel } from "@/lib/providers/tts/fishDialogue";
 
 export type TtsRenderModeSetting = "legacy_line" | "scene" | "auto";
 export type PersistedRenderMode = "legacy_line" | "scene" | "mixed_fallback" | "performance_conversion";
@@ -325,7 +326,7 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
   const sceneModel = provider === "elevenlabs"
     ? (process.env.ELEVENLABS_DIALOGUE_MODEL_ID || process.env.ELEVENLABS_MODEL_ID || process.env.ELEVENLABS_MODEL || "eleven_v3")
     : provider === "fish"
-      ? (process.env.FISH_SCENE_MODEL || process.env.FISH_MODEL || "s2.1-pro").trim() // official production default; override only after a live contract test
+      ? resolveFishSceneModel()
       : model;
   const wantTimestamps = provider === "elevenlabs" && process.env.ELEVENLABS_DIALOGUE_TIMESTAMPS !== "false";
 

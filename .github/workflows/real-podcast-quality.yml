@@ -45,6 +45,8 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
       - name: Independent editorial gate regression
         run: npm run test:editorial-gate
+      - name: Editorial learning and semantic audio contracts
+        run: npm run test:world-class-learning
       - name: Script queue identity regression
         run: npx tsx --conditions=react-server src/scripts/testScriptQueueTracking.ts
       - name: Cal performance regression
