@@ -183,13 +183,25 @@ async function main() {
       blockers.push(`The database records migration(s) this repository does not contain (${unknown.join(", ")}). It may belong to a different or newer deployment.`);
     } else if (emptyDb) {
       verdict = "READY FOR MIGRATE DEPLOY";
+    } else if (drifted && checkpoint.startsWith("BASELINE")) {
+      // A known old checkpoint is expected to fail/inconclusively report the
+      // invariants belonging to later migrations. Those migrations will run.
+      verdict = "ADOPTION POSSIBLE";
+    } else if (drifted) {
+      verdict = "MANUAL DATABASE REVIEW REQUIRED";
+      blockers.push("The schema matches no known checkpoint. Adoption cannot be reasoned about safely from here.");
+    } else if (failedInv.length > 0) {
+      verdict = "ADOPTION BLOCKED";
+      blockers.push(
+        `${failedInv.length} data invariant(s) FAIL: ${failedInv.map((i) => i.name).join(", ")}. ` +
+        `Migration history alone does not make an invalid production row safe.`
+      );
+    } else if (inconclusive.length > 0) {
+      verdict = "ADOPTION BLOCKED";
+      blockers.push(`${inconclusive.length} invariant(s) could not be evaluated (${inconclusive.map((i) => i.name).join(", ")}).`);
     } else if (historyExists && missing.length === 0 && !drifted) {
       // Scenario A
       verdict = "READY FOR MIGRATE DEPLOY";
-    } else if (drifted && checkpoint === "AN INTERMEDIATE / UNKNOWN POINT") {
-      // Scenario E
-      verdict = "MANUAL DATABASE REVIEW REQUIRED";
-      blockers.push("The schema matches no known checkpoint. Adoption cannot be reasoned about safely from here.");
     } else if (!drifted && missing.length > 0) {
       // Scenario C: schema matches current, history absent/partial.
       if (failedInv.length > 0) {
@@ -204,13 +216,6 @@ async function main() {
       } else {
         verdict = "ADOPTION POSSIBLE";
       }
-    } else if (drifted && checkpoint.startsWith("BASELINE")) {
-      // Scenario B
-      verdict = "ADOPTION POSSIBLE";
-    } else if (historyExists && missing.length > 0 && drifted) {
-      // Scenario D
-      verdict = "ADOPTION BLOCKED";
-      blockers.push("Partial history AND schema drift. The recorded history and the actual schema disagree; reconcile them by hand before adopting.");
     }
 
     h("VERDICT");

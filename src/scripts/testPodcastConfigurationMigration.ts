@@ -1,11 +1,10 @@
 // Podcast-configuration BACKFILL migration test.
 //   Run: npm run test:podcast-configuration-migration
 //
-// THE ONE THING THIS PROVES: the additive migration 20260716000000 gives EVERY
-// pre-existing Podcast a deterministic unique slug and exactly one editorial /
-// production / publishing row that mirrors its legacy columns — losing nothing,
-// duplicating nothing, and staying idempotent — while leaving existing Episodes
-// honestly marked configurationSource = 'legacy'.
+// THE ONE THING THIS PROVES: the original backfill and its corrective migration
+// give EVERY pre-existing or late-created Podcast a deterministic unique slug
+// and exactly one editorial / production / publishing row that mirrors its
+// legacy columns — losing nothing, duplicating nothing, and staying idempotent.
 //
 // Because `migrate deploy` runs the whole history at once (and no Podcast exists
 // in a fresh DB), we re-create the pre-migration situation: insert legacy-shaped
@@ -38,16 +37,17 @@ async function freePort(): Promise<number> {
 }
 
 const MIGRATION = "20260716000000_add_podcast_configuration";
+const REPAIR_MIGRATION = "20260801020000_repair_podcast_configuration_backfill";
 
 /** The backfill (data) statements of the real migration file: everything from
  *  the "2. Backfill" banner onward, split into individual statements (Prisma's
  *  executeRawUnsafe runs one command at a time). Comment lines are stripped;
  *  no statement in the backfill contains a semicolon inside a literal. We run
  *  exactly what production runs. */
-function backfillStatements(): string[] {
-  const file = fs.readFileSync(path.join(process.cwd(), "prisma", "migrations", MIGRATION, "migration.sql"), "utf8");
-  const marker = file.indexOf("-- 2. Backfill");
-  assert(marker > 0, "could not locate the backfill section of the migration");
+function backfillStatements(migration = MIGRATION): string[] {
+  const file = fs.readFileSync(path.join(process.cwd(), "prisma", "migrations", migration, "migration.sql"), "utf8");
+  const marker = migration === MIGRATION ? file.indexOf("-- 2. Backfill") : 0;
+  assert(marker >= 0, "could not locate the backfill section of the migration");
   return file
     .slice(marker)
     .split("\n")
@@ -153,6 +153,30 @@ async function main() {
       }
       const slugAfter = (await db.podcast.findUnique({ where: { id: "leg-owned" } }))!.slug;
       assert(slugBefore === slugAfter, "slug changed on re-run");
+    });
+
+    await check("the corrective migration repairs podcasts created after the original backfill", async () => {
+      await exec(`INSERT INTO "Podcast" ("id","name","cadence","verticals","teams","segmentCount","hostIds","owner","ownerId","slug","configVersion","createdAt","updatedAt","language","explicit","visibility")
+        VALUES ('late-show','Late Show','one_time', ARRAY['NBA'], ARRAY['team-late'], 5, ARRAY['late-a','late-b'], 'listener', NULL, NULL, 1, now(), now(), 'en', false, 'private')`);
+      const repair = backfillStatements(REPAIR_MIGRATION);
+      for (const s of repair) await exec(s);
+
+      const pod = await db.podcast.findUnique({ where: { id: "late-show" } });
+      const ed = await db.podcastEditorialConfig.findUnique({ where: { podcastId: "late-show" } });
+      const pr = await db.podcastProductionConfig.findUnique({ where: { podcastId: "late-show" } });
+      const pu = await db.podcastPublishingConfig.findUnique({ where: { podcastId: "late-show" } });
+      assert(!!pod?.slug && pod.slug.startsWith("late-show-"), `late slug was not repaired: ${pod?.slug}`);
+      assert(JSON.stringify(ed?.verticals) === JSON.stringify(["NBA"]), "late editorial verticals were not preserved");
+      assert(JSON.stringify(ed?.teams) === JSON.stringify(["team-late"]), "late editorial teams were not preserved");
+      assert(ed?.segmentCount === 5, "late segment count was not preserved");
+      assert(JSON.stringify(pr?.hostIds) === JSON.stringify(["late-a", "late-b"]), "late host IDs were not preserved");
+      assert(!!pu, "late publishing config was not created");
+
+      for (const s of repair) await exec(s);
+      for (const table of ["PodcastEditorialConfig", "PodcastProductionConfig", "PodcastPublishingConfig"]) {
+        const rows = await db.$queryRawUnsafe<Array<{ n: number }>>(`SELECT COUNT(*)::int AS n FROM "${table}" WHERE "podcastId"='late-show'`);
+        assert(rows[0].n === 1, `${table} is not idempotent for late-show`);
+      }
     });
 
     await check("`migrate status` stays clean and no drift is introduced", () => {

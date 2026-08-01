@@ -131,6 +131,47 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Prompt 7 PR1. Adds Episode.formatId (default two_host_debate — exactly what built every existing episode) + normalized EpisodeCastMember rows BACKFILLED from pinned Episode.hostIds in seat order. A matching schema does NOT prove the cast backfill ran.",
   },
+  { name: "20260718120000_add_render_diagnostics", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260719000000_add_sonic_identity_and_variant_pools", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260719120000_add_diversity_policy", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260725000000_add_dialogue_scene_audio", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260726000000_add_show_continuity", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260726140000_add_topic_frame", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  {
+    name: "20260727000000_replace_dutch_continuity_with_red_eye",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: ["retired_continuity_quarantined"],
+    note: "Archives retired Dutch continuity state and quarantines legacy per-episode claims before removing the old live columns.",
+  },
+  {
+    name: "20260727010000_replace_mulkey_host_with_cal_mercer",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: ["cal_host_identity_migrated"],
+    note: "Moves the existing seat-B identity to Cal while preserving every relation.",
+  },
+  {
+    name: "20260728170000_cal_performance_v2",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: ["cal_performance_v2_applied"],
+    note: "Updates the existing Cal host row to the production-v2 performance profile.",
+  },
+  { name: "20260801000000_editorial_story_scores", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  { name: "20260801010000_listener_learning", hasDataTransform: false, schemaEqualitySufficient: true, invariants: [] },
+  {
+    name: "20260801020000_repair_podcast_configuration_backfill",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "every_podcast_has_editorial_config",
+      "every_podcast_has_production_config",
+      "every_podcast_has_publishing_config",
+      "every_podcast_has_unique_slug",
+    ],
+    note: "Repairs podcasts created after the original one-time configuration backfill had run.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -147,6 +188,11 @@ const one = async (db: InvariantDb, sql: string): Promise<number> => {
 /** True when the table exists — lets an invariant say "inconclusive" instead of exploding. */
 async function tableExists(db: InvariantDb, table: string): Promise<boolean> {
   const n = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.tables WHERE table_schema='public' AND table_name='${table}'`);
+  return n > 0;
+}
+
+async function columnExists(db: InvariantDb, table: string, column: string): Promise<boolean> {
+  const n = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='${table}' AND column_name='${column}'`);
   return n > 0;
 }
 
@@ -255,6 +301,74 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   else add("studio_draft_owner_fk", false, "StudioDraft does not exist", true);
   if (await tableExists(db, "AiHost")) await fk("aihost_owner_fk", "AiHost_ownerId_fkey", "AiHost");
   else add("aihost_owner_fk", false, "AiHost does not exist", true);
+
+  // --- 20260727000000: retired continuity quarantine ---------------------
+  if (await tableExists(db, "Episode") && await tableExists(db, "ShowContinuity")) {
+    const retiredColumns = await one(db, `
+      SELECT COUNT(*)::int AS n FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='ShowContinuity'
+        AND column_name IN (
+          'phantomFansTotal','lastAttendanceClaim','lastAttendanceReal','weCount',
+          'weCountThisEpisode','currentDodge','hoytStage','hoytFactsEstablished',
+          'arcBeat','badgeStage','wolverinesInvoked','lastWolverineUsed',
+          'nuclearOptionFirings','coldOpenFullRuns','uncorrectedLedgerRuns',
+          'wagerTerms','wagerLeader','wagerPot'
+        )`);
+    const unquarantined = await one(db, `
+      SELECT COUNT(*)::int AS n FROM "Episode"
+      WHERE "continuityUpdate" IS NOT NULL AND (
+        "continuityUpdate" ? 'attendanceClaimed'
+        OR "continuityUpdate" ? 'weSaidCount'
+        OR "continuityUpdate" ? 'hoytBeatDelivered'
+        OR "continuityUpdate" ? 'wolverineUsed'
+        OR "continuityUpdate" ? 'unityBeatPresent'
+        OR "continuityUpdate" ? 'endedOnDodge'
+      )`);
+    const archivePresent = await tableExists(db, "ShowContinuityLegacyDutch");
+    add("retired_continuity_quarantined", retiredColumns === 0 && unquarantined === 0 && archivePresent,
+      retiredColumns > 0 ? `${retiredColumns} retired ShowContinuity column(s) are still live`
+      : unquarantined > 0 ? `${unquarantined} Episode row(s) still carry retired continuity claims`
+      : !archivePresent ? "ShowContinuityLegacyDutch archive table is missing"
+      : "retired columns are absent and every legacy episode claim is quarantined");
+  } else {
+    add("retired_continuity_quarantined", false, "Episode or ShowContinuity does not exist", true);
+  }
+
+  // --- 20260727010000 + 20260728170000: Cal identity/performance ----------
+  if (await tableExists(db, "AiHost")) {
+    const hasArchive = await columnExists(db, "AiHost", "isArchived");
+    if (hasArchive) {
+      const dutch = await one(db, `SELECT COUNT(*)::int AS n FROM "AiHost" WHERE "slug"='dutch-attendance' AND "isArchived"=false`);
+      add("cal_host_identity_migrated", dutch === 0,
+        dutch > 0 ? `${dutch} active dutch-attendance host row(s) remain` : "no active retired Dutch identity remains");
+    } else {
+      add("cal_host_identity_migrated", false, "AiHost.isArchived does not exist yet", true);
+    }
+
+    const hasProfile = await columnExists(db, "AiHost", "performanceProfile");
+    if (hasProfile) {
+      const calRows = await db.$queryRawUnsafe<Array<{ worldview: string; profile: unknown }>>(`
+        SELECT "worldview", "performanceProfile" AS profile FROM "AiHost" WHERE "slug"='cal-red-eye-mercer'`);
+      const cal = calRows[0];
+      // No Cal row means there was no row for either host migration to transform.
+      // That is valid on a fresh, unseeded database.
+      const calV2 = !cal || (
+        !cal.worldview.includes('PENDING SEED')
+        && typeof cal.profile === 'object'
+        && cal.profile !== null
+        && Number((cal.profile as Record<string, unknown>).baselinePace) === 1.08
+      );
+      add("cal_performance_v2_applied", calV2,
+        !cal ? "no Cal row exists; there was no host row to transform"
+        : calV2 ? "Cal carries the authored v2 performance profile"
+        : "Cal still carries a migration placeholder or a pre-v2 performance profile");
+    } else {
+      add("cal_performance_v2_applied", false, "AiHost.performanceProfile does not exist yet", true);
+    }
+  } else {
+    add("cal_host_identity_migrated", false, "AiHost does not exist", true);
+    add("cal_performance_v2_applied", false, "AiHost does not exist", true);
+  }
 
   // --- 20260716000000: Podcast configuration backfill ---------------------
   // Schema equality is deliberately NOT sufficient here: the three config

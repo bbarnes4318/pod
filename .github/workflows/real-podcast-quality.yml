@@ -47,6 +47,12 @@ jobs:
         run: npm run test:editorial-gate
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
+      - name: Deployment and migration manifest contract
+        run: npm run test:deployment-contract
+      - name: Podcast configuration repair migration
+        run: npm run test:podcast-configuration-migration
+      - name: Migration adoption auditor
+        run: npm run test:migration-adoption
       - name: Script queue identity regression
         run: npx tsx --conditions=react-server src/scripts/testScriptQueueTracking.ts
       - name: Cal performance regression

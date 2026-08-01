@@ -17,6 +17,7 @@
 
 import fs from "fs";
 import path from "path";
+import { MIGRATION_CHECKPOINTS } from "../lib/services/migrationCheckpoints";
 
 let passed = 0, failed = 0;
 function assert(c: boolean, m: string) { if (!c) throw new Error(m); }
@@ -157,6 +158,13 @@ function run() {
 
   const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
   const migrationDirs = fs.readdirSync(migrationsDir).filter((d) => fs.statSync(path.join(migrationsDir, d)).isDirectory()).sort();
+
+  try {
+    const checkpoints = MIGRATION_CHECKPOINTS.map((m) => m.name).sort();
+    assert(JSON.stringify(checkpoints) === JSON.stringify(migrationDirs),
+      `migration auditor manifest is stale.\n      directories: ${migrationDirs.join(", ")}\n      checkpoints: ${checkpoints.join(", ")}`);
+    ok("the migration auditor knows every migration in the repository");
+  } catch (e) { bad("the migration auditor knows every migration in the repository", e); }
 
   try {
     assert(migrationDirs.length > 0, "no migrations found");
