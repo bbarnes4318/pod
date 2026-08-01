@@ -5,30 +5,47 @@ import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 import type { EpisodeBuildInput } from "../services/episodeService";
 import { scriptJobIsInFlight, scriptQueueIdentity } from "./scriptQueueIdentity";
 
-const QUEUE_NAME = "podcast-generation";
+export const BACKGROUND_QUEUE_NAME = "podcast-generation";
+export const PRODUCTION_QUEUE_NAME = "podcast-production";
 
-// Reuse global client to prevent connection exhaustion in Next.js HMR dev mode
-const globalForQueue = globalThis as unknown as {
-  podcastQueue: Queue | undefined;
+const sharedJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: "exponential" as const,
+    delay: 5000,
+  },
+  removeOnComplete: true,
+  removeOnFail: false,
 };
 
+// Reuse global clients to prevent connection exhaustion in Next.js HMR dev mode.
+const globalForQueue = globalThis as unknown as {
+  podcastQueue: Queue | undefined;
+  productionQueue: Queue | undefined;
+};
+
+// Scheduled ingestion, topic generation, and research only. Slow provider calls
+// on this queue must never prevent a Studio production action from starting.
 export const podcastQueue =
   globalForQueue.podcastQueue ??
-  new Queue(QUEUE_NAME, {
+  new Queue(BACKGROUND_QUEUE_NAME, {
     connection: getRedisClient() as any,
-    defaultJobOptions: {
-      attempts: 3,
-      backoff: {
-        type: "exponential",
-        delay: 5000,
-      },
-      removeOnComplete: true,
-      removeOnFail: false,
-    },
+    defaultJobOptions: sharedJobOptions,
+  });
+
+// Interactive and publishable episode work has an independent worker lane.
+// A 15-minute research timeout can no longer starve script, fact-check, TTS,
+// mixing, content, or line-regeneration jobs submitted from Studio.
+export const productionQueue =
+  globalForQueue.productionQueue ??
+  new Queue(PRODUCTION_QUEUE_NAME, {
+    connection: getRedisClient() as any,
+    defaultJobOptions: sharedJobOptions,
   });
 
 if (process.env.NODE_ENV !== "production") {
   globalForQueue.podcastQueue = podcastQueue;
+  globalForQueue.productionQueue = productionQueue;
 }
 
 export interface JobData {
@@ -119,7 +136,7 @@ export interface EpisodeBuildJobData {
 export async function queueEpisodeBuildJob(data: EpisodeBuildJobData, opts?: { jobId?: string }) {
   // A deterministic jobId makes the enqueue idempotent: BullMQ ignores a
   // second add with the same id (used by the recurring scheduler).
-  return podcastQueue.add("build:episode", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
+  return productionQueue.add("build:episode", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
 }
 
 /** Every EpisodeBuildInput field a build job carries — the single source of
@@ -202,7 +219,7 @@ export async function queueScriptGenerationJob(data: ScriptGenJobData) {
 
   // A second click for the same not-yet-written version must not create another
   // expensive job or another misleading log row.
-  const existing = await podcastQueue.getJob(identity.jobId);
+  const existing = await productionQueue.getJob(identity.jobId);
   if (existing) {
     const state = await existing.getState();
     if (scriptJobIsInFlight(state)) return existing;
@@ -213,7 +230,25 @@ export async function queueScriptGenerationJob(data: ScriptGenJobData) {
     } catch {
       const current = await existing.getState();
       if (scriptJobIsInFlight(current)) return existing;
-      throw new Error(`Could not clear terminal script job ${identity.jobId} (state: ${current}).`);
+      throw new Error(`Could not clear terminal production script job ${identity.jobId} (state: ${current}).`);
+    }
+  }
+
+  // Adoption bridge: releases before production-queue isolation placed Studio
+  // script jobs on the background queue. If that legacy job is already active,
+  // let it finish. Otherwise remove it before submitting the same deterministic
+  // identity to the production lane, so it cannot execute hours later and
+  // generate a duplicate script version.
+  const legacy = await podcastQueue.getJob(identity.jobId);
+  if (legacy) {
+    const state = await legacy.getState();
+    if (state === "active") return legacy;
+    try {
+      await legacy.remove();
+    } catch {
+      const current = await legacy.getState();
+      if (current === "active") return legacy;
+      throw new Error(`Could not migrate legacy script job ${identity.jobId} (state: ${current}).`);
     }
   }
 
@@ -249,7 +284,7 @@ export async function queueScriptGenerationJob(data: ScriptGenJobData) {
   });
 
   try {
-    return await podcastQueue.add("generate:script", payload, { jobId: identity.jobId });
+    return await productionQueue.add("generate:script", payload, { jobId: identity.jobId });
   } catch (error) {
     await db.jobLog.update({
       where: { id: identity.submissionLogId },
@@ -268,7 +303,7 @@ export interface FactCheckJobData {
 }
 
 export async function queueFactCheckJob(data: FactCheckJobData) {
-  return podcastQueue.add("fact-check:script", data);
+  return productionQueue.add("fact-check:script", data);
 }
 
 export interface TtsSegmentJobData {
@@ -284,7 +319,7 @@ export interface TtsSegmentJobData {
 }
 
 export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {
-  return podcastQueue.add("tts:generate-segments", data);
+  return productionQueue.add("tts:generate-segments", data);
 }
 
 export interface FinalAudioStitchJobData {
@@ -301,7 +336,7 @@ export interface FinalAudioStitchJobData {
 }
 
 export async function queueFinalAudioStitchJob(data: FinalAudioStitchJobData) {
-  return podcastQueue.add("audio:stitch-final", data);
+  return productionQueue.add("audio:stitch-final", data);
 }
 
 export interface ContentAssetJobData {
@@ -314,7 +349,7 @@ export interface ContentAssetJobData {
 }
 
 export async function queueContentAssetGenerationJob(data: ContentAssetJobData) {
-  return podcastQueue.add("content:generate-assets", data);
+  return productionQueue.add("content:generate-assets", data);
 }
 
 // Auto social clip render. Carries the SocialClip row id; the handler renders
@@ -325,7 +360,7 @@ export interface SocialClipJobData {
 }
 
 export async function queueSocialClipJob(data: SocialClipJobData) {
-  return podcastQueue.add("social-clip:generate", data, {
+  return productionQueue.add("social-clip:generate", data, {
     jobId: `social-clip-${data.clipId}`,
   });
 }
@@ -344,7 +379,7 @@ export interface LineAudioRegenJobData {
  * episode re-render. jobId is per (script,line) so rapid re-clicks coalesce.
  */
 export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
-  return podcastQueue.add("audio:regenerate-line", data, {
+  return productionQueue.add("audio:regenerate-line", data, {
     jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
   });
 }
