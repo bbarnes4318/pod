@@ -67,5 +67,7 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testShowForgeDiscoverability.ts
       - name: Production chain and scene retry regression
         run: npm run test:production-chain
+      - name: Audio stitch orphan recovery regression
+        run: npm run test:audio-stitch-recovery
       - name: Production build contract
         run: npm run build
