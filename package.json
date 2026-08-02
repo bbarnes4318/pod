@@ -152,7 +152,8 @@
     "test:verification-scoring": "tsx --conditions=react-server src/scripts/testVerificationScoring.ts",
     "rescore:verification": "tsx --conditions=react-server src/scripts/rescoreVerificationArtifact.ts",
     "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts",
-    "test:voice-audition": "tsx --conditions=react-server src/scripts/testVoiceAudition.ts"
+    "test:voice-audition": "tsx --conditions=react-server src/scripts/testVoiceAudition.ts",
+    "test:voice-audition-authz": "tsx --conditions=react-server src/scripts/testVoiceAuditionAuthz.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

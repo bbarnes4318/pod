@@ -187,7 +187,7 @@ async function main() {
           text: line.text,
           voiceId: line.speakerHostId === HOST_A ? voiceA : voiceB,
           format: "mp3",
-        } as Parameters<FishTTSProvider["synthesizeSpeech"]>[0]);
+        } as Parameters<typeof fish.synthesizeSpeech>[0]);
         const f = path.join(OUT, `acceptance-${line.lineIndex}.mp3`);
         fs.writeFileSync(f, (res as { audioBuffer: Buffer }).audioBuffer);
         parts.push(f);
