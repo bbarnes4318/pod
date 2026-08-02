@@ -39,12 +39,10 @@ export function sportsNewsCron(): string {
   return validateCron(process.env.SPORTS_NEWS_CRON, "0 */3 * * *");
 }
 
-/** Daily topic-generation cadence. Runs AFTER the 05:15 structured ingest and
- *  the early news ticks so the LLM sees fresh evidence. Without this scheduler
- *  topics were only ever created by a manual admin click — ingest could run
- *  forever while the takes board silently went stale. Default: 08:00. */
+/** Topic generation follows the frequent news feed instead of waiting for one
+ * daily window. The 30-minute offset lets the RSS job finish first. */
 export function topicsGenerateCron(): string {
-  return validateCron(process.env.TOPICS_GENERATE_CRON, "0 8 * * *");
+  return validateCron(process.env.TOPICS_GENERATE_CRON, "30 */3 * * *");
 }
 
 /** Minimum debate score for scheduler-generated topics (0 = keep all). */
