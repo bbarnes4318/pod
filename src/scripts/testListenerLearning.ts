@@ -46,6 +46,7 @@ import {
   resolveEffectivePolicy,
   resolveThresholds,
   rollbackProductionPolicy,
+  approveStagedPolicyPromotion,
   runLearningPromotionCycle,
   validatePolicyProposal,
 } from "../lib/services/productionPolicy";
@@ -416,6 +417,12 @@ async function main() {
         cohort: opts.cohort,
         formatId: "two_host_debate",
         hostPairKey: hostPairKey(["cal", "zabala"]),
+        // Real traffic arrives attested: the intake boundary stamps the salted
+        // source bucket onto every event that cleared its controls, and only
+        // attested events count toward a promotion's sample. Spread across many
+        // sources because credibility caps each one at
+        // MAX_CREDIBLE_LISTENERS_PER_SOURCE — one machine cannot be a panel.
+        sourceKey: `src-${opts.podcastId}-${Math.floor(i / 2)}`,
         now: at(i),
       });
       assert.equal(res.ok, true);
@@ -516,14 +523,34 @@ async function main() {
     assert.equal(loser.mean, 0.25);
     assert.ok(winner.sampleSize >= DEFAULT_PROMOTION_THRESHOLDS.minSamplePerArm);
 
-    const result = await runLearningPromotionCycle(store, {
+    // CONTRACT: a listener-sourced signal is collected from a PUBLIC,
+    // unauthenticated endpoint. Even with overwhelming evidence, the automated
+    // cycle STAGES the change rather than applying it — anonymous traffic does
+    // not get to move production policy on its own. A named human applies it.
+    const staged = await runLearningPromotionCycle(store, {
       podcastId: "show-a",
       aggregates: aggA,
       events: eventsA,
       actor: "test-operator",
       now: at(500),
     });
-    assert.equal(result.promoted, true, `expected promotion, got ${JSON.stringify(result)}`);
+    assert.equal(staged.promoted, false, "listener-sourced evidence must not auto-apply");
+    assert.equal(staged.code, "awaiting_human_approval", `expected staging, got ${JSON.stringify(staged)}`);
+    assert.equal(staged.decision.outcome, "staged");
+    assert.equal(staged.decision.resultingVersion, null, "nothing may move before a human approves");
+    // The evidence a human will read is already on the staged decision.
+    const stagedStats = (staged.decision.detail as { stats?: { credible?: { winner: number; challenger: number } } })?.stats;
+    assert.ok((stagedStats?.credible?.winner ?? 0) >= 60, "the staged decision must record CREDIBLE listeners, not raw hits");
+
+    const result = await approveStagedPolicyPromotion(store, {
+      podcastId: "show-a",
+      decisionId: staged.decision.id,
+      humanActor: "producer@example.com",
+      aggregates: aggA,
+      events: eventsA,
+      now: at(501),
+    });
+    assert.equal(result.promoted, true, `expected promotion after human approval, got ${JSON.stringify(result)}`);
     if (!result.promoted) return;
 
     assert.equal(result.version.version, baselineA.version + 1);
