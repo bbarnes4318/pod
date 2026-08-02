@@ -47,6 +47,8 @@ jobs:
         run: npm run test:editorial-gate
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
+      - name: Topic freshness and automated research regression
+        run: npm run test:topic-freshness
       - name: Deployment and migration manifest contract
         run: npm run test:deployment-contract
       - name: Podcast configuration repair migration

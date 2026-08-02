@@ -245,7 +245,11 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // Long-context consolidation and traceable extraction.
     case "research_brief":
     case "evidence_extraction":
-      return [NV.deepseekPro(), NV.nemotron()];
+      // Production logs showed DeepSeek V4 Pro repeatedly consuming 4-12
+      // minutes before returning an empty response or timing out. Nemotron was
+      // the fallback that actually completed the same briefs, so it must be the
+      // primary instead of paying the known-failing attempt on every topic.
+      return [NV.nemotron(), NV.deepseekPro(), ZAI_FLASH()];
 
     // Literal transcript audit.
     case "continuity_report":

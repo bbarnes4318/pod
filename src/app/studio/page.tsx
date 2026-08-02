@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { ownerScope } from "@/lib/ownerScope";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
+import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 import { fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,10 @@ export const dynamic = "force-dynamic";
  * the feed-health read are all pulled straight from the database.
  * ------------------------------------------------------------------ */
 
-const AVAILABLE = ["approved", "pending"] as const;
+// Production surfaces show only topics the pipeline can actually use. Pending
+// editorial submissions belong in the review surface, not beside a Generate
+// button that will reject them.
+const AVAILABLE = ["approved"] as const;
 
 /** Heat tiers over the 0-100 talkability score. Meaning is carried by an
  *  icon + a text label + color together — never color alone — and Signal
@@ -72,17 +76,19 @@ export default async function StudioBoard() {
   // stories); EPISODES are not — they were previously listed unscoped, so the
   // board showed a new account other people's work.
   const viewer = await currentUser();
+  const freshAfter = activeTopicCutoff();
+  const freshWhere = { status: { in: [...AVAILABLE] }, createdAt: { gte: freshAfter } };
   const [takes, poolCount, newest, recentEpisodes] = await Promise.all([
     // The ranked take pool — reuse the EXISTING ranking (debateScore desc).
     db.topicCandidate.findMany({
-      where: { status: { in: [...AVAILABLE] } },
+      where: freshWhere,
       include: { researchBrief: true },
       orderBy: { debateScore: "desc" },
       take: 12,
     }),
-    db.topicCandidate.count({ where: { status: { in: [...AVAILABLE] } } }),
+    db.topicCandidate.count({ where: freshWhere }),
     db.topicCandidate.findFirst({
-      where: { status: { in: [...AVAILABLE] } },
+      where: freshWhere,
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     }),

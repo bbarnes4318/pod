@@ -42,7 +42,7 @@ import { dispatchTtsGeneration, dispatchFinalStitch, dispatchLineRegen } from ".
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
-import type { AiHost, Prisma } from "@prisma/client";
+import { Prisma, type AiHost } from "@prisma/client";
 import { podcastQueue, BACKGROUND_QUEUE_NAME, PRODUCTION_QUEUE_NAME } from "./podcastQueue";
 
 /** Persona block for LLM prompts, built from a host's own profile record —
@@ -80,6 +80,11 @@ import {
   ingestDateKey,
   ingestHourKey,
 } from "../services/sportsIngestSchedule";
+import {
+  activeTopicCutoff,
+  topicDedupeCutoff,
+  topicEvidenceWindow,
+} from "../services/topicFreshness";
 
 console.log("--------------------------------------------------");
 console.log("TAKE MACHINE WORKER - INITIALIZING");
@@ -151,7 +156,7 @@ podcastQueue
   .then(() => console.log(`[Worker] Sports-news scheduler registered: '${sportsNewsCron()}' ${SPORTS_INGEST_TZ}`))
   .catch((err) => console.error(`[Worker] Failed to register sports-news scheduler: ${err.message}`));
 
-// Daily topic generation from the freshest ingested evidence. Without this,
+// Frequent topic generation from the freshest ingested evidence. Without this,
 // topics were only ever created by a manual admin click — the ingest
 // schedulers kept news flowing while the takes board silently went stale
 // (the July-2026 "no new topics since the 11th" failure).
@@ -163,6 +168,16 @@ podcastQueue
   )
   .then(() => console.log(`[Worker] Topic-generation scheduler registered: '${topicsGenerateCron()}' ${SPORTS_INGEST_TZ}`))
   .catch((err) => console.error(`[Worker] Failed to register topic-generation scheduler: ${err.message}`));
+
+// Repair the exact failure mode that stranded generated topics as pending while
+// their queued research jobs required approved. Also remove perished topics on
+// boot so a deploy immediately cleans the Studio board instead of waiting for
+// the next cron tick.
+reconcileTopicPoolOnBoot()
+  .then(() => dispatchFreshTopicRuns("boot"))
+  .catch((err) =>
+    console.error(`[Worker] Topic-pool startup reconciliation failed: ${err.message}`)
+  );
 
 // Worker concurrency is env-driven and bounded. Production defaults to 1 (the
 // DEPLOYMENT_RUNBOOK recommendation — a single ffmpeg/LLM-heavy job at a time
@@ -429,31 +444,87 @@ async function handleSportsNewsScheduler(job: Job) {
   }
 }
 
-// Scheduled daily topic generation: one global run over the freshest evidence
-// (empty leagueId/sport = all leagues; topics carry their own sport metadata,
-// and the generate:topics handler already dedupes against every existing
-// candidate). Deterministic per-day job id keeps re-registration idempotent.
+// Scheduled topic generation fans out by league. The former single global
+// prompt routinely produced only one or two accepted topics because every
+// sport competed for the same 10-20 output slots. Per-league batches replenish
+// the board broadly while deterministic IDs keep each hour idempotent.
 async function handleTopicsGenerateScheduler(job: Job) {
-  const dateKey = ingestDateKey();
+  const hourKey = ingestHourKey();
   const minScore = topicsGenerateMinScore();
   const jobLog = await db.jobLog.create({
-    data: { jobType: "scheduler:topics-generate", status: "running", input: { dateKey, minScore } as any, output: {} },
+    data: { jobType: "scheduler:topics-generate", status: "running", input: { hourKey, minScore } as any, output: {} },
   });
   try {
-    const gen = await queueTopicGenerationJob(
-      { leagueId: "", sport: "", minScore },
-      { jobId: `topics-gen-${dateKey}` }
-    );
+    const dispatched = await dispatchFreshTopicRuns("scheduler", hourKey, minScore);
     await db.jobLog.update({
       where: { id: jobLog.id },
-      data: { status: "completed", output: { message: "Dispatched daily topic generation.", topicJobId: String(gen.id), dateKey, minScore } as any },
+      data: { status: "completed", output: { message: "Dispatched fresh per-league topic generation.", dispatched, hourKey, minScore } as any },
     });
-    console.log(`[Worker] Topic-generation scheduler dispatched daily run for ${dateKey}.`);
-    return { success: true, topicJobId: String(gen.id) };
+    return { success: true, dispatched };
   } catch (err: any) {
     await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "failed", error: err.message || "Topic-generation scheduler failed" } });
     throw err;
   }
+}
+
+async function dispatchFreshTopicRuns(
+  source: "boot" | "scheduler",
+  hourKey: string = ingestHourKey(),
+  minScore: number = topicsGenerateMinScore()
+) {
+  const dispatched: Array<{ leagueId: string; jobId: string }> = [];
+  for (const leagueId of getSportsIngestLeagues()) {
+    const queued = await queueTopicGenerationJob(
+      { leagueId, sport: "", minScore },
+      { jobId: `topics-gen-${leagueId.toLowerCase()}-${hourKey}` }
+    );
+    dispatched.push({ leagueId, jobId: String(queued.id) });
+  }
+  console.log(
+    `[Worker] Topic generation dispatched by ${source}: ${dispatched.length} league(s) for ${hourKey}.`
+  );
+  return dispatched;
+}
+
+async function reconcileTopicPoolOnBoot() {
+  const cutoff = activeTopicCutoff();
+  const archived = await db.topicCandidate.updateMany({
+    where: {
+      status: { in: ["pending", "approved"] },
+      createdAt: { lt: cutoff },
+      episodeTopics: { none: {} },
+    },
+    data: { status: "archived" },
+  });
+
+  // Only repair recent machine-generated rows: they carry editorialScores and
+  // evidence, unlike a producer's unreviewed custom topic.
+  const stranded = await db.topicCandidate.findMany({
+    where: {
+      status: "pending",
+      createdAt: { gte: cutoff },
+      researchBrief: null,
+      editorialScores: { not: Prisma.JsonNull },
+    },
+    select: { id: true, evidenceIds: true },
+  });
+  const generated = stranded.filter(
+    (topic) => Array.isArray(topic.evidenceIds) && topic.evidenceIds.length >= 2
+  );
+
+  let repaired = 0;
+  for (const topic of generated) {
+    await db.topicCandidate.update({ where: { id: topic.id }, data: { status: "approved" } });
+    await queueResearchBriefGenerationJob(
+      { topicId: topic.id },
+      { jobId: `research-brief-${topic.id}`, priority: 1 }
+    );
+    repaired++;
+  }
+
+  console.log(
+    `[Worker] Topic-pool reconciliation: archived=${archived.count}, repaired=${repaired}, cutoff=${cutoff.toISOString()}`
+  );
 }
 
 // 2. Real Sports Data Ingestion Handler
@@ -1070,6 +1141,21 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
   });
 
   try {
+    const now = new Date();
+    const activeCutoff = activeTopicCutoff(now);
+    const windows = topicEvidenceWindow(now);
+    const archived = await db.topicCandidate.updateMany({
+      where: {
+        status: { in: ["pending", "approved"] },
+        createdAt: { lt: activeCutoff },
+        episodeTopics: { none: {} },
+      },
+      data: { status: "archived" },
+    });
+    if (archived.count > 0) {
+      console.log(`[Worker] Archived ${archived.count} stale topic(s) before generation.`);
+    }
+
     // 1. Stub LLM Guard: Must throw error and abort.
     // Asks ROUTING, not LLM_PROVIDER: under a profile that routes this role to
     // NVIDIA or Z.ai, LLM_PROVIDER may legitimately be unset, and aborting the
@@ -1092,13 +1178,17 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
     const whereLeague = leagueId ? { leagueId: leagueId.toUpperCase() } : {};
 
     const games = await db.game.findMany({
-      where: whereLeague,
+      where: {
+        ...whereLeague,
+        scheduledAt: { gte: windows.gameAfter, lte: windows.gameBefore },
+      },
       take: 30,
       orderBy: { scheduledAt: "desc" },
       include: { homeTeam: true, awayTeam: true },
     });
 
     const newsItems = await db.newsItem.findMany({
+      where: { publishedAt: { gte: windows.newsAfter } },
       take: 60,
       orderBy: { publishedAt: "desc" },
     });
@@ -1143,6 +1233,7 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
     const injuries = await db.injury.findMany({
       where: {
         team: whereLeague,
+        reportedAt: { gte: windows.injuryAfter },
       },
       take: 20,
       orderBy: { reportedAt: "desc" },
@@ -1155,19 +1246,20 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
     const oddsSnapshots = await db.oddsSnapshot.findMany({
       where: {
         game: whereLeague,
+        capturedAt: { gte: windows.oddsAfter },
       },
       take: 30,
       orderBy: { capturedAt: "desc" },
     });
 
     const teamStats = await db.teamStat.findMany({
-      where: whereLeague,
+      where: { ...whereLeague, recordedAt: { gte: windows.statsAfter } },
       take: 20,
       orderBy: { recordedAt: "desc" },
     });
 
     const playerStats = await db.playerStat.findMany({
-      where: whereLeague,
+      where: { ...whereLeague, recordedAt: { gte: windows.statsAfter } },
       take: 20,
       orderBy: { recordedAt: "desc" },
     });
@@ -1377,8 +1469,18 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
 
     // Fetch existing candidates for advanced duplicate checking
     const existingCandidates = await db.topicCandidate.findMany({
+      where: { createdAt: { gte: topicDedupeCutoff(now) } },
       select: { title: true, evidenceIds: true },
     });
+
+    const allowedEvidence = new Map<string, Set<string>>([
+      ["game", new Set(games.map((row) => row.id))],
+      ["newsItem", new Set(filteredNews.map((row) => row.id))],
+      ["injury", new Set(validInjuries.map((row) => row.id))],
+      ["oddsSnapshot", new Set(oddsSnapshots.map((row) => row.id))],
+      ["teamStat", new Set(teamStats.map((row) => row.id))],
+      ["playerStat", new Set(playerStats.map((row) => row.id))],
+    ]);
 
     for (const topic of topicsList) {
       // Basic fields validation
@@ -1441,34 +1543,11 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           break;
         }
 
-        let exists = false;
-        try {
-          if (ref.type === "game") {
-            const r = await db.game.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          } else if (ref.type === "newsItem") {
-            const r = await db.newsItem.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          } else if (ref.type === "injury") {
-            const r = await db.injury.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          } else if (ref.type === "oddsSnapshot") {
-            const r = await db.oddsSnapshot.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          } else if (ref.type === "teamStat") {
-            const r = await db.teamStat.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          } else if (ref.type === "playerStat") {
-            const r = await db.playerStat.findUnique({ where: { id: ref.id } });
-            exists = !!r;
-          }
-        } catch {
-          exists = false;
-        }
+        const exists = allowedEvidence.get(ref.type)?.has(ref.id) ?? false;
 
         if (!exists) {
           hasInvalidEvidence = true;
-          skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: evidence reference [${ref.type}] ${ref.id} not found in DB.`);
+          skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: evidence reference [${ref.type}] ${ref.id} is missing or outside the freshness window.`);
           break;
         }
         validEvidence.push(ref);
@@ -1477,6 +1556,18 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       if (hasInvalidEvidence) {
         invalidEvidenceCount++;
         rejectedCount++;
+        continue;
+      }
+
+      const hasFreshStoryAnchor = validEvidence.some(
+        (ev) => ev.type === "newsItem" || ev.type === "game" || ev.type === "injury"
+      );
+      if (!hasFreshStoryAnchor) {
+        skippedWeakEvidenceCount++;
+        rejectedCount++;
+        skippedRecordsReasonSummary.push(
+          `Topic '${topic.title}' rejected: stats/odds alone cannot anchor a fresh story.`
+        );
         continue;
       }
 
@@ -1610,7 +1701,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           editorialScore: editorial.total,
           editorialScores: editorial as unknown as Prisma.InputJsonValue,
           evidenceIds: validEvidence as any,
-          status: "pending",
+          status: "approved",
           frame: frame.frame,
           frameScore: frame.score,
           frameSignals: frame.signals as any,
@@ -1632,7 +1723,10 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     const briefEnqueueErrors: string[] = [];
     for (const topicId of insertedTopicIds) {
       try {
-        await queueResearchBriefGenerationJob({ topicId });
+        await queueResearchBriefGenerationJob(
+          { topicId },
+          { jobId: `research-brief-${topicId}`, priority: 1 }
+        );
         briefJobsQueued++;
       } catch (e) {
         // One failed enqueue must not lose the other topics' briefs.

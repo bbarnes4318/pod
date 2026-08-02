@@ -102,11 +102,22 @@ export interface ResearchBriefJobData {
   forceRegenerate?: boolean;
 }
 
-export async function queueResearchBriefGenerationJob(data: ResearchBriefJobData, opts?: { jobId?: string }) {
+export async function queueResearchBriefGenerationJob(
+  data: ResearchBriefJobData,
+  opts?: { jobId?: string; priority?: number }
+) {
   // A deterministic jobId makes the enqueue idempotent: BullMQ ignores a second
   // add with the same id, so an operator double-clicking "Start research"
   // cannot queue the same expensive LLM run twice.
-  return podcastQueue.add("generate:research-brief", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
+  const jobOptions = {
+    ...(opts?.jobId ? { jobId: opts.jobId } : {}),
+    ...(typeof opts?.priority === "number" ? { priority: opts.priority } : {}),
+  };
+  return podcastQueue.add(
+    "generate:research-brief",
+    data,
+    Object.keys(jobOptions).length > 0 ? jobOptions : undefined
+  );
 }
 
 export interface EpisodeBuildJobData {
