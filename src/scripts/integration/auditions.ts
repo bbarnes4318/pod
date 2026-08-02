@@ -31,6 +31,9 @@ const ADMIN: AuditionViewer = { id: uid("admin"), isAdmin: true };
 
 const VOICE_A = "36780e7121b84d5c9c24cbd2f15eaaa4";
 const VOICE_B = "46780e7121b84d5c9c24cbd2f15eaaa4";
+// The scene partner must be a THIRD voice: a candidate cannot audition against
+// itself, and the service rightly refuses it.
+const VOICE_PARTNER = "56780e7121b84d5c9c24cbd2f15eaaa4";
 
 /** Deterministic stand-ins for the provider, the analyzer and object storage. */
 function stubDeps(client: ReturnType<typeof prisma>): VoiceAuditionDeps {
@@ -98,7 +101,7 @@ async function main() {
     await seedUser(client, ADMIN, "ADMIN");
 
     const ownedHost = await seedHost(client, OWNER.id, VOICE_A);
-    const partnerHost = await seedHost(client, OWNER.id, VOICE_B);
+    const partnerHost = await seedHost(client, OWNER.id, VOICE_PARTNER);
     const foreignHost = await seedHost(client, OTHER.id, VOICE_A);
     const systemHost = await seedHost(client, null, VOICE_B);
 
