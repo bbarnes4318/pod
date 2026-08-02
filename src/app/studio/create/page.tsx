@@ -9,12 +9,14 @@ import { MAX_TOPICS_PER_EPISODE } from "@/lib/services/episodeCreation";
 import type { PrismaClient } from "@prisma/client";
 import RundownBuilder from "./RundownBuilder";
 import { ttsEngineOptions } from "@/lib/providers/tts/availability";
+import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 
 export const dynamic = "force-dynamic";
 
 export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
   const { topic: seedTopicId } = await searchParams;
   const user = await currentUser(); // /studio layout already gates auth
+  const freshAfter = activeTopicCutoff();
 
   // Resume state first — it tells us which podcast to scope usage to.
   const draft = user ? await loadStudioDraft(user.id) : null;
@@ -36,7 +38,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
 
   const [rawTopics, hostRows] = await Promise.all([
     db.topicCandidate.findMany({
-      where: { status: { in: ["pending", "approved"] } },
+      where: { status: "approved", createdAt: { gte: freshAfter } },
       include: { researchBrief: true },
       orderBy: { createdAt: "desc" },
       take: 60,
