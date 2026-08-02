@@ -153,7 +153,8 @@ async function main() {
 
     await check("select winner does NOT change any production voice", async () => {
       const before = await client.aiHost.findUnique({ where: { id: ownedHost.id } });
-      await selectWinner(deps, { auditionId, ballotId } as never);
+      // Selecting a winner is attributable, like every other decision here.
+      await selectWinner(deps, { auditionId, ballotId, actorId: OWNER.id, actorLabel: "integration" } as never);
       const after = await client.aiHost.findUnique({ where: { id: ownedHost.id } });
       if (before!.ttsVoiceId !== after!.ttsVoiceId) {
         throw new Error("selecting a winner must never promote a voice by itself");
