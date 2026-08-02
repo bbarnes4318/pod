@@ -712,6 +712,19 @@ export async function openVoting(deps: VoiceAuditionDeps, auditionId: string): P
   }
 
   const order = seededShuffle(candidates, audition.blindSeed);
+
+  // TWO PASSES, because (auditionId, blindPosition) is UNIQUE in the database.
+  //
+  // Candidates already hold positions 0..n-1 from when they were added. Writing
+  // the shuffled order straight back collides the moment the shuffle moves any
+  // candidate onto a position another one still occupies — which a Map-backed
+  // store never notices, and Postgres rejects outright.
+  //
+  // So park everything in a disjoint range first, then lay down the final
+  // order. The parking range is negative, which no real position ever uses.
+  for (let i = 0; i < order.length; i++) {
+    await deps.store.updateCandidate(order[i].id, { blindPosition: -(i + 1) });
+  }
   for (let position = 0; position < order.length; position++) {
     await deps.store.updateCandidate(order[position].id, { blindPosition: position });
   }
