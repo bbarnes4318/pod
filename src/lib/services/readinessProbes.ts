@@ -119,7 +119,12 @@ export function containsUnqualifiedReady(text: string): boolean {
 /* 2. Secret hygiene                                                    */
 /* ------------------------------------------------------------------ */
 
-const SECRET_NAME_RE = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|DSN)\b|_URL$|^DATABASE_URL$|^REDIS_URL$/i;
+// Substring match, deliberately. An earlier `\b` after the alternation missed
+// every name where the marker is not the last word — `S3_ACCESS_KEY_ID` being
+// the one that matters here, since the S3 SDK echoes the access key id into
+// `SignatureDoesNotMatch` errors. Over-redacting a non-secret is harmless; the
+// report's contract is names and booleans, so no VALUE needs to survive.
+const SECRET_NAME_RE = /KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|DSN|_URL$/i;
 
 /**
  * Remove any live secret VALUE that managed to reach a rendered string.
@@ -1115,7 +1120,10 @@ export function serializeReport(report: ReadinessReport, env: NodeJS.ProcessEnv)
     headline: clean(report.headline),
     exitCode: report.exitCode,
     checks: report.checks.map((c) => ({
-      name: c.name,
+      // Names are authored constants, but they interpolate provider ids that
+      // come from the environment, so they go through the scrubber too. Every
+      // string that reaches an output stream is scrubbed — no exceptions.
+      name: clean(c.name),
       verdict: c.verdict,
       category: c.category,
       status: c.status,
@@ -1146,7 +1154,7 @@ export function renderReport(report: ReadinessReport, env: NodeJS.ProcessEnv): s
     }
     const icon =
       c.status === "pass" ? "PASS" : c.status === "fail" ? (c.mandatory ? "FAIL" : "warn") : c.status === "warn" ? "warn" : "skip";
-    lines.push(`    [${icon}] ${c.name}`);
+    lines.push(`    [${icon}] ${clean(c.name)}`);
     if (c.detail) lines.push(`           ${clean(c.detail)}`);
     if (c.missingVars?.length) lines.push(`           missing: ${c.missingVars.join(", ")}`);
   }
@@ -1536,4 +1544,44 @@ export async function createLiveDependencies(): Promise<ReadinessDependencies> {
       webBuildIdentity: liveWebBuildIdentity,
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* 9. Command line                                                      */
+/* ------------------------------------------------------------------ */
+
+export interface ReadinessCliOptions {
+  mode: ReadinessMode;
+  asJson: boolean;
+  expectSha: string | null;
+  workerTimeoutMs: number;
+  /** True when the operator explicitly refused the live probes. */
+  skipLive: boolean;
+}
+
+/**
+ * Pure, so the flag-to-mode mapping is testable without running the command.
+ *
+ * `--skip-live` predates the four verdicts and is kept as an explicit alias for
+ * config mode. It WINS over `--live`/`--release`: those flags ask for evidence
+ * and `--skip-live` refuses to gather it, and the only safe reading of a
+ * contradiction is the one that cannot over-claim. A `--skip-live --release`
+ * run therefore reports CONFIGURATION-READY at best and never accepts a release.
+ */
+export function parseReadinessArgs(argv: string[]): ReadinessCliOptions {
+  const asJson = argv.includes("--json");
+  const skipLive = argv.includes("--skip-live") || argv.includes("--config");
+  const release = !skipLive && argv.includes("--release");
+  const live = !skipLive && argv.includes("--live");
+  const mode: ReadinessMode = release ? "release" : live ? "live" : "config";
+
+  const shaIndex = argv.indexOf("--expect-sha");
+  const rawSha = shaIndex >= 0 ? (argv[shaIndex + 1] || "").trim() : "";
+  const expectSha = rawSha && !rawSha.startsWith("--") ? rawSha : null;
+
+  const timeoutIndex = argv.indexOf("--worker-timeout-ms");
+  const parsedTimeout = timeoutIndex >= 0 && argv[timeoutIndex + 1] ? Number(argv[timeoutIndex + 1]) : NaN;
+  const workerTimeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : WORKER_HEALTH_TIMEOUT_MS;
+
+  return { mode, asJson, expectSha, workerTimeoutMs, skipLive };
 }

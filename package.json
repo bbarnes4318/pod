@@ -45,6 +45,7 @@
     "test:seven-role-pipeline": "tsx --conditions=react-server src/scripts/testSevenRolePipeline.ts",
     "test:production-release-gate": "tsx --conditions=react-server src/scripts/testProductionReleaseGate.ts",
     "test:semantic-audio-qa": "tsx --conditions=react-server src/scripts/testSemanticAudioQa.ts",
+    "test:semantic-qa-acceptance": "tsx --conditions=react-server src/scripts/testSemanticQaAcceptance.ts",
     "test:world-class-learning": "tsx --conditions=react-server src/scripts/testWorldClassLearning.ts",
     "sample:human-dialogue": "tsx --conditions=react-server src/scripts/produceHumanDialogueAudition.ts",
     "test:waveform-analysis": "tsx src/scripts/testWaveformAnalysis.ts",

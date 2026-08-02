@@ -26,6 +26,8 @@ export interface AudioSemanticQaReport {
   speakerAttributionErrorRate: number | null;
   criticalTokenMissRate: number | null;
   interruptionErrorRate: number | null;
+  /** Authored speaker sequence vs rendered speaker sequence. */
+  lineOrderErrorRate?: number | null;
   transcript: string | null;
   speakerMap: Record<string, string>;
   failures: string[];
@@ -230,6 +232,21 @@ export function evaluateDiarizedTranscript(expected: ExpectedSpokenLine[], segme
     missedInterruptions = Math.max(0, expectedInterruptions - fastHandoffs);
   }
   const interruptionError = expectedInterruptions ? missedInterruptions / expectedInterruptions : 0;
+  // --- line order -----------------------------------------------------------
+  // Speaker attribution alone does not prove the episode plays in the authored
+  // ORDER. A stitch that emits scene 3 before scene 2, or a re-splice that drops
+  // a line, can leave per-speaker text almost unchanged while the argument
+  // stops making sense. Compare the authored speaker sequence against the
+  // rendered one, collapsing consecutive same-speaker runs so ordinary
+  // diarization segmentation is not counted as a fault.
+  const collapse = (seq: string[]) => seq.filter((s, i) => i === 0 || s !== seq[i - 1]);
+  const expectedOrder = collapse(expected.map((l) => l.speakerHostId));
+  const actualOrder = collapse(
+    segments.map((s) => speakerMap[s.speaker]).filter((x): x is string => Boolean(x))
+  );
+  const orderDistance = distance(expectedOrder, actualOrder);
+  const lineOrderErrorRate = expectedOrder.length ? orderDistance / expectedOrder.length : 0;
+
   const failures: string[] = [];
   const warnings: string[] = [];
   if (wer > 0.16) failures.push(`Transcript word-error rate ${(wer * 100).toFixed(1)}% exceeds 16%.`);
@@ -251,6 +268,7 @@ export function evaluateDiarizedTranscript(expected: ExpectedSpokenLine[], segme
     failures.push(`Name(s) not present in the rendered audio: ${missedNames.join(", ")}.`);
   }
   if (speakerError > 0.08) failures.push(`Speaker-attribution error rate ${(speakerError * 100).toFixed(1)}% exceeds 8%.`);
+  if (lineOrderErrorRate > 0.12) failures.push(`Rendered speaker order differs from the authored order (${(lineOrderErrorRate * 100).toFixed(1)}% edit distance).`);
   if (interruptionError > 0.5) warnings.push(`${missedInterruptions}/${expectedInterruptions} authored interruptions were not audible as tight handoffs.`);
   return {
     status: failures.length ? "fail" : "pass",
@@ -260,6 +278,7 @@ export function evaluateDiarizedTranscript(expected: ExpectedSpokenLine[], segme
     speakerAttributionErrorRate: speakerError,
     criticalTokenMissRate: criticalMiss,
     interruptionErrorRate: interruptionError,
+    lineOrderErrorRate,
     transcript: actualText,
     speakerMap,
     failures,
@@ -417,7 +436,7 @@ export async function runAudioSemanticQa(input: { audio: Buffer; mimeType: strin
     // FAIL CLOSED in production. Elsewhere, report not_run exactly as before so
     // local and CI work are unaffected.
     if (requirement.required) throw new SemanticQaUnavailableError(requirement.missing);
-    return { status: "not_run", provider: null, model: null, wordErrorRate: null, speakerAttributionErrorRate: null, criticalTokenMissRate: null, interruptionErrorRate: null, transcript: null, speakerMap: {}, failures: [], warnings: ["TTS_TRANSCRIPT_QA_ENABLED is not true."], segments: [] };
+    return { status: "not_run", provider: null, model: null, wordErrorRate: null, speakerAttributionErrorRate: null, criticalTokenMissRate: null, interruptionErrorRate: null, lineOrderErrorRate: null, transcript: null, speakerMap: {}, failures: [], warnings: ["TTS_TRANSCRIPT_QA_ENABLED is not true."], segments: [] };
   }
   if (requirement.required && requirement.missing.length) {
     throw new SemanticQaUnavailableError(requirement.missing);

@@ -41,46 +41,22 @@
 
 import "dotenv/config";
 
+// The flag parsing itself lives in the probe module (`parseReadinessArgs`) so
+// that `npm run test:production-readiness` can assert the flag-to-mode mapping
+// — in particular that `--skip-live` can never reach a release verdict —
+// without executing the command.
 import {
-  WORKER_HEALTH_TIMEOUT_MS,
   createLiveDependencies,
   errText,
   evaluateReadiness,
+  parseReadinessArgs,
   renderReport,
   scrubSecrets,
   serializeReport,
-  type ReadinessMode,
 } from "../lib/services/readinessProbes";
 
-interface Cli {
-  mode: ReadinessMode;
-  asJson: boolean;
-  expectSha: string | null;
-  workerTimeoutMs: number;
-}
-
-function parseArgs(argv: string[]): Cli {
-  const asJson = argv.includes("--json");
-
-  // `--skip-live` predates the four verdicts. It is kept as an explicit alias
-  // for config mode so an existing CI invocation keeps working — and it now
-  // gets the same qualified verdict as `--config`, never a bare READY.
-  const release = argv.includes("--release");
-  const live = argv.includes("--live");
-  const mode: ReadinessMode = release ? "release" : live ? "live" : "config";
-
-  const shaIndex = argv.indexOf("--expect-sha");
-  const expectSha = shaIndex >= 0 && argv[shaIndex + 1] ? argv[shaIndex + 1].trim() : null;
-
-  const timeoutIndex = argv.indexOf("--worker-timeout-ms");
-  const parsedTimeout = timeoutIndex >= 0 && argv[timeoutIndex + 1] ? Number(argv[timeoutIndex + 1]) : NaN;
-  const workerTimeoutMs = Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : WORKER_HEALTH_TIMEOUT_MS;
-
-  return { mode, asJson, expectSha, workerTimeoutMs };
-}
-
 async function main() {
-  const cli = parseArgs(process.argv.slice(2));
+  const cli = parseReadinessArgs(process.argv.slice(2));
   const deps = await createLiveDependencies();
 
   const report = await evaluateReadiness({

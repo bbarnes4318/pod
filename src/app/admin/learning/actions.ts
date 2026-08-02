@@ -18,7 +18,10 @@ import {
   ADJUSTABLE_POLICY_FIELDS,
   IMMUTABLE_POLICY_RULES,
   DEFAULT_PROMOTION_THRESHOLDS,
+  approveStagedPolicyPromotion,
+  dismissStagedPolicyPromotion,
   getActivePolicyVersion,
+  listStagedPolicyPromotions,
   rollbackProductionPolicy,
   runLearningPromotionCycle,
 } from "@/lib/services/productionPolicy";
@@ -67,6 +70,28 @@ export interface PolicyDecisionVm {
   decidedAt: string;
 }
 
+/**
+ * A change that cleared every automated gate on evidence from the PUBLIC
+ * endpoint. It is deliberately NOT applied: anonymous traffic cannot be shown
+ * to be trustworthy enough to move production settings by itself, so a named
+ * operator decides. See productionPolicy.ts rule 5.
+ */
+export interface StagedPromotionVm {
+  decisionId: string;
+  reason: string;
+  stagedAt: string;
+  signalLabel: string;
+  winnerScopeKey: string;
+  challengerScopeKey: string;
+  /** Raw aggregate sample per arm. */
+  rawSample: string;
+  /** Credible INDEPENDENT listeners per arm — the number that actually gated. */
+  credibleSample: string;
+  effect: number | null;
+  zScore: number | null;
+  changes: { field: string; from: string; to: string }[];
+}
+
 export interface LearningViewData {
   shows: { id: string; name: string }[];
   podcastId: string | null;
@@ -78,6 +103,7 @@ export interface LearningViewData {
   scopeKinds: AggregateScopeKind[];
   policyVersions: PolicyVersionVm[];
   decisions: PolicyDecisionVm[];
+  staged: StagedPromotionVm[];
   activeVersion: number | null;
   adjustableFields: { field: string; label: string; bound: string }[];
   immutableFields: string[];
@@ -135,6 +161,7 @@ export async function fetchLearningData(podcastId?: string | null): Promise<Lear
     scopeKinds: AGGREGATE_SCOPE_KINDS,
     policyVersions: [],
     decisions: [],
+    staged: [],
     activeVersion: null,
     adjustableFields: Object.keys(ADJUSTABLE_POLICY_FIELDS).map((field) => ({
       field,

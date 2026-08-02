@@ -835,6 +835,186 @@ export async function rollbackProductionPolicy(
 }
 
 /* ------------------------------------------------------------------ */
+/* 3b. The human approval leg.                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A promotion that cleared every automated gate and is waiting for a person.
+ * The proposal and the statistics that produced it are carried verbatim from
+ * the staged decision, so the approver sees exactly what was proposed.
+ */
+export interface StagedPromotion {
+  decisionId: string;
+  podcastId: string;
+  reason: string;
+  stagedAt: Date;
+  proposal: PolicyProposal;
+  comparison: PolicyComparison | null;
+  stats: Partial<PromotionStats> | null;
+  evidence: Record<string, unknown> | null;
+}
+
+function detailObject(detail: Record<string, unknown> | null, key: string): Record<string, unknown> | null {
+  const v = detail?.[key];
+  return isPlainObject(v) ? v : null;
+}
+
+/** Decision ids that a later decision already approved or dismissed. */
+function resolvedStagedIds(decisions: PolicyDecisionRecord[]): Set<string> {
+  const resolved = new Set<string>();
+  for (const d of decisions) {
+    const approved = d.detail?.approvedDecisionId;
+    const dismissed = d.detail?.dismissedDecisionId;
+    if (typeof approved === "string") resolved.add(approved);
+    if (typeof dismissed === "string") resolved.add(dismissed);
+  }
+  return resolved;
+}
+
+/**
+ * Everything currently awaiting a human for ONE show, newest first. A staged
+ * decision that has already been approved or dismissed is not returned — an
+ * approval queue that keeps re-offering settled items trains people to click
+ * through it.
+ */
+export async function listStagedPolicyPromotions(store: LearningStore, podcastId: string): Promise<StagedPromotion[]> {
+  const decisions = assertShowScoped(await store.listPolicyDecisions(podcastId), podcastId);
+  const resolved = resolvedStagedIds(decisions);
+  return decisions
+    .filter((d) => d.outcome === "staged" && !resolved.has(d.id))
+    .map((d) => ({
+      decisionId: d.id,
+      podcastId: d.podcastId,
+      reason: d.reason,
+      stagedAt: d.decidedAt,
+      proposal: detailObject(d.detail, "proposal") ?? {},
+      comparison: (detailObject(d.detail, "comparison") as unknown as PolicyComparison | null) ?? null,
+      stats: (detailObject(d.detail, "stats") as unknown as Partial<PromotionStats> | null) ?? null,
+      evidence: detailObject(d.detail, "evidence"),
+    }))
+    .sort((a, b) => b.stagedAt.getTime() - a.stagedAt.getTime());
+}
+
+export type StagedResolutionFailure = {
+  promoted: false;
+  code: "unknown_staged_decision" | "already_resolved" | "human_actor_required" | "incomplete_staged_decision";
+  reason: string;
+  decision: null;
+};
+
+/**
+ * APPLY a staged promotion, on the authority of a NAMED HUMAN.
+ *
+ * The staged proposal is NOT trusted as pre-approved evidence. It is re-run
+ * through promoteProductionPolicy() against the aggregates and raw events as
+ * they are NOW — bounds, step cap, sample size, significance and credible
+ * independent listeners are all re-checked at approval time. A proposal whose
+ * support has since evaporated is refused here exactly as it would have been
+ * refused when it was staged, and the refusal is recorded.
+ *
+ * The ONLY thing approval supplies is the `approval.humanActor` that the gate in
+ * promoteProductionPolicy() requires. That is the whole point: a person, named
+ * in the version row, takes responsibility for a change that anonymous traffic
+ * suggested.
+ */
+export async function approveStagedPolicyPromotion(
+  store: LearningStore,
+  input: {
+    podcastId: string;
+    decisionId: string;
+    /** A real, identifiable operator. Never an automated caller's name. */
+    humanActor: string;
+    aggregates: LearningAggregateRow[];
+    events?: LearningEventRecord[];
+    thresholds?: Partial<PromotionThresholds>;
+    rationale?: string;
+    now?: Date;
+  }
+): Promise<PromotionResult | StagedResolutionFailure> {
+  const now = input.now ?? new Date();
+  const humanActor = (input.humanActor ?? "").trim();
+  if (!humanActor) {
+    return {
+      promoted: false,
+      code: "human_actor_required",
+      reason: "A staged promotion is applied on a named person's authority; an empty actor is not one.",
+      decision: null,
+    };
+  }
+
+  const decisions = assertShowScoped(await store.listPolicyDecisions(input.podcastId), input.podcastId);
+  const staged = decisions.find((d) => d.id === input.decisionId && d.outcome === "staged") ?? null;
+  if (!staged) {
+    return { promoted: false, code: "unknown_staged_decision", reason: `No staged promotion "${input.decisionId}" for this show.`, decision: null };
+  }
+  if (resolvedStagedIds(decisions).has(staged.id)) {
+    return { promoted: false, code: "already_resolved", reason: "That staged promotion has already been approved or dismissed.", decision: null };
+  }
+
+  const proposal = detailObject(staged.detail, "proposal");
+  const comparison = detailObject(staged.detail, "comparison") as unknown as PolicyComparison | null;
+  if (!proposal || !comparison || !isLearningSignalKey(comparison.signalKey)) {
+    return {
+      promoted: false,
+      code: "incomplete_staged_decision",
+      reason: "The staged decision does not carry a proposal and comparison to re-verify.",
+      decision: null,
+    };
+  }
+
+  return promoteProductionPolicy(store, {
+    podcastId: input.podcastId,
+    proposal,
+    comparison,
+    aggregates: input.aggregates,
+    events: input.events,
+    actor: humanActor,
+    rationale: input.rationale,
+    thresholds: input.thresholds,
+    now,
+    approval: { humanActor, approvedDecisionId: staged.id },
+  });
+}
+
+/**
+ * Decline a staged promotion. Recorded rather than deleted: "a human looked at
+ * this and said no" is evidence, and without it the same candidate would be
+ * re-staged on the next cycle with nothing to show it had been considered.
+ */
+export async function dismissStagedPolicyPromotion(
+  store: LearningStore,
+  input: { podcastId: string; decisionId: string; humanActor: string; reason?: string; now?: Date }
+): Promise<{ dismissed: true; decision: PolicyDecisionRecord } | StagedResolutionFailure> {
+  const now = input.now ?? new Date();
+  const humanActor = (input.humanActor ?? "").trim();
+  if (!humanActor) {
+    return { promoted: false, code: "human_actor_required", reason: "A dismissal is recorded against a named person.", decision: null };
+  }
+  const decisions = assertShowScoped(await store.listPolicyDecisions(input.podcastId), input.podcastId);
+  const staged = decisions.find((d) => d.id === input.decisionId && d.outcome === "staged") ?? null;
+  if (!staged) {
+    return { promoted: false, code: "unknown_staged_decision", reason: `No staged promotion "${input.decisionId}" for this show.`, decision: null };
+  }
+  if (resolvedStagedIds(decisions).has(staged.id)) {
+    return { promoted: false, code: "already_resolved", reason: "That staged promotion has already been approved or dismissed.", decision: null };
+  }
+
+  const decision: PolicyDecisionRecord = {
+    id: newId(),
+    podcastId: input.podcastId,
+    outcome: "rejected",
+    code: "human_dismissed",
+    reason: input.reason?.trim() || "A reviewer declined this staged change.",
+    resultingVersion: null,
+    detail: { dismissedDecisionId: staged.id, stagedReason: staged.reason },
+    actor: humanActor,
+    decidedAt: now,
+  };
+  await store.insertPolicyDecision(decision);
+  return { dismissed: true, decision };
+}
+
+/* ------------------------------------------------------------------ */
 /* 4. Turning aggregates into a candidate proposal (the automated leg). */
 /* ------------------------------------------------------------------ */
 

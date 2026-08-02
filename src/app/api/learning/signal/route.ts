@@ -1,76 +1,66 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import {
-  countryFromHeaders,
-  createPrismaLearningStore,
-  isLearningSignalKey,
-  recordLearningEvents,
-  signalDescriptor,
-} from "@/lib/services/listenerLearning";
-import { loadEpisodeLearningContext } from "../episodeContext";
+import { intakeIssueSignalContext, intakeListenerSignal } from "@/lib/services/listenerLearning";
+import { learningIntakeDeps, readCappedBody, requestOrigin } from "../episodeContext";
 
 export const dynamic = "force-dynamic";
 
-// Listener / panel signal collection for the closed learning loop.
+// PUBLIC listener / panel signal collection for the closed learning loop.
 //
-// CONSENT IS THE GATE: a body without `consent: true` is refused with a reason
-// rather than quietly stored. The raw `listenerId` the client sends is hashed
-// inside recordLearningEvents() and never persisted; nothing else identifying
-// is read from the request — no IP, no user-agent, only an edge geo header's
-// 2-letter country when one exists.
+// THIS IS AN UNAUTHENTICATED ENDPOINT REACHABLE BY ANYONE WITH curl, and the
+// data it collects feeds production-policy promotion. It is therefore a
+// two-step handshake, not a fire-and-forget beacon:
 //
-// The attribution dimensions (show, format, host pair, opening variant, policy
-// versions) are resolved SERVER-SIDE from the episode, so a client can neither
-// choose nor spoof what a signal is attributed to.
+//   GET  ?episodeId=…  -> { context }   a short-lived HMAC-signed grant
+//   POST { context, signalKey, value, listenerId, consent }
+//
+// The signed context is what makes attribution trustworthy: the EPISODE is
+// named inside the token by the server, so a client cannot report a signal
+// against a show it was never served, and it cannot mint its own grant.
+//
+// Everything the boundary enforces — strict per-signal ranges, the closed
+// metadata allow-list, body/metadata size caps, (listener, episode, signal)
+// dedupe, per-listener and per-source rate limits, consent, and the refusal of
+// any client-named variant identity — lives in listenerLearning.ts section 8
+// and is proved offline by src/scripts/testListenerSignalAbuse.ts. This handler
+// deliberately contains NO rules of its own: a rule that lived here would be a
+// rule the adversarial suite could not reach.
+//
+// PRIVACY: the raw listenerId is hashed and never persisted; the source IP is
+// salted-hashed into a coarse bucket and never stored as an address; geo is a
+// 2-letter country from an edge header at most.
+//
+// NOTE ON WHAT THIS DATA MAY DO: nothing collected here can move production
+// settings on its own. A promotion whose deciding signal came from this
+// endpoint is STAGED for a named human — see productionPolicy.ts.
 
+/** Issue a signed context for one episode. */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const episodeId = url.searchParams.get("episodeId") || "";
+  const { sourceIp } = requestOrigin(req);
+
+  const result = await intakeIssueSignalContext(learningIntakeDeps(), { episodeId, sourceIp });
+  if (!result.ok) {
+    return NextResponse.json({ ok: false, error: result.code, reason: result.reason }, { status: result.status });
+  }
+  return NextResponse.json(
+    { ok: true, ...result.body },
+    // A grant is minted per request and per source; caching one would hand the
+    // same token to every listener behind a shared cache.
+    { headers: { "cache-control": "no-store" } }
+  );
+}
+
+/** Record one signal against the episode named in the signed context. */
 export async function POST(req: Request) {
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const rawBody = await readCappedBody(req);
+  const { sourceIp, country } = requestOrigin(req);
 
-  const episodeId = typeof body.episodeId === "string" ? body.episodeId : "";
-  const signalKey = body.signalKey;
-  const listenerId = typeof body.listenerId === "string" ? body.listenerId : "";
-
-  if (!episodeId || !isLearningSignalKey(signalKey)) {
-    return NextResponse.json({ ok: false, error: "episodeId and a known signalKey are required." }, { status: 400 });
+  const result = await intakeListenerSignal(learningIntakeDeps(), { rawBody, sourceIp, country });
+  if (!result.ok) {
+    const headers: Record<string, string> = {};
+    if (result.status === 429) headers["retry-after"] = "60";
+    return NextResponse.json({ ok: false, error: result.code, reason: result.reason }, { status: result.status, headers });
   }
-  const descriptor = signalDescriptor(signalKey);
-  if (descriptor.source === "production") {
-    // Production measurements are derived from artifacts by the worker, not
-    // reported by a client that could assert any number it likes.
-    return NextResponse.json({ ok: false, error: `"${signalKey}" is a production-side measurement and is not accepted from clients.` }, { status: 400 });
-  }
-  if (body.consent !== true) {
-    return NextResponse.json({ ok: false, error: "consent_required" }, { status: 403 });
-  }
-  if (!listenerId) {
-    return NextResponse.json({ ok: false, error: "listenerId is required (it is hashed and never stored)." }, { status: 400 });
-  }
-
-  const context = await loadEpisodeLearningContext(episodeId);
-  if (!context) return NextResponse.json({ ok: false, error: "unknown_episode" }, { status: 404 });
-
-  const store = createPrismaLearningStore(db);
-  const { recorded, rejected } = await recordLearningEvents(store, [
-    {
-      signalKey,
-      value: Number(body.value ?? 1),
-      episodeId: context.episodeId,
-      podcastId: context.podcastId,
-      formatId: context.formatId,
-      openingVariant: context.openingVariant,
-      hostPairKey: context.hostPairKey,
-      voicePolicyVersion: context.voicePolicyVersion,
-      productionPolicyVersion: context.productionPolicyVersion,
-      listenerId,
-      cohort: typeof body.cohort === "string" ? body.cohort : null,
-      consented: true,
-      country: countryFromHeaders(req.headers),
-      metadata: (body.metadata as Record<string, unknown>) ?? null,
-    },
-  ]);
-
-  if (!recorded.length) {
-    return NextResponse.json({ ok: false, error: rejected[0]?.code ?? "rejected", reason: rejected[0]?.reason }, { status: 400 });
-  }
-  return NextResponse.json({ ok: true, recorded: recorded.length });
+  return NextResponse.json({ ok: true, ...result.body });
 }
