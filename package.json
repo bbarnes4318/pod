@@ -154,7 +154,8 @@
     "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts",
     "test:voice-audition": "tsx --conditions=react-server src/scripts/testVoiceAudition.ts",
     "test:voice-audition-authz": "tsx --conditions=react-server src/scripts/testVoiceAuditionAuthz.ts",
-    "test:listener-signal-abuse": "tsx --conditions=react-server src/scripts/testListenerSignalAbuse.ts"
+    "test:listener-signal-abuse": "tsx --conditions=react-server src/scripts/testListenerSignalAbuse.ts",
+    "test:production-readiness": "tsx --conditions=react-server src/scripts/testProductionReadiness.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
