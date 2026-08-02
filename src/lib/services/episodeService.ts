@@ -13,6 +13,7 @@ import { evaluateHardGates, type EligibilityTopic } from "./topicEligibility";
 import {
   enforceEventDiversity,
   loadEventContext,
+  type CandidateDecision,
   type ClusterableTopic,
   type DiversityDeferral,
   type DiversitySkip,
@@ -229,6 +230,10 @@ export interface AutoSelectDiversity {
   deferred: DiversityDeferral[];
   /** True when `allowDuplicateEvents` let same-event topics through. */
   overrideApplied: boolean;
+  /** One line per examined candidate — accepted, rejected, allowed as an
+   *  update, deferred or never reached — with the reason in plain words. This
+   *  is the audit trail an operator reads to understand a short rundown. */
+  decisions: CandidateDecision[];
 }
 
 /** How deep the pairwise event-diversity pass will search before giving up on
@@ -420,14 +425,22 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
     skipped: enforcement.skipped,
     deferred: enforcement.deferred,
     overrideApplied: enforcement.overrideApplied,
+    decisions: enforcement.decisions,
   };
 
   // WHY a qualifying topic was left out, in the operator-visible reason list.
   for (const s of enforcement.skipped) {
     result.skippedTopicCount++;
+    const label = s.relation === "update" ? "same event as" : s.stale ? "a STALE duplicate of" : "same event as";
     result.reasons.push(
-      `Skipped '${s.title}': same event as '${s.duplicateOfTitle}' already in this rundown — ${s.reasons.slice(1).join(" ") || s.reasons[0]}`
+      `Skipped '${s.title}': ${label} '${s.duplicateOfTitle}' already in this rundown — ${s.reasons.slice(1).join(" ") || s.reasons[0]}`
     );
+  }
+  // A same-event story that carried real new information kept its slot; say so,
+  // because "two topics about one game" otherwise reads as a regression.
+  for (const d of enforcement.decisions) {
+    if (d.outcome !== "accepted-as-update") continue;
+    result.reasons.push(`Kept '${d.title}' as an UPDATE on an event already in the rundown: ${d.reason}`);
   }
   for (const d of enforcement.deferred) {
     if (result.chosen.some((c) => c.id === d.topicId)) continue;

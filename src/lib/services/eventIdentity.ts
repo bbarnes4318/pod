@@ -827,9 +827,12 @@ export const OPEN_QUESTION_MARKERS: string[] = [
 ];
 
 /** Phrases that mean the later story CLOSED something. */
+// NOTE: a bare "ruling" is deliberately NOT here — it occurs just as often in
+// "awaiting a ruling" (an OPEN question) as in a resolution, and a marker that
+// fires on both sides classifies restatements as updates.
 export const RESOLUTION_MARKERS: string[] = [
   "announced", "was suspended", "suspended for", "has been suspended", "ruled",
-  "ruling", "decided", "confirmed", "officially", "finalized", "finalised",
+  "decided", "confirmed", "officially", "finalized", "finalised",
   "agreed to", "cleared to", "was cleared", "upheld", "overturned", "reinstated",
   "handed a", "issued a", "completed the trade", "was traded", "has been traded",
   "was fired", "was hired", "signed a", "has been named", "will miss the season",

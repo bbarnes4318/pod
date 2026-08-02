@@ -894,6 +894,33 @@ async function testControlFlow(): Promise<void> {
     await assert.rejects(() => openVoting(deps, audition.id), /at least two candidates/);
   });
 
+  await check("every candidate must face the same scene partner", async () => {
+    const { deps, store } = makeDeps();
+    const audition = await createAudition(deps, { ownerId: "u", hostId: HOST_ID, title: "Partner drift" });
+    await addCandidate(deps, { auditionId: audition.id, ...CHALLENGER_A, partner: PARTNER });
+    await assert.rejects(
+      () => addCandidate(deps, {
+        auditionId: audition.id,
+        ...CHALLENGER_B,
+        partner: { provider: "fish", voiceId: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+      }),
+      /same scene partner/
+    );
+    // The partner actually used is recorded as provenance on the candidate.
+    const stored = await store.listCandidates(audition.id);
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].generationSettings?.partnerVoiceId, PARTNER.voiceId);
+  });
+
+  await check("a voice cannot audition against itself", async () => {
+    const { deps } = makeDeps();
+    const audition = await createAudition(deps, { ownerId: "u", hostId: HOST_ID, title: "Self" });
+    await assert.rejects(
+      () => addCandidate(deps, { auditionId: audition.id, ...PARTNER, partner: PARTNER }),
+      /against itself/
+    );
+  });
+
   await check("the same voice cannot be entered twice", async () => {
     const { deps } = makeDeps();
     const audition = await createAudition(deps, { ownerId: "u", hostId: HOST_ID, title: "Dupes" });

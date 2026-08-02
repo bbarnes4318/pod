@@ -1454,3 +1454,192 @@ model VoicePromotion {
   @@index([auditionId])
   @@index([revertsPromotionId])
 }
+
+// ===========================================================================
+// CLOSED LISTENER-LEARNING LOOP
+// (migration 20260802010000_add_listener_learning — PURELY ADDITIVE)
+//
+// The loop: collect -> aggregate -> evaluate -> promote/reject -> rollback.
+//
+// Two storage layers, deliberately separate:
+//   • ListenerLearningEvent     RAW, attributable, append-only. THE RECORD.
+//   • ListenerLearningAggregate DERIVED and fully recomputable from the raw
+//                               events. Safe to truncate and rebuild.
+// Nothing reads an aggregate as evidence of anything the raw events cannot
+// reproduce; see recomputeAggregates() in src/lib/services/listenerLearning.ts.
+//
+// PRIVACY: listenerHash is sha256(rawId | day | salt) truncated — the raw
+// identifier is never persisted, no IP, no user-agent, no free text. `country`
+// is a 2-letter ISO code from an edge geo header only. `consented` records the
+// explicit listener opt-in that gated collection. `expiresAt` is the retention
+// horizon; purgeExpiredLearningEvents() is the documented purge path.
+//
+// No relations to existing tables on purpose (episodeId / podcastId are plain
+// ids), so this whole block can be added or dropped without touching Episode,
+// Podcast or any existing constraint.
+// ===========================================================================
+
+model ListenerLearningEvent {
+  id String @id @default(uuid())
+
+  /// One of the 14 keys in LEARNING_SIGNALS (src/lib/services/listenerLearning.ts).
+  signalKey String
+  /// listener | panel | production — where the measurement came from.
+  source    String
+
+  // --- Attribution dimensions (all nullable: a signal is recorded with the
+  // dimensions that are actually known, never with invented ones) -----------
+  episodeId               String?
+  podcastId               String?
+  formatId                String?
+  /// Cold-open / opening archetype in force for the measured episode.
+  openingVariant          String?
+  /// Stable, order-independent key for the host pair (e.g. "cal|zabala").
+  hostPairKey             String?
+  voicePolicyVersion      Int?
+  productionPolicyVersion Int?
+
+  // --- Privacy-bearing fields ----------------------------------------------
+  /// Salted hash. NEVER a raw session id, account id, cookie or IP.
+  listenerHash String?
+  /// Coarse panel/experiment cohort label. Never a person.
+  cohort       String?
+  /// Explicit opt-in captured at collection time.
+  consented    Boolean @default(false)
+  /// 2-letter ISO country from a geo header, or null. Nothing finer.
+  country      String?
+
+  /// The measured number, already clamped into the signal's declared range.
+  value      Float
+  /// Units of `value` — "ratio" | "usd_per_minute" | "score_0_1".
+  unit       String
+  occurredAt DateTime @default(now())
+  /// Retention horizon. Rows past this are purged; see the purge path.
+  expiresAt  DateTime
+  /// Non-identifying context only (sanitized on write).
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([podcastId, signalKey, occurredAt])
+  @@index([episodeId, signalKey])
+  @@index([expiresAt])
+  @@index([listenerHash])
+}
+
+/// DERIVED rollups. Every row is reproducible from ListenerLearningEvent by
+/// recomputeAggregates(); nothing is written here that raw events cannot
+/// regenerate. scopeKind ∈ episode | show | format | opening_variant |
+/// host_pair | voice_policy | production_policy.
+model ListenerLearningAggregate {
+  id        String @id @default(uuid())
+  podcastId String
+
+  scopeKind String
+  scopeKey  String
+  signalKey String
+
+  sampleSize Int
+  mean       Float
+  sum        Float
+  minValue   Float
+  maxValue   Float
+  stdDev     Float
+  /// Half-width of the 95% interval around `mean`.
+  marginOfError Float
+  /// low | moderate | high — sample-size + spread driven, never asserted.
+  confidence    String
+
+  windowStart DateTime
+  windowEnd   DateTime
+  computedAt  DateTime @default(now())
+
+  @@unique([podcastId, scopeKind, scopeKey, signalKey])
+  @@index([podcastId, signalKey])
+}
+
+/// A blind head-to-head cold-open test. The variant ids live ONLY here; the
+/// payload served to the listener carries slot labels ("A"/"B") and slot-scoped
+/// media URLs, never the variant identity. See buildColdOpenTrial().
+model ColdOpenPairwiseTrial {
+  id         String @id @default(uuid())
+  /// Opaque token the listener's client echoes back. Not derived from variants.
+  trialToken String @unique
+
+  episodeId String?
+  podcastId String?
+
+  /// Variant served in slot A / slot B. SERVER-SIDE ONLY.
+  slotAVariantId String
+  slotBVariantId String
+
+  listenerHash String?
+  consented    Boolean @default(false)
+  country      String?
+
+  /// "A" | "B" once decided.
+  winnerSlot      String?
+  winnerVariantId String?
+  decidedAt       DateTime?
+
+  servedAt  DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([podcastId, servedAt])
+  @@index([episodeId])
+}
+
+/// Versioned, PER-SHOW production policy. Scoped by podcastId so a preference
+/// learned on one show can never homogenize another. `preferences` holds ONLY
+/// the bounded adjustable fields; `immutableRules` is the frozen snapshot of
+/// evidence/safety/character rules that learning may never touch.
+model ProductionPolicyVersion {
+  id        String @id @default(uuid())
+  podcastId String
+  version   Int
+
+  /// active | superseded | rolled_back
+  status String @default("active")
+
+  preferences    Json
+  immutableRules Json
+
+  /// Human-readable "why". Never empty for a promoted version.
+  rationale String
+
+  /// Explainability payload: causing episode ids, listener cohorts, the
+  /// signals + sample sizes + confidence that justified the change.
+  evidence Json
+
+  promotedFromVersion Int?
+  promotedBy          String?
+  promotedAt          DateTime  @default(now())
+  rolledBackAt        DateTime?
+  rolledBackBy        String?
+  rolledBackReason    String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([podcastId, version])
+  @@index([podcastId, status])
+}
+
+/// Every promotion ATTEMPT, including the refusals. An automated change that
+/// did not happen must leave a reason behind, or the loop is not auditable.
+model ProductionPolicyDecision {
+  id        String @id @default(uuid())
+  podcastId String
+
+  /// promoted | rejected | rolled_back
+  outcome String
+  /// Machine code: insufficient_sample | low_confidence | immutable_field |
+  /// out_of_bounds | unknown_field | no_prior_version | promoted | rolled_back
+  code    String
+  reason  String
+
+  resultingVersion Int?
+  detail           Json?
+  actor            String?
+  decidedAt        DateTime @default(now())
+
+  @@index([podcastId, decidedAt])
+}

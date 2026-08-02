@@ -19,7 +19,6 @@ import {
   addCandidate,
   castVote,
   createAudition,
-  createPrismaVoiceAuditionStore,
   getBallots,
   listPromotionHistory,
   openVoting,
@@ -30,17 +29,8 @@ import {
   tallyAudition,
   VoiceAuditionError,
   type AuditionScores,
-  type VoiceAuditionDeps,
-  type VoiceAuditionPrismaClient,
 } from "@/lib/services/voiceAudition";
-
-// The Prisma delegates are structurally compatible with the narrow port the
-// store needs; the cast keeps the service free of a compile-time dependency on
-// generated client types.
-// Async because every export of a "use server" module must be a server action.
-export async function auditionDeps(): Promise<VoiceAuditionDeps> {
-  return { store: createPrismaVoiceAuditionStore(db as unknown as VoiceAuditionPrismaClient) };
-}
+import { auditionDeps } from "./store";
 
 type Fail = { success: false; error: string };
 
@@ -64,7 +54,7 @@ async function requireProducer(): Promise<
 async function requireOwnedAudition(auditionId: string) {
   const gate = await requireProducer();
   if (!gate.ok) return gate;
-  const audition = await (await auditionDeps()).store.getAudition(auditionId);
+  const audition = await auditionDeps().store.getAudition(auditionId);
   if (!audition) return { ok: false as const, error: "That audition no longer exists." };
   if (audition.ownerId && audition.ownerId !== gate.user.id && gate.user.role !== "ADMIN") {
     return { ok: false as const, error: "That audition belongs to another account." };
@@ -100,7 +90,7 @@ export async function createAuditionAction(input: { title: string; hostId: strin
   const gate = await requireOwnedHost(input.hostId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    const audition = await createAudition(await auditionDeps(), {
+    const audition = await createAudition(auditionDeps(), {
       ownerId: gate.user.id,
       hostId: gate.host.id,
       title: input.title,
@@ -142,7 +132,7 @@ export async function addCandidateAction(input: {
   }
 
   try {
-    const candidate = await addCandidate(await auditionDeps(), {
+    const candidate = await addCandidate(auditionDeps(), {
       auditionId: gate.audition.id,
       provider,
       voiceId,
@@ -167,7 +157,7 @@ export async function openVotingAction(auditionId: string) {
   const gate = await requireOwnedAudition(auditionId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    await openVoting(await auditionDeps(), auditionId);
+    await openVoting(auditionDeps(), auditionId);
     refresh();
     return { success: true as const };
   } catch (error) {
@@ -180,7 +170,7 @@ export async function getBallotsAction(auditionId: string) {
   const gate = await requireOwnedAudition(auditionId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    const deps = await auditionDeps();
+    const deps = auditionDeps();
     const [ballots, tally] = await Promise.all([
       getBallots(deps, auditionId),
       tallyAudition(deps, auditionId),
@@ -201,7 +191,7 @@ export async function castVoteAction(input: {
   const gate = await requireOwnedAudition(input.auditionId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    const deps = await auditionDeps();
+    const deps = auditionDeps();
     await castVote(deps, {
       auditionId: input.auditionId,
       ballotId: input.ballotId,
@@ -224,7 +214,7 @@ export async function selectWinnerAction(input: { auditionId: string; ballotId: 
   const gate = await requireOwnedAudition(input.auditionId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    await selectWinner(await auditionDeps(), {
+    await selectWinner(auditionDeps(), {
       auditionId: input.auditionId,
       ballotId: input.ballotId,
       actorId: gate.user.id,
@@ -240,7 +230,7 @@ export async function revealAuditionAction(auditionId: string) {
   const gate = await requireOwnedAudition(auditionId);
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    const revealed = await revealAudition(await auditionDeps(), { auditionId, actorId: gate.user.id });
+    const revealed = await revealAudition(auditionDeps(), { auditionId, actorId: gate.user.id });
     refresh();
     return { success: true as const, candidates: revealed.candidates };
   } catch (error) {
@@ -265,7 +255,7 @@ export async function promoteWinnerAction(input: {
   const host = await requireOwnedHost(hostId);
   if (!host.ok) return { success: false as const, error: host.error };
   try {
-    const { promotion } = await promoteWinner(await auditionDeps(), {
+    const { promotion } = await promoteWinner(auditionDeps(), {
       auditionId: input.auditionId,
       hostId: host.host.id,
       acknowledgedBallotId: input.acknowledgedBallotId,
@@ -284,7 +274,7 @@ export async function promoteWinnerAction(input: {
 export async function rollbackPromotionAction(input: { promotionId: string; reason?: string }) {
   const gate = await requireProducer();
   if (!gate.ok) return { success: false as const, error: gate.error };
-  const deps = await auditionDeps();
+  const deps = auditionDeps();
   const promotion = await deps.store.getPromotion(input.promotionId);
   if (!promotion) return { success: false as const, error: "That promotion is not in the history." };
   const host = await requireOwnedHost(promotion.hostId);
@@ -312,7 +302,7 @@ export async function promotionHistoryAction(hostId?: string) {
   const gate = await requireProducer();
   if (!gate.ok) return { success: false as const, error: gate.error };
   try {
-    return { success: true as const, promotions: await listPromotionHistory(await auditionDeps(), hostId) };
+    return { success: true as const, promotions: await listPromotionHistory(auditionDeps(), hostId) };
   } catch (error) {
     return fail(error);
   }

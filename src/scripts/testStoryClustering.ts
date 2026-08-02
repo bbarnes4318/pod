@@ -329,6 +329,284 @@ function allStarTextOnly(): Fixture[] {
   }));
 }
 
+/**
+ * THE PARAPHRASE REGRESSION — the exact case the previous version failed.
+ *
+ * The same three All-Star topics, rewritten so that between them they share:
+ *   - NO game id, NO evidence row, NO source URL (every ref is unique);
+ *   - NO proper noun beyond the sport itself — no "All-Star", no "Mike Trout",
+ *     no "Philadelphia", no "American League", no team, no city.
+ * All that survives is the propositional content: one exhibition, a 4-0
+ * shutout, eleven pitchers, a flat night. If duplicate protection can be
+ * evaded by rewording, it is not duplicate protection.
+ */
+function allStarParaphrased(): Fixture[] {
+  return [
+    topic({
+      id: "par-comeback",
+      title: "Was One Comeback the Only Thing Worth Watching in a Drama-Free Baseball Exhibition?",
+      summary:
+        "A 34-year-old outfielder went 2-for-3 in his first midsummer exhibition appearance since 2023 as the winning side blanked the other four to nothing, and the loudest ovation of a quiet night went to a player nobody expected on the field.",
+      debateScore: 91,
+      evidenceIds: [{ type: "newsItem", id: "par-news-1" }],
+      sources: [{ canonicalUrl: "https://par-example-one.test/story-one", publishedAt: ASG_DATE }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Went two for three." }, { text: "Winning side blanked the other four to nothing." }],
+        sourceIds: [{ type: "newsItem", id: "par-news-1" }],
+        argumentForHostA: "The comeback was the only thing worth watching.",
+        argumentForHostB: "One veteran's night out does not rescue an exhibition.",
+        mainAngle: "One ageing outfielder's return carried an otherwise flat midsummer showcase.",
+        contrarianAngle: "The four to nothing result was forgettable with or without him.",
+      },
+    }),
+    topic({
+      id: "par-snooze",
+      title: "Did Baseball's Midsummer Showcase Just Become a Snoozefest?",
+      summary:
+        "The 4-0 final in the sport's annual midsummer exhibition was the lowest-scoring version in a decade, and the broadcast drew its smallest audience since 2018.",
+      debateScore: 89,
+      createdAt: new Date("2026-07-15T09:00:00Z"),
+      evidenceIds: [{ type: "newsItem", id: "par-news-2" }],
+      sources: [{ canonicalUrl: "https://par-example-two.test/story-two", publishedAt: new Date("2026-07-15T14:00:00Z") }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Lowest-scoring version in ten years." }, { text: "Smallest audience since 2018." }],
+        sourceIds: [{ type: "newsItem", id: "par-news-2" }],
+        argumentForHostA: "A four to nothing exhibition nobody watched is a product problem.",
+        argumentForHostB: "The showcase was never supposed to be competitive.",
+        mainAngle: "The four-nothing midsummer exhibition was the least watchable version of the event yet.",
+        contrarianAngle: "A ratings decline is a television story, not a baseball story.",
+      },
+    }),
+    topic({
+      id: "par-arms",
+      title: "Is an 11-Pitcher Exhibition Shutout Great Baseball or Spreadsheet Baseball?",
+      summary:
+        "Eleven pitchers combined for a four-run shutout in the annual midsummer showcase, none of them working more than one inning, in a game managed exactly like a division-race Tuesday.",
+      debateScore: 87,
+      evidenceIds: [{ type: "newsItem", id: "par-news-3" }],
+      sources: [{ canonicalUrl: "https://par-example-three.test/story-three", publishedAt: ASG_DATE }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Eleven pitchers, none over one inning." }, { text: "Combined shutout." }],
+        sourceIds: [{ type: "newsItem", id: "par-news-3" }],
+        argumentForHostA: "An eleven-pitcher shutout is optimisation, not entertainment.",
+        argumentForHostB: "Every one of those arms is the best in the world at one inning.",
+        mainAngle: "The showcase's eleven-pitcher shutout is modern baseball in miniature.",
+        contrarianAngle: "Bullpen specialisation is what makes a four to nothing shutout possible at all.",
+      },
+    }),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// ADVERSARIAL PRECISION FIXTURES
+// Each pair is built to trip exactly one of the paraphrase-proof paths, so the
+// discriminator that stops it has to do real work.
+// ---------------------------------------------------------------------------
+
+/** Same two franchises, same 4-0 shutout claim — THREE MONTHS APART. Only the
+ *  date discriminates, and it must. */
+function sameTeamsDifferentDates(): Fixture[] {
+  return [
+    topic({
+      id: "adv-pair-may",
+      title: "Was a 4-0 Shutout the Night the Angels' Season Turned?",
+      createdAt: new Date("2026-05-04T08:00:00Z"),
+      summary: "The Astros blanked the Angels 4-0 in Anaheim, the third time in a week the lineup went quiet.",
+      evidenceIds: [{ type: "game", id: "mlb-2026-05-03-hou-laa" }, { type: "newsItem", id: "news-may-shutout" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/may-shutout", publishedAt: new Date("2026-05-04T02:00:00Z") }],
+      eventContext: {
+        games: [{ id: "mlb-2026-05-03-hou-laa", leagueId: "MLB", homeTeamId: "mlb-laa", awayTeamId: "mlb-hou", scheduledAt: new Date("2026-05-03T02:05:00Z") }],
+        newsItems: [],
+      },
+      researchBrief: {
+        facts: [{ text: "Shut out 4-0." }],
+        sourceIds: [{ type: "newsItem", id: "news-may-shutout" }],
+        argumentForHostA: "A 4-0 shutout in May is how seasons end early.",
+        argumentForHostB: "One quiet night in May means nothing.",
+        mainAngle: "The Angels were blanked 4-0 by the Astros and the lineup is the problem.",
+        contrarianAngle: "A single 4-0 shutout is noise.",
+      },
+    }),
+    topic({
+      id: "adv-pair-aug",
+      title: "Is a 4-0 Shutout Proof the Angels Finally Fixed Their Rotation?",
+      createdAt: new Date("2026-08-20T08:00:00Z"),
+      summary: "The Angels blanked the Astros 4-0 in Houston behind a rotation that has not allowed a run in three starts.",
+      evidenceIds: [{ type: "game", id: "mlb-2026-08-19-laa-hou" }, { type: "newsItem", id: "news-aug-shutout" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/august-shutout", publishedAt: new Date("2026-08-20T02:00:00Z") }],
+      eventContext: {
+        games: [{ id: "mlb-2026-08-19-laa-hou", leagueId: "MLB", homeTeamId: "mlb-hou", awayTeamId: "mlb-laa", scheduledAt: new Date("2026-08-19T00:10:00Z") }],
+        newsItems: [],
+      },
+      researchBrief: {
+        facts: [{ text: "Shut out the Astros 4-0." }],
+        sourceIds: [{ type: "newsItem", id: "news-aug-shutout" }],
+        argumentForHostA: "A 4-0 shutout in August is a statement.",
+        argumentForHostB: "The rotation has been carried by a soft schedule.",
+        mainAngle: "The Angels blanked the Astros 4-0 and the rotation looks fixed.",
+        contrarianAngle: "A single 4-0 shutout proves nothing about October.",
+      },
+    }),
+  ];
+}
+
+/** Two different players on the SAME team, same night, near-identical framing.
+ *  The shared franchises would carry a merge; the disjoint principals must not
+ *  let it. */
+function twoPlayersSameTeam(): Fixture[] {
+  return [
+    topic({
+      id: "adv-player-bat",
+      title: "Was Brady Whitlock's Two-Homer Night the Turning Point of the Angels' Season?",
+      createdAt: new Date("2026-06-17T08:00:00Z"),
+      summary: "Brady Whitlock homered twice against the Mariners on Tuesday, his first multi-homer game since April, and the Angels have now won four in a row.",
+      evidenceIds: [{ type: "newsItem", id: "news-whitlock" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/whitlock", publishedAt: new Date("2026-06-17T03:00:00Z") }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Two homers." }],
+        sourceIds: [{ type: "newsItem", id: "news-whitlock" }],
+        argumentForHostA: "Brady Whitlock is the bat this lineup was missing.",
+        argumentForHostB: "One night against the Mariners is not a turning point.",
+        mainAngle: "Brady Whitlock's power has arrived and the Angels are winning because of it.",
+        contrarianAngle: "Multi-homer nights are the noisiest statistic in the sport.",
+      },
+    }),
+    topic({
+      id: "adv-player-arm",
+      title: "Is Diego Salcedo Already the Best Starter the Angels Have?",
+      createdAt: new Date("2026-06-17T08:00:00Z"),
+      summary: "Diego Salcedo struck out eleven Mariners over seven innings on Tuesday, and the Angels have now won four in a row.",
+      evidenceIds: [{ type: "newsItem", id: "news-salcedo" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/salcedo", publishedAt: new Date("2026-06-17T03:00:00Z") }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Eleven strikeouts over seven innings." }],
+        sourceIds: [{ type: "newsItem", id: "news-salcedo" }],
+        argumentForHostA: "Diego Salcedo has the best stuff on the staff.",
+        argumentForHostB: "Eleven strikeouts against the Mariners is a schedule artefact.",
+        mainAngle: "Diego Salcedo has quietly become the Angels' number one starter.",
+        contrarianAngle: "Strikeout totals flatter pitchers facing bad lineups.",
+      },
+    }),
+  ];
+}
+
+/** Two DIFFERENT games in the same league on the same night, both 4-0 shutouts,
+ *  described in almost the same words. The claim atoms match perfectly; only
+ *  the franchises differ. This is the hardest precision case in the file. */
+function sameNightDifferentGames(): Fixture[] {
+  return [
+    topic({
+      id: "adv-night-yankees",
+      title: "Was a 4-0 Shutout in the Bronx the Statement Win of the Yankees' Week?",
+      createdAt: new Date("2026-06-17T08:00:00Z"),
+      summary: "The Yankees blanked the Orioles 4-0 on Tuesday night behind eight shutout innings, the quietest game of the series.",
+      evidenceIds: [{ type: "newsItem", id: "news-nyy-shutout" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/yankees-shutout", publishedAt: new Date("2026-06-17T03:00:00Z") }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Blanked 4-0." }],
+        sourceIds: [{ type: "newsItem", id: "news-nyy-shutout" }],
+        argumentForHostA: "A 4-0 shutout is a statement about the rotation.",
+        argumentForHostB: "The Orioles have not scored all week.",
+        mainAngle: "The Yankees blanked the Orioles 4-0 behind eight shutout innings.",
+        contrarianAngle: "A 4-0 shutout of a slumping lineup proves very little.",
+      },
+    }),
+    topic({
+      id: "adv-night-padres",
+      title: "Did the Padres Just Announce Themselves With a 4-0 Shutout?",
+      createdAt: new Date("2026-06-17T08:00:00Z"),
+      summary: "The Padres blanked the Rockies 4-0 on Tuesday night behind eight shutout innings, the quietest game of the series.",
+      evidenceIds: [{ type: "newsItem", id: "news-sd-shutout" }],
+      sources: [{ canonicalUrl: "https://adv-example.test/padres-shutout", publishedAt: new Date("2026-06-17T03:00:00Z") }],
+      eventContext: null,
+      researchBrief: {
+        facts: [{ text: "Blanked 4-0." }],
+        sourceIds: [{ type: "newsItem", id: "news-sd-shutout" }],
+        argumentForHostA: "A 4-0 shutout is a statement about the rotation.",
+        argumentForHostB: "The Rockies have not scored all week.",
+        mainAngle: "The Padres blanked the Rockies 4-0 behind eight shutout innings.",
+        contrarianAngle: "A 4-0 shutout of a slumping lineup proves very little.",
+      },
+    }),
+  ];
+}
+
+const BRAWL_GAME_ID = "mlb-2026-06-10-brawl";
+
+/** One incident, three write-ups: the original (open question), a genuine
+ *  follow-up that CLOSES it, and a restatement that adds nothing. */
+function updateVsDuplicateFixture(): { base: Fixture; update: Fixture; restatement: Fixture } {
+  const shared = {
+    evidenceIds: [{ type: "game", id: BRAWL_GAME_ID }, { type: "newsItem", id: "news-brawl" }],
+    eventContext: {
+      games: [{ id: BRAWL_GAME_ID, leagueId: "MLB", homeTeamId: "mlb-sea", awayTeamId: "mlb-laa", scheduledAt: new Date("2026-06-10T02:10:00Z") }],
+      newsItems: [] as Array<{ id: string; title?: string | null; url?: string | null; publishedAt?: Date | string | null; entities?: unknown }>,
+    },
+  };
+  return {
+    base: topic({
+      id: "upd-base",
+      title: "Should the League Suspend Marcus Reeve After the Bench-Clearing Brawl?",
+      createdAt: new Date("2026-06-10T14:00:00Z"),
+      summary:
+        "Marcus Reeve threw a punch in the eighth inning on Tuesday and is awaiting a ruling from the league office, which has given no timetable for a decision.",
+      debateScore: 92,
+      ...shared,
+      sources: [{ canonicalUrl: "https://adv-example.test/brawl", publishedAt: new Date("2026-06-10T13:00:00Z") }],
+      researchBrief: {
+        facts: [{ text: "Threw a punch in the eighth inning." }],
+        sourceIds: [{ type: "newsItem", id: "news-brawl" }],
+        argumentForHostA: "A punch is a punch and the league has to act.",
+        argumentForHostB: "Suspensions for brawls are handed out arbitrarily.",
+        mainAngle: "Marcus Reeve is awaiting a ruling after the bench-clearing brawl.",
+        contrarianAngle: "No timetable means the league is hoping this goes away.",
+      },
+    }),
+    update: topic({
+      id: "upd-followup",
+      title: "Is a Six-Game Ban Enough for Marcus Reeve?",
+      createdAt: new Date("2026-06-12T14:00:00Z"),
+      summary:
+        "The league announced on Thursday that Marcus Reeve was suspended for six games, and Ana Delgado was fined for her role in the same brawl.",
+      debateScore: 90,
+      ...shared,
+      sources: [{ canonicalUrl: "https://adv-example.test/brawl-ruling", publishedAt: new Date("2026-06-12T13:00:00Z") }],
+      researchBrief: {
+        facts: [{ text: "Suspended for six games." }],
+        sourceIds: [{ type: "newsItem", id: "news-brawl" }],
+        argumentForHostA: "Six games is a slap on the wrist.",
+        argumentForHostB: "Six games is the harshest ban of the season.",
+        mainAngle: "Marcus Reeve was suspended for six games and Ana Delgado was fined.",
+        contrarianAngle: "The length of the ban is the wrong argument.",
+      },
+    }),
+    restatement: topic({
+      id: "upd-restatement",
+      title: "Was the Bench-Clearing Brawl the Ugliest Moment of the Season?",
+      createdAt: new Date("2026-06-10T15:00:00Z"),
+      summary:
+        "Marcus Reeve threw a punch in the eighth inning on Tuesday, and the benches emptied for the second time this season.",
+      debateScore: 88,
+      ...shared,
+      sources: [{ canonicalUrl: "https://adv-example.test/brawl-reaction", publishedAt: new Date("2026-06-10T14:30:00Z") }],
+      researchBrief: {
+        facts: [{ text: "Benches emptied in the eighth inning." }],
+        sourceIds: [{ type: "newsItem", id: "news-brawl" }],
+        argumentForHostA: "The brawl was the ugliest thing all season.",
+        argumentForHostB: "Baseball has always had brawls.",
+        mainAngle: "Marcus Reeve threw a punch and the benches emptied in the eighth inning.",
+        contrarianAngle: "The reaction is louder than the incident.",
+      },
+    }),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Fake db — only the surface selectAutoTopics touches.
 // ---------------------------------------------------------------------------

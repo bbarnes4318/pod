@@ -395,6 +395,9 @@ export interface EventFingerprint {
   titleTokens: string[];
   /** Title (double weighted) + summary + brief angles tokens. */
   textTokens: string[];
+  /** The topic's prose, joined and normalized but NOT tokenized — phrase-level
+   *  markers ("awaiting a ruling", "was suspended") only exist in running text. */
+  prose: string;
   /** sha1 over the sorted unique title tokens — stable across rewordings that
    *  only reorder or repunctuate. */
   titleFingerprint: string;
@@ -521,6 +524,7 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     ...(topic.sources ?? []).map((s) => s.title ?? ""),
   ].join(" . ");
   const claimAtoms = extractClaimAtoms(claimSource);
+  const prose = normalizeText(claimSource);
 
   const concepts = conceptsOf(textTokens);
   const conceptTokens = expandConcepts(textTokens);
@@ -579,6 +583,7 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     sourceUrls: [...sourceUrls].sort(),
     titleTokens,
     textTokens,
+    prose,
     titleFingerprint,
     claimFingerprint,
     key,
@@ -997,8 +1002,7 @@ export interface RelationVerdict {
   forwardGap: number | null;
 }
 
-const relationTextOf = (fp: EventFingerprint): string =>
-  [fp.title, ...fp.textTokens].join(" ");
+const relationTextOf = (fp: EventFingerprint): string => fp.prose;
 
 /**
  * Decide whether `candidate` is a genuine UPDATE to `incumbent` or just another
