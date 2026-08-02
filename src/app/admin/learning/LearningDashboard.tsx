@@ -58,7 +58,7 @@ export default function LearningDashboard({ initial }: { initial: LearningViewDa
   };
 
   const byScope = useMemo(() => {
-    const map = new Map<string, typeof data.aggregates>();
+    const map = new Map<string, LearningViewData["aggregates"]>();
     for (const kind of data.scopeKinds) map.set(kind, []);
     for (const row of data.aggregates) {
       const list = map.get(row.scopeKind);

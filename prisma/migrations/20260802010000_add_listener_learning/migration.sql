@@ -13,7 +13,9 @@
 --   DROP TABLE IF EXISTS "ColdOpenPairwiseTrial";
 --   DROP TABLE IF EXISTS "ListenerLearningAggregate";
 --   DROP TABLE IF EXISTS "ListenerLearningEvent";
--- (Indexes and constraints are owned by these tables and drop with them.)
+--   DELETE FROM "_prisma_migrations" WHERE migration_name = '20260802010000_add_listener_learning';
+-- (Indexes and constraints are owned by these tables and drop with them. The
+--  pre-existing "ListenerSignal" table and its data are untouched either way.)
 
 -- RAW, attributable, append-only. THE RECORD.
 CREATE TABLE "ListenerLearningEvent" (
@@ -66,7 +68,8 @@ CREATE TABLE "ListenerLearningAggregate" (
   CONSTRAINT "ListenerLearningAggregate_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "ListenerLearningAggregate_podcastId_scopeKind_scopeKey_signalKey_key" ON "ListenerLearningAggregate"("podcastId", "scopeKind", "scopeKey", "signalKey");
+-- Name matches Prisma's own 63-character truncation for this constraint.
+CREATE UNIQUE INDEX "ListenerLearningAggregate_podcastId_scopeKind_scopeKey_sign_key" ON "ListenerLearningAggregate"("podcastId", "scopeKind", "scopeKey", "signalKey");
 CREATE INDEX "ListenerLearningAggregate_podcastId_signalKey_idx" ON "ListenerLearningAggregate"("podcastId", "signalKey");
 
 -- Blind cold-open head-to-head. Variant identity lives ONLY in this table.

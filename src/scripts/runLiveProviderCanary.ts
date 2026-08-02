@@ -504,6 +504,41 @@ export function assessRouteIndependence(authoring: CanaryRoute[], judge: CanaryR
   };
 }
 
+export interface PreSpendVerdict {
+  ok: boolean;
+  alertClass: CanaryAlertClass | null;
+  reason: string | null;
+  independence: RouteIndependence;
+}
+
+/**
+ * EVERYTHING that must be true before the canary is allowed to spend anything.
+ *
+ * Pure, and deliberately takes already-resolved routes rather than resolving
+ * them itself, so the "before any spend" property is structural: this function
+ * cannot reach a provider, so nothing it rejects can have cost money. `main`
+ * calls it once, immediately after resolution and before the first live stage.
+ */
+export function preSpendCheck(
+  preflight: PreflightResult,
+  authoring: CanaryRoute[],
+  judge: CanaryRoute
+): PreSpendVerdict {
+  const independence = assessRouteIndependence(authoring, judge);
+  if (!preflight.ok) {
+    return {
+      ok: false,
+      alertClass: "configuration_failure",
+      reason: `Canary configuration incomplete. ${preflight.summary}`,
+      independence,
+    };
+  }
+  if (!independence.independent) {
+    return { ok: false, alertClass: "configuration_failure", reason: independence.reason, independence };
+  }
+  return { ok: true, alertClass: null, reason: null, independence };
+}
+
 /** Resolve every canary route without calling anything. */
 function resolveCanaryRoutes(): { all: CanaryRoute[]; authoring: CanaryRoute[]; judge: CanaryRoute } {
   const route = (role: LLMRole): CanaryRoute => {
@@ -864,7 +899,20 @@ export function canaryOutputDir(env: CanaryEnv): string {
   return path.resolve(process.cwd(), value(env, "CANARY_REPORT_DIR") || "artifacts/live-provider-canary");
 }
 
-/** The durable record this run leaves behind for tomorrow's comparison. */
+/** Where the last known good run is read from, and where this run offers its own. */
+export function canaryBaselinePath(env: CanaryEnv, outDir: string): string {
+  return value(env, "CANARY_BASELINE_PATH") || path.join(outDir, "../live-provider-canary-baseline/baseline.json");
+}
+
+/**
+ * The durable record this run leaves behind for tomorrow's comparison.
+ *
+ * A PROJECTION of the report, not the report itself. Staging the whole report as
+ * the baseline looks equivalent and is not: `report.cost` is a full per-stage
+ * ledger while a baseline needs one token total, so a comparison reading the raw
+ * report would find `cost.tokens` undefined and silently stop comparing cost
+ * forever. This is written as its own file for exactly that reason.
+ */
 export function baselineFromReport(report: CanaryReport): CanaryBaselineRecord {
   return {
     ranAt: report.ranAt,
@@ -1396,18 +1444,18 @@ async function main(): Promise<void> {
     }
     console.log(preflight.summary);
 
-    // ---- independence, BEFORE any spend ----
+    // ---- everything that must hold BEFORE any spend ----
     const routes = resolveCanaryRoutes();
-    const independence = assessRouteIndependence(routes.authoring, routes.judge);
+    const preSpend = preSpendCheck(preflight, routes.authoring, routes.judge);
     report.routing = {
       routes: routes.all,
       writer: routes.authoring.find((r) => r.role === "script_host_a_writer")?.label ?? null,
       judge: routes.judge.label,
-      independent: independence.independent,
-      independenceReason: independence.reason,
+      independent: preSpend.independence.independent,
+      independenceReason: preSpend.independence.reason,
     };
-    if (!independence.independent) {
-      throw new CanaryFailure("configuration_failure", independence.reason!);
+    if (!preSpend.ok) {
+      throw new CanaryFailure(preSpend.alertClass!, preSpend.reason!);
     }
     console.log(`Routes: ${routes.all.map((r) => `${r.role}=${r.label}`).join(", ")}`);
 
@@ -1646,8 +1694,7 @@ async function main(): Promise<void> {
     }
 
     // ---- 9. the durable baseline ----
-    const baselinePath =
-      value(env, "CANARY_BASELINE_PATH") || path.join(outDir, "../live-provider-canary-baseline/report.json");
+    const baselinePath = canaryBaselinePath(env, outDir);
     const loaded = loadCanaryBaseline(baselinePath);
     report.baseline = {
       path: baselinePath,
@@ -1683,6 +1730,15 @@ async function main(): Promise<void> {
     report.finishedAt = new Date().toISOString();
     report.durationMs = Date.now() - startedAt;
     const written = writeCanaryReport(outDir, report, env);
+    // Offer a new baseline only when the whole run was sound. Promoting a failed
+    // run would move the goalposts to wherever today's breakage landed, which is
+    // how a regression becomes the new normal without anyone deciding it should.
+    if (report.status === "ok") {
+      fs.writeFileSync(
+        path.join(outDir, "baseline.json"),
+        JSON.stringify(baselineFromReport(report), null, 2)
+      );
+    }
     console.log(
       `[canary] status=${report.status} alertClass=${report.alertClass} ` +
         `roles=${report.roles.filter((r) => r.status === "ok").length}/${SEVEN_ROLE_ORDER.length} ` +
