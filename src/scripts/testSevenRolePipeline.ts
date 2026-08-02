@@ -24,7 +24,6 @@ import {
   REQUIRED_SEVEN_ROLES,
   OPTIONAL_SEVEN_ROLES,
   SEVEN_ROLE_ORDER,
-  SevenRoleTrace,
   type ResolvedCallReport,
   type RoleProviderResolver,
   type SevenRole,
@@ -373,18 +372,14 @@ function makeStubs(overrides: StubSetOverrides = {}): {
       respond: overrides.respond?.[role] ?? defaultResponder,
     });
   }
+  // The resolver reports what the ROUTER asked for, exactly as the real one does
+  // from resolveRolePlan(). Keeping it separate from what the stub ANSWERS with
+  // is the whole point: that gap is what a fallback is.
   const resolver: RoleProviderResolver = (role) => ({
     provider: stubs[role],
-    requested: stubs[role]["options" as never] as never, // never used; see below
+    requested: overrides.requested?.[role] ?? { provider: "zai", model: "glm-4.7-flash" },
   });
-  // The resolver must report the ROUTER's request, which the stub owns.
-  const realResolver: RoleProviderResolver = (role) => ({
-    provider: stubs[role],
-    requested:
-      overrides.requested?.[role] ?? { provider: "zai", model: "glm-4.7-flash" },
-  });
-  void resolver;
-  return { stubs, resolver: realResolver };
+  return { stubs, resolver };
 }
 
 async function runPipeline(
@@ -930,8 +925,6 @@ async function main(): Promise<void> {
   });
 
   await check("CONTROL: the pipeline declines a cast it cannot write", async () => {
-    const trace = new SevenRoleTrace();
-    void trace;
     const result = await runSevenRolePipeline({
       systemPrompt: "system",
       episodeTitle: "Three hosts",
