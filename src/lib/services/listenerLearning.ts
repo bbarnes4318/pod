@@ -296,7 +296,12 @@ export interface PolicyVersionRecord {
 export interface PolicyDecisionRecord {
   id: string;
   podcastId: string;
-  outcome: "promoted" | "rejected" | "rolled_back";
+  /**
+   * "staged" = the evidence cleared every automated gate but the deciding
+   * signal came from the public endpoint, so a human must approve it. The
+   * decision's `detail` carries the exact bounded proposal and the stats.
+   */
+  outcome: "promoted" | "rejected" | "rolled_back" | "staged";
   code: string;
   reason: string;
   resultingVersion: number | null;
@@ -1148,4 +1153,877 @@ export async function recordProductionSignals(store: LearningStore, artifacts: P
 export function hostPairKey(hostIds: string[]): string | null {
   const ids = hostIds.filter(Boolean).map((h) => h.trim().toLowerCase()).sort();
   return ids.length ? ids.join("|") : null;
+}
+
+/* ================================================================== */
+/* 8. PUBLIC INTAKE HARDENING.                                         */
+/*                                                                     */
+/* Everything below exists because /api/learning/* is reachable by      */
+/* anyone with curl. The route handlers are deliberately thin wrappers  */
+/* around these functions: all of it is pure or store/clock-injected,   */
+/* so the adversarial suite proves the real code path offline rather    */
+/* than a re-implementation of it.                                      */
+/* ================================================================== */
+
+/* ---------------- 8.1 Size caps ---------------- */
+
+/** Hard ceiling on a request body. Anything larger is refused with 413. */
+export const MAX_INTAKE_BODY_BYTES = 4_096;
+/** Ceiling on the sanitized metadata object a client may attach. */
+export const MAX_METADATA_KEYS = 8;
+export const MAX_METADATA_BYTES = 512;
+export const MAX_METADATA_VALUE_CHARS = 120;
+/** Bounds on the self-asserted anonymous listener identifier. */
+export const MIN_LISTENER_ID_CHARS = 8;
+export const MAX_LISTENER_ID_CHARS = 128;
+
+const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
+const COHORT_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
+const SAFE_STRING_PATTERN = /^[\w .,:/-]{1,120}$/;
+
+export function byteLength(s: string): number {
+  return Buffer.byteLength(s, "utf8");
+}
+
+/* ---------------- 8.2 Per-signal intake rules ---------------- */
+
+export interface SignalIntakeRule {
+  /**
+   * May a public client report this signal at all? Production-side signals are
+   * derived from artifacts by the worker; a client asserting them would be
+   * asserting its own quality score.
+   */
+  clientSubmittable: boolean;
+  /** EXPLICIT numeric range. Never inferred, never clamped — out of range is a refusal. */
+  min: number;
+  max: number;
+  /** When present, the ONLY accepted values (a milestone is reached or it is not). */
+  allowedValues?: readonly number[];
+  /** The complete set of metadata keys a client may attach. Anything else is refused. */
+  metadataKeys: readonly string[];
+  /** DEDUPE KEY, documented per signal. */
+  dedupeKey: string;
+}
+
+/**
+ * DEDUPE KEY PER SIGNAL — the authoritative table.
+ *
+ * Eleven of the fourteen dedupe on (listenerHash, episodeId, signalKey): a
+ * listener either reached 60 seconds of an episode or did not, and repeating
+ * the claim is not new evidence.
+ *
+ * cold_open_pairwise is the exception the naive key gets WRONG. A listener may
+ * legitimately judge several distinct A/B trials on the same episode, so keying
+ * on (listener, episode, signal) would throw away real data. It dedupes on the
+ * TRIAL instead, enforced by compare-and-set in recordColdOpenChoice().
+ *
+ * The six production signals are not client-reachable at all; their events are
+ * emitted once per derivation run by deriveProductionSignals(), keyed
+ * (episodeId, signalKey, run). They are listed here for completeness and so a
+ * future route cannot accidentally accept one.
+ */
+export const SIGNAL_INTAKE_RULES: Record<LearningSignalKey, SignalIntakeRule> = {
+  retention_15s: {
+    clientSubmittable: true, min: 0, max: 1, allowedValues: [0, 1],
+    metadataKeys: ["playerBuild", "positionSeconds"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  retention_60s: {
+    clientSubmittable: true, min: 0, max: 1, allowedValues: [0, 1],
+    metadataKeys: ["playerBuild", "positionSeconds"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  retention_180s: {
+    clientSubmittable: true, min: 0, max: 1, allowedValues: [0, 1],
+    metadataKeys: ["playerBuild", "positionSeconds"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  completion: {
+    clientSubmittable: true, min: 0, max: 1,
+    metadataKeys: ["playerBuild", "positionSeconds", "durationSeconds"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  next_episode_play: {
+    clientSubmittable: true, min: 0, max: 1, allowedValues: [0, 1],
+    metadataKeys: ["playerBuild"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  cold_open_pairwise: {
+    // NOT accepted here. It is produced server-side by resolving a trial the
+    // server itself issued — that is the only way the variant identity stays
+    // out of the client's hands.
+    clientSubmittable: false, min: 0, max: 1, allowedValues: [0, 1],
+    metadataKeys: [],
+    dedupeKey: "(trialId)  — one resolution per server-issued trial",
+  },
+  sounds_human: {
+    clientSubmittable: true, min: 0, max: 1,
+    metadataKeys: ["playerBuild", "panelRound"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  host_distinguishability: {
+    clientSubmittable: true, min: 0, max: 1,
+    metadataKeys: ["playerBuild", "panelRound"],
+    dedupeKey: "(listenerHash, episodeId, signalKey)",
+  },
+  unsupported_claim_rate: { clientSubmittable: false, min: 0, max: 1, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+  repeated_point_rate: { clientSubmittable: false, min: 0, max: 1, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+  voice_regeneration_rate: { clientSubmittable: false, min: 0, max: 1, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+  transcript_word_error_rate: { clientSubmittable: false, min: 0, max: 1, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+  speaker_attribution_error_rate: { clientSubmittable: false, min: 0, max: 1, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+  cost_per_publishable_minute: { clientSubmittable: false, min: 0, max: 1000, metadataKeys: [], dedupeKey: "(episodeId, signalKey) per derivation run — server-derived" },
+};
+
+/** Field names that would let a client name the variant it judged. Always refused. */
+const VARIANT_IDENTITY_KEYS = [
+  "variantid", "variant", "variants", "openingvariant", "opening_variant",
+  "winnervariantid", "winner_variant_id", "slotavariantid", "slotbvariantid",
+  "archetype", "coldopenvariant",
+];
+
+/* ---------------- 8.3 Signed, tamper-evident context ---------------- */
+
+/**
+ * The client never names the episode, the show, or the variant it is reporting
+ * on. The server issues a signed context; the client echoes it back verbatim.
+ *
+ * ENV: LEARNING_SIGNAL_SECRET (>= 16 chars). In production an unset or weak
+ * secret means the intake FAILS CLOSED — every submission is refused with 503
+ * rather than trusting unsigned attribution. Outside production a deterministic
+ * dev secret is derived so the loop is still exercisable locally and in tests.
+ */
+export function resolveLearningSecret(env: Record<string, string | undefined> = process.env): string | null {
+  const explicit = (env.LEARNING_SIGNAL_SECRET || "").trim();
+  if (explicit.length >= 16) return explicit;
+  if (env.NODE_ENV === "production") return null;
+  return `learning-dev-secret|${env.ANALYTICS_HASH_SALT || "take-machine-analytics"}`;
+}
+
+/** How long an issued context stays valid. Short enough that a stolen token rots. */
+export const LEARNING_CONTEXT_TTL_SECONDS = 2 * 60 * 60;
+
+export interface LearningContextClaims {
+  kind: "signal" | "cold_open";
+  episodeId: string;
+  podcastId: string | null;
+  /** The trial id for a pairwise context; an opaque context id otherwise. */
+  trialId: string;
+  /** Epoch SECONDS the context was issued. */
+  issuedAt: number;
+  /** Server-computed source bucket, signed so the client cannot rewrite it. */
+  src: string | null;
+}
+
+function b64url(buf: Buffer): string {
+  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function unb64url(s: string): Buffer {
+  return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+function hmac(payload: string, secret: string): string {
+  return b64url(crypto.createHmac("sha256", secret).update(payload).digest());
+}
+function timingSafeEquals(a: string, b: string): boolean {
+  const ab = Buffer.from(a, "utf8");
+  const bb = Buffer.from(b, "utf8");
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
+
+/** HMAC-SHA256 over episodeId + trialId + issuedAt (+ show, source, kind). */
+export function signLearningContext(claims: LearningContextClaims, secret: string): string {
+  const payload = b64url(Buffer.from(JSON.stringify(claims), "utf8"));
+  return `${payload}.${hmac(payload, secret)}`;
+}
+
+export type ContextVerification =
+  | { ok: true; claims: LearningContextClaims }
+  | { ok: false; code: "context_missing" | "context_malformed" | "context_forged" | "context_expired" | "context_wrong_kind"; reason: string };
+
+export function verifyLearningContext(
+  token: unknown,
+  secret: string,
+  now: Date,
+  opts: { kind: LearningContextClaims["kind"]; ttlSeconds?: number }
+): ContextVerification {
+  if (typeof token !== "string" || !token) {
+    return { ok: false, code: "context_missing", reason: "A server-issued context token is required." };
+  }
+  if (byteLength(token) > 1_024) {
+    return { ok: false, code: "context_malformed", reason: "Context token is not a context token." };
+  }
+  const dot = token.indexOf(".");
+  if (dot <= 0 || dot === token.length - 1) {
+    return { ok: false, code: "context_malformed", reason: "Context token is malformed." };
+  }
+  const payload = token.slice(0, dot);
+  const signature = token.slice(dot + 1);
+  if (!timingSafeEquals(signature, hmac(payload, secret))) {
+    return { ok: false, code: "context_forged", reason: "Context signature does not verify." };
+  }
+  let claims: LearningContextClaims;
+  try {
+    claims = JSON.parse(unb64url(payload).toString("utf8")) as LearningContextClaims;
+  } catch {
+    return { ok: false, code: "context_malformed", reason: "Context payload is not readable." };
+  }
+  if (!claims || typeof claims.episodeId !== "string" || typeof claims.trialId !== "string" || typeof claims.issuedAt !== "number") {
+    return { ok: false, code: "context_malformed", reason: "Context payload is incomplete." };
+  }
+  if (claims.kind !== opts.kind) {
+    return { ok: false, code: "context_wrong_kind", reason: `Context was issued for "${String(claims.kind)}", not "${opts.kind}".` };
+  }
+  const ttl = opts.ttlSeconds ?? LEARNING_CONTEXT_TTL_SECONDS;
+  const ageSeconds = Math.floor(now.getTime() / 1000) - claims.issuedAt;
+  if (!Number.isFinite(ageSeconds) || ageSeconds < -60 || ageSeconds > ttl) {
+    return { ok: false, code: "context_expired", reason: "Context has expired; request a fresh one." };
+  }
+  return { ok: true, claims };
+}
+
+/* ---------------- 8.4 Source bucketing ---------------- */
+
+/**
+ * Salted bucket for a request source. NOT stored as an IP and not reversible.
+ *
+ * The epoch is the UTC MONTH, deliberately coarser than the daily listener
+ * epoch: the per-source credible cap has to survive a listener id that rotates
+ * every night, or "one machine, a new id each day" would read as a growing
+ * audience. Monthly rotation still keeps the bucket from becoming a durable
+ * identifier.
+ */
+export function sourceEpoch(at: Date = new Date()): string {
+  return at.toISOString().slice(0, 7);
+}
+
+export function hashSourceIp(ip: string, opts: { epoch?: string; salt?: string } = {}): string {
+  const epoch = opts.epoch ?? sourceEpoch();
+  const salt = opts.salt ?? analyticsSalt();
+  return crypto.createHash("sha256").update(`source|${ip}|${epoch}|${salt}`).digest("hex").slice(0, 24);
+}
+
+/** First forwarded hop, or the direct peer. Never persisted in raw form. */
+export function sourceIpFromHeaders(headers: Headers, fallback?: string | null): string | null {
+  const forwarded = headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return headers.get("x-real-ip") || headers.get("cf-connecting-ip") || fallback || null;
+}
+
+/* ---------------- 8.5 Rate limiting ---------------- */
+
+export interface RateLimitRuleSpec {
+  limit: number;
+  windowSeconds: number;
+}
+
+/**
+ * DOCUMENTED WINDOWS. All fixed-window: a bucket is floor(epochSeconds/window),
+ * so a limiter that trips recovers exactly when the next bucket opens.
+ */
+export const LEARNING_RATE_LIMITS = {
+  /** Signals from one listener identifier: 30 per 10 minutes. */
+  signal_per_listener: { limit: 30, windowSeconds: 600 },
+  /** Signals from one source bucket: 120 per 10 minutes. */
+  signal_per_source: { limit: 120, windowSeconds: 600 },
+  /** Cold-open trials issued to one source bucket: 60 per 10 minutes. */
+  trial_issue_per_source: { limit: 60, windowSeconds: 600 },
+  /** Cold-open trials resolved by one source bucket: 60 per 10 minutes. */
+  trial_resolve_per_source: { limit: 60, windowSeconds: 600 },
+} as const satisfies Record<string, RateLimitRuleSpec>;
+
+export type LearningRateLimitKind = keyof typeof LEARNING_RATE_LIMITS;
+
+/** The only persistence the limiter needs. Injectable so it is provable offline. */
+export interface RateLimitStore {
+  /** Add 1 to `key`'s counter for this window and return the new total. */
+  increment(key: string, windowSeconds: number, now: Date): Promise<number>;
+}
+
+export interface InMemoryRateLimitStore extends RateLimitStore {
+  reset(): void;
+  size(): number;
+}
+
+export function createInMemoryRateLimitStore(): InMemoryRateLimitStore {
+  const counters = new Map<string, number>();
+  return {
+    async increment(key, windowSeconds, now) {
+      const bucket = Math.floor(now.getTime() / 1000 / windowSeconds);
+      const full = `${key}:${bucket}`;
+      // Drop buckets that can no longer be current, so a long-lived process
+      // does not accumulate one entry per identity per window forever.
+      const prefix = `${key}:`;
+      for (const existing of counters.keys()) {
+        if (existing.startsWith(prefix) && existing !== full) counters.delete(existing);
+      }
+      const next = (counters.get(full) ?? 0) + 1;
+      counters.set(full, next);
+      return next;
+    },
+    reset() {
+      counters.clear();
+    },
+    size() {
+      return counters.size;
+    },
+  };
+}
+
+/**
+ * Redis-backed limiter for production, where web runs as more than one process
+ * and a process-local counter would silently multiply every limit.
+ *
+ * The shared ioredis client is created with `maxRetriesPerRequest: null`, so a
+ * command issued while Redis is down NEVER settles. Every call is therefore
+ * raced against a timeout, and a timeout THROWS — the caller turns that into a
+ * 503. Unlike the admin limiter (src/lib/rateLimit.ts), this one fails CLOSED:
+ * this is a public abuse boundary, and dropping optional telemetry is strictly
+ * better than leaving the boundary open while Redis is unreachable.
+ */
+export function createRedisRateLimitStore(
+  redis: { incr(key: string): Promise<number>; expire(key: string, seconds: number): Promise<unknown> },
+  timeoutMs = 1_000
+): RateLimitStore {
+  const race = async <T>(p: Promise<T>): Promise<T> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("rate_limiter_timeout")), timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+  return {
+    async increment(key, windowSeconds, now) {
+      const bucket = Math.floor(now.getTime() / 1000 / windowSeconds);
+      const full = `learning:rl:${key}:${bucket}`;
+      const count = await race(redis.incr(full));
+      void race(Promise.resolve(redis.expire(full, windowSeconds + 5))).catch(() => {});
+      return count;
+    },
+  };
+}
+
+export interface RateLimitVerdict {
+  allowed: boolean;
+  count: number;
+  limit: number;
+  retryAfterSeconds: number;
+}
+
+export async function consumeLearningRateLimit(
+  store: RateLimitStore,
+  kind: LearningRateLimitKind,
+  identity: string,
+  now: Date
+): Promise<RateLimitVerdict> {
+  const rule = LEARNING_RATE_LIMITS[kind] as RateLimitRuleSpec;
+  const count = await store.increment(`${kind}:${identity}`, rule.windowSeconds, now);
+  const elapsed = Math.floor(now.getTime() / 1000) % rule.windowSeconds;
+  return {
+    allowed: count <= rule.limit,
+    count,
+    limit: rule.limit,
+    retryAfterSeconds: Math.max(1, rule.windowSeconds - elapsed),
+  };
+}
+
+/* ---------------- 8.6 Credible-listener counting ---------------- */
+
+/**
+ * CREDIBILITY RULE (stated plainly so it can be argued with).
+ *
+ * An event counts toward a promotion's sample only when ALL of:
+ *   1. it carries a server attestation (_credible === true) — meaning it
+ *      arrived with a valid, unexpired, server-issued HMAC context;
+ *   2. it carries a server-computed source bucket (_src) — meaning the request
+ *      had a resolvable origin the server hashed itself;
+ *   3. it passed dedupe for its signal's key;
+ *   4. neither the per-listener nor the per-source limiter had tripped;
+ *   5. consent was explicit and a listener hash exists.
+ * (1)-(2) are visible on the stored row; (3)-(5) are preconditions of the row
+ * existing at all — an event that failed any of them was never written.
+ *
+ * AND THEN, the part that actually matters: at most
+ * MAX_CREDIBLE_LISTENERS_PER_SOURCE distinct listeners are counted per source
+ * bucket. Rotating a fresh listener id per request from one machine therefore
+ * buys 3 credible listeners, not 3,000.
+ *
+ * This is a COST control, not a proof of humanity. It is precisely why
+ * listener-sourced promotions are staged for a human rather than applied.
+ */
+export const MAX_CREDIBLE_LISTENERS_PER_SOURCE = 3;
+
+export function isCredibleEvent(e: LearningEventRecord): boolean {
+  const md = e.metadata as Record<string, unknown> | null;
+  return (
+    !!e.listenerHash &&
+    e.consented === true &&
+    !!md &&
+    md[ATTESTATION_CREDIBLE_KEY] === true &&
+    typeof md[ATTESTATION_SOURCE_KEY] === "string" &&
+    (md[ATTESTATION_SOURCE_KEY] as string).length > 0
+  );
+}
+
+/**
+ * Number of CREDIBLE INDEPENDENT listeners represented by `events` — NOT the
+ * number of rows, and NOT the number of distinct anonymous ids.
+ */
+export function countCredibleListeners(
+  events: LearningEventRecord[],
+  opts: { maxPerSource?: number } = {}
+): number {
+  const maxPerSource = opts.maxPerSource ?? MAX_CREDIBLE_LISTENERS_PER_SOURCE;
+  const bySource = new Map<string, Set<string>>();
+  for (const e of events) {
+    if (!isCredibleEvent(e)) continue;
+    const src = String((e.metadata as Record<string, unknown>)[ATTESTATION_SOURCE_KEY]);
+    let listeners = bySource.get(src);
+    if (!listeners) {
+      listeners = new Set<string>();
+      bySource.set(src, listeners);
+    }
+    listeners.add(e.listenerHash!);
+  }
+  let total = 0;
+  for (const listeners of bySource.values()) total += Math.min(listeners.size, maxPerSource);
+  return total;
+}
+
+/* ---------------- 8.7 Payload validation ---------------- */
+
+export type IntakeRejection = { ok: false; status: number; code: string; reason: string };
+export type IntakeResult<T = Record<string, unknown>> = { ok: true; status: 200; body: T } | IntakeRejection;
+
+function reject(status: number, code: string, reason: string): IntakeRejection {
+  return { ok: false, status, code, reason };
+}
+
+/** Parse a capped body into a plain object, refusing everything else. */
+export function parseIntakeBody(rawBody: string): { ok: true; body: Record<string, unknown> } | IntakeRejection {
+  if (byteLength(rawBody) > MAX_INTAKE_BODY_BYTES) {
+    return reject(413, "body_too_large", `Request body exceeds ${MAX_INTAKE_BODY_BYTES} bytes.`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody || "");
+  } catch {
+    return reject(400, "malformed_body", "Body is not valid JSON.");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return reject(400, "malformed_body", "Body must be a JSON object.");
+  }
+  return { ok: true, body: parsed as Record<string, unknown> };
+}
+
+/** A client naming a variant is always a refusal, on every learning route. */
+export function assertNoVariantIdentity(body: Record<string, unknown>): IntakeRejection | null {
+  for (const key of Object.keys(body)) {
+    if (VARIANT_IDENTITY_KEYS.includes(key.toLowerCase())) {
+      return reject(
+        403,
+        "variant_identity_forbidden",
+        `"${key}" is chosen by the server. A client that can name the variant it judged has unblinded the experiment.`
+      );
+    }
+  }
+  return null;
+}
+
+function validateMetadata(raw: unknown, rule: SignalIntakeRule): { ok: true; metadata: Record<string, unknown> | null } | IntakeRejection {
+  if (raw === undefined || raw === null) return { ok: true, metadata: null };
+  if (typeof raw !== "object" || Array.isArray(raw)) return reject(400, "invalid_metadata", "metadata must be a JSON object.");
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > MAX_METADATA_KEYS) {
+    return reject(413, "metadata_too_large", `metadata may carry at most ${MAX_METADATA_KEYS} keys; got ${entries.length}.`);
+  }
+  if (byteLength(JSON.stringify(raw)) > MAX_METADATA_BYTES) {
+    return reject(413, "metadata_too_large", `metadata may be at most ${MAX_METADATA_BYTES} bytes.`);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of entries) {
+    if (!rule.metadataKeys.includes(key)) {
+      return reject(400, "unexpected_metadata_key", `"${key}" is not an accepted metadata key for this signal (allowed: ${rule.metadataKeys.join(", ") || "none"}).`);
+    }
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return reject(400, "invalid_metadata", `metadata."${key}" must be a finite number.`);
+      out[key] = value;
+    } else if (typeof value === "boolean") {
+      out[key] = value;
+    } else if (typeof value === "string") {
+      if (value.length > MAX_METADATA_VALUE_CHARS || !SAFE_STRING_PATTERN.test(value)) {
+        return reject(400, "invalid_metadata", `metadata."${key}" must be a short, plain string.`);
+      }
+      out[key] = value;
+    } else {
+      return reject(400, "invalid_metadata", `metadata."${key}" must be a number, boolean or short string.`);
+    }
+  }
+  return { ok: true, metadata: Object.keys(out).length ? out : null };
+}
+
+export interface ValidatedSignalSubmission {
+  signalKey: LearningSignalKey;
+  value: number;
+  listenerId: string;
+  cohort: string | null;
+  metadata: Record<string, unknown> | null;
+  context: string;
+  /** Echoed episode id, if the client sent one. Must match the signed context. */
+  claimedEpisodeId: string | null;
+}
+
+const SIGNAL_BODY_KEYS = ["context", "signalKey", "value", "consent", "listenerId", "cohort", "metadata", "episodeId"];
+
+/** STRICT validation of one public signal submission. Rejects, never coerces. */
+export function validateSignalSubmission(rawBody: string): { ok: true; submission: ValidatedSignalSubmission } | IntakeRejection {
+  const parsed = parseIntakeBody(rawBody);
+  if (!parsed.ok) return parsed;
+  const body = parsed.body;
+
+  const variant = assertNoVariantIdentity(body);
+  if (variant) return variant;
+
+  for (const key of Object.keys(body)) {
+    if (!SIGNAL_BODY_KEYS.includes(key)) {
+      return reject(400, "unexpected_field", `"${key}" is not an accepted field.`);
+    }
+  }
+
+  if (body.consent !== true) return reject(403, "consent_required", "Collection requires an explicit consent: true.");
+
+  const signalKey = body.signalKey;
+  if (!isLearningSignalKey(signalKey)) return reject(400, "unknown_signal", `"${String(signalKey)}" is not a known signal.`);
+  const rule = SIGNAL_INTAKE_RULES[signalKey];
+  if (!rule.clientSubmittable) {
+    return reject(400, "signal_not_client_submittable", `"${signalKey}" is measured server-side and is never accepted from a client.`);
+  }
+
+  const value = body.value;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return reject(400, "invalid_value", `value must be a finite number; got ${JSON.stringify(value)}.`);
+  }
+  if (value < rule.min || value > rule.max) {
+    return reject(400, "value_out_of_range", `value for "${signalKey}" must be within [${rule.min}, ${rule.max}]; got ${value}.`);
+  }
+  if (rule.allowedValues && !rule.allowedValues.includes(value)) {
+    return reject(400, "value_out_of_range", `"${signalKey}" accepts only ${rule.allowedValues.join(" or ")}; got ${value}.`);
+  }
+
+  const listenerId = body.listenerId;
+  if (typeof listenerId !== "string" || listenerId.length < MIN_LISTENER_ID_CHARS || listenerId.length > MAX_LISTENER_ID_CHARS || !ID_PATTERN.test(listenerId)) {
+    return reject(400, "invalid_listener_id", `listenerId must be ${MIN_LISTENER_ID_CHARS}-${MAX_LISTENER_ID_CHARS} url-safe characters. It is hashed and never stored.`);
+  }
+
+  let cohort: string | null = null;
+  if (body.cohort !== undefined && body.cohort !== null) {
+    if (typeof body.cohort !== "string" || !COHORT_PATTERN.test(body.cohort)) {
+      return reject(400, "invalid_cohort", "cohort must be a short label.");
+    }
+    cohort = body.cohort;
+  }
+
+  const metadata = validateMetadata(body.metadata, rule);
+  if (!metadata.ok) return metadata;
+
+  let claimedEpisodeId: string | null = null;
+  if (body.episodeId !== undefined && body.episodeId !== null) {
+    if (typeof body.episodeId !== "string" || !ID_PATTERN.test(body.episodeId)) {
+      return reject(400, "invalid_episode_id", "episodeId must be an id.");
+    }
+    claimedEpisodeId = body.episodeId;
+  }
+
+  if (typeof body.context !== "string" || !body.context) {
+    return reject(400, "context_missing", "A server-issued context token is required.");
+  }
+
+  return {
+    ok: true,
+    submission: { signalKey, value, listenerId, cohort, metadata: metadata.metadata, context: body.context, claimedEpisodeId },
+  };
+}
+
+/* ---------------- 8.8 The intake itself ---------------- */
+
+/** Attribution the SERVER resolved. A client never supplies any of it. */
+export interface EpisodeAttribution {
+  episodeId: string;
+  podcastId: string | null;
+  formatId: string | null;
+  openingVariant: string | null;
+  hostPairKey: string | null;
+  voicePolicyVersion: number | null;
+  productionPolicyVersion: number | null;
+  coldOpenVariants: ColdOpenVariantInput[];
+}
+
+export interface LearningIntakeDeps {
+  store: LearningStore;
+  rateLimiter: RateLimitStore;
+  loadEpisode: (episodeId: string) => Promise<EpisodeAttribution | null>;
+  /** null => fail closed (production without LEARNING_SIGNAL_SECRET). */
+  secret: string | null;
+  now: Date;
+  hashEpoch?: string;
+  sourceEpochOverride?: string;
+}
+
+export interface IntakeRequest {
+  rawBody: string;
+  sourceIp: string | null;
+  country: string | null;
+}
+
+function secretOrRefusal(deps: LearningIntakeDeps): IntakeRejection | null {
+  if (deps.secret) return null;
+  return reject(
+    503,
+    "signing_secret_unset",
+    "LEARNING_SIGNAL_SECRET is not configured. Learning intake fails closed rather than accepting unsigned attribution."
+  );
+}
+
+async function limit(deps: LearningIntakeDeps, kind: LearningRateLimitKind, identity: string): Promise<IntakeRejection | null> {
+  let verdict: RateLimitVerdict;
+  try {
+    verdict = await consumeLearningRateLimit(deps.rateLimiter, kind, identity, deps.now);
+  } catch {
+    // Fail CLOSED: an abuse boundary that cannot be consulted is not a boundary.
+    return reject(503, "limiter_unavailable", "Rate limiter is unavailable; submission refused.");
+  }
+  if (verdict.allowed) return null;
+  return reject(429, "rate_limited", `Too many submissions. Retry in ${verdict.retryAfterSeconds}s.`);
+}
+
+/**
+ * Issue a signed context for one episode. This is the ONLY way a client obtains
+ * permission to report a signal, and the token names the episode — so a client
+ * can never attribute a signal to a show it was not served.
+ */
+export async function intakeIssueSignalContext(
+  deps: LearningIntakeDeps,
+  req: { episodeId: string; sourceIp: string | null }
+): Promise<IntakeResult<{ context: string; episodeId: string; expiresInSeconds: number }>> {
+  const refusal = secretOrRefusal(deps);
+  if (refusal) return refusal;
+  if (typeof req.episodeId !== "string" || !ID_PATTERN.test(req.episodeId)) {
+    return reject(400, "invalid_episode_id", "episodeId is required.");
+  }
+  const sourceKey = req.sourceIp ? hashSourceIp(req.sourceIp, { epoch: deps.sourceEpochOverride }) : null;
+  const limited = await limit(deps, "signal_per_source", sourceKey ?? "unknown");
+  if (limited) return limited;
+
+  const episode = await deps.loadEpisode(req.episodeId);
+  if (!episode) return reject(404, "unknown_episode", "No such episode.");
+
+  const context = signLearningContext(
+    {
+      kind: "signal",
+      episodeId: episode.episodeId,
+      podcastId: episode.podcastId,
+      trialId: crypto.randomBytes(12).toString("hex"),
+      issuedAt: Math.floor(deps.now.getTime() / 1000),
+      src: sourceKey,
+    },
+    deps.secret!
+  );
+  return { ok: true, status: 200, body: { context, episodeId: episode.episodeId, expiresInSeconds: LEARNING_CONTEXT_TTL_SECONDS } };
+}
+
+/**
+ * Accept one listener/panel signal. Order is deliberate:
+ * source limiter -> strict validation -> signed context -> cross-show check ->
+ * listener limiter -> dedupe -> write.
+ */
+export async function intakeListenerSignal(
+  deps: LearningIntakeDeps,
+  req: IntakeRequest
+): Promise<IntakeResult<{ recorded: number; credible: boolean }>> {
+  const refusal = secretOrRefusal(deps);
+  if (refusal) return refusal;
+
+  const sourceKey = req.sourceIp ? hashSourceIp(req.sourceIp, { epoch: deps.sourceEpochOverride }) : null;
+  const sourceLimited = await limit(deps, "signal_per_source", sourceKey ?? "unknown");
+  if (sourceLimited) return sourceLimited;
+
+  const validated = validateSignalSubmission(req.rawBody);
+  if (!validated.ok) return validated;
+  const s = validated.submission;
+
+  const verified = verifyLearningContext(s.context, deps.secret!, deps.now, { kind: "signal" });
+  if (!verified.ok) return reject(verified.code === "context_expired" ? 401 : 403, verified.code, verified.reason);
+
+  // CROSS-SHOW ATTRIBUTION: the episode comes from the SIGNED token. An echoed
+  // episodeId is only ever allowed to agree with it.
+  if (s.claimedEpisodeId && s.claimedEpisodeId !== verified.claims.episodeId) {
+    return reject(403, "context_mismatch", "This signal was issued for a different episode.");
+  }
+
+  const listenerHash = hashListenerId(s.listenerId, { epoch: deps.hashEpoch });
+  const listenerLimited = await limit(deps, "signal_per_listener", listenerHash);
+  if (listenerLimited) return listenerLimited;
+
+  const episode = await deps.loadEpisode(verified.claims.episodeId);
+  if (!episode) return reject(404, "unknown_episode", "No such episode.");
+
+  // DEDUPE — (listenerHash, episodeId, signalKey) for every client signal.
+  const existing = await deps.store.countEvents({ signalKey: s.signalKey, listenerHash, episodeId: episode.episodeId });
+  if (existing > 0) {
+    return reject(409, "duplicate_signal", `"${s.signalKey}" is already recorded for this listener and episode. ${SIGNAL_INTAKE_RULES[s.signalKey].dedupeKey}`);
+  }
+
+  const credible = !!sourceKey;
+  const { recorded, rejected } = await recordLearningEvents(deps.store, [
+    {
+      signalKey: s.signalKey,
+      value: s.value,
+      episodeId: episode.episodeId,
+      podcastId: episode.podcastId,
+      formatId: episode.formatId,
+      openingVariant: episode.openingVariant,
+      hostPairKey: episode.hostPairKey,
+      voicePolicyVersion: episode.voicePolicyVersion,
+      productionPolicyVersion: episode.productionPolicyVersion,
+      listenerHash,
+      cohort: s.cohort,
+      consented: true,
+      country: req.country,
+      occurredAt: deps.now,
+      metadata: s.metadata,
+      attestation: { credible, sourceKey },
+    },
+  ]);
+
+  if (!recorded.length) {
+    const first = rejected[0];
+    return reject(400, first?.code ?? "rejected", first?.reason ?? "Refused.");
+  }
+  return { ok: true, status: 200, body: { recorded: recorded.length, credible } };
+}
+
+/** Serve a blind cold-open trial and the signed context that resolves it. */
+export async function intakeIssueColdOpenTrial(
+  deps: LearningIntakeDeps,
+  req: { episodeId: string; listenerId: string | null; consent: boolean; sourceIp: string | null; country: string | null }
+): Promise<IntakeResult<{ trial: ColdOpenBlindPayload; context: string; expiresInSeconds: number }>> {
+  const refusal = secretOrRefusal(deps);
+  if (refusal) return refusal;
+  if (typeof req.episodeId !== "string" || !ID_PATTERN.test(req.episodeId)) {
+    return reject(400, "invalid_episode_id", "episodeId is required.");
+  }
+  if (req.consent !== true) return reject(403, "consent_required", "Collection requires explicit consent.");
+  if (req.listenerId !== null && (typeof req.listenerId !== "string" || req.listenerId.length < MIN_LISTENER_ID_CHARS || !ID_PATTERN.test(req.listenerId))) {
+    return reject(400, "invalid_listener_id", "listenerId must be url-safe. It is hashed and never stored.");
+  }
+
+  const sourceKey = req.sourceIp ? hashSourceIp(req.sourceIp, { epoch: deps.sourceEpochOverride }) : null;
+  const limited = await limit(deps, "trial_issue_per_source", sourceKey ?? "unknown");
+  if (limited) return limited;
+
+  const episode = await deps.loadEpisode(req.episodeId);
+  if (!episode) return reject(404, "unknown_episode", "No such episode.");
+  if (episode.coldOpenVariants.length < 2) {
+    return reject(409, "insufficient_variants", "This episode has fewer than two cold-open variants to compare.");
+  }
+
+  const served = await serveColdOpenTrial(deps.store, {
+    episodeId: episode.episodeId,
+    podcastId: episode.podcastId,
+    variants: [episode.coldOpenVariants[0], episode.coldOpenVariants[1]],
+    listenerId: req.listenerId,
+    hashEpoch: deps.hashEpoch,
+    consented: true,
+    country: req.country,
+    now: deps.now,
+  });
+  if (!served.ok) return reject(400, served.error, served.error);
+
+  const context = signLearningContext(
+    {
+      kind: "cold_open",
+      episodeId: episode.episodeId,
+      podcastId: episode.podcastId,
+      trialId: served.payload.trialToken,
+      issuedAt: Math.floor(deps.now.getTime() / 1000),
+      src: sourceKey,
+    },
+    deps.secret!
+  );
+  return { ok: true, status: 200, body: { trial: served.payload, context, expiresInSeconds: LEARNING_CONTEXT_TTL_SECONDS } };
+}
+
+const COLD_OPEN_BODY_KEYS = ["context", "winnerSlot", "cohort", "trialToken"];
+
+/**
+ * Resolve a trial. The client sends the signed context and a SIDE — never a
+ * variant identity, and never a trial it was not issued.
+ */
+export async function intakeResolveColdOpenTrial(
+  deps: LearningIntakeDeps,
+  req: IntakeRequest
+): Promise<IntakeResult<{ recorded: true }>> {
+  const refusal = secretOrRefusal(deps);
+  if (refusal) return refusal;
+
+  const sourceKeyFromRequest = req.sourceIp ? hashSourceIp(req.sourceIp, { epoch: deps.sourceEpochOverride }) : null;
+  const limited = await limit(deps, "trial_resolve_per_source", sourceKeyFromRequest ?? "unknown");
+  if (limited) return limited;
+
+  const parsed = parseIntakeBody(req.rawBody);
+  if (!parsed.ok) return parsed;
+  const body = parsed.body;
+
+  const variant = assertNoVariantIdentity(body);
+  if (variant) return variant;
+  for (const key of Object.keys(body)) {
+    if (!COLD_OPEN_BODY_KEYS.includes(key)) return reject(400, "unexpected_field", `"${key}" is not an accepted field.`);
+  }
+  if (body.winnerSlot !== "A" && body.winnerSlot !== "B") {
+    return reject(400, "invalid_slot", "winnerSlot must be exactly \"A\" or \"B\".");
+  }
+  let cohort: string | null = null;
+  if (body.cohort !== undefined && body.cohort !== null) {
+    if (typeof body.cohort !== "string" || !COHORT_PATTERN.test(body.cohort)) return reject(400, "invalid_cohort", "cohort must be a short label.");
+    cohort = body.cohort;
+  }
+
+  const verified = verifyLearningContext(body.context, deps.secret!, deps.now, { kind: "cold_open" });
+  if (!verified.ok) return reject(verified.code === "context_expired" ? 401 : 403, verified.code, verified.reason);
+  if (typeof body.trialToken === "string" && body.trialToken !== verified.claims.trialId) {
+    return reject(403, "context_mismatch", "This context was issued for a different trial.");
+  }
+
+  const episode = verified.claims.episodeId ? await deps.loadEpisode(verified.claims.episodeId) : null;
+  const result = await recordColdOpenChoice(deps.store, {
+    trialToken: verified.claims.trialId,
+    winnerSlot: body.winnerSlot as ColdOpenSlot,
+    formatId: episode?.formatId ?? null,
+    hostPairKey: episode?.hostPairKey ?? null,
+    voicePolicyVersion: episode?.voicePolicyVersion ?? null,
+    productionPolicyVersion: episode?.productionPolicyVersion ?? null,
+    cohort,
+    // Signed at issue time, so a replay from a different machine still counts
+    // against the source that was actually served the trial.
+    sourceKey: verified.claims.src,
+    now: deps.now,
+  });
+
+  if (!result.ok) {
+    if (result.error === "already_decided") {
+      return reject(409, "replayed_trial", "This trial has already been resolved. A trial resolves exactly once.");
+    }
+    return reject(result.error === "unknown_trial" ? 404 : 400, result.error, result.error);
+  }
+  // Deliberately does NOT echo the winning variant: the listener may still be
+  // inside the experiment.
+  return { ok: true, status: 200, body: { recorded: true } };
 }

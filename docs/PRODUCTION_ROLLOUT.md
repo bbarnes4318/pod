@@ -89,14 +89,32 @@ Both are **additive**. No column is dropped, no data is rewritten.
 | `20260802000000_add_blind_voice_audition` | blind voice audition tables (candidates, ballots, votes, promotions, rollback history) |
 | `20260802010000_add_listener_learning` | raw listener signal events, derived aggregates, versioned production policy |
 
-Apply with:
+### Single migration owner
+
+There is a **single migration owner**: exactly one release step applies
+migrations, and it is the `web` Coolify service.
+
+**The worker never runs migrations** — not on start, not as a pre-deploy hook,
+not by hand during a release. Two owners race each other, and a migrated schema
+can end up exposed to old code.
+
+This is enforced, not merely documented: `npm run test:deployment-contract`
+fails if any start script, `Dockerfile` `CMD`/`ENTRYPOINT`, image build step, or
+**any document in `docs/`** introduces a second migration owner.
+
+Migrations run from the **web service's Coolify _pre-deployment_ command**:
 
 ```bash
-npx prisma migrate deploy
+npm run prisma:migrate:deploy
 ```
 
-**Both web and worker run `migrate deploy`.** Whichever starts first applies them;
-the second is a no-op. Do not skip the worker.
+Coolify's pre-deployment command runs a container from the **new image** before
+the new container starts serving. That ordering is the whole point: the schema
+must exist before any new code touches it.
+
+> Do **not** use a post-deployment command. It runs after the new container has
+> already started, so new code briefly runs against the old schema — which is
+> exactly the window this contract exists to close.
 
 ### Migration rollback
 
@@ -109,17 +127,27 @@ listed at the top of each `migration.sql`.
 
 ## 4. Deployment order
 
-The gate lives at the queue boundary, which the **worker** executes. Deploy the
-worker first so it is never running old enforcement against new scripts.
+This release adds tables and changes enforcement behaviour, so treat it as an
+**incompatible deployment window**: pause and drain production jobs first, and
+resume only once both services are on the new commit.
 
-1. Set every variable in §2 on **both** services.
-2. `npm run verify:production-readiness` — must exit 0. Do not proceed otherwise.
-3. Deploy **worker**, wait for it to report healthy.
-4. Deploy **web**.
-5. Confirm `GIT_COMMIT_SHA` matches on both.
-6. Re-run the preflight against the deployed environment (the live checks —
-   database, Redis, migrations, worker queue consumption — only mean something
-   from inside).
+| # | Step | Where |
+|---|---|---|
+| 1 | Set every variable in §2 on both services | Coolify |
+| 2 | `npm run verify:production-readiness -- --release --expect-sha <sha>` — must exit 0 | anywhere with prod env |
+| 3 | **Pause the production queue** and let in-flight jobs drain; confirm `active` reaches 0 | Coolify / queue admin |
+| 4 | **Back up the database** (Coolify snapshot or `pg_dump`) — the only rollback for a data mistake | Coolify / psql |
+| 5 | **Apply migrations** from the web service's *pre-deployment* command: `npm run prisma:migrate:deploy` | web service only |
+| 6 | Deploy **web** | Coolify |
+| 7 | Deploy **worker** | Coolify |
+| 8 | Verify commit identity: `GIT_COMMIT_SHA` on web and on worker both equal the expected release sha | readiness `--release` |
+| 9 | Re-run `verify:production-readiness -- --release --expect-sha <sha>` from inside; the live probes (database, Redis, migrations, authenticated storage, worker health round-trip) only mean anything there | inside |
+| 10 | **Resume the queue** | Coolify / queue admin |
+| 11 | Watch the first episode through Studio and confirm the editorial-gate panel renders a verdict | Studio |
+
+Web is deployed before the worker because web owns the migration: its
+pre-deployment step creates the schema the worker will need. The queue stays
+paused across steps 3–10, so no job ever runs against a half-deployed pair.
 
 ---
 
@@ -150,10 +178,19 @@ Studio and record an attributable release, or edit and regenerate.
 
 ## 6. Rollback procedure
 
-**Code rollback (safe at any point):**
+**Code rollback — order matters.** A new worker against an old schema is the one
+state that must never exist, so the worker goes back first.
 
-1. Redeploy the previous commit to **web**, then **worker**.
-2. Leave the new tables in place — the old code does not read them.
+1. **Pause the production queue** and let in-flight jobs drain.
+2. Roll back the **worker** to the previous commit, and wait for it to be healthy.
+3. Roll back **web**.
+4. Confirm `GIT_COMMIT_SHA` matches the previous release on both services.
+5. **Resume the queue.**
+
+Leave the new tables in place — the old code does not read them, and dropping
+them is what would make the rollback destructive. Only run the `DROP` statements
+in each `migration.sql` if you are abandoning the feature permanently, and only
+after step 5 with the queue paused again.
 3. Optionally unset `SCRIPT_GATE_ENFORCEMENT_FROM`, `TTS_TRANSCRIPT_QA_ENABLED`,
    `TRANSCRIPT_QA_PROVIDER`. The old code ignores them.
 

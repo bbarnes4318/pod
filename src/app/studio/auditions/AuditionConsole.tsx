@@ -126,6 +126,12 @@ export interface AuditionVM {
   revealed: RevealedVM[] | null;
 }
 
+/**
+ * The voice change log as the browser is allowed to see it: who changed which
+ * host, when, why, and whether it can still be undone. No provider, voice id or
+ * model — this object is serialized into the page HTML, and the identity of an
+ * engine is not something a page needs in order to offer an undo button.
+ */
 export interface PromotionVM {
   id: string;
   kind: string;
@@ -133,10 +139,6 @@ export interface PromotionVM {
   hostId: string;
   hostName: string;
   auditionId: string | null;
-  fromVoiceId: string | null;
-  toVoiceId: string;
-  fromProvider: string | null;
-  toProvider: string;
   actorLabel: string;
   reason: string | null;
   createdAt: string;
@@ -742,7 +744,7 @@ function PromotionRow({ promotion }: { promotion: PromotionVM }) {
     setNote(
       result.alreadyRolledBack
         ? "This promotion had already been rolled back. Nothing changed."
-        : `Restored ${shortVoice(result.restoredVoiceId)}.`
+        : `${result.hostName} is back on its previous voice.`
     );
     router.refresh();
   };
@@ -758,9 +760,9 @@ function PromotionRow({ promotion }: { promotion: PromotionVM }) {
         </span>
       </div>
       <p className="advCardSub">
-        <code>{promotion.fromProvider || "—"}:{shortVoice(promotion.fromVoiceId)}</code>
-        {" → "}
-        <code>{promotion.toProvider}:{shortVoice(promotion.toVoiceId)}</code>
+        {promotion.kind === "rollback"
+          ? "Restored the voice this host used before the promotion above."
+          : "Replaced this host's production voice with the winning audition entry."}
         {promotion.reason ? ` — ${promotion.reason}` : ""}
       </p>
       {promotion.rolledBackAt && (

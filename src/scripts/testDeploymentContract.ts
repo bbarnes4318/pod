@@ -156,6 +156,60 @@ function run() {
   // the baseline that fixed it.
   // =====================================================================
 
+  // =====================================================================
+  // DOCUMENTATION MUST NOT CONTRADICT THE CONTRACT
+  //
+  // The code was already correct. A newly added runbook nevertheless told
+  // operators to run `prisma migrate deploy` from BOTH web and worker, which is
+  // precisely the race this contract exists to prevent. An operator follows the
+  // document, not the test — so a document that contradicts the rule is a real
+  // defect, and is now a failing check.
+  //
+  // Deliberately plain string tests rather than regexes: this checks PROSE, and
+  // a subtly wrong regex would fail open on the exact sentence it must catch.
+  // =====================================================================
+  try {
+    const docsDir = path.join(ROOT, "docs");
+    const docs = fs.existsSync(docsDir) ? fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")) : [];
+    const offenders: string[] = [];
+    for (const file of docs) {
+      for (const raw of fs.readFileSync(path.join(docsDir, file), "utf8").split(/\r?\n/)) {
+        const l = raw.toLowerCase();
+        // Only INSTRUCTIONS matter. Requiring the literal command keeps prose
+        // that merely explains the rule ("two services applying migrations race
+        // each other") from tripping a check aimed at "run it on both".
+        if (!l.includes("migrate deploy")) continue;
+        const saysBoth =
+          (l.includes("both") || l.includes("each")) &&
+          ((l.includes("web") && l.includes("worker")) || l.includes("services"));
+        const tellsWorkerToMigrate =
+          l.includes("worker") && l.includes("migrate deploy") && /\b(run|runs|running)\b/.test(l);
+        // A line that forbids the worker from migrating obviously must not trip.
+        const isProhibition = l.includes("never") || l.includes("must not") || l.includes("do not") || l.includes("don't");
+        if ((saysBoth || tellsWorkerToMigrate) && !isProhibition) {
+          offenders.push(`${file}: ${raw.trim().slice(0, 130)}`);
+        }
+      }
+    }
+    assert(
+      offenders.length === 0,
+      `documentation instructs more than one migration owner:\n      ${offenders.join("\n      ")}\n      ${RULE}`
+    );
+    ok("no document instructs both services to run migrations");
+  } catch (e) { bad("no document instructs both services to run migrations", e); }
+
+  try {
+    const rollout = path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md");
+    assert(fs.existsSync(rollout), "docs/PRODUCTION_ROLLOUT.md is missing");
+    const text = fs.readFileSync(rollout, "utf8").toLowerCase();
+    assert(text.includes("single migration owner"), "the rollout doc must state the single-migration-owner rule");
+    assert(
+      text.includes("worker never runs migrations") || text.includes("worker must not run migrations"),
+      "the rollout doc must state explicitly that the worker never migrates"
+    );
+    ok("the rollout document names one migration owner and excludes the worker");
+  } catch (e) { bad("the rollout document names one migration owner and excludes the worker", e); }
+
   const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
   const migrationDirs = fs.readdirSync(migrationsDir).filter((d) => fs.statSync(path.join(migrationsDir, d)).isDirectory()).sort();
 

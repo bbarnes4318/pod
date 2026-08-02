@@ -1,6 +1,6 @@
 import React from "react";
 import { db } from "@/lib/db";
-import { currentUser } from "@/lib/currentUser";
+import { ownerScope } from "@/lib/ownerScope";
 import {
   AUDITION_SCENES,
   AUDITION_PACK_VERSION,
@@ -9,11 +9,12 @@ import {
 import {
   blindLabelFor,
   getBallots,
-  listPromotionHistory,
+  guardedListAuditions,
+  guardedPromotionHistory,
   tallyAudition,
   type AuditionScores,
 } from "@/lib/services/voiceAudition";
-import { auditionDeps } from "./store";
+import { auditionDeps, auditionViewer } from "./store";
 import AuditionConsole, {
   type AuditionVM,
   type HostOptionVM,
@@ -23,11 +24,17 @@ import AuditionConsole, {
 export const dynamic = "force-dynamic";
 
 export default async function AuditionsPage() {
-  const user = await currentUser();
+  // Server components serialize their props into the HTML, so everything below
+  // is scoped by the QUERY. Nothing is fetched broadly and narrowed in the JSX:
+  // narrowing in the component still ships the wide result to the browser.
+  const viewer = await auditionViewer();
   const deps = auditionDeps();
 
   const hosts = await db.aiHost.findMany({
-    where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }], isArchived: false } : { ownerId: null, isArchived: false },
+    // `ownerScope` is the app-wide rule: operators see everything (including
+    // legacy/system ownerId=null rows), everyone else sees strictly their own.
+    // Signed out matches nothing.
+    where: { ...ownerScope(viewer), isArchived: false },
     orderBy: { createdAt: "asc" },
     select: { id: true, name: true, ttsProvider: true, ttsVoiceId: true, ownerId: true },
   });
@@ -35,11 +42,12 @@ export default async function AuditionsPage() {
     id: host.id,
     name: host.name,
     hasVoice: /^[0-9a-f]{32}$/i.test(host.ttsVoiceId || ""),
-    ownedByMe: !!user && host.ownerId === user.id,
+    ownedByMe: !!viewer && host.ownerId === viewer.id,
   }));
   const hostNameById = new Map(hosts.map((host) => [host.id, host.name]));
 
-  const auditions = user ? await deps.store.listAuditions(user.id) : [];
+  const auditionsResult = await guardedListAuditions(deps, viewer);
+  const auditions = auditionsResult.ok ? auditionsResult.value : [];
 
   const vms: AuditionVM[] = await Promise.all(
     auditions.map(async (audition) => {
@@ -52,10 +60,11 @@ export default async function AuditionsPage() {
       const ballots = audition.status === "draft" ? [] : await getBallots(deps, audition.id);
       const tally = audition.status === "draft" ? [] : await tallyAudition(deps, audition.id);
 
-      const votes = user ? await deps.store.listVotes(audition.id) : [];
+      // Scoped to this viewer in the query — the console only ever renders
+      // "your scores", so other panelists' ballots never leave the database.
+      const votes = viewer ? await deps.store.listVotes(audition.id, viewer.id) : [];
       const myVotes: Record<string, { scores: AuditionScores; overall: number; notes: string | null }> = {};
       for (const vote of votes) {
-        if (!user || vote.voterId !== user.id) continue;
         const ballotId = ballotIdByCandidate.get(vote.candidateId);
         if (ballotId) myVotes[ballotId] = { scores: vote.scores, overall: vote.overall, notes: vote.notes };
       }
@@ -114,23 +123,22 @@ export default async function AuditionsPage() {
     })
   );
 
-  const promotions: PromotionVM[] = (await listPromotionHistory(deps)).map((promotion) => ({
+  // Owner-scoped in the query (hosts you own; everything for an operator) and
+  // projected to a summary that carries no provider, voice id or model.
+  const historyResult = await guardedPromotionHistory(deps, viewer);
+  const promotions: PromotionVM[] = (historyResult.ok ? historyResult.value : []).map((promotion) => ({
     id: promotion.id,
     kind: promotion.kind,
     status: promotion.status,
     hostId: promotion.hostId,
     hostName: hostNameById.get(promotion.hostId) ?? "(host removed)",
     auditionId: promotion.auditionId,
-    fromVoiceId: promotion.fromVoiceId,
-    toVoiceId: promotion.toVoiceId,
-    fromProvider: promotion.fromProvider,
-    toProvider: promotion.toProvider,
-    actorLabel: promotion.actorLabel || promotion.actorId,
+    actorLabel: promotion.actorLabel || "unknown operator",
     reason: promotion.reason,
-    createdAt: promotion.createdAt.toISOString(),
-    rolledBackAt: promotion.rolledBackAt?.toISOString() ?? null,
+    createdAt: promotion.createdAt,
+    rolledBackAt: promotion.rolledBackAt,
     revertsPromotionId: promotion.revertsPromotionId,
-    canRollback: promotion.kind === "promotion" && promotion.status === "active",
+    canRollback: promotion.canRollback,
   }));
 
   const pack = validateAuditionPack();
@@ -151,7 +159,7 @@ export default async function AuditionsPage() {
         totalWords: pack.totalWords,
         estimatedMinutes: Number((pack.estimatedDurationSec / 60).toFixed(1)),
       }}
-      signedIn={!!user}
+      signedIn={!!viewer}
     />
   );
 }

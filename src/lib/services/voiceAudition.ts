@@ -332,7 +332,9 @@ export interface VoiceAuditionStore {
   listCandidates(auditionId: string): Promise<CandidateRecord[]>;
 
   upsertVote(input: Omit<VoteRecord, "id" | "createdAt"> & { id?: string; createdAt?: Date }): Promise<VoteRecord>;
-  listVotes(auditionId: string): Promise<VoteRecord[]>;
+  /** `voterId` narrows to one voter's own ballots IN THE QUERY (the console
+   *  renders "your scores"; it must not receive everyone else's to do it). */
+  listVotes(auditionId: string, voterId?: string): Promise<VoteRecord[]>;
 
   getHostVoice(hostId: string): Promise<HostVoiceRecord | null>;
   setHostVoice(hostId: string, voice: { provider: string; voiceId: string }): Promise<void>;
@@ -1842,9 +1844,9 @@ export function createPrismaVoiceAuditionStore(client: VoiceAuditionPrismaClient
       });
       return mapVote(row as Row);
     },
-    async listVotes(auditionId) {
+    async listVotes(auditionId, voterId) {
       const rows = await client.voiceAuditionVote.findMany({
-        where: { auditionId },
+        where: voterId ? { auditionId, voterId } : { auditionId },
         orderBy: { createdAt: "asc" },
       });
       return rows.map((row) => mapVote(row as Row));
@@ -2022,9 +2024,10 @@ export function createInMemoryVoiceAuditionStore(
       votes.set(key, record);
       return clone(record);
     },
-    async listVotes(auditionId) {
+    async listVotes(auditionId, voterId) {
       return [...votes.values()]
         .filter((vote) => vote.auditionId === auditionId)
+        .filter((vote) => (voterId ? vote.voterId === voterId : true))
         .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
         .map((vote) => ({ ...vote, scores: { ...vote.scores } }));
     },

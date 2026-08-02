@@ -26,10 +26,39 @@
 //     episode ids and the listener cohorts. Rollback restores the previous
 //     version row untouched, and a rollback with nothing behind it is a
 //     recorded no-op rather than an error.
+//
+//  5. NO AUTOMATIC PROMOTION FROM ANONYMOUS TRAFFIC — a deliberate choice,
+//     not an oversight, and the reason is written down rather than hidden in a
+//     threshold.
+//
+//     /api/learning/* is public. listenerLearning.ts section 8 makes forging an
+//     audience expensive (server-issued signed context, strict per-signal
+//     validation, dedupe, per-listener and per-source rate limits, one-shot
+//     pairwise trials, and a per-source cap on credible listeners). It does not
+//     make it IMPOSSIBLE: a listener id is self-asserted and IP diversity is
+//     purchasable. We cannot establish that fully anonymous traffic is
+//     trustworthy enough to move production settings by itself.
+//
+//     So: a promotion whose deciding signal is listener- or panel-sourced is
+//     STAGED (outcome "staged", code "awaiting_human_approval") and applied only
+//     when a named human calls approveStagedPolicyPromotion(). The evidence, the
+//     stats and the exact bounded proposal are all in the staged decision, so
+//     approval is an informed click rather than a rubber stamp.
+//
+//     Production-sourced signals — derived server-side from real artifacts by
+//     deriveProductionSignals(), unreachable from any client — may still promote
+//     automatically. The distinction is who could have manufactured the number.
+//
+//     Two further gates back this up: sample sizes are counted in CREDIBLE
+//     INDEPENDENT LISTENERS (countCredibleListeners), not raw rows or raw
+//     anonymous ids; and a person-sourced comparison with no raw events to count
+//     is refused outright ("unverifiable_sample") rather than trusted.
 
 import crypto from "node:crypto";
 import {
   LEARNING_SIGNALS,
+  countCredibleListeners,
+  eventScopeKey,
   isLearningSignalKey,
   signalDescriptor,
   type AggregateScopeKind,
@@ -319,6 +348,33 @@ export interface PolicyComparison {
   challengerScopeKey: string;
 }
 
+export interface CredibleCounts {
+  winner: number;
+  challenger: number;
+  total: number;
+}
+
+/**
+ * How many CREDIBLE INDEPENDENT listeners stand behind each arm of a
+ * comparison. Not rows, and not distinct anonymous ids — see the credibility
+ * rule in listenerLearning.ts section 8.6.
+ */
+export function credibleCountsForComparison(events: LearningEventRecord[], comparison: PolicyComparison): CredibleCounts {
+  const forArm = (scopeKey: string) =>
+    countCredibleListeners(
+      events.filter((e) => e.signalKey === comparison.signalKey && eventScopeKey(comparison.scopeKind, e) === scopeKey)
+    );
+  const winner = forArm(comparison.winnerScopeKey);
+  const challenger = forArm(comparison.challengerScopeKey);
+  return { winner, challenger, total: winner + challenger };
+}
+
+/** Signals that arrive through the PUBLIC endpoint and can never auto-promote. */
+export function signalRequiresHumanApproval(signalKey: LearningSignalKey): boolean {
+  const source = signalDescriptor(signalKey).source;
+  return source === "listener" || source === "panel";
+}
+
 export interface PromotionStats {
   signalKey: LearningSignalKey;
   scopeKind: AggregateScopeKind;
@@ -328,18 +384,33 @@ export interface PromotionStats {
   effect: number;
   zScore: number;
   totalSample: number;
+  /** Credible independent listeners per arm. null for server-derived signals. */
+  credible: CredibleCounts | null;
   thresholds: PromotionThresholds;
 }
 
 export type ReadinessResult =
   | { ready: true; stats: PromotionStats }
-  | { ready: false; code: "unknown_signal" | "missing_arm" | "insufficient_sample" | "low_confidence" | "no_clear_winner"; reason: string; stats: Partial<PromotionStats> };
+  | {
+      ready: false;
+      code: "unknown_signal" | "missing_arm" | "insufficient_sample" | "low_confidence" | "no_clear_winner" | "unverifiable_sample";
+      reason: string;
+      stats: Partial<PromotionStats>;
+    };
 
-/** Does the evidence clear the sample-size AND confidence bar? */
+/**
+ * Does the evidence clear the sample-size AND confidence bar?
+ *
+ * For a person-sourced signal the sample thresholds are applied TWICE: once to
+ * the raw aggregate sample, and once to the count of credible independent
+ * listeners. `credible` must be supplied for those signals — a comparison whose
+ * independence cannot be counted is refused, not assumed.
+ */
 export function evaluatePromotionReadiness(input: {
   aggregates: LearningAggregateRow[];
   comparison: PolicyComparison;
   thresholds?: Partial<PromotionThresholds>;
+  credible?: CredibleCounts | null;
 }): ReadinessResult {
   const thresholds = resolveThresholds(input.thresholds);
   const { signalKey, scopeKind, winnerScopeKey, challengerScopeKey } = input.comparison;
@@ -372,6 +443,7 @@ export function evaluatePromotionReadiness(input: {
   const zScore = sign * rawZ;
   const totalSample = winnerRow.sampleSize + challengerRow.sampleSize;
 
+  const needsCredible = signalRequiresHumanApproval(signalKey);
   const stats: PromotionStats = {
     signalKey,
     scopeKind,
@@ -380,6 +452,7 @@ export function evaluatePromotionReadiness(input: {
     effect,
     zScore,
     totalSample,
+    credible: needsCredible ? input.credible ?? null : null,
     thresholds,
   };
 
@@ -394,6 +467,31 @@ export function evaluatePromotionReadiness(input: {
       reason: `Need ≥${thresholds.minSamplePerArm} per arm and ≥${thresholds.minTotalSample} total; have ${winnerRow.sampleSize} vs ${challengerRow.sampleSize} (total ${totalSample}).`,
       stats,
     };
+  }
+
+  // CREDIBLE INDEPENDENT LISTENERS, not raw anonymous ids. A stranger rotating
+  // a fresh id per request is one source, and one source is worth at most
+  // MAX_CREDIBLE_LISTENERS_PER_SOURCE listeners however many ids it invents.
+  if (needsCredible) {
+    if (!input.credible) {
+      return {
+        ready: false,
+        code: "unverifiable_sample",
+        reason: `"${signalKey}" comes from the public endpoint; its raw events must be supplied so credible independent listeners can be counted.`,
+        stats,
+      };
+    }
+    const c = input.credible;
+    if (c.winner < thresholds.minSamplePerArm || c.challenger < thresholds.minSamplePerArm || c.total < thresholds.minTotalSample) {
+      return {
+        ready: false,
+        code: "insufficient_sample",
+        reason:
+          `Raw sample is large enough but CREDIBLE independent listeners are not: ` +
+          `${c.winner} vs ${c.challenger} (total ${c.total}); need ≥${thresholds.minSamplePerArm} per arm and ≥${thresholds.minTotalSample} total.`,
+        stats,
+      };
+    }
   }
 
   if (effect < thresholds.minEffect) {
@@ -515,6 +613,12 @@ export interface PromotionInput {
   rationale?: string;
   thresholds?: Partial<PromotionThresholds>;
   now?: Date;
+  /**
+   * A NAMED HUMAN taking responsibility for applying a listener- or
+   * panel-sourced change. Absent, such a change is staged instead of applied.
+   * Never set this from an automated caller — that is the whole control.
+   */
+  approval?: { humanActor: string; approvedDecisionId?: string | null } | null;
 }
 
 export type PromotionResult =
@@ -594,7 +698,11 @@ export async function promoteProductionPolicy(store: LearningStore, input: Promo
     return { promoted: false, code: worst.code, reason: worst.reason, decision };
   }
 
-  // 2. Sample size + confidence.
+  // 2. Sample size + confidence + CREDIBLE INDEPENDENT LISTENERS.
+  const scopedEvents = (input.events ?? []).filter((e) => e.podcastId === podcastId);
+  const needsHuman = isLearningSignalKey(input.comparison.signalKey) && signalRequiresHumanApproval(input.comparison.signalKey);
+  const credible = needsHuman && input.events ? credibleCountsForComparison(scopedEvents, input.comparison) : null;
+
   const readiness = evaluatePromotionReadiness({
     aggregates: assertShowScoped(
       input.aggregates.filter((a) => a.podcastId === podcastId),
@@ -602,13 +710,38 @@ export async function promoteProductionPolicy(store: LearningStore, input: Promo
     ),
     comparison: input.comparison,
     thresholds: input.thresholds,
+    credible,
   });
   if (!readiness.ready) {
     const decision = await record("rejected", readiness.code, readiness.reason, { stats: readiness.stats as unknown as Record<string, unknown>, proposal: validation.normalized }, null);
     return { promoted: false, code: readiness.code, reason: readiness.reason, decision };
   }
 
-  // 3. Promote — a NEW version for THIS show only.
+  // 3. HUMAN APPROVAL GATE. The evidence is good enough for a person to look
+  //    at; it is not, by itself, authority to change the show. Staging happens
+  //    HERE rather than in the caller so no call site can route around it.
+  if (needsHuman && !input.approval?.humanActor) {
+    const reason =
+      `Evidence clears every automated gate, but "${LEARNING_SIGNALS[readiness.stats.signalKey].label}" is collected from a public, ` +
+      `unauthenticated endpoint (${signalDescriptor(readiness.stats.signalKey).source}-sourced). ` +
+      `${readiness.stats.credible?.winner ?? 0} vs ${readiness.stats.credible?.challenger ?? 0} credible independent listeners. ` +
+      `A named human must approve this change before it is applied.`;
+    const decision = await record(
+      "staged",
+      "awaiting_human_approval",
+      reason,
+      {
+        proposal: validation.normalized,
+        comparison: input.comparison as unknown as Record<string, unknown>,
+        stats: readiness.stats as unknown as Record<string, unknown>,
+        evidence: explainability(input, readiness.stats) as unknown as Record<string, unknown>,
+      },
+      null
+    );
+    return { promoted: false, code: "awaiting_human_approval", reason, decision };
+  }
+
+  // 4. Promote — a NEW version for THIS show only.
   const evidence = explainability(input, readiness.stats);
   const version: PolicyVersionRecord = {
     id: newId(),
@@ -621,9 +754,16 @@ export async function promoteProductionPolicy(store: LearningStore, input: Promo
       input.rationale ??
       `"${evidence.winner.scopeKey}" beat "${evidence.challenger.scopeKey}" on ${LEARNING_SIGNALS[readiness.stats.signalKey].label} ` +
         `(${evidence.winner.mean.toFixed(3)} vs ${evidence.challenger.mean.toFixed(3)}, n=${evidence.winner.sampleSize}/${evidence.challenger.sampleSize}, z=${evidence.zScore.toFixed(2)}).`,
-    evidence: { ...evidence, changedFields: Object.keys(validation.normalized) },
+    evidence: {
+      ...evidence,
+      changedFields: Object.keys(validation.normalized),
+      credible: readiness.stats.credible,
+      approvedBy: input.approval?.humanActor ?? null,
+      approvedDecisionId: input.approval?.approvedDecisionId ?? null,
+      automatic: !needsHuman,
+    },
     promotedFromVersion: active.version,
-    promotedBy: input.actor,
+    promotedBy: input.approval?.humanActor ?? input.actor,
     promotedAt: now,
     rolledBackAt: null,
     rolledBackBy: null,
