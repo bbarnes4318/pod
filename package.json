@@ -41,6 +41,7 @@
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
     "test:editorial-gate": "tsx --conditions=react-server src/scripts/testScriptEditorialGate.ts",
+    "test:seven-role-pipeline": "tsx --conditions=react-server src/scripts/testSevenRolePipeline.ts",
     "test:production-release-gate": "tsx --conditions=react-server src/scripts/testProductionReleaseGate.ts",
     "test:semantic-audio-qa": "tsx --conditions=react-server src/scripts/testSemanticAudioQa.ts",
     "test:world-class-learning": "tsx --conditions=react-server src/scripts/testWorldClassLearning.ts",
@@ -148,7 +149,8 @@
     "test:role-experiments": "tsx --conditions=react-server src/scripts/testRoleExperiments.ts",
     "test:verification-scoring": "tsx --conditions=react-server src/scripts/testVerificationScoring.ts",
     "rescore:verification": "tsx --conditions=react-server src/scripts/rescoreVerificationArtifact.ts",
-    "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts"
+    "probe:llm-contract": "tsx --conditions=react-server src/scripts/probeProviderContract.ts",
+    "test:voice-audition": "tsx --conditions=react-server src/scripts/testVoiceAudition.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
