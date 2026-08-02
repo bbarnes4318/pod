@@ -295,7 +295,8 @@ async function main() {
   console.log("\n=== Queue chain: a held script must never reach TTS ===");
   await check("queueing TTS for a held script throws ProductionHoldError", async () => {
     __setScriptContentLoaderForTests(async () => ({
-      editorialGate: { decision: "hold", reasons: ["cold open is 233 words"], failedCriticalAxes: ["coldOpenQuality"] },
+      content: { editorialGate: { decision: "hold", reasons: ["cold open is 233 words"], failedCriticalAxes: ["coldOpenQuality"] } },
+      createdAt: new Date().toISOString(),
     }));
     await assert.rejects(
       () => assertScriptReleasableForProduction("script-held", "tts:generate-segments", PROD),
@@ -305,7 +306,8 @@ async function main() {
   });
   await check("queueing TTS for a review script throws too", async () => {
     __setScriptContentLoaderForTests(async () => ({
-      editorialGate: { decision: "review", reasons: ["judge unavailable"], failedCriticalAxes: [] },
+      content: { editorialGate: { decision: "review", reasons: ["judge unavailable"], failedCriticalAxes: [] } },
+      createdAt: new Date().toISOString(),
     }));
     await assert.rejects(
       () => assertScriptReleasableForProduction("script-review", "tts:generate-segments", PROD),
@@ -315,11 +317,109 @@ async function main() {
   });
   await check("a passing script is allowed through the choke point", async () => {
     __setScriptContentLoaderForTests(async () => ({
-      editorialGate: { decision: "pass", reasons: [], failedCriticalAxes: [] },
+      content: { editorialGate: { decision: "pass", reasons: [], failedCriticalAxes: [] } },
+      createdAt: new Date().toISOString(),
     }));
     const v = await assertScriptReleasableForProduction("script-ok", "tts:generate-segments", PROD);
     assert.equal(v.blocked, false, "a passing script must proceed");
   });
+  console.log("\n=== Rollout policy: legacy scripts must not be stranded, and must stay attributable ===");
+  const CUTOVER = "2026-08-02T00:00:00.000Z";
+  const PROD_WITH_CUTOVER = { ...PROD, SCRIPT_GATE_ENFORCEMENT_FROM: CUTOVER } as unknown as NodeJS.ProcessEnv;
+  const legacyContent = { segments: [] }; // a real pre-gate script: no editorialGate at all
+
+  await check("a pre-existing script with NO verdict is blocked when no cutover is configured", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("legacy-1", "tts:generate-segments", PROD),
+      (err: unknown) =>
+        err instanceof ProductionHoldError &&
+        /SCRIPT_GATE_ENFORCEMENT_FROM is not configured/.test(err.message),
+      "with no cutover set, nothing may be grandfathered"
+    );
+  });
+
+  await check("a pre-existing script IS grandfathered once the cutover is configured", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    const v = await assertScriptReleasableForProduction("legacy-2", "tts:generate-segments", PROD_WITH_CUTOVER);
+    assert.equal(v.blocked, false, "in-flight work created before the cutover must be able to finish");
+    assert.equal(v.rollout?.grandfathered, true, "the allowance must be recorded");
+  });
+
+  await check("a grandfathered pass is ATTRIBUTABLE, not silent", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    const v = await assertScriptReleasableForProduction("legacy-3", "tts:generate-segments", PROD_WITH_CUTOVER);
+    assert.equal(v.rollout?.disposition, "grandfathered_pre_enforcement");
+    assert.equal(v.rollout?.scriptCreatedAt, "2026-07-01T00:00:00.000Z", "the script's creation time must be recorded");
+    assert.equal(v.rollout?.cutoverAt, CUTOVER, "the cutover it was compared against must be recorded");
+    assert.ok(v.reasons.some((r) => /before the editorial-gate enforcement cutover/.test(r)), "a human-readable reason must be attached");
+  });
+
+  await check("grandfathering is NOT a global bypass: a script created AFTER the cutover is still blocked", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-08-03T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("new-unmeasured", "tts:generate-segments", PROD_WITH_CUTOVER),
+      (err: unknown) => err instanceof ProductionHoldError && /at or after the enforcement cutover/.test(err.message),
+      "a script written after the cutover with no verdict is a pipeline defect, not a rollout gap"
+    );
+  });
+
+  await check("grandfathering NEVER applies to a script that was measured and FAILED", async () => {
+    // This is the crucial asymmetry. Age excuses "never evaluated"; it does not
+    // excuse "evaluated and found unacceptable".
+    __setScriptContentLoaderForTests(async () => ({
+      content: { editorialGate: { decision: "hold", reasons: ["cold open is 223 words"], failedCriticalAxes: ["coldOpenQuality"] } },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("old-but-held", "tts:generate-segments", PROD_WITH_CUTOVER),
+      ProductionHoldError,
+      "an old script that FAILED the gate must still be blocked; its remedy is a human release"
+    );
+  });
+
+  await check("an old REVIEW script is blocked but has a documented remedy (human release)", async () => {
+    const reviewed = {
+      editorialGate: { decision: "review", reasons: ["judge 72/100"], failedCriticalAxes: [] },
+    };
+    __setScriptContentLoaderForTests(async () => ({ content: reviewed, createdAt: "2026-01-01T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("old-review", "tts:generate-segments", PROD_WITH_CUTOVER),
+      ProductionHoldError,
+      "an old review script must not auto-advance"
+    );
+    // ...and the remedy works, so it is not permanently unproducible.
+    __setScriptContentLoaderForTests(async () => ({
+      content: {
+        ...reviewed,
+        humanRelease: { approvedBy: "producer@example.com", approvedAt: "now", approvedDecision: "review", acknowledgedReasons: ["judge 72/100"] },
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    const v = await assertScriptReleasableForProduction("old-review", "tts:generate-segments", PROD_WITH_CUTOVER);
+    assert.equal(v.blocked, false, "a recorded human release must unstick in-flight reviewed work");
+    assert.equal(v.releasedBy, "producer@example.com");
+  });
+
+  await check("an unparseable cutover does not silently grandfather everything", async () => {
+    const badEnv = { ...PROD, SCRIPT_GATE_ENFORCEMENT_FROM: "whenever" } as unknown as NodeJS.ProcessEnv;
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("bad-cutover", "tts:generate-segments", badEnv),
+      ProductionHoldError,
+      "a malformed cutover must fail closed, not open"
+    );
+  });
+
+  await check("a script with no usable creation time is not grandfathered", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: null }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("no-date", "tts:generate-segments", PROD_WITH_CUTOVER),
+      ProductionHoldError,
+      "without a creation time a script cannot be shown to predate the cutover"
+    );
+  });
+
   __setScriptContentLoaderForTests(null);
 
   console.log(

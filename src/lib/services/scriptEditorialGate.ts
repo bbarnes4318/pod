@@ -246,6 +246,17 @@ export interface DownstreamBlockVerdict {
   failedCriticalAxes: string[];
   /** Set when a recorded human release cleared an otherwise blocking verdict. */
   releasedBy?: string;
+  /** Set when the editorial-gate rollout policy was consulted for this script.
+   *  Present on both grandfathered passes and refusals, so an operator can see
+   *  exactly what was compared. Typed loosely here to keep this module free of
+   *  a queue-layer import. */
+  rollout?: {
+    grandfathered: boolean;
+    disposition: string;
+    reason: string;
+    scriptCreatedAt: string | null;
+    cutoverAt: string | null;
+  };
 }
 
 const DECISION_RANK: Record<ScriptEditorialDecision, number> = { pass: 0, review: 1, hold: 2 };

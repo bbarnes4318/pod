@@ -12,6 +12,7 @@
 // cannot forget to check, because the check is not at the call site.
 
 import { evaluateDownstreamBlock, type DownstreamBlockVerdict } from "../services/scriptEditorialGate";
+import { evaluateRolloutDisposition, type RolloutDecision } from "./rolloutPolicy";
 
 export class ProductionHoldError extends Error {
   readonly code = "PRODUCTION_HOLD";
@@ -40,7 +41,14 @@ export class ProductionHoldError extends Error {
  * downstream production. `pass` continues; `review` and `hold` require a
  * recorded human release stored on the script content.
  */
-export type ScriptContentLoader = (scriptId: string) => Promise<unknown | null>;
+export interface LoadedScript {
+  content: unknown;
+  /** Needed by the rollout policy; a script cannot be shown to predate the
+   *  enforcement cutover without it. */
+  createdAt: Date | string | null;
+}
+
+export type ScriptContentLoader = (scriptId: string) => Promise<LoadedScript | null>;
 
 // Imported lazily so the gate's decision logic can be executed in tests and in
 // CI without a generated Prisma client standing between the assertion and the
@@ -49,9 +57,9 @@ const dbLoader: ScriptContentLoader = async (scriptId) => {
   const { db } = await import("../db");
   const script = await db.script.findUnique({
     where: { id: scriptId },
-    select: { id: true, content: true },
+    select: { id: true, content: true, createdAt: true },
   });
-  return script ? script.content : null;
+  return script ? { content: script.content, createdAt: script.createdAt } : null;
 };
 
 let activeLoader: ScriptContentLoader = dbLoader;
@@ -64,18 +72,62 @@ export function __setScriptContentLoaderForTests(loader: ScriptContentLoader | n
   activeLoader = loader ?? dbLoader;
 }
 
+/** Emitted whenever the rollout policy lets an unmeasured legacy script pass. */
+export interface GrandfatherNotice {
+  scriptId: string;
+  stage: string;
+  decision: RolloutDecision;
+}
+
+let onGrandfather: ((notice: GrandfatherNotice) => void) | null = null;
+
+/** Lets the worker record grandfathered passes onto the JobLog. */
+export function setGrandfatherObserver(fn: ((notice: GrandfatherNotice) => void) | null): void {
+  onGrandfather = fn;
+}
+
 export async function assertScriptReleasableForProduction(
   scriptId: string,
   stage: string,
   env: NodeJS.ProcessEnv = process.env
 ): Promise<DownstreamBlockVerdict> {
-  const content = await activeLoader(scriptId);
-  if (content === null || content === undefined) {
+  const loaded = await activeLoader(scriptId);
+  if (!loaded || loaded.content === null || loaded.content === undefined) {
     throw new Error(`Script ${scriptId} not found; refusing to queue ${stage}.`);
   }
-  const verdict = evaluateDownstreamBlock(content, env);
-  if (verdict.blocked) {
-    throw new ProductionHoldError(scriptId, stage, verdict);
+  const verdict = evaluateDownstreamBlock(loaded.content, env);
+  if (!verdict.blocked) return verdict;
+
+  // ROLLOUT POLICY. Only an UNMEASURED script can be grandfathered, and only
+  // when it demonstrably predates the configured enforcement cutover. A script
+  // that was measured and came back `review`/`hold` is never grandfathered —
+  // its remedy is an attributable human release, which is a documented path,
+  // not a dead end.
+  if (verdict.decision === "unknown") {
+    const rollout = evaluateRolloutDisposition({
+      hasVerdict: false,
+      scriptCreatedAt: loaded.createdAt,
+      env,
+    });
+    if (rollout.grandfathered) {
+      onGrandfather?.({ scriptId, stage, decision: rollout });
+      console.warn(
+        `[ProductionGuard] GRANDFATHERED script ${scriptId} into ${stage} with no editorial ` +
+          `verdict. ${rollout.reason}`
+      );
+      return {
+        ...verdict,
+        blocked: false,
+        reasons: [...verdict.reasons, rollout.reason],
+        rollout,
+      };
+    }
+    throw new ProductionHoldError(scriptId, stage, {
+      ...verdict,
+      reasons: [...verdict.reasons, rollout.reason],
+      rollout,
+    });
   }
-  return verdict;
+
+  throw new ProductionHoldError(scriptId, stage, verdict);
 }
