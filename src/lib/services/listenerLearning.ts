@@ -1,5 +1,33 @@
 // CLOSED LISTENER-LEARNING LOOP — collection + aggregation half.
 //
+// ===========================================================================
+// READ THIS FIRST: ANONYMOUS TRAFFIC DOES NOT AUTO-PROMOTE ANYTHING.
+//
+// /api/learning/* is a PUBLIC endpoint. Everything it collects is, by
+// construction, from an unauthenticated stranger who chooses their own
+// "listener id". The controls in section 8 (signed context, strict per-signal
+// validation, dedupe, per-listener and per-source rate limits, one-shot
+// pairwise trials, credible-listener counting) raise the cost of manufacturing
+// an audience from "a for-loop" to "a distributed botnet with a real IP
+// spread". They do NOT make the data trustworthy in the sense a promotion
+// needs, and pretending otherwise with a bigger threshold would be dishonest:
+//
+//   • A listener id is self-asserted. The only independence evidence we have
+//     is the source IP bucket, and IPs are rentable.
+//   • listenerHash rotates per UTC day for privacy, so the SAME person is a
+//     new "listener" tomorrow. The per-source credible cap (section 8.6) is
+//     what bounds that, and it is a heuristic, not a proof.
+//   • There is no bot check on this surface, by design — a CAPTCHA on a
+//     podcast player is not something this project is going to ship.
+//
+// Therefore: a promotion whose deciding signal came from the public endpoint
+// (source "listener" or "panel") is STAGED, never applied. A human approves it
+// in /admin/learning. See productionPolicy.ts → promoteProductionPolicy(),
+// runLearningPromotionCycle(), approveStagedPolicyPromotion().
+// Production-sourced signals (derived server-side from real artifacts, never
+// client-reported) may still promote automatically — a client cannot reach them.
+// ===========================================================================
+//
 // Retention storage on its own is not a loop. This module is the first two
 // legs of one:
 //
@@ -286,6 +314,12 @@ export interface LearningStore {
   insertEvents(events: LearningEventRecord[]): Promise<void>;
   listEvents(filter?: { podcastId?: string; since?: Date; aliveAt?: Date }): Promise<LearningEventRecord[]>;
   deleteEventsExpiredBefore(now: Date): Promise<number>;
+  /**
+   * DEDUPE READ. How many events already exist for this exact
+   * (listener, episode, signal) triple. See SIGNAL_INTAKE_RULES for the
+   * per-signal dedupe key this backs.
+   */
+  countEvents(filter: { signalKey: LearningSignalKey; listenerHash: string; episodeId: string | null }): Promise<number>;
 
   replaceAggregates(podcastId: string, rows: LearningAggregateRow[]): Promise<void>;
   listAggregates(podcastId: string): Promise<LearningAggregateRow[]>;
@@ -293,6 +327,14 @@ export interface LearningStore {
   insertColdOpenTrial(trial: ColdOpenTrialRecord): Promise<void>;
   findColdOpenTrial(trialToken: string): Promise<ColdOpenTrialRecord | null>;
   updateColdOpenTrial(trialToken: string, patch: Partial<ColdOpenTrialRecord>): Promise<void>;
+  /**
+   * REPLAY PROTECTION, compare-and-set. Marks an UNDECIDED trial decided and
+   * returns true; returns false if it was already decided. This is the single
+   * point that makes "a trial resolves once" an invariant rather than a
+   * read-then-write race — the Prisma implementation pushes the condition into
+   * the WHERE clause so two concurrent votes cannot both win.
+   */
+  claimColdOpenTrial(trialToken: string, patch: Partial<ColdOpenTrialRecord>): Promise<boolean>;
 
   listPolicyVersions(podcastId: string): Promise<PolicyVersionRecord[]>;
   insertPolicyVersion(version: PolicyVersionRecord): Promise<void>;
@@ -352,6 +394,11 @@ export function createInMemoryLearningStore(): InMemoryLearningStore {
       }
       return removed;
     },
+    async countEvents(filter) {
+      return events.filter(
+        (e) => e.signalKey === filter.signalKey && e.listenerHash === filter.listenerHash && (e.episodeId ?? null) === (filter.episodeId ?? null)
+      ).length;
+    },
     async replaceAggregates(podcastId, rows) {
       for (let i = aggregates.length - 1; i >= 0; i--) {
         if (aggregates[i].podcastId === podcastId) aggregates.splice(i, 1);
@@ -371,6 +418,12 @@ export function createInMemoryLearningStore(): InMemoryLearningStore {
     async updateColdOpenTrial(trialToken, patch) {
       const found = trials.find((t) => t.trialToken === trialToken);
       if (found) Object.assign(found, clone(patch));
+    },
+    async claimColdOpenTrial(trialToken, patch) {
+      const found = trials.find((t) => t.trialToken === trialToken && t.decidedAt == null);
+      if (!found) return false;
+      Object.assign(found, clone(patch));
+      return true;
     },
     async listPolicyVersions(podcastId) {
       return policyVersions.filter((v) => v.podcastId === podcastId).map(clone).sort((a, b) => a.version - b.version);
@@ -415,8 +468,9 @@ interface PrismaDelegate {
   createMany?(args: { data: unknown[] }): Promise<unknown>;
   findMany(args?: unknown): Promise<unknown[]>;
   findUnique(args: unknown): Promise<unknown>;
+  count?(args: unknown): Promise<number>;
   update(args: unknown): Promise<unknown>;
-  updateMany?(args: unknown): Promise<unknown>;
+  updateMany?(args: unknown): Promise<{ count: number }>;
   deleteMany(args: unknown): Promise<{ count: number }>;
 }
 
@@ -453,6 +507,12 @@ export function createPrismaLearningStore(client: unknown): LearningStore {
       const res = await db.listenerLearningEvent.deleteMany({ where: { expiresAt: { lte: now } } });
       return res.count;
     },
+    async countEvents(filter) {
+      // Uses the @@index([episodeId, signalKey]) / @@index([listenerHash]) pair.
+      return db.listenerLearningEvent.count!({
+        where: { signalKey: filter.signalKey, listenerHash: filter.listenerHash, episodeId: filter.episodeId ?? null },
+      });
+    },
     async replaceAggregates(podcastId, rows) {
       await db.listenerLearningAggregate.deleteMany({ where: { podcastId } });
       if (rows.length) await db.listenerLearningAggregate.createMany!({ data: rows.map((r) => ({ ...r })) });
@@ -480,6 +540,12 @@ export function createPrismaLearningStore(client: unknown): LearningStore {
     },
     async updateColdOpenTrial(trialToken, patch) {
       await db.coldOpenPairwiseTrial.update({ where: { trialToken }, data: { ...patch } });
+    },
+    async claimColdOpenTrial(trialToken, patch) {
+      // The `decidedAt: null` predicate lives in the WHERE clause, so the
+      // database — not this process — decides who wins a concurrent replay.
+      const res = await db.coldOpenPairwiseTrial.updateMany!({ where: { trialToken, decidedAt: null }, data: { ...patch } });
+      return res.count === 1;
     },
     async listPolicyVersions(podcastId) {
       const rows = (await db.productionPolicyVersion.findMany({ where: { podcastId }, orderBy: { version: "asc" } })) as Record<string, unknown>[];
@@ -533,17 +599,26 @@ export interface LearningEventInput {
   occurredAt?: Date;
   retentionDays?: number;
   metadata?: Record<string, unknown> | null;
+  /**
+   * SERVER-ONLY attestation, applied AFTER metadata sanitization so a client
+   * can never spoof it. `sourceKey` is the salted source bucket (see
+   * hashSourceIp); `credible` means the event cleared every intake control in
+   * section 8. Only attested events are counted by countCredibleListeners().
+   */
+  attestation?: { credible: boolean; sourceKey: string | null } | null;
 }
 
 export type CollectionResult =
   | { ok: true; event: LearningEventRecord; droppedMetadataKeys: string[] }
-  | { ok: false; code: "unknown_signal" | "consent_required" | "identifier_required" | "identifier_forbidden" | "invalid_value"; reason: string };
+  | {
+      ok: false;
+      code: "unknown_signal" | "consent_required" | "identifier_required" | "identifier_forbidden" | "invalid_value" | "out_of_range";
+      reason: string;
+    };
 
-function clampToSignal(key: LearningSignalKey, value: number): number {
-  const d = signalDescriptor(key);
-  if (!Number.isFinite(value)) return NaN;
-  return Math.min(d.max, Math.max(d.min, value));
-}
+/** Reserved metadata keys. A client-supplied key starting with `_` is refused. */
+export const ATTESTATION_SOURCE_KEY = "_src";
+export const ATTESTATION_CREDIBLE_KEY = "_credible";
 
 /**
  * Build one raw event. Pure — no I/O — so the consent/PII rules are testable
@@ -573,14 +648,29 @@ export function buildLearningEvent(input: LearningEventInput): CollectionResult 
     return { ok: false, code: "identifier_forbidden", reason: `"${input.signalKey}" is a production measurement and must not carry a listener identifier.` };
   }
 
-  const value = clampToSignal(input.signalKey, Number(input.value));
-  if (!Number.isFinite(value)) {
+  // A non-finite value is refused, and so is an in-range-looking value that is
+  // actually outside the signal's declared range. The previous behaviour CLAMPED
+  // out-of-range input, which quietly turned "value: 1e9" into a perfect score.
+  const value = Number(input.value);
+  if (typeof input.value === "boolean" || input.value === null || !Number.isFinite(value)) {
     return { ok: false, code: "invalid_value", reason: `"${input.signalKey}" received a non-numeric value.` };
+  }
+  if (value < descriptor.min || value > descriptor.max) {
+    return {
+      ok: false,
+      code: "out_of_range",
+      reason: `"${input.signalKey}" must be within [${descriptor.min}, ${descriptor.max}]; got ${value}.`,
+    };
   }
 
   const occurredAt = input.occurredAt ?? new Date();
   const retentionDays = input.retentionDays ?? LEARNING_RETENTION_DAYS;
   const { clean, dropped } = sanitizeMetadata(input.metadata);
+  // Attestation is stamped LAST: sanitization can never strip it and caller
+  // metadata can never impersonate it.
+  const attested = input.attestation
+    ? { ...(clean ?? {}), [ATTESTATION_CREDIBLE_KEY]: input.attestation.credible, [ATTESTATION_SOURCE_KEY]: input.attestation.sourceKey }
+    : clean;
 
   return {
     ok: true,
@@ -604,7 +694,7 @@ export function buildLearningEvent(input: LearningEventInput): CollectionResult 
       unit: descriptor.unit,
       occurredAt,
       expiresAt: new Date(occurredAt.getTime() + retentionDays * 24 * 60 * 60 * 1000),
-      metadata: clean,
+      metadata: attested,
     },
   };
 }
@@ -628,6 +718,14 @@ export async function recordLearningEvents(
 /**
  * PURGE PATH (documented, not implied).
  *
+ * THIS is the function a PostgreSQL integration job must call:
+ *
+ *     purgeExpiredLearningEvents(createPrismaLearningStore(db), new Date())
+ *
+ * It takes a plain LearningStore, so the same call proves the same behaviour
+ * against the in-memory store offline and against real Prisma in CI. It returns
+ * the number of rows removed.
+ *
  * Every raw event is written with `expiresAt = occurredAt + retentionDays`.
  * This call deletes everything at or past that horizon. It is safe to run on
  * any schedule: aggregates are DERIVED, so after a purge the correct next step
@@ -644,7 +742,9 @@ export async function purgeExpiredLearningEvents(store: LearningStore, now: Date
 /* 5. Aggregation (derived, recomputable).                             */
 /* ------------------------------------------------------------------ */
 
-function scopeKeyFor(kind: AggregateScopeKind, e: LearningEventRecord): string | null {
+/** Which value of `e` a given aggregate scope groups by. Exported so the policy
+ *  layer can count credible listeners on the SAME scope the aggregate used. */
+export function eventScopeKey(kind: AggregateScopeKind, e: LearningEventRecord): string | null {
   switch (kind) {
     case "episode":
       return e.episodeId;
@@ -693,7 +793,7 @@ export function computeAggregates(events: LearningEventRecord[]): LearningAggreg
   for (const e of events) {
     if (!e.podcastId) continue; // aggregates are always show-scoped
     for (const kind of AGGREGATE_SCOPE_KINDS) {
-      const scopeKey = scopeKeyFor(kind, e);
+      const scopeKey = eventScopeKey(kind, e);
       if (!scopeKey) continue;
       const id = `${e.podcastId} ${kind} ${scopeKey} ${e.signalKey}`;
       const existing = buckets.get(id);
@@ -884,6 +984,14 @@ export async function serveColdOpenTrial(
  * is resolved server-side from the stored trial, so the client never had to
  * know it. Emits two raw pairwise events (winner 1, loser 0) so the aggregate
  * by opening_variant is a real win rate.
+ *
+ * DEDUPE / REPLAY KEY: the TRIAL, not (listener, episode, signal). One listener
+ * may legitimately resolve several distinct trials on the same episode, but a
+ * single trial resolves exactly once — enforced by claimColdOpenTrial()'s
+ * compare-and-set, so a resubmission loses the race rather than double-counting.
+ *
+ * `sourceKey` must come from a VERIFIED signed context (section 8); it is what
+ * makes the emitted events countable as credible independent listeners.
  */
 export async function recordColdOpenChoice(
   store: LearningStore,
@@ -896,20 +1004,27 @@ export async function recordColdOpenChoice(
     voicePolicyVersion?: number | null;
     productionPolicyVersion?: number | null;
     cohort?: string | null;
+    sourceKey?: string | null;
   }
 ): Promise<{ ok: true; winnerVariantId: string; loserVariantId: string } | { ok: false; error: string }> {
+  if (input.winnerSlot !== "A" && input.winnerSlot !== "B") return { ok: false, error: "invalid_slot" };
   const trial = await store.findColdOpenTrial(input.trialToken);
   if (!trial) return { ok: false, error: "unknown_trial" };
   if (trial.decidedAt) return { ok: false, error: "already_decided" };
-  if (input.winnerSlot !== "A" && input.winnerSlot !== "B") return { ok: false, error: "invalid_slot" };
 
   const winnerVariantId = input.winnerSlot === "A" ? trial.slotAVariantId : trial.slotBVariantId;
   const loserVariantId = input.winnerSlot === "A" ? trial.slotBVariantId : trial.slotAVariantId;
   const now = input.now ?? new Date();
 
-  await store.updateColdOpenTrial(trial.trialToken, { winnerSlot: input.winnerSlot, winnerVariantId, decidedAt: now });
+  const claimed = await store.claimColdOpenTrial(trial.trialToken, {
+    winnerSlot: input.winnerSlot,
+    winnerVariantId,
+    decidedAt: now,
+  });
+  if (!claimed) return { ok: false, error: "already_decided" };
 
   const shared = {
+    attestation: input.sourceKey ? { credible: true, sourceKey: input.sourceKey } : null,
     signalKey: "cold_open_pairwise" as const,
     episodeId: trial.episodeId,
     podcastId: trial.podcastId,

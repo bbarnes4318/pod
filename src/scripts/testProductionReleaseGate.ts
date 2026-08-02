@@ -25,6 +25,11 @@ import {
   ProductionHoldError,
   __setScriptContentLoaderForTests,
 } from "../lib/queue/productionGuard";
+import {
+  createInMemoryLegacyReleaseStore,
+  __setLegacyReleaseStoreForTests,
+  DEFAULT_LEGACY_RELEASE_STAGES,
+} from "../lib/queue/legacyRelease";
 
 let failures = 0;
 function check(name: string, fn: () => void | Promise<void>): Promise<void> {
@@ -324,6 +329,10 @@ async function main() {
     assert.equal(v.blocked, false, "a passing script must proceed");
   });
   console.log("\n=== Rollout policy: legacy scripts must not be stranded, and must stay attributable ===");
+  // Every rollout assertion below runs against a real store, because the whole
+  // point of the fix is that a release is a ROW and not a return value.
+  let releaseStore = createInMemoryLegacyReleaseStore();
+  __setLegacyReleaseStoreForTests(releaseStore);
   const CUTOVER = "2026-08-02T00:00:00.000Z";
   const PROD_WITH_CUTOVER = { ...PROD, SCRIPT_GATE_ENFORCEMENT_FROM: CUTOVER } as unknown as NodeJS.ProcessEnv;
   const legacyContent = { segments: [] }; // a real pre-gate script: no editorialGate at all
@@ -340,6 +349,8 @@ async function main() {
   });
 
   await check("a pre-existing script IS grandfathered once the cutover is configured", async () => {
+    releaseStore = createInMemoryLegacyReleaseStore();
+    __setLegacyReleaseStoreForTests(releaseStore);
     __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
     const v = await assertScriptReleasableForProduction("legacy-2", "tts:generate-segments", PROD_WITH_CUTOVER);
     assert.equal(v.blocked, false, "in-flight work created before the cutover must be able to finish");
@@ -347,6 +358,8 @@ async function main() {
   });
 
   await check("a grandfathered pass is ATTRIBUTABLE, not silent", async () => {
+    releaseStore = createInMemoryLegacyReleaseStore();
+    __setLegacyReleaseStoreForTests(releaseStore);
     __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
     const v = await assertScriptReleasableForProduction("legacy-3", "tts:generate-segments", PROD_WITH_CUTOVER);
     assert.equal(v.rollout?.disposition, "grandfathered_pre_enforcement");
@@ -420,7 +433,80 @@ async function main() {
     );
   });
 
+  console.log("\n=== The legacy release is DURABLE: one row per script, stable across restarts ===");
+
+  await check("repeated boundaries reuse ONE release — it cannot mint unlimited releases", async () => {
+    releaseStore = createInMemoryLegacyReleaseStore();
+    __setLegacyReleaseStoreForTests(releaseStore);
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    // The same script crosses all three production boundaries, twice over.
+    for (let round = 0; round < 2; round++) {
+      for (const stage of DEFAULT_LEGACY_RELEASE_STAGES) {
+        await assertScriptReleasableForProduction("legacy-durable", stage, PROD_WITH_CUTOVER);
+      }
+    }
+    assert.equal(await releaseStore.count(), 1, "six passes must share exactly ONE release row");
+  });
+
+  await check("the release survives a worker restart", async () => {
+    const before = (await releaseStore.find("legacy-durable"))!;
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    const v = await assertScriptReleasableForProduction("legacy-durable", "tts:generate-segments", PROD_WITH_CUTOVER);
+    assert.equal(v.legacyRelease?.id, before.id, "the same release row must be reused after a restart");
+    assert.equal(await releaseStore.count(), 1, "a restart must not mint a second release");
+  });
+
+  await check("the release records actor, cutover, creation time and SCOPE", async () => {
+    const row = (await releaseStore.find("legacy-durable"))!;
+    assert.equal(row.actorKind, "system", "the automatic path must record a SYSTEM actor, never a person");
+    assert.ok(row.actorId?.startsWith("system:"), `expected a system actor id, got ${row.actorId}`);
+    assert.equal(row.scriptCreatedAt.toISOString(), "2026-07-01T00:00:00.000Z");
+    assert.equal(row.cutoverAt.toISOString(), CUTOVER);
+    assert.deepEqual(row.permittedStages, [...DEFAULT_LEGACY_RELEASE_STAGES], "scope must be explicit on the row");
+  });
+
+  await check("a release is SCOPED: a stage outside its scope is still refused", async () => {
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("legacy-durable", "social-clip:generate", PROD_WITH_CUTOVER),
+      ProductionHoldError,
+      "a compatibility release must not be a blanket pass for anything the pipeline might do later"
+    );
+  });
+
+  await check("a REVOKED release stops working, and the audit trail survives", async () => {
+    await releaseStore.revoke("legacy-durable", "producer@example.com", "superseded by a real verdict");
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    await assert.rejects(
+      () => assertScriptReleasableForProduction("legacy-durable", "tts:generate-segments", PROD_WITH_CUTOVER),
+      (err: unknown) => err instanceof ProductionHoldError && /revoked/i.test(err.message),
+      "a revoked release must stop permitting production"
+    );
+    assert.equal(await releaseStore.count(), 1, "revoking must not delete the record");
+  });
+
+  await check("a measured-and-FAILED script never gets a release row at all", async () => {
+    releaseStore = createInMemoryLegacyReleaseStore();
+    __setLegacyReleaseStoreForTests(releaseStore);
+    __setScriptContentLoaderForTests(async () => ({
+      content: { editorialGate: { decision: "hold", reasons: ["x"], failedCriticalAxes: [] } },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    }));
+    await assert.rejects(() => assertScriptReleasableForProduction("old-held-2", "tts:generate-segments", PROD_WITH_CUTOVER), ProductionHoldError);
+    assert.equal(await releaseStore.count(), 0, "a measured failure must never create a compatibility release");
+  });
+
+  await check("an ineligible script creates NO row (no cutover configured)", async () => {
+    releaseStore = createInMemoryLegacyReleaseStore();
+    __setLegacyReleaseStoreForTests(releaseStore);
+    __setScriptContentLoaderForTests(async () => ({ content: legacyContent, createdAt: "2026-07-01T00:00:00.000Z" }));
+    await assert.rejects(() => assertScriptReleasableForProduction("no-cutover", "tts:generate-segments", PROD), ProductionHoldError);
+    assert.equal(await releaseStore.count(), 0, "eligibility must be established before a row is written");
+  });
+
+  __setLegacyReleaseStoreForTests(null);
   __setScriptContentLoaderForTests(null);
+
 
   console.log(
     `\nMeasured on the failed-episode fixture: coldOpen=${failedInv.measurements.coldOpenWords}w, ` +

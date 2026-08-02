@@ -13,6 +13,7 @@
 
 import { evaluateDownstreamBlock, type DownstreamBlockVerdict } from "../services/scriptEditorialGate";
 import { evaluateRolloutDisposition, type RolloutDecision } from "./rolloutPolicy";
+import { resolveLegacyRelease, type LegacyReleaseRecord } from "./legacyRelease";
 
 export class ProductionHoldError extends Error {
   readonly code = "PRODUCTION_HOLD";
@@ -77,6 +78,7 @@ export interface GrandfatherNotice {
   scriptId: string;
   stage: string;
   decision: RolloutDecision;
+  release: LegacyReleaseRecord;
 }
 
 let onGrandfather: ((notice: GrandfatherNotice) => void) | null = null;
@@ -109,22 +111,38 @@ export async function assertScriptReleasableForProduction(
       scriptCreatedAt: loaded.createdAt,
       env,
     });
-    if (rollout.grandfathered) {
-      onGrandfather?.({ scriptId, stage, decision: rollout });
-      console.warn(
-        `[ProductionGuard] GRANDFATHERED script ${scriptId} into ${stage} with no editorial ` +
-          `verdict. ${rollout.reason}`
-      );
+
+    // Eligibility alone grants nothing. The release must be a durable, scoped
+    // row — otherwise the same script is re-grandfathered at every queue
+    // boundary and again after every restart, which is exactly the defect this
+    // replaced.
+    const outcome = await resolveLegacyRelease(scriptId, stage, rollout);
+    if (outcome.allowed) {
+      onGrandfather?.({ scriptId, stage, decision: rollout, release: outcome.record });
+      if (outcome.created) {
+        console.warn(
+          `[ProductionGuard] LEGACY RELEASE CREATED for script ${scriptId} (${outcome.record.id}), ` +
+            `scope=[${outcome.record.permittedStages.join(", ")}], actor=${outcome.record.actorId}. ${rollout.reason}`
+        );
+      }
       return {
         ...verdict,
         blocked: false,
-        reasons: [...verdict.reasons, rollout.reason],
+        reasons: [...verdict.reasons, outcome.record.reason],
         rollout,
+        legacyRelease: {
+          id: outcome.record.id,
+          createdAt: outcome.record.createdAt.toISOString(),
+          actorKind: outcome.record.actorKind,
+          actorId: outcome.record.actorId,
+          permittedStages: outcome.record.permittedStages,
+          reason: outcome.record.reason,
+        },
       };
     }
     throw new ProductionHoldError(scriptId, stage, {
       ...verdict,
-      reasons: [...verdict.reasons, rollout.reason],
+      reasons: [...verdict.reasons, outcome.reason],
       rollout,
     });
   }

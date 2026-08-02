@@ -14,6 +14,17 @@ export interface EditorialGatePanelProps {
   provenance?: ScriptPipelineProvenance | null;
   invariants?: InvariantReport | null;
   humanRelease?: { approvedBy?: string; approvedAt?: string; approvedDecision?: string } | null;
+  /** The durable ScriptLegacyRelease row, when a pre-cutover script was let
+   *  through for in-flight compatibility. Shown prominently because it means
+   *  this episode reached production WITHOUT a quality verdict. */
+  legacyRelease?: {
+    id?: string;
+    createdAt?: string;
+    actorKind?: string;
+    actorId?: string | null;
+    permittedStages?: string[];
+    reason?: string;
+  } | null;
 }
 
 const DECISION_COPY: Record<string, { label: string; tone: string; blurb: string }> = {
@@ -40,7 +51,7 @@ function pathCopy(path?: string): { label: string; warn: boolean } {
   return { label: path || "unknown", warn: true };
 }
 
-export default function EditorialGatePanel({ gate, provenance, invariants, humanRelease }: EditorialGatePanelProps) {
+export default function EditorialGatePanel({ gate, provenance, invariants, humanRelease, legacyRelease }: EditorialGatePanelProps) {
   if (!gate?.decision) {
     return (
       <section className="studio-panel gate-panel gate-hold">
@@ -132,6 +143,28 @@ export default function EditorialGatePanel({ gate, provenance, invariants, human
               <li key={i}>{reason}</li>
             ))}
           </ol>
+        </div>
+      )}
+
+      {legacyRelease?.id && (
+        <div className="gate-legacy-release gate-warn">
+          <h4>Legacy compatibility release</h4>
+          <p>
+            This script reached production <strong>without a quality verdict</strong>. It was written before the
+            editorial gate had authority, so a scoped compatibility release let it finish.
+          </p>
+          <dl>
+            <dt>Release</dt>
+            <dd><code>{legacyRelease.id}</code>{legacyRelease.createdAt ? ` · ${legacyRelease.createdAt}` : ""}</dd>
+            <dt>Released by</dt>
+            <dd>{legacyRelease.actorKind === "system" ? `automatic rollout (${legacyRelease.actorId})` : legacyRelease.actorId || "unknown"}</dd>
+            <dt>Permits</dt>
+            <dd>{(legacyRelease.permittedStages || []).join(", ") || "—"}</dd>
+          </dl>
+          {legacyRelease.reason && <p className="gate-legacy-reason">{legacyRelease.reason}</p>}
+          <p>
+            Run <code>npm run gate:reevaluate -- --script &lt;id&gt;</code> to replace this release with a real verdict.
+          </p>
         </div>
       )}
 

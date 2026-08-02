@@ -1643,3 +1643,54 @@ model ProductionPolicyDecision {
 
   @@index([podcastId, decidedAt])
 }
+
+// ---------------------------------------------------------------------------
+// Editorial-gate rollout: durable legacy release
+//
+// The first version of the rollout policy was a PURE FUNCTION. It said a
+// pre-cutover script was "allowed once", but nothing was persisted, so the same
+// script was re-grandfathered at every queue boundary and again after every
+// worker restart. The claim was false.
+//
+// A release is now a ROW. One per script, enforced by a unique constraint, so
+// "one decision per script" is a database invariant rather than a sentence in a
+// comment. It records who released it (a system actor for the automatic
+// compatibility path), what it was compared against, and exactly which
+// downstream stages it permits.
+//
+// This exists ONLY for attributable in-flight compatibility. The preferred
+// remedy is `npm run gate:reevaluate`, which replaces the release with a real
+// verdict.
+// ---------------------------------------------------------------------------
+model ScriptLegacyRelease {
+  id String @id @default(uuid())
+
+  /// One release per script. This unique constraint is what makes the
+  /// "one decision per script" guarantee real.
+  scriptId String @unique
+
+  /// What the policy compared, kept so an auditor never has to re-derive it.
+  scriptCreatedAt DateTime
+  cutoverAt       DateTime
+  reason          String
+
+  /// Who released it. The automatic compatibility path records a SYSTEM actor
+  /// so it is never mistaken for a person's decision.
+  actorKind String  @default("system") // "system" | "human"
+  actorId   String?
+
+  /// Exactly which downstream stages this release permits. A release is not a
+  /// blanket pass for anything the pipeline might do later.
+  permittedStages String[]
+
+  createdAt DateTime @default(now())
+
+  /// Revoking is how an operator takes a release back without deleting the
+  /// audit trail.
+  revokedAt     DateTime?
+  revokedBy     String?
+  revokedReason String?
+
+  @@index([createdAt])
+  @@index([revokedAt])
+}

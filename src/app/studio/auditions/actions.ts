@@ -2,82 +2,64 @@
 
 // Server actions for the blind voice audition console.
 //
-// Two rules this file exists to enforce:
+// Three rules this file exists to enforce:
 //   1. NOTHING here returns provider / voiceId / model to the browser except
 //      `revealAuditionAction`, which is only legal after a winner is locked and
 //      which records that the audition was unblinded.
 //   2. `promoteWinnerAction` is the ONLY action that changes a production
 //      voice, it requires the operator to re-confirm the winning ballot, and it
 //      writes an attributed row that `rollbackPromotionAction` can undo.
+//   3. EVERY id that arrives from the browser — auditionId, hostId,
+//      partnerHostId, ballotId, promotionId — is resolved through an ownership
+//      guard BEFORE it is used, and a row you do not own answers exactly like a
+//      row that does not exist.
+//
+// The guards themselves live in `voiceAudition.ts` (guarded* / authorize*) so
+// that they can be executed against the in-memory store in
+// `src/scripts/testVoiceAuditionAuthz.ts`. This module is the thin, session-
+// resolving edge: it turns a cookie into an `AuditionViewer` and translates the
+// service's AuthzResult into the `{ success }` shape the console expects.
 
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
-import { currentUser } from "@/lib/currentUser";
 import { isTtsProviderId } from "@/lib/providers/tts/providerIds";
 import { isVoiceIdValidForProvider } from "@/lib/providers/tts/voiceResolution";
 import {
   addCandidate,
-  castVote,
+  authorizeAudition,
+  authorizeHost,
   createAudition,
-  getBallots,
-  listPromotionHistory,
-  openVoting,
-  promoteWinner,
-  revealAudition,
-  rollbackPromotion,
-  selectWinner,
-  tallyAudition,
+  guardedCastVote,
+  guardedGetBallots,
+  guardedOpenVoting,
+  guardedPromote,
+  guardedPromotionHistory,
+  guardedReveal,
+  guardedRollback,
+  guardedSelectWinner,
+  redactVoiceSecrets,
   VoiceAuditionError,
   type AuditionScores,
+  type AuthzResult,
 } from "@/lib/services/voiceAudition";
-import { auditionDeps } from "./store";
+import { auditionDeps, auditionViewer } from "./store";
 
 type Fail = { success: false; error: string };
 
 function fail(error: unknown): Fail {
-  if (error instanceof VoiceAuditionError) return { success: false, error: error.message };
+  if (error instanceof VoiceAuditionError) {
+    return { success: false, error: redactVoiceSecrets(error.message) };
+  }
   return {
     success: false,
-    error: error instanceof Error ? error.message : "That didn't work. Try again.",
+    error: redactVoiceSecrets(
+      error instanceof Error ? error.message : "That didn't work. Try again."
+    ),
   };
 }
 
-async function requireProducer(): Promise<
-  { ok: true; user: { id: string; name: string | null; email: string | null; role: string } } | { ok: false; error: string }
-> {
-  const user = await currentUser();
-  if (!user) return { ok: false, error: "Please sign in to run a voice audition." };
-  return { ok: true, user };
-}
-
-/** Auditions are owner-scoped exactly like hosts and episodes. */
-async function requireOwnedAudition(auditionId: string) {
-  const gate = await requireProducer();
-  if (!gate.ok) return gate;
-  const audition = await auditionDeps().store.getAudition(auditionId);
-  if (!audition) return { ok: false as const, error: "That audition no longer exists." };
-  if (audition.ownerId && audition.ownerId !== gate.user.id && gate.user.role !== "ADMIN") {
-    return { ok: false as const, error: "That audition belongs to another account." };
-  }
-  return { ok: true as const, user: gate.user, audition };
-}
-
-async function requireOwnedHost(hostId: string) {
-  const gate = await requireProducer();
-  if (!gate.ok) return gate;
-  const host = await db.aiHost.findUnique({
-    where: { id: hostId },
-    select: { id: true, name: true, ownerId: true, ttsProvider: true, ttsVoiceId: true },
-  });
-  if (!host) return { ok: false as const, error: "That host no longer exists." };
-  if (host.ownerId !== null && host.ownerId !== gate.user.id && gate.user.role !== "ADMIN") {
-    return { ok: false as const, error: "That host belongs to another account." };
-  }
-  return { ok: true as const, user: gate.user, host };
-}
-
-function actorLabel(user: { name: string | null; email: string | null }): string {
-  return user.name || user.email || "unknown operator";
+/** AuthzResult -> the console's `{ success }` envelope. */
+function refused<T>(result: Extract<AuthzResult<T>, { ok: false }>): Fail {
+  return { success: false, error: result.error };
 }
 
 function refresh() {
@@ -87,12 +69,16 @@ function refresh() {
 // ---------------------------------------------------------------------------
 
 export async function createAuditionAction(input: { title: string; hostId: string; notes?: string }) {
-  const gate = await requireOwnedHost(input.hostId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
+  const deps = auditionDeps();
+  const viewer = await auditionViewer();
+  // You may only run an audition for a host you own. A shared/system host
+  // (ownerId === null) is operator-only, exactly like every other write to it.
+  const host = await authorizeHost(deps, viewer, input.hostId);
+  if (!host.ok) return refused(host);
   try {
-    const audition = await createAudition(auditionDeps(), {
-      ownerId: gate.user.id,
-      hostId: gate.host.id,
+    const audition = await createAudition(deps, {
+      ownerId: viewer!.id,
+      hostId: host.value.id,
       title: input.title,
       notes: input.notes ?? null,
     });
@@ -116,32 +102,37 @@ export async function addCandidateAction(input: {
   privateLabel?: string;
   partnerHostId: string;
 }) {
-  const gate = await requireOwnedAudition(input.auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  const partner = await requireOwnedHost(input.partnerHostId);
-  if (!partner.ok) return { success: false as const, error: partner.error };
+  const deps = auditionDeps();
+  const viewer = await auditionViewer();
+  const gate = await authorizeAudition(deps, viewer, input.auditionId);
+  if (!gate.ok) return refused(gate);
+  const partner = await authorizeHost(deps, viewer, input.partnerHostId);
+  if (!partner.ok) return refused(partner);
 
   const provider = input.provider.trim().toLowerCase();
   const voiceId = input.voiceId.trim();
   if (!isTtsProviderId(provider)) return { success: false as const, error: "That voice provider is not supported." };
   if (provider !== "stub" && !isVoiceIdValidForProvider(provider, voiceId)) {
-    return { success: false as const, error: `That voice id is not valid for ${provider}.` };
+    // Deliberately does not echo the provider back: validation messages are a
+    // favourite way for an engine name to escape into a screenshot.
+    return { success: false as const, error: "That voice id is not valid for the provider you chose." };
   }
-  if (!partner.host.ttsVoiceId) {
+  if (!partner.value.voiceId) {
     return { success: false as const, error: "The scene partner has no voice assigned yet." };
   }
 
   try {
-    const candidate = await addCandidate(auditionDeps(), {
-      auditionId: gate.audition.id,
+    const candidate = await addCandidate(deps, {
+      auditionId: gate.value.id,
       provider,
       voiceId,
       model: input.model?.trim() || null,
       privateLabel: input.privateLabel ?? null,
-      partner: { provider: partner.host.ttsProvider, voiceId: partner.host.ttsVoiceId },
+      partner: { provider: partner.value.provider, voiceId: partner.value.voiceId },
     });
     refresh();
     // Deliberately NOT returning provider/voiceId — only whether it rendered.
+    // `renderError` was redacted of engine identity before it was stored.
     return {
       success: true as const,
       rendered: !candidate.renderError,
@@ -154,31 +145,17 @@ export async function addCandidateAction(input: {
 }
 
 export async function openVotingAction(auditionId: string) {
-  const gate = await requireOwnedAudition(auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    await openVoting(auditionDeps(), auditionId);
-    refresh();
-    return { success: true as const };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedOpenVoting(auditionDeps(), await auditionViewer(), auditionId);
+  if (!result.ok) return refused(result);
+  refresh();
+  return { success: true as const };
 }
 
 /** The blind read, exposed to the client. Identity is not reachable from here. */
 export async function getBallotsAction(auditionId: string) {
-  const gate = await requireOwnedAudition(auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    const deps = auditionDeps();
-    const [ballots, tally] = await Promise.all([
-      getBallots(deps, auditionId),
-      tallyAudition(deps, auditionId),
-    ]);
-    return { success: true as const, ballots, tally };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedGetBallots(auditionDeps(), await auditionViewer(), auditionId);
+  if (!result.ok) return refused(result);
+  return { success: true as const, ballots: result.value.ballots, tally: result.value.tally };
 }
 
 export async function castVoteAction(input: {
@@ -188,60 +165,37 @@ export async function castVoteAction(input: {
   overall: number;
   notes?: string;
 }) {
-  const gate = await requireOwnedAudition(input.auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    const deps = auditionDeps();
-    await castVote(deps, {
-      auditionId: input.auditionId,
-      ballotId: input.ballotId,
-      voterId: gate.user.id,
-      voterLabel: actorLabel(gate.user),
-      scores: input.scores,
-      overall: input.overall,
-      notes: input.notes ?? null,
-    });
-    const tally = await tallyAudition(deps, input.auditionId);
-    refresh();
-    return { success: true as const, tally };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedCastVote(auditionDeps(), await auditionViewer(), {
+    auditionId: input.auditionId,
+    ballotId: input.ballotId,
+    scores: input.scores,
+    overall: input.overall,
+    notes: input.notes ?? null,
+  });
+  if (!result.ok) return refused(result);
+  refresh();
+  return { success: true as const, tally: result.value };
 }
 
 /** Records the decision. Changes no production voice — see promoteWinnerAction. */
 export async function selectWinnerAction(input: { auditionId: string; ballotId: string }) {
-  const gate = await requireOwnedAudition(input.auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    await selectWinner(auditionDeps(), {
-      auditionId: input.auditionId,
-      ballotId: input.ballotId,
-      actorId: gate.user.id,
-    });
-    refresh();
-    return { success: true as const };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedSelectWinner(auditionDeps(), await auditionViewer(), input);
+  if (!result.ok) return refused(result);
+  refresh();
+  return { success: true as const };
 }
 
 export async function revealAuditionAction(auditionId: string) {
-  const gate = await requireOwnedAudition(auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    const revealed = await revealAudition(auditionDeps(), { auditionId, actorId: gate.user.id });
-    refresh();
-    return { success: true as const, candidates: revealed.candidates };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedReveal(auditionDeps(), await auditionViewer(), auditionId);
+  if (!result.ok) return refused(result);
+  refresh();
+  return { success: true as const, candidates: result.value };
 }
 
 /**
  * The only writer of a production voice in this feature. Requires the operator
  * to restate the winning ballot id — a re-render or a stray click cannot
- * promote anything.
+ * promote anything — and requires them to own BOTH the audition and the host.
  */
 export async function promoteWinnerAction(input: {
   auditionId: string;
@@ -249,61 +203,33 @@ export async function promoteWinnerAction(input: {
   hostId?: string;
   reason?: string;
 }) {
-  const gate = await requireOwnedAudition(input.auditionId);
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  const hostId = input.hostId || gate.audition.hostId || "";
-  const host = await requireOwnedHost(hostId);
-  if (!host.ok) return { success: false as const, error: host.error };
-  try {
-    const { promotion } = await promoteWinner(auditionDeps(), {
-      auditionId: input.auditionId,
-      hostId: host.host.id,
-      acknowledgedBallotId: input.acknowledgedBallotId,
-      actorId: gate.user.id,
-      actorLabel: actorLabel(gate.user),
-      reason: input.reason ?? null,
-    });
-    refresh();
-    revalidatePath("/studio/hosts");
-    return { success: true as const, promotionId: promotion.id };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedPromote(auditionDeps(), await auditionViewer(), input);
+  if (!result.ok) return refused(result);
+  refresh();
+  revalidatePath("/studio/hosts");
+  return { success: true as const, promotionId: result.value.promotionId };
 }
 
 export async function rollbackPromotionAction(input: { promotionId: string; reason?: string }) {
-  const gate = await requireProducer();
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  const deps = auditionDeps();
-  const promotion = await deps.store.getPromotion(input.promotionId);
-  if (!promotion) return { success: false as const, error: "That promotion is not in the history." };
-  const host = await requireOwnedHost(promotion.hostId);
-  if (!host.ok) return { success: false as const, error: host.error };
-  try {
-    const result = await rollbackPromotion(deps, {
-      promotionId: input.promotionId,
-      actorId: gate.user.id,
-      actorLabel: actorLabel(gate.user),
-      reason: input.reason ?? null,
-    });
-    refresh();
-    revalidatePath("/studio/hosts");
-    return {
-      success: true as const,
-      alreadyRolledBack: result.alreadyRolledBack,
-      restoredVoiceId: result.restored?.voiceId ?? null,
-    };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedRollback(auditionDeps(), await auditionViewer(), input);
+  if (!result.ok) return refused(result);
+  refresh();
+  revalidatePath("/studio/hosts");
+  // The restored voice id stays on the server. The operator asked to undo a
+  // change; naming the engine identity here would put it in the browser.
+  return {
+    success: true as const,
+    alreadyRolledBack: result.value.alreadyRolledBack,
+    hostName: result.value.hostName,
+  };
 }
 
+/**
+ * With no hostId this is "the voice changes on hosts YOU own", scoped by the
+ * query. It used to be "every voice change on the deployment".
+ */
 export async function promotionHistoryAction(hostId?: string) {
-  const gate = await requireProducer();
-  if (!gate.ok) return { success: false as const, error: gate.error };
-  try {
-    return { success: true as const, promotions: await listPromotionHistory(auditionDeps(), hostId) };
-  } catch (error) {
-    return fail(error);
-  }
+  const result = await guardedPromotionHistory(auditionDeps(), await auditionViewer(), hostId);
+  if (!result.ok) return refused(result);
+  return { success: true as const, promotions: result.value };
 }

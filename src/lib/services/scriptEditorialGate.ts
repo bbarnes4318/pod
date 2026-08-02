@@ -257,6 +257,17 @@ export interface DownstreamBlockVerdict {
     scriptCreatedAt: string | null;
     cutoverAt: string | null;
   };
+  /** The DURABLE legacy release row that permitted this script, when one did.
+   *  Present means a row exists in ScriptLegacyRelease — not that a pure
+   *  function returned true. */
+  legacyRelease?: {
+    id: string;
+    createdAt: string;
+    actorKind: string;
+    actorId: string | null;
+    permittedStages: string[];
+    reason: string;
+  };
 }
 
 const DECISION_RANK: Record<ScriptEditorialDecision, number> = { pass: 0, review: 1, hold: 2 };

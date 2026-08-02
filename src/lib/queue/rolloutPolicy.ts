@@ -6,7 +6,14 @@
 // script that already exists was written before the gate had authority. Without
 // a policy, deploying the gate would strand all of them.
 //
-// THE POLICY. Grandfathering is:
+// THIS MODULE ONLY DECIDES ELIGIBILITY. It is pure and deliberately stateless.
+// It does NOT grant anything — granting is ./legacyRelease, which writes one
+// durable, scoped row per script. An earlier version claimed a script was
+// "allowed once" while persisting nothing, so the same script was
+// re-grandfathered at every queue boundary and after every restart.
+// Eligibility is a judgement; the release is a record.
+//
+// THE POLICY. Eligibility is:
 //   - NARROW      — it applies only to scripts with no verdict at all, never to
 //                   a script that WAS measured and came back `review`/`hold`.
 //                   A measured-and-failed script has a documented remedy (an
@@ -123,8 +130,8 @@ export function evaluateRolloutDisposition(input: {
       disposition: "grandfathered_pre_enforcement",
       reason:
         `Script was created ${createdIso}, before the editorial-gate enforcement cutover ` +
-        `${cutoverIso}. Allowed once under the rollout policy WITHOUT a quality verdict. ` +
-        `Re-evaluate it to replace this allowance with a real verdict.`,
+        `${cutoverIso}. Eligible for a durable, scoped legacy release WITHOUT a quality verdict. ` +
+        `Re-evaluate it to replace that release with a real verdict.`,
       scriptCreatedAt: createdIso,
       cutoverAt: cutoverIso,
     };

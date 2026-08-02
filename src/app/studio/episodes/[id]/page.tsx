@@ -179,6 +179,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         provenance={(script?.content as any)?.pipelineProvenance ?? null}
         invariants={(script?.content as any)?.productionInvariants ?? null}
         humanRelease={(script?.content as any)?.humanRelease ?? null}
+        legacyRelease={(script?.content as any)?.legacyRelease ?? null}
       />
       <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
 

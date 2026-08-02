@@ -186,6 +186,13 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     invariants: [],
     note: "Additive only: raw listener signal events, derived aggregates, and versioned per-show production policy. No FK into any existing table.",
   },
+  {
+    name: "20260802020000_add_script_legacy_release",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive only: one table holding the durable, scoped editorial-gate legacy release. UNIQUE(scriptId) is what makes 'one decision per script' a database invariant rather than a claim in a comment.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;

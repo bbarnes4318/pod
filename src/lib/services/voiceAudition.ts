@@ -276,6 +276,35 @@ export interface HostVoiceRecord {
   name: string;
   provider: string;
   voiceId: string;
+  /**
+   * Who may change this host's production voice. `null` means NOBODY CLAIMED IT
+   * — a shared/system/seeded host — which is deliberately NOT "everybody owns
+   * it": only an operator account may touch those. Optional on the type so a
+   * fixture can leave it out; absent is read as `null`.
+   */
+  ownerId?: string | null;
+}
+
+/**
+ * How a promotion list is narrowed. A bare string is the legacy "one host"
+ * form; the object form is what owner-scoping uses, and it is applied by the
+ * QUERY (a Prisma `where`), never by filtering a full table in memory.
+ */
+export type PromotionFilter =
+  | string
+  | { hostId?: string | null; hostIds?: readonly string[] | null }
+  | undefined;
+
+function normalizePromotionFilter(filter: PromotionFilter): {
+  hostId?: string;
+  hostIds?: readonly string[];
+} {
+  if (!filter) return {};
+  if (typeof filter === "string") return filter ? { hostId: filter } : {};
+  const out: { hostId?: string; hostIds?: readonly string[] } = {};
+  if (filter.hostId) out.hostId = filter.hostId;
+  if (filter.hostIds) out.hostIds = filter.hostIds;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,11 +336,13 @@ export interface VoiceAuditionStore {
 
   getHostVoice(hostId: string): Promise<HostVoiceRecord | null>;
   setHostVoice(hostId: string, voice: { provider: string; voiceId: string }): Promise<void>;
+  /** The hosts an account owns. The owner-scoped promotion query is built from this. */
+  listHostIdsForOwner(ownerId: string): Promise<string[]>;
 
   createPromotion(input: Omit<PromotionRecord, "createdAt"> & { createdAt?: Date }): Promise<PromotionRecord>;
   getPromotion(id: string): Promise<PromotionRecord | null>;
   updatePromotion(id: string, patch: Partial<PromotionRecord>): Promise<PromotionRecord>;
-  listPromotions(hostId?: string): Promise<PromotionRecord[]>;
+  listPromotions(filter?: PromotionFilter): Promise<PromotionRecord[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +489,27 @@ export function assertBallotIsBlind(payload: unknown, secrets: string[] = []): v
       throw new VoiceAuditionError(`Blindness violation: the serialized ballot leaks '${trimmed}'.`);
     }
   }
+}
+
+/** A 32-hex reference id — the shape every provider voice id in this app has. */
+const VOICE_ID_SHAPE = /\b[0-9a-f]{32}\b/gi;
+
+/**
+ * Error messages are the classic blindness hole: a provider SDK happily puts the
+ * voice id it just rejected into the exception, and that string then travels to
+ * a ballot ("problem"), to a toast, and into the page HTML. Every message this
+ * module stores or returns goes through here first.
+ */
+export function redactVoiceSecrets(
+  message: string,
+  secrets: Array<string | null | undefined> = []
+): string {
+  let out = message ?? "";
+  for (const secret of secrets) {
+    const trimmed = (secret || "").trim();
+    if (trimmed.length >= 3) out = out.split(trimmed).join("[redacted]");
+  }
+  return out.replace(VOICE_ID_SHAPE, "[redacted]");
 }
 
 /** Deterministic shuffle so ballot order does not encode who was entered first. */
@@ -610,7 +662,14 @@ export async function addCandidate(
     audioBytes = rendered.audioBuffer.length;
     renderedAt = deps_now(deps);
   } catch (error) {
-    renderError = error instanceof Error ? error.message : String(error);
+    renderError = redactVoiceSecrets(error instanceof Error ? error.message : String(error), [
+      provider,
+      voiceId,
+      model,
+      partnerProvider,
+      partnerVoiceId,
+      input.privateLabel,
+    ]);
   }
 
   return deps.store.createCandidate({
@@ -1029,10 +1088,376 @@ export async function rollbackPromotion(
 
 export async function listPromotionHistory(
   deps: VoiceAuditionDeps,
-  hostId?: string
+  filter?: PromotionFilter
 ): Promise<PromotionRecord[]> {
-  const rows = await deps.store.listPromotions(hostId);
+  const rows = await deps.store.listPromotions(filter);
   return rows.slice().sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+}
+
+// ---------------------------------------------------------------------------
+// AUTHORIZATION
+//
+// Everything below is the answer to "who is allowed to touch this row". It lives
+// in the service, not in the server actions, for two reasons:
+//
+//   · The actions used to each re-derive the rule, and one of them (promotion
+//     history) simply forgot to, which handed every signed-in account the voice
+//     change log of every other account.
+//   · A rule that needs a database to execute cannot be proved. These take an
+//     injected store, so the whole matrix runs offline in
+//     `testVoiceAuditionAuthz.ts`.
+//
+// The rule mirrors `ownerScope`/`canViewOwned` exactly:
+//   signed out            → nothing
+//   operator (isOwnerAccount: role ADMIN or an OWNER_EMAILS address) → everything
+//   everyone else         → strictly rows they own. An `ownerId` of null means
+//                           "unclaimed", NOT "shared with everyone", so a system
+//                           host is operator-only.
+//
+// A row you do not own is reported with the SAME message as a row that does not
+// exist. Guessing ids must not be a way to learn what exists.
+// ---------------------------------------------------------------------------
+
+export interface AuditionViewer {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  role?: string | null;
+  /**
+   * Resolved ONCE by the caller using the project's single admin rule
+   * (`isOwnerAccount` in entitlementService: role ADMIN, or an email listed in
+   * OWNER_EMAILS). It is passed in rather than recomputed here so this module
+   * stays free of a database import — and so there is no second definition of
+   * "admin" to drift from the first.
+   */
+  isAdmin: boolean;
+}
+
+export type AuthzResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export const AUTHZ_SIGN_IN_REQUIRED = "Please sign in to run a voice audition.";
+export const AUTHZ_AUDITION_UNAVAILABLE = "That audition is not available.";
+export const AUTHZ_HOST_UNAVAILABLE = "That host is not available.";
+export const AUTHZ_PROMOTION_UNAVAILABLE = "That promotion is not available.";
+
+function deny<T>(error: string): AuthzResult<T> {
+  return { ok: false, error };
+}
+
+/** True when this viewer may act on an owned record. Mirrors `canViewOwned`. */
+export function viewerOwns(
+  viewer: AuditionViewer | null | undefined,
+  record: { ownerId?: string | null } | null | undefined
+): boolean {
+  if (!viewer || !record) return false;
+  if (viewer.isAdmin) return true;
+  return !!record.ownerId && record.ownerId === viewer.id;
+}
+
+export function actorLabelFor(viewer: AuditionViewer): string {
+  return viewer.name || viewer.email || viewer.id;
+}
+
+/** Signed in at all. Every guarded operation starts here. */
+export function requireViewer(viewer: AuditionViewer | null | undefined): AuthzResult<AuditionViewer> {
+  if (!viewer?.id) return deny(AUTHZ_SIGN_IN_REQUIRED);
+  return { ok: true, value: viewer };
+}
+
+export async function authorizeAudition(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  auditionId: string
+): Promise<AuthzResult<AuditionRecord>> {
+  const gate = requireViewer(viewer);
+  if (!gate.ok) return gate;
+  const audition = auditionId ? await deps.store.getAudition(auditionId) : null;
+  // Missing and not-mine are the same answer on purpose.
+  if (!audition || !viewerOwns(gate.value, audition)) return deny(AUTHZ_AUDITION_UNAVAILABLE);
+  return { ok: true, value: audition };
+}
+
+export async function authorizeHost(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  hostId: string
+): Promise<AuthzResult<HostVoiceRecord>> {
+  const gate = requireViewer(viewer);
+  if (!gate.ok) return gate;
+  const host = hostId ? await deps.store.getHostVoice(hostId) : null;
+  // `ownerId: null` (shared/system host) falls through to operators only.
+  if (!host || !viewerOwns(gate.value, { ownerId: host.ownerId ?? null })) {
+    return deny(AUTHZ_HOST_UNAVAILABLE);
+  }
+  return { ok: true, value: host };
+}
+
+/** A promotion belongs to whoever owns the host whose voice it changed. */
+export async function authorizePromotion(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  promotionId: string
+): Promise<AuthzResult<{ promotion: PromotionRecord; host: HostVoiceRecord }>> {
+  const gate = requireViewer(viewer);
+  if (!gate.ok) return gate;
+  const promotion = promotionId ? await deps.store.getPromotion(promotionId) : null;
+  if (!promotion) return deny(AUTHZ_PROMOTION_UNAVAILABLE);
+  const host = await authorizeHost(deps, gate.value, promotion.hostId);
+  // Deliberately reports the promotion message, not the host one: which of the
+  // two was refused is itself information.
+  if (!host.ok) return deny(AUTHZ_PROMOTION_UNAVAILABLE);
+  return { ok: true, value: { promotion, host: host.value } };
+}
+
+// ---------------------------------------------------------------------------
+// Guarded operations — the ONLY entry points a server action should call.
+// ---------------------------------------------------------------------------
+
+/** Identity-free view of the voice change log. Rollback needs an id, not a voice. */
+export interface PromotionSummary {
+  id: string;
+  hostId: string;
+  kind: PromotionKind;
+  status: PromotionStatus;
+  auditionId: string | null;
+  actorLabel: string | null;
+  reason: string | null;
+  createdAt: string;
+  rolledBackAt: string | null;
+  rolledBackReason: string | null;
+  revertsPromotionId: string | null;
+  canRollback: boolean;
+}
+
+/**
+ * Drops fromProvider/toProvider/fromVoiceId/toVoiceId/toModel/candidateId. The
+ * ledger still holds them — a rollback reads them server-side — but a browser
+ * never needs them to know that a voice was changed, by whom, and when.
+ */
+export function toPromotionSummary(promotion: PromotionRecord): PromotionSummary {
+  return {
+    id: promotion.id,
+    hostId: promotion.hostId,
+    kind: promotion.kind,
+    status: promotion.status,
+    auditionId: promotion.auditionId,
+    actorLabel: promotion.actorLabel,
+    reason: promotion.reason,
+    createdAt: promotion.createdAt.toISOString(),
+    rolledBackAt: promotion.rolledBackAt?.toISOString() ?? null,
+    rolledBackReason: promotion.rolledBackReason,
+    revertsPromotionId: promotion.revertsPromotionId,
+    canRollback: promotion.kind === "promotion" && promotion.status === "active",
+  };
+}
+
+function guardFailure<T>(error: unknown): AuthzResult<T> {
+  const message =
+    error instanceof VoiceAuditionError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : "That didn't work. Try again.";
+  return deny(redactVoiceSecrets(message));
+}
+
+export async function guardedListAuditions(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null
+): Promise<AuthzResult<AuditionRecord[]>> {
+  const gate = requireViewer(viewer);
+  if (!gate.ok) return gate;
+  // Operators see the whole deployment; everyone else gets a query scoped to
+  // their own id before it reaches the database.
+  const rows = await deps.store.listAuditions(gate.value.isAdmin ? null : gate.value.id);
+  return { ok: true, value: rows };
+}
+
+export async function guardedGetBallots(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  auditionId: string
+): Promise<AuthzResult<{ ballots: BlindBallot[]; tally: BlindTallyRow[] }>> {
+  const gate = await authorizeAudition(deps, viewer, auditionId);
+  if (!gate.ok) return gate;
+  try {
+    const [ballots, tally] = await Promise.all([
+      getBallots(deps, gate.value.id),
+      tallyAudition(deps, gate.value.id),
+    ]);
+    return { ok: true, value: { ballots, tally } };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+export async function guardedOpenVoting(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  auditionId: string
+): Promise<AuthzResult<AuditionStatus>> {
+  const gate = await authorizeAudition(deps, viewer, auditionId);
+  if (!gate.ok) return gate;
+  try {
+    const opened = await openVoting(deps, gate.value.id);
+    return { ok: true, value: opened.status };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+export async function guardedCastVote(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  input: { auditionId: string; ballotId: string; scores: Partial<AuditionScores>; overall: number; notes?: string | null }
+): Promise<AuthzResult<BlindTallyRow[]>> {
+  const gate = await authorizeAudition(deps, viewer, input.auditionId);
+  if (!gate.ok) return gate;
+  try {
+    await castVote(deps, {
+      auditionId: gate.value.id,
+      // Resolved against THIS audition, so a ballot id from another audition is
+      // rejected even when the caller owns both.
+      ballotId: input.ballotId,
+      voterId: viewer!.id,
+      voterLabel: actorLabelFor(viewer!),
+      scores: input.scores,
+      overall: input.overall,
+      notes: input.notes ?? null,
+    });
+    return { ok: true, value: await tallyAudition(deps, gate.value.id) };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+export async function guardedSelectWinner(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  input: { auditionId: string; ballotId: string }
+): Promise<AuthzResult<{ selected: true }>> {
+  const gate = await authorizeAudition(deps, viewer, input.auditionId);
+  if (!gate.ok) return gate;
+  try {
+    await selectWinner(deps, {
+      auditionId: gate.value.id,
+      ballotId: input.ballotId,
+      actorId: viewer!.id,
+    });
+    return { ok: true, value: { selected: true } };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+export async function guardedReveal(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  auditionId: string
+): Promise<AuthzResult<RevealedCandidate[]>> {
+  const gate = await authorizeAudition(deps, viewer, auditionId);
+  if (!gate.ok) return gate;
+  try {
+    const revealed = await revealAudition(deps, { auditionId: gate.value.id, actorId: viewer!.id });
+    return { ok: true, value: revealed.candidates };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+/**
+ * Promotion is the dangerous verb, so it is gated TWICE: on the audition being
+ * yours, and on the host being yours. A system host (`ownerId: null`) is an
+ * operator-only target — an ordinary account cannot repoint the shared voice.
+ */
+export async function guardedPromote(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  input: { auditionId: string; acknowledgedBallotId: string; hostId?: string | null; reason?: string | null }
+): Promise<AuthzResult<{ promotionId: string }>> {
+  const auditionGate = await authorizeAudition(deps, viewer, input.auditionId);
+  if (!auditionGate.ok) return auditionGate;
+  const hostGate = await authorizeHost(
+    deps,
+    viewer,
+    (input.hostId || auditionGate.value.hostId || "").trim()
+  );
+  if (!hostGate.ok) return hostGate;
+  try {
+    const { promotion } = await promoteWinner(deps, {
+      auditionId: auditionGate.value.id,
+      hostId: hostGate.value.id,
+      acknowledgedBallotId: input.acknowledgedBallotId,
+      actorId: viewer!.id,
+      actorLabel: actorLabelFor(viewer!),
+      reason: input.reason ?? null,
+    });
+    return { ok: true, value: { promotionId: promotion.id } };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+export async function guardedRollback(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  input: { promotionId: string; reason?: string | null }
+): Promise<AuthzResult<{ alreadyRolledBack: boolean; hostName: string }>> {
+  const gate = await authorizePromotion(deps, viewer, input.promotionId);
+  if (!gate.ok) return gate;
+  try {
+    const result = await rollbackPromotion(deps, {
+      promotionId: gate.value.promotion.id,
+      actorId: viewer!.id,
+      actorLabel: actorLabelFor(viewer!),
+      reason: input.reason ?? null,
+    });
+    // `result.restored` holds the voice that came back. It stays on the server:
+    // the operator asked to undo a change, not to be told an engine identity.
+    return {
+      ok: true,
+      value: { alreadyRolledBack: result.alreadyRolledBack, hostName: gate.value.host.name },
+    };
+  } catch (error) {
+    return guardFailure(error);
+  }
+}
+
+/**
+ * The defect that started this: no hostId used to mean "every promotion on the
+ * deployment". Now it means "every promotion on hosts you own", built as a
+ * scoped query — and a hostId you do not own is refused rather than answered.
+ */
+export async function guardedPromotionHistory(
+  deps: VoiceAuditionDeps,
+  viewer: AuditionViewer | null,
+  hostId?: string | null
+): Promise<AuthzResult<PromotionSummary[]>> {
+  const gate = requireViewer(viewer);
+  if (!gate.ok) return gate;
+
+  let filter: PromotionFilter;
+  if (hostId) {
+    const host = await authorizeHost(deps, gate.value, hostId);
+    if (!host.ok) return deny(host.error);
+    filter = { hostId: host.value.id };
+  } else if (gate.value.isAdmin) {
+    filter = undefined;
+  } else {
+    const ownedHostIds = await deps.store.listHostIdsForOwner(gate.value.id);
+    if (ownedHostIds.length === 0) return { ok: true, value: [] };
+    filter = { hostIds: ownedHostIds };
+  }
+
+  try {
+    const rows = await listPromotionHistory(deps, filter);
+    const summaries = rows.map(toPromotionSummary);
+    // Same last line of defence the ballots get.
+    assertBallotIsBlind(summaries);
+    return { ok: true, value: summaries };
+  } catch (error) {
+    return guardFailure(error);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1428,7 +1853,9 @@ export function createPrismaVoiceAuditionStore(client: VoiceAuditionPrismaClient
     async getHostVoice(hostId) {
       const row = (await client.aiHost.findUnique({
         where: { id: hostId },
-        select: { id: true, name: true, ttsProvider: true, ttsVoiceId: true },
+        // ownerId is selected because every caller has to decide whether this
+        // viewer may touch the host; a host read without its owner is unusable.
+        select: { id: true, name: true, ttsProvider: true, ttsVoiceId: true, ownerId: true },
       })) as Row | null;
       if (!row) return null;
       return {
@@ -1436,6 +1863,7 @@ export function createPrismaVoiceAuditionStore(client: VoiceAuditionPrismaClient
         name: String(row.name ?? ""),
         provider: String(row.ttsProvider ?? ""),
         voiceId: String(row.ttsVoiceId ?? ""),
+        ownerId: (row.ownerId as string | null) ?? null,
       };
     },
     async setHostVoice(hostId, voice) {
@@ -1443,6 +1871,10 @@ export function createPrismaVoiceAuditionStore(client: VoiceAuditionPrismaClient
         where: { id: hostId },
         data: { ttsProvider: voice.provider, ttsVoiceId: voice.voiceId },
       });
+    },
+    async listHostIdsForOwner(ownerId) {
+      const rows = await client.aiHost.findMany({ where: { ownerId }, select: { id: true } });
+      return rows.map((row) => String((row as Row).id));
     },
 
     async createPromotion(input) {
@@ -1457,11 +1889,14 @@ export function createPrismaVoiceAuditionStore(client: VoiceAuditionPrismaClient
       const row = await client.voicePromotion.update({ where: { id }, data: promotionWriteData(patch) });
       return mapPromotion(row as Row);
     },
-    async listPromotions(hostId) {
-      const rows = await client.voicePromotion.findMany({
-        where: hostId ? { hostId } : {},
-        orderBy: { createdAt: "desc" },
-      });
+    async listPromotions(filter) {
+      const { hostId, hostIds } = normalizePromotionFilter(filter);
+      // Owner scoping is a WHERE, not a post-filter: rows outside the scope are
+      // never loaded into the process that answers the browser.
+      const where: Row = {};
+      if (hostId) where.hostId = hostId;
+      else if (hostIds) where.hostId = { in: [...hostIds] };
+      const rows = await client.voicePromotion.findMany({ where, orderBy: { createdAt: "desc" } });
       return rows.map((row) => mapPromotion(row as Row));
     },
   };
@@ -1604,6 +2039,11 @@ export function createInMemoryVoiceAuditionStore(
       hostMap.set(hostId, { ...found, provider: voice.provider, voiceId: voice.voiceId });
       hostWrites.push({ hostId, provider: voice.provider, voiceId: voice.voiceId, at: new Date() });
     },
+    async listHostIdsForOwner(ownerId) {
+      return [...hostMap.values()]
+        .filter((host) => !!host.ownerId && host.ownerId === ownerId)
+        .map((host) => host.id);
+    },
 
     async createPromotion(input) {
       const record: PromotionRecord = { ...input, createdAt: input.createdAt ?? new Date() };
@@ -1621,9 +2061,12 @@ export function createInMemoryVoiceAuditionStore(
       promotions.set(id, next);
       return clone(next);
     },
-    async listPromotions(hostId) {
+    async listPromotions(filter) {
+      const { hostId, hostIds } = normalizePromotionFilter(filter);
+      const allowed = hostIds ? new Set(hostIds) : null;
       return [...promotions.values()]
         .filter((promotion) => (hostId ? promotion.hostId === hostId : true))
+        .filter((promotion) => (allowed ? allowed.has(promotion.hostId) : true))
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
         .map(clone);
     },
