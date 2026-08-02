@@ -1286,3 +1286,171 @@ model ShowContinuityLegacyDutch {
   wagerPot              Int      @default(0)
   archivedAt            DateTime @default(now())
 }
+
+// ===========================================================================
+// BLIND LONG-FORM VOICE AUDITION
+//
+// Appended additively. No existing model or column is touched, and none of
+// these tables carry a foreign key into an existing table: hostId, ownerId,
+// actorId and voterId are plain ids so this block can be added (and dropped)
+// without touching AiHost or User. Service layer: src/lib/services/voiceAudition.ts.
+// ===========================================================================
+
+/// One blind casting session. Every candidate performs the same versioned
+/// eight-scene pack so the recordings are actually comparable.
+model VoiceAudition {
+  id      String  @id @default(uuid())
+  ownerId String? // User.id of the producer running it (no FK by design)
+  hostId  String? // AiHost.id this is casting for (no FK by design)
+  title   String
+  /// draft | voting | decided | promoted | abandoned
+  status  String  @default("draft")
+
+  /// Votes are only comparable within one pack version. Recorded, never inferred.
+  packVersion   String
+  packSceneIds  String[] @default([])
+  policyVersion Int      @default(1)
+
+  /// Seeds the shuffle that assigns "Voice A/B/C", so ballot order does not
+  /// encode which candidate was entered first (usually the incumbent).
+  blindSeed String
+
+  /// Choosing a winner is an opinion. It changes no production voice.
+  winnerCandidateId  String?
+  winnerSelectedAt   DateTime?
+  winnerSelectedById String?
+
+  /// Unblinding is legal only after a winner exists, and is recorded.
+  unblindedAt   DateTime?
+  unblindedById String?
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  candidates VoiceAuditionCandidate[]
+  votes      VoiceAuditionVote[]
+  promotions VoicePromotion[]
+
+  @@index([ownerId, createdAt])
+  @@index([hostId])
+}
+
+/// One voice under audition. `provider`, `voiceId`, `model` and
+/// `generationSettings` are the IDENTITY columns: the ballot query
+/// (BALLOT_SELECT in voiceAudition.ts) never selects them.
+model VoiceAuditionCandidate {
+  id         String        @id @default(uuid())
+  auditionId String
+  audition   VoiceAudition @relation(fields: [auditionId], references: [id], onDelete: Cascade)
+
+  /// The opaque handle the voting surface uses. Random, not derived from the
+  /// voice, so it cannot be reversed into an identity.
+  ballotId      String @unique
+  blindPosition Int
+
+  /// Producer-only note ("incumbent", "fish redesign"). Never on a ballot.
+  privateLabel String?
+
+  // --- identity (never selected by the blind path) ---
+  provider           String
+  voiceId            String
+  model              String?
+  generationSettings Json?
+
+  // --- rendered artifact (keyed by ballotId, so the URL leaks nothing) ---
+  audioAssetKey    String?
+  audioAssetUrl    String?
+  audioContentType String?
+  audioBytes       Int?
+  durationMs       Int?
+  renderedAt       DateTime?
+  renderError      String?
+
+  /// AuditionMetrics from spokenPerformanceQa — advisory, never auto-deciding.
+  metrics Json?
+
+  createdAt DateTime @default(now())
+
+  votes VoiceAuditionVote[]
+
+  @@unique([auditionId, blindPosition])
+  @@index([auditionId])
+}
+
+/// One listener's scores for one blind candidate. Every dimension is
+/// "higher is better", including listenerFatigue, which is scored as stamina.
+model VoiceAuditionVote {
+  id          String                 @id @default(uuid())
+  auditionId  String
+  audition    VoiceAudition          @relation(fields: [auditionId], references: [id], onDelete: Cascade)
+  candidateId String
+  candidate   VoiceAuditionCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  voterId    String
+  voterLabel String?
+
+  characterFit        Int
+  identityConsistency Int
+  listenerFatigue     Int
+  spontaneity         Int
+  intelligibility     Int
+  emotionalRange      Int
+  interruptionQuality Int
+  pairChemistry       Int
+  overall             Int
+
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([candidateId, voterId])
+  @@index([auditionId])
+}
+
+/// The voice-change audit trail, and the rollback mechanism.
+///
+/// kind="promotion" rows record a deliberate voice change (who, when, from
+/// which audition, and the previous voice). kind="rollback" rows are the
+/// reversals, pointing back via revertsPromotionId. Nothing in the pipeline
+/// writes here automatically — a promotion is always a human act.
+model VoicePromotion {
+  id     String @id @default(uuid())
+  hostId String
+  /// promotion | rollback
+  kind   String @default("promotion")
+
+  auditionId  String?
+  audition    VoiceAudition? @relation(fields: [auditionId], references: [id], onDelete: SetNull)
+  candidateId String?
+
+  /// The voice being replaced — this is what a rollback restores.
+  fromProvider String?
+  fromVoiceId  String?
+  fromModel    String?
+
+  toProvider String
+  toVoiceId  String
+  toModel    String?
+
+  /// Attribution. A voice change with no name attached is not acceptable.
+  actorId    String
+  actorLabel String?
+  reason     String?
+
+  policyVersion Int @default(1)
+
+  /// active | rolled_back | reversal
+  status             String  @default("active")
+  revertsPromotionId String?
+
+  rolledBackAt     DateTime?
+  rolledBackById   String?
+  rolledBackReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([hostId, createdAt])
+  @@index([auditionId])
+  @@index([revertsPromotionId])
+}

@@ -27,6 +27,8 @@ import { evaluateScriptEditorialGate, type ScriptPipelineProvenance } from "./sc
 import { evaluateProductionInvariants } from "./productionInvariants";
 import { retiredHostNameFragments } from "../hosts/roster";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
+import { runIndependentJudgeStage, runSevenRolePipeline } from "./scriptSevenRolePipeline";
+import type { SevenRoleTrace, SevenRoleTraceRecord } from "./scriptRoles";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
@@ -512,7 +514,10 @@ Delivery field meanings:
 
   // Observed record of how this script was actually produced. Every value here
   // is written from what ran, never from configuration.
-  const pipelineProvenance: ScriptPipelineProvenance = {
+  const pipelineProvenance: ScriptPipelineProvenance & {
+    creativePath?: "seven_role" | "outline_driven_legacy" | "single_shot_fallback";
+    roleTrace?: SevenRoleTraceRecord;
+  } = {
     path: "outline_driven",
     fallbackReason: null,
     stages: [],
@@ -525,7 +530,55 @@ Delivery field meanings:
     pipelineProvenance.stages!.push({ name, status, detail });
   };
 
-  try {
+  // ---- THE SEVEN-ROLE WRITING PIPELINE -----------------------------------
+  //
+  // Roles 1-6 run here; role 7 (the independent judge) runs further down on the
+  // FINAL segments, into the same trace. When the pipeline cannot complete, the
+  // existing outline-driven path below is tried unchanged — availability is
+  // preserved, and the role trace records exactly which roles ran, which model
+  // actually served each one, and why the path was abandoned.
+  //
+  // SCRIPT_SEVEN_ROLE_PIPELINE=false restores the pre-seven-role behaviour
+  // completely: no trace, no new roles, the original two-role generation.
+  let roleTrace: SevenRoleTrace | null = null;
+  if (process.env.SCRIPT_SEVEN_ROLE_PIPELINE !== "false") {
+    const seven = await runSevenRolePipeline({
+      systemPrompt: systemPromptWithContinuity,
+      episodeTitle: ep.title,
+      topicsPrompts,
+      targetDuration,
+      temperature,
+      maxTokens,
+      speakerNames: speakers.hostNames,
+      learningPolicy: ep.podcast?.editorialConfig?.learningPolicy ?? undefined,
+      continuityContext: continuity?.opportunities ?? undefined,
+      log: (msg) => result.reasons.push(msg),
+    });
+    roleTrace = seven.trace;
+    if (seven.ok) {
+      llmResult = {
+        segments: seven.segments,
+        privateAgendas: seven.privateAgendas,
+        coldOpenTournament: seven.coldOpenTournament,
+        sevenRole: { spine: seven.spine, turnPlan: seven.turnPlan, continuity: seven.continuity },
+      };
+      pipelineProvenance.creativePath = "seven_role";
+      result.reasons.push(
+        `Seven-role writing pipeline completed: ${seven.trace.stageRecords.filter((r) => r.status === "ok").length}/7 role(s) ok, ` +
+          `${seven.trace.violations.length} violation(s).`
+      );
+    } else {
+      result.reasons.push(
+        `Seven-role writing pipeline did not complete (${seven.error}); falling back to the outline-driven path. ` +
+          `The role trace records which role failed.`
+      );
+      console.warn(`[ScriptService] Seven-role pipeline unavailable: ${seven.error}`);
+    }
+  } else {
+    result.reasons.push("Seven-role writing pipeline is DISABLED (SCRIPT_SEVEN_ROLE_PIPELINE=false).");
+  }
+
+  if (!llmResult) try {
     llmResult = await generateOutlineDrivenScript(llm, {
       systemPrompt: systemPromptWithContinuity,
       episodeTitle: ep.title,
@@ -640,10 +693,21 @@ Delivery field meanings:
     : 0;
   pipelineProvenance.coldOpenTournamentRan = Boolean(llmResult.coldOpenTournament);
   const agendaCount = pipelineProvenance.privateAgendaCount ?? 0;
+  // In the seven-role pipeline the "character writer passes" ARE the two host
+  // writer roles — one separated writer per host, counted from what actually
+  // completed rather than from an env flag.
   pipelineProvenance.characterWriterPassesRan =
-    pipelineProvenance.path === "outline_driven" && process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false"
+    pipelineProvenance.creativePath === "seven_role"
+      ? (roleTrace?.stageRecords.filter(
+          (r) => (r.role === "host_a_writer" || r.role === "host_b_writer") && r.status === "ok"
+        ).length ?? 0)
+      : pipelineProvenance.path === "outline_driven" && process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false"
       ? agendaCount
       : 0;
+  if (!pipelineProvenance.creativePath) {
+    pipelineProvenance.creativePath =
+      pipelineProvenance.path === "outline_driven" ? "outline_driven_legacy" : "single_shot_fallback";
+  }
   if (pipelineProvenance.path === "outline_driven") {
     recordStage("script:outline", "ok");
     recordStage("script:private-agendas", agendaCount > 0 ? "ok" : "failed",
@@ -1059,6 +1123,11 @@ Delivery field meanings:
       // was made, which is exactly what made episode e7867729 hard to diagnose.
       characterWriterPasses: pipelineProvenance.characterWriterPassesRan ?? 0,
       coldOpenTournament: llmResult.coldOpenTournament ?? null,
+      // The seven-role pipeline's non-dialogue artifacts: the story editor's
+      // spine, the architect's turn allocation, the continuity editor's report.
+      // Persisted so a finished episode can be traced back to the decisions that
+      // shaped it, not only to the words that came out.
+      sevenRole: llmResult.sevenRole ?? null,
     },
     pipelineProvenance,
   };
@@ -1080,16 +1149,39 @@ Delivery field meanings:
 
   // Attach the 0-100 quality score so every script carries its own rubric,
   // plus the source-material talkability that fed it (for regression tracking).
-  const qualityJudge = roleHasRealProvider("quality_judge")
-    ? getRoleLLMProvider("quality_judge")
-    : null;
-  const qualityReview = await assessScriptQuality(qualityJudge, finalSegments, {
+  //
+  // ROLE 7 of the seven-role pipeline is this judge. When the trace exists the
+  // call is routed THROUGH it, so the finished script carries a judge record
+  // with the same provider/model/fallback detail as every other role — and a
+  // judge outage becomes a failed required role rather than only a gate note.
+  const judgeContext = {
     episodeTitle: ep.title,
     hostNames: speakers.hostNames,
     evidenceSummary: result.evidenceAudit?.samples.slice(0, 40).join("\n"),
-  });
+  };
+  const qualityReview = roleTrace
+    ? await runIndependentJudgeStage(roleTrace, { segments: finalSegments, ...judgeContext })
+    : await assessScriptQuality(
+        roleHasRealProvider("quality_judge") ? getRoleLLMProvider("quality_judge") : null,
+        finalSegments,
+        judgeContext
+      );
   pipelineProvenance.judgeRan = Boolean(qualityReview.judge);
   recordStage("quality:judge", qualityReview.judge ? "ok" : "failed", qualityReview.judgeError);
+  // Merge the seven-role trace in LAST, so `stages` carries both the legacy
+  // creative-stage entries and the role-by-role projection, and `roleTrace`
+  // carries the full record the Studio panel reads.
+  if (roleTrace) {
+    roleTrace.attachTo(pipelineProvenance);
+    if (roleTrace.holdingRoles.length) {
+      result.reasons.push(
+        `Seven-role pipeline: required role(s) FAILED — ${roleTrace.holdingRoles.join(", ")}. Production is held.`
+      );
+    }
+    for (const violation of roleTrace.violations) {
+      result.reasons.push(`Role violation [${violation.role}/${violation.kind}]: ${violation.detail}`);
+    }
+  }
 
   qualityReview.deterministic = scoreScriptQuality(cleanContent);
   cleanContent.quality = qualityReview.deterministic;

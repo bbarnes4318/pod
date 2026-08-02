@@ -23,37 +23,113 @@
 // repo are SOUND-CUE diversity. They have nothing to do with this file.)
 //
 // DESIGN CONSTRAINTS
-//  - Fully offline and deterministic: no network, no API keys, no model calls.
-//    Everything here is classical lexical semantics (stopword stripping, light
-//    stemming, cosine over token vectors, Jaccard over entity/evidence sets)
-//    plus the hard identifiers the schema actually carries.
+//  - Fully offline and deterministic: no network, no API keys, no model calls,
+//    no clock. Everything here is classical lexical semantics (stopword
+//    stripping, light stemming, cosine over token vectors, Jaccard over
+//    entity/evidence sets) plus the durable event-identity primitives in
+//    `eventIdentity.ts` (alias resolution, claim fingerprints, concept
+//    expansion) plus the hard identifiers the schema actually carries.
 //  - Only REAL schema fields are read: TopicCandidate.{title, summary, sport,
 //    leagueId, evidenceIds, createdAt}, ResearchBrief.{facts, sourceIds,
 //    mainAngle, contrarianAngle, argumentForHostA/B}, TopicSource.{canonicalUrl,
 //    originalUrl, publishedAt, title}, and — when a caller enriches — Game.{id,
 //    homeTeamId, awayTeamId, scheduledAt, leagueId} and NewsItem.{id, url,
 //    publishedAt, entities, title}.
-//  - Every merge must be EXPLAINABLE. See THE ANCHOR RULE below.
+//  - Every merge must be EXPLAINABLE. See THE NAMEABLE-SIGNAL RULE below.
 //
-// THE ANCHOR RULE (the central editorial trade-off, stated plainly)
-// ----------------------------------------------------------------
-// Two topics are only ever declared the same event when this module can NAME
-// the thing they share: a shared Game id, a shared piece of evidence, a shared
-// article URL, a shared team-pair-plus-date, or at least two shared named
-// entities. Pure "these two blobs of prose look alike" is deliberately NOT
-// sufficient on its own.
+// THE NAMEABLE-SIGNAL RULE (replaces the old, rejected "anchor rule")
+// -------------------------------------------------------------------
+// The first version of this module would only merge when it could name a HARD
+// identifier: the same Game id, the same evidence row, the same article URL, or
+// a heavy overlap of literal proper nouns. It shipped with the caveat that
+// three paraphrases of one event with every identifier stripped would NOT be
+// merged. That caveat was rejected, and rightly: a duplicate that changes its
+// vocabulary is still a duplicate, and "we could not name a shared row" is not
+// a reason to put the same story on the show three times.
 //
-// The cost of that choice, honestly: a pair of topics carrying no identifiable
-// entities at all (no proper nouns, no shared evidence, no game) can never be
-// merged, no matter how similar their wording. In production that shape does
-// not occur — a real sports topic always names somebody — but it means this
-// module is tuned for PRECISION over recall. A false merge silently deletes a
-// legitimate story from the rundown and no operator would ever see the story
-// that wasn't there; a missed merge is visible in the finished episode and is
-// also caught downstream by `scoreRundownDiversity`. Those two failure modes
-// are not symmetric, so the thresholds are not symmetric either.
+// The rule now is that a merge must name a concrete shared SIGNAL — but a
+// signal no longer has to be a database identifier. These all count, and each
+// one prints as a sentence an operator can read:
+//
+//   1. shared_game            — the same Game row.
+//   2. shared_teams_and_date  — the same fixture, from enriched Game rows.
+//   3. shared_source_url      — the same article behind both topics.
+//   4. shared_evidence(_row)  — the same evidence rows, with lexical support.
+//   5. semantic_overlap       — heavy wording AND named-entity overlap.
+//   6. canonical_entity_date  — the same two CANONICAL franchises (aliases
+//                               resolved: "the Halos" == "LAA" == "Angels")
+//                               within a day of each other, with concept
+//                               support.
+//   7. same_claim             — THE NEW ONE. Both topics assert the same
+//                               normalized CLAIM: same final score, same event
+//                               type, same action, same magnitudes, on the same
+//                               day, in the same league, with corroborating
+//                               concept-space similarity. This is what catches
+//                               "the AL blanked the NL four to nothing" against
+//                               "American League shuts out National League 4-0"
+//                               when neither carries a game id, an evidence row,
+//                               a URL, or a shared proper noun.
+//
+// PRECISION IS HELD BY VETOES, NOT BY REFUSING TO LOOK
+// ----------------------------------------------------
+// Widening recall on paraphrases without inviting false merges is done with
+// explicit DISCRIMINATORS rather than a higher similarity bar. Signals 5-7 (the
+// soft paths — the ones with no shared database row) are cancelled outright
+// when any of these is true:
+//
+//   - date_conflict     : both sides carry dates and the closest pair is more
+//                         than SAME_EVENT_MAX_DAY_GAP days apart. Two meetings
+//                         of the same two teams in different weeks are two
+//                         events, however identically they are written.
+//   - disjoint_people   : both sides name at least one canonical PERSON and
+//                         they share none. Two players on one team are two
+//                         stories.
+//   - disjoint_teams    : both sides name canonical franchises and share none.
+//                         Two different 4-0 games on one night are two events.
+//   - league_conflict   : the leagues disagree.
+//   - claim_conflict    : both sides state a final score / batting line and the
+//                         values differ.
+//
+// A veto never touches signals 1-4: if two topics literally cite the same Game
+// row, no amount of prose disagreement makes them different events.
+//
+// The residual honest limitation: two topics with NO dates, NO canonical
+// entities, NO claim atoms and NO shared rows — i.e. no propositional content
+// at all — still cannot be merged, because there would be nothing to name.
+// That is a statement about empty inputs, not about paraphrases.
 
 import crypto from "crypto";
+import {
+  CONCEPT_TOKEN_WEIGHT,
+  OPEN_QUESTION_MARKERS,
+  RESOLUTION_ACTIONS,
+  RESOLUTION_MARKERS,
+  compareClaims,
+  conceptsOf,
+  configureEmbeddingHook,
+  containsAnyPhrase,
+  contentTokens,
+  describeCanonicalEntity,
+  expandConcepts,
+  extractCanonicalEntities,
+  extractClaimAtoms,
+  forwardDayGap,
+  isEmbeddingHookEnabled,
+  minDayGap,
+  normalizeNumbers,
+  normalizeText,
+  stemWord,
+  toDayString,
+  vectorCosine,
+  type ClaimAtom,
+  type ClaimComparison,
+  type EmbeddingHook,
+} from "./eventIdentity";
+
+// The text primitives moved to `eventIdentity.ts` so the identity layer has no
+// import cycle; they stay part of THIS module's public API unchanged.
+export { contentTokens, normalizeText, stemWord, normalizeNumbers, extractClaimAtoms, compareClaims, configureEmbeddingHook, isEmbeddingHookEnabled, describeCanonicalEntity };
+export type { ClaimAtom, ClaimComparison, EmbeddingHook };
 
 // ---------------------------------------------------------------------------
 // Thresholds (exported so a test can read them instead of hardcoding numbers)
@@ -73,6 +149,36 @@ export const EVIDENCE_PATH_MIN_COSINE = 0.25;
 export const SOFT_OVERLAP_COSINE = 0.45;
 /** Minimum `scoreRundownDiversity` score for `passed`. */
 export const RUNDOWN_DIVERSITY_THRESHOLD = 55;
+
+// --- Durable-identity thresholds (the paraphrase-proof paths) --------------
+
+/** The most identifying shared claim atom must be at least this strong. 0.5 is
+ *  the weight of a specific ACTION (`act:shutout`); a bare `act:win` (0.15) can
+ *  never carry a merge on its own. */
+export const CLAIM_ANCHOR_MIN_PEAK = 0.5;
+/** Total weight of shared claim atoms required. One score (0.95) is not enough
+ *  on its own — it must be corroborated by an event type, action or magnitude. */
+export const CLAIM_ANCHOR_MIN_WEIGHT = 1.2;
+/** Shared claim atoms required, so a single coincidence never merges. */
+export const CLAIM_ANCHOR_MIN_ATOMS = 2;
+/** Concept-expanded cosine required alongside the claim match. */
+export const CLAIM_ANCHOR_MIN_CONCEPT_COSINE = 0.32;
+/** Canonical-franchise path: shared resolved franchises required. */
+export const CANONICAL_ENTITY_MIN_TEAMS = 2;
+/** Concept cosine required on the canonical-franchise path. */
+export const CANONICAL_ENTITY_MIN_CONCEPT_COSINE = 0.3;
+/** Days apart beyond which two stories cannot be the same event. */
+export const SAME_EVENT_MAX_DAY_GAP = 1;
+/** A later story must be at least this many days newer for the DATE alone to
+ *  count as a meaningful new development. Under this, "newer" is just a
+ *  follow-up article about the same facts. */
+export const UPDATE_MIN_EVENT_DAY_GAP = 2;
+/** A duplicate whose event is this many days behind the freshest event in the
+ *  pool is STALE and is hard-blocked regardless of the per-event allowance. */
+export const STALE_EVENT_DAYS = 3;
+/** If an optional embedding hook is installed, this cosine corroborates the
+ *  claim path. Never sufficient alone. Unused while no hook is installed. */
+export const EMBEDDING_CORROBORATION_COSINE = 0.82;
 
 // ---------------------------------------------------------------------------
 // Input shapes — structural, so a Prisma row, a snapshot, or a fixture all fit
@@ -123,30 +229,14 @@ export interface ClusterableTopic {
   }> | null;
   /** Resolved Game/NewsItem rows, when the caller enriched them. */
   eventContext?: TopicEventContext | null;
+  /** OPTIONAL sentence embedding, if a caller installed an encoder. Nothing in
+   *  this repo supplies one; the offline path stands alone without it. */
+  embedding?: number[] | null;
 }
 
 // ---------------------------------------------------------------------------
-// Text normalization
+// Text normalization (primitives live in eventIdentity.ts, re-exported above)
 // ---------------------------------------------------------------------------
-
-const STOPWORDS = new Set<string>([
-  "a", "about", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren",
-  "as", "at", "be", "became", "because", "been", "before", "being", "below", "between", "both",
-  "but", "by", "can", "cant", "could", "couldnt", "did", "didnt", "do", "does", "doesnt", "doing",
-  "dont", "down", "during", "each", "few", "for", "from", "further", "get", "gets", "got", "had",
-  "has", "hasnt", "have", "havent", "having", "he", "her", "here", "hers", "him", "his", "how",
-  "i", "if", "in", "into", "is", "isnt", "it", "its", "just", "like", "made", "make", "makes",
-  "me", "might", "more", "most", "much", "must", "my", "never", "no", "nor", "not", "now", "of",
-  "off", "on", "once", "one", "only", "or", "other", "our", "out", "over", "own", "really", "s",
-  "same", "say", "says", "she", "should", "so", "some", "still", "such", "t", "than", "that",
-  "the", "their", "theirs", "them", "then", "there", "these", "they", "this", "those", "through",
-  "to", "too", "under", "until", "up", "very", "was", "wasnt", "we", "were", "what", "when",
-  "where", "which", "while", "who", "whom", "why", "will", "with", "would", "you", "your", "yours",
-  // Question scaffolding: every generated topic title is a question, so these
-  // carry no information about WHICH story a topic is.
-  "did", "does", "is", "are", "was", "were", "should", "could", "can", "has", "have", "will",
-  "just", "real", "actually", "even",
-]);
 
 /** Words that are capitalized in headline case but are not entity names. */
 const NON_ENTITY_CAPITALS = new Set<string>([
@@ -158,56 +248,6 @@ const NON_ENTITY_CAPITALS = new Set<string>([
   "last", "first", "best", "worst", "good", "bad", "more", "most", "less", "least", "than", "that",
   "this", "these", "those", "here", "there", "now", "then", "still", "even", "become", "became",
 ]);
-
-/** Very light suffix stripper — enough to fold pitcher/pitchers, shut/shutout
- *  style variants together without dragging in a real stemmer dependency. */
-export function stemWord(word: string): string {
-  let w = word;
-  if (w.length > 4 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
-  if (w.length > 4 && w.endsWith("sses")) return w.slice(0, -2);
-  if (w.length > 3 && w.endsWith("ss")) return w;
-  if (w.length > 3 && w.endsWith("s") && !w.endsWith("us")) w = w.slice(0, -1);
-  if (w.length > 5 && w.endsWith("ing")) w = w.slice(0, -3);
-  else if (w.length > 4 && w.endsWith("ed")) w = w.slice(0, -2);
-  if (w.length > 4 && w.endsWith("er")) w = w.slice(0, -2);
-  return w;
-}
-
-/** Case/punctuation/spacing-insensitive headline form (matches the generator's
- *  own normalizeTitle contract in topicIngestion.ts). */
-export function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[‘’“”]/g, "'")
-    .replace(/[^a-z0-9'-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Stopword-stripped, stemmed content tokens. Hyphenated compounds are kept
- *  whole ("all-star") AND split, so "All-Star" matches "all star". */
-export function contentTokens(text: string | null | undefined): string[] {
-  if (!text) return [];
-  const out: string[] = [];
-  for (const raw of normalizeText(text).split(" ")) {
-    if (!raw) continue;
-    const bare = raw.replace(/'/g, "");
-    if (bare.includes("-")) {
-      const joined = bare.replace(/-/g, "");
-      if (joined.length > 2 && !STOPWORDS.has(joined)) out.push(stemWord(joined));
-      for (const part of bare.split("-")) {
-        if (part.length > 2 && !STOPWORDS.has(part)) out.push(stemWord(part));
-      }
-      continue;
-    }
-    if (bare.length < 2) continue;
-    if (STOPWORDS.has(bare)) continue;
-    if (/^\d+$/.test(bare) && bare.length < 3) continue;
-    out.push(stemWord(bare));
-  }
-  return out;
-}
 
 /** Named entities: capitalized words and capitalized runs, minus headline
  *  furniture. Returns lowercase forms; runs are kept as one entity
@@ -307,13 +347,6 @@ function evidenceKeysOf(value: unknown): string[] {
   return [...keys].sort();
 }
 
-function toDayString(value: Date | string | null | undefined): string | null {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
-}
-
 // ---------------------------------------------------------------------------
 // Fingerprint
 // ---------------------------------------------------------------------------
@@ -330,10 +363,30 @@ export interface EventFingerprint {
   teamIds: string[];
   /** YYYY-MM-DD days the underlying event/reporting sits on. */
   eventDates: string[];
+  /** YYYY-MM-DD days the topic itself was written/published on. Weaker than
+   *  `eventDates` but present even when a topic carries no resolved rows. */
+  publicationDates: string[];
+  /** eventDates ∪ publicationDates — what temporal proximity is judged on. */
+  allDates: string[];
   /** Capitalized-run entities from the title/summary/news entities. */
   entities: string[];
   /** The subset of `entities` that read as a person's name. */
   people: string[];
+  /** Alias-resolved franchise/conference ids ("MLB:LAA"), so "the Halos",
+   *  "Angels", "LAA" and "Los Angeles Angels" are ONE entity. */
+  canonicalTeams: string[];
+  /** Full person names that survived the possessive/common-word filters. */
+  canonicalPeople: string[];
+  /** Surnames for those people, so "Trout" matches "Mike Trout". */
+  personKeys: string[];
+  /** Normalized propositional atoms — the claim fingerprint. */
+  claimAtoms: ClaimAtom[];
+  /** Concept ids the prose triggers (SHUTOUT, EXHIBITION, ...). */
+  concepts: string[];
+  /** `textTokens` expanded with curated concept markers. */
+  conceptTokens: string[];
+  /** Optional caller-supplied sentence embedding. Absent by default. */
+  embedding: number[] | null;
   /** "type:id" evidence + brief-source refs. */
   evidenceKeys: string[];
   /** Normalized article URLs from TopicSource / NewsItem / brief JSON. */
@@ -345,6 +398,9 @@ export interface EventFingerprint {
   /** sha1 over the sorted unique title tokens — stable across rewordings that
    *  only reorder or repunctuate. */
   titleFingerprint: string;
+  /** sha1 over the sorted claim atoms — stable across a full paraphrase,
+   *  because it is built from propositions, not from words. */
+  claimFingerprint: string;
   /** Composite identifier: the strongest durable anchor available. */
   key: string;
 }
@@ -369,6 +425,7 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
 
   const teamIds = new Set<string>();
   const eventDates = new Set<string>();
+  const publicationDates = new Set<string>();
   const sourceUrls = new Set<string>();
 
   for (const g of topic.eventContext?.games ?? []) {
@@ -379,13 +436,23 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     if (day) eventDates.add(day);
   }
 
+  const league = (topic.leagueId || topic.sport || "").trim().toUpperCase() || null;
+
   const entityBag = new Set<string>();
   const peopleBag = new Set<string>();
+  const canonicalTeams = new Set<string>();
+  const canonicalPeople = new Set<string>();
+  const personKeys = new Set<string>();
 
   const absorbText = (text: string | null | undefined) => {
     const { entities, people } = extractEntities(text);
     for (const e of entities) entityBag.add(e);
     for (const p of people) peopleBag.add(p);
+    // Alias resolution runs on the RAW text so capitalisation is still intact.
+    const canon = extractCanonicalEntities(text, league);
+    for (const t of canon.teams) canonicalTeams.add(t);
+    for (const p of canon.people) canonicalPeople.add(p);
+    for (const k of canon.personKeys) personKeys.add(k);
   };
 
   absorbText(topic.title);
@@ -402,7 +469,13 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     // NewsItem.entities is a JSON array of extracted entity strings.
     if (Array.isArray(n.entities)) {
       for (const e of n.entities) {
-        if (typeof e === "string" && e.trim().length >= 3) entityBag.add(e.trim().toLowerCase());
+        if (typeof e === "string" && e.trim().length >= 3) {
+          entityBag.add(e.trim().toLowerCase());
+          const canon = extractCanonicalEntities(e.trim(), league);
+          for (const t of canon.teams) canonicalTeams.add(t);
+          for (const p of canon.people) canonicalPeople.add(p);
+          for (const k of canon.personKeys) personKeys.add(k);
+        }
       }
     }
   }
@@ -415,10 +488,12 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     absorbText(s.title);
   }
 
+  const createdDay = toDayString(topic.createdAt);
+  if (createdDay) publicationDates.add(createdDay);
+
   collectUrlsFromJson(brief?.sourceIds, sourceUrls);
   collectUrlsFromJson(brief?.facts, sourceUrls);
 
-  const league = (topic.leagueId || topic.sport || "").trim().toUpperCase() || null;
   if (league) {
     // A league code is an entity in name only — every topic in a single-league
     // show shares it, so it must never be what holds a cluster together.
@@ -434,22 +509,53 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     ...contentTokens(brief?.contrarianAngle),
   ];
 
+  // The CLAIM FINGERPRINT is built from every piece of prose the topic carries,
+  // because the propositional content ("4-0 shutout at the all-star exhibition")
+  // is scattered across the title, the summary and both angles.
+  const claimSource = [
+    topic.title,
+    topic.summary ?? "",
+    brief?.mainAngle ?? "",
+    brief?.contrarianAngle ?? "",
+    ...(topic.eventContext?.newsItems ?? []).map((n) => n.title ?? ""),
+    ...(topic.sources ?? []).map((s) => s.title ?? ""),
+  ].join(" . ");
+  const claimAtoms = extractClaimAtoms(claimSource);
+
+  const concepts = conceptsOf(textTokens);
+  const conceptTokens = expandConcepts(textTokens);
+
   const titleFingerprint = crypto
     .createHash("sha1")
     .update([...new Set(titleTokens)].sort().join("|"))
     .digest("hex")
     .slice(0, 16);
 
+  const claimFingerprint = crypto
+    .createHash("sha1")
+    .update(claimAtoms.map((a) => a.atom).join("|"))
+    .digest("hex")
+    .slice(0, 16);
+
   const sortedGames = [...gameIds].sort();
   const sortedTeams = [...teamIds].sort();
   const sortedDates = [...eventDates].sort();
+  const sortedPubDates = [...publicationDates].sort();
+  const allDates = [...new Set([...sortedDates, ...sortedPubDates])].sort();
 
-  // The composite key prefers the strongest durable anchor present.
+  const sortedCanonTeams = [...canonicalTeams].sort();
+
+  // The composite key prefers the strongest durable anchor present. The claim
+  // fingerprint sits above the title digest because it survives a paraphrase.
   const key = sortedGames.length > 0
     ? `game:${sortedGames.join("+")}`
     : sortedTeams.length > 0 && sortedDates.length > 0
       ? `teams:${sortedTeams.join("+")}@${sortedDates[0]}`
-      : `${league ?? "-"}:title:${titleFingerprint}`;
+      : sortedCanonTeams.length > 0 && allDates.length > 0
+        ? `canon:${sortedCanonTeams.join("+")}@${allDates[0]}`
+        : claimAtoms.length > 0
+          ? `${league ?? "-"}:claim:${claimFingerprint}`
+          : `${league ?? "-"}:title:${titleFingerprint}`;
 
   return {
     topicId: topic.id,
@@ -458,13 +564,23 @@ export function deriveEventFingerprint(topic: ClusterableTopic): EventFingerprin
     gameIds: sortedGames,
     teamIds: sortedTeams,
     eventDates: sortedDates,
+    publicationDates: sortedPubDates,
+    allDates,
     entities: [...entityBag].sort(),
     people: [...peopleBag].sort(),
+    canonicalTeams: sortedCanonTeams,
+    canonicalPeople: [...canonicalPeople].sort(),
+    personKeys: [...personKeys].sort(),
+    claimAtoms,
+    concepts,
+    conceptTokens,
+    embedding: Array.isArray(topic.embedding) ? topic.embedding : null,
     evidenceKeys: [...evidenceKeys].sort(),
     sourceUrls: [...sourceUrls].sort(),
     titleTokens,
     textTokens,
     titleFingerprint,
+    claimFingerprint,
     key,
   };
 }
@@ -516,7 +632,19 @@ export type DuplicateSignalCode =
   | "shared_source_url"
   | "shared_evidence"
   | "shared_evidence_row"
-  | "semantic_overlap";
+  | "semantic_overlap"
+  | "canonical_entity_date"
+  | "same_claim";
+
+/** Signals backed by a literal shared database row or URL. Vetoes never apply
+ *  to these — two topics citing one Game row ARE one event. */
+const HARD_SIGNAL_CODES = new Set<DuplicateSignalCode>([
+  "shared_game",
+  "shared_teams_and_date",
+  "shared_source_url",
+  "shared_evidence",
+  "shared_evidence_row",
+]);
 
 export interface DuplicateSignal {
   code: DuplicateSignalCode;
@@ -524,6 +652,20 @@ export interface DuplicateSignal {
   detail: string;
   /** 0..1 — how conclusive this signal is on its own. */
   weight: number;
+}
+
+/** Why an otherwise-plausible soft merge was refused. */
+export type DiscriminatorCode =
+  | "date_conflict"
+  | "disjoint_people"
+  | "disjoint_teams"
+  | "league_conflict"
+  | "claim_conflict";
+
+export interface Discriminator {
+  code: DiscriminatorCode;
+  /** Operator-readable, names the thing that differs. */
+  detail: string;
 }
 
 export interface TopicSimilarity {
@@ -539,13 +681,27 @@ export interface TopicSimilarity {
   evidenceJaccard: number;
   /** Jaccard over person-shaped entities. */
   peopleJaccard: number;
+  /** Cosine over concept-EXPANDED tokens — the offline semantic signal. */
+  conceptCosine: number;
+  /** Cosine over caller-supplied embeddings; 0 when none were supplied. */
+  embeddingCosine: number;
+  /** Claim-fingerprint comparison (the paraphrase-proof signal). */
+  claim: ClaimComparison;
   sharedGameIds: string[];
   sharedEntities: string[];
   sharedEvidenceKeys: string[];
   sharedSourceUrls: string[];
   sharedTeamIds: string[];
   sharedDates: string[];
-  /** True only when a NAMED anchor supports the merge (see THE ANCHOR RULE). */
+  /** Alias-resolved franchises present on both sides. */
+  sharedCanonicalTeams: string[];
+  /** People present on both sides (by surname key). */
+  sharedPersonKeys: string[];
+  /** Closest gap in days between the two topics' dates; null when unknown. */
+  dayGap: number | null;
+  /** Reasons a soft merge was refused. Empty when nothing discriminates. */
+  discriminators: Discriminator[];
+  /** True only when a NAMED signal supports the merge and nothing vetoes it. */
   sameEvent: boolean;
   /** 0..1 confidence in `sameEvent`. */
   confidence: number;
@@ -562,15 +718,56 @@ export function compareFingerprints(a: EventFingerprint, b: EventFingerprint): T
   const sharedSourceUrls = intersect(a.sourceUrls, b.sourceUrls);
   const sharedTeamIds = intersect(a.teamIds, b.teamIds);
   const sharedDates = intersect(a.eventDates, b.eventDates);
+  const sharedCanonicalTeams = intersect(a.canonicalTeams, b.canonicalTeams);
+  const sharedPersonKeys = intersect(a.personKeys, b.personKeys);
 
   const lexicalCosine = cosineSimilarity(a.textTokens, b.textTokens);
   const titleCosine = cosineSimilarity(a.titleTokens, b.titleTokens);
+  const conceptCosine = cosineSimilarity(a.conceptTokens, b.conceptTokens);
+  const embeddingCosine = vectorCosine(a.embedding, b.embedding);
   const entityJaccard = jaccard(a.entities, b.entities);
   const peopleJaccard = jaccard(a.people, b.people);
   const evidenceJaccard = jaccard(
     [...a.evidenceKeys, ...a.sourceUrls],
     [...b.evidenceKeys, ...b.sourceUrls]
   );
+  const claim = compareClaims(a.claimAtoms, b.claimAtoms);
+  const dayGap = minDayGap(a.allDates, b.allDates);
+
+  // --- DISCRIMINATORS -------------------------------------------------------
+  // Computed BEFORE any soft signal so the vetoes are visible in the report
+  // even when nothing would have merged anyway.
+  const discriminators: Discriminator[] = [];
+  if (dayGap !== null && dayGap > SAME_EVENT_MAX_DAY_GAP) {
+    discriminators.push({
+      code: "date_conflict",
+      detail: `${Math.round(dayGap)} days apart (${a.allDates.join("/")} vs ${b.allDates.join("/")}) — beyond the ${SAME_EVENT_MAX_DAY_GAP}-day window for one event`,
+    });
+  }
+  if (a.personKeys.length > 0 && b.personKeys.length > 0 && sharedPersonKeys.length === 0) {
+    discriminators.push({
+      code: "disjoint_people",
+      detail: `different principals: ${a.canonicalPeople.join(", ") || a.personKeys.join(", ")} vs ${b.canonicalPeople.join(", ") || b.personKeys.join(", ")}`,
+    });
+  }
+  if (a.canonicalTeams.length > 0 && b.canonicalTeams.length > 0 && sharedCanonicalTeams.length === 0) {
+    discriminators.push({
+      code: "disjoint_teams",
+      detail: `no franchise in common: ${a.canonicalTeams.map(describeCanonicalEntity).join(", ")} vs ${b.canonicalTeams.map(describeCanonicalEntity).join(", ")}`,
+    });
+  }
+  if (a.league && b.league && a.league !== b.league) {
+    discriminators.push({ code: "league_conflict", detail: `different leagues (${a.league} vs ${b.league})` });
+  }
+  if (claim.conflicts.length > 0) {
+    discriminators.push({
+      code: "claim_conflict",
+      detail: `incompatible figures — ${claim.conflicts.join("; ")}`,
+    });
+  }
+  const softMergeVetoed = discriminators.length > 0;
+  const temporallyProximate = dayGap === null || dayGap <= SAME_EVENT_MAX_DAY_GAP;
+  const leagueCompatible = a.league == null || b.league == null || a.league === b.league;
 
   const signals: DuplicateSignal[] = [];
 
@@ -644,10 +841,11 @@ export function compareFingerprints(a: EventFingerprint, b: EventFingerprint): T
   //     PLUS a heavily overlapping cast of named entities. The entity
   //     requirement is THE ANCHOR RULE — wording alone never merges.
   if (
+    !softMergeVetoed &&
     lexicalCosine >= SEMANTIC_SAME_EVENT_COSINE &&
     entityJaccard >= SEMANTIC_SAME_EVENT_ENTITY_JACCARD &&
     sharedEntities.length >= 2 &&
-    (a.league == null || b.league == null || a.league === b.league)
+    leagueCompatible
   ) {
     signals.push({
       code: "semantic_overlap",
@@ -656,6 +854,53 @@ export function compareFingerprints(a: EventFingerprint, b: EventFingerprint): T
     });
   }
 
+  // (6) The same CANONICAL franchises within a day of each other. Alias
+  //     resolution is what makes this work across "the Halos" / "LAA" /
+  //     "Los Angeles Angels": the surface strings never match, the ids do.
+  if (
+    !softMergeVetoed &&
+    sharedCanonicalTeams.length >= CANONICAL_ENTITY_MIN_TEAMS &&
+    temporallyProximate &&
+    leagueCompatible &&
+    conceptCosine >= CANONICAL_ENTITY_MIN_CONCEPT_COSINE
+  ) {
+    signals.push({
+      code: "canonical_entity_date",
+      detail: `the same ${sharedCanonicalTeams.length} franchises (${sharedCanonicalTeams.map(describeCanonicalEntity).join(", ")}) ${dayGap === null ? "with no conflicting dates" : `within ${Math.round(dayGap)} day(s)`}, and ${Math.round(conceptCosine * 100)}% concept-space overlap`,
+      weight: 0.78,
+    });
+  }
+
+  // (7) THE SAME CLAIM. No shared row, no shared proper noun required: both
+  //     topics assert the same normalized proposition — same final score, same
+  //     event type, same action, same magnitudes — on the same day, in the same
+  //     league, with concept-space agreement. This is the path that stops a
+  //     paraphrase from evading duplicate protection, and it still NAMES what
+  //     is shared, atom by atom.
+  const embeddingCorroborates =
+    a.embedding != null && b.embedding != null && embeddingCosine >= EMBEDDING_CORROBORATION_COSINE;
+  if (
+    !softMergeVetoed &&
+    claim.peakWeight >= CLAIM_ANCHOR_MIN_PEAK &&
+    claim.sharedWeight >= CLAIM_ANCHOR_MIN_WEIGHT &&
+    claim.sharedAtoms.length >= CLAIM_ANCHOR_MIN_ATOMS &&
+    (conceptCosine >= CLAIM_ANCHOR_MIN_CONCEPT_COSINE || embeddingCorroborates) &&
+    temporallyProximate &&
+    leagueCompatible
+  ) {
+    const named = claim.sharedAtoms.slice(0, 4).map((x) => x.label).join(", ");
+    signals.push({
+      code: "same_claim",
+      detail:
+        `both state the same claim — ${named} ` +
+        `(atoms ${claim.sharedAtoms.slice(0, 4).map((x) => x.atom).join(", ")}; ` +
+        `${Math.round(claim.jaccard * 100)}% claim overlap, ${Math.round(conceptCosine * 100)}% concept-space overlap` +
+        `${dayGap === null ? "" : `, ${Math.round(dayGap)} day(s) apart`})`,
+      weight: 0.82,
+    });
+  }
+
+  const hardSignals = signals.filter((s) => HARD_SIGNAL_CODES.has(s.code));
   const confidence = signals.reduce((m, s) => Math.max(m, s.weight), 0);
   const overlap = Math.max(
     lexicalCosine,
@@ -672,12 +917,21 @@ export function compareFingerprints(a: EventFingerprint, b: EventFingerprint): T
     entityJaccard,
     evidenceJaccard,
     peopleJaccard,
+    conceptCosine,
+    embeddingCosine,
+    claim,
     sharedGameIds,
     sharedEntities,
     sharedEvidenceKeys,
     sharedSourceUrls,
     sharedTeamIds,
     sharedDates,
+    sharedCanonicalTeams,
+    sharedPersonKeys,
+    dayGap,
+    // Only report the vetoes that actually mattered: when a hard shared row
+    // carried the merge, a wording discrepancy is noise, not a discriminator.
+    discriminators: hardSignals.length > 0 ? [] : discriminators,
     sameEvent: signals.length > 0,
     confidence,
     signals,
@@ -695,20 +949,156 @@ export function compareTopics(a: ClusterableTopic, b: ClusterableTopic): TopicSi
  * for an operator staring at a rundown, not for a log parser.
  */
 export function explainDuplicate(a: ClusterableTopic, b: ClusterableTopic): string[] {
-  const sim = compareTopics(a, b);
+  return explainSimilarity(a.title, b.title, compareTopics(a, b));
+}
+
+/** The same explanation, from an already-computed comparison. */
+export function explainSimilarity(titleA: string, titleB: string, sim: TopicSimilarity): string[] {
   if (sim.signals.length === 0) {
     const near: string[] = [];
     if (sim.lexicalCosine > 0) near.push(`${Math.round(sim.lexicalCosine * 100)}% wording overlap`);
+    if (sim.conceptCosine > 0) near.push(`${Math.round(sim.conceptCosine * 100)}% concept-space overlap`);
     if (sim.entityJaccard > 0) near.push(`${Math.round(sim.entityJaccard * 100)}% entity overlap`);
+    if (sim.claim.sharedAtoms.length > 0) {
+      near.push(`${sim.claim.sharedAtoms.length} shared claim atom(s) (${sim.claim.sharedAtoms.slice(0, 3).map((x) => x.atom).join(", ")})`);
+    }
     if (sim.sharedEvidenceKeys.length > 0) near.push(`${sim.sharedEvidenceKeys.length} shared evidence ref(s)`);
-    return [
+    const lines = [
       near.length > 0
-        ? `Different events: ${near.join(", ")} — below the bar for a merge, and no shared game, article, or entity pair to name.`
-        : "Different events: nothing shared — no game, article, evidence, entity, or wording overlap.",
+        ? `Different events: ${near.join(", ")} — below the bar for a merge, and no shared game, article, claim, or entity pair to name.`
+        : "Different events: nothing shared — no game, article, evidence, entity, claim, or wording overlap.",
     ];
+    // When something DID look alike, say which discriminator settled it. An
+    // operator reading "these two are 60% alike but not the same event" needs
+    // the reason, not the number.
+    for (const d of sim.discriminators) lines.push(`- discriminator (${d.code}): ${d.detail}`);
+    return lines;
   }
-  const head = `'${a.title}' and '${b.title}' look like the same event (${Math.round(sim.confidence * 100)}% confidence):`;
+  const head = `'${titleA}' and '${titleB}' look like the same event (${Math.round(sim.confidence * 100)}% confidence):`;
   return [head, ...sim.signals.map((s) => `- ${s.detail}`)];
+}
+
+// ---------------------------------------------------------------------------
+// Update vs duplicate
+// ---------------------------------------------------------------------------
+
+/** What a same-event candidate is, relative to the topic already selected. */
+export type EventRelation = "duplicate" | "update" | "distinct";
+
+export interface RelationVerdict {
+  relation: EventRelation;
+  /** One operator-readable sentence. */
+  reason: string;
+  /** The specific new developments found, empty for a pure restatement. */
+  developments: string[];
+  /** True when the candidate's event is well behind the freshest in the pool. */
+  stale: boolean;
+  /** Days the candidate's event sits after the incumbent's (negative = older). */
+  forwardGap: number | null;
+}
+
+const relationTextOf = (fp: EventFingerprint): string =>
+  [fp.title, ...fp.textTokens].join(" ");
+
+/**
+ * Decide whether `candidate` is a genuine UPDATE to `incumbent` or just another
+ * restatement of the same facts. Stated as a rule set, because "the model
+ * thought so" is not something an operator can argue with:
+ *
+ *   R1 NEW ACTOR      — the candidate names a canonical PERSON the incumbent
+ *                       never mentions. A new principal is new information.
+ *   R2 NEW OUTCOME    — the candidate carries a RESOLUTION-class claim atom
+ *                       (trade / signing / firing / discipline / injury /
+ *                       retirement / clinch-or-elimination) that the incumbent
+ *                       lacks. Something happened that had not happened before.
+ *   R3 NEWER EVENT    — the candidate's event is at least
+ *                       UPDATE_MIN_EVENT_DAY_GAP days after the incumbent's.
+ *                       One day is a second write-up of the same night; two is
+ *                       a new development.
+ *   R4 RESOLVED       — the incumbent left an explicit open question ("awaiting
+ *                       a ruling", "no timetable") and the candidate closes it
+ *                       ("was suspended", "underwent surgery", "made official").
+ *
+ * Any rule firing, with the candidate not OLDER than the incumbent, makes this
+ * an UPDATE. Nothing firing makes it a DUPLICATE, which is hard-blocked.
+ */
+export function classifyEventRelation(
+  incumbent: EventFingerprint,
+  candidate: EventFingerprint,
+  opts: { referenceDate?: string | null; sameEvent?: boolean } = {}
+): RelationVerdict {
+  const sameEvent = opts.sameEvent ?? compareFingerprints(incumbent, candidate).sameEvent;
+  const forwardGap = forwardDayGap(incumbent.allDates, candidate.allDates);
+
+  // Staleness is measured against a REFERENCE day supplied by the caller (the
+  // freshest event in the pool), never against a clock — CI must be reproducible.
+  const candidateNewest = candidate.allDates.slice().sort().at(-1) ?? null;
+  const stale =
+    opts.referenceDate != null && candidateNewest != null
+      ? (Date.parse(`${opts.referenceDate}T00:00:00Z`) - Date.parse(`${candidateNewest}T00:00:00Z`)) / 86_400_000 >
+        STALE_EVENT_DAYS
+      : false;
+
+  if (!sameEvent) {
+    return {
+      relation: "distinct",
+      reason: "Different events — no shared signal strong enough to merge them.",
+      developments: [],
+      stale,
+      forwardGap,
+    };
+  }
+
+  const developments: string[] = [];
+
+  // R1 — a canonical person the incumbent never names.
+  const newPeople = candidate.canonicalPeople.filter((p) => !incumbent.canonicalPeople.includes(p));
+  const newKeys = candidate.personKeys.filter((k) => !incumbent.personKeys.includes(k));
+  if (newPeople.length > 0 && newKeys.length > 0) {
+    developments.push(`introduces a principal the earlier story never mentions (${newPeople.join(", ")})`);
+  }
+
+  // R2 — a resolution-class action the incumbent does not carry.
+  const incumbentAtoms = new Set(incumbent.claimAtoms.map((x) => x.atom));
+  const newResolutions = candidate.claimAtoms.filter(
+    (x) => RESOLUTION_ACTIONS.has(x.atom) && !incumbentAtoms.has(x.atom)
+  );
+  if (newResolutions.length > 0) {
+    developments.push(`reports a new outcome the earlier story does not have (${newResolutions.map((x) => x.label).join(", ")})`);
+  }
+
+  // R3 — a materially newer event date.
+  if (forwardGap !== null && forwardGap >= UPDATE_MIN_EVENT_DAY_GAP) {
+    developments.push(`is ${Math.round(forwardGap)} days newer than the story already selected`);
+  }
+
+  // R4 — an open question in the incumbent, closed by the candidate.
+  const open = containsAnyPhrase(relationTextOf(incumbent), OPEN_QUESTION_MARKERS);
+  const closed = containsAnyPhrase(relationTextOf(candidate), RESOLUTION_MARKERS);
+  if (open && closed) {
+    developments.push(`resolves the open question in the earlier story ('${open}' -> '${closed}')`);
+  }
+
+  const isOlder = forwardGap !== null && forwardGap < 0;
+  if (developments.length > 0 && !isOlder) {
+    return {
+      relation: "update",
+      reason: `Same event as the story already selected, but it ${developments.join("; and it ")}.`,
+      developments,
+      stale,
+      forwardGap,
+    };
+  }
+
+  return {
+    relation: "duplicate",
+    reason: isOlder
+      ? `Same event as the story already selected, and ${Math.abs(Math.round(forwardGap!))} day(s) older — a restatement, not a development.`
+      : "Same event as the story already selected, with no new development — it restates facts the rundown already carries.",
+    developments: [],
+    stale,
+    forwardGap,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -804,11 +1194,19 @@ export function clusterTopicsByEvent(topics: ClusterableTopic[]): ClusteringResu
       (acc, f, idx) => (idx === 0 ? f.gameIds : intersect(acc, f.gameIds)), []);
     const sharedEnt = memberFps.reduce<string[]>(
       (acc, f, idx) => (idx === 0 ? f.entities : intersect(acc, f.entities)), []);
+    const sharedCanon = memberFps.reduce<string[]>(
+      (acc, f, idx) => (idx === 0 ? f.canonicalTeams : intersect(acc, f.canonicalTeams)), []);
+    const sharedClaim = memberFps.reduce<string[]>(
+      (acc, f, idx) => (idx === 0 ? f.claimAtoms.map((x) => x.atom) : intersect(acc, f.claimAtoms.map((x) => x.atom))), []);
     const label = sharedGames.length > 0
       ? `game ${sharedGames[0]}`
-      : sharedEnt.length > 0
-        ? sharedEnt.slice(0, 3).join(" / ")
-        : memberFps[0].title;
+      : sharedCanon.length > 0
+        ? sharedCanon.map(describeCanonicalEntity).slice(0, 3).join(" / ")
+        : sharedEnt.length > 0
+          ? sharedEnt.slice(0, 3).join(" / ")
+          : sharedClaim.length > 0
+            ? sharedClaim.slice(0, 3).join(" + ")
+            : memberFps[0].title;
 
     const id = `evt-${crypto.createHash("sha1").update(topicIds.slice().sort().join("|")).digest("hex").slice(0, 12)}`;
     for (const t of topicIds) clusterIdByTopicId[t] = id;

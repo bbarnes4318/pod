@@ -195,6 +195,494 @@ export async function runColdOpenTextTournament(input: {
   };
 }
 
+// =====================================================================
+// SEVEN-ROLE PIPELINE STAGE HELPERS
+//
+// One exported function per LLM-calling role. They compose prompts and validate
+// responses; they do NOT decide whether a stage passed. Every structural
+// guarantee — authorship filtering, brief isolation, the director's bounds —
+// lives in scriptSevenRolePipeline.ts, where it can be enforced on the returned
+// data instead of requested in a prompt.
+// =====================================================================
+
+export interface EpisodeSpine {
+  /** What this episode is actually about, in one sentence. */
+  aboutInOneSentence: string;
+  /** The one question the hosts cannot settle by agreeing. */
+  unresolvedQuestion: string;
+  whyItMattersToAListener: string;
+  /** What evidence or event would actually settle the question. */
+  whatWouldSettleIt: string;
+  hostStakes: Array<{ speakerName: string; stake: string }>;
+  /** Framings the story editor rejected, so the architect cannot drift back. */
+  rejectedFrames: string[];
+}
+
+function validateSpine(value: unknown): string | null {
+  const spine = (value as { spine?: Partial<EpisodeSpine> })?.spine;
+  if (!spine || typeof spine !== "object") return "Missing 'spine' object.";
+  for (const key of ["aboutInOneSentence", "unresolvedQuestion", "whyItMattersToAListener", "whatWouldSettleIt"] as const) {
+    if (typeof spine[key] !== "string" || !String(spine[key]).trim()) return `Spine is missing ${key}.`;
+  }
+  if (!Array.isArray(spine.hostStakes) || spine.hostStakes.length < 2) {
+    return "Spine needs a stake for each host.";
+  }
+  return null;
+}
+
+/**
+ * ROLE 1 — STORY EDITOR.
+ *
+ * Deliberately produces NO structure and NO dialogue. Its entire output is the
+ * decision every later role is held to: what the episode is about, and what is
+ * unresolved. Merging this into the outline call is what let episodes become a
+ * competent list of beats about nothing in particular.
+ */
+export async function pickStorySpine(input: {
+  llm: LLMProvider;
+  episodeTitle: string;
+  speakerNames: string[];
+  topicsEvidence: string;
+  targetDuration: number;
+  systemPrompt: string;
+}): Promise<EpisodeSpine> {
+  const result = await withLlmStage("script:story-spine", () =>
+    input.llm.generateStructuredOutput<{ spine: EpisodeSpine }>({
+      systemPrompt: `${input.systemPrompt}\n\nYou are the STORY EDITOR. You do not write dialogue, beats, or jokes. You decide what this episode is about and what it refuses to resolve. A story whose question can be answered by both hosts agreeing is not a story.`,
+      prompt: `Episode ${JSON.stringify(input.episodeTitle)} runs roughly ${input.targetDuration} minutes with ${input.speakerNames.join(" and ")}.
+
+EVIDENCE AVAILABLE:
+${input.topicsEvidence}
+
+Decide:
+- What this episode is ACTUALLY about — not the headline, the thing underneath it.
+- The ONE unresolved question. It must be answerable in principle and unanswerable tonight.
+- Why a listener who does not already care should care.
+- What would actually settle it, so the hosts can name what they do not have.
+- What is personally at stake for each host. The stakes must differ; if both hosts want the same thing there is no episode.
+- Framings you are REJECTING, so nobody downstream drifts back into them.
+
+Return valid JSON only:
+{"spine":{"aboutInOneSentence":"...","unresolvedQuestion":"...","whyItMattersToAListener":"...","whatWouldSettleIt":"...","hostStakes":[{"speakerName":"...","stake":"..."}],"rejectedFrames":["..."]}}`,
+      temperature: 0.5,
+      maxTokens: 2500,
+      validate: validateSpine,
+    })
+  );
+  const spine = result.spine;
+  return {
+    aboutInOneSentence: String(spine.aboutInOneSentence).trim(),
+    unresolvedQuestion: String(spine.unresolvedQuestion).trim(),
+    whyItMattersToAListener: String(spine.whyItMattersToAListener).trim(),
+    whatWouldSettleIt: String(spine.whatWouldSettleIt).trim(),
+    hostStakes: (spine.hostStakes || []).map((s) => ({
+      speakerName: String(s?.speakerName || "").trim(),
+      stake: String(s?.stake || "").trim(),
+    })),
+    rejectedFrames: Array.isArray(spine.rejectedFrames) ? spine.rejectedFrames.map(String).slice(0, 6) : [],
+  };
+}
+
+/** One planned turn. Public: both host writers see the whole plan, because a
+ *  writer who cannot see what the other host is about to DO cannot write a
+ *  causal reply. What they never see is the other host's PRIVATE brief. */
+export interface TurnPlanEntry {
+  turnIndex: number;
+  beatIndex: number;
+  speakerName: string;
+  /** What this turn does to the conversation. Not the words — the action. */
+  intent: string;
+  factRefs: Array<{ type: string; id: string }>;
+  targetWords: number;
+}
+
+function validateTurnPlan(value: unknown): string | null {
+  const turns = (value as { turns?: unknown })?.turns;
+  if (!Array.isArray(turns) || turns.length === 0) return "Missing non-empty 'turns' array.";
+  for (const turn of turns as Array<Record<string, unknown>>) {
+    if (typeof turn?.speakerName !== "string" || !turn.speakerName.trim()) return "Every turn needs a speakerName.";
+    if (typeof turn?.intent !== "string" || !turn.intent.trim()) return "Every turn needs an intent.";
+  }
+  return null;
+}
+
+/**
+ * ROLE 2 — DEBATE ARCHITECT, turn allocation half.
+ *
+ * The output is the contract between the two host writers: who speaks when,
+ * what each turn has to accomplish, and which evidence that turn is allowed to
+ * introduce. Without it, two writers working from separate briefs produce two
+ * monologues that never meet.
+ */
+export async function planDebateTurns(input: {
+  llm: LLMProvider;
+  episodeTitle: string;
+  speakerNames: string[];
+  spine: EpisodeSpine;
+  beats: unknown[];
+  topicsEvidence: string;
+  systemPrompt: string;
+  totalWordTarget: number;
+}): Promise<TurnPlanEntry[]> {
+  const result = await withLlmStage("script:turn-plan", () =>
+    input.llm.generateStructuredOutput<{ turns: TurnPlanEntry[] }>({
+      systemPrompt: `${input.systemPrompt}\n\nYou are the DEBATE ARCHITECT. You allocate turns and evidence. You never write spoken words — an "intent" that contains a quotable sentence is a failure of this role, because two different writers have to be able to write that turn in their own character's voice.`,
+      prompt: `Allocate the turns for ${JSON.stringify(input.episodeTitle)}.
+
+SPINE (already decided — serve it, do not replace it):
+${JSON.stringify(input.spine, null, 2)}
+
+BEATS (each turn belongs to exactly one):
+${JSON.stringify(input.beats, null, 2)}
+
+EVIDENCE:
+${input.topicsEvidence}
+
+RULES:
+- Speakers are exactly: ${input.speakerNames.join(", ")}. Beat 0 (the cold open) is already written — start at beat 1.
+- Do NOT alternate mechanically. A host may hold two or three consecutive turns when the pressure warrants it; a one-word reaction is a legitimate turn.
+- The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
+- Assign each evidence fact to at most ONE turn, on the beat that already owns it.
+- "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line.
+- Total spoken words across all turns should land near ${input.totalWordTarget}; set targetWords per turn accordingly (short reactions 4-15, arguments 35-90).
+
+Return valid JSON only:
+{"turns":[{"turnIndex":0,"beatIndex":1,"speakerName":"...","intent":"...","factRefs":[{"type":"...","id":"..."}],"targetWords":45}]}`,
+      temperature: 0.6,
+      maxTokens: 7000,
+      validate: validateTurnPlan,
+    })
+  );
+
+  const legal = new Map(input.speakerNames.map((n) => [n.toLowerCase(), n]));
+  const turns: TurnPlanEntry[] = [];
+  for (const raw of result.turns) {
+    const speakerName = legal.get(String(raw.speakerName).trim().toLowerCase());
+    if (!speakerName) continue; // a speaker nobody cast cannot be allocated turns
+    turns.push({
+      turnIndex: turns.length,
+      beatIndex: Number.isInteger(raw.beatIndex) ? Number(raw.beatIndex) : 1,
+      speakerName,
+      intent: String(raw.intent).trim(),
+      factRefs: Array.isArray(raw.factRefs)
+        ? raw.factRefs.filter((r) => r && r.type && r.id).map((r) => ({ type: String(r.type), id: String(r.id) }))
+        : [],
+      targetWords: Math.max(3, Math.min(140, Number(raw.targetWords) || 40)),
+    });
+  }
+  return turns;
+}
+
+export interface HostWrittenLine {
+  turnIndex: number;
+  speakerName: string;
+  text: string;
+  tone?: string;
+  energy?: string;
+  pauseBefore?: string;
+  isInterruption?: boolean;
+  evidenceRefs?: unknown[];
+  isFactualClaim?: boolean;
+}
+
+export interface HostWriterChunkResult {
+  lines: HostWrittenLine[];
+  /** Foreign-brief phrases that were REDACTED out of the composed prompt, and
+   *  the exact strings that reached the model — the isolation evidence. */
+  isolation: {
+    redactedTerms: string[];
+    sentSystemPrompt: string;
+    sentPrompt: string;
+  };
+}
+
+/**
+ * The isolation guarantee, implemented rather than requested.
+ *
+ * Every phrase from the OTHER host's private brief is removed from the composed
+ * prompt before it is sent. This matters because the architect writes the turn
+ * intents, and an architect that paraphrases host B's protected belief into host
+ * B's turn intent would leak the brief into host A's prompt through the back
+ * door. Redaction closes that door; the count of redactions is reported so the
+ * leak is visible rather than silently patched.
+ */
+function redactForeignBrief(text: string, terms: string[]): { text: string; redacted: string[] } {
+  let out = text;
+  const redacted: string[] = [];
+  for (const term of terms) {
+    const needle = term.trim();
+    if (needle.length < 12) continue; // too short to be a distinctive brief phrase
+    let index = out.toLowerCase().indexOf(needle.toLowerCase());
+    let hit = false;
+    while (index >= 0) {
+      hit = true;
+      out = `${out.slice(0, index)}[REDACTED: the other host's private brief]${out.slice(index + needle.length)}`;
+      index = out.toLowerCase().indexOf(needle.toLowerCase());
+    }
+    if (hit) redacted.push(needle);
+  }
+  return { text: out, redacted };
+}
+
+/**
+ * ROLES 3 and 4 — HOST WRITERS.
+ *
+ * One call writes one movement's worth of ONE host's turns. The other host's
+ * turns appear as INTENTS (and, once written, as text) so the reply can be
+ * causal; the other host's private brief never appears at all.
+ */
+export async function writeHostLines(input: {
+  llm: LLMProvider;
+  hostName: string;
+  otherHostName: string;
+  privateBrief: PrivateHostAgenda;
+  /** Distinctive phrases from the OTHER host's brief. Removed before sending. */
+  foreignBriefTerms: string[];
+  spine: unknown;
+  beats: unknown;
+  chunkTurns: TurnPlanEntry[];
+  ownTurnIndexes: number[];
+  /** Everything already on the page, in order. Cold open + earlier movements. */
+  writtenSoFar: Array<{ turnIndex: number; speakerName: string; text: string }>;
+  topicsEvidence: string;
+  systemPrompt: string;
+  movementNumber: number;
+  movementCount: number;
+  temperature: number;
+  maxTokens: number;
+}): Promise<HostWriterChunkResult> {
+  const ownTurns = input.chunkTurns.filter((t) => input.ownTurnIndexes.includes(t.turnIndex));
+  const planView = input.chunkTurns
+    .map((t) =>
+      t.speakerName.toLowerCase() === input.hostName.toLowerCase()
+        ? `>>> TURN ${t.turnIndex} — YOURS (${input.hostName}) — intent: ${t.intent} — target ${t.targetWords} words — facts: ${JSON.stringify(t.factRefs)}`
+        : `    TURN ${t.turnIndex} — ${t.speakerName} (NOT yours) — intent: ${t.intent}`
+    )
+    .join("\n");
+  const transcriptSoFar = input.writtenSoFar.length
+    ? input.writtenSoFar.map((l) => `${l.speakerName}: ${l.text}`).join("\n")
+    : "(the episode opens here)";
+
+  const rawSystemPrompt = `${input.systemPrompt}
+
+You are the private writer for ${input.hostName}, and ONLY for ${input.hostName}.
+
+- You write ${input.hostName}'s turns. You do not write ${input.otherHostName}'s turns, not even as a setup, not even to show what you are replying to. Lines you return for anyone other than ${input.hostName} are discarded by the pipeline and recorded as an authorship violation against you.
+- You have ${input.hostName}'s private brief. You do NOT have ${input.otherHostName}'s. You are not supposed to. Write a person who is guessing at the other one's motives and sometimes guessing wrong.
+- Your character's sentence shapes, evasions, humour, vulnerabilities and aggression are yours to own. Do not converge on a neutral house voice — another writer is writing the other host and the difference between you is the show.
+- Never speak the brief aloud, never name your objective, never explain your own psychology.`;
+
+  const rawPrompt = `MOVEMENT ${input.movementNumber} of ${input.movementCount}.
+
+YOUR PRIVATE BRIEF (${input.hostName} only):
+${JSON.stringify(input.privateBrief, null, 2)}
+
+EPISODE SPINE:
+${JSON.stringify(input.spine, null, 2)}
+
+BEATS IN PLAY:
+${JSON.stringify(input.beats, null, 2)}
+
+THE TURN PLAN FOR THIS MOVEMENT (the architect's allocation — you write only the ones marked YOURS):
+${planView}
+
+WHAT IS ALREADY ON THE PAGE — continue its emotional and conversational logic:
+${transcriptSoFar}
+
+EVIDENCE — only the facts assigned to your own turns may be newly introduced, and every specific number, date, result, quote or named-person action you state as true must be in that evidence and carry its ref. With no evidence, argue vividly without a fabricated specific:
+${input.topicsEvidence}
+
+Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent; hitting the target word count is secondary to hitting the intent.
+
+Return valid JSON only:
+{"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false}]}`;
+
+  const redactedSystem = redactForeignBrief(rawSystemPrompt, input.foreignBriefTerms);
+  const redactedPrompt = redactForeignBrief(rawPrompt, input.foreignBriefTerms);
+  const sentSystemPrompt = redactedSystem.text;
+  const sentPrompt = redactedPrompt.text;
+
+  const result = await withLlmStage(`script:host-writer:${input.hostName}`, () =>
+    input.llm.generateStructuredOutput<{ lines: HostWrittenLine[] }>({
+      systemPrompt: sentSystemPrompt,
+      prompt: sentPrompt,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      validate: (value) => {
+        const lines = (value as { lines?: unknown })?.lines;
+        if (!Array.isArray(lines)) return "Missing 'lines' array.";
+        if (lines.length === 0) return "Returned zero lines.";
+        for (const line of lines as Array<Record<string, unknown>>) {
+          if (!Number.isInteger(line?.turnIndex)) return "Every line needs an integer turnIndex.";
+          if (typeof line?.text !== "string" || !line.text.trim()) return "Every line needs text.";
+        }
+        return null;
+      },
+    })
+  );
+
+  return {
+    lines: (result.lines || []).map((line) => ({
+      ...line,
+      turnIndex: Number(line.turnIndex),
+      speakerName: String(line.speakerName ?? "").trim(),
+      text: String(line.text ?? ""),
+    })),
+    isolation: {
+      redactedTerms: [...new Set([...redactedSystem.redacted, ...redactedPrompt.redacted])],
+      sentSystemPrompt,
+      sentPrompt,
+    },
+  };
+}
+
+export interface DirectorRepair {
+  lineIndex: number;
+  text: string;
+  reason: string;
+}
+
+/**
+ * ROLE 5 — DIALOGUE DIRECTOR.
+ *
+ * Two writers worked without each other's words, so the seams are real: replies
+ * that answer a question nobody asked, transitions that skip a step, a
+ * concession offered before it was earned. The director repairs the JOINS.
+ *
+ * It is explicitly told it may not rewrite characters — and, more importantly,
+ * the caller measures whether it did anyway and reverts the whole pass if so.
+ */
+export async function directDialogueTransitions(input: {
+  llm: LLMProvider;
+  lines: Array<{ lineIndex: number; speakerName: string; text: string }>;
+  hostNames: string[];
+  systemPrompt: string;
+  maxChangedFraction: number;
+  temperature: number;
+  maxTokens: number;
+}): Promise<{ repairs: DirectorRepair[]; notes: string[] }> {
+  const transcript = input.lines
+    .map((l) => `${l.lineIndex}\t${l.speakerName}: ${l.text}`)
+    .join("\n");
+
+  const result = await withLlmStage("script:dialogue-director", () =>
+    input.llm.generateStructuredOutput<{ repairs: DirectorRepair[]; notes?: string[] }>({
+      systemPrompt: `${input.systemPrompt}
+
+You are the DIALOGUE DIRECTOR. Two different writers wrote ${input.hostNames.join(" and ")} separately, from private briefs neither shared. Your job is the JOINS between their turns, and nothing else.
+
+You MAY: repair a reply that does not answer what was actually said; add or remove the small connective move that makes a transition follow; fix a reference to something that was never said; reorder nothing but fix the line that assumes a missing step.
+
+You MAY NOT: improve a line you merely dislike; make either host wittier, calmer, more articulate, or more balanced; harmonise their sentence shapes, vocabulary, or rhythm; move a fact; introduce a fact; touch a line that already lands.
+
+Two different minds is the product. If your pass makes both hosts sound like one careful writer, it will be measured, rejected wholesale, and recorded as a homogenization violation. Repair at most ${Math.round(input.maxChangedFraction * 100)}% of either host's lines, and change as few words in each as the repair needs.`,
+      prompt: `TRANSCRIPT (lineIndex, speaker, text):
+${transcript}
+
+Return ONLY the lines that genuinely need a causal or transitional repair, with the smallest edit that fixes them. Preserve the speaker's voice, their facts, and their evidence. If nothing needs repair, return an empty array — that is a valid and common answer.
+
+Return valid JSON only:
+{"repairs":[{"lineIndex":0,"text":"the repaired line","reason":"what did not follow, and what the edit fixes"}],"notes":["optional observation"]}`,
+      temperature: input.temperature,
+      maxTokens: input.maxTokens,
+      validate: (value) => {
+        const repairs = (value as { repairs?: unknown })?.repairs;
+        if (!Array.isArray(repairs)) return "Missing 'repairs' array (an empty array is valid).";
+        for (const repair of repairs as Array<Record<string, unknown>>) {
+          if (!Number.isInteger(repair?.lineIndex)) return "Every repair needs an integer lineIndex.";
+          if (typeof repair?.text !== "string" || !repair.text.trim()) return "Every repair needs text.";
+        }
+        return null;
+      },
+    })
+  );
+
+  return {
+    repairs: (result.repairs || []).map((r) => ({
+      lineIndex: Number(r.lineIndex),
+      text: String(r.text),
+      reason: String(r.reason ?? "").trim() || "(no reason given)",
+    })),
+    notes: Array.isArray(result.notes) ? result.notes.map(String).slice(0, 10) : [],
+  };
+}
+
+export interface ContinuityEditorReport {
+  callbacksLanded: Array<{ phrase: string; setupLineIndex: number; payoffLineIndex: number }>;
+  callbacksAttemptedButFlat: string[];
+  characterHistoryConflicts: Array<{ lineIndex: number; detail: string }>;
+  runningBitsUsed: string[];
+  /** Issues that a human should read. Advisory: this role does not rewrite. */
+  issues: Array<{ lineIndex: number | null; severity: "note" | "warn"; detail: string }>;
+}
+
+/**
+ * ROLE 6 — CONTINUITY EDITOR.
+ *
+ * Reports. Never rewrites. Optional by design: continuity in this show is
+ * topic-gated and nothing is required per episode, so a continuity outage must
+ * not be able to hold a sound script.
+ */
+export async function reviewContinuity(input: {
+  llm: LLMProvider;
+  transcript: string;
+  hostNames: string[];
+  priorContext?: unknown;
+  systemPrompt: string;
+}): Promise<ContinuityEditorReport> {
+  const result = await withLlmStage("script:continuity-editor", () =>
+    input.llm.generateStructuredOutput<Partial<ContinuityEditorReport>>({
+      systemPrompt: `${input.systemPrompt}\n\nYou are the CONTINUITY EDITOR. You report only what is literally on the page. You never rewrite a line and never invent a callback that is not there. A callback counts only when a concrete earlier phrase or image genuinely returns and does new work; a topic mentioned twice is not a callback.`,
+      prompt: `HOSTS: ${input.hostNames.join(" and ")}
+${input.priorContext ? `\nESTABLISHED HISTORY AND RUNNING BITS:\n${JSON.stringify(input.priorContext, null, 2)}\n` : ""}
+TRANSCRIPT (lineIndex, speaker, text):
+${input.transcript}
+
+Report:
+- callbacks that LANDED (name the exact phrase, the setup line and the payoff line)
+- callbacks that were attempted and fell flat
+- lines that contradict a host's established history or an earlier statement in this same episode
+- running bits actually used
+
+Return valid JSON only:
+{"callbacksLanded":[{"phrase":"...","setupLineIndex":0,"payoffLineIndex":0}],"callbacksAttemptedButFlat":["..."],"characterHistoryConflicts":[{"lineIndex":0,"detail":"..."}],"runningBitsUsed":["..."],"issues":[{"lineIndex":0,"severity":"note|warn","detail":"..."}]}`,
+      temperature: 0,
+      maxTokens: 3000,
+      validate: (value) =>
+        value && typeof value === "object" ? null : "Continuity report must be an object.",
+    })
+  );
+
+  const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+  return {
+    callbacksLanded: arr<ContinuityEditorReport["callbacksLanded"][number]>(result.callbacksLanded),
+    callbacksAttemptedButFlat: arr<string>(result.callbacksAttemptedButFlat).map(String),
+    characterHistoryConflicts: arr<ContinuityEditorReport["characterHistoryConflicts"][number]>(
+      result.characterHistoryConflicts
+    ),
+    runningBitsUsed: arr<string>(result.runningBitsUsed).map(String),
+    issues: arr<ContinuityEditorReport["issues"][number]>(result.issues),
+  };
+}
+
+/** Distinctive phrases from a private brief — what must never cross to the
+ *  other host's writer. Short values are dropped: they are not distinctive
+ *  enough to be a leak and redacting them would mangle ordinary prose. */
+export function privateBriefTerms(agenda: PrivateHostAgenda): string[] {
+  const fields: Array<keyof PrivateHostAgenda> = [
+    "exclusiveFactResponsibility",
+    "protectedBelief",
+    "avoidedConcession",
+    "behavioralTrigger",
+    "misconceptionAboutOtherHost",
+    "genuineQuestion",
+    "privateObjective",
+  ];
+  return fields
+    .map((f) => String(agenda[f] ?? "").trim())
+    .filter((v) => v.length >= 12);
+}
+
 function validateCharacterRewrite(value: unknown): string | null {
   const parsed = value as { lines?: Array<{ lineIndex?: number; text?: string }> };
   if (!Array.isArray(parsed?.lines)) return "Missing lines array.";

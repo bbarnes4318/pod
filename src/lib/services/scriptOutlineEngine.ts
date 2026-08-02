@@ -366,7 +366,9 @@ export function countMovement(segments: any[]): { lines: number; words: number }
   return { lines, words };
 }
 
-function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
+/** Body beats grouped into three movements. Shared with the seven-role pipeline
+ *  so both paths cut the episode into acts identically. */
+export function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
   if (beats.length <= 3) return [beats];
   const closing = beats[beats.length - 1];
   const body = beats.slice(0, -1);
@@ -468,14 +470,34 @@ Return valid JSON only:
   return output;
 }
 
-async function generateEpisodeOutline(
+/**
+ * The beat sheet.
+ *
+ * Exported because the seven-role pipeline's DEBATE ARCHITECT owns this job and
+ * must not re-implement it: the beat contract (6-8 beats, one cold open, one
+ * closing, every fact assigned once, no scheduled jokes) is the same contract
+ * whichever pipeline asks for it. When `spine` is supplied — the story editor's
+ * output in the seven-role pipeline — the beats are built to serve that spine
+ * instead of inventing a second, competing one.
+ */
+export async function generateEpisodeOutline(
   llm: LLMProvider,
   args: OutlineDrivenArgs,
-  creativeSystemPrompt: string
+  creativeSystemPrompt: string,
+  spine?: unknown
 ): Promise<OutlineBeat[]> {
   const prompt = [
     `You are showrunning episode "${args.episodeTitle}" (roughly ${args.targetDuration} minutes).`,
     "",
+    ...(spine
+      ? [
+          "THE STORY EDITOR HAS ALREADY DECIDED WHAT THIS EPISODE IS ABOUT.",
+          "Do not replace the spine, soften it, or add a competing central question.",
+          "Every beat must serve it:",
+          JSON.stringify(spine, null, 2),
+          "",
+        ]
+      : []),
     "TOPICS & EVIDENCE:",
     args.topicsPrompts,
     "",

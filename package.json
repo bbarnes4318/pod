@@ -41,6 +41,7 @@
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
     "test:editorial-gate": "tsx --conditions=react-server src/scripts/testScriptEditorialGate.ts",
     "test:production-release-gate": "tsx --conditions=react-server src/scripts/testProductionReleaseGate.ts",
+    "test:semantic-audio-qa": "tsx --conditions=react-server src/scripts/testSemanticAudioQa.ts",
     "test:world-class-learning": "tsx --conditions=react-server src/scripts/testWorldClassLearning.ts",
     "sample:human-dialogue": "tsx --conditions=react-server src/scripts/produceHumanDialogueAudition.ts",
     "test:waveform-analysis": "tsx src/scripts/testWaveformAnalysis.ts",
