@@ -82,6 +82,9 @@ jobs:
       # 4. A real BullMQ round-trip on a real Redis. A registered-but-idle
       #    worker must fail this.
       - name: Worker health round-trip (real Redis)
+        # Bounded: this step drives real blocking BullMQ calls, so a hang here
+        # must fail fast rather than sit until the job timeout.
+        timeout-minutes: 3
         run: npm run test:integration-worker-health
 
       # 5. Prisma-backed persistence for the two systems whose unit tests use

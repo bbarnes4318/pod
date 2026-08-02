@@ -82,20 +82,26 @@ async function main() {
     }
   });
 
-  await check("a worker that only CONNECTS but never processes still fails the probe", async () => {
-    // The exact false positive the old preflight had: a registered connection.
+  await check("a worker that only CONNECTS but never processes in time still fails the probe", async () => {
+    // The exact false positive the old preflight had: a registered CONNECTION
+    // counted as consumption.
+    //
+    // The handler stalls for longer than the probe window but DOES eventually
+    // resolve. A never-resolving handler would wedge `worker.close()` — BullMQ
+    // waits for the active job — and hang the CI job rather than fail it.
     const name = `${QUEUE}-registered`;
     const conn = connection();
-    const worker = new Worker(name, async () => new Promise(() => {}), {
-      connection: conn as never,
-      // Attached, but every job hangs forever.
-    });
+    const worker = new Worker(name, async () => {
+      await new Promise((r) => setTimeout(r, 6_000));
+      return { late: true };
+    }, { connection: conn as never });
     try {
       await worker.waitUntilReady();
       const result = await roundTrip(name, 1500);
-      if (result.processed) throw new Error("a wedged worker must not count as consumption");
+      if (result.processed) throw new Error("a worker that misses the window must not count as consumption");
     } finally {
-      await worker.close();
+      // force=true so a still-running job cannot block shutdown.
+      await worker.close(true);
       await conn.quit();
     }
   });
