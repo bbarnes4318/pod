@@ -131,10 +131,11 @@ async function main() {
     });
 
     await check("votes persist and are keyed by BALLOT, not candidate", async () => {
+      // Every audition dimension is scored 1-5.
       await castVote(deps, {
         auditionId, ballotId, voterId: OWNER.id,
-        scores: { characterFit: 9, identityConsistency: 8 } as never,
-        overall: 9,
+        scores: { characterFit: 5, identityConsistency: 4 } as never,
+        overall: 5,
       });
       const votes = await client.voiceAuditionVote.findMany({ where: { auditionId } });
       if (votes.length !== 1) throw new Error(`expected 1 vote row, found ${votes.length}`);
