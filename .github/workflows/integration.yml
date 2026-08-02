@@ -1,0 +1,100 @@
+name: Database Integration
+
+# Proves the PRISMA implementations and the MIGRATIONS, not just the port
+# contracts. The unit suites run against in-memory stores behind the same
+# interfaces, which proves the contract and nothing about the SQL — so this job
+# stands up a real PostgreSQL and a real Redis, migrates from empty, and drives
+# the persistence paths that production actually uses.
+#
+# It needs NO production secrets: everything runs against throwaway service
+# containers that GitHub tears down with the job.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: takemachine_integration
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      NODE_ENV: test
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Throwaway containers. These are not secrets and are not production.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/takemachine_integration?schema=public
+      REDIS_URL: redis://localhost:6379
+      LLM_PROVIDER: stub
+      TTS_PROVIDER: stub
+      STORAGE_PROVIDER: stub
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+
+      # 1. The schema must be buildable FROM EMPTY. This is the check that
+      #    catches a migration that only works on a database that already has
+      #    the table it forgot to create.
+      - name: Migrate from an empty database
+        run: npx prisma migrate deploy
+
+      # 2. Applied, complete, and drift-free.
+      - name: Migration integrity and manifest registration
+        run: npm run test:integration-migrations
+
+      # 3. The durable legacy release, against real Postgres. The UNIQUE
+      #    constraint is the whole guarantee, so it has to be exercised by the
+      #    database rather than by a Map.
+      - name: Durable legacy release (real Postgres)
+        run: npm run test:integration-legacy-release
+
+      # 4. A real BullMQ round-trip on a real Redis. A registered-but-idle
+      #    worker must fail this.
+      - name: Worker health round-trip (real Redis)
+        run: npm run test:integration-worker-health
+
+      # 5. Prisma-backed persistence for the two systems whose unit tests use
+      #    in-memory fakes.
+      - name: Voice auditions and tenant isolation (real Postgres)
+        run: npm run test:integration-auditions
+
+      - name: Listener learning, aggregates, policy and purge (real Postgres)
+        run: npm run test:integration-learning
+
+      - name: Summarize
+        if: always()
+        run: |
+          echo "### Database Integration" >> "$GITHUB_STEP_SUMMARY"
+          echo "PostgreSQL 16 + Redis 7 service containers, migrated from empty." >> "$GITHUB_STEP_SUMMARY"
+          echo "No production secrets are used by this job." >> "$GITHUB_STEP_SUMMARY"

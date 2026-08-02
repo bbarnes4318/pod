@@ -155,7 +155,12 @@
     "test:voice-audition": "tsx --conditions=react-server src/scripts/testVoiceAudition.ts",
     "test:voice-audition-authz": "tsx --conditions=react-server src/scripts/testVoiceAuditionAuthz.ts",
     "test:listener-signal-abuse": "tsx --conditions=react-server src/scripts/testListenerSignalAbuse.ts",
-    "test:production-readiness": "tsx --conditions=react-server src/scripts/testProductionReadiness.ts"
+    "test:production-readiness": "tsx --conditions=react-server src/scripts/testProductionReadiness.ts",
+    "test:integration-migrations": "tsx --conditions=react-server src/scripts/integration/migrations.ts",
+    "test:integration-legacy-release": "tsx --conditions=react-server src/scripts/integration/legacyRelease.ts",
+    "test:integration-worker-health": "tsx --conditions=react-server src/scripts/integration/workerHealth.ts",
+    "test:integration-auditions": "tsx --conditions=react-server src/scripts/integration/auditions.ts",
+    "test:integration-learning": "tsx --conditions=react-server src/scripts/integration/learning.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
