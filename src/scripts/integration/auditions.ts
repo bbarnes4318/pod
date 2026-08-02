@@ -126,7 +126,12 @@ async function main() {
 
       const rows = await client.voiceAuditionCandidate.findMany({ where: { auditionId } });
       if (rows.length !== 2) throw new Error(`expected 2 candidate rows, found ${rows.length}`);
-      ballotId = rows[0].ballotId;
+      // Deliberately pick the candidate whose voice DIFFERS from the host's
+      // current one. Promotion correctly refuses a no-op, and the blind order is
+      // a seeded shuffle, so taking rows[0] makes the run coin-flip flaky.
+      const challenger = rows.find((r) => r.voiceId !== ownedHost.ttsVoiceId);
+      if (!challenger) throw new Error("no candidate offers a different voice");
+      ballotId = challenger.ballotId;
       if (!ballotId) throw new Error("a candidate must carry a ballot id");
     });
 
