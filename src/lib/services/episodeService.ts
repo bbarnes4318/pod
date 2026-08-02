@@ -231,6 +231,11 @@ export interface AutoSelectDiversity {
   overrideApplied: boolean;
 }
 
+/** How deep the pairwise event-diversity pass will search before giving up on
+ *  filling the rundown. Bounds the cost of the pairwise comparison on a day
+ *  when a very large pool is all one story. */
+export const DIVERSITY_SCAN_LIMIT = 40;
+
 export interface AutoSelectResult {
   chosen: TopicWithBrief[];
   reasons: string[];
@@ -387,21 +392,22 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
 
     eligible.push(t);
     forClustering.push({ ...t, eventContext: eventContext.get(t.id) ?? null });
-    if (eligible.length > DIVERSITY_SCAN_LIMIT) {
-      // Guard against a pathological day (everything is one story) turning the
-      // pairwise pass into a full-pool O(n^3) scan. Candidates past this point
-      // are far below the rank bar anyway; the shortfall is reported below.
+    // Re-run over the pool grown so far: the enforcement function is the SAME
+    // one the tests exercise, so the production path and the fixture path can
+    // never diverge. The pool normally stops growing a candidate or two after
+    // targetCount, so this stays cheap.
+    enforcement = enforceEventDiversity(forClustering, targetCount, enforcementOpts);
+    if (enforcement.chosen.length >= targetCount) break;
+    if (eligible.length >= DIVERSITY_SCAN_LIMIT) {
+      // Guard against a pathological day (every qualifying topic is the same
+      // story) turning a pairwise pass into a full-pool cubic scan. Candidates
+      // past this point are far below the rank bar anyway, and the resulting
+      // shortfall is reported honestly below.
       result.reasons.push(
         `Event-diversity search stopped after examining the top ${DIVERSITY_SCAN_LIMIT} qualifying candidates.`
       );
       break;
     }
-    // Re-run over the pool grown so far: the enforcement function is the SAME
-    // one the tests exercise, so the production path and the fixture path can
-    // never diverge. The pool is bounded by targetCount (<= 6) plus whatever
-    // duplicates were rejected, so this stays cheap.
-    enforcement = enforceEventDiversity(forClustering, targetCount, enforcementOpts);
-    if (enforcement.chosen.length >= targetCount) break;
   }
 
   // Map the clustering copies back to the ORIGINAL rows: nothing downstream
