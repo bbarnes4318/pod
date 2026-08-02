@@ -13,7 +13,7 @@ import {
   tallyAudition,
   type AuditionScores,
 } from "@/lib/services/voiceAudition";
-import { auditionDeps } from "./actions";
+import { auditionDeps } from "./store";
 import AuditionConsole, {
   type AuditionVM,
   type HostOptionVM,
@@ -24,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AuditionsPage() {
   const user = await currentUser();
-  const deps = await auditionDeps();
+  const deps = auditionDeps();
 
   const hosts = await db.aiHost.findMany({
     where: user ? { OR: [{ ownerId: user.id }, { ownerId: null }], isArchived: false } : { ownerId: null, isArchived: false },

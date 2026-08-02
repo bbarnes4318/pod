@@ -20,16 +20,22 @@
 
 import assert from "node:assert/strict";
 import {
+  classifyEventRelation,
   clusterTopicsByEvent,
+  compareFingerprints,
   compareTopics,
   deriveEventFingerprint,
   enforceEventDiversity,
   explainDuplicate,
+  extractClaimAtoms,
+  isEmbeddingHookEnabled,
   scoreRundownDiversity,
   RUNDOWN_DIVERSITY_THRESHOLD,
+  SEMANTIC_SAME_EVENT_ENTITY_JACCARD,
   SOFT_OVERLAP_COSINE,
   type ClusterableTopic,
 } from "../lib/services/storyClustering";
+import { canonicalizeTeamName } from "../lib/services/eventIdentity";
 import { selectAutoTopics } from "../lib/services/episodeService";
 
 // The fixtures are deliberately terse; isolate SELECTION from the talkability
@@ -863,6 +869,383 @@ async function run() {
       report.score < 100,
       "a rundown of three near-identical prose topics must not score perfectly even when no hard anchor survives"
     );
+  });
+
+  // =========================================================================
+  // DURABLE EVENT IDENTITY — the rejected caveat, closed.
+  // =========================================================================
+  const paraphrased = allStarParaphrased();
+  dump("PARAPHRASED All-Star (no ids, no shared proper nouns)", paraphrased);
+  dump("ADVERSARIAL: same teams, different dates", sameTeamsDifferentDates());
+  dump("ADVERSARIAL: two players, same team, same night", twoPlayersSameTeam());
+  dump("ADVERSARIAL: two different 4-0 games, same league, same night", sameNightDifferentGames());
+  console.log("");
+
+  // ---- 1. PARAPHRASE REGRESSION -------------------------------------------
+  await check("PARAPHRASE FIXTURE really does share no identifiers and no proper nouns", () => {
+    const fps = paraphrased.map(deriveEventFingerprint);
+    for (let i = 0; i < fps.length; i++) {
+      for (let j = i + 1; j < fps.length; j++) {
+        const a = fps[i];
+        const b = fps[j];
+        assert.deepEqual(a.gameIds, [], "the fixture must carry no game ids");
+        assert.deepEqual(
+          a.evidenceKeys.filter((k) => b.evidenceKeys.includes(k)), [],
+          `${a.topicId}/${b.topicId} share an evidence row — the fixture is not honest`
+        );
+        assert.deepEqual(
+          a.sourceUrls.filter((u) => b.sourceUrls.includes(u)), [],
+          `${a.topicId}/${b.topicId} share a source URL — the fixture is not honest`
+        );
+        assert.deepEqual(
+          a.canonicalTeams.filter((t) => b.canonicalTeams.includes(t)), [],
+          `${a.topicId}/${b.topicId} share a named franchise — the fixture is not honest`
+        );
+        assert.deepEqual(
+          a.personKeys.filter((p) => b.personKeys.includes(p)), [],
+          `${a.topicId}/${b.topicId} share a named person — the fixture is not honest`
+        );
+        const sim = compareFingerprints(a, b);
+        assert.ok(
+          sim.entityJaccard < SEMANTIC_SAME_EVENT_ENTITY_JACCARD,
+          `entity overlap ${sim.entityJaccard.toFixed(3)} is above the old semantic bar — the fixture is not a real paraphrase`
+        );
+      }
+    }
+  });
+
+  await check("PARAPHRASE REGRESSION: three reworded All-Star topics STILL cluster into one", () => {
+    const res = clusterTopicsByEvent(paraphrased);
+    assert.equal(
+      res.clusters.length, 1,
+      `a paraphrase escaped duplicate protection: ${JSON.stringify(res.clusters.map((c) => c.topicIds))}`
+    );
+    assert.deepEqual(res.clusters[0].topicIds.slice().sort(), ["par-arms", "par-comeback", "par-snooze"]);
+    assert.ok(res.clusters[0].anchors.length > 0, "the cluster must still be able to name what holds it together");
+    for (const p of res.pairs) {
+      assert.ok(p.sameEvent, `${p.topicIdA}/${p.topicIdB} was not judged the same event`);
+      assert.ok(
+        p.signals.some((s) => s.code === "same_claim"),
+        `${p.topicIdA}/${p.topicIdB} merged without the claim signal: ${p.signals.map((s) => s.code).join(",")}`
+      );
+    }
+  });
+
+  await check("PARAPHRASE REGRESSION: enforcement keeps ONE, and says why in words", () => {
+    const res = enforceEventDiversity(paraphrased, 3);
+    assert.equal(res.chosen.length, 1, `${res.chosen.length} paraphrases survived: ${res.chosen.map((c) => c.id).join(",")}`);
+    assert.equal(res.skipped.length, 2);
+    for (const s of res.skipped) {
+      const text = s.reasons.join(" ");
+      assert.ok(/same claim/.test(text), `the skip must NAME the shared claim: ${text}`);
+      assert.ok(/score:4-0/.test(text), `the skip must quote the shared score atom: ${text}`);
+      assert.equal(s.relation, "duplicate", "a reworded restatement is a duplicate, not an update");
+    }
+  });
+
+  await check("PARAPHRASE REGRESSION: selectAutoTopics rejects the reworded rundown too", async () => {
+    const db = makeFakeDb(paraphrased);
+    const res = await selectAutoTopics({ targetCount: 3, minDebateScore: 50 }, db as any);
+    assert.equal(res.chosen.length, 1, `selection took ${res.chosen.length} paraphrases of one event`);
+    assert.equal(res.eventDiversity?.skipped.length, 2);
+    assert.ok(/same claim/.test(res.reasons.join(" ")), "the operator must be told which claim was shared");
+  });
+
+  // ---- 2. IDENTIFIER-OMISSION REGRESSION ----------------------------------
+  await check("IDENTIFIER OMISSION: the real All-Star prose with every durable id stripped still clusters", () => {
+    const stripped = allStarTextOnly();
+    for (const fp of stripped.map(deriveEventFingerprint)) {
+      assert.deepEqual(fp.gameIds, [], "no game ids may survive the strip");
+      assert.deepEqual(fp.teamIds, [], "no resolved Game rows may survive the strip");
+    }
+    const res = clusterTopicsByEvent(stripped);
+    assert.equal(
+      res.clusters.length, 1,
+      `stripping the identifiers split one event into ${res.clusters.length}: ${JSON.stringify(res.clusters.map((c) => c.topicIds))}`
+    );
+    const enforced = enforceEventDiversity(stripped, 3);
+    assert.equal(enforced.chosen.length, 1, "hard enforcement must fire, not just the scorer");
+    assert.equal(scoreRundownDiversity(stripped).passed, false, "and the rundown gate must fail it");
+  });
+
+  // ---- 3. NUMERIC PARAPHRASE ----------------------------------------------
+  await check("NUMERIC PARAPHRASE: 'four to nothing', '4-0' and 'a four-run shutout' agree", () => {
+    const forms = [
+      "the American League won four to nothing",
+      "American League shuts out National League 4-0",
+      "the winning side needed only a four-run shutout",
+      "a 0-4 loss for the National League",
+      "they were beaten four-nothing",
+    ];
+    const atomSets = forms.map((f) => extractClaimAtoms(f).map((a) => a.atom));
+    for (let i = 0; i < forms.length; i++) {
+      assert.ok(
+        atomSets[i].includes("score:4-0"),
+        `'${forms[i]}' produced ${JSON.stringify(atomSets[i])} — no score:4-0`
+      );
+      assert.ok(
+        atomSets[i].includes("act:shutout"),
+        `'${forms[i]}' should also read as a shutout, got ${JSON.stringify(atomSets[i])}`
+      );
+    }
+    // Different scores must NOT collapse together.
+    assert.ok(!extractClaimAtoms("a 6-3 win").map((a) => a.atom).includes("score:4-0"));
+    // A batting line is not a score.
+    const line = extractClaimAtoms("he went 2-for-3 with a walk").map((a) => a.atom);
+    assert.ok(line.includes("line:2-3"), `expected a batting line, got ${JSON.stringify(line)}`);
+    assert.ok(!line.includes("score:3-2"), "a 2-for-3 line must never be read as a 3-2 score");
+    // Magnitudes: spelled-out and numeric forms agree.
+    assert.ok(extractClaimAtoms("eleven pitchers").map((a) => a.atom).includes("mag:11:pitcher"));
+    assert.ok(extractClaimAtoms("an 11-pitcher shutout").map((a) => a.atom).includes("mag:11:pitcher"));
+  });
+
+  await check("NUMERIC PARAPHRASE: the paraphrased topics carry identical score atoms", () => {
+    const fps = paraphrased.map(deriveEventFingerprint);
+    for (const fp of fps) {
+      const atoms = fp.claimAtoms.map((a) => a.atom);
+      assert.ok(atoms.includes("score:4-0"), `${fp.topicId} lost the score atom: ${JSON.stringify(atoms)}`);
+      assert.ok(atoms.includes("evt:exhibition"), `${fp.topicId} lost the event type: ${JSON.stringify(atoms)}`);
+    }
+  });
+
+  // ---- 4. ENTITY ALIAS -----------------------------------------------------
+  await check("ENTITY ALIAS: nickname, official name and abbreviation are ONE canonical entity", () => {
+    const forms = ["Halos", "Angels", "Los Angeles Angels", "LAA", "Anaheim"];
+    for (const f of forms) {
+      assert.equal(
+        canonicalizeTeamName(f, "MLB"), "MLB:LAA",
+        `'${f}' did not resolve to MLB:LAA (got ${canonicalizeTeamName(f, "MLB")})`
+      );
+    }
+    // League scoping: the same nickname is two different franchises.
+    assert.equal(canonicalizeTeamName("Rangers", "MLB"), "MLB:TEX");
+    assert.equal(canonicalizeTeamName("Rangers", "NHL"), "NHL:NYR");
+    assert.notEqual(canonicalizeTeamName("Rangers", "MLB"), canonicalizeTeamName("Rangers", "NHL"));
+    assert.equal(canonicalizeTeamName("Giants", "NFL"), "NFL:NYG");
+    // A franchise that is not in the table resolves to nothing rather than to
+    // a guess.
+    assert.equal(canonicalizeTeamName("Whitlock", "MLB"), null);
+    // And it works end to end, through a real fingerprint.
+    const withNickname = deriveEventFingerprint(topic({ id: "alias-a", title: "Are the Halos Finally Buyers?", sport: "MLB", leagueId: "MLB" }));
+    const withFullName = deriveEventFingerprint(topic({ id: "alias-b", title: "Are the Los Angeles Angels Finally Buyers?", sport: "MLB", leagueId: "MLB" }));
+    const withAbbr = deriveEventFingerprint(topic({ id: "alias-c", title: "Is LAA Finally Buying?", sport: "MLB", leagueId: "MLB" }));
+    assert.deepEqual(withNickname.canonicalTeams, ["MLB:LAA"]);
+    assert.deepEqual(withFullName.canonicalTeams, ["MLB:LAA"]);
+    assert.deepEqual(withAbbr.canonicalTeams, ["MLB:LAA"]);
+  });
+
+  // ---- 5. UPDATE vs DUPLICATE ---------------------------------------------
+  await check("UPDATE vs DUPLICATE: a real development is an `update`, a restatement is a `duplicate`", () => {
+    const { base, update, restatement } = updateVsDuplicateFixture();
+    const fpBase = deriveEventFingerprint(base);
+    const fpUpdate = deriveEventFingerprint(update);
+    const fpRestate = deriveEventFingerprint(restatement);
+
+    // Both are genuinely the SAME event — otherwise this test proves nothing.
+    assert.ok(compareFingerprints(fpBase, fpUpdate).sameEvent, "the follow-up must be the same event");
+    assert.ok(compareFingerprints(fpBase, fpRestate).sameEvent, "the restatement must be the same event");
+
+    const upd = classifyEventRelation(fpBase, fpUpdate, { referenceDate: "2026-06-12" });
+    assert.equal(upd.relation, "update", `expected an update, got ${upd.relation}: ${upd.reason}`);
+    assert.ok(upd.developments.length >= 2, `an update should name its developments, got ${JSON.stringify(upd.developments)}`);
+    assert.ok(/resolves the open question/.test(upd.developments.join(" ")), `the closed question must be named: ${JSON.stringify(upd.developments)}`);
+    assert.ok(/days newer/.test(upd.developments.join(" ")), `the newer date must be named: ${JSON.stringify(upd.developments)}`);
+
+    const dup = classifyEventRelation(fpBase, fpRestate, { referenceDate: "2026-06-12" });
+    assert.equal(dup.relation, "duplicate", `expected a duplicate, got ${dup.relation}: ${dup.reason}`);
+    assert.deepEqual(dup.developments, [], "a restatement has no developments to name");
+    assert.ok(/no new development/.test(dup.reason), `the verdict must be readable: ${dup.reason}`);
+  });
+
+  await check("UPDATE vs DUPLICATE: enforcement ALLOWS the update and BLOCKS the restatement", () => {
+    const { base, update, restatement } = updateVsDuplicateFixture();
+    const res = enforceEventDiversity([base, update, restatement] as Fixture[], 3);
+    const ids = res.chosen.map((c) => c.id);
+    assert.ok(ids.includes("upd-base"), "the original must be kept");
+    assert.ok(ids.includes("upd-followup"), `the genuine follow-up must be kept, got ${ids.join(",")}`);
+    assert.ok(!ids.includes("upd-restatement"), `a restatement must never take a slot, got ${ids.join(",")}`);
+    assert.equal(res.skipped.length, 1);
+    assert.equal(res.skipped[0].topicId, "upd-restatement");
+    assert.equal(res.skipped[0].relation, "duplicate");
+    const updateDecision = res.decisions.find((d) => d.topicId === "upd-followup")!;
+    assert.equal(updateDecision.outcome, "accepted-as-update");
+    assert.equal(updateDecision.relation, "update");
+
+    // The dial must also be able to turn updates OFF entirely.
+    const strict = enforceEventDiversity([base, update, restatement] as Fixture[], 3, { allowUpdates: false });
+    assert.deepEqual(strict.chosen.map((c) => c.id), ["upd-base"], "with allowUpdates=false only one survives");
+    assert.equal(strict.skipped.length, 2);
+    assert.ok(
+      strict.skipped.every((s) => /Updates are disabled|no new development/.test(s.reasons.join(" ") + " ")) ||
+      strict.decisions.some((d) => /Updates are disabled/.test(d.reason)),
+      "the operator must be told updates were switched off"
+    );
+  });
+
+  await check("STALE duplicates are hard-blocked even when maxPerEvent would allow them", () => {
+    const { base, restatement } = updateVsDuplicateFixture();
+    // A fresh, unrelated story sets the reference day two weeks later, which
+    // makes the brawl pair stale.
+    const fresh = { ...control[0], id: "fresh-nfl", debateScore: 99 } as Fixture;
+    const pool = [base, restatement, fresh] as Fixture[];
+    const lenient = enforceEventDiversity(pool, 3, { maxPerEvent: 2, referenceDate: "2026-10-13" });
+    const ids = lenient.chosen.map((c) => c.id);
+    assert.ok(!ids.includes("upd-restatement"), `a STALE duplicate took a slot anyway: ${ids.join(",")}`);
+    const skip = lenient.skipped.find((s) => s.topicId === "upd-restatement");
+    assert.ok(skip, "the stale duplicate must be reported");
+    assert.equal(skip!.stale, true, "and flagged as stale");
+    const decision = lenient.decisions.find((d) => d.topicId === "upd-restatement")!;
+    assert.ok(/more than 3 days behind/.test(decision.reason), `the staleness must be explained: ${decision.reason}`);
+    // Sanity: with a fresh reference day, maxPerEvent=2 really does allow two.
+    const fresher = enforceEventDiversity([base, restatement] as Fixture[], 3, { maxPerEvent: 2, referenceDate: "2026-06-11" });
+    assert.equal(fresher.chosen.length, 2, "the allowance itself still works when nothing is stale");
+  });
+
+  // ---- 6. PRECISION CONTROL (the part recall must not break) ---------------
+  await check("PRECISION: two games between the SAME teams on DIFFERENT dates never merge", () => {
+    const pair = sameTeamsDifferentDates();
+    const sim = compareTopics(pair[0], pair[1]);
+    assert.equal(sim.sameEvent, false, `two different fixtures merged: ${sim.signals.map((s) => s.code).join(",")}`);
+    assert.ok(
+      sim.claim.sharedAtoms.some((a) => a.atom === "score:4-0"),
+      "the fixture must genuinely share the 4-0 claim, or it proves nothing"
+    );
+    assert.ok(sim.sharedCanonicalTeams.length >= 2, "and the same two franchises");
+    assert.ok(
+      sim.discriminators.some((d) => d.code === "date_conflict"),
+      `the DATE must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
+    );
+    const res = enforceEventDiversity(pair, 2);
+    assert.equal(res.chosen.length, 2, "both fixtures must fill their slots");
+    assert.equal(res.skipped.length, 0);
+  });
+
+  await check("PRECISION: two players on the SAME team on the SAME night never merge", () => {
+    const pair = twoPlayersSameTeam();
+    const sim = compareTopics(pair[0], pair[1]);
+    assert.equal(sim.sameEvent, false, `two player stories merged: ${sim.signals.map((s) => s.code).join(",")}`);
+    assert.ok(sim.sharedCanonicalTeams.length >= 2, "the fixture must genuinely share both franchises");
+    assert.equal(sim.dayGap, 0, "and sit on the same day");
+    assert.ok(
+      sim.discriminators.some((d) => d.code === "disjoint_people"),
+      `the PRINCIPALS must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
+    );
+    const res = enforceEventDiversity(pair, 2);
+    assert.equal(res.chosen.length, 2, "both players' stories must fill their slots");
+  });
+
+  await check("PRECISION: two different 4-0 games in one league on one night never merge", () => {
+    const pair = sameNightDifferentGames();
+    const sim = compareTopics(pair[0], pair[1]);
+    assert.equal(sim.sameEvent, false, `two different games merged: ${sim.signals.map((s) => s.code).join(",")}`);
+    // This is the adversarial part: the claim fingerprints agree completely and
+    // the prose is nearly identical.
+    assert.ok(
+      sim.claim.sharedAtoms.some((a) => a.atom === "score:4-0"),
+      "the fixture must share the score atom, or it proves nothing"
+    );
+    assert.ok(sim.conceptCosine >= 0.6, `the prose must genuinely be near-identical, got ${sim.conceptCosine.toFixed(3)}`);
+    assert.ok(
+      sim.discriminators.some((d) => d.code === "disjoint_teams"),
+      `the FRANCHISES must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
+    );
+    const res = enforceEventDiversity(pair, 2);
+    assert.equal(res.chosen.length, 2, "both games must fill their slots");
+    assert.equal(res.skipped.length, 0);
+  });
+
+  await check("PRECISION: the original control still fills all three slots, unchanged", () => {
+    const res = clusterTopicsByEvent(control);
+    assert.equal(res.clusters.length, 3, "the recall work must not have merged the control");
+    const enforced = enforceEventDiversity(control, 3);
+    assert.deepEqual(enforced.chosen.map((c) => c.id), ["ctl-chiefs", "ctl-wemby", "ctl-panthers"]);
+    assert.equal(enforced.skipped.length, 0);
+    assert.equal(scoreRundownDiversity(control).passed, true);
+  });
+
+  await check("PRECISION: every adversarial pair survives the whole selection path together", async () => {
+    const pool = [
+      ...sameTeamsDifferentDates(),
+      ...twoPlayersSameTeam(),
+      ...sameNightDifferentGames(),
+    ] as Fixture[];
+    const db = makeFakeDb(pool);
+    const res = await selectAutoTopics({ targetCount: 6, minDebateScore: 50 }, db as any);
+    assert.equal(
+      res.chosen.length, 6,
+      `the filter deleted a legitimate story: kept ${res.chosen.map((c) => c.id).join(",")}; skipped ${JSON.stringify(res.eventDiversity?.skipped.map((s) => s.topicId))}`
+    );
+    assert.equal(res.eventDiversity?.skipped.length, 0, "nothing may be skipped in six distinct stories");
+  });
+
+  // ---- 7. REASON PERSISTENCE ----------------------------------------------
+  await check("REASON PERSISTENCE: every candidate carries a readable accept/reject/update reason", () => {
+    const { base, update, restatement } = updateVsDuplicateFixture();
+    const pool = [...paraphrased, base, update, restatement] as Fixture[];
+    const res = enforceEventDiversity(pool, 4);
+
+    assert.equal(res.decisions.length, pool.length, "every candidate must appear in the audit trail exactly once");
+    const ids = new Set(res.decisions.map((d) => d.topicId));
+    for (const t of pool) assert.ok(ids.has(t.id), `${t.id} has no recorded decision`);
+
+    for (const d of res.decisions) {
+      assert.ok(d.reason.length > 25, `decision for ${d.topicId} is not a readable sentence: '${d.reason}'`);
+      assert.ok(/[a-z]/.test(d.reason) && /\.$/.test(d.reason.trim()), `decision for ${d.topicId} is not prose: '${d.reason}'`);
+      assert.ok(
+        ["accepted", "accepted-as-update", "accepted-under-override", "rejected", "deferred", "not-considered"].includes(d.outcome),
+        `unknown outcome ${d.outcome}`
+      );
+      assert.ok(typeof d.clusterId === "string" && d.clusterId.length > 0, "each decision names its event cluster");
+    }
+
+    const outcomes = new Map(res.decisions.map((d) => [d.topicId, d.outcome]));
+    assert.equal(outcomes.get("par-comeback"), "accepted");
+    assert.equal(outcomes.get("par-snooze"), "rejected");
+    assert.equal(outcomes.get("par-arms"), "rejected");
+    assert.equal(outcomes.get("upd-base"), "accepted");
+    assert.equal(outcomes.get("upd-followup"), "accepted-as-update");
+    assert.equal(outcomes.get("upd-restatement"), "rejected");
+
+    const rejected = res.decisions.find((d) => d.topicId === "par-snooze")!;
+    assert.equal(rejected.comparedToTopicId, "par-comeback", "a rejection names what it duplicated");
+    assert.ok(/restates facts|no new development/.test(rejected.reason), `unhelpful rejection reason: ${rejected.reason}`);
+    const updated = res.decisions.find((d) => d.topicId === "upd-followup")!;
+    assert.ok(updated.developments.length > 0, "an update records the developments that earned its slot");
+  });
+
+  await check("REASON PERSISTENCE: the reasons reach the selection result an operator reads", async () => {
+    const { base, update, restatement } = updateVsDuplicateFixture();
+    const db = makeFakeDb([base, update, restatement] as Fixture[]);
+    const res = await selectAutoTopics({ targetCount: 3, minDebateScore: 50 }, db as any);
+    const decisions = res.eventDiversity?.decisions ?? [];
+    console.log("DBG chosen:", res.chosen.map((c:any)=>c.id), "decisions:", JSON.stringify(decisions.map((d:any)=>[d.topicId,d.outcome,d.relation])), "reasons:", JSON.stringify(res.reasons));
+    assert.ok(decisions.length >= 3, `the audit trail must survive the service boundary, got ${decisions.length}`);
+    assert.ok(
+      decisions.some((d) => d.outcome === "accepted-as-update"),
+      "the update must be visible on the result"
+    );
+    assert.ok(
+      decisions.some((d) => d.outcome === "rejected" && d.relation === "duplicate"),
+      "so must the duplicate"
+    );
+    const why = res.reasons.join(" ");
+    assert.ok(/Kept .* as an UPDATE/.test(why), `the operator must be told an update kept its slot: ${why}`);
+  });
+
+  await check("the discriminators are reported even when nothing merged", () => {
+    const pair = sameNightDifferentGames();
+    const text = explainDuplicate(pair[0], pair[1]).join(" ");
+    assert.ok(/Different events/.test(text), `expected a 'different events' verdict: ${text}`);
+    assert.ok(/discriminator \(disjoint_teams\)/.test(text), `the discriminator must be named: ${text}`);
+    assert.ok(/Yankees|Orioles|Padres|Rockies/.test(text), `and it must name the franchises: ${text}`);
+  });
+
+  await check("the offline semantic layer is honest: no embedding hook is installed", () => {
+    assert.equal(isEmbeddingHookEnabled(), false, "CI must run on the offline path alone");
+    // And the offline path is what produced every merge above.
+    const res = clusterTopicsByEvent(paraphrased);
+    assert.equal(res.clusters.length, 1, "the paraphrase merge must not depend on an encoder");
+    for (const p of res.pairs) assert.equal(p.embeddingCosine, 0, "no embedding may have contributed");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);
