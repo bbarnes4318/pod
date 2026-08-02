@@ -57,6 +57,17 @@ function stubDeps(client: ReturnType<typeof prisma>): VoiceAuditionDeps {
   };
 }
 
+/**
+ * AiHost.ownerId is a real foreign key to User, so the owners have to exist
+ * before a host can reference them. (The in-memory store cannot catch this —
+ * exactly the class of bug this job is here to find.)
+ */
+async function seedUser(client: ReturnType<typeof prisma>, viewer: AuditionViewer, role: string) {
+  return client.user.create({
+    data: { id: viewer.id, email: `${viewer.id}@integration.invalid`, name: viewer.id, role },
+  });
+}
+
 async function seedHost(client: ReturnType<typeof prisma>, ownerId: string | null, voiceId: string) {
   const slug = uid("integration-host");
   const host = await client.aiHost.create({
@@ -82,6 +93,10 @@ async function main() {
   const deps = stubDeps(client);
 
   try {
+    await seedUser(client, OWNER, "USER");
+    await seedUser(client, OTHER, "USER");
+    await seedUser(client, ADMIN, "ADMIN");
+
     const ownedHost = await seedHost(client, OWNER.id, VOICE_A);
     const partnerHost = await seedHost(client, OWNER.id, VOICE_B);
     const foreignHost = await seedHost(client, OTHER.id, VOICE_A);
@@ -198,6 +213,7 @@ async function main() {
     await client.aiHost.deleteMany({
       where: { id: { in: [ownedHost.id, partnerHost.id, foreignHost.id, systemHost.id] } },
     });
+    await client.user.deleteMany({ where: { id: { in: [OWNER.id, OTHER.id, ADMIN.id] } } });
   } finally {
     await client.$disconnect();
   }
