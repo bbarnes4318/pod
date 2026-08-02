@@ -127,6 +127,7 @@
     "test:ledger": "tsx --conditions=react-server src/scripts/testLedger.ts",
     "test:pipeline-chaining": "tsx src/scripts/testPipelineChaining.ts",
     "test:production-chain": "tsx --conditions=react-server src/scripts/testProductionChain.ts",
+    "test:audio-stitch-recovery": "tsx --conditions=react-server src/scripts/testAudioStitchRecovery.ts",
     "test:betting-frame": "tsx --conditions=react-server src/scripts/testBettingFrame.ts",
     "analyze:topic-bias": "tsx --conditions=react-server src/scripts/analyzeTopicBias.ts",
     "backfill:topic-frame": "tsx --conditions=react-server src/scripts/backfillTopicFrame.ts",

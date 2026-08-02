@@ -43,7 +43,7 @@ import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
 import { Prisma, type AiHost } from "@prisma/client";
-import { podcastQueue, BACKGROUND_QUEUE_NAME, PRODUCTION_QUEUE_NAME } from "./podcastQueue";
+import { podcastQueue, productionQueue, BACKGROUND_QUEUE_NAME, PRODUCTION_QUEUE_NAME } from "./podcastQueue";
 
 /** Persona block for LLM prompts, built from a host's own profile record —
  *  so topic/brief seeding reflects whoever the show's active hosts are, not
@@ -271,6 +271,117 @@ function attachWorkerListeners(queueWorker: Worker, lane: "background" | "produc
 
 attachWorkerListeners(worker, "background");
 attachWorkerListeners(productionWorker, "production");
+
+// A rolling deployment can terminate ffmpeg after the database has moved the
+// episode to audio_stitching. BullMQ will release the dead worker's lock, but
+// the database status is durable; without reconciliation every retry rejects
+// itself forever as "already audio_stitching". Give the prior container's
+// BullMQ lock time to expire, then repair and requeue only stitches with no
+// live queue owner.
+const AUDIO_STITCH_RECOVERY_GRACE_MS = 45_000;
+setTimeout(() => {
+  recoverOrphanedAudioStitchesOnBoot().catch((err) =>
+    console.error(`[Worker] Orphaned audio-stitch recovery failed: ${err.message}`)
+  );
+}, AUDIO_STITCH_RECOVERY_GRACE_MS);
+
+async function queuedStitchesForScript(scriptId: string) {
+  const jobs = await productionQueue.getJobs(
+    ["active", "wait", "delayed", "prioritized"],
+    0,
+    500,
+    true
+  );
+  const matches = jobs.filter(
+    (queued) =>
+      queued.name === "audio:stitch-final" &&
+      (queued.data as FinalAudioStitchJobData).scriptId === scriptId
+  );
+  return Promise.all(
+    matches.map(async (queued) => ({ queued, state: await queued.getState() }))
+  );
+}
+
+async function markOrphanedStitchLogsFailed(scriptId: string, reason: string) {
+  await db.jobLog.updateMany({
+    where: {
+      jobType: "audio:stitch-final",
+      status: "running",
+      input: { path: ["scriptId"], equals: scriptId },
+    },
+    data: {
+      status: "failed",
+      error: reason,
+      output: { scriptId, finalStatus: "failed", reasons: [reason] } as Prisma.InputJsonValue,
+    },
+  });
+}
+
+async function releaseOrphanedStitchLockForJob(job: Job<FinalAudioStitchJobData>) {
+  const { scriptId } = job.data;
+  const script = await db.script.findUnique({
+    where: { id: scriptId },
+    select: { episode: { select: { id: true, status: true } } },
+  });
+  if (script?.episode.status !== "audio_stitching") return false;
+
+  const queued = await queuedStitchesForScript(scriptId);
+  const competingActive = queued.some(
+    ({ queued: candidate, state }) =>
+      state === "active" && String(candidate.id) !== String(job.id)
+  );
+  if (competingActive) return false;
+
+  const reason = "Recovered an orphaned audio stitch after its worker stopped before releasing the episode lock.";
+  const released = await db.episode.updateMany({
+    where: { id: script.episode.id, status: "audio_stitching" },
+    data: { status: "audio_segments_ready" },
+  });
+  if (released.count === 0) return false;
+  await markOrphanedStitchLogsFailed(scriptId, reason);
+  console.warn(`[Worker] ${reason} scriptId=${scriptId} retryJobId=${job.id}`);
+  return true;
+}
+
+async function recoverOrphanedAudioStitchesOnBoot() {
+  const cutoff = new Date(Date.now() - AUDIO_STITCH_RECOVERY_GRACE_MS);
+  const stranded = await db.script.findMany({
+    where: {
+      episode: {
+        status: "audio_stitching",
+        updatedAt: { lt: cutoff },
+      },
+    },
+    select: { id: true, episodeId: true },
+  });
+
+  let recovered = 0;
+  for (const script of stranded) {
+    const queued = await queuedStitchesForScript(script.id);
+    if (queued.some(({ state }) => state === "active")) continue;
+
+    const reason = "Recovered an orphaned audio stitch during worker startup; no live BullMQ job owned the database lock.";
+    const released = await db.episode.updateMany({
+      where: {
+        id: script.episodeId,
+        status: "audio_stitching",
+        updatedAt: { lt: cutoff },
+      },
+      data: { status: "audio_segments_ready" },
+    });
+    if (released.count === 0) continue;
+
+    await markOrphanedStitchLogsFailed(script.id, reason);
+    const alreadyQueued = queued.some(({ state }) =>
+      state === "waiting" || state === "delayed" || state === "prioritized"
+    );
+    if (!alreadyQueued) await queueFinalAudioStitchJob({ scriptId: script.id });
+    recovered++;
+    console.warn(`[Worker] ${reason} scriptId=${script.id} requeued=${!alreadyQueued}`);
+  }
+
+  console.log(`[Worker] Orphaned audio-stitch recovery complete: recovered=${recovered}.`);
+}
 
 // Helper function to simulate background processing delay
 function simulateProgress(ms: number) {
@@ -3057,6 +3168,10 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
   const { scriptId } = job.data;
   console.log(`[Worker] Starting audio:stitch-final job for Script ${scriptId}`);
   try {
+    // If a prior worker died after setting audio_stitching, this retry is now
+    // the only live owner. Release that orphaned database lock before entering
+    // either the scene or legacy stitcher.
+    await releaseOrphanedStitchLockForJob(job);
     // Scene-voiced episodes assemble whole scenes; legacy episodes keep the
     // exact per-line path (decided by the PERSISTED Episode.ttsRenderMode).
     const res = await dispatchFinalStitch(job.data);
