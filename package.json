@@ -14,6 +14,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "verify:prod-env": "tsx --conditions=react-server src/scripts/verifyProdEnv.ts",
     "verify:production-readiness": "tsx --conditions=react-server src/scripts/productionReadiness.ts",
+    "gate:reevaluate": "tsx --conditions=react-server src/scripts/reevaluateScriptGate.ts",
     "validate:rss": "tsx src/scripts/validateRssFeed.ts",
     "test": "tsx --conditions=react-server src/scripts/testSourceRouting.ts",
     "sample:ab": "tsx --conditions=react-server src/scripts/abSample.ts",

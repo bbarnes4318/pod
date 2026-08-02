@@ -1233,6 +1233,10 @@ export interface DiversitySkip {
   confidence: number;
   /** Human-readable, straight from `explainDuplicate`. */
   reasons: string[];
+  /** Duplicate vs update, from `classifyEventRelation`. */
+  relation: EventRelation;
+  /** True when the event is well behind the freshest in the pool. */
+  stale: boolean;
 }
 
 export interface DiversityDeferral {
@@ -1243,6 +1247,26 @@ export interface DiversityDeferral {
   reason: string;
 }
 
+/** What happened to ONE candidate, and why. Recorded for every topic examined
+ *  — accepted, rejected, allowed as an update, deferred or never reached — so
+ *  an operator can read the whole selection back afterwards. */
+export interface CandidateDecision {
+  topicId: string;
+  title: string;
+  clusterId: string;
+  outcome: "accepted" | "accepted-as-update" | "accepted-under-override" | "rejected" | "deferred" | "not-considered";
+  relation: EventRelation | "n/a";
+  /** The already-selected topic this was judged against, when there was one. */
+  comparedToTopicId: string | null;
+  /** One sentence, written for a human. */
+  reason: string;
+  /** The named signals or discriminators behind the verdict. */
+  detail: string[];
+  /** New developments found, when this was treated as an update. */
+  developments: string[];
+  stale: boolean;
+}
+
 export interface EnforcementResult<T> {
   chosen: T[];
   skipped: DiversitySkip[];
@@ -1251,28 +1275,49 @@ export interface EnforcementResult<T> {
   clusters: EventCluster[];
   /** True when a human override let duplicates through. */
   overrideApplied: boolean;
+  /** One entry per candidate, in input order. The audit trail. */
+  decisions: CandidateDecision[];
 }
 
 export interface EnforcementOptions {
   /** AUTHORIZED human override: keep multiple angles on one event anyway. */
   allowDuplicateEvents?: boolean;
-  /** At most this many topics per event cluster (default 1). */
+  /** At most this many DUPLICATE-relation topics per event cluster (default 1). */
   maxPerEvent?: number;
   /** Overlap above which a distinct topic is pushed down the order. */
   softOverlapThreshold?: number;
+  /** Let a same-event story with a genuine new development through on top of
+   *  the per-event allowance. Default true: an update is news, not a rerun. */
+  allowUpdates?: boolean;
+  /** At most this many updates per event cluster (default 1). */
+  maxUpdatesPerEvent?: number;
+  /** Day used as "today" for staleness. Defaults to the freshest event date in
+   *  the pool, so the decision is deterministic and clock-free. */
+  referenceDate?: string | null;
 }
 
 /**
  * Walk an ALREADY-RANKED list and take the best `targetCount` topics such that
  * no two are the same event.
  *
- * Two distinct mechanisms, deliberately:
- *  - HARD: a topic whose event is already represented is DROPPED, with the
- *    reason recorded. This is what makes three All-Star angles impossible.
+ * Three distinct mechanisms, deliberately:
+ *  - HARD: a topic whose event is already represented and which carries no new
+ *    development is DROPPED, with the reason recorded. This is what makes three
+ *    All-Star angles impossible.
+ *  - UPDATE: a same-event topic that DOES carry a meaningful new development
+ *    (see `classifyEventRelation`) is admitted on top of the per-event
+ *    allowance, bounded by `maxUpdatesPerEvent`. A rundown that refuses to
+ *    report "and then he was suspended" is not protecting anybody.
  *  - SOFT: a topic that is a different event but overlaps heavily in wording is
  *    DEFERRED to the back of the queue rather than dropped, so a distinct story
  *    never disappears — it just stops sitting next to its nearest neighbour.
  *    Deferred topics are pulled back in (in rank order) if slots remain.
+ *
+ * STALENESS: a duplicate whose event is more than STALE_EVENT_DAYS behind the
+ * freshest event in the pool is blocked even when `maxPerEvent` would have
+ * allowed a second angle — an old restatement is the worst thing to spend a
+ * slot on. The reference day comes from the pool, never from a clock, so the
+ * behaviour is reproducible in CI.
  *
  * Rank order is otherwise preserved: this never promotes a lower-ranked topic
  * above a higher-ranked one that is still distinct.
@@ -1283,6 +1328,8 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
   opts: EnforcementOptions = {}
 ): EnforcementResult<T> {
   const maxPerEvent = Math.max(1, Math.floor(opts.maxPerEvent ?? 1));
+  const maxUpdatesPerEvent = Math.max(0, Math.floor(opts.maxUpdatesPerEvent ?? 1));
+  const allowUpdates = opts.allowUpdates !== false;
   const softThreshold = opts.softOverlapThreshold ?? SOFT_OVERLAP_COSINE;
   const target = Math.max(0, Math.floor(targetCount));
 
@@ -1293,19 +1340,78 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     deferred: [],
     clusters: clustering.clusters,
     overrideApplied: opts.allowDuplicateEvents === true,
+    decisions: [],
   };
   if (target === 0 || ranked.length === 0) return result;
 
   const byId = new Map(ranked.map((t) => [t.id, t]));
   const fp = (t: T) => clustering.fingerprints[t.id];
 
-  const perCluster = new Map<string, string[]>();
-  const deferredQueue: T[] = [];
+  // The freshest day anywhere in the pool is "today" for staleness purposes.
+  const referenceDate =
+    opts.referenceDate ??
+    ranked
+      .flatMap((t) => clustering.fingerprints[t.id]?.allDates ?? [])
+      .sort()
+      .at(-1) ??
+    null;
 
-  const takeSlot = (t: T) => {
+  const perCluster = new Map<string, string[]>();
+  const updatesPerCluster = new Map<string, number>();
+  const deferredQueue: T[] = [];
+  const decided = new Set<string>();
+
+  const record = (d: CandidateDecision) => {
+    decided.add(d.topicId);
+    result.decisions = result.decisions.filter((x) => x.topicId !== d.topicId);
+    result.decisions.push(d);
+  };
+
+  const takeSlot = (t: T, decision: Omit<CandidateDecision, "topicId" | "title" | "clusterId">) => {
     const cid = clustering.clusterIdByTopicId[t.id];
     perCluster.set(cid, [...(perCluster.get(cid) ?? []), t.id]);
     result.chosen.push(t);
+    record({ topicId: t.id, title: t.title, clusterId: cid, ...decision });
+  };
+
+  /** Judge a candidate against the topic already holding its event. */
+  const judge = (candidate: T, keptId: string) => {
+    const kept = byId.get(keptId)!;
+    const sim = compareFingerprints(fp(kept), fp(candidate));
+    const verdict = classifyEventRelation(fp(kept), fp(candidate), {
+      referenceDate,
+      sameEvent: true,
+    });
+    return { kept, sim, verdict };
+  };
+
+  const reject = (candidate: T, keptId: string, extra: string) => {
+    const cid = clustering.clusterIdByTopicId[candidate.id];
+    const { kept, sim, verdict } = judge(candidate, keptId);
+    const reasons = explainSimilarity(kept.title, candidate.title, sim);
+    result.skipped.push({
+      topicId: candidate.id,
+      title: candidate.title,
+      clusterId: cid,
+      duplicateOfTopicId: keptId,
+      duplicateOfTitle: kept.title,
+      confidence: sim.confidence,
+      reasons,
+      relation: verdict.relation,
+      stale: verdict.stale,
+    });
+    record({
+      topicId: candidate.id,
+      title: candidate.title,
+      clusterId: cid,
+      outcome: "rejected",
+      relation: verdict.relation,
+      comparedToTopicId: keptId,
+      reason: `${verdict.reason} ${extra}`.trim(),
+      detail: sim.signals.map((s) => s.detail),
+      developments: verdict.developments,
+      stale: verdict.stale,
+    });
   };
 
   for (const candidate of ranked) {
@@ -1313,22 +1419,70 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     const cid = clustering.clusterIdByTopicId[candidate.id];
     const already = perCluster.get(cid) ?? [];
 
-    if (already.length >= maxPerEvent) {
+    if (already.length > 0) {
       const keptId = already[0];
-      const kept = byId.get(keptId)!;
       if (opts.allowDuplicateEvents) {
-        takeSlot(candidate);
+        const { verdict } = judge(candidate, keptId);
+        takeSlot(candidate, {
+          outcome: "accepted-under-override",
+          relation: verdict.relation,
+          comparedToTopicId: keptId,
+          reason: `Same event as '${byId.get(keptId)!.title}', admitted because allowDuplicateEvents was set by an operator.`,
+          detail: [],
+          developments: verdict.developments,
+          stale: verdict.stale,
+        });
         continue;
       }
-      const sim = compareFingerprints(fp(kept), fp(candidate));
-      result.skipped.push({
-        topicId: candidate.id,
-        title: candidate.title,
-        clusterId: cid,
-        duplicateOfTopicId: keptId,
-        duplicateOfTitle: kept.title,
-        confidence: sim.confidence,
-        reasons: explainDuplicate(kept, candidate),
+
+      const { verdict } = judge(candidate, keptId);
+      const updatesTaken = updatesPerCluster.get(cid) ?? 0;
+
+      // An UPDATE is new news, so it is admitted on top of the per-event
+      // allowance — but only up to `maxUpdatesPerEvent`.
+      if (verdict.relation === "update" && allowUpdates && updatesTaken < maxUpdatesPerEvent) {
+        updatesPerCluster.set(cid, updatesTaken + 1);
+        takeSlot(candidate, {
+          outcome: "accepted-as-update",
+          relation: "update",
+          comparedToTopicId: keptId,
+          reason: verdict.reason,
+          detail: verdict.developments,
+          developments: verdict.developments,
+          stale: verdict.stale,
+        });
+        continue;
+      }
+      if (verdict.relation === "update" && !allowUpdates) {
+        reject(candidate, keptId, "Updates are disabled for this build (allowUpdates=false).");
+        continue;
+      }
+      if (verdict.relation === "update") {
+        reject(candidate, keptId, `This event already carries ${maxUpdatesPerEvent} update(s).`);
+        continue;
+      }
+      // A stale duplicate is blocked even when the per-event allowance has room.
+      if (verdict.stale) {
+        reject(
+          candidate,
+          keptId,
+          `The event is more than ${STALE_EVENT_DAYS} days behind the freshest story in the pool, so a second angle on it is not worth a slot.`
+        );
+        continue;
+      }
+      if (already.length >= maxPerEvent) {
+        reject(candidate, keptId, `This event already holds its allowance of ${maxPerEvent} topic(s).`);
+        continue;
+      }
+      // Within the allowance: a second angle on one event was explicitly asked for.
+      takeSlot(candidate, {
+        outcome: "accepted",
+        relation: verdict.relation,
+        comparedToTopicId: keptId,
+        reason: `Second angle on the same event, permitted by maxPerEvent=${maxPerEvent}.`,
+        detail: [],
+        developments: [],
+        stale: verdict.stale,
       });
       continue;
     }
@@ -1341,17 +1495,38 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     }, null);
     if (worst && worst.overlap >= softThreshold && !opts.allowDuplicateEvents) {
       deferredQueue.push(candidate);
+      const reason = `Deferred behind distinct stories: ${Math.round(worst.overlap * 100)}% overlap with '${byId.get(worst.id)!.title}' (different event, so kept — just not adjacent).`;
       result.deferred.push({
         topicId: candidate.id,
         title: candidate.title,
         comparedToTopicId: worst.id,
         overlap: worst.overlap,
-        reason: `Deferred behind distinct stories: ${Math.round(worst.overlap * 100)}% overlap with '${byId.get(worst.id)!.title}' (different event, so kept — just not adjacent).`,
+        reason,
+      });
+      record({
+        topicId: candidate.id,
+        title: candidate.title,
+        clusterId: cid,
+        outcome: "deferred",
+        relation: "distinct",
+        comparedToTopicId: worst.id,
+        reason,
+        detail: [],
+        developments: [],
+        stale: false,
       });
       continue;
     }
 
-    takeSlot(candidate);
+    takeSlot(candidate, {
+      outcome: "accepted",
+      relation: result.chosen.length === 0 ? "n/a" : "distinct",
+      comparedToTopicId: null,
+      reason: "Distinct event — nothing already in the rundown is the same story.",
+      detail: [],
+      developments: [],
+      stale: false,
+    });
   }
 
   // Backfill from the deferred queue, still respecting the hard event rule. A
@@ -1362,24 +1537,41 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     const cid = clustering.clusterIdByTopicId[candidate.id];
     const already = perCluster.get(cid) ?? [];
     if (already.length >= maxPerEvent) {
-      const keptId = already[0];
-      const kept = byId.get(keptId)!;
-      const sim = compareFingerprints(fp(kept), fp(candidate));
       result.deferred = result.deferred.filter((d) => d.topicId !== candidate.id);
-      result.skipped.push({
-        topicId: candidate.id,
-        title: candidate.title,
-        clusterId: cid,
-        duplicateOfTopicId: keptId,
-        duplicateOfTitle: kept.title,
-        confidence: sim.confidence,
-        reasons: explainDuplicate(kept, candidate),
-      });
+      reject(candidate, already[0], "Its event filled up while it waited behind the distinct stories.");
       continue;
     }
     if (result.chosen.length >= target) continue;
-    takeSlot(candidate);
+    result.deferred = result.deferred.filter((d) => d.topicId !== candidate.id);
+    takeSlot(candidate, {
+      outcome: "accepted",
+      relation: "distinct",
+      comparedToTopicId: null,
+      reason: "Pulled back in from the deferred queue — a slot remained and it is a distinct event.",
+      detail: [],
+      developments: [],
+      stale: false,
+    });
   }
+
+  // Everything the walk never reached still gets a line in the audit trail.
+  for (const candidate of ranked) {
+    if (decided.has(candidate.id)) continue;
+    result.decisions.push({
+      topicId: candidate.id,
+      title: candidate.title,
+      clusterId: clustering.clusterIdByTopicId[candidate.id],
+      outcome: "not-considered",
+      relation: "n/a",
+      comparedToTopicId: null,
+      reason: `Not examined: the rundown was already full at ${target} topic(s) when this candidate came up.`,
+      detail: [],
+      developments: [],
+      stale: false,
+    });
+  }
+  const order = new Map(ranked.map((t, i) => [t.id, i]));
+  result.decisions.sort((x, y) => (order.get(x.topicId) ?? 0) - (order.get(y.topicId) ?? 0));
 
   return result;
 }
