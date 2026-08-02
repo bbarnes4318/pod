@@ -1462,7 +1462,10 @@ async function main(): Promise<void> {
     // ---- 1. a CURRENT story, via the real selection path ----
     const storyStart = Date.now();
     const selection = await stage("story_selection", () => selectCurrentStory(env));
-    const angle = await stage("topic_generation", () => generateEpisodeAngle(selection.story, selection.clusterMembers));
+    // Recorded IMMEDIATELY. Selection is a real stage that really succeeded, and
+    // filling this block only after the angle call would make a later failure
+    // report `story: null` — which reads as "the feeds never worked" and sends
+    // whoever is on call to the wrong place.
     report.story = {
       feedsQueried: selection.feedsQueried,
       itemsFetched: selection.itemsFetched,
@@ -1473,9 +1476,12 @@ async function main(): Promise<void> {
       diversityScore: selection.diversityScore,
       skipped: selection.skipped,
       deferred: selection.deferred,
-      generatedAngle: angle.angle,
+      generatedAngle: null,
       latencyMs: Date.now() - storyStart,
     };
+    const angle = await stage("topic_generation", () => generateEpisodeAngle(selection.story, selection.clusterMembers));
+    report.story.generatedAngle = angle.angle;
+    report.story.latencyMs = Date.now() - storyStart;
     console.log(`Story: "${angle.title}" — ${angle.angle}`);
 
     // ---- 2. a NEW research brief, on the real route ----
