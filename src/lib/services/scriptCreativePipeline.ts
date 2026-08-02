@@ -1,6 +1,7 @@
 import type { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
+import { COLD_OPEN_MIN_WORDS, COLD_OPEN_MAX_WORDS } from "./productionInvariants";
 
 export interface PrivateHostAgenda {
   speakerName: string;
@@ -39,11 +40,16 @@ export interface ColdOpenVariant {
 }
 
 export interface ColdOpenTournamentResult {
-  version: 1;
+  version: number;
   targetSeconds: 45;
   selectedId: ColdOpenVariant["id"];
   variants: ColdOpenVariant[];
   selectionBasis: "independent_text_judge";
+  /** The band every finalist was held to, persisted so a later rewrite that
+   *  expanded the cold open can be identified after the fact. */
+  wordBand?: { min: number; max: number };
+  /** Why the other two candidates lost. */
+  rejected?: Array<{ id: string; textScore: number; reasons: string[] }>;
 }
 
 const IDS = ["accusation", "consequence", "contradiction"] as const;
@@ -77,17 +83,25 @@ export async function generatePrivateHostAgendas(input: {
       validate: validateAgendas,
     })
   );
+  // Every active host must have a REAL packet. Substituting boilerplate for a
+  // host the model failed to name destroys the asymmetry this stage exists to
+  // create, while leaving a persisted `privateAgendas` blob that looks fully
+  // populated — the agendas were the one thing nobody could tell had gone
+  // missing. A missing packet is now a stage failure, which the caller turns
+  // into a retry and then an editorial hold.
   const byName = new Map((result.agendas || []).map((a) => [a.speakerName.toLowerCase(), a]));
-  return input.speakerNames.map((speakerName) => byName.get(speakerName.toLowerCase()) || {
+  const resolved = input.speakerNames.map((speakerName) => ({
     speakerName,
-    exclusiveFactResponsibility: "Introduce one assigned evidence fact only when the other host creates the opening.",
-    protectedBelief: "Protect the standard expressed in the character worldview.",
-    avoidedConcession: "Avoid conceding that the human consequence is irrelevant.",
-    behavioralTrigger: "React when the other host dismisses motive or consequence.",
-    misconceptionAboutOtherHost: "Assume the other host cares more about winning than answering the central question.",
-    genuineQuestion: "What evidence would actually change the other host's position?",
-    privateObjective: "Force one meaningful change in the argument without announcing it.",
-  });
+    agenda: byName.get(speakerName.toLowerCase()) || null,
+  }));
+  const missing = resolved.filter((r) => !r.agenda).map((r) => r.speakerName);
+  if (missing.length) {
+    throw new Error(
+      `Private agenda generation did not return a packet for: ${missing.join(", ")}. ` +
+        `Returned packets: ${(result.agendas || []).map((a) => a.speakerName).join(", ") || "none"}.`
+    );
+  }
+  return resolved.map((r) => r.agenda!);
 }
 
 function spokenWords(lines: CreativeScriptLine[]): number {
@@ -102,7 +116,15 @@ function validateColdOpenDraft(value: unknown): string | null {
   for (const variant of parsed.variants) {
     if (!Array.isArray(variant.lines) || variant.lines.length < 3) return `${variant.id} needs at least three lines.`;
     const words = spokenWords(variant.lines);
-    if (words < 80 || words > 135) return `${variant.id} has ${words} words; required range is 80-135.`;
+    if (words < COLD_OPEN_MIN_WORDS || words > COLD_OPEN_MAX_WORDS) {
+      return `${variant.id} has ${words} words; required range is ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS}.`;
+    }
+    // A cold open that greets, introduces, or summarises is not a cold open at
+    // any word count.
+    const joined = variant.lines.map((l) => String(l?.text || "")).join(" ").toLowerCase();
+    if (/\b(welcome (back )?to|you're listening to|thanks for (tuning|joining)|hello and welcome|i'm your host|on today's (show|episode)|coming up on)\b/.test(joined)) {
+      return `${variant.id} opens with a greeting or show description; it must start mid-argument.`;
+    }
   }
   return null;
 }
@@ -123,7 +145,7 @@ export async function runColdOpenTextTournament(input: {
   const draft = await withLlmStage("script:cold-open-variants", () =>
     input.writer.generateStructuredOutput<{ variants: Array<{ id: ColdOpenVariant["id"]; lines: CreativeScriptLine[] }> }>({
       systemPrompt: `${input.systemPrompt}\n\nThis is a dedicated cold-open room. Write only the first 45 seconds. No greeting, show description, throat-clearing, scene label, or \"today we're discussing\". Start in motion. Each host owns only their private agenda; do not make either character recite the other's internal objective.`,
-      prompt: `Create three COMPLETELY DIFFERENT 45-second openings for ${JSON.stringify(input.episodeTitle)}:\n1. accusation — one host directly challenges the other's judgment;\n2. consequence — begin with the most concrete human cost;\n3. contradiction — begin with two evidence-backed facts that should not comfortably coexist.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\nUse 80-135 spoken words per variant and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Legal speakers: ${input.speakerNames.join(", ")}. Return JSON only: {"variants":[{"id":"accusation","lines":[]},{"id":"consequence","lines":[]},{"id":"contradiction","lines":[]}]}`,
+      prompt: `Create three COMPLETELY DIFFERENT 45-second openings for ${JSON.stringify(input.episodeTitle)}:\n1. accusation — one host directly challenges the other's judgment;\n2. consequence — begin with the most concrete human cost;\n3. contradiction — begin with two evidence-backed facts that should not comfortably coexist.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\nUse 80-120 spoken words per variant and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Legal speakers: ${input.speakerNames.join(", ")}. Return JSON only: {"variants":[{"id":"accusation","lines":[]},{"id":"consequence","lines":[]},{"id":"contradiction","lines":[]}]}`,
       temperature: 0.9,
       maxTokens: 8000,
       validate: validateColdOpenDraft,
@@ -151,8 +173,25 @@ export async function runColdOpenTextTournament(input: {
   variants.sort((a, b) => b.textScore - a.textScore);
   const selected = variants[0];
   return {
-    segment: { type: "cold_open", title: "Cold open", lines: selected.lines },
-    tournament: { version: 1, targetSeconds: 45, selectedId: selected.id, variants, selectionBasis: "independent_text_judge" },
+    // The title carries the selected variant so a finished artifact can be
+    // traced back to the tournament. A generic hardcoded "Cold open" was what
+    // made episode e7867729 ambiguous: its artifact read "Cold Open: The Empty
+    // Seats", which no tournament path can produce, and that mismatch was the
+    // only visible sign the creative pipeline had been bypassed entirely.
+    segment: { type: "cold_open", title: `Cold open (${selected.id})`, lines: selected.lines },
+    tournament: {
+      version: 2,
+      targetSeconds: 45,
+      selectedId: selected.id,
+      variants,
+      selectionBasis: "independent_text_judge",
+      wordBand: { min: COLD_OPEN_MIN_WORDS, max: COLD_OPEN_MAX_WORDS },
+      rejected: variants.slice(1).map((v) => ({
+        id: v.id,
+        textScore: v.textScore,
+        reasons: v.judgeReasons,
+      })),
+    },
   };
 }
 

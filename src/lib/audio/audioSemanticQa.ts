@@ -174,11 +174,62 @@ async function transcribeOpenAi(audio: Buffer, mimeType: string): Promise<{ mode
   return { model, segments };
 }
 
+/**
+ * Which semantic-QA settings are missing, by NAME only — never a value.
+ *
+ * Production episode e7867729 reported `TTS_TRANSCRIPT_QA_ENABLED=false` and
+ * published anyway: `not_run` was an accepted outcome all the way to the
+ * master. Meaning-aware QA is the only check that can catch a wrong speaker, a
+ * dropped line, or a hallucinated number, so in production its absence must
+ * stop the episode rather than annotate it.
+ */
+export function resolveSemanticQaRequirement(env: NodeJS.ProcessEnv = process.env): {
+  required: boolean;
+  enabled: boolean;
+  missing: string[];
+  provider: string;
+} {
+  const enabled = env.TTS_TRANSCRIPT_QA_ENABLED === "true";
+  // Required in production unless an operator recorded a deliberate waiver. The
+  // waiver is its own named variable so it appears in an env audit instead of
+  // hiding inside a general "strict" toggle.
+  const required = env.NODE_ENV === "production" && env.TTS_TRANSCRIPT_QA_WAIVED !== "true";
+  const provider = (env.TRANSCRIPT_QA_PROVIDER || "openai").trim().toLowerCase();
+
+  const missing: string[] = [];
+  if (!enabled) missing.push("TTS_TRANSCRIPT_QA_ENABLED");
+  if (provider === "openai" && !(env.TRANSCRIPT_QA_OPENAI_API_KEY || env.OPENAI_API_KEY || "").trim()) {
+    missing.push("TRANSCRIPT_QA_OPENAI_API_KEY (or OPENAI_API_KEY)");
+  }
+  return { required, enabled, missing, provider };
+}
+
+export class SemanticQaUnavailableError extends Error {
+  readonly code = "SEMANTIC_QA_UNAVAILABLE";
+  readonly missing: string[];
+  constructor(missing: string[]) {
+    super(
+      `Meaning-aware audio QA cannot run and this is production. Missing configuration: ${missing.join(", ")}. ` +
+        `Configure a transcription provider, or record a deliberate waiver via TTS_TRANSCRIPT_QA_WAIVED=true. ` +
+        `Nothing else verifies speaker attribution, names, or numbers.`
+    );
+    this.name = "SemanticQaUnavailableError";
+    this.missing = missing;
+  }
+}
+
 export async function runAudioSemanticQa(input: { audio: Buffer; mimeType: string; expected: ExpectedSpokenLine[] }): Promise<AudioSemanticQaReport> {
-  if (process.env.TTS_TRANSCRIPT_QA_ENABLED !== "true") {
+  const requirement = resolveSemanticQaRequirement();
+  if (!requirement.enabled) {
+    // FAIL CLOSED in production. Elsewhere, report not_run exactly as before so
+    // local and CI work are unaffected.
+    if (requirement.required) throw new SemanticQaUnavailableError(requirement.missing);
     return { status: "not_run", provider: null, model: null, wordErrorRate: null, speakerAttributionErrorRate: null, criticalTokenMissRate: null, interruptionErrorRate: null, transcript: null, speakerMap: {}, failures: [], warnings: ["TTS_TRANSCRIPT_QA_ENABLED is not true."], segments: [] };
   }
-  const provider = (process.env.TRANSCRIPT_QA_PROVIDER || "openai").trim().toLowerCase();
+  if (requirement.required && requirement.missing.length) {
+    throw new SemanticQaUnavailableError(requirement.missing);
+  }
+  const provider = requirement.provider;
   if (provider !== "openai") throw new Error(`Unsupported TRANSCRIPT_QA_PROVIDER '${provider}'.`);
   const transcribed = await transcribeOpenAi(input.audio, input.mimeType);
   return evaluateDiarizedTranscript(input.expected, transcribed.segments, { provider, model: transcribed.model });

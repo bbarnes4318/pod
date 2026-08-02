@@ -1,3 +1,22 @@
+# Private live-provider canary. Publishes nothing; the report is a private
+# workflow artifact.
+#
+# EVERY VARIABLE BELOW MUST EXIST OR THE RUN FAILS AS `configuration_failure`.
+# The repository currently has none of them configured, which is exactly what
+# the first scheduled run hit. The script's preflight now names the missing
+# variables and always writes artifacts/live-provider-canary/report.json, so
+# `if-no-files-found: error` below is a genuine signal (no report = the process
+# died before its own finally block) rather than the noise it used to be.
+#
+#   Secrets   ANTHROPIC_API_KEY, FISH_API_KEY, ELEVENLABS_API_KEY,
+#             CANARY_LLM_PROVIDER, CANARY_LLM_MODEL,
+#             CANARY_JUDGE_PROVIDER, CANARY_JUDGE_MODEL,
+#             CANARY_FISH_VOICE_A, CANARY_FISH_VOICE_B,
+#             CANARY_ELEVENLABS_VOICE_A, CANARY_ELEVENLABS_VOICE_B
+#             (OPENAI_API_KEY only if a role is pointed at OpenAI)
+#   Variables FISH_SCENE_MODEL (optional; defaults to the mandated
+#             s2.1-pro-free free tier — never promote it silently)
+
 name: Private Live Provider Canary
 
 on:
@@ -13,7 +32,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      NODE_ENV: production
       LLM_ROUTING_PROFILE: custom
       SCRIPT_MOVEMENT_LLM_PROVIDER: ${{ secrets.CANARY_LLM_PROVIDER }}
       SCRIPT_MOVEMENT_LLM_MODEL: ${{ secrets.CANARY_LLM_MODEL }}
@@ -22,7 +40,9 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
-      FISH_SCENE_MODEL: ${{ vars.FISH_SCENE_MODEL }}
+      # Fish model policy is nonnegotiable: the free S2.1 tier is the default and
+      # a promotion must be a deliberate repository-variable change.
+      FISH_SCENE_MODEL: ${{ vars.FISH_SCENE_MODEL || 's2.1-pro-free' }}
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
       CANARY_FISH_VOICE_A: ${{ secrets.CANARY_FISH_VOICE_A }}
       CANARY_FISH_VOICE_B: ${{ secrets.CANARY_FISH_VOICE_B }}
@@ -33,18 +53,44 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 20 is deprecated on GitHub-hosted runners.
+          node-version: 22
           cache: npm
+      # NODE_ENV is deliberately NOT set job-wide: `npm ci` under
+      # NODE_ENV=production skips devDependencies, and the Prisma CLI is one.
+      # The canary step sets it for itself, and QA strictness is pinned
+      # explicitly by TTS_PERFORMANCE_QA_STRICT above.
       - run: npm ci
       - run: npx prisma generate
+      - name: Preflight contract test (network-free)
+        run: npm run test:canary-preflight
       - uses: actions/cache/restore@v4
         with:
           path: artifacts/live-provider-canary-baseline
           key: live-canary-${{ runner.os }}-${{ github.run_id }}
           restore-keys: live-canary-${{ runner.os }}-
       - name: Run real private canary
+        env:
+          NODE_ENV: production
         run: npm run canary:live-providers
+      - name: Summarize alert class
+        if: always()
+        run: |
+          if [ -f artifacts/live-provider-canary/report.json ]; then
+            node -e "const r=require('./artifacts/live-provider-canary/report.json');
+              const lines=['### Live provider canary','',
+                '- status: `'+r.status+'`','- alertClass: `'+r.alertClass+'`',
+                '- reason: '+(r.alertReason||'none'),
+                '- missing variables: '+((r.preflight&&r.preflight.missing.length)?r.preflight.missing.join(', '):'none'),
+                '- writer route: '+(r.routing&&r.routing.writer||'n/a')+' | judge route: '+(r.routing&&r.routing.judge||'n/a'),
+                '- fish scene model: '+(r.fish&&(r.fish.renderedModel||r.fish.resolvedSceneModel)||'n/a')];
+              require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n')+'\n');
+              console.log(lines.join('\n'));"
+          else
+            echo "No report.json was produced — the canary process died before its finally block." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Stage next baseline
+        if: success()
         run: |
           mkdir -p artifacts/live-provider-canary-baseline
           cp artifacts/live-provider-canary/report.json artifacts/live-provider-canary-baseline/report.json
@@ -53,6 +99,8 @@ jobs:
         with:
           path: artifacts/live-provider-canary-baseline
           key: live-canary-${{ runner.os }}-${{ github.run_id }}
+      # Always upload: the report is the diagnosis, and it matters most when the
+      # run failed. A missing file here now means the process was killed.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

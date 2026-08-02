@@ -1,5 +1,14 @@
 import { db } from "../db";
 import { formatChapterTime } from "../chapterTime";
+import {
+  describeChapterViolations,
+  rescaleChapterTimeline,
+  timelineRescaleFactor,
+  validateChapterTimeline,
+  type ChapterTiming,
+} from "../chapterTimeline";
+import { MAX_SONIC_LOGO_MS, resolveOpeningPlan } from "../audio/openingTiming";
+import { planConversationTimeline, type PlannedLine, type SegmentBreak } from "../audio/assembly";
 import { getStorageProvider } from "../providers/storage/factory";
 import { getRoleLLMProvider, roleHasRealProvider, roleProviderLabel } from "../providers/llm/routing";
 import { withLlmStage } from "../providers/llm/costLedger";
@@ -45,19 +54,45 @@ async function getFileDuration(ffprobePath: string, filePath: string): Promise<n
   return 0;
 }
 
+// Cast-NEUTRAL show-notes schema.
+//
+// These keys used to be `maxVoltageAngle` / `drLinebreakAngle` — the names of
+// two retired hosts, baked into the JSON schema the live LLM prompt tells the
+// model to emit. The cast is per-episode (Episode.hostIds + resolveEpisodeHosts)
+// and has already been replaced twice, so host names must never appear in a
+// structural key. `readKeyDebateAngles` keeps reading blobs persisted under the
+// old names.
+interface KeyDebateEntry {
+  topicTitle: string;
+  hostAAngle: string;
+  hostBAngle: string;
+  whatMakesItDebatable: string;
+}
+
 interface DeterministicShowNotes {
   episodeSummary: string;
-  keyDebates: {
-    topicTitle: string;
-    maxVoltageAngle: string;
-    drLinebreakAngle: string;
-    whatMakesItDebatable: string;
-  }[];
+  keyDebates: KeyDebateEntry[];
   bestLines: {
     speakerName: string;
     quote: string;
   }[];
   sourceGroundedNotes: string[];
+}
+
+/** Backward-compatible read of a keyDebates entry: new cast-neutral keys first,
+ *  then the retired-host keys still present in already-persisted show notes. */
+function readKeyDebateAngles(kd: Record<string, unknown>): { hostAAngle: string; hostBAngle: string } {
+  const pick = (...keys: string[]): string => {
+    for (const k of keys) {
+      const v = kd?.[k];
+      if (typeof v === "string" && v.trim()) return v;
+    }
+    return "";
+  };
+  return {
+    hostAAngle: pick("hostAAngle", "maxVoltageAngle"),
+    hostBAngle: pick("hostBAngle", "drLinebreakAngle"),
+  };
 }
 
 function buildDeterministicShowNotes(episode: any, script: any, hostA: any, hostB: any): DeterministicShowNotes {
@@ -67,8 +102,8 @@ function buildDeterministicShowNotes(episode: any, script: any, hostA: any, host
     const rb = et.topic.researchBrief;
     return {
       topicTitle: et.topic.title,
-      maxVoltageAngle: rb?.argumentForHostA?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
-      drLinebreakAngle: rb?.argumentForHostB?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
+      hostAAngle: rb?.argumentForHostA?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
+      hostBAngle: rb?.argumentForHostB?.trim() || et.topic.summary?.trim() || "No approved source-grounded angle available.",
       whatMakesItDebatable: "No approved source-grounded angle available."
     };
   });
@@ -397,12 +432,11 @@ export async function generateEpisodeContentAssets(input: {
   }
 
   // 8. Timestamps walk
-  // Default to approximate: true. We only clear it if we are fully deterministic.
+  // Default to approximate: true. Only REAL MEASURED per-line timings clear it.
   let timestampsApproximate = true;
+  let timingBasis: LineTimingBasis = "text_estimate";
 
-  const lineGapMs = Number(process.env.AUDIO_LINE_GAP_MS) || 450;
   const segmentGapMs = Number(process.env.AUDIO_SEGMENT_GAP_MS) || 850;
-  const topicGapMs = Number(process.env.AUDIO_TOPIC_GAP_MS) || 1200;
 
   // Query latest successful stitch job log to verify if intro/outro was used
   let includeIntro = false;
@@ -466,84 +500,132 @@ export async function generateEpisodeContentAssets(input: {
     }
   }
 
-  // Default to approximate if intro/outro is used but duration was not safely measured
+  // NO 30-SECOND GUESS.
+  //
+  // This used to be `introDurationMs = 30000` when the asset could not be
+  // measured — a pure invention that pushed every downstream chapter 30s late
+  // and was a direct contributor to the 638s-chapters-on-a-515s-MP3 defect. The
+  // real bound is the capped opening: after openingTiming.ts no render may put
+  // more than MAX_SONIC_LOGO_MS of theme in front of the first spoken word.
   if (includeIntro && introDurationMs === 0) {
-    introDurationMs = 30000; // 30s fallback
+    introDurationMs = MAX_SONIC_LOGO_MS;
     timestampsApproximate = true;
+    console.warn(`[contentAssets] Intro duration unmeasurable; assuming the ${MAX_SONIC_LOGO_MS}ms sonic-logo cap.`);
   }
   if (includeOutro && outroDurationMs === 0) {
-    outroDurationMs = 30000; // 30s fallback
+    // The outro sits AFTER the last chapter, so an unmeasured outro affects only
+    // the fallback total, never a chapter endpoint. Do not invent a length.
     timestampsApproximate = true;
+    console.warn("[contentAssets] Outro duration unmeasurable; excluded from the estimated total.");
   }
 
-  let currentTimeMs = 0;
-  if (includeIntro) {
-    currentTimeMs += introDurationMs;
-    currentTimeMs += segmentGapMs; // gap after intro
-  }
+  // Where speech actually starts, under the same cap the stitcher enforces.
+  const dialogueStartMs = includeIntro
+    ? resolveOpeningPlan({ introDurationMs }).dialogueStartMs
+    : 0;
 
-  const lineTimings: {
-    lineIndex: number;
-    startTimeMs: number;
-    endTimeMs: number;
-    durationMs: number;
-  }[] = [];
+  // ---- PREFER REAL MEASURED TIMINGS ---------------------------------------
+  // Order of preference:
+  //   1. Scene timing maps (provider timestamps / forced alignment) placed at
+  //      the render's REAL scene starts -> genuinely measured, not approximate.
+  //   2. Real scene spans (measured scene durations + real placement), lines
+  //      distributed within a scene by word share -> approximate but bounded by
+  //      real audio.
+  //   3. The actual renderer's timeline math (planConversationTimeline) fed
+  //      with real AudioSegment durations -> models jitter and interruption
+  //      OVERLAPS, which the old flat 450ms walk ignored entirely.
+  const measuredLineTimings = await measuredSceneLineTimings(episode.id, scriptId);
+  const sceneSpanTimings = measuredLineTimings ? null : await sceneSpanLineTimings(episode.id, scriptId);
 
-  for (let i = 0; i < allLines.length; i++) {
-    const curr = allLines[i];
-    const prev = i > 0 ? allLines[i - 1] : null;
-
-    if (prev) {
-      if (curr.segmentIndex !== prev.segmentIndex) {
-        const isTopic = curr.segmentType === "topic";
-        const gap = isTopic ? topicGapMs : segmentGapMs;
-        currentTimeMs += gap;
-      } else {
-        currentTimeMs += lineGapMs;
-      }
-    }
-
-    const list = segmentMap.get(curr.line.lineIndex) || [];
-    const as = list[0];
-    let dur = as?.durationMs || 0;
-    if (dur <= 0) {
-      // Fallback estimate: 150 words per minute => 2.5 words per second => 400ms per word
-      const wordCount = curr.line.text.split(/\s+/).filter(Boolean).length;
-      dur = Math.max(1000, wordCount * 400);
-    }
-
-    const startTimeMs = currentTimeMs;
-    const endTimeMs = startTimeMs + dur;
-    currentTimeMs = endTimeMs;
-
-    lineTimings.push({
-      lineIndex: curr.line.lineIndex,
-      startTimeMs,
-      endTimeMs,
-      durationMs: dur,
+  let lineTimings: LineTiming[] = [];
+  if (measuredLineTimings && allLines.every((it) => measuredLineTimings.has(it.line.lineIndex))) {
+    timingBasis = "measured_scene_timing_map";
+    lineTimings = allLines.map((it) => {
+      const m = measuredLineTimings.get(it.line.lineIndex)!;
+      return { lineIndex: it.line.lineIndex, startTimeMs: m.startMs, endTimeMs: m.endMs, durationMs: Math.max(0, m.endMs - m.startMs) };
     });
+  } else if (sceneSpanTimings && allLines.every((it) => sceneSpanTimings.has(it.line.lineIndex))) {
+    timingBasis = "rendered_scene_spans";
+    lineTimings = allLines.map((it) => {
+      const m = sceneSpanTimings.get(it.line.lineIndex)!;
+      return { lineIndex: it.line.lineIndex, startTimeMs: m.startMs, endTimeMs: m.endMs, durationMs: Math.max(0, m.endMs - m.startMs) };
+    });
+  } else {
+    timingBasis = allLines.every((it) => (segmentMap.get(it.line.lineIndex) || [])[0]?.durationMs > 0)
+      ? "rendered_timeline_estimate"
+      : "text_estimate";
+    const plannedLines: PlannedLine[] = allLines.map((curr, i) => {
+      const prev = i > 0 ? allLines[i - 1] : null;
+      const as = (segmentMap.get(curr.line.lineIndex) || [])[0];
+      let dur = as?.durationMs || 0;
+      if (dur <= 0) {
+        // Last-resort estimate: 150 wpm => 400ms per word.
+        const wordCount = curr.line.text.split(/\s+/).filter(Boolean).length;
+        dur = Math.max(1000, wordCount * 400);
+      }
+      const segmentBreak: SegmentBreak = !prev || curr.segmentIndex === prev.segmentIndex
+        ? "none"
+        : curr.segmentType === "topic" ? "topic" : "segment";
+      return {
+        filePath: "",
+        durationMs: dur,
+        lineIndex: curr.line.lineIndex,
+        hostSlot: 0,
+        pauseBefore: curr.line.pauseBefore,
+        isInterruption: curr.line.isInterruption === true,
+        segmentBreak,
+      };
+    });
+    // The renderer's own math: jittered gaps and NEGATIVE gaps on interruptions
+    // (up to 40% of the previous line). The old walk added a flat 450ms between
+    // every pair and ignored interruptions, so it drifted long on every episode.
+    const clips = planConversationTimeline(plannedLines, { startAtMs: dialogueStartMs });
+    lineTimings = plannedLines.map((pl, i) => ({
+      lineIndex: pl.lineIndex,
+      startTimeMs: clips[i].startMs,
+      endTimeMs: clips[i].startMs + clips[i].durationMs,
+      durationMs: clips[i].durationMs,
+    }));
   }
 
-  if (includeOutro) {
+  let currentTimeMs = lineTimings.length ? Math.max(...lineTimings.map((t) => t.endTimeMs)) : dialogueStartMs;
+  if (includeOutro && outroDurationMs > 0) {
     currentTimeMs += segmentGapMs; // gap before outro
     currentTimeMs += outroDurationMs;
   }
 
-  // Determine if we can set timestampsApproximate to false
-  const allSegmentsHaveDuration = allLines.every(item => {
-    const list = segmentMap.get(item.line.lineIndex) || [];
-    const as = list[0];
-    return as && as.durationMs && as.durationMs > 0;
-  });
-  const introOk = !includeIntro || (includeIntro && introDurationMs > 0);
-  const outroOk = !includeOutro || (includeOutro && outroDurationMs > 0);
-
-  if (allSegmentsHaveDuration && introOk && outroOk) {
-    timestampsApproximate = false;
-  }
+  // ONLY measured per-line timings are exact. A timeline assembled from real
+  // clip durations but MODELLED gaps is still an estimate: it does not know the
+  // per-break stinger room the stitcher may have opened, nor the exact jitter
+  // seed state of the shipped render. Keeping the flag honest here is the point
+  // — it used to be cleared to false whenever every AudioSegment merely had a
+  // duration, which is how impossible timestamps shipped labelled as exact.
+  timestampsApproximate = timingBasis !== "measured_scene_timing_map" || timestampsApproximate;
 
   const calculatedDurationSeconds = Math.round(currentTimeMs / 1000);
   const finalDurationSeconds = episode.durationSeconds || calculatedDurationSeconds;
+
+  // ---- RECONCILE ESTIMATE AGAINST THE REAL AUDIO --------------------------
+  // These two numbers were computed independently and never compared. If the
+  // walk overruns the measured master, compress it proportionally onto the real
+  // duration: the SHAPE of the episode is the part we know, the absolute scale
+  // is the part the master already settled.
+  const finalDurationMs = finalDurationSeconds * 1000;
+  const rescaleFactor = timelineRescaleFactor(currentTimeMs, finalDurationMs);
+  if (rescaleFactor !== 1) {
+    console.warn(
+      `[contentAssets] Estimated timeline (${Math.round(currentTimeMs)}ms, basis=${timingBasis}) overruns the real ` +
+        `audio (${finalDurationMs}ms). Rescaling chapter timings by ${rescaleFactor.toFixed(4)}.`
+    );
+    lineTimings = lineTimings.map((t) => ({
+      lineIndex: t.lineIndex,
+      startTimeMs: Math.round(t.startTimeMs * rescaleFactor),
+      endTimeMs: Math.round(t.endTimeMs * rescaleFactor),
+      durationMs: Math.round(t.durationMs * rescaleFactor),
+    }));
+    currentTimeMs = Math.round(currentTimeMs * rescaleFactor);
+    timestampsApproximate = true;
+  }
 
   // Chapter/duration stamps live in lib/chapterTime so they can be tested
   // against real values instead of a copy — see testPublishedArtifacts.
@@ -633,7 +715,7 @@ export async function generateEpisodeContentAssets(input: {
     segments: jsonSegments,
   };
 
-  const chapters = jsonSegments.map((js) => {
+  let chapters: ChapterTiming[] = jsonSegments.map((js) => {
     let title = js.title;
     if (js.type === "cold_open") title = "Cold Open";
     else if (js.type === "closing") title = "Closing";
@@ -644,6 +726,44 @@ export async function generateEpisodeContentAssets(input: {
       type: js.type,
     };
   });
+
+  // ---- HARD CHAPTER GATE ---------------------------------------------------
+  // Nothing used to compare chapters[last].endTimeSeconds to the real audio
+  // duration, which is how a 638s chapter list shipped against a 515s MP3.
+  // Chapters must be monotonic and must fit inside the audio they describe.
+  // A second-pass rescale catches residual overhang from per-segment rounding;
+  // anything still invalid is a REJECT, not a warning — impossible timestamps
+  // must never reach the feed.
+  let chapterValidation = validateChapterTimeline(chapters, finalDurationSeconds);
+  if (!chapterValidation.ok && chapterValidation.violations.some((v) => v.code === "exceeds_audio_duration")) {
+    const factor = timelineRescaleFactor(chapterValidation.timelineEndSeconds, finalDurationSeconds);
+    const scale = (v: number) => Math.round(Number(v) * factor * 10) / 10;
+    chapters = rescaleChapterTimeline(chapters, finalDurationSeconds);
+    // Keep transcript + topic views consistent with the published chapters —
+    // one timeline, scaled once, everywhere it is quoted.
+    for (const js of jsonSegments) {
+      js.startTimeSeconds = scale(js.startTimeSeconds);
+      js.endTimeSeconds = scale(js.endTimeSeconds);
+      for (const jl of js.lines) {
+        jl.startTimeSeconds = scale(jl.startTimeSeconds);
+        jl.endTimeSeconds = scale(jl.endTimeSeconds);
+        jl.durationMs = Math.round(jl.durationMs * factor);
+      }
+    }
+    transcriptJson.segments = jsonSegments;
+    timestampsApproximate = true;
+    chapterValidation = validateChapterTimeline(chapters, finalDurationSeconds);
+    console.warn(
+      `[contentAssets] Chapter timeline overran the final audio and was rescaled onto ${finalDurationSeconds}s (factor ${factor.toFixed(4)}).`
+    );
+  }
+  if (!chapterValidation.ok) {
+    throw new Error(
+      `Refusing to publish an impossible chapter timeline for episode ${episode.id} ` +
+        `(basis=${timingBasis}, final audio ${finalDurationSeconds}s, timeline ends ${chapterValidation.timelineEndSeconds}s): ` +
+        describeChapterViolations(chapterValidation)
+    );
+  }
 
   // Generate show notes from the FINAL persisted script (script.plainText below
   // is the approved, self-verified, antithesis-passed text — not the draft).
@@ -704,8 +824,8 @@ Rules:
   "keyDebates": [
     {
       "topicTitle": "Topic Title",
-      "maxVoltageAngle": "${hostA.name}'s argument/angle.",
-      "drLinebreakAngle": "${hostB.name}'s argument/angle.",
+      "hostAAngle": "${hostA.name}'s argument/angle.",
+      "hostBAngle": "${hostB.name}'s argument/angle.",
       "whatMakesItDebatable": "What makes this controversial or debatable."
     }
   ],
@@ -789,9 +909,21 @@ Rules:
         }
       }
 
+      // Normalize the model's reply onto the cast-neutral keys, accepting the
+      // retired-host keys it may still emit from an older prompt/cache.
+      const normalizedDebates: KeyDebateEntry[] = (Array.isArray(res.keyDebates) ? res.keyDebates : []).map((kd: Record<string, unknown>) => {
+        const angles = readKeyDebateAngles(kd);
+        return {
+          topicTitle: typeof kd?.topicTitle === "string" ? kd.topicTitle : "",
+          hostAAngle: angles.hostAAngle,
+          hostBAngle: angles.hostBAngle,
+          whatMakesItDebatable: typeof kd?.whatMakesItDebatable === "string" ? kd.whatMakesItDebatable : "",
+        };
+      });
+
       showNotesJson = {
         episodeSummary: res.episodeSummary || "",
-        keyDebates: res.keyDebates || [],
+        keyDebates: normalizedDebates,
         bestLines: cleanBestLines,
         sourceGroundedNotes: res.sourceGroundedNotes || [],
       };
@@ -820,9 +952,12 @@ Rules:
 
   showNotesMarkdown += `## Key Debates\n\n`;
   for (const kd of showNotesJson.keyDebates) {
+    // Tolerant read: a model reply (or a blob persisted before the rename) may
+    // still carry the retired-host keys.
+    const angles = readKeyDebateAngles(kd as unknown as Record<string, unknown>);
     showNotesMarkdown += `### ${kd.topicTitle}\n\n`;
-    showNotesMarkdown += `* ${hostA.name} angle: ${kd.maxVoltageAngle}\n`;
-    showNotesMarkdown += `* ${hostB.name} angle: ${kd.drLinebreakAngle}\n`;
+    showNotesMarkdown += `* ${hostA.name} angle: ${angles.hostAAngle}\n`;
+    showNotesMarkdown += `* ${hostB.name} angle: ${angles.hostBAngle}\n`;
     showNotesMarkdown += `* What makes it debatable: ${kd.whatMakesItDebatable}\n\n`;
   }
 

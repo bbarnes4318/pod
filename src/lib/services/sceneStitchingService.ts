@@ -27,6 +27,7 @@ import {
   runFfmpeg,
 } from "@/lib/audio/assembly";
 import { DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS, DEFAULT_PAUSE_MS } from "@/lib/audio/pauseTiming";
+import { resolveOpeningPlan } from "@/lib/audio/openingTiming";
 import { analyzeEpisodeAudio, type AudioQaReport, type ScriptedPause } from "@/lib/audio/audioQa";
 import { analyzeSceneAudioRows, type SceneQaReport } from "@/lib/audio/sceneAudioQa";
 import { runAudioSemanticQa, type AudioSemanticQaReport } from "@/lib/audio/audioSemanticQa";
@@ -331,17 +332,40 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     let cursorMs = 0;
     let introClip: TimelineClip | null = null;
     if (introStd) {
+      // Capped pre-roll (openingTiming.ts). The unbounded
+      // `introStd.durationMs - musicCrossfadeMs` this replaces is what put 30.9s
+      // of theme in front of the first host word on a 31.8s asset.
+      const opening = resolveOpeningPlan({
+        introDurationMs: introStd.durationMs,
+        musicCrossfadeMs,
+      });
+      let introPath = introStd.filePath;
+      if (opening.truncated) {
+        try {
+          const logoPath = path.join(tempDir, "intro-sonic-logo.wav");
+          await runFfmpeg(ffmpegPath, [
+            "-y", "-i", introStd.filePath,
+            "-af", `atrim=0:${(opening.introPlayDurationMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`,
+            "-ar", String(targetSampleRate), "-c:a", "pcm_s16le", logoPath,
+          ]);
+          introPath = logoPath;
+        } catch (trimErr) {
+          soundWarnings.push(`Intro sonic-logo trim failed; relying on the fade-out instead: ${trimErr instanceof Error ? trimErr.message : String(trimErr)}`);
+        }
+        soundWarnings.push(`Intro opening: ${opening.reason}`);
+        console.log(`[SceneStitcher] ${opening.reason}`);
+      }
       introClip = {
-        filePath: introStd.filePath,
+        filePath: introPath,
         startMs: 0,
-        durationMs: introStd.durationMs,
+        durationMs: opening.introPlayDurationMs,
         kind: "music",
         pan: 0,
         fadeInMs: 20,
-        fadeOutMs: musicCrossfadeMs,
+        fadeOutMs: opening.fadeOutMs,
         gainDb: -2,
       };
-      cursorMs = Math.max(0, introStd.durationMs - musicCrossfadeMs);
+      cursorMs = opening.dialogueStartMs;
     }
 
     const stingerClips: TimelineClip[] = [];

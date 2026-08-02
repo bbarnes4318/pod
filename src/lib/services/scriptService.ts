@@ -23,7 +23,9 @@ import {
 import { dedupeScriptSegments, normalizeLineIndexes } from "./scriptRepetition";
 import { scoreScriptQuality } from "./episodeQualityService";
 import { assessScriptQuality } from "./scriptQualityJudge";
-import { evaluateScriptEditorialGate } from "./scriptEditorialGate";
+import { evaluateScriptEditorialGate, type ScriptPipelineProvenance } from "./scriptEditorialGate";
+import { evaluateProductionInvariants } from "./productionInvariants";
+import { retiredHostNameFragments } from "../hosts/roster";
 import { generateOutlineDrivenScript, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
@@ -508,6 +510,21 @@ Delivery field meanings:
   const maxTokens = Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000;
   let llmResult: any;
 
+  // Observed record of how this script was actually produced. Every value here
+  // is written from what ran, never from configuration.
+  const pipelineProvenance: ScriptPipelineProvenance = {
+    path: "outline_driven",
+    fallbackReason: null,
+    stages: [],
+    privateAgendaCount: 0,
+    coldOpenTournamentRan: false,
+    characterWriterPassesRan: 0,
+    judgeRan: false,
+  };
+  const recordStage = (name: string, status: "ok" | "failed" | "skipped", detail?: string) => {
+    pipelineProvenance.stages!.push({ name, status, detail });
+  };
+
   try {
     llmResult = await generateOutlineDrivenScript(llm, {
       systemPrompt: systemPromptWithContinuity,
@@ -533,9 +550,57 @@ Delivery field meanings:
       );
     }
   } catch (outlineErr: any) {
-    console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); falling back to single-shot.`);
-    result.reasons.push(`Outline-driven generation failed; used single-shot fallback: ${outlineErr.message}`);
+    // A creative-stage failure is NOT a licence to publish an ordinary script.
+    //
+    // Retry the creative path once before degrading: most failures here are
+    // transient structural rejections (a movement that came back malformed, a
+    // cold-open variant outside the word band), and a second attempt fixes them
+    // without abandoning outlining, private agendas, and the tournament.
+    recordStage("creative_pipeline", "failed", outlineErr.message);
+    console.warn(`[ScriptService] Outline-driven generation failed (${outlineErr.message}); retrying once.`);
+    result.reasons.push(`Outline-driven generation failed: ${outlineErr.message}. Retrying the creative path.`);
+
+    let retried = false;
     try {
+      llmResult = await generateOutlineDrivenScript(llm, {
+        systemPrompt: systemPromptWithContinuity,
+        episodeTitle: ep.title,
+        topicsPrompts,
+        targetDuration,
+        version: nextVersion,
+        temperature,
+        maxTokens,
+        speakerNames: speakers.hostNames,
+        learningPolicy: ep.podcast?.editorialConfig?.learningPolicy ?? undefined,
+        outlineLlm,
+        log: (msg: string) => result.reasons.push(msg),
+      });
+      retried = true;
+      recordStage("creative_pipeline_retry", "ok");
+      result.reasons.push("Creative pipeline retry succeeded; script is outline-driven.");
+    } catch (retryErr: any) {
+      recordStage("creative_pipeline_retry", "failed", retryErr.message);
+      result.reasons.push(`Creative pipeline retry also failed: ${retryErr.message}.`);
+    }
+
+    if (!retried) {
+      // Emergency availability only. The resulting script is marked as a
+      // fallback, is held by the editorial gate, and must pass every final
+      // creative invariant before a human can release it. It must never claim
+      // that agendas, separated writers, or a tournament ran.
+      pipelineProvenance.path = "single_shot_fallback";
+      pipelineProvenance.fallbackReason = outlineErr.message;
+      if (process.env.SCRIPT_SINGLE_SHOT_FALLBACK_ENABLED === "false") {
+        throw new Error(
+          `Creative pipeline failed and the single-shot fallback is disabled: ${outlineErr.message}`
+        );
+      }
+      console.warn(`[ScriptService] Falling back to single-shot; script will be held for review.`);
+      result.reasons.push(
+        `Used single-shot fallback: ${outlineErr.message}. This script is held for human inspection.`
+      );
+    }
+    if (!retried) try {
       llmResult = await withLlmStage("script:single-shot-fallback", () =>
         llm.generateStructuredOutput<any>({
           prompt,
@@ -565,6 +630,29 @@ Delivery field meanings:
 
   if (!Array.isArray(llmResult.segments)) {
     throw new Error("Returned JSON is missing a 'segments' array.");
+  }
+
+  // Record what the generation path actually produced. On the single-shot
+  // fallback these stay at their zero values, so the persisted artifact cannot
+  // imply agendas or a tournament ran when they did not.
+  pipelineProvenance.privateAgendaCount = Array.isArray(llmResult.privateAgendas)
+    ? llmResult.privateAgendas.length
+    : 0;
+  pipelineProvenance.coldOpenTournamentRan = Boolean(llmResult.coldOpenTournament);
+  pipelineProvenance.characterWriterPassesRan =
+    pipelineProvenance.path === "outline_driven" && process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false"
+      ? pipelineProvenance.privateAgendaCount
+      : 0;
+  if (pipelineProvenance.path === "outline_driven") {
+    recordStage("script:outline", "ok");
+    recordStage("script:private-agendas", pipelineProvenance.privateAgendaCount > 0 ? "ok" : "failed",
+      pipelineProvenance.privateAgendaCount > 0 ? undefined : "no private agendas returned");
+    recordStage("script:cold-open-tournament", pipelineProvenance.coldOpenTournamentRan ? "ok" : "failed",
+      pipelineProvenance.coldOpenTournamentRan ? undefined : "tournament produced no selection");
+  } else {
+    recordStage("script:outline", "skipped", "single-shot fallback");
+    recordStage("script:private-agendas", "skipped", "single-shot fallback");
+    recordStage("script:cold-open-tournament", "skipped", "single-shot fallback");
   }
 
   // FIX 1 — self-verify BEFORE persist, on WHICHEVER path produced the script
@@ -962,11 +1050,16 @@ Delivery field meanings:
       requiresHumanReview: true,
     },
     creativePipeline: {
-      version: 1,
+      version: 2,
       privateAgendas: Array.isArray(llmResult.privateAgendas) ? llmResult.privateAgendas : [],
-      characterWriterPasses: process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false",
+      // OBSERVED, not inferred. The old version read this from an env var, so a
+      // single-shot fallback — which runs no character passes at all — still
+      // persisted `characterWriterPasses: true`. The artifact lied about how it
+      // was made, which is exactly what made episode e7867729 hard to diagnose.
+      characterWriterPasses: pipelineProvenance.characterWriterPassesRan ?? 0,
       coldOpenTournament: llmResult.coldOpenTournament ?? null,
     },
+    pipelineProvenance,
   };
 
   // Carried on the script so the review console can show the frame count for
@@ -994,10 +1087,33 @@ Delivery field meanings:
     hostNames: speakers.hostNames,
     evidenceSummary: result.evidenceAudit?.samples.slice(0, 40).join("\n"),
   });
+  pipelineProvenance.judgeRan = Boolean(qualityReview.judge);
+  recordStage("quality:judge", qualityReview.judge ? "ok" : "failed", qualityReview.judgeError);
+
   qualityReview.deterministic = scoreScriptQuality(cleanContent);
   cleanContent.quality = qualityReview.deterministic;
   cleanContent.qualityReview = qualityReview;
-  cleanContent.editorialGate = evaluateScriptEditorialGate(qualityReview);
+
+  // Deterministic listener-facing invariants, measured on the FINAL segments —
+  // after every rewrite, repair and character pass. A cold open that was in
+  // band when the tournament selected it but got expanded by a later rewrite is
+  // caught here, which is the specific failure mode that shipped.
+  const invariants = evaluateProductionInvariants(finalSegments, {
+    activeHostNames: speakers.hostNames,
+    retiredHostNames: retiredHostNameFragments(),
+  });
+  cleanContent.productionInvariants = invariants;
+  result.reasons.push(
+    `Production invariants: coldOpen=${invariants.measurements.coldOpenWords}w, ` +
+      `alternation=${(invariants.measurements.strictAlternationRatio * 100).toFixed(1)}%, ` +
+      `positionSwaps=${invariants.measurements.positionSwapCount}, ` +
+      `lines=${JSON.stringify(invariants.measurements.perSpeakerLines)} → ${invariants.worstSeverity}.`
+  );
+
+  cleanContent.editorialGate = evaluateScriptEditorialGate(qualityReview, process.env, {
+    invariants,
+    provenance: pipelineProvenance,
+  });
   cleanContent.sourceTalkability = {
     average: Math.round(gate.avgTalkability),
     topics: gate.talkabilityReports.map((t) => ({ title: t.title, total: t.report.total })),
@@ -1082,7 +1198,9 @@ Delivery field meanings:
         version: nextVersion,
         content: cleanContent as any,
         plainText,
-        status: cleanContent.editorialGate.decision === "hold" ? "needs_revision" : "draft",
+        // `review` now needs a human too, so it is no longer stored as an
+        // ordinary draft indistinguishable from a clean pass.
+        status: cleanContent.editorialGate.decision === "pass" ? "draft" : "needs_revision",
       },
     });
 
