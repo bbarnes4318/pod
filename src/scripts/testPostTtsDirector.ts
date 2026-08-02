@@ -127,8 +127,17 @@ function main() {
     const debate = directPostTtsSound(baseInput({ formatId: "two_host_debate" }));
     const solo = directPostTtsSound(baseInput({ formatId: "solo_commentary" }));
     const rapid = directPostTtsSound(baseInput({ formatId: "rapid_fire" }));
-    // solo has minimal reactions (ceiling 1) + no bed via 'none'? solo bed depends on identity; compare intro styles + reaction counts
-    assert(debate.bookendPlan.intro?.treatment !== solo.bookendPlan.intro?.treatment || debate.cuePlacements.length !== solo.cuePlacements.length, "debate != solo");
+    // Every format now OPENS with a restrained treatment (the whole-theme-first
+    // open shipped a 30.9s pre-roll), so the intro style alone no longer
+    // separates debate from solo. Compare the parts that genuinely carry format
+    // character: the closing treatment, the protected-opening padding that sets
+    // speech entry, and the cue budget.
+    const shape = (p: typeof debate) => [
+      p.bookendPlan.intro?.treatment, p.bookendPlan.outro?.treatment,
+      p.bookendPlan.intro?.speechEntryMs, p.cuePlacements.length,
+    ].join("|");
+    assert(shape(debate) !== shape(solo), `debate != solo (${shape(debate)} vs ${shape(solo)})`);
+    assert(debate.bookendPlan.outro?.treatment !== solo.bookendPlan.outro?.treatment, "debate rises under the final line; solo closes clean");
     assert(rapid.bedPlan === null && debate.bedPlan !== null, "rapid no bed, debate has bed");
   });
 

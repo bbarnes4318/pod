@@ -639,9 +639,10 @@ Delivery field meanings:
     ? llmResult.privateAgendas.length
     : 0;
   pipelineProvenance.coldOpenTournamentRan = Boolean(llmResult.coldOpenTournament);
+  const agendaCount = pipelineProvenance.privateAgendaCount ?? 0;
   pipelineProvenance.characterWriterPassesRan =
     pipelineProvenance.path === "outline_driven" && process.env.SCRIPT_CHARACTER_WRITER_PASSES !== "false"
-      ? pipelineProvenance.privateAgendaCount
+      ? agendaCount
       : 0;
   if (pipelineProvenance.path === "outline_driven") {
     recordStage("script:outline", "ok");

@@ -26,7 +26,8 @@ const profile = (over: Partial<FrozenSoundProfile> = {}): FrozenSoundProfile => 
 });
 // The real stitcher offsets the dialogue by the intro treatment's speech-entry
 // BEFORE building the timeline, so the intro never overlaps the opening words.
-// Mirror that here (full_before on a 4000ms asset -> ~4250ms offset).
+// Mirror that here. The offset is CAPPED (openingTiming.ts): a 4000ms asset
+// opens as a <=1.5s sonic logo (~1750ms entry), never the whole theme up front.
 const DIALOGUE_OFFSET = resolveIntroDialogueStartMs(profile(), "two_host_debate", true, 4000);
 function timeline(off: number = DIALOGUE_OFFSET) {
   const L = (i: number, start: number, dur: number, boundary: "inline" | "segment" | "topic"): ActualTimelineLineInput => ({

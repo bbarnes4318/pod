@@ -79,6 +79,110 @@ interface DeterministicShowNotes {
   sourceGroundedNotes: string[];
 }
 
+interface LineTiming {
+  lineIndex: number;
+  startTimeMs: number;
+  endTimeMs: number;
+  durationMs: number;
+}
+
+/** How the published timestamps were derived — recorded in metadata.json so an
+ *  operator can tell a measured timeline from a modelled one. */
+type LineTimingBasis =
+  | "measured_scene_timing_map"   // provider timestamps / alignment at real scene starts
+  | "rendered_scene_spans"        // real scene placement + duration, lines split by word share
+  | "rendered_timeline_estimate"  // real clip durations through the renderer's own gap math
+  | "text_estimate";              // word-count guesses (no per-line audio at all)
+
+/** Absolute per-line timings from scene timing maps placed at the render's REAL
+ *  scene starts. Null when the render or the maps are unavailable. Mirrors
+ *  socialClipService.sceneAbsoluteLineTimings — same two sources of truth. */
+async function measuredSceneLineTimings(
+  episodeId: string,
+  scriptId: string
+): Promise<Map<number, { startMs: number; endMs: number }> | null> {
+  try {
+    const render = await db.episodeAudioRender.findFirst({
+      where: { episodeId, status: "succeeded", renderMode: "scene" },
+      orderBy: { renderVersion: "desc" },
+      select: { diagnostics: true },
+    });
+    const timeline = (render?.diagnostics as { sceneTimeline?: Array<{ sceneIndex: number; startMs: number }> } | null)?.sceneTimeline;
+    if (!Array.isArray(timeline) || timeline.length === 0) return null;
+    const startBySceneIndex = new Map(timeline.map((t) => [t.sceneIndex, t.startMs]));
+
+    const scenes = await db.dialogueSceneAudio.findMany({
+      where: { scriptId, status: "ready", selected: true },
+      select: { sceneIndex: true, timingStatus: true, timingMap: true },
+    });
+    const out = new Map<number, { startMs: number; endMs: number }>();
+    for (const scene of scenes) {
+      const base = startBySceneIndex.get(scene.sceneIndex);
+      if (base === undefined) continue;
+      if (scene.timingStatus === "timing_unavailable" || !Array.isArray(scene.timingMap)) continue;
+      for (const u of scene.timingMap as Array<{ lineIndex: number; startMs: number; endMs: number }>) {
+        if (!Number.isFinite(u?.startMs) || !Number.isFinite(u?.endMs)) continue;
+        out.set(u.lineIndex, { startMs: base + u.startMs, endMs: base + u.endMs });
+      }
+    }
+    return out.size > 0 ? out : null;
+  } catch (err) {
+    console.warn("[contentAssets] Could not read measured scene line timings:", err);
+    return null;
+  }
+}
+
+/** Fallback for scene-voiced episodes without timing maps: real scene START and
+ *  real scene DURATION bound each scene, and its lines are distributed inside
+ *  that real window by word share. Approximate per line, but every line is
+ *  provably inside audio that exists. */
+async function sceneSpanLineTimings(
+  episodeId: string,
+  scriptId: string
+): Promise<Map<number, { startMs: number; endMs: number }> | null> {
+  try {
+    const render = await db.episodeAudioRender.findFirst({
+      where: { episodeId, status: "succeeded", renderMode: "scene" },
+      orderBy: { renderVersion: "desc" },
+      select: { diagnostics: true },
+    });
+    const timeline = (render?.diagnostics as { sceneTimeline?: Array<{ sceneIndex: number; startMs: number }> } | null)?.sceneTimeline;
+    if (!Array.isArray(timeline) || timeline.length === 0) return null;
+    const startBySceneIndex = new Map(timeline.map((t) => [t.sceneIndex, t.startMs]));
+
+    const scenes = await db.dialogueSceneAudio.findMany({
+      where: { scriptId, status: "ready", selected: true },
+      select: { sceneIndex: true, durationMs: true, lineIndexes: true },
+      orderBy: { sceneIndex: "asc" },
+    });
+    const script = await db.script.findUnique({ where: { id: scriptId }, select: { content: true } });
+    const textByLine = new Map<number, string>();
+    for (const seg of ((script?.content as { segments?: Array<{ lines?: Array<{ lineIndex: number; text: string }> }> } | null)?.segments ?? [])) {
+      for (const l of seg.lines ?? []) textByLine.set(l.lineIndex, l.text ?? "");
+    }
+
+    const out = new Map<number, { startMs: number; endMs: number }>();
+    for (const scene of scenes) {
+      const base = startBySceneIndex.get(scene.sceneIndex);
+      const dur = scene.durationMs ?? 0;
+      const idxs = Array.isArray(scene.lineIndexes) ? (scene.lineIndexes as number[]) : [];
+      if (base === undefined || dur <= 0 || idxs.length === 0) continue;
+      const weights = idxs.map((i) => Math.max(1, (textByLine.get(i) ?? "").split(/\s+/).filter(Boolean).length));
+      const total = weights.reduce((a, b) => a + b, 0);
+      let cursor = base;
+      idxs.forEach((lineIndex, k) => {
+        const share = Math.round((weights[k] / total) * dur);
+        out.set(lineIndex, { startMs: cursor, endMs: cursor + share });
+        cursor += share;
+      });
+    }
+    return out.size > 0 ? out : null;
+  } catch (err) {
+    console.warn("[contentAssets] Could not read scene span timings:", err);
+    return null;
+  }
+}
+
 /** Backward-compatible read of a keyDebates entry: new cast-neutral keys first,
  *  then the retired-host keys still present in already-persisted show notes. */
 function readKeyDebateAngles(kd: Record<string, unknown>): { hostAAngle: string; hostBAngle: string } {
@@ -1040,6 +1144,9 @@ Rules:
         metadataJsonUrl: "", // placeholder
       },
       timestampsApproximate,
+      // How the timestamps above were derived, so "approximate" is auditable
+      // rather than a bare boolean.
+      timingBasis,
     };
 
     // Predict/upload metadata.json first
@@ -1082,6 +1189,7 @@ Rules:
       topicCount: episode.topics.length,
       durationSeconds: finalDurationSeconds,
       timestampsApproximate,
+      timingBasis,
       // Report what actually produced the notes, including the routed chain, so
       // the artifact records the real provider rather than a global variable.
       generatedWithProvider: useDeterministic

@@ -33,6 +33,8 @@
     "test:variant-selection": "tsx --conditions=react-server src/scripts/testVariantSelection.ts",
     "test:system-sound-pools": "tsx --conditions=react-server src/scripts/testSystemSoundPools.ts",
     "test:dialogue-timeline": "tsx src/scripts/testDialogueTimeline.ts",
+    "test:opening-chapter-integrity": "tsx --conditions=react-server src/scripts/testOpeningAndChapterIntegrity.ts",
+    "test:semantic-repetition": "tsx --conditions=react-server src/scripts/testSemanticRepetition.ts",
     "migrate:legacy-formats": "tsx --conditions=react-server src/scripts/migrateLegacyPanelFormats.ts",
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",

@@ -23,6 +23,17 @@
 //    is generic English (RESOLUTION, ARTIFICE, MONEY, ...), not baseball.
 //  - Every finding is itemised with the lines that produced it, so an editor
 //    or an automatic rewrite pass can act on it.
+//
+// KNOWN LIMITATION (deliberate, not a bug)
+//  The paraphrase channel recognises two sentences as the same proposition
+//  only when the meaning they share is expressed through the concept-frame
+//  lexicon below. A restatement whose shared meaning sits outside those
+//  frames is invisible to it and will only be caught if it overlaps
+//  lexically. Recall is therefore bounded by lexicon coverage; precision is
+//  the property this module optimises for, because a repetition gate that
+//  cries wolf gets switched off. Widening recall means adding frames (a
+//  domain-neutral edit) or swapping in real sentence embeddings — which
+//  would cost the offline/deterministic guarantee this module is built on.
 
 import { stripAudioTags } from "../audio/speechText";
 
@@ -373,6 +384,26 @@ const CONCEPT_FRAMES: Record<string, ConceptFrame> = {
   RITUAL: {
     weight: 0.8,
     words: ["ceremony", "ceremonial", "ritual", "tribute", "celebration", "celebrate", "honor", "honored", "commemorate", "recognition", "award", "presentation", "salute"],
+  },
+  EVALUATION_HIGH: {
+    weight: 0.85,
+    words: [
+      "best", "finest", "greatest", "elite", "superb", "excellent", "outstanding", "brilliant", "remarkable",
+      "extraordinary", "impressive", "terrific", "phenomenal", "unbelievable", "incredible", "premier",
+      "special", "gem", "masterclass",
+    ],
+  },
+  EVALUATION_LOW: {
+    weight: 0.85,
+    words: ["worst", "awful", "terrible", "poor", "mediocre", "lousy", "dreadful", "ugly", "weak", "bad", "sloppy", "unwatchable", "indefensible"],
+  },
+  NOVICE: {
+    weight: 0.75,
+    words: ["rookie", "debut", "newcomer", "prospect", "youngster", "freshman", "minors", "unproven", "inexperienced", "callup", "greenhorn"],
+  },
+  MEMORY: {
+    weight: 0.5,
+    words: ["remember", "recall", "forget", "forgotten", "memory", "historic", "decade", "generation", "lifetime", "precedent"],
   },
   SCALE: {
     weight: 0.5,
@@ -792,9 +823,12 @@ export function analyzeSemanticRepetition(
     typeTokenRatio: 0,
   };
 
+  // Budgets are RATES, scaled to the length of the episode. The floors are
+  // small-sample guards: below ~700 words a pure rate would cap ordinary
+  // topic vocabulary at two or three uses, which is not repetition.
   const budgets: SemanticRepetitionBudgets = {
     lemmaPer1000,
-    lemmaAllowance: Math.max(3, Math.ceil((lemmaPer1000 * Math.max(totalWords, 1)) / 1000)),
+    lemmaAllowance: Math.max(4, Math.ceil((lemmaPer1000 * Math.max(totalWords, 1)) / 1000)),
     phrasePer1000,
     phraseAllowance: Math.max(2, Math.ceil((phrasePer1000 * Math.max(totalWords, 1)) / 1000)),
     framePer1000,
@@ -908,6 +942,10 @@ export function analyzeSemanticRepetition(
   for (const sentence of sentences) {
     const seenInSentence = new Set<string>();
     for (const claim of sentence.numerics) {
+      // A bare small number ("six", "nine") is counting talk, not a statistic.
+      // Evidence needs a unit it is measuring, or a magnitude that can only be
+      // a figure.
+      if (claim.unit === undefined && claim.value < 1000) continue;
       if (seenInSentence.has(claim.key)) continue;
       seenInSentence.add(claim.key);
       const bucket = numericUses.get(claim.key) ?? [];
@@ -920,7 +958,7 @@ export function analyzeSemanticRepetition(
     const reused = [...numericUses.entries()]
       .filter(([, uses]) => new Set(uses.map((u) => u.unit.lineIndex)).size >= 2)
       .sort((a, b) => b[1].length - a[1].length);
-    for (const [key, uses] of reused) {
+    for (const [, uses] of reused) {
       if (spent >= CATEGORY_CAPS.repeated_evidence) break;
       const distinctLines = new Set(uses.map((u) => u.unit.lineIndex)).size;
       const framedAsNew = uses.filter((u) => u.unit.hasFreshEvidenceMarker).length;
@@ -931,7 +969,7 @@ export function analyzeSemanticRepetition(
         category: "repeated_evidence",
         severity: distinctLines >= 3 || framedAsNew >= 1 ? "high" : "medium",
         message:
-          `the same statistic (${uses[0].raw}${key.includes(":") ? "" : ""}) is presented ${distinctLines} times` +
+          `the same statistic (${uses[0].raw}) is presented ${distinctLines} times` +
           (framedAsNew ? " — at least once framed as a fresh revelation" : ""),
         occurrences: distinctLines,
         penalty,
@@ -1210,8 +1248,11 @@ export function analyzeSemanticRepetition(
         const right = profiles[j];
         if (left.meta.topicKey === right.meta.topicKey) continue;
         if (left.meta.sentenceIds.length < 3 || right.meta.sentenceIds.length < 3) continue;
+        // "different topics" is measured over DISTINCTIVE (high-idf) stems
+        // only: those are the segment's actual subject matter. The low-idf
+        // stems an over-repetitive episode shares everywhere ARE the thesis
+        // vocabulary, so counting them would hide precisely this failure.
         const entityOverlap = jaccard(left.stems, right.stems);
-        // "different topics" = the subject matter does not overlap much...
         if (entityOverlap > 0.34) continue;
         const thesisCosine = cosineVectors(left.frameVector, right.frameVector);
         const crossMatches = matches.filter(
@@ -1219,8 +1260,12 @@ export function analyzeSemanticRepetition(
             (m.a.segmentIndex === left.meta.index && m.b.segmentIndex === right.meta.index) ||
             (m.a.segmentIndex === right.meta.index && m.b.segmentIndex === left.meta.index),
         );
-        // ...while the argument being made is the same.
-        if (!(thesisCosine >= 0.82 && crossMatches.length >= 1) && crossMatches.length < 2) continue;
+        // ...while the argument being made is the same: either the concept
+        // profiles are near-identical, or several individual claim pairs match
+        // across the two segments with at least moderate profile agreement.
+        const sameArgument =
+          (thesisCosine >= 0.82 && crossMatches.length >= 1) || (crossMatches.length >= 2 && thesisCosine >= 0.5);
+        if (!sameArgument) continue;
         const raw = 7;
         const penalty = Math.min(raw, CATEGORY_CAPS.duplicate_thesis - spent);
         spent += penalty;
@@ -1229,8 +1274,8 @@ export function analyzeSemanticRepetition(
           category: "duplicate_thesis",
           severity: crossMatches.length >= 2 ? "high" : "medium",
           message:
-            `segments ${left.meta.index + 1}${left.meta.title ? ` ("${left.meta.title}")` : ""} and ${right.meta.index + 1}${right.meta.title ? ` ("${right.meta.title}")` : ""} cover different subjects ` +
-            `(entity overlap ${entityOverlap.toFixed(2)}) but argue the same underlying proposition (thesis similarity ${thesisCosine.toFixed(2)}, ${crossMatches.length} matching claim pair(s))`,
+            `segments ${left.meta.index + 1}${left.meta.title ? ` ("${left.meta.title}")` : ""} and ${right.meta.index + 1}${right.meta.title ? ` ("${right.meta.title}")` : ""} are about different subjects ` +
+            `(topic-entity overlap ${entityOverlap.toFixed(2)}) yet argue the same underlying proposition: ${crossMatches.length} claim pair(s) match across them, concept-profile similarity ${thesisCosine.toFixed(2)}`,
           occurrences: crossMatches.length,
           penalty,
           measure: Number(thesisCosine.toFixed(3)),

@@ -278,10 +278,20 @@ check("content-word budget is derived from length, not a word list", () => {
   assert.ok(budgetFindings.length >= 3, `expected several over-budget lemmas, got ${budgetFindings.length}`);
   const worst = budgetFindings[0];
   assert.ok(worst.measure !== undefined && worst.measure > 6, `expected a rate above 6/1000, got ${worst.measure}`);
+  assert.equal(failedReport.budgets.lemmaPer1000, 6, "the documented rate is 6 per 1000 words");
+  assert.ok(
+    failedReport.budgets.lemmaAllowance >= Math.ceil((6 * failedReport.totals.words) / 1000),
+    "the allowance must never be tighter than the documented rate",
+  );
+  // On a long episode the small-sample floor stops binding and the allowance
+  // is exactly the rate — proving the budget is derived, not hardcoded.
+  const longLine = "Milwaukee traded a catcher for two arms nobody outside the organisation had scouted properly this winter.";
+  const longEpisode = [{ title: "Long", topicId: "long", lines: Array.from({ length: 120 }, () => ({ speakerName: "Zabala", text: longLine })) }];
+  const longReport = analyzeSemanticRepetition(longEpisode);
   assert.equal(
-    failedReport.budgets.lemmaAllowance,
-    Math.max(3, Math.ceil((6 * failedReport.totals.words) / 1000)),
-    "lemma allowance must scale with episode word count",
+    longReport.budgets.lemmaAllowance,
+    Math.ceil((6 * longReport.totals.words) / 1000),
+    `allowance should equal the rate on a ${longReport.totals.words}-word episode`,
   );
 });
 
@@ -316,6 +326,27 @@ check("clean fixture is not flagged for claims, frames or thesis duplication", (
       `false positive ${category}: ${findingsIn(cleanReport, category).map((f) => f.message).join(" | ")}`,
     );
   }
+});
+
+check("the clean episode degrades when a single restatement is injected", () => {
+  // Proves the pass above is earned rather than inert: one restated
+  // proposition — different wording, same claim — must move the score.
+  const injected = [
+    ...CLEAN_EPISODE,
+    seg("Injected restatement", [
+      ["Zabala", "The blown save decided that game before the bullpen door had even closed behind him."],
+      ["Mercer", "Once Rivas walked off the mound, the outcome of the game was already settled and the final result never moved."],
+    ]),
+  ];
+  const report = analyzeSemanticRepetition(injected);
+  assert.ok(
+    report.repetitionScore < cleanReport.repetitionScore,
+    `injecting a restatement should cost points, got ${report.repetitionScore} vs ${cleanReport.repetitionScore}`,
+  );
+  assert.ok(
+    has(report, "repeated_claim"),
+    `the injected restatement should surface as a repeated claim; got [${report.categoriesTriggered.join(", ")}]`,
+  );
 });
 
 check("the detector separates the two episodes by a wide margin", () => {

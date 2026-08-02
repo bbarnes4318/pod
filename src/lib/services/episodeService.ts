@@ -10,6 +10,15 @@ import { resolveEpisodeHosts } from "./hostCasting";
 import { buildTopicSnapshot } from "./topicSnapshot";
 import { reserveRecentlyUsedTopics, supportsAdvisoryLocks } from "./topicReservation";
 import { evaluateHardGates, type EligibilityTopic } from "./topicEligibility";
+import {
+  enforceEventDiversity,
+  loadEventContext,
+  type ClusterableTopic,
+  type DiversityDeferral,
+  type DiversitySkip,
+  type EventCluster,
+  type TopicEventContext,
+} from "./storyClustering";
 import { DEFAULT_MIN_DEBATE_SCORE, DEFAULT_MIN_TALKABILITY } from "../episodeLimits";
 import type { EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { DEFAULT_FORMAT_ID, getShowFormat, roleForSeat } from "../formats/showFormatRegistry";
@@ -202,6 +211,24 @@ export interface AutoSelectOptions {
   teamNames?: string[];
   /** Topic ids to leave out of the ranked pool (hybrid pins them separately). */
   excludeTopicIds?: string[];
+  /**
+   * AUTHORIZED HUMAN OVERRIDE. Normally at most one topic per event cluster is
+   * selected, so one game can never fill a whole rundown. Set this only when an
+   * operator has deliberately asked for several angles on the same event.
+   */
+  allowDuplicateEvents?: boolean;
+}
+
+/** What the event-diversity pass did, so an operator can see it. */
+export interface AutoSelectDiversity {
+  /** The event clusters found among the eligible pool that was examined. */
+  clusters: EventCluster[];
+  /** Topics dropped because their event was already in the rundown. */
+  skipped: DiversitySkip[];
+  /** Distinct topics pushed down the order for reading too much alike. */
+  deferred: DiversityDeferral[];
+  /** True when `allowDuplicateEvents` let same-event topics through. */
+  overrideApplied: boolean;
 }
 
 export interface AutoSelectResult {
@@ -210,6 +237,8 @@ export interface AutoSelectResult {
   skippedTopicCount: number;
   missingBriefCount: number;
   weakEvidenceCount: number;
+  /** Present whenever auto-selection ran; empty arrays on a clean rundown. */
+  eventDiversity?: AutoSelectDiversity;
 }
 
 /**
@@ -218,6 +247,17 @@ export interface AutoSelectResult {
  * (vertical / team / league / sport / min-score), enforce topic eligibility,
  * and return the top `targetCount`. Shared by the legacy auto path and the
  * new hybrid fill — one ranking, one filter chain.
+ *
+ * EVENT DIVERSITY (added after episode e7867729 shipped three angles on one
+ * All-Star game as three "different" topics): ranking by a single scalar and
+ * taking the top N can only ever ask "is this topic good?", never "is this
+ * topic a rerun of the one I already took?". So the final take is no longer a
+ * pure top-N — it walks the ranked pool and enforces AT MOST ONE topic per
+ * event cluster (see storyClustering.ts), recording on the result exactly why
+ * anything was dropped. Every pre-existing requirement — freshness/talkability
+ * floor, evidence + brief eligibility, league/sport/vertical/team/min-score —
+ * is applied FIRST and unchanged; diversity can only ever remove a candidate
+ * that already qualified, never admit one that didn't.
  */
 export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): Promise<AutoSelectResult> {
   const result: AutoSelectResult = {
@@ -304,6 +344,23 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
     }
   }
 
+  // Resolve the Game / NewsItem rows behind the pool's evidence so clustering
+  // can compare real teams, dates and article URLs — not just headlines. Best
+  // effort: a db double without those tables simply yields no context.
+  let eventContext = new Map<string, TopicEventContext>();
+  try {
+    eventContext = await loadEventContext(dbi, candidates as ClusterableTopic[]);
+  } catch {
+    /* clustering degrades to text + evidence refs */
+  }
+
+  // The pool of topics that passed EVERY pre-existing gate, in rank order.
+  // Diversity is applied to this list — it can subtract, never add.
+  const eligible: TopicWithBrief[] = [];
+  const forClustering: Array<TopicWithBrief & { eventContext?: TopicEventContext | null }> = [];
+  const enforcementOpts = { allowDuplicateEvents: opts.allowDuplicateEvents === true };
+  let enforcement = enforceEventDiversity(forClustering, targetCount, enforcementOpts);
+
   for (const t of candidates) {
     if (t.debateScore < minScore) {
       result.skippedTopicCount++;
@@ -328,8 +385,46 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
       continue;
     }
 
-    result.chosen.push(t);
-    if (result.chosen.length >= targetCount) break;
+    eligible.push(t);
+    forClustering.push({ ...t, eventContext: eventContext.get(t.id) ?? null });
+    // Re-run over the pool grown so far: the enforcement function is the SAME
+    // one the tests exercise, so the production path and the fixture path can
+    // never diverge. The pool is bounded by targetCount (<= 6) plus whatever
+    // duplicates were rejected, so this stays cheap.
+    enforcement = enforceEventDiversity(forClustering, targetCount, enforcementOpts);
+    if (enforcement.chosen.length >= targetCount) break;
+  }
+
+  // Map the clustering copies back to the ORIGINAL rows: nothing downstream
+  // (snapshotting, EpisodeTopic writes) may ever see a synthesized field.
+  const byId = new Map(eligible.map((t) => [t.id, t]));
+  result.chosen = enforcement.chosen.map((c) => byId.get(c.id)!).filter(Boolean);
+
+  result.eventDiversity = {
+    clusters: enforcement.clusters,
+    skipped: enforcement.skipped,
+    deferred: enforcement.deferred,
+    overrideApplied: enforcement.overrideApplied,
+  };
+
+  // WHY a qualifying topic was left out, in the operator-visible reason list.
+  for (const s of enforcement.skipped) {
+    result.skippedTopicCount++;
+    result.reasons.push(
+      `Skipped '${s.title}': same event as '${s.duplicateOfTitle}' already in this rundown — ${s.reasons.slice(1).join(" ") || s.reasons[0]}`
+    );
+  }
+  for (const d of enforcement.deferred) {
+    if (result.chosen.some((c) => c.id === d.topicId)) continue;
+    result.reasons.push(`Held back '${d.title}': ${d.reason}`);
+  }
+  if (enforcement.overrideApplied) {
+    result.reasons.push("Event-diversity enforcement was overridden for this build (allowDuplicateEvents).");
+  }
+  if (enforcement.skipped.length > 0 && result.chosen.length < targetCount) {
+    result.reasons.push(
+      `Rundown is ${result.chosen.length}/${targetCount} topics: the remaining qualifying candidates were all the same event(s) as topics already selected. A shorter show beats the same story three times.`
+    );
   }
 
   return result;

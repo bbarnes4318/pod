@@ -45,6 +45,19 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
       - name: Independent editorial gate regression
         run: npm run test:editorial-gate
+      # These assert PRODUCTION semantics explicitly (they hand NODE_ENV
+      # "production" to the gate directly), so the relaxed strictness flags on
+      # this job cannot mask a regression the way they did before.
+      - name: Production release gate + failed-episode regression
+        run: npm run test:production-release-gate
+      - name: Semantic repetition regression
+        run: npm run test:semantic-repetition
+      - name: Opening timing and chapter integrity regression
+        run: npm run test:opening-chapter-integrity
+      - name: Story clustering and rundown diversity regression
+        run: npm run test:story-clustering
+      - name: Canary preflight regression
+        run: npm run test:canary-preflight
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
       - name: Topic freshness and automated research regression
