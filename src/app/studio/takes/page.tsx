@@ -7,12 +7,13 @@ import { getTopicUsage } from "@/lib/services/topicUsageService";
 import { fmtDate } from "../lib";
 import TakesFilters, { LeagueOption } from "./TakesFilters";
 import type { TopicEditorialStatus } from "@prisma/client";
+import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 
 export const dynamic = "force-dynamic";
 
 // Editorial-readiness statuses only — "used" is no longer a status; usage is
 // derived from EpisodeTopic and shown as a reuse-friendly count.
-const BOARD_STATUSES: TopicEditorialStatus[] = ["pending", "approved"];
+const BOARD_STATUSES: TopicEditorialStatus[] = ["approved"];
 
 export default async function TakesBoard({
   searchParams,
@@ -20,11 +21,12 @@ export default async function TakesBoard({
   searchParams: Promise<{ sport?: string; league?: string }>;
 }) {
   const sp = await searchParams;
+  const freshAfter = activeTopicCutoff();
 
   // Server-side Sport / League filtering — applied in the query so the
   // talkability ranking below runs over the filtered universe, not just the
   // loaded page.
-  const where: any = { status: { in: BOARD_STATUSES } };
+  const where: any = { status: { in: BOARD_STATUSES }, createdAt: { gte: freshAfter } };
   if (sp.sport) where.sport = { equals: sp.sport, mode: "insensitive" };
   if (sp.league) where.leagueId = sp.league;
 
@@ -38,13 +40,13 @@ export default async function TakesBoard({
     // Filter options come from the whole board (unfiltered), so a chosen sport
     // never removes the other sports from the dropdown.
     db.topicCandidate.findMany({
-      where: { status: { in: BOARD_STATUSES } },
+      where: { status: { in: BOARD_STATUSES }, createdAt: { gte: freshAfter } },
       distinct: ["sport"],
       select: { sport: true },
       orderBy: { sport: "asc" },
     }),
     db.topicCandidate.findMany({
-      where: { status: { in: BOARD_STATUSES }, leagueId: { not: null } },
+      where: { status: { in: BOARD_STATUSES }, createdAt: { gte: freshAfter }, leagueId: { not: null } },
       distinct: ["leagueId"],
       select: { leagueId: true, league: { select: { id: true, name: true } } },
       orderBy: { leagueId: "asc" },
