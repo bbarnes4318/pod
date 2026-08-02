@@ -494,7 +494,13 @@ export function createPrismaLearningStore(client: unknown): LearningStore {
   return {
     async insertEvents(rows) {
       if (!rows.length) return;
-      await db.listenerLearningEvent.createMany!({ data: rows.map((r) => ({ ...r })) });
+      // skipDuplicates leans on the partial unique index added in migration
+      // 20260802030000, so dedupe holds for EVERY writer rather than only the
+      // public intake boundary.
+      await (db.listenerLearningEvent.createMany as (args: {
+        data: unknown[];
+        skipDuplicates?: boolean;
+      }) => Promise<unknown>)({ data: rows.map((r) => ({ ...r })), skipDuplicates: true });
     },
     async listEvents(filter = {}) {
       const where: Record<string, unknown> = {};

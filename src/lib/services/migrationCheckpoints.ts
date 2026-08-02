@@ -193,6 +193,13 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     invariants: [],
     note: "Additive only: one table holding the durable, scoped editorial-gate legacy release. UNIQUE(scriptId) is what makes 'one decision per script' a database invariant rather than a claim in a comment.",
   },
+  {
+    name: "20260802030000_learning_event_dedupe_index",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive partial unique index making listener-event dedupe a database invariant rather than a boundary convention. Excludes production-side measurements, which carry no listenerHash by design.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;

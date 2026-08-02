@@ -1524,6 +1524,10 @@ model ListenerLearningEvent {
   @@index([episodeId, signalKey])
   @@index([expiresAt])
   @@index([listenerHash])
+
+  /// Dedupe is a DATABASE invariant, not a boundary convention. Partial:
+  /// production-side measurements deliberately carry no listenerHash.
+  @@unique([listenerHash, episodeId, signalKey], map: "ListenerLearningEvent_listener_episode_signal_key")
 }
 
 /// DERIVED rollups. Every row is reproducible from ListenerLearningEvent by
