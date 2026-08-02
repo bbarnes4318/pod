@@ -14,7 +14,9 @@ import {
   verdictsEvaluatedIn,
   containsUnqualifiedReady,
   type BuildIdentityResult,
+  type CanaryVerificationResult,
   type CredentialProbeResult,
+  type MigrationPlanResult,
   type LlmRouteProbeResult,
   type ReadinessDependencies,
   type ReadinessMode,
@@ -98,6 +100,33 @@ const cred = (over: Partial<CredentialProbeResult> = {}): CredentialProbeResult 
 const okCred = (): CredentialProbeResult => cred();
 const okBuild = (): BuildIdentityResult => ({ sha: GOOD_SHA, source: "build-info", detail: "web build-info" });
 
+/** Migration PLAN. Pending migrations are the NORMAL pre-deploy state. */
+const plan = (over: Partial<MigrationPlanResult> = {}): MigrationPlanResult => ({
+  ok: true,
+  pending: [
+    "20260802000000_add_blind_voice_audition",
+    "20260802010000_add_listener_learning",
+    "20260802020000_add_script_legacy_release",
+    "20260802030000_learning_event_dedupe_index",
+  ],
+  failed: [],
+  unknown: [],
+  detail: "37 applied, 4 pending.",
+  ...over,
+});
+
+const canary = (over: Partial<CanaryVerificationResult> = {}): CanaryVerificationResult => ({
+  ok: true,
+  code: "ok",
+  sha: GOOD_SHA,
+  conclusion: "success",
+  runUrl: "https://github.com/example/pod/actions/runs/1",
+  completedAt: new Date().toISOString(),
+  ageHours: 2,
+  detail: "Canary green for this commit 2h ago.",
+  ...over,
+});
+
 /** Healthy dependencies; override one probe per scenario. */
 function healthyDeps(over: Partial<ReadinessDependencies["probes"]> = {}): ReadinessDependencies {
   return {
@@ -129,6 +158,8 @@ function healthyDeps(over: Partial<ReadinessDependencies["probes"]> = {}): Readi
       database: async () => okSimple(),
       redis: async () => okSimple(),
       migrations: async () => okSimple(),
+      migrationPlan: async () => plan(),
+      canaryRun: async () => canary(),
       storage: async () => okStorage(),
       workerHealth: async () => okWorker(),
       llmRoute: async (role) => okLlm(role),
@@ -152,6 +183,118 @@ async function main() {
     const r = await run("release", healthyDeps());
     assert.equal(r.exitCode, 0, `expected acceptance; blocking: ${JSON.stringify(r.verdicts)}`);
     assert.equal(r.verdicts.releaseAccepted.state, "accepted", r.verdicts.releaseAccepted.reason);
+  });
+
+  // =======================================================================
+  // THE CIRCULARITY THIS SPLIT REMOVES.
+  //
+  // Before a deploy: migrations are PENDING, and web and worker are still on
+  // the OLD build. Release mode verifies exactly those things, so demanding it
+  // beforehand could never pass. Pre-deploy must pass in that state; release
+  // must refuse it.
+  // =======================================================================
+  console.log("  -- pre-deploy vs release, in the REAL pre-deploy state --");
+
+  /** Production as it actually looks moments before the deploy. */
+  function preDeployWorld() {
+    const OLD_SHA = "0000oldbuild";
+    return healthyDeps({
+      // Four migrations written but not yet applied.
+      migrationPlan: async () => plan(),
+      migrations: async () => ({ ok: false, detail: "4 migration(s) on disk are not applied to this database." }),
+      // Both services still running the previous release.
+      webBuildIdentity: async () => ({ sha: OLD_SHA, source: "build-info", detail: "old build" }),
+      workerHealth: async () => worker({ reportedSha: OLD_SHA }),
+    });
+  }
+
+  await check("PRE-DEPLOY passes while migrations are pending and services are old", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "pg_dump-2026-08-02" });
+    const r = await evaluateReadiness({
+      mode: "predeploy", env, deps: preDeployWorld(), expectedSha: GOOD_SHA, workerTimeoutMs: 500,
+    });
+    assert.equal(r.exitCode, 0, `pre-deploy must pass before the deploy; blocking: ${JSON.stringify(r.verdicts.predeployValidated)}`);
+    assert.equal(r.verdicts.predeployValidated.state, "accepted");
+  });
+
+  await check("...and RELEASE fails in that exact same state", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "pg_dump-2026-08-02" });
+    const r = await evaluateReadiness({
+      mode: "release", env, deps: preDeployWorld(), expectedSha: GOOD_SHA, workerTimeoutMs: 500,
+    });
+    assert.notEqual(r.exitCode, 0, "release must refuse before the deploy has happened");
+  });
+
+  await check("pre-deploy does NOT claim a release verdict", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "b" });
+    const r = await evaluateReadiness({ mode: "predeploy", env, deps: preDeployWorld(), expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+    assert.equal(r.verdicts.releaseAccepted.state, "not-evaluated", "pre-deploy must not imply the release is accepted");
+  });
+
+  await check("release does NOT re-claim the pre-deploy verdict", async () => {
+    const r = await run("release", healthyDeps());
+    assert.equal(r.verdicts.predeployValidated.state, "not-evaluated");
+  });
+
+  await check("a HALF-APPLIED migration blocks pre-deploy", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "b" });
+    const deps = healthyDeps({
+      migrationPlan: async () => plan({ ok: false, failed: ["20260714120000_topic_lifecycle_and_snapshots"] }),
+    });
+    const r = await evaluateReadiness({ mode: "predeploy", env, deps, expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+    assert.notEqual(r.exitCode, 0, "a migration that died mid-run must be resolved before deploying");
+  });
+
+  await check("no recorded backup blocks pre-deploy", async () => {
+    const r = await evaluateReadiness({
+      mode: "predeploy", env: healthyEnv(), deps: preDeployWorld(), expectedSha: GOOD_SHA, workerTimeoutMs: 500,
+    });
+    assert.notEqual(r.exitCode, 0, "four additive migrations without a backup is not a release plan");
+  });
+
+  console.log("  -- canary evidence is per-commit, green, and fresh --");
+  for (const [label, over] of [
+    ["no run for this sha", { ok: false, code: "no_run_for_sha" as const }],
+    ["a cancelled/failed run", { ok: false, code: "not_successful" as const, conclusion: "cancelled" }],
+    ["a stale green run", { ok: false, code: "stale" as const, ageHours: 200 }],
+    ["no read token configured", { ok: false, code: "unverifiable" as const }],
+  ] as Array<[string, Partial<CanaryVerificationResult>]>) {
+    await check(`pre-deploy refuses ${label}`, async () => {
+      const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "b" });
+      const deps = healthyDeps({ canaryRun: async () => canary(over) });
+      const r = await evaluateReadiness({ mode: "predeploy", env, deps, expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+      assert.notEqual(r.exitCode, 0, `${label} must not count as a green canary`);
+    });
+  }
+
+  await check("the canary is verified against the EXPECTED sha, not any sha", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "b" });
+    let asked: string | null = null;
+    const deps = healthyDeps({
+      canaryRun: async (sha: string) => {
+        asked = sha;
+        return canary({ sha });
+      },
+    });
+    await evaluateReadiness({ mode: "predeploy", env, deps, expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+    assert.equal(asked, GOOD_SHA, "the canary probe must be asked about the commit being shipped");
+  });
+
+  await check("pre-deploy does NOT require GitHub-only canary secrets in the container env", async () => {
+    // The whole point: these live in GitHub Actions, not in Coolify.
+    const env = healthyEnv({
+      DEPLOY_BACKUP_REFERENCE: "b",
+      CANARY_LLM_PROVIDER: undefined,
+      CANARY_LLM_MODEL: undefined,
+      CANARY_JUDGE_PROVIDER: undefined,
+      CANARY_JUDGE_MODEL: undefined,
+      CANARY_FISH_VOICE_A: undefined,
+      CANARY_FISH_VOICE_B: undefined,
+      CANARY_ELEVENLABS_VOICE_A: undefined,
+      CANARY_ELEVENLABS_VOICE_B: undefined,
+    });
+    const r = await evaluateReadiness({ mode: "predeploy", env, deps: preDeployWorld(), expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+    assert.equal(r.exitCode, 0, `container env must not need the workflow's own secrets: ${JSON.stringify(r.verdicts.predeployValidated)}`);
   });
 
   console.log("  -- storage: an HTTP reply is not proof --");
@@ -235,16 +378,21 @@ async function main() {
     assert.notEqual(r.exitCode, 0, "every provider the policy requires must authenticate");
   });
 
-  console.log("  -- canary config is mandatory for a RELEASE --");
-  await check("missing canary config refuses --release", async () => {
-    const env = healthyEnv({ CANARY_FISH_VOICE_A: undefined, CANARY_LLM_PROVIDER: undefined });
-    const r = await evaluateReadiness({ mode: "release", env, deps: healthyDeps(), expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
-    assert.notEqual(r.exitCode, 0, "a release without a working canary must be refused");
+  console.log("  -- canary evidence belongs to PRE-DEPLOY, not to the container --");
+  // CONTRACT CHANGE. This used to assert that --release fails when the
+  // CANARY_* variables are absent from the process environment. That was wrong
+  // on two counts: those secrets belong to the GitHub workflow, and by release
+  // time the canary question was already settled. The gate is now "was the
+  // canary GREEN FOR THIS COMMIT", asked during pre-deploy.
+  await check("a missing green canary refuses PRE-DEPLOY", async () => {
+    const env = healthyEnv({ DEPLOY_BACKUP_REFERENCE: "b" });
+    const deps = healthyDeps({ canaryRun: async () => canary({ ok: false, code: "no_run_for_sha" }) });
+    const r = await evaluateReadiness({ mode: "predeploy", env, deps, expectedSha: GOOD_SHA, workerTimeoutMs: 500 });
+    assert.notEqual(r.exitCode, 0, "deploying a commit with no green canary must be refused");
   });
-  await check("...but it is only a warning in config mode", async () => {
-    const env = healthyEnv({ CANARY_FISH_VOICE_A: undefined, CANARY_LLM_PROVIDER: undefined });
-    const r = await evaluateReadiness({ mode: "config", env, deps: healthyDeps(), expectedSha: null, workerTimeoutMs: 500 });
-    assert.equal(r.exitCode, 0, "config mode must not be blocked by canary configuration");
+  await check("config mode is not blocked by canary evidence", async () => {
+    const r = await evaluateReadiness({ mode: "config", env: healthyEnv(), deps: healthyDeps(), expectedSha: null, workerTimeoutMs: 500 });
+    assert.equal(r.exitCode, 0, "config mode must not require a canary run");
   });
 
   console.log("  -- quality gates cannot be waived --");

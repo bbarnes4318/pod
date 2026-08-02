@@ -160,7 +160,13 @@
     "test:integration-legacy-release": "tsx --conditions=react-server src/scripts/integration/legacyRelease.ts",
     "test:integration-worker-health": "tsx --conditions=react-server src/scripts/integration/workerHealth.ts",
     "test:integration-auditions": "tsx --conditions=react-server src/scripts/integration/auditions.ts",
-    "test:integration-learning": "tsx --conditions=react-server src/scripts/integration/learning.ts"
+    "test:integration-learning": "tsx --conditions=react-server src/scripts/integration/learning.ts",
+    "queue:pause-production": "tsx --conditions=react-server src/scripts/queueControl.ts pause",
+    "queue:production-status": "tsx --conditions=react-server src/scripts/queueControl.ts status",
+    "queue:resume-production": "tsx --conditions=react-server src/scripts/queueControl.ts resume",
+    "test:queue-control": "tsx --conditions=react-server src/scripts/testQueueControl.ts",
+    "verify:predeploy": "tsx --conditions=react-server src/scripts/productionReadiness.ts --predeploy",
+    "verify:release": "tsx --conditions=react-server src/scripts/productionReadiness.ts --release"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

@@ -36,19 +36,35 @@
 
 export type CheckStatus = "pass" | "fail" | "warn" | "skip";
 
-/** What the operator asked to be proven. */
-export type ReadinessMode = "config" | "live" | "release";
+/**
+ * What the operator asked to be proven.
+ *
+ * `predeploy` and `release` are the two REAL deployment phases, and they exist
+ * because asking one command to do both was circular: release mode verifies
+ * that migrations are applied and that web and worker are already running the
+ * new commit, none of which can be true before you deploy.
+ *
+ *   predeploy  BEFORE touching production. Everything that is knowable in
+ *              advance: configuration, credentials, reachability, the migration
+ *              PLAN, a backup, and a green canary for the exact commit.
+ *   release    AFTER web and worker are deployed. Everything that only becomes
+ *              true afterwards: migrations applied, no drift, both services on
+ *              the expected commit.
+ */
+export type ReadinessMode = "config" | "live" | "predeploy" | "release";
 
 export type VerdictKey =
   | "codeConfiguration"
   | "infrastructureReachable"
   | "liveProvidersVerified"
+  | "predeployValidated"
   | "releaseAccepted";
 
 export const VERDICT_ORDER: VerdictKey[] = [
   "codeConfiguration",
   "infrastructureReachable",
   "liveProvidersVerified",
+  "predeployValidated",
   "releaseAccepted",
 ];
 
@@ -56,6 +72,7 @@ export const VERDICT_LABELS: Record<VerdictKey, string> = {
   codeConfiguration: "code/configuration ready",
   infrastructureReachable: "infrastructure reachable",
   liveProvidersVerified: "live providers verified",
+  predeployValidated: "PRE-DEPLOY VALIDATED",
   releaseAccepted: "RELEASE ACCEPTED",
 };
 
@@ -101,7 +118,24 @@ export function verdictsEvaluatedIn(mode: ReadinessMode): Set<VerdictKey> {
   if (mode === "live") {
     return new Set<VerdictKey>(["codeConfiguration", "infrastructureReachable", "liveProvidersVerified"]);
   }
-  return new Set<VerdictKey>(VERDICT_ORDER);
+  if (mode === "predeploy") {
+    // Deliberately NOT releaseAccepted: migrations are still pending and the
+    // running services are still the OLD build. Asking for those here is the
+    // circularity this split exists to remove.
+    return new Set<VerdictKey>([
+      "codeConfiguration",
+      "infrastructureReachable",
+      "liveProvidersVerified",
+      "predeployValidated",
+    ]);
+  }
+  // release: everything that is only true AFTER the deploy.
+  return new Set<VerdictKey>([
+    "codeConfiguration",
+    "infrastructureReachable",
+    "liveProvidersVerified",
+    "releaseAccepted",
+  ]);
 }
 
 /**
@@ -259,10 +293,64 @@ export interface ReadinessResolvers {
   fishSceneModel: () => string;
 }
 
+/**
+ * The migration PLAN, read before anything is applied.
+ *
+ * Pre-deploy must not demand that migrations are already applied — that is the
+ * whole point of running it first. What it CAN prove is that the plan is safe:
+ * the files are registered, nothing is half-applied from a previous attempt,
+ * and the pending set is exactly what the operator expects to run.
+ */
+export interface MigrationPlanResult {
+  ok: boolean;
+  /** On disk but not yet applied. Non-empty is NORMAL before a deploy. */
+  pending: string[];
+  /** Recorded but never finished — a previous run died mid-migration. */
+  failed: string[];
+  /** Applied to the database but absent from the repo. */
+  unknown: string[];
+  detail: string;
+}
+
+export type CanaryVerificationCode =
+  | "ok"
+  | "no_run_for_sha"
+  | "not_successful"
+  | "stale"
+  | "unverifiable"
+  | "error";
+
+/**
+ * Evidence that the LIVE-PROVIDER CANARY passed for the EXACT commit being
+ * deployed.
+ *
+ * This replaced an env-variable presence check. Requiring GitHub-only
+ * `CANARY_*` secrets to exist inside the web and worker containers was a
+ * category error: those secrets belong to the workflow, and copying them into
+ * Coolify only to satisfy a container-side check would widen their blast radius
+ * for no gain. What production actually needs is proof the run happened and
+ * went green for this SHA.
+ */
+export interface CanaryVerificationResult {
+  ok: boolean;
+  code: CanaryVerificationCode;
+  /** The commit the canary actually ran against. */
+  sha: string | null;
+  conclusion: string | null;
+  runUrl: string | null;
+  completedAt: string | null;
+  ageHours: number | null;
+  detail: string;
+}
+
 export interface ReadinessProbes {
   database: () => Promise<SimpleProbeResult>;
   redis: () => Promise<SimpleProbeResult>;
   migrations: () => Promise<SimpleProbeResult>;
+  /** Pre-deploy view: what WOULD run, and whether that is safe. */
+  migrationPlan: () => Promise<MigrationPlanResult>;
+  /** Was the canary green for this exact commit? */
+  canaryRun: (expectedSha: string) => Promise<CanaryVerificationResult>;
   storage: (input: StorageProbeInput) => Promise<StorageProbeResult>;
   workerHealth: (input: WorkerHealthInput) => Promise<WorkerHealthResult>;
   llmRoute: (role: "script_movement" | "quality_judge") => Promise<LlmRouteProbeResult>;
@@ -313,8 +401,17 @@ export const COMMIT_SHA_VARS = [
 
 export const STORAGE_VARS = ["S3_BUCKET", "S3_ENDPOINT", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const;
 
-/** Every canary variable. Mandatory in --release; a warning elsewhere. */
-export const CANARY_VARS = [
+/**
+ * The canary's OWN secrets. These live in GitHub Actions and are consumed by
+ * the workflow — they are listed here for the deployment checklist only, and
+ * are deliberately NOT required to exist inside the web or worker containers.
+ *
+ * Copying them into Coolify purely to satisfy a container-side presence check
+ * would widen their blast radius while proving nothing. What production needs
+ * is evidence the canary RAN GREEN for the commit being shipped, which is what
+ * `probes.canaryRun` verifies.
+ */
+export const CANARY_WORKFLOW_SECRETS = [
   "CANARY_LLM_PROVIDER",
   "CANARY_LLM_MODEL",
   "CANARY_JUDGE_PROVIDER",
@@ -328,6 +425,26 @@ export const CANARY_VARS = [
   "CANARY_ELEVENLABS_VOICE_B",
   "DEEPGRAM_API_KEY",
 ] as const;
+
+/**
+ * A READ-ONLY GitHub token used solely to look up the canary's workflow run.
+ * Minimum permission: `actions: read` on this repository (a fine-grained PAT
+ * with "Actions: Read-only", or the workflow's own GITHUB_TOKEN when the check
+ * runs inside Actions). It never needs write access to anything.
+ */
+export const CANARY_READ_TOKEN_VAR = "CANARY_READ_GITHUB_TOKEN";
+
+/** Repository the canary runs in, `owner/name`. */
+export const CANARY_REPO_VAR = "CANARY_GITHUB_REPO";
+
+/** Workflow file whose run must be green. */
+export const CANARY_WORKFLOW_VAR = "CANARY_WORKFLOW_FILE";
+
+/** A green canary older than this is stale evidence, not evidence. */
+export const CANARY_MAX_AGE_HOURS = 72;
+
+/** Operator's recorded backup identifier. Checked, never inspected. */
+export const BACKUP_CONFIRMED_VAR = "DEPLOY_BACKUP_REFERENCE";
 
 /** Which variable carries each TTS provider's credential. Names only. */
 export const TTS_CREDENTIAL_VARS: Record<string, string> = {
@@ -711,11 +828,39 @@ export async function evaluateReadiness(input: EvaluateReadinessInput): Promise<
       detail: `Not evaluated in ${mode} mode. Nothing here has been proven reachable. Re-run with --live or --release from inside the deployment.`,
     });
   } else {
-    for (const [name, probe] of [
+    // PRE-DEPLOY reads the migration PLAN; RELEASE requires them applied. Asking
+    // pre-deploy for "migrations applied" is the circularity this split removes.
+    if (mode === "predeploy") {
+      try {
+        const plan = await deps.probes.migrationPlan();
+        const blocking = plan.failed.length > 0 || plan.unknown.length > 0;
+        add({
+          name: "Migration plan is safe to apply",
+          verdict: "infrastructureReachable",
+          category: "migrations",
+          status: blocking || !plan.ok ? "fail" : "pass",
+          mandatory: true,
+          detail: blocking
+            ? `${plan.failed.length} half-applied and ${plan.unknown.length} unknown migration(s) — resolve before deploying. ${plan.detail}`
+            : `${plan.pending.length} migration(s) will be applied by web's pre-deployment command: ${plan.pending.join(", ") || "none"}.`,
+        });
+      } catch (err) {
+        add({
+          name: "Migration plan is safe to apply",
+          verdict: "infrastructureReachable",
+          category: "migrations",
+          status: "fail",
+          mandatory: true,
+          detail: errText(err),
+        });
+      }
+    }
+
+    for (const [name, probe] of ([
       ["Database reachable", deps.probes.database],
       ["Redis reachable", deps.probes.redis],
-      ["Migrations applied", deps.probes.migrations],
-    ] as const) {
+      ...(mode === "predeploy" ? [] : [["Migrations applied", deps.probes.migrations] as const]),
+    ] as ReadonlyArray<readonly [string, () => Promise<SimpleProbeResult>]>)) {
       try {
         const r = await probe();
         add({
@@ -898,23 +1043,83 @@ export async function evaluateReadiness(input: EvaluateReadinessInput): Promise<
 
   /* --- VERDICT 4: release accepted -------------------------------- */
 
-  const canaryMissing = missingOf(env, CANARY_VARS);
-  const canaryMandatory = mode === "release";
-  add({
-    name: "Live-provider canary configured",
-    verdict: "releaseAccepted",
-    category: "canary",
-    status: canaryMissing.length ? (canaryMandatory ? "fail" : "warn") : "pass",
-    mandatory: canaryMandatory,
-    detail: canaryMissing.length
-      ? `${canaryMissing.length} canary variable(s) unset. ${
-          canaryMandatory
-            ? "A release without an early-warning canary is refused: provider, voice and quality drift would go undetected."
-            : "Warning only outside --release; a release will refuse this."
-        }`
-      : "All canary variables present.",
-    missingVars: canaryMissing.length ? canaryMissing : undefined,
-  });
+  /* --- VERDICT 4: PRE-DEPLOY VALIDATED ---------------------------- */
+
+  if (evaluated.has("predeployValidated")) {
+    // (a) The operator must name the commit being shipped. Everything else in
+    //     this phase is checked AGAINST that commit.
+    add({
+      name: "Expected release sha supplied",
+      verdict: "predeployValidated",
+      category: "deployment",
+      status: expectedSha ? "pass" : "fail",
+      mandatory: true,
+      detail: expectedSha
+        ? `Validating against ${expectedSha.slice(0, 12)}.`
+        : `Pass --expect-sha <sha> (or set ${EXPECTED_SHA_VAR}). Without it there is nothing to validate the canary or the deploy against.`,
+      missingVars: expectedSha ? undefined : [EXPECTED_SHA_VAR],
+    });
+
+    // (b) A GREEN CANARY FOR THIS EXACT COMMIT. Not "the canary is configured",
+    //     and not "a canary passed once" — this commit, successfully, recently.
+    if (!expectedSha) {
+      add({
+        name: "Live-provider canary is green for this commit",
+        verdict: "predeployValidated",
+        category: "canary",
+        status: "fail",
+        mandatory: true,
+        detail: "Cannot verify a canary without an expected sha.",
+      });
+    } else {
+      try {
+        const canary = await deps.probes.canaryRun(expectedSha);
+        add({
+          name: "Live-provider canary is green for this commit",
+          verdict: "predeployValidated",
+          category: "canary",
+          status: canary.ok ? "pass" : "fail",
+          mandatory: true,
+          detail: canary.detail,
+          missingVars: canary.code === "unverifiable" ? [CANARY_READ_TOKEN_VAR] : undefined,
+        });
+      } catch (err) {
+        add({
+          name: "Live-provider canary is green for this commit",
+          verdict: "predeployValidated",
+          category: "canary",
+          status: "fail",
+          mandatory: true,
+          detail: errText(err),
+        });
+      }
+    }
+
+    // (c) A BACKUP. Additive migrations are still migrations, and this is the
+    //     only rollback for a data mistake. It is an explicit acknowledgement
+    //     rather than something this tool can detect.
+    const backup = (env[BACKUP_CONFIRMED_VAR] || "").trim();
+    add({
+      name: "Database backup confirmed",
+      verdict: "predeployValidated",
+      category: "deployment",
+      status: backup ? "pass" : "fail",
+      mandatory: true,
+      detail: backup
+        ? `Operator recorded a backup reference: ${backup.slice(0, 60)}.`
+        : `Take a backup (Coolify snapshot or pg_dump), then set ${BACKUP_CONFIRMED_VAR} to its identifier. Four additive migrations are pending; a backup is the only remedy for a data mistake.`,
+      missingVars: backup ? undefined : [BACKUP_CONFIRMED_VAR],
+    });
+  } else {
+    add({
+      name: "Pre-deploy validation",
+      verdict: "predeployValidated",
+      category: "deployment",
+      status: "skip",
+      mandatory: false,
+      detail: `Not evaluated in ${mode} mode. Run \`npm run verify:predeploy -- --expect-sha <sha>\` BEFORE deploying.`,
+    });
+  }
 
   if (!evaluated.has("releaseAccepted")) {
     add({
@@ -1054,7 +1259,13 @@ export async function evaluateReadiness(input: EvaluateReadinessInput): Promise<
   // Inheriting "not-evaluated" as acceptance is exactly the collapse this
   // rewrite exists to prevent.
   if (evaluated.has("releaseAccepted") && verdicts.releaseAccepted.state === "accepted") {
-    const unmet = VERDICT_ORDER.filter((k) => k !== "releaseAccepted" && verdicts[k].state !== "accepted");
+    // Only verdicts THIS MODE evaluated can be prerequisites. `predeployValidated`
+    // is deliberately not evaluated during release — it was proven in the
+    // earlier phase, against a world that no longer exists — so treating its
+    // "not-evaluated" as a refusal would make release permanently unreachable.
+    const unmet = VERDICT_ORDER.filter(
+      (k) => k !== "releaseAccepted" && evaluated.has(k) && verdicts[k].state !== "accepted"
+    );
     if (unmet.length) {
       verdicts.releaseAccepted = {
         key: "releaseAccepted",
@@ -1505,6 +1716,134 @@ async function liveWebBuildIdentity(): Promise<BuildIdentityResult> {
 }
 
 /**
+ * The migration PLAN: what would run, and whether the history is sane.
+ * Deliberately tolerant of pending migrations — that is the normal pre-deploy
+ * state, and demanding otherwise is the circularity this phase removes.
+ */
+async function liveMigrationPlan(): Promise<MigrationPlanResult> {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  try {
+    const dir = path.resolve(process.cwd(), "prisma/migrations");
+    const onDisk = fs.existsSync(dir)
+      ? fs.readdirSync(dir).filter((d) => fs.statSync(path.join(dir, d)).isDirectory()).sort()
+      : [];
+
+    const { db } = await import("../db");
+    const rows = await db.$queryRawUnsafe<Array<{ migration_name: string; finished_at: Date | null }>>(
+      `SELECT migration_name, finished_at FROM "_prisma_migrations"`
+    );
+    const applied = new Set(rows.filter((r) => r.finished_at).map((r) => r.migration_name));
+    const failed = rows.filter((r) => !r.finished_at).map((r) => r.migration_name);
+    const pending = onDisk.filter((m) => !applied.has(m));
+    const unknown = [...applied].filter((m) => !onDisk.includes(m));
+
+    return {
+      ok: failed.length === 0 && unknown.length === 0,
+      pending,
+      failed,
+      unknown,
+      detail:
+        `${applied.size} applied, ${pending.length} pending` +
+        `${failed.length ? `, ${failed.length} HALF-APPLIED (${failed.join(", ")})` : ""}` +
+        `${unknown.length ? `, ${unknown.length} applied-but-missing-from-repo (${unknown.join(", ")})` : ""}.`,
+    };
+  } catch (err) {
+    return { ok: false, pending: [], failed: [], unknown: [], detail: errText(err) };
+  }
+}
+
+/**
+ * Verify the live-provider canary went GREEN for the exact commit being shipped.
+ *
+ * Read-only: it asks the GitHub Actions API for workflow runs at that SHA. The
+ * token needs `actions: read` and nothing else, and its value is never printed.
+ */
+async function liveCanaryRun(expectedSha: string): Promise<CanaryVerificationResult> {
+  const token = (process.env[CANARY_READ_TOKEN_VAR] || process.env.GITHUB_TOKEN || "").trim();
+  const repo = (process.env[CANARY_REPO_VAR] || "").trim();
+  const workflow = (process.env[CANARY_WORKFLOW_VAR] || "live-provider-canary.yml").trim();
+  const empty = { sha: null, conclusion: null, runUrl: null, completedAt: null, ageHours: null };
+
+  if (!token || !repo) {
+    return {
+      ok: false,
+      code: "unverifiable",
+      ...empty,
+      detail:
+        `Cannot verify the canary: set ${CANARY_REPO_VAR} (owner/name) and ${CANARY_READ_TOKEN_VAR} ` +
+        `(a read-only token with "actions: read" and no other permission). Its value is never printed.`,
+    };
+  }
+
+  try {
+    const url =
+      `https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs` +
+      `?head_sha=${encodeURIComponent(expectedSha)}&per_page=10`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+    });
+    if (!res.ok) {
+      return { ok: false, code: "error", ...empty, detail: `GitHub API ${res.status} querying canary runs.` };
+    }
+    const body = (await res.json()) as {
+      workflow_runs?: Array<{ head_sha: string; status: string; conclusion: string | null; html_url: string; updated_at: string }>;
+    };
+    const runs = body.workflow_runs || [];
+    // Only this exact commit counts. A green run on a neighbouring commit is a
+    // different build.
+    const forSha = runs.filter((r) => r.head_sha === expectedSha);
+    if (!forSha.length) {
+      return {
+        ok: false,
+        code: "no_run_for_sha",
+        ...empty,
+        detail: `No ${workflow} run found for ${expectedSha.slice(0, 12)}. Run the canary against this exact commit before deploying.`,
+      };
+    }
+    const success = forSha.find((r) => r.status === "completed" && r.conclusion === "success");
+    if (!success) {
+      const worst = forSha[0];
+      return {
+        ok: false,
+        code: "not_successful",
+        sha: worst.head_sha,
+        conclusion: worst.conclusion ?? worst.status,
+        runUrl: worst.html_url,
+        completedAt: worst.updated_at,
+        ageHours: null,
+        detail: `The canary for ${expectedSha.slice(0, 12)} is "${worst.conclusion ?? worst.status}", not success. Cancelled, skipped and failed runs are all refused.`,
+      };
+    }
+    const ageHours = (Date.now() - new Date(success.updated_at).getTime()) / 3_600_000;
+    if (ageHours > CANARY_MAX_AGE_HOURS) {
+      return {
+        ok: false,
+        code: "stale",
+        sha: success.head_sha,
+        conclusion: "success",
+        runUrl: success.html_url,
+        completedAt: success.updated_at,
+        ageHours,
+        detail: `The green canary for this commit is ${ageHours.toFixed(0)}h old (limit ${CANARY_MAX_AGE_HOURS}h). Providers drift; re-run it.`,
+      };
+    }
+    return {
+      ok: true,
+      code: "ok",
+      sha: success.head_sha,
+      conclusion: "success",
+      runUrl: success.html_url,
+      completedAt: success.updated_at,
+      ageHours,
+      detail: `Canary green for ${expectedSha.slice(0, 12)} ${ageHours.toFixed(1)}h ago: ${success.html_url}`,
+    };
+  } catch (err) {
+    return { ok: false, code: "error", ...empty, detail: errText(err) };
+  }
+}
+
+/**
  * The real resolvers + probes.
  *
  * Async because every project module is imported here rather than at file
@@ -1536,6 +1875,8 @@ export async function createLiveDependencies(): Promise<ReadinessDependencies> {
       database: liveDatabase,
       redis: liveRedis,
       migrations: liveMigrations,
+      migrationPlan: liveMigrationPlan,
+      canaryRun: liveCanaryRun,
       storage: liveStorage,
       workerHealth: liveWorkerHealth,
       llmRoute: liveLlmRoute,
@@ -1572,8 +1913,9 @@ export function parseReadinessArgs(argv: string[]): ReadinessCliOptions {
   const asJson = argv.includes("--json");
   const skipLive = argv.includes("--skip-live") || argv.includes("--config");
   const release = !skipLive && argv.includes("--release");
-  const live = !skipLive && argv.includes("--live");
-  const mode: ReadinessMode = release ? "release" : live ? "live" : "config";
+  const predeploy = !skipLive && !release && argv.includes("--predeploy");
+  const live = !skipLive && !release && !predeploy && argv.includes("--live");
+  const mode: ReadinessMode = release ? "release" : predeploy ? "predeploy" : live ? "live" : "config";
 
   const shaIndex = argv.indexOf("--expect-sha");
   const rawSha = shaIndex >= 0 ? (argv[shaIndex + 1] || "").trim() : "";
