@@ -127,6 +127,7 @@
     "test:deployment-contract": "tsx src/scripts/testDeploymentContract.ts",
     "test:redis-log-sanitization": "tsx --conditions=react-server src/scripts/testRedisLogSanitization.ts",
     "test:shared-eligibility": "tsx --conditions=react-server src/scripts/testSharedEligibility.ts",
+    "test:story-clustering": "tsx --conditions=react-server src/scripts/testStoryClustering.ts",
     "test:episode-status": "tsx src/scripts/testEpisodeStatus.ts",
     "test:ledger": "tsx --conditions=react-server src/scripts/testLedger.ts",
     "test:pipeline-chaining": "tsx src/scripts/testPipelineChaining.ts",

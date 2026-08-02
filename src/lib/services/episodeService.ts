@@ -387,6 +387,15 @@ export async function selectAutoTopics(opts: AutoSelectOptions, dbi: any = db): 
 
     eligible.push(t);
     forClustering.push({ ...t, eventContext: eventContext.get(t.id) ?? null });
+    if (eligible.length > DIVERSITY_SCAN_LIMIT) {
+      // Guard against a pathological day (everything is one story) turning the
+      // pairwise pass into a full-pool O(n^3) scan. Candidates past this point
+      // are far below the rank bar anyway; the shortfall is reported below.
+      result.reasons.push(
+        `Event-diversity search stopped after examining the top ${DIVERSITY_SCAN_LIMIT} qualifying candidates.`
+      );
+      break;
+    }
     // Re-run over the pool grown so far: the enforcement function is the SAME
     // one the tests exercise, so the production path and the fixture path can
     // never diverge. The pool is bounded by targetCount (<= 6) plus whatever

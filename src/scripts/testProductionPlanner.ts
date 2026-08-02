@@ -12,6 +12,7 @@ import {
   resolveIntroFromPlan,
 } from "../lib/audio/planExecution";
 import { parseProductionPlan } from "../lib/audio/productionPlan";
+import { MAX_SONIC_LOGO_MS, MAX_SPEECH_START_MS } from "../lib/audio/openingTiming";
 import {
   CooldownSnapshot,
   DEFAULT_PLANNER_CONFIG,
@@ -434,7 +435,16 @@ async function main() {
     const warnings: string[] = [];
     const intro = resolveIntroFromPlan({ plan, assetsById, musicCrossfadeMs: 900, warnings });
     assert(!!intro.introClip, "intro cue must resolve to a clip");
-    assert(intro.dialogueStartMs === 8500 - 900, "dialogue starts under the intro fade tail");
+    // The intro asset here is 8500ms. This used to assert 8500 - 900 = 7600ms
+    // of music before the first word — the unbounded pre-roll that shipped a
+    // 30.9s opening on a 31.8s theme. A theme past the sonic-logo cap is now
+    // CUT, and speech always enters inside MAX_SPEECH_START_MS.
+    assert(
+      intro.dialogueStartMs <= MAX_SPEECH_START_MS,
+      `dialogue must start within ${MAX_SPEECH_START_MS}ms (got ${intro.dialogueStartMs}ms)`
+    );
+    assert(intro.introClip!.durationMs <= MAX_SONIC_LOGO_MS, "a long theme is cut to a sonic logo");
+    assert(intro.dialogueStartMs > 0, "dialogue still starts under the logo's fade tail, not on top of it");
 
     const result = executePlanOnTimeline({
       plan,
@@ -445,7 +455,12 @@ async function main() {
       dialogueStartMs: intro.dialogueStartMs,
       warnings,
     });
-    assert(warnings.length === 0, `unexpected warnings: ${warnings.join("; ")}`);
+    // The intro truncation above is REPORTED, not silent — that notice is
+    // expected here. Anything else is a genuine execution problem.
+    const introNotices = warnings.filter((w) => /sonic-logo cap/.test(w));
+    assert(introNotices.length === 1, "the sonic-logo truncation must be reported exactly once");
+    const otherWarnings = warnings.filter((w) => !/sonic-logo cap/.test(w));
+    assert(otherWarnings.length === 0, `unexpected warnings: ${otherWarnings.join("; ")}`);
     assert(result.stingerClips.length === plan.stats.stingerCues, "every stinger cue must render");
     assert(result.reactionClips.length === plan.stats.reactionCues, "every reaction cue must render");
 

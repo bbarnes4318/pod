@@ -515,6 +515,7 @@ export type DuplicateSignalCode =
   | "shared_teams_and_date"
   | "shared_source_url"
   | "shared_evidence"
+  | "shared_evidence_row"
   | "semantic_overlap";
 
 export interface DuplicateSignal {
@@ -615,6 +616,27 @@ export function compareFingerprints(a: EventFingerprint, b: EventFingerprint): T
       code: "shared_evidence",
       detail: `share ${sharedEvidenceCount} of ${evidenceUnionSize} evidence sources (${sharedEvidenceKeys.concat(sharedSourceUrls).slice(0, 3).join(", ")})`,
       weight: 0.9,
+    });
+  }
+
+  // (4b) The SAME source row, plus agreement about who the story is about.
+  //      Rule (4) asks for the evidence sets to overlap DOMINANTLY, which two
+  //      well-researched angles on one event often fail: each cites the shared
+  //      recap plus two of its own specialist pieces, so the Jaccard lands near
+  //      0.15 while the topics remain the same story. Citing one identical
+  //      article row is itself a nameable anchor; the two-entity and lexical
+  //      requirements are what stop a big weekly roundup from merging every
+  //      topic that happened to cite it.
+  const sharedRowKeys = sharedEvidenceKeys.filter((k) => !k.startsWith("topicSource:"));
+  if (
+    sharedRowKeys.length > 0 &&
+    sharedEntities.length >= 2 &&
+    lexicalCosine >= EVIDENCE_PATH_MIN_COSINE
+  ) {
+    signals.push({
+      code: "shared_evidence_row",
+      detail: `both cite ${sharedRowKeys.slice(0, 2).join(", ")} and agree on ${sharedEntities.length} named entities (${sharedEntities.slice(0, 3).join(", ")})`,
+      weight: 0.85,
     });
   }
 
@@ -934,12 +956,30 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     takeSlot(candidate);
   }
 
-  // Backfill from the deferred queue, still respecting the hard event rule.
+  // Backfill from the deferred queue, still respecting the hard event rule. A
+  // deferred topic whose event filled up while it waited is now a real drop, so
+  // it moves from `deferred` to `skipped` — the operator must never be shown a
+  // topic as "held back" when it was actually removed.
   for (const candidate of deferredQueue) {
-    if (result.chosen.length >= target) break;
     const cid = clustering.clusterIdByTopicId[candidate.id];
     const already = perCluster.get(cid) ?? [];
-    if (already.length >= maxPerEvent) continue;
+    if (already.length >= maxPerEvent) {
+      const keptId = already[0];
+      const kept = byId.get(keptId)!;
+      const sim = compareFingerprints(fp(kept), fp(candidate));
+      result.deferred = result.deferred.filter((d) => d.topicId !== candidate.id);
+      result.skipped.push({
+        topicId: candidate.id,
+        title: candidate.title,
+        clusterId: cid,
+        duplicateOfTopicId: keptId,
+        duplicateOfTitle: kept.title,
+        confidence: sim.confidence,
+        reasons: explainDuplicate(kept, candidate),
+      });
+      continue;
+    }
+    if (result.chosen.length >= target) continue;
     takeSlot(candidate);
   }
 

@@ -646,8 +646,8 @@ Delivery field meanings:
       : 0;
   if (pipelineProvenance.path === "outline_driven") {
     recordStage("script:outline", "ok");
-    recordStage("script:private-agendas", pipelineProvenance.privateAgendaCount > 0 ? "ok" : "failed",
-      pipelineProvenance.privateAgendaCount > 0 ? undefined : "no private agendas returned");
+    recordStage("script:private-agendas", agendaCount > 0 ? "ok" : "failed",
+      agendaCount > 0 ? undefined : "no private agendas returned");
     recordStage("script:cold-open-tournament", pipelineProvenance.coldOpenTournamentRan ? "ok" : "failed",
       pipelineProvenance.coldOpenTournamentRan ? undefined : "tournament produced no selection");
   } else {
