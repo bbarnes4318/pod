@@ -33,8 +33,10 @@ assert.match(worker, /is missing or outside the freshness window/);
 assert.match(worker, /stats\/odds alone cannot anchor a fresh story/);
 assert.match(worker, /reconcileTopicPoolOnBoot/);
 assert.match(worker, /dispatchFreshTopicRuns\("boot"\)/);
-assert.match(worker, /for \(const leagueId of getSportsIngestLeagues\(\)\)/);
+assert.match(worker, /for \(const \[index, leagueId\] of leagues\.entries\(\)\)/);
+assert.match(worker, /const delay = index \* 60_000/);
 assert.match(worker, /priority: 1/);
+assert.doesNotMatch(worker, /validEvidence\.length < 2/);
 
 for (const path of [
   "src/app/studio/page.tsx",

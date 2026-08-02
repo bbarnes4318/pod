@@ -90,11 +90,19 @@ export interface TopicGenJobData {
 
 export async function queueTopicGenerationJob(
   data: TopicGenJobData,
-  opts?: { jobId?: string }
+  opts?: { jobId?: string; delay?: number }
 ) {
   // A deterministic jobId makes the enqueue idempotent (used by the scheduled
   // daily topic-generation tick); manual admin triggers pass no jobId.
-  return podcastQueue.add("generate:topics", data, opts?.jobId ? { jobId: opts.jobId } : undefined);
+  const jobOptions = {
+    ...(opts?.jobId ? { jobId: opts.jobId } : {}),
+    ...(typeof opts?.delay === "number" && opts.delay > 0 ? { delay: opts.delay } : {}),
+  };
+  return podcastQueue.add(
+    "generate:topics",
+    data,
+    Object.keys(jobOptions).length > 0 ? jobOptions : undefined
+  );
 }
 
 export interface ResearchBriefJobData {

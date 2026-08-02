@@ -473,10 +473,15 @@ async function dispatchFreshTopicRuns(
   minScore: number = topicsGenerateMinScore()
 ) {
   const dispatched: Array<{ leagueId: string; jobId: string }> = [];
-  for (const leagueId of getSportsIngestLeagues()) {
+  const leagues = getSportsIngestLeagues();
+  for (const [index, leagueId] of leagues.entries()) {
+    // The free Z.ai endpoint rate-limits simultaneous structured calls. Space
+    // league batches one minute apart so our own fanout does not force one of
+    // them into a much slower fallback before it has even started.
+    const delay = index * 60_000;
     const queued = await queueTopicGenerationJob(
       { leagueId, sport: "", minScore },
-      { jobId: `topics-gen-${leagueId.toLowerCase()}-${hourKey}` }
+      { jobId: `topics-gen-${leagueId.toLowerCase()}-${hourKey}`, delay }
     );
     dispatched.push({ leagueId, jobId: String(queued.id) });
   }
@@ -1587,8 +1592,11 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       }
       evidenceStrengthScore = Math.max(1, Math.min(100, evidenceStrengthScore));
 
-      // Reject if evidence is weak (e.g. less than 2 valid evidence items)
-      if (validEvidence.length < 2 || evidenceStrengthScore < 20) {
+      // A single current news/game/injury record is a valid story LEAD; the
+      // research stage immediately gathers independent support. Requiring two
+      // database rows here rejected 90% of otherwise valid live candidates,
+      // even though stats/odds-only topics are already blocked above.
+      if (evidenceStrengthScore < 20) {
         skippedWeakEvidenceCount++;
         rejectedCount++;
         skippedRecordsReasonSummary.push(`Topic '${topic.title}' rejected: evidence strength (${evidenceStrengthScore}) is too weak.`);
