@@ -58,6 +58,21 @@ jobs:
         run: npm run test:story-clustering
       - name: Canary preflight regression
         run: npm run test:canary-preflight
+      # Security and release-safety suites added after the independent review.
+      - name: Voice audition authorization matrix
+        run: npm run test:voice-audition-authz
+      - name: Listener-signal abuse resistance
+        run: npm run test:listener-signal-abuse
+      - name: Production readiness false-positive regression
+        run: npm run test:production-readiness
+      - name: Semantic QA acceptance contract
+        run: npm run test:semantic-qa-acceptance
+      - name: Voice audition flow regression
+        run: npm run test:voice-audition
+      - name: Listener learning loop regression
+        run: npm run test:listener-learning
+      - name: Seven-role writing pipeline regression
+        run: npm run test:seven-role-pipeline
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
       - name: Topic freshness and automated research regression
