@@ -288,7 +288,8 @@ function run() {
     }
 
     for (const jobName of ["ingest:sports-data", "generate:topics", "generate:research-brief"]) {
-      assert(queueSrc.includes(`podcastQueue.add("${jobName}"`),
+      const escapedJobName = jobName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      assert(new RegExp(`podcastQueue\\.add\\(\\s*"${escapedJobName}"`).test(queueSrc),
         `${jobName} must remain on the background lane`);
     }
 
