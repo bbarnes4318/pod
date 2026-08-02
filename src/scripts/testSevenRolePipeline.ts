@@ -17,7 +17,6 @@
 import assert from "node:assert/strict";
 import type {
   GenerateStructuredOutputOptions,
-  GenerateTextOptions,
   LLMProvider,
 } from "../lib/providers/llm/interface";
 import {
@@ -215,7 +214,7 @@ class StubProvider implements LLMProvider {
     this.name = `stub:${options.label}`;
   }
 
-  async generateText(_options: GenerateTextOptions): Promise<string> {
+  async generateText(): Promise<string> {
     throw new Error("The seven-role pipeline only uses structured output.");
   }
 

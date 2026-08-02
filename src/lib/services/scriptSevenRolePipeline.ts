@@ -650,7 +650,7 @@ export async function runIndependentJudgeStage(
   const assess =
     input.assess ??
     ((judge: LLMProvider | null, segments: unknown[]) =>
-      assessScriptQuality(judge, segments as any[], {
+      assessScriptQuality(judge, segments as unknown[] as Parameters<typeof assessScriptQuality>[1], {
         episodeTitle: input.episodeTitle,
         hostNames: input.hostNames,
         evidenceSummary: input.evidenceSummary,
@@ -873,8 +873,11 @@ function assembleSegments(
 }
 
 function toScriptLine(line: AssembledLine): CreativeScriptLine {
-  const { beatIndex: _beatIndex, turnIndex: _turnIndex, ...rest } = line;
-  return rest as CreativeScriptLine;
+  const rest: Record<string, unknown> = { ...line };
+  // turnIndex and beatIndex are planning coordinates, not script fields.
+  delete rest.turnIndex;
+  delete rest.beatIndex;
+  return rest as unknown as CreativeScriptLine;
 }
 
 function abort(

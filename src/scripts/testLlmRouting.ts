@@ -248,6 +248,17 @@ function legacyTests(): void {
         script_outline: "anthropic/claude-opus-5",
         script_movement: "anthropic/claude-opus-5",
         continuity_report: "anthropic/claude-opus-5",
+        // The seven-role writing pipeline is creative work, so every one of its
+        // roles rolls back to the SCRIPT family — the same provider the old
+        // two-role generation used. Rolling back to legacy therefore puts the
+        // whole writing pipeline back on one model, which is exactly what a
+        // rollback is supposed to mean.
+        script_story_editor: "anthropic/claude-opus-5",
+        script_debate_architect: "anthropic/claude-opus-5",
+        script_host_a_writer: "anthropic/claude-opus-5",
+        script_host_b_writer: "anthropic/claude-opus-5",
+        script_dialogue_director: "anthropic/claude-opus-5",
+        script_continuity_editor: "anthropic/claude-opus-5",
         // verify family: VERIFY_* > factcheck chain, sonnet-5 on Anthropic
         script_verification: "anthropic/claude-sonnet-5",
         script_rewrite: "anthropic/claude-sonnet-5",

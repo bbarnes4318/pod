@@ -15,6 +15,26 @@
 // is three genuinely distinct stories (different leagues, teams, dates,
 // evidence, URLs) which must ALL survive — a filter that rejects everything is
 // not a filter, it is an outage.
+//
+// THE SECOND FAILURE THIS PINS DOWN (the rejected caveat)
+// -------------------------------------------------------
+// The first version of the clustering module could only merge when it could
+// name a HARD identifier — a shared Game row, evidence row, URL, or a heavy
+// overlap of literal proper nouns — and it documented that three PARAPHRASES of
+// one event with the identifiers stripped would slip through. That caveat was
+// rejected. `allStarParaphrased` below is exactly that shape: the same three
+// topics reworded to share no game id, no evidence row, no source URL and no
+// proper noun beyond the sport. It must still cluster into one, and the fixture
+// asserts its own honesty before asserting the merge.
+//
+// Recall like that is only worth having if precision survives it, so the
+// adversarial fixtures are the other half of the file:
+//   - `sameTeamsDifferentDates` — same franchises, same 4-0 claim, months apart
+//   - `twoPlayersSameTeam`      — same franchises, same night, different people
+//   - `sameNightDifferentGames` — two different 4-0 shutouts, one league, one night
+// Each pair clears every merge precondition EXCEPT one discriminator, and each
+// asserts that the discriminator is the ONLY thing separating them — so a
+// regression that weakens a veto fails here rather than in production.
 /* eslint-disable @typescript-eslint/no-explicit-any -- test harness: the
    in-memory fake DB doubles are intentionally loosely typed. */
 
@@ -30,6 +50,7 @@ import {
   extractClaimAtoms,
   isEmbeddingHookEnabled,
   scoreRundownDiversity,
+  CANONICAL_ENTITY_MIN_CONCEPT_COSINE,
   RUNDOWN_DIVERSITY_THRESHOLD,
   SEMANTIC_SAME_EVENT_ENTITY_JACCARD,
   SOFT_OVERLAP_COSINE,
@@ -468,7 +489,7 @@ function twoPlayersSameTeam(): Fixture[] {
       id: "adv-player-bat",
       title: "Was Brady Whitlock's Two-Homer Night the Turning Point of the Angels' Season?",
       createdAt: new Date("2026-06-17T08:00:00Z"),
-      summary: "Brady Whitlock homered twice against the Mariners on Tuesday, his first multi-homer game since April, and the Angels have now won four in a row.",
+      summary: "Brady Whitlock was the story again against the Mariners on Tuesday night, his best game since April, and the Angels have now won four in a row at home in front of a sellout crowd.",
       evidenceIds: [{ type: "newsItem", id: "news-whitlock" }],
       sources: [{ canonicalUrl: "https://adv-example.test/whitlock", publishedAt: new Date("2026-06-17T03:00:00Z") }],
       eventContext: null,
@@ -485,7 +506,7 @@ function twoPlayersSameTeam(): Fixture[] {
       id: "adv-player-arm",
       title: "Is Diego Salcedo Already the Best Starter the Angels Have?",
       createdAt: new Date("2026-06-17T08:00:00Z"),
-      summary: "Diego Salcedo struck out eleven Mariners over seven innings on Tuesday, and the Angels have now won four in a row.",
+      summary: "Diego Salcedo was the story again against the Mariners on Tuesday night, his best game since April, and the Angels have now won four in a row at home in front of a sellout crowd.",
       evidenceIds: [{ type: "newsItem", id: "news-salcedo" }],
       sources: [{ canonicalUrl: "https://adv-example.test/salcedo", publishedAt: new Date("2026-06-17T03:00:00Z") }],
       eventContext: null,
@@ -562,11 +583,15 @@ function updateVsDuplicateFixture(): { base: Fixture; update: Fixture; restateme
       createdAt: new Date("2026-06-10T14:00:00Z"),
       summary:
         "Marcus Reeve threw a punch in the eighth inning on Tuesday and is awaiting a ruling from the league office, which has given no timetable for a decision.",
-      debateScore: 92,
+      debateScore: 99,
       ...shared,
       sources: [{ canonicalUrl: "https://adv-example.test/brawl", publishedAt: new Date("2026-06-10T13:00:00Z") }],
       researchBrief: {
-        facts: [{ text: "Threw a punch in the eighth inning." }],
+        facts: [
+          { text: "Marcus Reeve threw a punch in the 8th inning." },
+          { text: "3 players were ejected by umpire Dana Whitcomb." },
+          { text: "2nd bench-clearing incident between these clubs in 2026." },
+        ],
         sourceIds: [{ type: "newsItem", id: "news-brawl" }],
         argumentForHostA: "A punch is a punch and the league has to act.",
         argumentForHostB: "Suspensions for brawls are handed out arbitrarily.",
@@ -580,7 +605,7 @@ function updateVsDuplicateFixture(): { base: Fixture; update: Fixture; restateme
       createdAt: new Date("2026-06-12T14:00:00Z"),
       summary:
         "The league announced on Thursday that Marcus Reeve was suspended for six games, and Ana Delgado was fined for her role in the same brawl.",
-      debateScore: 90,
+      debateScore: 70,
       ...shared,
       sources: [{ canonicalUrl: "https://adv-example.test/brawl-ruling", publishedAt: new Date("2026-06-12T13:00:00Z") }],
       researchBrief: {
@@ -598,7 +623,7 @@ function updateVsDuplicateFixture(): { base: Fixture; update: Fixture; restateme
       createdAt: new Date("2026-06-10T15:00:00Z"),
       summary:
         "Marcus Reeve threw a punch in the eighth inning on Tuesday, and the benches emptied for the second time this season.",
-      debateScore: 88,
+      debateScore: 60,
       ...shared,
       sources: [{ canonicalUrl: "https://adv-example.test/brawl-reaction", publishedAt: new Date("2026-06-10T14:30:00Z") }],
       researchBrief: {
@@ -649,7 +674,7 @@ async function run() {
       for (let j = i + 1; j < rows.length; j++) {
         const s = compareTopics(rows[i], rows[j]);
         console.log(
-          `    ${rows[i].id} ~ ${rows[j].id}  lexical=${s.lexicalCosine.toFixed(3)} title=${s.titleCosine.toFixed(3)} entity=${s.entityJaccard.toFixed(3)} evidence=${s.evidenceJaccard.toFixed(3)} overlap=${s.overlap.toFixed(3)} sameEvent=${s.sameEvent} [${s.signals.map((x) => x.code).join(",") || "none"}]`
+          `    ${rows[i].id} ~ ${rows[j].id}  lexical=${s.lexicalCosine.toFixed(3)} concept=${s.conceptCosine.toFixed(3)} entity=${s.entityJaccard.toFixed(3)} evidence=${s.evidenceJaccard.toFixed(3)} claimW=${s.claim.sharedWeight.toFixed(2)}/peak=${s.claim.peakWeight.toFixed(2)} days=${s.dayGap === null ? "?" : s.dayGap} overlap=${s.overlap.toFixed(3)} sameEvent=${s.sameEvent} [${s.signals.map((x) => x.code).join(",") || "none"}]${s.discriminators.length ? ` VETO[${s.discriminators.map((d) => d.code).join(",")}]` : ""}`
         );
       }
     }
@@ -1115,6 +1140,10 @@ async function run() {
       sim.discriminators.some((d) => d.code === "date_conflict"),
       `the DATE must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
     );
+    assert.deepEqual(
+      sim.discriminators.map((d) => d.code), ["date_conflict"],
+      "and the date must be the ONLY thing separating them — everything else about these two agrees"
+    );
     const res = enforceEventDiversity(pair, 2);
     assert.equal(res.chosen.length, 2, "both fixtures must fill their slots");
     assert.equal(res.skipped.length, 0);
@@ -1126,9 +1155,21 @@ async function run() {
     assert.equal(sim.sameEvent, false, `two player stories merged: ${sim.signals.map((s) => s.code).join(",")}`);
     assert.ok(sim.sharedCanonicalTeams.length >= 2, "the fixture must genuinely share both franchises");
     assert.equal(sim.dayGap, 0, "and sit on the same day");
+    // The canonical-franchise path is ARMED here — same two teams, same day,
+    // concept-space overlap above its bar. Only the principals stop it, which
+    // is what makes this a real test of the discriminator rather than of a
+    // threshold that happened to be missed.
+    assert.ok(
+      sim.conceptCosine >= CANONICAL_ENTITY_MIN_CONCEPT_COSINE,
+      `the canonical-franchise path must actually be reachable, concept=${sim.conceptCosine.toFixed(3)} < ${CANONICAL_ENTITY_MIN_CONCEPT_COSINE}`
+    );
     assert.ok(
       sim.discriminators.some((d) => d.code === "disjoint_people"),
       `the PRINCIPALS must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
+    );
+    assert.deepEqual(
+      sim.discriminators.map((d) => d.code), ["disjoint_people"],
+      "and the principals must be the ONLY thing separating them"
     );
     const res = enforceEventDiversity(pair, 2);
     assert.equal(res.chosen.length, 2, "both players' stories must fill their slots");
@@ -1148,6 +1189,10 @@ async function run() {
     assert.ok(
       sim.discriminators.some((d) => d.code === "disjoint_teams"),
       `the FRANCHISES must be what separates them: ${JSON.stringify(sim.discriminators.map((d) => d.code))}`
+    );
+    assert.deepEqual(
+      sim.discriminators.map((d) => d.code), ["disjoint_teams"],
+      "and the franchises must be the ONLY thing separating them"
     );
     const res = enforceEventDiversity(pair, 2);
     assert.equal(res.chosen.length, 2, "both games must fill their slots");
@@ -1218,7 +1263,6 @@ async function run() {
     const db = makeFakeDb([base, update, restatement] as Fixture[]);
     const res = await selectAutoTopics({ targetCount: 3, minDebateScore: 50 }, db as any);
     const decisions = res.eventDiversity?.decisions ?? [];
-    console.log("DBG chosen:", res.chosen.map((c:any)=>c.id), "decisions:", JSON.stringify(decisions.map((d:any)=>[d.topicId,d.outcome,d.relation])), "reasons:", JSON.stringify(res.reasons));
     assert.ok(decisions.length >= 3, `the audit trail must survive the service boundary, got ${decisions.length}`);
     assert.ok(
       decisions.some((d) => d.outcome === "accepted-as-update"),

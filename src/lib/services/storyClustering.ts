@@ -100,7 +100,6 @@
 
 import crypto from "crypto";
 import {
-  CONCEPT_TOKEN_WEIGHT,
   OPEN_QUESTION_MARKERS,
   RESOLUTION_ACTIONS,
   RESOLUTION_MARKERS,
@@ -1346,7 +1345,25 @@ export function enforceEventDiversity<T extends ClusterableTopic>(
     overrideApplied: opts.allowDuplicateEvents === true,
     decisions: [],
   };
-  if (target === 0 || ranked.length === 0) return result;
+  if (target === 0 || ranked.length === 0) {
+    // Even a no-op run leaves an audit trail: "nothing was asked for" is a
+    // reason an operator may need to read.
+    for (const t of ranked) {
+      result.decisions.push({
+        topicId: t.id,
+        title: t.title,
+        clusterId: clustering.clusterIdByTopicId[t.id],
+        outcome: "not-considered",
+        relation: "n/a",
+        comparedToTopicId: null,
+        reason: "Not examined: this selection asked for zero topics.",
+        detail: [],
+        developments: [],
+        stale: false,
+      });
+    }
+    return result;
+  }
 
   const byId = new Map(ranked.map((t) => [t.id, t]));
   const fp = (t: T) => clustering.fingerprints[t.id];
@@ -1603,8 +1620,16 @@ export interface RundownPairReport {
   lexicalCosine: number;
   entityJaccard: number;
   evidenceJaccard: number;
+  /** Concept-expanded cosine — the offline semantic signal. */
+  conceptCosine: number;
+  /** Weight of the claim atoms both topics assert. */
+  claimSharedWeight: number;
+  /** The atoms themselves, for an operator scanning the report. */
+  sharedClaimAtoms: string[];
   sameEvent: boolean;
   reasons: string[];
+  /** Present when the pair LOOKED alike but a discriminator settled it. */
+  discriminators: string[];
 }
 
 export interface RundownDiversityReport {
@@ -1660,8 +1685,12 @@ export function scoreRundownDiversity(selectedTopics: ClusterableTopic[]): Rundo
         lexicalCosine: sim.lexicalCosine,
         entityJaccard: sim.entityJaccard,
         evidenceJaccard: sim.evidenceJaccard,
+        conceptCosine: sim.conceptCosine,
+        claimSharedWeight: sim.claim.sharedWeight,
+        sharedClaimAtoms: sim.claim.sharedAtoms.map((x) => x.atom),
         sameEvent: sim.sameEvent,
         reasons: sim.sameEvent ? sim.signals.map((s) => s.detail) : [],
+        discriminators: sim.discriminators.map((d) => `${d.code}: ${d.detail}`),
       });
       if (sim.sameEvent) {
         warnings.push(

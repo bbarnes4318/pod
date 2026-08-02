@@ -37,6 +37,7 @@
     "test:dialogue-timeline": "tsx src/scripts/testDialogueTimeline.ts",
     "test:opening-chapter-integrity": "tsx --conditions=react-server src/scripts/testOpeningAndChapterIntegrity.ts",
     "test:semantic-repetition": "tsx --conditions=react-server src/scripts/testSemanticRepetition.ts",
+    "test:listener-learning": "tsx --conditions=react-server src/scripts/testListenerLearning.ts",
     "migrate:legacy-formats": "tsx --conditions=react-server src/scripts/migrateLegacyPanelFormats.ts",
     "test:scene-planner": "tsx --conditions=react-server src/scripts/testDialogueScenePlanner.ts",
     "test:scene-contracts": "tsx --conditions=react-server src/scripts/testSceneProviderContracts.ts",
