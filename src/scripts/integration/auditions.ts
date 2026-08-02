@@ -131,10 +131,20 @@ async function main() {
     });
 
     await check("votes persist and are keyed by BALLOT, not candidate", async () => {
-      // Every audition dimension is scored 1-5.
+      // All eight dimensions are required, each scored 1-5. A partial ballot is
+      // refused, which is the right call: a half-scored audition is not a vote.
       await castVote(deps, {
         auditionId, ballotId, voterId: OWNER.id,
-        scores: { characterFit: 5, identityConsistency: 4 } as never,
+        scores: {
+          characterFit: 5,
+          identityConsistency: 4,
+          listenerFatigue: 4,
+          spontaneity: 5,
+          intelligibility: 5,
+          emotionalRange: 4,
+          interruptionQuality: 4,
+          pairChemistry: 5,
+        } as never,
         overall: 5,
       });
       const votes = await client.voiceAuditionVote.findMany({ where: { auditionId } });
