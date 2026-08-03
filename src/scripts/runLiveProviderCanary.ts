@@ -119,7 +119,14 @@ import {
  */
 export type CanaryAlertClass =
   | "ok"
+  /** Something is unset, or set to something that cannot work. */
   | "configuration_failure"
+  /** A credential was PRESENT and REJECTED. Somebody has to rotate a key. */
+  | "credential_failure"
+  /** The provider account has no money. The key is fine, the code is fine, and
+   *  nothing ships until a human pays. Kept apart from configuration_failure so
+   *  it does not page an engineer to go debug a bill. */
+  | "billing_failure"
   | "provider_failure"
   | "quality_regression"
   | "latency_regression"
@@ -139,10 +146,13 @@ export const CANARY_EXPECTED_FISH_SCENE_MODEL = "s2.1-pro-free";
 
 class CanaryFailure extends Error {
   readonly alertClass: CanaryAlertClass;
-  constructor(alertClass: CanaryAlertClass, message: string) {
+  constructor(alertClass: CanaryAlertClass, message: string, cause?: unknown) {
     super(message);
     this.name = "CanaryFailure";
     this.alertClass = alertClass;
+    // Kept so operator guidance can still read the ORIGINAL failure — which
+    // provider, which category — after the stage has wrapped it in prose.
+    if (cause !== undefined) (this as { cause?: unknown }).cause = cause;
   }
 }
 
@@ -763,6 +773,9 @@ export interface CanaryReport {
   alertClass: CanaryAlertClass;
   /** One sentence naming what to go fix. Never contains a secret value. */
   alertReason: string | null;
+  /** What a human must DO about `alertClass`, in plain English. The reason says
+   *  what broke; this says who fixes it and how. Never contains a secret value. */
+  alertAction: string | null;
   preflight: PreflightResult;
   routing: {
     routes: CanaryRoute[];
@@ -858,6 +871,7 @@ export function emptyCanaryReport(preflight: PreflightResult): CanaryReport {
     // classified, the artifact still says "this run proved nothing".
     alertClass: "configuration_failure",
     alertReason: null,
+    alertAction: null,
     preflight,
     routing: { routes: [], writer: null, judge: null, independent: null, independenceReason: null },
     stages: [],
@@ -889,6 +903,7 @@ export function configurationFailureReport(preflight: PreflightResult): CanaryRe
   report.status = "failed";
   report.alertClass = "configuration_failure";
   report.alertReason = `Canary configuration incomplete. ${preflight.summary}`;
+  report.alertAction = operatorGuidance("configuration_failure");
   report.errors.push(preflight.summary);
   report.finishedAt = report.ranAt;
   report.durationMs = 0;
@@ -972,25 +987,110 @@ export function baselineFromReport(report: CanaryReport): CanaryBaselineRecord {
 // ---------------------------------------------------------------- classification
 
 /**
- * A key that is PRESENT but REJECTED is still a configuration problem — the
- * provider is up, the account is wrong. Only genuine provider-side trouble
- * (outage, rate limit, malformed output) earns `provider_failure`, so the two
- * alerts keep reaching the right person.
+ * Only genuine provider-side trouble (outage, malformed output, a rate limit)
+ * earns `provider_failure`. Everything on OUR side of the boundary is split
+ * three ways, because the three need three different humans:
+ *
+ *   billing_failure       the account is empty        → whoever holds the card
+ *   credential_failure    the key was rejected        → whoever holds the key
+ *   configuration_failure something is unset or wrong → whoever holds the config
+ *
+ * Collapsing these is how "add credit to the Anthropic account" spent a release
+ * cycle being read as "there is a bug in the request we send".
  */
-const LLM_CONFIG_CATEGORIES = ["missing_api_key", "authentication_failed", "invalid_model", "unsupported_parameter"];
+const LLM_BILLING_CATEGORIES = ["insufficient_credit"];
+const LLM_CREDENTIAL_CATEGORIES = ["authentication_failed"];
+const LLM_CONFIG_CATEGORIES = ["missing_api_key", "invalid_model", "unsupported_parameter"];
+
+/** Scene-render categories that are OUR problem rather than the provider's. */
 const SCENE_CONFIG_CATEGORIES = ["authentication", "insufficient_credit", "unsupported_model", "invalid_voice"];
+
+/**
+ * True when the error IS one of these categories, or when the routing chain's
+ * aggregated message names one.
+ *
+ * The chain reports the LAST category, so a run whose real cause was an unfunded
+ * account can end on "unknown" — but the aggregated message still lists every
+ * category it saw along the way.
+ */
+function namesCategory(error: LlmProviderError, categories: readonly string[]): boolean {
+  if (categories.includes(error.category)) return true;
+  return categories.some((c) => error.message.includes(`(${c})`));
+}
 
 export function classifyProviderError(error: unknown, sceneCategories = SCENE_CONFIG_CATEGORIES): CanaryAlertClass {
   if (error instanceof SemanticQaUnavailableError) return "configuration_failure";
+
   if (error instanceof LlmProviderError) {
-    if (LLM_CONFIG_CATEGORIES.includes(error.category)) return "configuration_failure";
-    // The chain reports the LAST category, so a run whose real cause was a
-    // rejected key can end on "unknown". The aggregated message still names
-    // every category it saw.
-    if (LLM_CONFIG_CATEGORIES.some((c) => error.message.includes(`(${c})`))) return "configuration_failure";
+    // Billing is checked first: if any candidate in the chain hit an empty
+    // account, that is the headline regardless of what the last one said.
+    if (namesCategory(error, LLM_BILLING_CATEGORIES)) return "billing_failure";
+    if (namesCategory(error, LLM_CREDENTIAL_CATEGORIES)) return "credential_failure";
+    if (namesCategory(error, LLM_CONFIG_CATEGORIES)) return "configuration_failure";
   }
-  if (error instanceof SceneGenerationError && sceneCategories.includes(error.category)) return "configuration_failure";
+
+  if (error instanceof SceneGenerationError && sceneCategories.includes(error.category)) {
+    if (error.category === "insufficient_credit") return "billing_failure";
+    if (error.category === "authentication") return "credential_failure";
+    return "configuration_failure";
+  }
   return "provider_failure";
+}
+
+/** Providers this canary can name in an operator instruction. */
+const PROVIDER_LABELS: Array<[RegExp, string]> = [
+  [/\banthropic\b|claude/i, "Anthropic"],
+  [/\bopenai\b|\bgpt-/i, "OpenAI"],
+  [/\bnvidia\b|nvapi/i, "NVIDIA"],
+  [/\bz\.?ai\b|\bglm-/i, "Z.ai"],
+  [/\bfish\b/i, "Fish Audio"],
+  [/\belevenlabs\b/i, "ElevenLabs"],
+  [/\bdeepgram\b/i, "Deepgram"],
+];
+
+/**
+ * Which provider's account an error is about, by name.
+ *
+ * Reads the failure's own provider field first, then its message — the routing
+ * layer wraps an exhausted chain with provider `"routing"`, but the aggregated
+ * message still carries `anthropic/claude-sonnet-5`.
+ */
+export function providerLabelFor(error: unknown): string {
+  const provider = error instanceof LlmProviderError ? error.provider : "";
+  const hay = `${provider} ${(error as Error)?.message ?? ""}`;
+  for (const [pattern, label] of PROVIDER_LABELS) {
+    if (pattern.test(hay)) return label;
+  }
+  return "The provider";
+}
+
+/**
+ * The one sentence an operator needs, in plain English.
+ *
+ * This is the fix for the report that said `programming_error` at somebody who
+ * needed to be told to go add credit. The alert class routes the page; this
+ * tells whoever it reached what to actually do.
+ */
+export function operatorGuidance(alertClass: CanaryAlertClass, error?: unknown): string | null {
+  switch (alertClass) {
+    case "billing_failure":
+      return (
+        `${providerLabelFor(error)} account requires credit. Add funds to the billing plan behind this ` +
+        `API key, then re-run this canary. The credential is valid and the code is correct — no model ` +
+        `change, retry or fallback clears an empty account.`
+      );
+    case "credential_failure":
+      return (
+        `${providerLabelFor(error)} rejected the credential it was given. Rotate or correct that key in ` +
+        `the repository secrets, then re-run.`
+      );
+    case "configuration_failure":
+      return "Set or correct the named variables, then re-run. No provider was reached, so nothing was spent.";
+    case "provider_failure":
+      return `${providerLabelFor(error)} failed on its own side. Check the provider's status, then re-run.`;
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------- live stages
@@ -1639,7 +1739,7 @@ async function main(): Promise<void> {
           error instanceof SceneGenerationError && error.category === "unsupported_model"
             ? "voice_drift"
             : classifyProviderError(error, ["authentication", "insufficient_credit", "invalid_voice"]);
-        throw new CanaryFailure(alertClass, `${provider} scene render failed: ${(error as Error).message}`);
+        throw new CanaryFailure(alertClass, `${provider} scene render failed: ${(error as Error).message}`, error);
       }
       const latencyMs = Date.now() - started;
       const qa = await stage(`performance_qa:${provider}`, () =>
@@ -1696,7 +1796,8 @@ async function main(): Promise<void> {
       } catch (error) {
         throw new CanaryFailure(
           classifyProviderError(error),
-          `${provider} semantic QA could not run: ${(error as Error).message}`
+          `${provider} semantic QA could not run: ${(error as Error).message}`,
+          error
         );
       }
       report.semanticQa[provider] = toSemanticResult(semantic);
@@ -1791,6 +1892,7 @@ async function main(): Promise<void> {
     report.status = "ok";
     report.alertClass = "ok";
     report.alertReason = null;
+    report.alertAction = null;
   } catch (error) {
     const failure = error as CanaryFailure;
     report.status = "failed";
@@ -1798,8 +1900,12 @@ async function main(): Promise<void> {
     // CanaryFailure carries the class the failing stage decided on.
     report.alertClass = failure instanceof CanaryFailure ? failure.alertClass : classifyProviderError(error);
     report.alertReason = failure?.message || String(error);
+    // The guidance reads the ORIGINAL error, not the CanaryFailure wrapper, so
+    // it can still name which provider's account is the one that needs money.
+    report.alertAction = operatorGuidance(report.alertClass, (failure as { cause?: unknown })?.cause ?? error);
     report.errors.push(failure?.message || String(error));
     console.error(`[canary] ${report.alertClass}: ${report.alertReason}`);
+    if (report.alertAction) console.error(`[canary] ACTION REQUIRED: ${report.alertAction}`);
   } finally {
     // ALWAYS. This is what keeps `if-no-files-found: error` meaningful and what
     // gets the diagnosis out of the runner and into the uploaded artifact.

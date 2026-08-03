@@ -271,14 +271,18 @@ check("a fully populated environment passes preflight", () => {
 
 // ---------------------------------------------------------------- 5. classification
 
-check("a rejected credential is configuration_failure, an outage is provider_failure", () => {
+// A rejected key used to share `configuration_failure` with an unset variable
+// and an unfunded account. Those are three different jobs for three different
+// people, so they are now three classes. See testProviderErrorClassification.ts
+// for the full five-way matrix and the billing case that forced the split.
+check("a rejected credential is credential_failure, an outage is provider_failure", () => {
   const rejectedKey = new LlmProviderError({
     provider: "anthropic",
     model: "claude-opus-5",
     category: "authentication_failed",
     message: "401 invalid x-api-key",
   });
-  assert.equal(classifyProviderError(rejectedKey), "configuration_failure");
+  assert.equal(classifyProviderError(rejectedKey), "credential_failure");
 
   // The routing chain reports the LAST candidate's category, so the aggregated
   // message is what preserves the real cause.
@@ -288,7 +292,16 @@ check("a rejected credential is configuration_failure, an outage is provider_fai
     category: "unknown",
     message: "Every candidate failed:\n  - anthropic/claude-opus-5 failed (authentication_failed): 401\n  - stub failed (unknown)",
   });
-  assert.equal(classifyProviderError(chainExhausted), "configuration_failure");
+  assert.equal(classifyProviderError(chainExhausted), "credential_failure");
+
+  // An UNSET variable is still configuration — the distinction the split keeps.
+  const missingKey = new LlmProviderError({
+    provider: "nvidia",
+    model: "some-model",
+    category: "missing_api_key",
+    message: "Missing NVIDIA_API_KEY",
+  });
+  assert.equal(classifyProviderError(missingKey), "configuration_failure");
 
   const outage = new LlmProviderError({
     provider: "anthropic",
@@ -298,7 +311,7 @@ check("a rejected credential is configuration_failure, an outage is provider_fai
   });
   assert.equal(classifyProviderError(outage), "provider_failure");
 
-  assert.equal(classifyProviderError(new SceneGenerationError("authentication", "401")), "configuration_failure");
+  assert.equal(classifyProviderError(new SceneGenerationError("authentication", "401")), "credential_failure");
   assert.equal(classifyProviderError(new SceneGenerationError("provider_unavailable", "503")), "provider_failure");
   assert.equal(classifyProviderError(new Error("something else")), "provider_failure");
 

@@ -423,6 +423,24 @@ export class RoutedLLMProvider implements LLMProvider {
     let fallbacks = 0;
     let stoppedEarly: { error: unknown; reason: string } | null = null;
 
+    /**
+     * Pass over every remaining candidate that bills the same account, recording
+     * each one as SKIPPED so the log shows what was declined and why. Returns
+     * the new loop index. Used for billing failures, where the next model on the
+     * same provider cannot possibly succeed.
+     */
+    const skipSameProviderFrom = (from: number, provider: string, category: LlmErrorCategory): number => {
+      let j = from;
+      while (j + 1 < this.plan.candidates.length && this.plan.candidates[j + 1].provider === provider) {
+        const skipped = this.plan.candidates[j + 1];
+        failures.push(
+          `${candidateKey(skipped)} [${skipped.source}] SKIPPED — ${category} on the shared ${provider} account credential`
+        );
+        j++;
+      }
+      return j;
+    };
+
     for (let i = 0; i < this.plan.candidates.length; i++) {
       const candidate = this.plan.candidates[i];
       const next = this.plan.candidates[i + 1];
@@ -449,6 +467,15 @@ export class RoutedLLMProvider implements LLMProvider {
         if (decision.verdict === "stop" && next) {
           stoppedEarly = { error: err, reason: decision.reason };
           break;
+        }
+        if (decision.verdict === "skip_provider") {
+          i = skipSameProviderFrom(i, candidate.provider, decision.category);
+          if (i + 1 >= this.plan.candidates.length) {
+            stoppedEarly = { error: err, reason: decision.reason };
+            break;
+          }
+          fallbacks++;
+          continue;
         }
         fallbacks++;
         continue;
@@ -490,6 +517,13 @@ export class RoutedLLMProvider implements LLMProvider {
         if (decision.verdict === "stop" && next) {
           stoppedEarly = { error: err, reason: decision.reason };
           break;
+        }
+        if (decision.verdict === "skip_provider") {
+          i = skipSameProviderFrom(i, candidate.provider, decision.category);
+          if (i + 1 >= this.plan.candidates.length) {
+            stoppedEarly = { error: err, reason: decision.reason };
+            break;
+          }
         }
         fallbacks++;
       }

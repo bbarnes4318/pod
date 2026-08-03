@@ -58,6 +58,8 @@ jobs:
         run: npm run test:story-clustering
       - name: Canary preflight regression
         run: npm run test:canary-preflight
+      - name: Provider error classification regression
+        run: npm run test:provider-error-classification
       # Security and release-safety suites added after the independent review.
       - name: Voice audition authorization matrix
         run: npm run test:voice-audition-authz

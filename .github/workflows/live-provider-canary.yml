@@ -173,6 +173,7 @@ jobs:
               const lines=['### Live provider canary','',
                 '- status: \`'+r.status+'\`','- alertClass: \`'+r.alertClass+'\`',
                 '- reason: '+n(r.alertReason,'none'),
+                '- **action required**: '+n(r.alertAction,'none'),
                 '- missing variables: '+((r.preflight&&r.preflight.missing.length)?r.preflight.missing.join(', '):'none'),
                 '- judge route: '+n(r.routing&&r.routing.judge,'n/a')+' | independent: '+n(r.routing&&r.routing.independent,'n/a'),
                 '- story: '+n(r.story&&r.story.selectedTitle,'not reached'),
