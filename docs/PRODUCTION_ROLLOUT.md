@@ -71,6 +71,21 @@ Both report every problem by **variable name**, never by value.
 | `TTS_TRANSCRIPT_QA_WAIVED` | A waiver is not production semantic QA. The preflight fails if it is `true`. |
 | `SCRIPT_EDITORIAL_HOLD_OVERRIDE` | No longer honoured; the preflight fails if it is `true`. |
 
+### Speech providers
+
+**Production renders with Fish, at `s2.1-pro-free`.** That is the only speech
+provider a release depends on, and `PRODUCTION_REQUIRED_TTS_PROVIDERS` defaults
+to `fish` accordingly.
+
+**ElevenLabs is a supported adapter, not a dependency.** The canary exercises it
+when it is configured and reports it as `skipped` when it is not; either way it
+cannot fail a Fish release. It becomes mandatory only if you add it to
+`PRODUCTION_REQUIRED_TTS_PROVIDERS` — a deliberate act, at which point its
+credential and two distinct voice ids are demanded like any other requirement.
+
+Do not assign ElevenLabs voices to production hosts to satisfy a check; nothing
+requires it.
+
 ### GitHub Actions — the canary's own secrets
 
 These belong to the **workflow**, and are deliberately **not** required inside
@@ -79,13 +94,28 @@ container-side check would widen their blast radius while proving nothing —
 what production needs is evidence the canary went green for the exact commit,
 which `verify:predeploy` checks over the Actions API.
 
-Secrets: `CANARY_LLM_PROVIDER`, `CANARY_LLM_MODEL`, `CANARY_JUDGE_PROVIDER`,
-`CANARY_JUDGE_MODEL`, `ANTHROPIC_API_KEY`, `FISH_API_KEY`, `ELEVENLABS_API_KEY`,
-`CANARY_FISH_VOICE_A`, `CANARY_FISH_VOICE_B`, `CANARY_ELEVENLABS_VOICE_A`,
-`CANARY_ELEVENLABS_VOICE_B`, `DEEPGRAM_API_KEY`.
+**Required secrets** (6): `ANTHROPIC_API_KEY`, `FISH_API_KEY`, `DEEPGRAM_API_KEY`,
+`CANARY_FISH_VOICE_A`, `CANARY_FISH_VOICE_B` — plus `OPENAI_API_KEY` /
+`NVIDIA_API_KEY` / `ZAI_API_KEY` only if a role is pointed at that provider.
 
-Variables (optional): `FISH_SCENE_MODEL` — **leave unset**; it defaults to
+**Optional-adapter secrets** (never required for a Fish release):
+`ELEVENLABS_API_KEY`, `CANARY_ELEVENLABS_VOICE_A`, `CANARY_ELEVENLABS_VOICE_B`.
+
+**Required variables** — routing is pinned per role, not by a single
+writer/judge pair. `LLM_ROUTING_PROFILE` plus a `_LLM_PROVIDER` / `_LLM_MODEL`
+pair for each of: `TOPIC_GENERATION`, `RESEARCH`, `SCRIPT_STORY_EDITOR`,
+`SCRIPT_DEBATE_ARCHITECT`, `SCRIPT_HOST_A_WRITER`, `SCRIPT_HOST_B_WRITER`,
+`SCRIPT_DIALOGUE_DIRECTOR`, `SCRIPT_CONTINUITY_EDITOR`, `QUALITY_JUDGE`. The
+judge must not resolve to the same endpoint as any authoring role, or the run
+stops before spending anything.
+
+> There are no `CANARY_LLM_PROVIDER` / `CANARY_JUDGE_MODEL` secrets. Those were
+> replaced by the per-role pairs above, so a single unpinned role can no longer
+> resolve silently down a fallback chain.
+
+**Optional variables:** `FISH_SCENE_MODEL` — **leave unset**; it defaults to
 `s2.1-pro-free`, and anything else is reported as voice drift.
+`PRODUCTION_REQUIRED_TTS_PROVIDERS` defaults to `fish`.
 
 ### Verifying without exposing a value
 

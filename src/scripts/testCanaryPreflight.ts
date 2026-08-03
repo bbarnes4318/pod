@@ -49,14 +49,18 @@ const FISH_B = "fedcba9876543210fedcba9876543210";
 
 /** Exactly what an unconfigured repository (no secrets, no variables) is
  *  missing. If this list changes, the operator checklist changes with it. */
+// CONTRACT CHANGE: no ElevenLabs variable belongs on this list.
+//
+// Production renders with Fish at s2.1-pro-free. ElevenLabs is a supported
+// ADAPTER, not a dependency — demanding it refused release SHA 2172f718 over a
+// provider production does not use. It is mandatory only when an operator names
+// it in PRODUCTION_REQUIRED_TTS_PROVIDERS, which
+// src/scripts/testTtsProviderPolicy.ts proves in both directions.
 const EXPECTED_MISSING = [
   "ANTHROPIC_API_KEY",
-  "CANARY_ELEVENLABS_VOICE_A",
-  "CANARY_ELEVENLABS_VOICE_B",
   "CANARY_FISH_VOICE_A",
   "CANARY_FISH_VOICE_B",
   "DEEPGRAM_API_KEY",
-  "ELEVENLABS_API_KEY",
   "FISH_API_KEY",
   "LLM_ROUTING_PROFILE",
   "QUALITY_JUDGE_LLM_MODEL",
@@ -157,7 +161,9 @@ check("an empty environment fails preflight and names every missing variable", (
   assert.equal(result.ok, false);
   assert.deepEqual([...result.missing].sort(), EXPECTED_MISSING);
   assert.equal(result.invalid.length, 0, "absent variables are missing, never 'invalid'");
-  assert.deepEqual(result.requiredProviders, ["fish", "elevenlabs"]);
+  // Fish is what a release depends on; ElevenLabs is an optional adapter.
+  assert.deepEqual(result.requiredProviders, ["fish"]);
+  assert.deepEqual(result.optionalProviders, ["elevenlabs"]);
   assert.ok(result.summary.includes("MISSING"), "summary must lead with the missing names");
 });
 

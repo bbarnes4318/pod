@@ -65,6 +65,11 @@ import { ElevenLabsTTSProvider } from "../lib/providers/tts/elevenlabs";
 import { FishTTSProvider } from "../lib/providers/tts/fish";
 import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";
 import { SceneGenerationError, type DialogueSceneInput, type SceneUtterance } from "../lib/providers/tts/sceneTypes";
+import {
+  REQUIRED_TTS_PROVIDERS_VAR,
+  SUPPORTED_TTS_PROVIDERS,
+  resolveTtsProviderPolicy,
+} from "../lib/services/ttsProviderPolicy";
 import { FISH_REFERENCE_ID_RE } from "../lib/providers/tts/providerIds";
 
 import { analyzeSpokenPerformanceBuffer } from "../lib/audio/spokenPerformanceQa";
@@ -270,8 +275,10 @@ export interface PreflightResult {
   /** Required variable NAMES set to something structurally unusable. */
   invalid: { name: string; reason: string }[];
   checks: PreflightCheck[];
-  /** TTS providers this run intends to exercise. */
+  /** TTS providers a RELEASE depends on. A failure here fails the run. */
   requiredProviders: CanaryProviderId[];
+  /** Supported adapters exercised only when configured; never a failure. */
+  optionalProviders: CanaryProviderId[];
   /** LLM roles whose routes this run pins. */
   requiredRoles: LLMRole[];
   /** Human summary, safe to print in a public CI log. */
@@ -323,28 +330,29 @@ export function preflightCanaryEnv(env: CanaryEnv): PreflightResult {
     if (reason) invalid.push({ name, reason });
   };
 
-  // Which TTS providers this run covers. An unknown name is a configuration
-  // error, not a silently skipped provider.
-  const rawProviders = value(env, "CANARY_REQUIRED_PROVIDERS") || "fish,elevenlabs";
-  const requiredProviders: CanaryProviderId[] = [];
-  const unknownProviders: string[] = [];
-  for (const p of rawProviders.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean)) {
-    if (p === "fish" || p === "elevenlabs") requiredProviders.push(p);
-    else unknownProviders.push(p);
-  }
-  if (unknownProviders.length) {
+  // Which TTS providers this run covers.
+  //
+  // Production renders with Fish, so Fish is what a RELEASE depends on.
+  // ElevenLabs is a supported ADAPTER: exercised when configured, reported as
+  // `skipped` when it is not, and mandatory only when an operator names it in
+  // PRODUCTION_REQUIRED_TTS_PROVIDERS. An unconfigured adapter must never
+  // refuse a Fish release — it did, and that was wrong.
+  const policy = resolveTtsProviderPolicy(env as Record<string, string | undefined>);
+  const requiredProviders = policy.required as CanaryProviderId[];
+  const optionalProviders = policy.optional as CanaryProviderId[];
+  if (policy.unknown.length) {
     invalid.push({
-      name: "CANARY_REQUIRED_PROVIDERS",
-      reason: `names ${unknownProviders.length} provider(s) the canary cannot build; supported: fish, elevenlabs`,
+      name: REQUIRED_TTS_PROVIDERS_VAR,
+      reason: `names ${policy.unknown.length} provider(s) the canary cannot build; supported: ${SUPPORTED_TTS_PROVIDERS.join(", ")}`,
     });
-    checks.push({ name: "CANARY_REQUIRED_PROVIDERS", present: true, valid: false, optional: true });
+    checks.push({ name: REQUIRED_TTS_PROVIDERS_VAR, present: true, valid: false, optional: true });
   } else {
     checks.push({
-      name: "CANARY_REQUIRED_PROVIDERS",
-      present: Boolean(value(env, "CANARY_REQUIRED_PROVIDERS")),
+      name: REQUIRED_TTS_PROVIDERS_VAR,
+      present: policy.requiredExplicit,
       valid: true,
       optional: true,
-      note: "defaults to fish,elevenlabs",
+      note: `required: ${requiredProviders.join(", ") || "(none)"}; optional: ${optionalProviders.join(", ") || "(none)"} — defaults to fish required, elevenlabs optional`,
     });
   }
 
@@ -395,6 +403,23 @@ export function preflightCanaryEnv(env: CanaryEnv): PreflightResult {
         ELEVENLABS_VOICE_RE.test(v) ? null : "must be an opaque ElevenLabs voice id (8-64 url-safe characters)"
       );
     }
+  }
+
+  // OPTIONAL adapters are recorded, never demanded. A missing credential or
+  // voice here produces a `skipped` provider in the report and leaves the
+  // release verdict untouched.
+  for (const provider of optionalProviders) {
+    const vars = CANARY_REQUIRED_PROVIDER_VARS[provider] || [];
+    const absent = vars.filter((name) => !value(env, name));
+    checks.push({
+      name: `optional provider: ${provider}`,
+      present: absent.length === 0,
+      valid: true,
+      optional: true,
+      note: absent.length
+        ? `not configured (${absent.join(", ")}) — this adapter will be SKIPPED, not failed`
+        : "configured; will be exercised as an optional adapter",
+    });
   }
 
   // ---- meaning-aware audio QA: required, with required VALUES ----
@@ -463,7 +488,7 @@ export function preflightCanaryEnv(env: CanaryEnv): PreflightResult {
         .filter(Boolean)
         .join(" | ");
 
-  return { ok, missing, invalid, checks, requiredProviders, requiredRoles: CANARY_LLM_ROLES, summary };
+  return { ok, missing, invalid, checks, requiredProviders, optionalProviders, requiredRoles: CANARY_LLM_ROLES, summary };
 }
 
 // ---------------------------------------------------------------- route independence
@@ -792,6 +817,8 @@ export interface CanaryReport {
     drifted: boolean;
   };
   providers: Record<string, CanaryProviderResult>;
+  /** Supported engines production does NOT depend on. Never fails the run. */
+  optionalAdapters: Record<string, { status: "ok" | "degraded" | "skipped" | "failed"; reason: string | null; detail: string }>;
   semanticQa: Record<string, CanarySemanticQaResult>;
   mix: {
     path: string;
@@ -846,6 +873,7 @@ export function emptyCanaryReport(preflight: PreflightResult): CanaryReport {
       drifted: false,
     },
     providers: {},
+    optionalAdapters: {},
     semanticQa: {},
     mix: null,
     cost: null,
@@ -1689,6 +1717,51 @@ async function main(): Promise<void> {
       }
       if (!qa.passed) {
         throw new CanaryFailure("quality_regression", `${provider} live performance QA failed: ${qa.failures.join(" ")}`);
+      }
+    }
+
+    // ---- 7b. OPTIONAL adapters ----
+    //
+    // Supported engines that production does NOT depend on. An unconfigured one
+    // is SKIPPED; a configured one that misbehaves is recorded. Neither can fail
+    // a release that renders on Fish. Promoting an adapter to a release
+    // requirement is a deliberate act: name it in
+    // PRODUCTION_REQUIRED_TTS_PROVIDERS.
+    for (const provider of preflight.optionalProviders) {
+      const needed = CANARY_REQUIRED_PROVIDER_VARS[provider] || [];
+      const absent = needed.filter((name) => !value(env, name));
+      if (absent.length) {
+        report.optionalAdapters[provider] = {
+          status: "skipped",
+          reason: `not configured (${absent.join(", ")})`,
+          detail: "Optional adapter; production does not render on it, so the release is unaffected.",
+        };
+        continue;
+      }
+      try {
+        const adapter = provider === "fish" ? new FishTTSProvider() : new ElevenLabsTTSProvider();
+        const started = Date.now();
+        const audio = await stage(`optional_render:${provider}`, () =>
+          adapter.synthesizeDialogueScene(sceneInput(env, provider, spoken))
+        );
+        const qa = await analyzeSpokenPerformanceBuffer(audio.audioBuffer, {
+          expectedTurnCount: spoken.length,
+          sceneType: "cold_open",
+          format: "mp3",
+          strict: false,
+        });
+        report.optionalAdapters[provider] = {
+          status: qa.passed ? "ok" : "degraded",
+          reason: qa.passed ? null : qa.failures.join(" | "),
+          detail: `rendered ${audio.audioBuffer.length} bytes on ${audio.model} in ${Date.now() - started}ms`,
+        };
+      } catch (error) {
+        // Deliberately swallowed: this adapter is not part of the release.
+        report.optionalAdapters[provider] = {
+          status: "failed",
+          reason: (error as Error).message.slice(0, 300),
+          detail: "Optional adapter failure — recorded, but it does not fail the Fish production canary.",
+        };
       }
     }
 

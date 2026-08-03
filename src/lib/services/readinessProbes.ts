@@ -30,6 +30,12 @@
 // SECRETS ARE NEVER PRINTED. Variable NAMES and booleans only. `scrubSecrets()`
 // is a second line of defence over every rendered string.
 
+// The ONLY static import in this module. Every project module is otherwise
+// loaded lazily so this file stays importable by an offline unit test with no
+// database, Redis or credentials — and this one is safe because it is pure
+// policy with no dependencies of its own.
+import { resolveTtsProviderPolicy } from "./ttsProviderPolicy";
+
 /* ------------------------------------------------------------------ */
 /* 1. Vocabulary                                                        */
 /* ------------------------------------------------------------------ */
@@ -458,23 +464,25 @@ export const TTS_CREDENTIAL_VARS: Record<string, string> = {
 /**
  * EVERY TTS provider production must be able to reach — not just Fish.
  *
- * The canary contract (`CANARY_REQUIRED_PROVIDERS`, default `fish,elevenlabs`)
- * is the existing declaration of which engines a release is expected to render
- * on, so it is the source of truth here rather than a second, drifting list.
+ * The policy lives in one place (`./ttsProviderPolicy`) so the canary and this
+ * preflight cannot drift apart. Production renders with Fish, so Fish is the
+ * default requirement; ElevenLabs is a supported ADAPTER and becomes mandatory
+ * only when an operator names it in PRODUCTION_REQUIRED_TTS_PROVIDERS.
+ *
  * The deployment's own default engine (`TTS_PROVIDER`) is added on top: an
  * engine the pipeline will actually select must also be provably reachable.
  */
 export function requiredTtsProviders(env: NodeJS.ProcessEnv): string[] {
-  const raw = (env.PRODUCTION_REQUIRED_TTS_PROVIDERS || env.CANARY_REQUIRED_PROVIDERS || "fish,elevenlabs").trim();
-  const set = new Set(
-    raw
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
+  const policy = resolveTtsProviderPolicy(env);
+  const set = new Set(policy.required);
   const configured = (env.TTS_PROVIDER || "").trim().toLowerCase();
   if (configured && configured !== "stub") set.add(configured);
   return [...set].sort();
+}
+
+/** Adapters exercised opportunistically. Never a release requirement. */
+export function optionalTtsProviders(env: NodeJS.ProcessEnv): string[] {
+  return resolveTtsProviderPolicy(env).optional;
 }
 
 /* ------------------------------------------------------------------ */

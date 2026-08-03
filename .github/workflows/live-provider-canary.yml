@@ -19,9 +19,10 @@
 #   ANTHROPIC_API_KEY
 #   DEEPGRAM_API_KEY
 #   FISH_API_KEY
-#   ELEVENLABS_API_KEY
+#   ELEVENLABS_API_KEY                       (OPTIONAL adapter only)
 #   CANARY_FISH_VOICE_A, CANARY_FISH_VOICE_B
-#   CANARY_ELEVENLABS_VOICE_A, CANARY_ELEVENLABS_VOICE_B
+#   CANARY_ELEVENLABS_VOICE_A, CANARY_ELEVENLABS_VOICE_B  (OPTIONAL adapter
+#     only — production renders on Fish, so these never block a release)
 #   OPENAI_API_KEY / NVIDIA_API_KEY / ZAI_API_KEY  (ONLY if a role below is
 #     pointed at that provider — the preflight adds them to the required list
 #     when, and only when, they are actually reachable from a configured route)
@@ -114,6 +115,11 @@ jobs:
       TRANSCRIPT_QA_MODEL: ${{ vars.TRANSCRIPT_QA_MODEL }}
       DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
 
+      # Production renders with Fish. ElevenLabs is a supported ADAPTER that is
+      # exercised when configured and reported as skipped when it is not — it
+      # never fails a Fish release. Promote it deliberately by listing it here.
+      PRODUCTION_REQUIRED_TTS_PROVIDERS: ${{ vars.PRODUCTION_REQUIRED_TTS_PROVIDERS || 'fish' }}
+      CANARY_OPTIONAL_TTS_PROVIDERS: ${{ vars.CANARY_OPTIONAL_TTS_PROVIDERS || 'elevenlabs' }}
       TTS_PERFORMANCE_QA_STRICT: "true"
       CANARY_NEWS_FEEDS: ${{ vars.CANARY_NEWS_FEEDS }}
       CANARY_TARGET_DURATION_MIN: ${{ vars.CANARY_TARGET_DURATION_MIN || '4' }}

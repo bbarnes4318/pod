@@ -166,7 +166,8 @@
     "queue:resume-production": "tsx --conditions=react-server src/scripts/queueControl.ts resume",
     "test:queue-control": "tsx --conditions=react-server src/scripts/testQueueControl.ts",
     "verify:predeploy": "tsx --conditions=react-server src/scripts/productionReadiness.ts --predeploy",
-    "verify:release": "tsx --conditions=react-server src/scripts/productionReadiness.ts --release"
+    "verify:release": "tsx --conditions=react-server src/scripts/productionReadiness.ts --release",
+    "test:tts-provider-policy": "tsx --conditions=react-server src/scripts/testTtsProviderPolicy.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

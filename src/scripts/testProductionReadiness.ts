@@ -372,10 +372,26 @@ async function main() {
     assert.notEqual(r.exitCode, 0, "a rejected transcription credential must refuse the release");
   });
   await check("a TTS provider required by policy but unconfigured => release refused", async () => {
+    // "Required by policy" now means NAMED in PRODUCTION_REQUIRED_TTS_PROVIDERS.
+    const r = await evaluateReadiness({
+      mode: "release",
+      env: healthyEnv({ PRODUCTION_REQUIRED_TTS_PROVIDERS: "fish,elevenlabs" }),
+      deps: healthyDeps({
+        ttsProvider: async (p) => (p === "fish" ? okCred() : cred({ ok: false, code: "rejected", status: 401, detail: `${p} rejected` })),
+      }),
+      expectedSha: GOOD_SHA,
+      workerTimeoutMs: 500,
+    });
+    assert.notEqual(r.exitCode, 0, "every provider the policy requires must authenticate");
+  });
+
+  await check("...but a failing OPTIONAL adapter does NOT refuse a Fish release", async () => {
+    // The regression that refused release SHA 2172f718: ElevenLabs is a
+    // supported adapter, not something production renders on.
     const r = await run("release", healthyDeps({
       ttsProvider: async (p) => (p === "fish" ? okCred() : cred({ ok: false, code: "rejected", status: 401, detail: `${p} rejected` })),
     }));
-    assert.notEqual(r.exitCode, 0, "every provider the policy requires must authenticate");
+    assert.equal(r.exitCode, 0, `a Fish release must not be blocked by an adapter production does not use: ${JSON.stringify(r.verdicts.liveProvidersVerified)}`);
   });
 
   console.log("  -- canary evidence belongs to PRE-DEPLOY, not to the container --");
