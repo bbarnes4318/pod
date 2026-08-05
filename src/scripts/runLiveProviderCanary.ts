@@ -56,6 +56,11 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { getRoleLLMProvider, resolveRolePlan, candidateKey, endpointIdentity } from "../lib/providers/llm/routing";
+import {
+  configuredLlmProviders,
+  gradeIndependence,
+  type IndependenceLevel,
+} from "../lib/providers/llm/routingAudit";
 import { ROUTING_PROFILES } from "../lib/providers/llm/profiles";
 import { ROLE_DEFINITIONS, type LLMRole } from "../lib/providers/llm/roles";
 import { llmCostMark, llmCostSince, withLlmStage } from "../lib/providers/llm/costLedger";
@@ -507,16 +512,29 @@ export interface CanaryRoute {
   role: string;
   /** provider/model, for humans. */
   label: string;
+  /** The provider alone. Two models from one lab are NOT independent of each
+   *  other, so this is graded separately from the endpoint. */
+  provider: string;
   /** provider + normalized base URL + model. Two routes are the SAME endpoint
    *  when these match, even if the labels differ. */
   identity: string;
 }
 
 export interface RouteIndependence {
+  /** True ONLY at provider level. Persisted to the report as-is. */
   independent: boolean;
+  /** provider | model | none — see routingAudit.ts. */
+  level: IndependenceLevel;
+  /** False when a better separation was available and simply not used. */
+  acceptable: boolean;
   /** Authoring roles that share the judge's endpoint. */
   collisions: string[];
+  /** Authoring roles that share the judge's PROVIDER. */
+  providerCollisions: string[];
+  /** Other credentialed providers the judge could have used. Names only. */
+  alternativesAvailable: string[];
   reason: string | null;
+  remedy: string | null;
 }
 
 /**
@@ -525,17 +543,34 @@ export interface RouteIndependence {
  * Run BEFORE any spend: a model grading its own output is a configuration
  * defect, and discovering it after paying for a full seven-role script means
  * paying for a verdict that was never worth anything.
+ *
+ * WHY THIS WAS REWRITTEN. It compared ENDPOINTS, so `anthropic/claude-sonnet-5`
+ * judging `anthropic/claude-opus-5` passed as independent — and that is exactly
+ * the configuration this repository's own GitHub variables held: nine roles on
+ * one provider, with the judge differing from the writers by model only. Two
+ * models from one lab share training data, alignment and blind spots. The rule
+ * now lives in routingAudit.ts so readiness and this check cannot disagree.
  */
-export function assessRouteIndependence(authoring: CanaryRoute[], judge: CanaryRoute): RouteIndependence {
-  const collisions = authoring.filter((r) => r.identity === judge.identity).map((r) => r.role);
-  if (!collisions.length) return { independent: true, collisions: [], reason: null };
+export function assessRouteIndependence(
+  authoring: CanaryRoute[],
+  judge: CanaryRoute,
+  alternativesAvailable: string[] = configuredLlmProviders()
+): RouteIndependence {
+  const grade = gradeIndependence({
+    judge,
+    authoring,
+    alternativesAvailable,
+    envVars: roleEnvVars(CANARY_JUDGE_ROLE),
+  });
   return {
-    independent: false,
-    collisions,
-    reason:
-      `The independent judge (${CANARY_JUDGE_ROLE}) resolves to ${judge.label}, the same endpoint as ` +
-      `${collisions.length} authoring role(s): ${collisions.join(", ")}. A model cannot independently judge ` +
-      `dialogue it wrote. Point ${roleEnvVars(CANARY_JUDGE_ROLE).join(" / ")} at a different provider or model.`,
+    independent: grade.independent,
+    level: grade.level,
+    acceptable: grade.acceptable,
+    collisions: grade.endpointCollisions,
+    providerCollisions: grade.providerCollisions,
+    alternativesAvailable: alternativesAvailable.filter((p) => p !== judge.provider),
+    reason: grade.reason,
+    remedy: grade.remedy,
   };
 }
 
@@ -557,9 +592,16 @@ export interface PreSpendVerdict {
 export function preSpendCheck(
   preflight: PreflightResult,
   authoring: CanaryRoute[],
-  judge: CanaryRoute
+  judge: CanaryRoute,
+  /** Credentialed LLM providers. Injectable so a test states the deployment
+   *  shape it is testing instead of inheriting the machine's environment. */
+  alternativesAvailable: string[] = configuredLlmProviders()
 ): PreSpendVerdict {
-  const independence = assessRouteIndependence(authoring, judge);
+  const independence = assessRouteIndependence(authoring, judge, alternativesAvailable);
+  /** The alert an operator reads: which role, what is wrong, what to change. */
+  const independenceAlert = independence.reason
+    ? `${CANARY_JUDGE_ROLE}: ${independence.reason}${independence.remedy ? ` ${independence.remedy}` : ""}`
+    : null;
   if (!preflight.ok) {
     return {
       ok: false,
@@ -568,8 +610,14 @@ export function preSpendCheck(
       independence,
     };
   }
-  if (!independence.independent) {
-    return { ok: false, alertClass: "configuration_failure", reason: independence.reason, independence };
+  // `acceptable` is the gate, not `independent`. A deployment with one
+  // credentialed provider CANNOT put the judge elsewhere, and refusing to run
+  // would leave the release with no evidence at all — so model-level separation
+  // with no alternative is allowed through with independence=false on the
+  // record. Model-level separation while another provider sat credentialed and
+  // unused is a fixable mistake and stops the run before it spends anything.
+  if (!independence.acceptable) {
+    return { ok: false, alertClass: "configuration_failure", reason: independenceAlert, independence };
   }
   return { ok: true, alertClass: null, reason: null, independence };
 }
@@ -579,7 +627,12 @@ function resolveCanaryRoutes(): { all: CanaryRoute[]; authoring: CanaryRoute[]; 
   const route = (role: LLMRole): CanaryRoute => {
     const first = resolveRolePlan(role).candidates[0];
     const candidate = first ?? { provider: "(no candidate)", model: undefined };
-    return { role, label: candidateKey(candidate), identity: endpointIdentity(candidate) };
+    return {
+      role,
+      label: candidateKey(candidate),
+      provider: candidate.provider,
+      identity: endpointIdentity(candidate),
+    };
   };
   const all = CANARY_LLM_ROLES.map(route);
   const byRole = new Map(all.map((r) => [r.role, r]));

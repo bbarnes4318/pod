@@ -165,6 +165,14 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // judge chain deliberately shares no model with script_movement.
     case "quality_judge":
       return [NV.nemotron(), NV.glm()];
+
+    // The cold-open judge grades three openings the WRITERS produced, so it
+    // shares no model with the dialogue family either. Its order is inverted
+    // against quality_judge on purpose: the opening and the finished script are
+    // two different judgements, and having them land on the same model by
+    // default would make one of the two verdicts redundant for free.
+    case "cold_open_judge":
+      return [NV.glm(), NV.nemotron()];
   }
 }
 
@@ -283,6 +291,11 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // Never shares a model with script_movement.
     case "quality_judge":
       return [NV.nemotron(), NV.glm()];
+
+    // Neither judge shares a model with the dialogue family, and the two judges
+    // do not share a primary with each other — see the frontier profile.
+    case "cold_open_judge":
+      return [NV.glm(), NV.nemotron()];
 
     // ---- roles below are MEASURED (see the findings block above)
 

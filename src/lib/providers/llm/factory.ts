@@ -4,6 +4,7 @@ import { OpenAILLMProvider } from "./openai";
 import { AnthropicLLMProvider } from "./anthropic";
 import { NvidiaNimLLMProvider } from "./nvidia";
 import { ZaiLLMProvider } from "./zai";
+import { LEGACY_ANTHROPIC_VERIFY_MODEL } from "./routing";
 
 export function getLLMProvider(opts: { provider?: string; model?: string } = {}): LLMProvider {
   const providerType = (opts.provider || process.env.LLM_PROVIDER || "stub").toLowerCase();
@@ -76,17 +77,17 @@ export function getFactCheckLLMProvider(): LLMProvider {
  * LLM used for VERIFICATION work: the self-verify grounding rewrites and the
  * semantic fact-check reviewer. These are structured grading/rewrite tasks
  * against supplied evidence — not creative generation — so they run on a
- * cheaper model than the script writer by default (claude-sonnet-5 when the
- * chain resolves to Anthropic). Override via VERIFY_LLM_PROVIDER /
- * VERIFY_MODEL. Non-Anthropic and stub chains keep their existing model — we
- * never silently upgrade "stub" to a paid call.
+ * cheaper model than the script writer by default when the chain resolves to
+ * Anthropic. Override via VERIFY_LLM_PROVIDER / VERIFY_MODEL. Non-Anthropic and
+ * stub chains keep their existing model — we never silently upgrade "stub" to a
+ * paid call.
  */
 export function resolveVerifyLLMConfig(): { provider: string; model?: string } {
   const base = resolveFactCheckLLMConfig();
   const provider = (process.env.VERIFY_LLM_PROVIDER || base.provider).toLowerCase();
   const model =
     process.env.VERIFY_MODEL ||
-    (provider === "anthropic" ? "claude-sonnet-5" : base.model);
+    (provider === "anthropic" ? LEGACY_ANTHROPIC_VERIFY_MODEL : base.model);
   return { provider, model };
 }
 

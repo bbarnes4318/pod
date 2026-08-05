@@ -35,6 +35,7 @@
 // database, Redis or credentials — and this one is safe because it is pure
 // policy with no dependencies of its own.
 import { resolveTtsProviderPolicy } from "./ttsProviderPolicy";
+import type { HostWriterSeparation, JudgeIndependence } from "../providers/llm/routingAudit";
 
 /* ------------------------------------------------------------------ */
 /* 1. Vocabulary                                                        */
@@ -296,6 +297,21 @@ export interface ReadinessResolvers {
   /** Raw value presence only — used to tell "unset" from "unparseable". */
   gateEnforcementRawSet: (env: NodeJS.ProcessEnv) => boolean;
   llmRoutes: () => { writer: string; judge: string; judgeHasRealProvider: boolean };
+  /**
+   * The role-by-role routing picture, already graded.
+   *
+   * A resolver rather than a direct call so a test can state the deployment
+   * shape it is checking — "two providers credentialed, judge on the writer's"
+   * — without setting a dozen environment variables and hoping the machine
+   * running the suite has none of its own.
+   */
+  routingAudit: () => {
+    rowCount: number;
+    judgeIndependence: JudgeIndependence;
+    hostWriters: HostWriterSeparation;
+    concentration: Array<{ provider: string; roles: string[] }>;
+    singleProvider: boolean;
+  };
   fishSceneModel: () => string;
 }
 
@@ -607,16 +623,54 @@ export async function evaluateReadiness(input: EvaluateReadinessInput): Promise<
 
   try {
     const routes = deps.resolvers.llmRoutes();
-    const separate = Boolean(routes.writer && routes.judge && routes.writer !== routes.judge);
+    // GRADED, not binary. `writer !== judge` passed the exact configuration this
+    // repository was running — nine roles on Anthropic, the judge differing from
+    // the writers by model only — because two different strings looked like two
+    // different minds. The rule now lives in routingAudit.ts so this check and
+    // the canary's pre-spend gate cannot answer differently.
+    const audit = deps.resolvers.routingAudit();
     add({
       name: "Independent judge routed separately from writer",
       verdict: "codeConfiguration",
       category: "llm",
-      status: separate ? "pass" : "fail",
+      // A judge grading its OWN endpoint fails outright. Same-provider-different-
+      // model fails only when another credentialed provider went unused; with a
+      // single credentialed provider it warns, because no configuration of this
+      // deployment could do better and a hard fail would just block the release.
+      status: audit.judgeIndependence.level === "provider" ? "pass" : audit.judgeIndependence.acceptable ? "warn" : "fail",
       mandatory: true,
-      detail: `writer=${routes.writer || "unresolved"} judge=${routes.judge || "unresolved"}${
-        routes.writer === routes.judge ? " — identical routes defeat independent judging." : ""
-      }`,
+      detail:
+        `writer=${routes.writer || "unresolved"} judge=${routes.judge || "unresolved"} ` +
+        `independence=${audit.judgeIndependence.independent} level=${audit.judgeIndependence.level}` +
+        (audit.judgeIndependence.reason ? ` — ${audit.judgeIndependence.reason}` : "") +
+        (audit.judgeIndependence.remedy ? ` ${audit.judgeIndependence.remedy}` : ""),
+    });
+    add({
+      name: "Host A and Host B written by different routes",
+      verdict: "codeConfiguration",
+      category: "llm",
+      // One model writing both characters converges them no matter how well the
+      // briefs are isolated. Warn rather than fail: it degrades the show, it does
+      // not make the pipeline unsafe, and blocking would strand a
+      // single-provider deployment with no path forward.
+      status: audit.hostWriters.separate ? "pass" : "warn",
+      mandatory: false,
+      detail:
+        `hostA=${audit.hostWriters.hostA} hostB=${audit.hostWriters.hostB}` +
+        (audit.hostWriters.reason ? ` — ${audit.hostWriters.reason}` : "") +
+        (audit.hostWriters.remedy ? ` ${audit.hostWriters.remedy}` : ""),
+    });
+    add({
+      name: "Editorial roles are not concentrated on one provider",
+      verdict: "codeConfiguration",
+      category: "llm",
+      status: audit.singleProvider ? "warn" : "pass",
+      mandatory: false,
+      detail: audit.singleProvider
+        ? `All ${audit.rowCount} audited roles resolve to ${audit.concentration[0]?.provider}. ` +
+          `That is a routing decision nobody made explicitly — it is what an unset LLM_ROUTING_PROFILE plus ` +
+          `grouped LLM_* / SCRIPT_LLM_* variables produces. Run \`npm run audit:llm-routing\` for the table.`
+        : `${audit.concentration.map((c) => `${c.provider}:${c.roles.length}`).join(" ")} across ${audit.rowCount} roles.`,
     });
     add({
       name: "Quality judge has a real provider",
@@ -1863,6 +1917,7 @@ export async function createLiveDependencies(): Promise<ReadinessDependencies> {
   const editorialGate = await import("./scriptEditorialGate");
   const rollout = await import("../queue/rolloutPolicy");
   const routing = await import("../providers/llm/routing");
+  const routingAudit = await import("../providers/llm/routingAudit");
   const fishDialogue = await import("../providers/tts/fishDialogue");
 
   return {
@@ -1872,6 +1927,30 @@ export async function createLiveDependencies(): Promise<ReadinessDependencies> {
       gateEnforcementVar: rollout.GATE_ENFORCEMENT_FROM_VAR,
       gateEnforcementCutover: () => rollout.resolveGateEnforcementCutover(),
       gateEnforcementRawSet: (env) => Boolean((env[rollout.GATE_ENFORCEMENT_FROM_VAR] || "").trim()),
+      routingAudit: () => {
+        const report = routingAudit.auditRoleRouting();
+        const judge =
+          report.judges.find((j) => j.judgeRole === "quality_judge") ??
+          report.judges[0] ?? {
+            level: "none" as const,
+            independent: false,
+            acceptable: false,
+            judgeRole: "quality_judge" as const,
+            judgeLabel: "(unresolved)",
+            providerCollisions: [],
+            endpointCollisions: [],
+            alternativesAvailable: [],
+            reason: "No judge route could be graded.",
+            remedy: "Set QUALITY_JUDGE_LLM_PROVIDER / QUALITY_JUDGE_LLM_MODEL.",
+          };
+        return {
+          rowCount: report.rows.length,
+          judgeIndependence: judge,
+          hostWriters: report.hostWriters,
+          concentration: report.concentration.map((c) => ({ provider: c.provider, roles: c.roles as string[] })),
+          singleProvider: report.singleProvider,
+        };
+      },
       llmRoutes: () => ({
         writer: routing.roleProviderLabel("script_movement"),
         judge: routing.roleProviderLabel("quality_judge"),

@@ -147,10 +147,43 @@ function healthyDeps(over: Partial<ReadinessDependencies["probes"]> = {}): Readi
         return Number.isFinite(d.getTime()) ? d : null;
       },
       gateEnforcementRawSet: (env) => Boolean((env.SCRIPT_GATE_ENFORCEMENT_FROM || "").trim()),
+      // HEALTHY means the judge is on a DIFFERENT PROVIDER. This fixture used to
+      // read anthropic/claude-opus-5 vs anthropic/claude-sonnet-5 and call it
+      // healthy — the same-lab configuration the repository was actually
+      // running. A fixture that encodes the defect cannot catch it.
       llmRoutes: () => ({
         writer: "anthropic/claude-opus-5",
-        judge: "anthropic/claude-sonnet-5",
+        judge: "nvidia/nemotron-3-ultra",
         judgeHasRealProvider: true,
+      }),
+      routingAudit: () => ({
+        rowCount: 9,
+        judgeIndependence: {
+          level: "provider",
+          independent: true,
+          acceptable: true,
+          judgeRole: "quality_judge",
+          judgeLabel: "nvidia/nemotron-3-ultra",
+          providerCollisions: [],
+          endpointCollisions: [],
+          alternativesAvailable: ["anthropic"],
+          reason: null,
+          remedy: null,
+        },
+        hostWriters: {
+          separate: true,
+          sameEndpoint: false,
+          sameProvider: false,
+          hostA: "anthropic/claude-opus-5",
+          hostB: "nvidia/mistral-medium-3.5",
+          reason: null,
+          remedy: null,
+        },
+        concentration: [
+          { provider: "anthropic", roles: ["script_story_editor", "script_debate_architect", "script_host_a_writer"] },
+          { provider: "nvidia", roles: ["script_host_b_writer", "quality_judge", "cold_open_judge"] },
+        ],
+        singleProvider: false,
       }),
       fishSceneModel: () => "s2.1-pro-free",
     },

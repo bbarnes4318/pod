@@ -115,7 +115,9 @@ function fullEnv(over: CanaryEnv = {}): CanaryEnv {
 }
 
 function route(role: string, label: string, identity = label): CanaryRoute {
-  return { role, label, identity };
+  // The provider is the part before the slash, matching how candidateKey spells
+  // a real route — so a fixture cannot accidentally claim two labs.
+  return { role, label, provider: label.split("/")[0], identity };
 }
 
 function roleRow(over: Partial<CanaryRoleRow> = {}): CanaryRoleRow {
@@ -373,28 +375,59 @@ check("identical writer and judge routes are a configuration_failure before any 
   );
   const judge = route("quality_judge", "anthropic/claude-opus-5", shared);
 
-  const independence = assessRouteIndependence(authoring, judge);
+  const independence = assessRouteIndependence(authoring, judge, ["anthropic"]);
   assert.equal(independence.independent, false);
+  assert.equal(independence.level, "none");
+  assert.equal(independence.acceptable, false, "self-judging is never acceptable, at any deployment shape");
   assert.deepEqual(independence.collisions.sort(), [...CANARY_AUTHORING_ROLES].sort());
-  assert.ok(independence.reason!.includes("QUALITY_JUDGE_LLM_PROVIDER"), "the alert must name the variable to change");
+  assert.ok(independence.remedy!.includes("QUALITY_JUDGE_LLM_PROVIDER"), "the alert must name the variable to change");
 
   // The spend gate itself: a passing preflight plus a colliding judge must still
   // stop the run, and must stop it as a CONFIGURATION failure.
   const mark = llmCostMark();
-  const verdict = preSpendCheck(preflightCanaryEnv(fullEnv()), authoring, judge);
+  const verdict = preSpendCheck(preflightCanaryEnv(fullEnv()), authoring, judge, ["anthropic"]);
   assert.equal(verdict.ok, false);
   assert.equal(verdict.alertClass, "configuration_failure");
-  assert.ok(verdict.reason!.includes("quality_judge"));
+  assert.ok(verdict.reason!.includes("quality_judge"), "the alert must name the role");
+  assert.ok(verdict.reason!.includes("QUALITY_JUDGE_LLM_PROVIDER"), "and the variable to change");
   assert.equal(llmCostSince(mark).callCount, 0, "the pre-spend check must not have cost a single LLM call");
 
-  // A judge on a genuinely different endpoint passes.
+  // A DIFFERENT MODEL ON THE SAME PROVIDER IS NOT INDEPENDENCE.
+  //
+  // This assertion used to say the opposite, and the configuration it blessed is
+  // the one this repository was actually running: nine roles on Anthropic with
+  // the judge differing by model alone. Two models from one lab share training
+  // data, alignment and blind spots.
+  const sameLab = route(
+    "quality_judge",
+    "anthropic/claude-sonnet-5",
+    "anthropic|https://api.anthropic.com/v1|claude-sonnet-5"
+  );
+  const withAlternative = preSpendCheck(preflightCanaryEnv(fullEnv()), authoring, sameLab, ["anthropic", "nvidia"]);
+  assert.equal(withAlternative.ok, false, "an unused credentialed provider makes same-lab judging a fixable mistake");
+  assert.equal(withAlternative.independence.level, "model");
+  assert.equal(withAlternative.independence.independent, false);
+  assert.ok(withAlternative.reason!.includes("nvidia"), "the alert must name the provider that was available");
+
+  // ...but a deployment with only ONE credentialed provider cannot do better,
+  // so it proceeds with independence=false ON THE RECORD rather than silently.
+  const soleProvider = preSpendCheck(preflightCanaryEnv(fullEnv()), authoring, sameLab, ["anthropic"]);
+  assert.equal(soleProvider.ok, true, "a single-provider deployment must not be blocked from running at all");
+  assert.equal(soleProvider.independence.independent, false, "but it is NOT independent, and says so");
+  assert.equal(soleProvider.independence.acceptable, true);
+  assert.equal(soleProvider.independence.level, "model");
+
+  // A judge on a genuinely different PROVIDER is the real thing.
   const distinct = preSpendCheck(
     preflightCanaryEnv(fullEnv()),
     authoring,
-    route("quality_judge", "anthropic/claude-sonnet-5", "anthropic|https://api.anthropic.com/v1|claude-sonnet-5")
+    route("quality_judge", "nvidia/nemotron-3-ultra", "nvidia|https://integrate.api.nvidia.com/v1|nemotron-3-ultra"),
+    ["anthropic", "nvidia"]
   );
-  assert.equal(distinct.ok, true, `a distinct judge route must pass: ${distinct.reason}`);
+  assert.equal(distinct.ok, true, `a different-provider judge must pass: ${distinct.reason}`);
   assert.equal(distinct.alertClass, null);
+  assert.equal(distinct.independence.independent, true);
+  assert.equal(distinct.independence.level, "provider");
 
   // An incomplete environment is caught by the same gate, also before spending.
   const unconfigured = preSpendCheck(preflightCanaryEnv({}), authoring, judge);

@@ -73,6 +73,19 @@ export interface RolePlan {
   isLegacyBypass: boolean;
 }
 
+/**
+ * The one Anthropic model id still named inside provider-agnostic routing.
+ *
+ * Exported and constant rather than inlined because it IS a vendor decision
+ * baked into shared code, and a decision nobody can see is a decision nobody
+ * revisits. Its scope is narrow: it picks a model for a chain that has ALREADY
+ * resolved to Anthropic, it never routes a role TO Anthropic, and VERIFY_MODEL
+ * overrides it entirely. `routingAudit.ts` reports every role that inherits it,
+ * so "the verifier runs on Claude because of a literal in routing.ts" is a
+ * visible fact rather than folklore.
+ */
+export const LEGACY_ANTHROPIC_VERIFY_MODEL = "claude-sonnet-5";
+
 const PAID_PROVIDERS = new Set(["anthropic", "openai"]);
 
 export function isPaidProvider(provider: string): boolean {
@@ -155,8 +168,12 @@ export function resolveLegacyFamily(family: LegacyFamily): { provider: string; m
     base = { provider: (readRoutingEnv("LLM_PROVIDER") || "stub").toLowerCase(), model: undefined };
   }
   const provider = (readRoutingEnv("VERIFY_LLM_PROVIDER") || base.provider).toLowerCase();
+  // The single Anthropic literal left in shared routing, named in factory.ts so
+  // it can be seen and revisited. It picks a model for a chain that has ALREADY
+  // resolved to Anthropic; it never routes a role to Anthropic.
   const model =
-    readRoutingEnv("VERIFY_MODEL") || (provider === "anthropic" ? "claude-sonnet-5" : base.model);
+    readRoutingEnv("VERIFY_MODEL") ||
+    (provider === "anthropic" ? LEGACY_ANTHROPIC_VERIFY_MODEL : base.model);
   return { provider, model };
 }
 

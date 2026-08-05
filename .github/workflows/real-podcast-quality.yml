@@ -60,6 +60,12 @@ jobs:
         run: npm run test:canary-preflight
       - name: Provider error classification regression
         run: npm run test:provider-error-classification
+      - name: LLM role routing and judge independence
+        run: npm run test:llm-role-routing
+      # Configuration-only. Fails on a role that resolves to nothing or a judge
+      # grading its own output; a single-provider account passes with warnings.
+      - name: Role routing audit
+        run: npm run audit:llm-routing
       # Security and release-safety suites added after the independent review.
       - name: Voice audition authorization matrix
         run: npm run test:voice-audition-authz

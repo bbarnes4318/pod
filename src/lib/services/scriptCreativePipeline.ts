@@ -50,6 +50,41 @@ export interface ColdOpenTournamentResult {
   wordBand?: { min: number; max: number };
   /** Why the other two candidates lost. */
   rejected?: Array<{ id: string; textScore: number; reasons: string[] }>;
+  /**
+   * Which route WROTE each candidate, and which route judged them.
+   *
+   * Persisted because "three candidates" only means something if they are
+   * genuinely three. One model asked for three openings in one call produces
+   * three angles on one sensibility; three providers produce three sensibilities.
+   * Both are legitimate, and the difference has to be readable after the fact —
+   * otherwise a tournament between three near-identical drafts looks exactly
+   * like a real one in the artifact.
+   */
+  authorship?: {
+    mode: "single_writer" | "multi_provider";
+    /** variantId → provider/model that wrote it. */
+    writers: Record<string, string>;
+    /** Distinct writer routes that produced the field. */
+    distinctWriters: string[];
+    judge: string;
+    /** Candidates a writer failed to produce, with the reason. Never hidden. */
+    failures: Array<{ variantId: string; writer: string; error: string }>;
+  };
+}
+
+/**
+ * One cold-open candidate and the route asked to write it.
+ *
+ * The pool is how "candidates must support generation by multiple configured
+ * providers" is satisfied: hand this function more than one writer and the
+ * field is genuinely diverse; hand it one and nothing about today's behaviour
+ * changes.
+ */
+export interface ColdOpenWriterAssignment {
+  variantId: (typeof IDS)[number];
+  provider: LLMProvider;
+  /** provider/model, for provenance. Never a credential. */
+  label: string;
 }
 
 const IDS = ["accusation", "consequence", "contradiction"] as const;
@@ -108,32 +143,104 @@ function spokenWords(lines: CreativeScriptLine[]): number {
   return lines.reduce((sum, line) => sum + stripAudioTags(String(line?.text || "")).split(/\s+/).filter(Boolean).length, 0);
 }
 
+/**
+ * The bar ONE candidate has to clear. Shared by the single-call path and the
+ * per-provider path so a multi-provider field is held to exactly the same
+ * standard as a single writer's three — a diverse field of bad openings is not
+ * an improvement.
+ */
+function validateOneColdOpen(variant: { id?: string; lines?: CreativeScriptLine[] }): string | null {
+  if (!Array.isArray(variant.lines) || variant.lines.length < 3) return `${variant.id} needs at least three lines.`;
+  const words = spokenWords(variant.lines);
+  if (words < COLD_OPEN_MIN_WORDS || words > COLD_OPEN_MAX_WORDS) {
+    return `${variant.id} has ${words} words; required range is ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS}.`;
+  }
+  // A cold open that greets, introduces, or summarises is not a cold open at
+  // any word count.
+  const joined = variant.lines.map((l) => String(l?.text || "")).join(" ").toLowerCase();
+  if (/\b(welcome (back )?to|you're listening to|thanks for (tuning|joining)|hello and welcome|i'm your host|on today's (show|episode)|coming up on)\b/.test(joined)) {
+    return `${variant.id} opens with a greeting or show description; it must start mid-argument.`;
+  }
+  return null;
+}
+
 function validateColdOpenDraft(value: unknown): string | null {
   const parsed = value as { variants?: Array<{ id?: string; lines?: CreativeScriptLine[] }> };
   if (!Array.isArray(parsed?.variants) || parsed.variants.length !== 3) return "Exactly three cold-open variants are required.";
   const seen = new Set(parsed.variants.map((v) => v.id));
   if (IDS.some((id) => !seen.has(id))) return "Cold opens must be accusation, consequence and contradiction.";
   for (const variant of parsed.variants) {
-    if (!Array.isArray(variant.lines) || variant.lines.length < 3) return `${variant.id} needs at least three lines.`;
-    const words = spokenWords(variant.lines);
-    if (words < COLD_OPEN_MIN_WORDS || words > COLD_OPEN_MAX_WORDS) {
-      return `${variant.id} has ${words} words; required range is ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS}.`;
-    }
-    // A cold open that greets, introduces, or summarises is not a cold open at
-    // any word count.
-    const joined = variant.lines.map((l) => String(l?.text || "")).join(" ").toLowerCase();
-    if (/\b(welcome (back )?to|you're listening to|thanks for (tuning|joining)|hello and welcome|i'm your host|on today's (show|episode)|coming up on)\b/.test(joined)) {
-      return `${variant.id} opens with a greeting or show description; it must start mid-argument.`;
-    }
+    const failure = validateOneColdOpen(variant);
+    if (failure) return failure;
   }
   return null;
+}
+
+/** What each of the three angles is asked to do. One place, both paths. */
+const COLD_OPEN_ANGLES: Record<(typeof IDS)[number], string> = {
+  accusation: "one host directly challenges the other's judgment",
+  consequence: "begin with the most concrete human cost",
+  contradiction: "begin with two evidence-backed facts that should not comfortably coexist",
+};
+
+function coldOpenSystemPrompt(base: string): string {
+  return `${base}\n\nThis is a dedicated cold-open room. Write only the first 45 seconds. No greeting, show description, throat-clearing, scene label, or "today we're discussing". Start in motion. Each host owns only their private agenda; do not make either character recite the other's internal objective.`;
+}
+
+function coldOpenLineContract(speakerNames: string[]): string {
+  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Legal speakers: ${speakerNames.join(", ")}.`;
+}
+
+/**
+ * ONE candidate from ONE route.
+ *
+ * Used only on the multi-provider path. The prompt is the single-call prompt
+ * narrowed to a single angle — deliberately the same instructions, so a
+ * difference between two candidates is a difference between two models rather
+ * than a difference between two prompts.
+ */
+async function generateOneColdOpenVariant(
+  assignment: ColdOpenWriterAssignment,
+  input: {
+    episodeTitle: string;
+    coldOpenBeat: unknown;
+    topicsEvidence: string;
+    speakerNames: string[];
+    agendas: PrivateHostAgenda[];
+    systemPrompt: string;
+  }
+): Promise<{ id: (typeof IDS)[number]; lines: CreativeScriptLine[] }> {
+  const result = await withLlmStage(`script:cold-open-variant:${assignment.variantId}`, () =>
+    assignment.provider.generateStructuredOutput<{ lines: CreativeScriptLine[] }>({
+      systemPrompt: coldOpenSystemPrompt(input.systemPrompt),
+      prompt: `Write ONE 45-second opening for ${JSON.stringify(input.episodeTitle)} on this angle:\n${assignment.variantId} — ${COLD_OPEN_ANGLES[assignment.variantId]}.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\n${coldOpenLineContract(input.speakerNames)} Return JSON only: {"lines":[]}`,
+      temperature: 0.9,
+      maxTokens: 4000,
+      validate: (value) =>
+        validateOneColdOpen({ id: assignment.variantId, lines: (value as { lines?: CreativeScriptLine[] })?.lines }),
+    })
+  );
+  return { id: assignment.variantId, lines: result.lines };
 }
 
 interface ColdOpenJudgment { id: string; score: number; reasons: string[] }
 
 export async function runColdOpenTextTournament(input: {
   writer: LLMProvider;
+  /**
+   * OPTIONAL distinct routes to spread the three candidates across.
+   *
+   * Omitted or holding fewer than two distinct labels, the single-call path runs
+   * and nothing about today's behaviour changes. With two or more, each angle is
+   * written by its own route — which is the only way three candidates are three
+   * opinions rather than one model's three moods.
+   */
+  writerPool?: ColdOpenWriterAssignment[];
+  /** provider/model of `writer`, for the authorship record. */
+  writerLabel?: string;
   judge: LLMProvider;
+  /** provider/model of `judge`, for the authorship record. */
+  judgeLabel?: string;
   episodeTitle: string;
   coldOpenBeat: unknown;
   topicsEvidence: string;
@@ -142,25 +249,90 @@ export async function runColdOpenTextTournament(input: {
   systemPrompt: string;
   learningPolicy?: unknown;
 }): Promise<{ segment: CreativeScriptSegment; tournament: ColdOpenTournamentResult }> {
-  const draft = await withLlmStage("script:cold-open-variants", () =>
-    input.writer.generateStructuredOutput<{ variants: Array<{ id: ColdOpenVariant["id"]; lines: CreativeScriptLine[] }> }>({
-      systemPrompt: `${input.systemPrompt}\n\nThis is a dedicated cold-open room. Write only the first 45 seconds. No greeting, show description, throat-clearing, scene label, or \"today we're discussing\". Start in motion. Each host owns only their private agenda; do not make either character recite the other's internal objective.`,
-      prompt: `Create three COMPLETELY DIFFERENT 45-second openings for ${JSON.stringify(input.episodeTitle)}:\n1. accusation — one host directly challenges the other's judgment;\n2. consequence — begin with the most concrete human cost;\n3. contradiction — begin with two evidence-backed facts that should not comfortably coexist.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\nUse 80-120 spoken words per variant and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Legal speakers: ${input.speakerNames.join(", ")}. Return JSON only: {"variants":[{"id":"accusation","lines":[]},{"id":"consequence","lines":[]},{"id":"contradiction","lines":[]}]}`,
-      temperature: 0.9,
-      maxTokens: 8000,
-      validate: validateColdOpenDraft,
-    })
-  );
+  const distinctPoolLabels = [...new Set((input.writerPool ?? []).map((a) => a.label))];
+  const multiProvider = distinctPoolLabels.length >= 2;
+
+  const writers: Record<string, string> = {};
+  const failures: Array<{ variantId: string; writer: string; error: string }> = [];
+  let variantDrafts: Array<{ id: ColdOpenVariant["id"]; lines: CreativeScriptLine[] }>;
+
+  if (multiProvider) {
+    // One call per angle, so a candidate that fails is that ROUTE's failure and
+    // is recorded as such. Settled rather than raced: one provider being down
+    // must cost its own candidate, never the whole tournament.
+    const assignments = input.writerPool!;
+    const settled = await Promise.all(
+      assignments.map(async (assignment) => {
+        try {
+          const variant = await generateOneColdOpenVariant(assignment, input);
+          return { assignment, variant, error: null as string | null };
+        } catch (err) {
+          return { assignment, variant: null, error: (err as Error).message };
+        }
+      })
+    );
+    variantDrafts = [];
+    for (const outcome of settled) {
+      if (outcome.variant) {
+        variantDrafts.push(outcome.variant);
+        writers[outcome.variant.id] = outcome.assignment.label;
+      } else {
+        failures.push({
+          variantId: outcome.assignment.variantId,
+          writer: outcome.assignment.label,
+          error: String(outcome.error),
+        });
+      }
+    }
+    // Two survivors is the floor. A "tournament" with one entrant is a single
+    // draft wearing a rosette, and persisting it as a tournament result would
+    // make the selection look contested when nothing was compared.
+    if (variantDrafts.length < 2) {
+      throw new Error(
+        `The cold-open tournament needs at least two candidates; ${variantDrafts.length} survived. ` +
+          failures.map((f) => `${f.variantId} (${f.writer}): ${f.error}`).join(" | ")
+      );
+    }
+  } else {
+    const draft = await withLlmStage("script:cold-open-variants", () =>
+      input.writer.generateStructuredOutput<{ variants: Array<{ id: ColdOpenVariant["id"]; lines: CreativeScriptLine[] }> }>({
+        systemPrompt: coldOpenSystemPrompt(input.systemPrompt),
+        prompt: `Create three COMPLETELY DIFFERENT 45-second openings for ${JSON.stringify(input.episodeTitle)}:\n1. accusation — ${COLD_OPEN_ANGLES.accusation};\n2. consequence — ${COLD_OPEN_ANGLES.consequence};\n3. contradiction — ${COLD_OPEN_ANGLES.contradiction}.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\n${coldOpenLineContract(input.speakerNames)} Return JSON only: {"variants":[{"id":"accusation","lines":[]},{"id":"consequence","lines":[]},{"id":"contradiction","lines":[]}]}`,
+        temperature: 0.9,
+        maxTokens: 8000,
+        validate: validateColdOpenDraft,
+      })
+    );
+    variantDrafts = draft.variants;
+    const label = input.writerLabel || "(unlabelled writer)";
+    for (const variant of variantDrafts) writers[variant.id] = label;
+  }
+
+  const draft = { variants: variantDrafts };
 
   const judgments = await withLlmStage("script:cold-open-judge", () =>
     input.judge.generateStructuredOutput<{ judgments: ColdOpenJudgment[] }>({
       systemPrompt: "You are an independent podcast cold-open judge. You do not reward volume, famous names, greetings, or generic drama. Reward an immediate open loop, specific consequence, unmistakable characters, causal back-and-forth, evidence integrity, and lines that will perform well aloud.",
-      prompt: `Blind-rank these three openings. Score each 0-100. Penalize any unsupported claim, exposition, interchangeable host voice, or answer revealed too early.\n\nSHOW-SPECIFIC LEARNING POLICY (soft prior only; never force a winner, never override this episode's evidence or character fit):\n${JSON.stringify(input.learningPolicy || null)}\n\n${JSON.stringify(draft.variants)}\n\nReturn JSON only: {"judgments":[{"id":"accusation","score":0,"reasons":["..."]}]}`,
+      // The candidates go to the judge as bare {id, lines} — no writer label,
+      // no provider name, no ordering signal. Telling a judge which lab wrote
+      // which opening would turn a craft comparison into a brand preference,
+      // and that matters far more now that the field can come from three
+      // different providers.
+      prompt: `Blind-rank these ${draft.variants.length} openings. Score each 0-100. Penalize any unsupported claim, exposition, interchangeable host voice, or answer revealed too early.\n\nSHOW-SPECIFIC LEARNING POLICY (soft prior only; never force a winner, never override this episode's evidence or character fit):\n${JSON.stringify(input.learningPolicy || null)}\n\n${JSON.stringify(draft.variants)}\n\nReturn JSON only: {"judgments":[{"id":"accusation","score":0,"reasons":["..."]}]}`,
       temperature: 0,
       maxTokens: 3000,
       validate: (value) => {
         const parsed = value as { judgments?: ColdOpenJudgment[] };
-        return Array.isArray(parsed?.judgments) && parsed.judgments.length === 3 ? null : "Exactly three judgments are required.";
+        if (!Array.isArray(parsed?.judgments)) return "A judgments array is required.";
+        // One judgement per SURVIVING candidate. Hardcoding three would fail the
+        // whole tournament whenever one provider in the pool was down, which is
+        // the moment the other two candidates matter most.
+        if (parsed.judgments.length !== draft.variants.length) {
+          return `Exactly ${draft.variants.length} judgments are required, one per candidate.`;
+        }
+        const ids = new Set(parsed.judgments.map((j) => j?.id));
+        const missing = draft.variants.filter((v) => !ids.has(v.id)).map((v) => v.id);
+        return missing.length ? `No judgment returned for: ${missing.join(", ")}.` : null;
       },
     })
   );
@@ -191,6 +363,13 @@ export async function runColdOpenTextTournament(input: {
         textScore: v.textScore,
         reasons: v.judgeReasons,
       })),
+      authorship: {
+        mode: multiProvider ? "multi_provider" : "single_writer",
+        writers,
+        distinctWriters: [...new Set(Object.values(writers))],
+        judge: input.judgeLabel || "(unlabelled judge)",
+        failures,
+      },
     },
   };
 }

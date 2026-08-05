@@ -45,6 +45,7 @@ export type LLMRole =
   | "fact_check"
   | "show_notes"
   | "episode_metadata"
+  | "cold_open_judge"
   | "quality_judge";
 
 /** The three grouped provider configurations that exist today. */
@@ -367,6 +368,25 @@ export const ROLE_DEFINITIONS: Record<LLMRole, RoleDefinition> = {
     // Deterministic today: publishAssetsService derives titles/descriptions/
     // chapters from the script and show notes without a model call.
     callSites: [],
+  },
+  cold_open_judge: {
+    role: "cold_open_judge",
+    label: "Cold-open judge",
+    purpose:
+      "Blind-ranks the three cold-open candidates before a word of the episode body is written. Separate from " +
+      "the final editorial judge on purpose: this one decides which of three openings survives, on craft alone, " +
+      "and it must never be the model that wrote them.",
+    envPrefix: "COLD_OPEN_JUDGE",
+    // Same grouped families as the final judge, so an unset COLD_OPEN_JUDGE_*
+    // resolves exactly where the cold-open judge resolved before this role
+    // existed. Declaring the role changes nothing until someone routes it.
+    legacyRollback: "verify",
+    legacyBackup: "verify",
+    structured: true,
+    reasoning: "on",
+    temperature: 0,
+    userFacingDialogue: false,
+    callSites: ["src/lib/services/scriptCreativePipeline.ts → script:cold-open-judge"],
   },
   quality_judge: {
     role: "quality_judge",

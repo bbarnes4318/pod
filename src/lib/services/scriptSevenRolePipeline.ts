@@ -74,6 +74,25 @@ import {
   type SevenRole,
 } from "./scriptRoles";
 import { assessScriptQuality, type CombinedQualityReport } from "./scriptQualityJudge";
+import { getRoleLLMProvider, resolveRolePlan, candidateKey } from "../providers/llm/routing";
+import { planColdOpenWriterRoutes } from "../providers/llm/routingAudit";
+import { readRoutingEnv, roleOverrideKeys } from "../providers/llm/routingEnv";
+import type { LLMRole } from "../providers/llm/roles";
+
+/** Has an operator actually routed the cold-open judge? Unset means "inherit". */
+function coldOpenJudgeIsRouted(): boolean {
+  return Boolean(readRoutingEnv(roleOverrideKeys("cold_open_judge").providerKey));
+}
+
+/** provider/model for a role, for the tournament's authorship record. Never a key. */
+function coldOpenRouteLabel(role: LLMRole): string {
+  try {
+    const first = resolveRolePlan(role).candidates[0];
+    return first ? candidateKey(first) : "(unresolved)";
+  } catch {
+    return "(unresolved)";
+  }
+}
 
 // ---------------------------------------------------------------- thresholds
 //
@@ -294,11 +313,37 @@ export async function runSevenRolePipeline(
 
       // The cold open is the architect's: it decides how the episode enters the
       // argument. The tournament is preserved exactly — three candidates, an
-      // 80-120 word band, chosen by an INDEPENDENT judge, which here is the
-      // provider bound to role 7 rather than the writer's own model.
+      // 80-120 word band, chosen by an INDEPENDENT judge.
+      //
+      // TWO THINGS ARE NEW, and neither changes a single-provider deployment.
+      // The judge is now the dedicated `cold_open_judge` route, which resolves
+      // to the same grouped configuration as the final judge until somebody
+      // routes it elsewhere. And when two or more DISTINCT writer routes are
+      // credentialed, the three candidates are written one per route instead of
+      // three-in-one-call — because three openings from one model are three
+      // moods, not three opinions, and the tournament was built to compare
+      // opinions. With one route configured, `planColdOpenWriterRoutes` returns
+      // nothing and the original single-call path runs untouched.
+      const coldOpenWriterPlan = planColdOpenWriterRoutes();
       const coldOpen = await runColdOpenTextTournament({
         writer: llm,
-        judge: trace.providerFor("independent_judge"),
+        writerLabel: coldOpenRouteLabel("script_debate_architect"),
+        writerPool: coldOpenWriterPlan.map((route) => ({
+          variantId: route.variantId,
+          provider: getRoleLLMProvider(route.llmRole),
+          label: route.label,
+        })),
+        // The dedicated route is used ONLY when an operator has explicitly set
+        // it. Unset, the judge stays the provider bound to role 7 through the
+        // trace — which is both the old behaviour and the seam the tests inject
+        // through. Reaching past the trace to the global router by default would
+        // have made every injected-provider test call a real endpoint.
+        judge: coldOpenJudgeIsRouted()
+          ? getRoleLLMProvider("cold_open_judge")
+          : trace.providerFor("independent_judge"),
+        judgeLabel: coldOpenJudgeIsRouted()
+          ? coldOpenRouteLabel("cold_open_judge")
+          : coldOpenRouteLabel("quality_judge"),
         episodeTitle: args.episodeTitle,
         coldOpenBeat: beats[0],
         topicsEvidence: args.topicsPrompts,
