@@ -4,6 +4,9 @@ import { OpenAILLMProvider } from "./openai";
 import { AnthropicLLMProvider } from "./anthropic";
 import { NvidiaNimLLMProvider } from "./nvidia";
 import { ZaiLLMProvider } from "./zai";
+import { XaiLLMProvider } from "./xai";
+import { MoonshotLLMProvider } from "./moonshot";
+import { GoogleLLMProvider } from "./google";
 import { LEGACY_ANTHROPIC_VERIFY_MODEL } from "./routing";
 
 export function getLLMProvider(opts: { provider?: string; model?: string } = {}): LLMProvider {
@@ -22,6 +25,17 @@ export function getLLMProvider(opts: { provider?: string; model?: string } = {})
       return new NvidiaNimLLMProvider(opts.model);
     case "zai":
       return new ZaiLLMProvider(opts.model);
+    // Same rule as NVIDIA and Z.ai above: these speak the OpenAI wire protocol
+    // but are their OWN providers, with their own credentials, cost records and
+    // capability entries. Folding any of them into the "openai" case would make
+    // the ledger lie about who wrote an episode and would break the judge
+    // independence check, which decides by PROVIDER.
+    case "xai":
+      return new XaiLLMProvider(opts.model);
+    case "moonshot":
+      return new MoonshotLLMProvider(opts.model);
+    case "google":
+      return new GoogleLLMProvider(opts.model);
     case "stub":
     default:
       return new StubLLMProvider();
@@ -29,7 +43,19 @@ export function getLLMProvider(opts: { provider?: string; model?: string } = {})
 }
 
 /** Providers this factory can build. */
-export const SUPPORTED_LLM_PROVIDERS = ["nvidia", "zai", "anthropic", "openai", "stub"] as const;
+export const SUPPORTED_LLM_PROVIDERS = [
+  "nvidia",
+  "zai",
+  "anthropic",
+  "xai",
+  "moonshot",
+  "google",
+  // OpenAI stays BUILDABLE but is routed nowhere: it is in no profile chain, no
+  // role default and no evaluation slate. Kept so an operator can still reach it
+  // deliberately, removed from everything that would select it silently.
+  "openai",
+  "stub",
+] as const;
 
 /**
  * LLM used for script WRITING specifically. Dialogue quality is extremely

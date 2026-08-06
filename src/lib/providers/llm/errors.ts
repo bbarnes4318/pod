@@ -174,6 +174,10 @@ function knownSecrets(): string[] {
     process.env.ZAI_API_KEY,
     process.env.ANTHROPIC_API_KEY,
     process.env.OPENAI_API_KEY,
+    process.env.XAI_API_KEY,
+    process.env.MOONSHOT_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GEMINI_API_KEY,
   ]
     .filter((v): v is string => typeof v === "string" && v.trim().length >= 8)
     .map((v) => v.trim());

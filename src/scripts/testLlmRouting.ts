@@ -264,6 +264,12 @@ function legacyTests(): void {
         script_rewrite: "anthropic/claude-sonnet-5",
         fact_check: "anthropic/claude-sonnet-5",
         quality_judge: "anthropic/claude-sonnet-5",
+        // cold_open_judge was split out of the cold-open tournament into its own
+        // role. Its legacyRollback is the verify family, which is exactly where
+        // the tournament's judging call resolved BEFORE the role existed. That
+        // is the entire rollback promise for the new role, so it is asserted
+        // here rather than left to the reader to trust.
+        cold_open_judge: "anthropic/claude-sonnet-5",
       };
       for (const role of ALL_ROLES) {
         const plan = resolveRolePlan(role);
@@ -362,6 +368,10 @@ function profileTests(): void {
         fact_check: "nvidia/deepseek-ai/deepseek-v4-pro",
         show_notes: "nvidia/deepseek-ai/deepseek-v4-flash",
         episode_metadata: "nvidia/mistralai/mistral-medium-3.5-128b",
+        // Deliberately INVERTED against quality_judge: two judging roles led by
+        // the same model would make the cold-open pick and the final grade one
+        // opinion cast twice.
+        cold_open_judge: "nvidia/z-ai/glm-5.2",
         quality_judge: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
       };
       for (const [role, want] of Object.entries(expected)) {

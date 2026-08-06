@@ -792,6 +792,14 @@ export function credentialVarFor(provider: string): string {
       return "ANTHROPIC_API_KEY";
     case "openai":
       return "OPENAI_API_KEY";
+    case "xai":
+      return "XAI_API_KEY";
+    case "moonshot":
+      return "MOONSHOT_API_KEY";
+    case "google":
+      // google.ts accepts GEMINI_API_KEY as an alias; this reports the primary
+      // spelling, which is the one the setup instructions tell operators to set.
+      return "GOOGLE_API_KEY";
     default:
       return "(none required)";
   }

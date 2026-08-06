@@ -46,6 +46,9 @@ export type RequestParameterProfile =
   | "anthropic-messages"
   | "openai-chat"
   | "openai-reasoning"
+  | "xai-grok"
+  | "moonshot-kimi"
+  | "google-gemini"
   | "stub";
 
 export interface ModelCapabilities {
@@ -197,6 +200,21 @@ export const MODEL_IDS = {
   },
   zai: {
     glmFlash: "glm-4.7-flash",
+  },
+  // Added for the role bake-off. Every id below is a DEFAULT, overridable by
+  // XAI_MODEL / MOONSHOT_MODEL / GOOGLE_MODEL. The Google id in particular has
+  // not been confirmed against a live account — see google.ts.
+  xai: {
+    grok43: "grok-4.3",
+    grok45: "grok-4.5",
+  },
+  moonshot: {
+    kimiK3: "kimi-k3",
+    kimiK26: "kimi-k2.6",
+  },
+  google: {
+    geminiPro: "gemini-3.1-pro",
+    geminiFlash: "gemini-3.6-flash",
   },
 } as const;
 
@@ -685,6 +703,36 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       supportsSystemPrompt: true,
       supportsStreaming: true,
       requestParameterProfile: "zai-glm",
+      unpriced: true,
+      provenance: unknownProvenance,
+    };
+  }
+  // xAI, Moonshot and Google all reach this application through the OpenAI chat
+  // protocol on the shared base class. NOTHING about their native JSON or
+  // reasoning support has been observed on a live account here, so every
+  // capability is declared false and JSON stays prompt-enforced — the same
+  // conservative posture every other unregistered model gets. Declaring a
+  // capability we have not watched work is how a pipeline starts failing in a
+  // way nobody can attribute. `npm run probe:llm-contract` is what upgrades it.
+  if (p === "xai" || p === "moonshot" || p === "google") {
+    return {
+      provider: p,
+      model,
+      catalogVerified: false,
+      liveContractVerified: false,
+      availability: "available",
+      qualityTested: false,
+      supportsNativeJsonObject: false,
+      supportsNativeJsonSchema: false,
+      supportsPromptEnforcedJson: true,
+      supportsThinking: false,
+      supportsReasoningEffort: false,
+      supportsReasoningBudget: false,
+      supportsSeed: false,
+      supportsSystemPrompt: true,
+      supportsStreaming: true,
+      requestParameterProfile:
+        p === "xai" ? "xai-grok" : p === "moonshot" ? "moonshot-kimi" : "google-gemini",
       unpriced: true,
       provenance: unknownProvenance,
     };
