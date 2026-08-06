@@ -475,14 +475,47 @@ export interface TurnPlanEntry {
   targetWords: number;
 }
 
-function validateTurnPlan(value: unknown): string | null {
-  const turns = (value as { turns?: unknown })?.turns;
-  if (!Array.isArray(turns) || turns.length === 0) return "Missing non-empty 'turns' array.";
-  for (const turn of turns as Array<Record<string, unknown>>) {
-    if (typeof turn?.speakerName !== "string" || !turn.speakerName.trim()) return "Every turn needs a speakerName.";
-    if (typeof turn?.intent !== "string" || !turn.intent.trim()) return "Every turn needs an intent.";
-  }
-  return null;
+/**
+ * Words per turn assumed when converting an episode's word target into a turn
+ * count. A real two-host argument mixes four-word interruptions with sixty-word
+ * arguments; this is the blended average, not a per-turn instruction.
+ *
+ * WHY IT IS DELIBERATELY LOW: the alternative to more turns is longer turns, and
+ * longer turns are how a conversation becomes two monologues. Filling eight
+ * minutes with fifteen speeches is worse than filling it with thirty-five
+ * exchanges, even though both hit the word count.
+ */
+const ASSUMED_WORDS_PER_TURN = 40;
+
+/** The turn floor an episode's word target implies. */
+export function minimumTurnsFor(totalWordTarget: number): number {
+  return Math.max(8, Math.ceil(totalWordTarget / ASSUMED_WORDS_PER_TURN));
+}
+
+function makeTurnPlanValidator(totalWordTarget: number) {
+  const minTurns = minimumTurnsFor(totalWordTarget);
+  return function validateTurnPlan(value: unknown): string | null {
+    const turns = (value as { turns?: unknown })?.turns;
+    if (!Array.isArray(turns) || turns.length === 0) return "Missing non-empty 'turns' array.";
+    for (const turn of turns as Array<Record<string, unknown>>) {
+      if (typeof turn?.speakerName !== "string" || !turn.speakerName.trim()) return "Every turn needs a speakerName.";
+      if (typeof turn?.intent !== "string" || !turn.intent.trim()) return "Every turn needs an intent.";
+    }
+    // ENFORCED, not merely requested. An under-planned turn count cannot be
+    // recovered downstream: the host writers each write only the turns they were
+    // given, so a short plan guarantees a short episode and the whole run dies
+    // at the word floor after every role has already been paid for. Observed
+    // 2026-08-06: an 8-minute episode planned with 15 turns produced 411 spoken
+    // words against a 951 floor, and every candidate model failed the same way.
+    if (turns.length < minTurns) {
+      return (
+        `The plan has ${turns.length} turns, but this episode needs at least ${minTurns} to reach ` +
+        `${totalWordTarget} spoken words at a natural conversational pace. Add turns — do not make the ` +
+        `existing ones longer, which produces monologues rather than an argument.`
+      );
+    }
+    return null;
+  };
 }
 
 /**
@@ -523,13 +556,14 @@ RULES:
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
 - Assign each evidence fact to at most ONE turn, on the beat that already owns it.
 - "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line.
+- PLAN AT LEAST ${minimumTurnsFor(input.totalWordTarget)} TURNS. This is arithmetic, not a style note: ${input.totalWordTarget} spoken words at a natural mix of short reactions and full arguments averages about ${ASSUMED_WORDS_PER_TURN} words a turn. Fewer turns than that cannot fill the episode however long you make each one, and stretching turns to compensate produces two monologues instead of an argument. Count the turns before you return them.
 - Total spoken words across all turns should land near ${input.totalWordTarget}; set targetWords per turn accordingly (short reactions 4-15, arguments 35-90).
 
 Return valid JSON only:
 {"turns":[{"turnIndex":0,"beatIndex":1,"speakerName":"...","intent":"...","factRefs":[{"type":"...","id":"..."}],"targetWords":45}]}`,
       temperature: 0.6,
       maxTokens: 7000,
-      validate: validateTurnPlan,
+      validate: makeTurnPlanValidator(input.totalWordTarget),
     })
   );
 
@@ -671,7 +705,7 @@ ${transcriptSoFar}
 EVIDENCE — only the facts assigned to your own turns may be newly introduced, and every specific number, date, result, quote or named-person action you state as true must be in that evidence and carry its ref. With no evidence, argue vividly without a fabricated specific:
 ${input.topicsEvidence}
 
-Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent; hitting the target word count is secondary to hitting the intent.
+Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent first. Then hit targetWords: it is a FLOOR, not a ceiling, and a turn that lands well under it starves the episode — the whole script is rejected outright if the totals come up short, which no amount of good intent recovers.
 
 EVIDENCE REFS ARE NOT DECORATION. Every line you mark "isFactualClaim":true must carry at least one evidenceRefs entry copied VERBATIM from the EVIDENCE block above — an exact phrase or number as written there. Not a paraphrase, not a source name, not a summary. A factual claim with an empty evidenceRefs is treated downstream as UNSUPPORTED and can block the episode from publishing. If you cannot quote the evidence for a specific, do not state that specific.
 
