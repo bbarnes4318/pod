@@ -28,7 +28,9 @@ import {
 } from "../lib/providers/llm/routingAudit";
 import { ALL_ROLES, ROLE_DEFINITIONS, roleDefinition } from "../lib/providers/llm/roles";
 import { roleOverrideKeys } from "../lib/providers/llm/routingEnv";
-import { resolveRolePlan, candidateKey, endpointIdentity } from "../lib/providers/llm/routing";
+import { resolveRolePlan, candidateKey, endpointIdentity, instantiateProvider } from "../lib/providers/llm/routing";
+import { SUPPORTED_LLM_PROVIDERS } from "../lib/providers/llm/providerRegistry";
+import { getLLMProvider } from "../lib/providers/llm/factory";
 import { declaredProfileChainFor } from "../lib/providers/llm/profiles";
 import { categorizeHttpFailure, categoryOf } from "../lib/providers/llm/errors";
 import { classifyProviderError } from "./runLiveProviderCanary";
@@ -660,6 +662,56 @@ async function main() {
     assert.equal(summary.fixturesCompleted, 1, "the failure must remain visible as a failure");
     assert.equal(summary.failures.length, 1);
     assert.equal(summary.qualityComposite, null, "an incomplete dimension set yields no composite, not a flattering one");
+  });
+
+  // ===========================================================================
+  // Both entry points must know every provider.
+  //
+  // THE BUG THIS EXISTS FOR: there were two provider switches — getLLMProvider()
+  // in factory.ts and instantiateProvider() in routing.ts. Three providers were
+  // added to the first and not the second. Direct calls worked, ROUTED calls
+  // threw "Unknown provider 'xai'", and the live smoke test reported success
+  // because it goes through the factory. A paid evaluation run was burned before
+  // anything noticed. There is one registry now, and this keeps it that way.
+  //
+  // A MISSING CREDENTIAL IS AN ACCEPTABLE OUTCOME — this has to pass in CI,
+  // where nothing is credentialed. What is never acceptable is a provider name
+  // the code cannot resolve to a class at all.
+  console.log("\n  -- every supported provider builds from BOTH entry points --");
+  for (const provider of SUPPORTED_LLM_PROVIDERS) {
+    check(`'${provider}' is known to the factory AND the router`, () => {
+      for (const [entryPoint, build] of [
+        ["getLLMProvider (factory)", () => getLLMProvider({ provider })],
+        ["instantiateProvider (router)", () => instantiateProvider(provider)],
+      ] as const) {
+        try {
+          build();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          assert.ok(
+            !/unknown provider/i.test(msg),
+            `${entryPoint} cannot build '${provider}': ${msg}\n` +
+              `      Both resolve through providerRegistry.ts — register it there, not in a second switch.`
+          );
+          // Anything else (a missing credential, most likely) is fine: the name
+          // resolved to a real class, which is all this check is about.
+        }
+      }
+    });
+  }
+
+  check("the factory falls back to stub for an unknown name; the router refuses", () => {
+    const built = getLLMProvider({ provider: "not-a-real-provider" });
+    assert.match(
+      built.name.toLowerCase(),
+      /^stub/,
+      "an unset or garbage LLM_PROVIDER is ordinary in development, so the factory degrades to the stub"
+    );
+    assert.throws(
+      () => instantiateProvider("not-a-real-provider"),
+      /unknown provider/i,
+      "a ROUTED name nothing can build is a configuration defect and must stop the chain"
+    );
   });
 
   if (failed) {

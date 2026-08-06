@@ -354,7 +354,23 @@ async function main() {
           speakerNames: HOST_NAMES,
           topicsPrompts: situation.topicsPrompts,
           systemPrompt: PERSONA_PROMPT,
-        } as never);
+          // PRODUCTION'S OWN DEFAULTS, spelled out rather than read from env, so
+          // a candidate is measured writing the way this show actually writes and
+          // two runs on different machines stay comparable. These mirror
+          // scriptService.ts (SCRIPT_GEN_TEMPERATURE 0.85, SCRIPT_GEN_MAX_TOKENS
+          // 16000); if that drifts, this must be updated deliberately.
+          version: 1,
+          temperature: 0.85,
+          maxTokens: 16000,
+          // `log` is REQUIRED by this function and was previously omitted under
+          // an `as never` cast — which silenced the compiler on the exact object
+          // that was wrong. Every candidate made four paid calls and then died on
+          // "args.log is not a function". Do not cast this argument again: the
+          // type is the only thing standing between a typo and a burned run.
+          log: (msg: string) => {
+            if (process.env.MODEL_EVAL_VERBOSE === "true") console.log(`      ${msg}`);
+          },
+        });
         const latencyMs = Date.now() - t0;
         const cost = llmCostSince(mark);
         const lines = flatten(generated.segments);

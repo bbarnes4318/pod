@@ -36,11 +36,10 @@ import {
 import { NVIDIA_DEFAULT_BASE_URL } from "./nvidia";
 import { ZAI_DEFAULT_BASE_URL } from "./zai";
 import { withLlmAttribution } from "./costLedger";
-import { StubLLMProvider } from "./stub";
-import { OpenAILLMProvider } from "./openai";
-import { AnthropicLLMProvider } from "./anthropic";
-import { NvidiaNimLLMProvider } from "./nvidia";
-import { ZaiLLMProvider } from "./zai";
+import { XAI_DEFAULT_BASE_URL } from "./xai";
+import { MOONSHOT_DEFAULT_BASE_URL } from "./moonshot";
+import { GOOGLE_DEFAULT_BASE_URL } from "./google";
+import { buildProvider, supportedProviderList } from "./providerRegistry";
 
 export type CandidateSource =
   | "role_override"
@@ -307,6 +306,12 @@ export function normalizedBaseUrl(provider: string): string {
       ? "https://api.anthropic.com/v1"
       : p === "openai"
       ? "https://api.openai.com/v1"
+      : p === "xai"
+      ? readRoutingEnv("XAI_BASE_URL") || XAI_DEFAULT_BASE_URL
+      : p === "moonshot"
+      ? readRoutingEnv("MOONSHOT_BASE_URL") || MOONSHOT_DEFAULT_BASE_URL
+      : p === "google"
+      ? readRoutingEnv("GOOGLE_BASE_URL") || GOOGLE_DEFAULT_BASE_URL
       : "(none)";
   // Normalize so trailing slashes, case and a default port cannot make one
   // endpoint look like two.
@@ -339,28 +344,20 @@ export function endpointIdentity(c: { provider: string; model?: string }): strin
 
 /** Build a concrete provider. Registered providers only — never a guess. */
 export function instantiateProvider(provider: string, model?: string): LLMProvider {
-  switch (provider.toLowerCase()) {
-    case "nvidia":
-      return new NvidiaNimLLMProvider(model);
-    case "zai":
-      return new ZaiLLMProvider(model);
-    case "anthropic":
-      return new AnthropicLLMProvider(model);
-    case "openai":
-      return new OpenAILLMProvider(model);
-    case "stub":
-      return new StubLLMProvider();
-    default:
-      // A provider name nothing can build is a configuration/programming defect,
-      // not something another model fixes — it stops the chain.
-      throw new LlmProviderError({
-        provider,
-        model: model || "(default)",
-        category: "programming_error",
-        message:
-          `[LLMRouting] Unknown provider '${provider}'. Supported: nvidia, zai, anthropic, openai, stub.`,
-      });
-  }
+  // Single registry — see providerRegistry.ts for why this is not a second
+  // switch. The supported list in the error message comes from the registry too,
+  // so a stale list cannot outlive the code it describes.
+  const built = buildProvider(provider, model);
+  if (built) return built;
+
+  // A provider name nothing can build is a configuration/programming defect,
+  // not something another model fixes — it stops the chain.
+  throw new LlmProviderError({
+    provider,
+    model: model || "(default)",
+    category: "programming_error",
+    message: `[LLMRouting] Unknown provider '${provider}'. Supported: ${supportedProviderList()}.`,
+  });
 }
 
 // ---------------------------------------------------------------- routed provider

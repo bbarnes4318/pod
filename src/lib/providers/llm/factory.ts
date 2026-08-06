@@ -1,61 +1,21 @@
 import { LLMProvider } from "./interface";
 import { StubLLMProvider } from "./stub";
-import { OpenAILLMProvider } from "./openai";
-import { AnthropicLLMProvider } from "./anthropic";
-import { NvidiaNimLLMProvider } from "./nvidia";
-import { ZaiLLMProvider } from "./zai";
-import { XaiLLMProvider } from "./xai";
-import { MoonshotLLMProvider } from "./moonshot";
-import { GoogleLLMProvider } from "./google";
+import { buildProvider } from "./providerRegistry";
 import { LEGACY_ANTHROPIC_VERIFY_MODEL } from "./routing";
 
 export function getLLMProvider(opts: { provider?: string; model?: string } = {}): LLMProvider {
   const providerType = (opts.provider || process.env.LLM_PROVIDER || "stub").toLowerCase();
 
-  switch (providerType) {
-    case "openai":
-      return new OpenAILLMProvider(opts.model);
-    case "anthropic":
-      return new AnthropicLLMProvider(opts.model);
-    // NVIDIA NIM and Z.ai share the OpenAI wire protocol but are their OWN
-    // providers: each records its own name in the cost ledger, carries its own
-    // credential and timeout configuration, and has its own capability records.
-    // Never fold them into the "openai" case.
-    case "nvidia":
-      return new NvidiaNimLLMProvider(opts.model);
-    case "zai":
-      return new ZaiLLMProvider(opts.model);
-    // Same rule as NVIDIA and Z.ai above: these speak the OpenAI wire protocol
-    // but are their OWN providers, with their own credentials, cost records and
-    // capability entries. Folding any of them into the "openai" case would make
-    // the ledger lie about who wrote an episode and would break the judge
-    // independence check, which decides by PROVIDER.
-    case "xai":
-      return new XaiLLMProvider(opts.model);
-    case "moonshot":
-      return new MoonshotLLMProvider(opts.model);
-    case "google":
-      return new GoogleLLMProvider(opts.model);
-    case "stub":
-    default:
-      return new StubLLMProvider();
-  }
+  // One registry, shared with routing.ts's instantiateProvider — see
+  // providerRegistry.ts. An unknown name falls back to the stub HERE (an unset
+  // LLM_PROVIDER is ordinary in development), whereas the router throws. That
+  // difference is deliberate and is the only reason buildProvider returns null
+  // instead of raising.
+  return buildProvider(providerType, opts.model) ?? new StubLLMProvider();
 }
 
 /** Providers this factory can build. */
-export const SUPPORTED_LLM_PROVIDERS = [
-  "nvidia",
-  "zai",
-  "anthropic",
-  "xai",
-  "moonshot",
-  "google",
-  // OpenAI stays BUILDABLE but is routed nowhere: it is in no profile chain, no
-  // role default and no evaluation slate. Kept so an operator can still reach it
-  // deliberately, removed from everything that would select it silently.
-  "openai",
-  "stub",
-] as const;
+export { SUPPORTED_LLM_PROVIDERS } from "./providerRegistry";
 
 /**
  * LLM used for script WRITING specifically. Dialogue quality is extremely
