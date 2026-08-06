@@ -439,6 +439,17 @@ export async function runSevenRolePipeline(
           const ownTurns = chunkTurns.filter((t) => t.speakerName === host);
           if (ownTurns.length === 0) continue;
 
+          // ONE RETRY for turns the writer skipped.
+          //
+          // A model that returns 7 of 13 allocated turns is not a model that
+          // cannot write them; it is a model that stopped early. Asking again for
+          // ONLY the missing turns is a small, cheap call. Failing the episode
+          // instead throws away six roles that already ran and were already paid
+          // for — which is what happened before this loop existed.
+          const seen = new Set<number>();
+          let pending = ownTurns;
+
+          for (let attempt = 0; attempt < 2 && pending.length > 0; attempt++) {
           const soFar = [...written.values()]
             .sort((a, b) => a.turnIndex - b.turnIndex)
             .map((l) => ({ turnIndex: l.turnIndex, speakerName: l.speakerName, text: l.text }));
@@ -452,7 +463,7 @@ export async function runSevenRolePipeline(
             spine,
             beats: movements[m],
             chunkTurns,
-            ownTurnIndexes: ownTurns.map((t) => t.turnIndex),
+            ownTurnIndexes: pending.map((t) => t.turnIndex),
             writtenSoFar: soFar,
             topicsEvidence: args.topicsPrompts,
             systemPrompt: creativeSystemPrompt,
@@ -479,7 +490,6 @@ export async function runSevenRolePipeline(
 
           // AUTHORSHIP — a host writer owns its own turns and nothing else.
           const ownIndexes = new Set(ownTurns.map((t) => t.turnIndex));
-          const seen = new Set<number>();
           for (const line of result.lines) {
             const wrongSpeaker = line.speakerName.toLowerCase() !== host.toLowerCase();
             const wrongTurn = !ownIndexes.has(line.turnIndex);
@@ -539,6 +549,10 @@ export async function runSevenRolePipeline(
               evidenceRefs: Array.isArray(line.evidenceRefs) ? line.evidenceRefs : [],
               isFactualClaim: line.isFactualClaim === true,
             });
+          }
+
+            // Whatever is still unwritten goes round once more, and only that.
+            pending = pending.filter((t) => !seen.has(t.turnIndex));
           }
 
           const missing = ownTurns.filter((t) => !seen.has(t.turnIndex));
