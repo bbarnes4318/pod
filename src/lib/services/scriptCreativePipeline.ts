@@ -482,10 +482,21 @@ export interface TurnPlanEntry {
  *
  * WHY IT IS DELIBERATELY LOW: the alternative to more turns is longer turns, and
  * longer turns are how a conversation becomes two monologues. Filling eight
- * minutes with fifteen speeches is worse than filling it with thirty-five
- * exchanges, even though both hit the word count.
+ * minutes with fifteen speeches is worse than filling it with forty exchanges,
+ * even though both hit the word count.
+ *
+ * 27 IS MEASURED, NOT CHOSEN. Two full runs on 2026-08-06 landed within a word
+ * of each other — 411 words over 15 turns (27.4) and 720 over 27 (26.7) — with
+ * different models on each host. The first value here was a guessed 40, which
+ * under-planned the turn count by a third and produced an episode that died at
+ * the word floor after every role had run.
+ *
+ * It also agrees with the clock, which is the real constraint: 27 words at
+ * ordinary speech pace is about eleven seconds, and an eight-minute episode is
+ * roughly forty-three eleven-second exchanges. If a future change makes the
+ * writers verbose, re-measure rather than re-guess.
  */
-const ASSUMED_WORDS_PER_TURN = 40;
+const ASSUMED_WORDS_PER_TURN = 27;
 
 /** The turn floor an episode's word target implies. */
 export function minimumTurnsFor(totalWordTarget: number): number {
