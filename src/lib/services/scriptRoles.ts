@@ -207,6 +207,10 @@ export type RoleViolationKind =
   | "isolation_breach"
   | "director_overreach"
   | "voice_homogenization"
+  /** A writer handed back a line already spoken on the page. See the NOVELTY
+   *  check in scriptSevenRolePipeline — a character repeating himself verbatim
+   *  is the loudest sign a script was assembled rather than performed. */
+  | "repeated_line"
   | "schema";
 
 export interface RoleViolation {

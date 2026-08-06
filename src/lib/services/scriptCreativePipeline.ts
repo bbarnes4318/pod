@@ -699,7 +699,7 @@ ${JSON.stringify(input.beats, null, 2)}
 THE TURN PLAN FOR THIS MOVEMENT (the architect's allocation — you write only the ones marked YOURS):
 ${planView}
 
-WHAT IS ALREADY ON THE PAGE — continue its emotional and conversational logic:
+WHAT IS ALREADY ON THE PAGE — continue its emotional and conversational logic. READ IT, RESPOND TO IT, NEVER REPRODUCE IT: any line below has already been spoken aloud, including lines of your own. Repeating one — verbatim or lightly reworded — is the single most obvious sign a script was assembled by a machine, and such a line is dropped without being replaced, leaving your character silent on that turn:
 ${transcriptSoFar}
 
 EVIDENCE — only the facts assigned to your own turns may be newly introduced, and every specific number, date, result, quote or named-person action you state as true must be in that evidence and carry its ref. With no evidence, argue vividly without a fabricated specific:

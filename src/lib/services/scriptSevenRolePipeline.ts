@@ -496,6 +496,36 @@ export async function runSevenRolePipeline(
               continue;
             }
             if (seen.has(line.turnIndex)) continue;
+
+            // NOVELTY — a writer may not hand back a line that is already on the
+            // page. It receives `writtenSoFar` so it can RESPOND to the
+            // conversation; a model that treats that context as source material
+            // to copy will reproduce its own earlier turns word for word.
+            //
+            // OBSERVED 2026-08-06: with Host A on grok-4.3, all three of the cold
+            // open's lines came back verbatim inside the first movement, four
+            // lines after they were first spoken. Host B on nemotron, given the
+            // same prompt, did not. Nothing caught it: ISOLATION and AUTHORSHIP
+            // were the only structural checks here and neither looks at text.
+            //
+            // Near-duplicates count too. A line reworded just enough to fall
+            // short of an exact match still reads to a listener as the character
+            // saying the same thing twice, which is the tell this exists to kill.
+            const priorTexts = [...soFar.map((l) => l.text), ...accepted.map((l) => l.text)];
+            const echoed = priorTexts.find((prior) => lineSimilarity(prior, line.text) >= 0.9);
+            if (echoed) {
+              violations.push({
+                role,
+                kind: "repeated_line",
+                detail:
+                  `${host}'s writer returned a line already on the page (turn ${line.turnIndex}) — dropped. ` +
+                  `A character repeating himself verbatim is the loudest sign a script was assembled rather ` +
+                  `than performed. Echoed: ${JSON.stringify(echoed.slice(0, 90))}`,
+                observed: { turnIndex: line.turnIndex, echoedFrom: echoed.slice(0, 120) },
+              });
+              continue;
+            }
+
             seen.add(line.turnIndex);
             const turn = ownTurns.find((t) => t.turnIndex === line.turnIndex)!;
             accepted.push({
