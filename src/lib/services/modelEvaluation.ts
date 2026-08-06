@@ -173,6 +173,26 @@ export interface CandidateFixtureResult {
   estimatedCostUsd: number | null;
   tokensIn: number;
   tokensOut: number;
+  /**
+   * Why a deterministic dimension scored what it did.
+   *
+   * Added because factual_support came back 0 for a candidate across four runs
+   * and the stored record could not say whether the model emitted empty refs,
+   * emitted paraphrases that the exact-match scorer rejected, or something else.
+   * A score nobody can explain is not evidence, and re-running to find out costs
+   * a full episode of generation each time. Samples only — enough to diagnose,
+   * never a copy of the script.
+   */
+  diagnostics?: {
+    factualSupport?: {
+      claimLines: number;
+      supportedLines: number;
+      /** A few real (ref, matched) pairs. An empty array means no refs at all. */
+      sampleRefs: Array<{ ref: string; matched: boolean }>;
+      /** True when every claim line carried a completely empty evidenceRefs. */
+      allRefsEmpty: boolean;
+    };
+  };
 }
 
 export interface EvaluationRun {

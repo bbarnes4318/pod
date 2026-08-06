@@ -137,6 +137,44 @@ function scoreFactualSupport(lines: FlatLine[], evidence: string): number {
   return Math.round((supported.length / claims.length) * 100);
 }
 
+/**
+ * The same measurement, with its working shown. A 0 here has three very
+ * different causes — no refs emitted, refs that paraphrase instead of quoting,
+ * or a scorer too strict about whitespace and punctuation — and the score alone
+ * cannot tell them apart. This is what makes the next run diagnosable without
+ * paying for another one after it.
+ */
+function factualSupportDiagnostics(
+  lines: FlatLine[],
+  evidence: string
+): NonNullable<CandidateFixtureResult["diagnostics"]>["factualSupport"] {
+  const claims = lines.filter((l) => l.isFactualClaim);
+  if (!claims.length) return undefined;
+  const haystack = evidence.toLowerCase();
+
+  const sampleRefs: Array<{ ref: string; matched: boolean }> = [];
+  let supportedLines = 0;
+  let anyRefAtAll = false;
+
+  for (const line of claims) {
+    const refs = (line.evidenceRefs || []).map((r) => String(r).trim()).filter((r) => r.length > 0);
+    if (refs.length) anyRefAtAll = true;
+    const matched = refs.some((r) => haystack.includes(r.toLowerCase()));
+    if (matched) supportedLines++;
+    for (const ref of refs) {
+      if (sampleRefs.length >= 8) break;
+      sampleRefs.push({ ref: ref.slice(0, 120), matched: haystack.includes(ref.toLowerCase()) });
+    }
+  }
+
+  return {
+    claimLines: claims.length,
+    supportedLines,
+    sampleRefs,
+    allRefsEmpty: !anyRefAtAll,
+  };
+}
+
 /** FREEDOM FROM REPETITION — 100 minus the share of lines flagged as repeats. */
 function scoreRepetition(lines: FlatLine[]): number {
   if (!lines.length) return 0;
@@ -393,6 +431,9 @@ async function main() {
             estimated_cost: cost.totals.estimatedCostUsd ?? 0,
             latency: latencyMs,
           },
+          diagnostics: {
+            factualSupport: factualSupportDiagnostics(lines, situation.topicsPrompts),
+          },
           failure: null,
           latencyMs,
           estimatedCostUsd: cost.totals.estimatedCostUsd ?? null,
@@ -468,6 +509,35 @@ async function main() {
 
   console.log(`\n${renderSummaryTable(run)}\n`);
   for (const note of notes) console.log(`  note: ${note}`);
+
+  // Show the working for any candidate whose factual support came out poorly.
+  // A 0 in that column has three very different causes and the number alone
+  // cannot say which, so the run prints the evidence instead of making the next
+  // person pay for another run to find out.
+  for (const row of results) {
+    const d = row.diagnostics?.factualSupport;
+    if (!d || d.supportedLines === d.claimLines) continue;
+    console.log(
+      `\n  factual_support — ${row.candidate} on ${row.fixtureKey}: ` +
+        `${d.supportedLines}/${d.claimLines} claim line(s) supported.`
+    );
+    if (d.allRefsEmpty) {
+      console.log(
+        "    Every claim line carried an EMPTY evidenceRefs. The model asserted specifics and cited nothing,\n" +
+          "    so the prompt is not landing — this is a writing-instruction defect, not a retrieval one."
+      );
+    } else {
+      console.log("    Refs the model emitted (matched = found verbatim in the fixture evidence):");
+      for (const s of d.sampleRefs) {
+        console.log(`      ${s.matched ? "MATCH" : "MISS "}  ${JSON.stringify(s.ref)}`);
+      }
+      console.log(
+        "    All MISS with plausible-looking refs means the model PARAPHRASED rather than quoted —\n" +
+          "    tighten the instruction. Near-misses on whitespace or punctuation mean the SCORER is too strict."
+      );
+    }
+  }
+
   console.log(`\nStored: ${target}`);
 
   const decision = decidePromotion([...storedRuns()], incumbentSpec);
