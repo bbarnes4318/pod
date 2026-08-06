@@ -122,7 +122,14 @@ function scoreHostDistinctness(lines: FlatLine[], hosts: string[]): number {
  */
 function scoreFactualSupport(lines: FlatLine[], evidence: string): number {
   const claims = lines.filter((l) => l.isFactualClaim);
-  if (!claims.length) return 0;
+  // A script that made NO factual claims is not the same thing as a script whose
+  // every claim was unsupported, and returning 0 for both made the two
+  // indistinguishable in the table. The first run had a candidate score 0 here
+  // while scoring in the 90s on every judged dimension, and there was no way to
+  // tell from the number whether it had fabricated its evidence or simply never
+  // cited any. NaN is the harness's "not measured" value and keeps the
+  // distinction visible instead of averaging a silence into a failure.
+  if (!claims.length) return Number.NaN;
   const haystack = evidence.toLowerCase();
   const supported = claims.filter((l) =>
     l.evidenceRefs.some((ref) => ref.trim().length > 0 && haystack.includes(ref.trim().toLowerCase()))

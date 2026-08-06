@@ -49,15 +49,30 @@ export class MoonshotLLMProvider extends OpenAICompatibleLLMProvider {
     super(config);
   }
 
-  /** See xai.ts — nothing provider-specific until a live probe says otherwise. */
+  /**
+   * OBSERVED 2026-08-06, and it is the same trap Z.ai's GLM set: kimi-k3 REASONS
+   * BY DEFAULT and bills that reasoning against max_tokens. Every fixture in the
+   * first evaluation run came back `finish_reason: length` with completely empty
+   * content — the model spent the whole allowance thinking and never wrote an
+   * answer. Scored naively that reads as "this model cannot write", when the
+   * truth is that it was never given room to.
+   *
+   * There is no documented switch to disable it, so the fix is headroom rather
+   * than suppression: raise the ceiling so the answer has somewhere to go. This
+   * mirrors shapeZaiRequest, which exists for exactly this reason.
+   */
   protected shapeModelFields(ctx: ShapeContext): ShapeResult {
+    const configured = Number(readRoutingEnv("MOONSHOT_REASONING_HEADROOM_TOKENS"));
+    const headroom = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2048;
     return {
       fields: {},
+      maxTokensAdd: headroom,
       diagnostics: {
         reasoningRequested: false,
         note:
-          "moonshot-kimi: no provider-specific fields sent. " +
-          `Caller wanted reasoning: ${ctx.wantsReasoning}.`,
+          `moonshot-kimi: no provider-specific fields sent, but +${headroom} tokens of ANSWER HEADROOM are added because ` +
+          `this model reasons by default and bills it against max_tokens. Caller wanted reasoning: ${ctx.wantsReasoning}. ` +
+          "A reasoning-only response is still reported as output_limit, never as an empty success.",
       },
     };
   }
