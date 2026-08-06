@@ -440,8 +440,10 @@ ${attributions}${semantic}
 
 ${lineBlocks.join("\n\n")}
 
-Return valid JSON only:
-{ "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": [] } ] }`;
+A line kept as "isFactualClaim":true MUST carry at least one evidenceRefs entry copied VERBATIM from that line's EVIDENCE above — an exact phrase or number as written, never a paraphrase or a source name. If the evidence will not support the specific, the correct fix is to make the line qualitative and set "isFactualClaim":false with empty evidenceRefs. A true claim with empty refs is the defect this stage exists to remove, not an acceptable output.
+
+Return valid JSON only. Both shapes:
+{ "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": ["an exact phrase copied from that line's EVIDENCE"] }, { "lineIndex": 1, "text": "...", "isFactualClaim": false, "evidenceRefs": [] } ] }`;
 
     try {
       const result = await withLlmStage("script:selfverify-rewrite", () =>

@@ -188,7 +188,7 @@ function coldOpenSystemPrompt(base: string): string {
 }
 
 function coldOpenLineContract(speakerNames: string[]): string {
-  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Legal speakers: ${speakerNames.join(", ")}.`;
+  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Any line with "isFactualClaim":true must also carry at least one evidenceRefs entry copied VERBATIM from the supplied evidence — an exact phrase or number as written there, never a paraphrase or a source name. A claim with empty evidenceRefs counts as unsupported. Legal speakers: ${speakerNames.join(", ")}.`;
 }
 
 /**
@@ -673,8 +673,10 @@ ${input.topicsEvidence}
 
 Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent; hitting the target word count is secondary to hitting the intent.
 
-Return valid JSON only:
-{"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false}]}`;
+EVIDENCE REFS ARE NOT DECORATION. Every line you mark "isFactualClaim":true must carry at least one evidenceRefs entry copied VERBATIM from the EVIDENCE block above — an exact phrase, number or sentence fragment as written there. Not a paraphrase, not a source name, not a summary. A factual claim with an empty evidenceRefs is treated downstream as UNSUPPORTED and can block the episode from publishing. If you cannot quote the evidence for a specific, do not state that specific.
+
+Return valid JSON only. The two lines below show both shapes — an ordinary line, and a line making a factual claim:
+{"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false},{"turnIndex":1,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words that assert a specific number or result","tone":"analytical","energy":"medium","pauseBefore":"beat","isInterruption":false,"evidenceRefs":["an exact phrase copied from the EVIDENCE block"],"isFactualClaim":true}]}`;
 
   const redactedSystem = redactForeignBrief(rawSystemPrompt, input.foreignBriefTerms);
   const redactedPrompt = redactForeignBrief(rawPrompt, input.foreignBriefTerms);
