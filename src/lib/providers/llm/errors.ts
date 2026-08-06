@@ -268,6 +268,14 @@ const INSUFFICIENT_CREDIT = new RegExp(
     "(purchase|buy|add) (more )?(credits|funds)",
     "payment (is )?required",
     "account (is )?(not funded|unfunded)",
+    // OBSERVED 2026-08-05 against live accounts, both arriving as HTTP 429:
+    //   Google  "Your prepayment credits are depleted."
+    //   Z.ai    "Insufficient balance or no resource package. Please recharge."
+    // The Z.ai text already matched on "insufficient balance"; Google's did not
+    // match anything, which is what sent me looking at the status code.
+    "(credit|credits|balance) (are|is )?depleted",
+    "prepayment credits",
+    "please recharge",
   ].join("|"),
   "i"
 );
@@ -317,12 +325,26 @@ export function categorizeHttpFailure(
   // fix is to add credit — and, because programming_error is TERMINAL, doing it
   // with a message that says no other model can help for the wrong reason.
   //
-  // A 402 is unambiguous on its own. A 400 or 403 must have the provider
+  // A 402 is unambiguous on its own. Any other status must have the provider
   // actually NAME the money, so an ordinary bad request keeps its own category.
-  // 429 is deliberately untouched: a spent free-tier allowance is already
-  // `quota_exhausted`, and a rate limit must stay a rate limit.
+  //
+  // 429 IS INCLUDED, and that was a correction. It was excluded on the reasoning
+  // that a spent allowance is `quota_exhausted` and a rate limit must stay a rate
+  // limit — both true, and both irrelevant to what live providers actually send.
+  // Smoke-testing real accounts on 2026-08-05 produced:
+  //
+  //   Google  429  "Your prepayment credits are depleted."
+  //   Z.ai    429  "Insufficient balance or no resource package. Please recharge."
+  //
+  // Neither is a rate limit. Classified as one, the operator is told to wait and
+  // retry, and waiting never adds money — the same misleading advice the 400 case
+  // was fixed to stop giving. A 429 with no funding language in the provider's
+  // OWN message field still falls through to the rate-limit rules untouched.
   if (status === 402) return "insufficient_credit";
-  if ((status === 400 || status === 403) && looksLikeInsufficientCredit(body)) {
+  if (
+    (status === 400 || status === 403 || status === 429) &&
+    looksLikeInsufficientCredit(body)
+  ) {
     return "insufficient_credit";
   }
 

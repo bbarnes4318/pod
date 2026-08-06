@@ -212,8 +212,11 @@ export const MODEL_IDS = {
     kimiK3: "kimi-k3",
     kimiK26: "kimi-k2.6",
   },
+  // CONFIRMED against the live catalog on 2026-08-05. There is no bare
+  // `gemini-3.1-pro` — the Pro line is preview-suffixed, which is exactly the
+  // kind of guess that would have failed on the first paid call.
   google: {
-    geminiPro: "gemini-3.1-pro",
+    geminiPro: "gemini-3.1-pro-preview",
     geminiFlash: "gemini-3.6-flash",
   },
 } as const;
@@ -733,6 +736,13 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       supportsStreaming: true,
       requestParameterProfile:
         p === "xai" ? "xai-grok" : p === "moonshot" ? "moonshot-kimi" : "google-gemini",
+      // OBSERVED 2026-08-05: kimi-k3 rejects any temperature but 1 outright —
+      //   HTTP 400 "invalid temperature: only 1 is allowed for this model"
+      // Same contract Anthropic's frontier models have, so it uses the same flag
+      // and the shared base omits the field rather than sending a value that
+      // fails every call. Scoped to what was actually observed: other Kimi
+      // checkpoints accept sampling and are not assumed to behave alike.
+      rejectsSampling: p === "moonshot" && /^kimi-k3/i.test(model),
       unpriced: true,
       provenance: unknownProvenance,
     };

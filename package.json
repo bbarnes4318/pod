@@ -171,7 +171,8 @@
     "test:provider-error-classification": "tsx --conditions=react-server src/scripts/testProviderErrorClassification.ts",
     "audit:llm-routing": "tsx --conditions=react-server src/scripts/auditLlmRouting.ts",
     "eval:models": "tsx --conditions=react-server src/scripts/runModelEvaluation.ts",
-    "test:llm-role-routing": "tsx --conditions=react-server src/scripts/testLlmRoleRouting.ts"
+    "test:llm-role-routing": "tsx --conditions=react-server src/scripts/testLlmRoleRouting.ts",
+    "smoke:llm-providers": "tsx --conditions=react-server src/scripts/smokeLlmProviders.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

@@ -152,6 +152,29 @@ check("a 403 that names the money is billing, not a credential problem", () => {
   assert.equal(categorizeHttpFailure(403, body, []), "insufficient_credit");
 });
 
+// These two bodies are VERBATIM from live accounts on 2026-08-05, captured by a
+// real smoke call. Both are billing failures delivered as HTTP 429, which the
+// first version of this classifier deliberately excluded — so it would have told
+// an operator to wait out a "rate limit" that no amount of waiting fixes.
+check("Google's 429 'prepayment credits are depleted' is billing, not a rate limit", () => {
+  const body = JSON.stringify({
+    error: { code: 429, message: "Your prepayment credits are depleted. Please go to AI Studio to manage your project." },
+  });
+  assert.equal(categorizeHttpFailure(429, body, []), "insufficient_credit");
+});
+
+check("Z.ai's 429 'Insufficient balance ... Please recharge' is billing, not a rate limit", () => {
+  const body = JSON.stringify({ error: { code: "1113", message: "Insufficient balance or no resource package. Please recharge." } });
+  assert.equal(categorizeHttpFailure(429, body, []), "insufficient_credit");
+});
+
+check("a 429 with NO funding language is still an ordinary rate limit", () => {
+  const body = JSON.stringify({ error: { message: "Rate limit exceeded. Please slow down." } });
+  const category = categorizeHttpFailure(429, body, []);
+  assert.notEqual(category, "insufficient_credit", "widening 429 must not swallow real rate limits");
+  assert.equal(isRetryableCategory(category), true, "a real rate limit is still worth retrying");
+});
+
 check("the operator is told to fund the account", () => {
   const action = operatorAction("insufficient_credit");
   assert.ok(action, "insufficient_credit must carry an operator action");
