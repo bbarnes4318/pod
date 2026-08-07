@@ -699,7 +699,28 @@ export function modelCapabilities(provider: string, model: string): ModelCapabil
       supportsNativeJsonObject: false,
       supportsNativeJsonSchema: false,
       supportsPromptEnforcedJson: true,
-      supportsThinking: false,
+      // TRUE ON PURPOSE for an UNREGISTERED model, which is the opposite of the
+      // conservative default everywhere else here — and the conservative default
+      // is what breaks GLM.
+      //
+      // shapeZaiRequest only sends `thinking: {type:"disabled"}` when this flag
+      // is set. GLM REASONS BY DEFAULT and bills it against max_tokens, so a
+      // model that never receives the disable spends its whole allowance
+      // thinking and returns empty content. Declaring false does not mean "we
+      // send nothing safe"; it means "we send nothing, and the model does
+      // whatever it likes".
+      //
+      // OBSERVED 2026-08-06: glm-5.2, newly funded and absent from this
+      // registry, failed a live smoke call with finish_reason=length and no
+      // answer — while the REGISTERED glm-4.7-flash, which carries
+      // supportsThinking: true, worked. The whole GLM family behaves this way,
+      // so the family default should match the registered member.
+      //
+      // Sending the field is also the safe direction: this endpoint ignores
+      // parameters it does not recognise (see the leniency note on the
+      // registered entry), so a wrong guess here costs nothing, whereas the
+      // omission costs the entire response.
+      supportsThinking: true,
       supportsReasoningEffort: false,
       supportsReasoningBudget: false,
       supportsSeed: false,
