@@ -92,6 +92,23 @@ async function main() {
   console.log("=".repeat(78));
   console.log(`\nHost distinctness: ${JSON.stringify(distinctness)}`);
   console.log(`Repeated lines:    ${repeated}/${lines.length}`);
+
+  // SHOW THE PAIRS. `repetitionScore` costs 5x its ratio in the quality gate, so
+  // a script loses real points here — and the count alone cannot say whether the
+  // detector caught a genuine restatement or a deliberate CALLBACK, which the
+  // continuity editor counts as a virtue. Those are opposite verdicts on the
+  // same text, and the pairs are the only way to tell which happened.
+  for (const hit of (repeats.repeats || []) as Array<{ index: number; ofIndex: number; similarity: number }>) {
+    const now = lines[hit.index];
+    const before = lines[hit.ofIndex];
+    if (!now || !before) continue;
+    console.log(`\n  repeat (${(hit.similarity * 100).toFixed(0)}% similar)`);
+    console.log(`    first  [${hit.ofIndex}] ${before.speakerName}: ${before.text.slice(0, 110)}`);
+    console.log(`    again  [${hit.index}] ${now.speakerName}: ${now.text.slice(0, 110)}`);
+    console.log(
+      `    ${before.speakerName === now.speakerName ? "SAME speaker — restating himself." : "DIFFERENT speaker — could be a callback doing new work."}`
+    );
+  }
   console.log(`Role violations:   ${seven.trace.violations.length}`);
   for (const v of seven.trace.violations.slice(0, 10)) {
     console.log(`  ${JSON.stringify(v).slice(0, 180)}`);
