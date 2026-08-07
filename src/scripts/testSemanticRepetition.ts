@@ -29,6 +29,7 @@ import {
   type SemanticRepetitionReport,
   type SemanticRepetitionSegmentInput,
 } from "../lib/services/semanticRepetition";
+import { findRepetitions } from "../lib/services/scriptRepetition";
 
 const VERBOSE = process.argv.includes("--verbose");
 
@@ -352,6 +353,44 @@ check("the clean episode degrades when a single restatement is injected", () => 
 check("the detector separates the two episodes by a wide margin", () => {
   const gap = cleanReport.repetitionScore - failedReport.repetitionScore;
   assert.ok(gap >= 50, `expected a decisive gap between the fixtures, got ${gap}`);
+});
+
+// --- findRepetitions: a shared FIGURE is not a shared POINT ----------------
+//
+// A show about a disputed number says that number constantly — it IS the
+// subject. Numerals used to count as content stems AND as anchors, so a shared
+// figure inflated stem containment past the 0.6 threshold and then satisfied the
+// anchor gate that existed to stop topical overlap tripping it. Both lines below
+// are verbatim from a generated transcript, they were flagged against each
+// other, and they are entirely different arguments.
+//
+// This matters beyond a soft score: findRepetitions also gates movements, and
+// scoreScriptQuality charges 5x the ratio, so the false positive could block an
+// episode outright.
+check("findRepetitions: two lines sharing only a FIGURE are not repetition", () => {
+  const report = findRepetitions([
+    "League audit. Same night. Five thousand two hundred.",
+    "The lights stayed on because Maria, Derek and Tammy kept buying based on six thousand four hundred ninety two.",
+    "Does the version you rehearse for your daughter change when the audit number of five thousand two hundred becomes the only number?",
+  ]);
+  assert.equal(
+    report.repeats.length,
+    0,
+    `expected no repeats; got ${JSON.stringify(report.repeats.map((r) => r.text.slice(0, 60)))}`,
+  );
+});
+
+check("findRepetitions: a genuine restatement is STILL caught when it shares a figure", () => {
+  // Guards the correction itself. Numerals were down-weighted, not switched off:
+  // these two make the same point with the same content words in a new order.
+  const report = findRepetitions([
+    "Calder announced six thousand four hundred ninety two but the league audit counted five thousand two hundred.",
+    "The league audit counted five thousand two hundred while Calder announced six thousand four hundred ninety two.",
+  ]);
+  assert.ok(
+    report.repeats.length >= 1,
+    "a reworded restatement must still be flagged — the fix removes double-counting, not detection",
+  );
 });
 
 // --- paraphrase --------------------------------------------------------

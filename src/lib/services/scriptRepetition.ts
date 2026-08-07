@@ -50,16 +50,49 @@ function stem(word: string): string {
   return word.replace(/'s$/, "").replace(/(ing|ed|es|s)$/, "");
 }
 
-/** Content-word stems + "anchor" tokens (numbers and proper-noun-ish words). */
+const NUMBER_WORDS = new Set([
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+  "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+  "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty",
+  "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "million", "billion",
+]);
+
+function isNumeral(word: string): boolean {
+  return /^\d[\d,.]*$/.test(word) || NUMBER_WORDS.has(word);
+}
+
+/**
+ * Content-word stems + "anchor" tokens (numbers and proper-noun-ish words).
+ *
+ * A NUMERAL IS AN ANCHOR AND NOT A STEM, and that separation is the point.
+ *
+ * Path 2 flags a reworded restatement when stem containment clears 0.6 AND the
+ * two lines share an anchor — the anchor requirement exists so that topical
+ * overlap alone cannot trip it. Counting numerals in BOTH sets made that
+ * safeguard self-defeating: a shared figure inflated containment past the
+ * threshold and then satisfied the very gate meant to restrain it.
+ *
+ * OBSERVED 2026-08-06 across three runs. "League audit. Same night. Five
+ * thousand two hundred." was flagged against "The lights stayed on because
+ * Maria, Derek and Tammy kept buying based on six thousand four hundred ninety
+ * two." Different arguments entirely. Spelled out, those attendance figures run
+ * four and six words, which in a ten-word line is most of the content — so the
+ * detector was comparing the numbers and almost nothing else.
+ *
+ * The consequence was worse than a soft score: this detector also gates
+ * movements, and scoreScriptQuality charges 5x the repetition ratio. A show
+ * whose SUBJECT is a disputed number was being penalised, and occasionally
+ * blocked outright, for referring to the fact it exists to argue about.
+ */
 function contentProfile(originalText: string, normalized: string): { stems: Set<string>; anchors: Set<string> } {
   const stems = new Set<string>();
   for (const w of normalized.split(" ")) {
-    if (!w || STOPWORDS.has(w)) continue;
+    if (!w || STOPWORDS.has(w) || isNumeral(w)) continue;
     stems.add(stem(w));
   }
   const anchors = new Set<string>();
-  for (const m of normalized.match(/\b(\d[\d,.]*|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)\b/g) || []) {
-    anchors.add(m);
+  for (const w of normalized.split(" ")) {
+    if (w && isNumeral(w)) anchors.add(w);
   }
   // Capitalized words not at the start of the line are proper-noun-ish
   const words = originalText.split(/\s+/);
