@@ -697,15 +697,49 @@ export async function runSevenRolePipeline(
   }
 
   // ------------------------------------------------ episode-level floor
+  //
+  // A SHORT EPISODE IS NOT A BROKEN EPISODE.
+  //
+  // Measured over six runs of the same fixture: the material naturally yields
+  // between ~500 and ~730 spoken words, and the floor sits inside that range. So
+  // roughly one run in six was thrown away — after all seven roles had run and
+  // been paid for — for producing a tight three-and-a-half-minute argument
+  // instead of a five-minute one.
+  //
+  // The only way to close that gap is padding: restatement, throat-clearing,
+  // three sentences doing one sentence's work. That is precisely the texture
+  // that makes generated dialogue sound generated, so failing here actively
+  // selects for the defect the rest of this pipeline exists to remove.
+  //
+  // Two thresholds instead of one:
+  //   below SEVERE  — there is no episode here. Still fatal.
+  //   in between    — a real episode, shorter than requested. Ship it, and say
+  //                   so loudly enough that a drifting trend is visible.
+  //
+  // The severe floor is a fraction of the REQUESTED length rather than a fixed
+  // word count, so it scales with what was actually asked for.
   const words = countWords(draftLines);
-  if (words < episodeMinimumWords) {
+  const severeMinimumWords = Math.round(episodeMinimumWords * 0.6);
+
+  if (words < severeMinimumWords) {
     const reason =
-      `The seven-role draft came to ${words} spoken words; a ${args.targetDuration}-minute episode ` +
-      `requires at least ${episodeMinimumWords}.`;
+      `The seven-role draft came to ${words} spoken words, below the hard floor of ${severeMinimumWords} ` +
+      `for a ${args.targetDuration}-minute episode (target ${episodeMinimumWords}). That is not a short ` +
+      `episode, it is an incomplete one.`;
     trace.failPipeline(reason);
     trace.skip("independent_judge", "the draft never reached the judge");
     trace.finish();
     return { ok: false, trace, error: reason, spine, turnPlan: turns, continuity };
+  }
+
+  if (words < episodeMinimumWords) {
+    args.log(
+      `SHORT EPISODE (not blocking): ${words} spoken words against a ${episodeMinimumWords}-word target for ` +
+        `${args.targetDuration} minutes — roughly ${(words / 145).toFixed(1)} minutes of speech. The evidence ` +
+        `supported this much argument and no more. Padding it to length would add exactly the filler this ` +
+        `pipeline strips, so it ships at its natural length. If this becomes the norm rather than the ` +
+        `exception, the fix is richer source material or a shorter target duration — not a longer script.`
+    );
   }
 
   trace.finish();
