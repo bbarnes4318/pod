@@ -33,20 +33,30 @@ async function main() {
   const wanted = flag("fixture") || "character_revealing";
   const situation = SITUATIONS.find((s) => s.key === wanted) || SITUATIONS[0];
 
+  // MEASURED 2026-08-06: these fixtures plateau at ~730 spoken words no matter
+  // how many turns are planned — 15 turns gave 411, 27 gave 720, 44 gave 733 by
+  // writing shorter lines. The material supports roughly five minutes of real
+  // argument, and demanding eight buys padding, which is the exact texture that
+  // makes generated dialogue sound generated. Override deliberately.
+  const minutes = Number(flag("minutes")) || situation.targetDuration;
+
   // Print WHO IS WRITING before spending anything. A surprising transcript is
   // much easier to interpret when the routing that produced it is on the page.
   console.log("\nROUTING FOR THIS EPISODE");
   for (const row of roleRoutingTable(PRODUCTION_WRITING_ROLES)) {
     console.log(`  ${row.role.padEnd(26)} ${row.provider}/${row.model}`);
   }
-  console.log(`\nFixture: ${situation.key} — "${situation.episodeTitle}"\n`);
+  console.log(
+    `\nFixture: ${situation.key} — "${situation.episodeTitle}" (${minutes} min` +
+      `${minutes !== situation.targetDuration ? `, overridden from ${situation.targetDuration}` : ""})\n`
+  );
 
   const started = Date.now();
   const seven = await runSevenRolePipeline({
     systemPrompt: PERSONA_PROMPT,
     episodeTitle: situation.episodeTitle,
     topicsPrompts: situation.topicsPrompts,
-    targetDuration: situation.targetDuration,
+    targetDuration: minutes,
     temperature: 0.85,
     maxTokens: 16000,
     speakerNames: HOST_NAMES,
