@@ -663,7 +663,13 @@ export async function runSevenRolePipeline(
   );
 
   // ------------------------------------------------ ROLE 6 — continuity editor
-  const segments = assembleSegments(coldOpen.segment, draftLines, beats);
+  const deInterrupted = resolvePhantomInterruptions(draftLines);
+  if (deInterrupted.fixed) {
+    args.log(
+      `Phantom interruptions repaired: ${deInterrupted.fixed} line(s) ended mid-sentence with nobody cutting in.`
+    );
+  }
+  const segments = assembleSegments(coldOpen.segment, deInterrupted.lines, beats);
   const transcriptArtifact = artifactRef("final_draft", segments, `${draftLines.length} lines`);
   let continuity: ContinuityEditorReport | null = null;
   const continuityStage = await trace.run("continuity_editor", [transcriptArtifact], async (llm) => {
@@ -939,6 +945,49 @@ function countWords(lines: Array<{ text?: unknown }>): number {
 }
 
 /** Cold open first, then one segment per beat that actually received turns. */
+/**
+ * An interruption needs an interrupter.
+ *
+ * A line ending in a dash is a promise to the listener: someone is about to cut
+ * in. When the very next line belongs to the SAME speaker, nobody did, and the
+ * dash becomes a sentence that just stops.
+ *
+ * OBSERVED 2026-08-06: "Look, the July first deadline is going to kill three
+ * clubs but—" followed by the same host continuing at length. In text it reads
+ * as a typo; spoken by a TTS voice it is worse, because the performance commits
+ * to being cut off and then isn't.
+ *
+ * The dash is what gets corrected, not the turn order. The writers are working
+ * from a plan they cannot see the whole of, so the punctuation is the thing that
+ * turned out to be wrong, and it is the cheapest honest thing to fix.
+ */
+function resolvePhantomInterruptions(lines: AssembledLine[]): { lines: AssembledLine[]; fixed: number } {
+  const ordered = [...lines].sort((a, b) => a.turnIndex - b.turnIndex);
+  // Em dash, en dash or a double hyphen. A single trailing hyphen is left alone:
+  // it is far more likely to be a hyphenated word than a cut-off.
+  const CUT_OFF = /(\s*(?:[—–]|--)\s*)$/;
+
+  let fixed = 0;
+  const out = ordered.map((line, i) => {
+    const text = String((line as unknown as { text?: unknown }).text ?? "").trimEnd();
+    if (!CUT_OFF.test(text)) return line;
+
+    const next = ordered[i + 1];
+    const someoneCutIn =
+      !!next && String(next.speakerName || "").toLowerCase() !== String(line.speakerName || "").toLowerCase();
+    if (someoneCutIn) return line;
+
+    fixed++;
+    return {
+      ...line,
+      text: text.replace(CUT_OFF, "."),
+      isInterruption: false,
+    } as AssembledLine;
+  });
+
+  return { lines: out, fixed };
+}
+
 function assembleSegments(
   coldOpenSegment: CreativeScriptSegment,
   lines: AssembledLine[],

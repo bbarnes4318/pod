@@ -518,6 +518,28 @@ function makeTurnPlanValidator(totalWordTarget: number) {
     // at the word floor after every role has already been paid for. Observed
     // 2026-08-06: an 8-minute episode planned with 15 turns produced 411 spoken
     // words against a 951 floor, and every candidate model failed the same way.
+    // No speaker holds the floor three times running.
+    //
+    // The prompt says a host "may hold two or three consecutive turns when the
+    // pressure warrants it", and three is one too many. OBSERVED 2026-08-06:
+    // Mulkey took three in a row and the third one asked ZABALA a question —
+    // the character interrogating himself, because there was no turn between
+    // them for Zabala to answer in. Two consecutive turns is a person pressing
+    // a point; three is a monologue that forgot the other chair.
+    let run = 1;
+    for (let i = 1; i < turns.length; i++) {
+      const prev = String((turns[i - 1] as Record<string, unknown>).speakerName || "").toLowerCase();
+      const here = String((turns[i] as Record<string, unknown>).speakerName || "").toLowerCase();
+      run = here === prev ? run + 1 : 1;
+      if (run > 2) {
+        return (
+          `${(turns[i] as Record<string, unknown>).speakerName} holds three consecutive turns ` +
+          `(around turn ${i}). Give the other host a turn between them — two in a row is pressing a ` +
+          `point, three is a monologue with nobody in the other chair.`
+        );
+      }
+    }
+
     if (turns.length < minTurns) {
       return (
         `The plan has ${turns.length} turns, but this episode needs at least ${minTurns} to reach ` +
