@@ -15,6 +15,18 @@ test.afterAll(async () => { await closeE2eDb(); });
 
 async function gotoCreate(page: Page) {
   await page.goto("/studio/create");
+  // Wait for the page to be INTERACTIVE before probing for Discard. The probe
+  // below is a bare isVisible() with no auto-wait, so it needs the app to have
+  // hydrated: Discard now lives in the shell topbar and is portalled there, and
+  // portalled content is never present in the server HTML. Without this wait the
+  // probe returns false, the draft is never discarded, and the restored draft
+  // opens on its own saved step — where `mode-manual` does not exist. That is
+  // why every test AFTER the first one failed: the first runs with no draft.
+  // The sentinel must be something that ONLY exists after hydration. .rundownBuilder
+  // and step-show are server-rendered, so waiting on them proves nothing. save-status
+  // is portalled into the shell subbar by <StudioPageHeader>, so its presence proves
+  // the header mounted — and therefore that Discard is mounted too, if a draft exists.
+  await page.locator('[data-testid="save-status"]').waitFor({ state: "attached", timeout: 30_000 });
   const discard = page.getByTestId("discard-draft");
   // Discard is only rendered when a draft exists, and now sits behind an
   // explicit confirm step.

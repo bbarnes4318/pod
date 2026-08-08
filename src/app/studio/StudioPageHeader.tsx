@@ -33,9 +33,15 @@
 // visible title is a <div>, so the document always has exactly one h1 and it is
 // present on first paint rather than after hydration.
 
-import React, { useEffect, useId, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useStudioHeader, type StudioHeaderCrumb } from "./StudioShell";
+
+// useLayoutEffect warns when it runs during SSR, where there is no layout to
+// read. On the client it matters: it resolves the portal host BEFORE the
+// browser paints, so chrome-hosted controls are never visibly absent for a
+// frame after hydration.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 export interface StudioPageHeaderProps {
   /** Shown in the topbar. Sentence case. */
@@ -55,10 +61,17 @@ function ChromeSlot({ slotId, children }: { slotId: string; children: React.Reac
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   // The slot is rendered by the shell, which is above this component in the
-  // tree, so it always exists by the time this effect runs. Resolving it in an
-  // effect (not during render) keeps the server and first client render
-  // identical, which is what stops a hydration mismatch.
-  useEffect(() => {
+  // tree, so it always exists by the time this runs. Resolving it in an effect
+  // (not during render) keeps the server and first client render identical,
+  // which is what stops a hydration mismatch — and doing it in a LAYOUT effect
+  // means the portalled control is in the DOM before the first paint.
+  //
+  // Portalled content is never server-rendered, so anything placed here is
+  // client-only by construction. That is a real behavioural change for controls
+  // that used to live in the page body: they now appear on hydration rather
+  // than in the initial HTML. Keep ephemeral, page-scoped chrome here — not
+  // anything that must exist for a no-JS or pre-hydration reader.
+  useIsomorphicLayoutEffect(() => {
     setHost(document.getElementById(slotId));
   }, [slotId]);
 
