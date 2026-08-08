@@ -178,7 +178,13 @@ export default function TopicRundownPicker({
             const canSelect = t.eligible || selected;
             const expanded = expandedId === t.id;
             return (
-              <li key={t.id} className="studioCard" style={{ padding: "0.85rem 1rem", opacity: canSelect ? 1 : 0.72 }}>
+              // An unusable card is marked by its BORDER, not by fading it. The
+              // old `opacity: 0.72` dropped every chip on the card to 4.04:1 —
+              // under the AA floor — so the card explaining WHY a take cannot be
+              // used was the hardest one on the page to read. The checkbox is
+              // already disabled and the readiness chip already says why; a
+              // dashed edge is the third signal and it costs no contrast.
+              <li key={t.id} className="studioCard" style={{ padding: "0.85rem 1rem", borderStyle: canSelect ? undefined : "dashed" }}>
                 <div style={{ display: "flex", gap: "0.85rem", alignItems: "flex-start" }}>
                   <input
                     type="checkbox"

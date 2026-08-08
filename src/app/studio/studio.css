@@ -557,14 +557,17 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* No opacity on either state. --accent on the active tab's wash is 4.81:1 and
+   --text-muted on --surface-2 is 6.13:1; the 0.9 and 0.85 fades that used to sit
+   here pulled the active hint to 4.25:1, under the AA floor. Recede with a
+   token, never by fading one. */
 .epTabHint {
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--text-muted);
-  opacity: 0.85;
 }
-.epTab.active .epTabHint { color: var(--accent); opacity: 0.9; }
+.epTab.active .epTabHint { color: var(--accent); }
 
 .epTabPanel { animation: fadeUp 0.25s ease both; }
 
@@ -1793,12 +1796,13 @@
   align-items: baseline;
   font-size: 0.8rem;
   line-height: 1.5;
-  /* Not-yet-recorded lines are present but recessive: they are what is coming,
-     not what has happened. */
+  /* Not-yet-recorded lines are recessive by TOKEN, never by opacity. Fading
+     --text-muted to 60% measured 3.29:1 — the line that says what is coming
+     next was the least legible thing on the page. Muted vs full text is the
+     same distinction every other row in this console already draws, and it
+     holds 6.85:1. */
   color: var(--text-muted);
-  opacity: 0.6;
 }
-.prodTickerLine--voiced { opacity: 1; }
 .prodTickerMark { font-family: var(--font-mono); color: var(--text-muted); }
 .prodTickerLine--voiced .prodTickerMark { color: var(--success); }
 .prodTickerSpeaker {
