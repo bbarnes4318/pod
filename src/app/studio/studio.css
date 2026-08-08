@@ -917,22 +917,51 @@
 .transcriptLegend { display: flex; gap: 1rem; font-size: 0.76rem; color: var(--text-muted); }
 .transcriptLegend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .legendSwatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.transcriptScroller { max-height: 560px; overflow-y: auto; padding-right: 0.3rem; }
-.transcriptSeg { margin-bottom: 1.2rem; }
-.transcriptSegTag { margin-bottom: 0.7rem; }
+.transcriptScroller { max-height: 640px; overflow-y: auto; padding-right: 0.3rem; }
+.transcriptSeg { margin-bottom: var(--sp-4); }
+.transcriptSegTag { margin-bottom: var(--sp-2); }
 
+/* ---- Density ----
+   A transcript is read by scanning down it, and the old row spent two stacked
+   blocks and a permanently-reserved action strip on every single line — three
+   rows of chrome for one row of dialogue. The speaker now sits in a fixed left
+   gutter (so the names line up as one scannable column) and the actions are
+   removed from flow entirely until the line is hovered or focused. `display`
+   rather than `opacity` is what reclaims the space; :focus-within still fires
+   from the always-focusable line text, so the buttons appear before a keyboard
+   user can reach them. */
 .tLine {
-  padding: 0.55rem 0.7rem;
+  display: grid;
+  grid-template-columns: 11ch minmax(0, 1fr);
+  gap: 0 var(--sp-3);
+  align-items: baseline;
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   border: 1px solid transparent;
   border-left: 3px solid var(--border);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--sp-1);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .tLine:hover { background: var(--surface-2); }
 .tLine-dirty { border-left-color: var(--warning); background: var(--warning-muted); }
-.tLineHead { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
-.tSpeaker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.tLineHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.tLine > :not(.tLineHead) { grid-column: 2; }
+.tSpeaker {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tDirtyChip { background: var(--warning-muted); color: var(--warning); border-color: var(--warning-border); }
 
 .tText {
@@ -975,8 +1004,8 @@
 .citeName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .citeLink { color: var(--accent); font-weight: 700; }
 
-.tLineActions { display: flex; gap: 0.35rem; margin-top: 0.45rem; opacity: 0; transition: opacity 0.15s ease; flex-wrap: wrap; }
-.tLine:hover .tLineActions, .tLine:focus-within .tLineActions { opacity: 1; }
+.tLineActions { display: none; gap: 0.35rem; margin-top: var(--sp-2); flex-wrap: wrap; }
+.tLine:hover .tLineActions, .tLine:focus-within .tLineActions { display: flex; }
 .tMini {
   font-size: 0.72rem;
   font-weight: 600;
@@ -1141,6 +1170,22 @@
 @media (max-width: 860px) {
   .transcriptWorkspace { grid-template-columns: 1fr; }
   .factPanel { position: static; }
+}
+
+@media (max-width: 640px) {
+  /* An 11ch gutter is a third of a phone screen. Below this the speaker goes
+     back above the line and the actions stay hover-free — there is no hover on
+     a touch screen, so they are simply always shown. */
+  .tLine { grid-template-columns: minmax(0, 1fr); }
+  .tLine > :not(.tLineHead) { grid-column: 1; }
+  .tLineHead { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+  .tLineActions { display: flex; }
+}
+
+/* Hover-reveal is a lie on a device that cannot hover — a wide tablet is still
+   a touch screen. Show the actions outright there. */
+@media (hover: none) {
+  .tLineActions { display: flex; }
 }
 
 /* ============================================================
@@ -1535,61 +1580,91 @@
   margin-top: 0.3rem;
 }
 
-/* ---- The stage rail ---- */
-.prodRail { list-style: none; margin: 0; padding: 0.4rem 0; }
+/* ---- The rundown ----
+   A broadcast rundown, not a progress bar: rows of segments with a tally lamp,
+   a segment number, and one shared clock column down the right. The four
+   columns are declared once and reused by the header row, the live rows and the
+   skeleton, so the clock's right edge never moves between states. */
+.prodRundownHead,
 .prodStage {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 18px 3ch minmax(0, 1fr) 7ch;
+  gap: 0 var(--sp-3);
   padding: 0 1.35rem;
 }
-.prodStageMark {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  padding-top: 0.95rem;
+.prodRundownHead {
+  padding-top: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
-/* The connector lives in the mark column so it inherits that column's exact
-   centre line no matter how tall the row's body grows. */
-.prodStageMark::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-}
-.prodStage:first-child .prodStageMark::before { top: 0.95rem; }
-.prodStage:last-child .prodStageMark::before { bottom: calc(100% - 0.95rem); }
-.prodStage--done .prodStageMark::before { background: var(--success); }
+.prodColClock { text-align: right; }
 
-.prodDot {
-  position: relative;
-  z-index: 1;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+.prodRail { list-style: none; margin: 0; padding: 0; }
+.prodStage { align-items: start; }
+.prodStage + .prodStage { border-top: 1px solid var(--border); }
+/* The live row is the one the eye should land on from across the desk. */
+.prodStage--active,
+.prodStage--checkpoint { background: var(--accent-muted); }
+.prodStage--failed { background: var(--error-muted); }
+
+/* The tally lamp. Dark when the segment is not up, lit when it is — the same
+   convention as a camera tally, which is why the active state also pulses. */
+.prodTally {
+  width: 14px;
+  height: 14px;
+  margin-top: 0.95rem;
+  border-radius: 3px;
   display: grid;
   place-items: center;
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   font-weight: 800;
+  line-height: 1;
   background: var(--surface-2);
-  color: var(--text-muted);
-  border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px var(--border);
-  flex-shrink: 0;
+  color: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
-.prodStage--done .prodDot { background: var(--success); color: var(--bg); box-shadow: 0 0 0 1px var(--success); }
-.prodStage--active .prodDot,
-.prodStage--checkpoint .prodDot { background: var(--accent); color: var(--bg); box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow); }
-.prodStage--active .prodDot { animation: onAirPulse 2s ease-in-out infinite; }
-.prodStage--failed .prodDot { background: var(--error-text); color: var(--bg); box-shadow: 0 0 0 1px var(--error-text); }
+.prodStage--done .prodTally { background: var(--success); box-shadow: none; }
+.prodStage--active .prodTally,
+.prodStage--checkpoint .prodTally {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.prodStage--active .prodTally { animation: onAirPulse 2s ease-in-out infinite; }
+.prodStage--failed .prodTally { background: var(--error-text); box-shadow: none; }
+
+.prodStageNum {
+  margin-top: 0.85rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
 
 .prodStageBody { padding: 0.8rem 0 0.95rem; min-width: 0; }
-.prodStageTop { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.prodStageTop { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
 .prodStageLabel { font-size: 0.92rem; font-weight: 700; color: var(--text-muted); }
 .prodStage--active .prodStageLabel,
 .prodStage--checkpoint .prodStageLabel,
 .prodStage--failed .prodStageLabel { color: var(--text); }
+/* State in words as well as in colour — a lamp on its own is not a status. */
+.prodStageState {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.prodStage--active .prodStageState,
+.prodStage--checkpoint .prodStageState { color: var(--accent); }
+.prodStage--done .prodStageState { color: var(--success); }
+.prodStage--failed .prodStageState { color: var(--error-text); }
 .prodStageBlurb {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -1597,15 +1672,25 @@
   margin: 0.3rem 0 0;
   max-width: 62ch;
 }
-/* Tabular figures + right alignment so a ticking second never shifts the row. */
-.prodStageTime {
-  margin-left: auto;
+.prodStagePace {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin: var(--sp-1) 0 0;
+}
+/* Tabular figures + right alignment so a ticking second never shifts the row,
+   and so two rows' times line up digit for digit. */
+.prodStageClock {
+  margin-top: 0.85rem;
+  text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
+.prodStage--active .prodStageClock,
+.prodStage--checkpoint .prodStageClock { color: var(--text); }
+.prodStage--done .prodStageClock { color: var(--text-muted); }
 
 /* ---- Progress affordances ---- */
 .prodBarTrack {
@@ -1672,12 +1757,70 @@
 }
 .prodFoot .btnPrimary { margin-left: auto; }
 .prodSafe { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); }
+.prodRetryError { margin-top: var(--sp-2); }
+
+/* ---- The script ticker ----
+   The lines that exist right now, filling in as each one's audio comes back.
+   Monospace because it is a log of work completing, not prose to be read — the
+   transcript tab is where the script is actually read. */
+.prodTicker { border-top: 1px solid var(--border); padding: var(--sp-4) 1.35rem; }
+.prodTickerHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.prodTickerTitle {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.prodTickerCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.prodTickerList { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.prodTickerLine {
+  display: grid;
+  grid-template-columns: 1ch minmax(0, 12ch) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: baseline;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  /* Not-yet-recorded lines are present but recessive: they are what is coming,
+     not what has happened. */
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.prodTickerLine--voiced { opacity: 1; }
+.prodTickerMark { font-family: var(--font-mono); color: var(--text-muted); }
+.prodTickerLine--voiced .prodTickerMark { color: var(--success); }
+.prodTickerSpeaker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prodTickerLine--voiced .prodTickerText { color: var(--text); }
 
 @media (max-width: 560px) {
-  .prodStage { grid-template-columns: 34px minmax(0, 1fr); padding: 0 0.9rem; }
-  .prodHead, .prodFoot { padding: 1rem; }
+  .prodRundownHead,
+  .prodStage { grid-template-columns: 14px 2ch minmax(0, 1fr) 6ch; padding: 0 0.9rem; }
+  .prodHead, .prodFoot, .prodTicker { padding-left: 0.9rem; padding-right: 0.9rem; }
   .prodElapsedWrap { text-align: left; }
   .prodFoot .btnPrimary { margin-left: 0; width: 100%; }
+  .prodTickerLine { grid-template-columns: 1ch minmax(0, 1fr); }
+  .prodTickerText { grid-column: 1 / -1; }
 }
 
 /* ============================================================
@@ -2167,6 +2310,47 @@
 .epNoteSmall { font-size: 0.75rem; color: var(--text-muted); }
 .epStack { display: flex; flex-direction: column; gap: var(--sp-3); }
 .epStackWide { display: flex; flex-direction: column; gap: var(--sp-6); }
+
+/* ---- Episode action bar ----
+   Sticky, not fixed: it sits at the end of the document and pins to the bottom
+   of the viewport only while there is still content below it, so it can never
+   hide the last row of a panel. The negative margins cancel .studioMain's own
+   padding so the bar spans the full content column and reads as a bar rather
+   than as one more card. */
+.epActionBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin: var(--sp-6) calc(var(--sp-6) * -1) calc(var(--sp-8) * -1);
+  padding: var(--sp-3) var(--sp-6);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.epActionBarWhat { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
+.epActionBarStage {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.epActionBarStatus { font-size: 0.85rem; color: var(--text); }
+.epActionBarDo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+@media (max-width: 720px) {
+  .epActionBar {
+    margin: var(--sp-4) calc(var(--sp-4) * -1) calc(var(--sp-6) * -1);
+    padding: var(--sp-2) var(--sp-4);
+  }
+  .epActionBarDo { width: 100%; }
+  .epActionBarDo > * { flex: 1; text-align: center; }
+}
 
 /* Mix timeline. */
 .mixScrubFill { width: var(--at); }

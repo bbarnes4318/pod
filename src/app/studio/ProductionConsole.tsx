@@ -35,6 +35,19 @@ function paceNote(elapsedMs: number | null, typicalMs: number | null): string | 
   return `usually about ${fmtDur(typicalMs)}`;
 }
 
+/**
+ * The state word in the rundown's own column. A rundown reads down the page as a
+ * list of segments and their state, so each row says its state in words as well
+ * as in colour — colour alone is not a status.
+ */
+const STATE_WORD: Record<ProgressStageVM["state"], string> = {
+  done: "Done",
+  active: "On air",
+  checkpoint: "Your turn",
+  failed: "Stopped",
+  todo: "Queued",
+};
+
 export default function ProductionConsole({
   episodeId,
   initialVm,
@@ -212,30 +225,45 @@ export default function ProductionConsole({
         )}
       </header>
 
+      {/* The rundown. Read it the way a control room reads one: a tally lamp per
+          row, the segment, its state in words, and the clock — the clock column
+          is monospace and shares one right edge, so a ticking second never
+          reflows the row and two rows' times can be compared by eye. */}
+      <div className="prodRundownHead" aria-hidden="true">
+        <span className="prodColTally" />
+        <span className="prodColNum">#</span>
+        <span className="prodColSeg">Segment</span>
+        <span className="prodColClock">Time</span>
+      </div>
+
       <ol className="prodRail">
-        {vm.stages.map((s, i) => (
+        {vm.stages.map((s, i) => {
+          // Done shows what it took; anything running shows what it is taking.
+          // A stage nobody has reached shows nothing rather than a zero.
+          const clock =
+            s.state === "done" ? s.elapsedMs
+            : s.state === "todo" ? null
+            : liveElapsed(s);
+          return (
           <li key={s.key} className={`prodStage prodStage--${s.state}`} data-testid={`prod-stage-${s.key}`} data-state={s.state}>
-            <div className="prodStageMark">
-              <span className="prodDot">
-                {s.state === "done" ? "✓" : s.state === "failed" ? "!" : i + 1}
-              </span>
-            </div>
+            <span className="prodTally" aria-hidden="true">
+              {s.state === "done" ? "✓" : s.state === "failed" ? "!" : ""}
+            </span>
+            <span className="prodStageNum" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
             <div className="prodStageBody">
               <div className="prodStageTop">
                 <span className="prodStageLabel">{s.label}</span>
-                {s.state === "done" && s.elapsedMs !== null && (
-                  <span className="prodStageTime">{fmtDur(s.elapsedMs)}</span>
-                )}
-                {(s.state === "active" || s.state === "failed") && (
-                  <span className="prodStageTime">
-                    {paceNote(liveElapsed(s), s.typicalMs) ?? (s.typicalMs ? `usually about ${fmtDur(s.typicalMs)}` : "")}
-                  </span>
-                )}
+                <span className="prodStageState">{STATE_WORD[s.state]}</span>
               </div>
 
               {(s.state === "active" || s.state === "checkpoint" || s.state === "failed") && (
                 <p className="prodStageBlurb">{s.blurb}</p>
               )}
+
+              {(s.state === "active" || s.state === "failed") && (() => {
+                const pace = paceNote(liveElapsed(s), s.typicalMs);
+                return pace ? <p className="prodStagePace">{pace}</p> : null;
+              })()}
 
               {/* Voicing is the one stage with a real denominator, so it is the
                   one stage allowed to draw a filled bar. */}
@@ -263,6 +291,9 @@ export default function ProductionConsole({
                 <div className="prodBarTrack prodBarSweep" />
               ) : null}
 
+              {/* Recovery happens in the row that failed. The step that stopped,
+                  why it stopped, and the button that restarts it are one block —
+                  so the fix never requires finding another part of the page. */}
               {s.state === "failed" && s.error && (
                 <div className="prodNote prodNote--error" role="alert">
                   <div>{s.error}</div>
@@ -271,8 +302,17 @@ export default function ProductionConsole({
                       {retrying && <span className="btnSpin" aria-hidden="true" />}
                       {retrying ? "Restarting…" : "Try this step again"}
                     </button>
+                    {/* Some stops are the script's fault, not the worker's, and
+                        restarting the same input just fails again. The transcript
+                        is where that gets fixed. */}
+                    {(s.key === "factcheck" || s.key === "voices") && (
+                      <a href={tabHref("transcript")} className="btnGhost">Open the transcript</a>
+                    )}
+                    {s.key === "mix" && (
+                      <a href={tabHref("produce")} className="btnGhost">Open mix settings</a>
+                    )}
                   </div>
-                  {retryError && <div className="mt-2">{retryError}</div>}
+                  {retryError && <div className="prodRetryError">{retryError}</div>}
                 </div>
               )}
 
@@ -309,9 +349,43 @@ export default function ProductionConsole({
                 </>
               )}
             </div>
+            <span className="prodStageClock">{clock === null ? "" : fmtDur(clock)}</span>
           </li>
-        ))}
+          );
+        })}
       </ol>
+
+      {/* The script as it lands. While the writer is running there is nothing to
+          show; the moment lines exist they appear here, and each one fills in as
+          its own audio comes back. Nothing is shown as recorded until that
+          line's segment says ready. */}
+      {vm.recentLines.length > 0 && !vm.done && (
+        <section className="prodTicker" aria-label="Script lines as they are recorded">
+          <div className="prodTickerHead">
+            <span className="prodTickerTitle">Script</span>
+            {vm.script && (
+              <span className="prodTickerCount">
+                {vm.voicedCount > 0
+                  ? `${vm.voicedCount} of ${vm.script.lineCount} lines recorded`
+                  : `${vm.script.lineCount} lines written`}
+              </span>
+            )}
+          </div>
+          <ol className="prodTickerList">
+            {vm.recentLines.map((l) => (
+              <li
+                key={l.lineIndex}
+                className={`prodTickerLine${l.voiced ? " prodTickerLine--voiced" : ""}`}
+                data-testid="prod-ticker-line"
+              >
+                <span className="prodTickerMark" aria-hidden="true">{l.voiced ? "✓" : "·"}</span>
+                <span className="prodTickerSpeaker">{l.speaker || "—"}</span>
+                <span className="prodTickerText">{l.text}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {vm.stalled && !vm.failure && (
         <div className="prodFootNote">
@@ -364,13 +438,21 @@ export function ConsoleSkeleton() {
           <div className="skelLine skelLine--short" />
         </div>
       </div>
+      <div className="prodRundownHead" aria-hidden="true">
+        <span className="prodColTally" />
+        <span className="prodColNum">#</span>
+        <span className="prodColSeg">Segment</span>
+        <span className="prodColClock">Time</span>
+      </div>
       <ol className="prodRail">
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <li key={i} className="prodStage prodStage--todo">
-            <div className="prodStageMark"><span className="prodDot">{i + 1}</span></div>
+            <span className="prodTally" aria-hidden="true" />
+            <span className="prodStageNum" aria-hidden="true">{String(i + 1).padStart(2, "0")}</span>
             <div className="prodStageBody">
               <div className="skelLine skelLine--tiny" />
             </div>
+            <span className="prodStageClock" />
           </li>
         ))}
       </ol>

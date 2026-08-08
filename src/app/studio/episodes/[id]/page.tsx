@@ -137,9 +137,20 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const chip = statusChip(episode.status);
   const action = nextActionFor(episode);
 
-  // Seed the production console server-side so the pre-audio state paints with
-  // real progress instead of a skeleton. Only needed while there is no master.
-  const progressVm = episode.audioUrl ? null : await getCreateProgressVM(episode.id);
+  // Seed the production console server-side so it paints with real progress
+  // instead of a skeleton.
+  //
+  // The console used to be the `else` branch of "is there audio yet" — which
+  // meant the moment a master existed the pipeline went invisible, even though
+  // show notes, chapters and cover art are still being written after it, and a
+  // re-mix runs the mix stage again on an episode that already has audio. The
+  // console is now the page's spine and runs alongside the player until the
+  // pipeline is genuinely finished. The three terminal statuses are the ones
+  // productionStageForStatus maps to "done", so skipping the read for them
+  // costs a finished episode exactly what it cost before: nothing.
+  const PIPELINE_FINISHED = new Set(["content_ready", "publish_ready", "published"]);
+  const progressVm = PIPELINE_FINISHED.has(episode.status) ? null : await getCreateProgressVM(episode.id);
+  const showConsole = !episode.audioUrl || (progressVm ? !progressVm.done : false);
 
   // ---- Overview tab: quality breakdown + quick actions (the calm landing) ----
   const overviewNode = (
@@ -289,7 +300,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         }
       />
 
-      {episode.audioUrl ? (
+      {episode.audioUrl && (
         <StudioPlayer
           episodeId={episode.id}
           audioUrl={bustedAudioUrl!}
@@ -298,17 +309,41 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           hostSpans={hostSpans}
           hostNames={[hostA.name, hostB.name]}
         />
-      ) : (
-        /* Until there is audio, this slot is the LIVE production console rather
-           than a static "No audio yet" card. It polls real pipeline state, so
-           the page no longer requires a manual browser refresh to progress. The
-           first read is done here on the server, so it paints already-populated. */
-        <ProductionConsole episodeId={episode.id} initialVm={progressVm ?? undefined} />
+      )}
+
+      {/* The live rundown. It polls real pipeline state, so the page never needs
+          a manual refresh to move forward, and the first read is done on the
+          server so it paints already-populated. */}
+      {showConsole && (
+        <div className={episode.audioUrl ? "mt-6" : undefined}>
+          <ProductionConsole episodeId={episode.id} initialVm={progressVm ?? undefined} />
+        </div>
       )}
 
       {/* ---- Everything else, organized into one focused tab at a time ---- */}
       <div className="mt-6">
         <EpisodeWorkspace tabs={tabs} />
+      </div>
+
+      {/* ---- The action bar ----
+          One place, always on screen, that says what this episode needs next.
+          Before this the next step lived wherever that step's panel happened to
+          be, so "what do I do now" was answered by scrolling. Sticky rather
+          than fixed: it takes its own space at the end of the document, so it
+          can never cover the last row of a panel. */}
+      <div className="epActionBar" data-testid="episode-action-bar">
+        <div className="epActionBarWhat">
+          <span className="epActionBarStage">{action.stage}</span>
+          <span className="epActionBarStatus">{chip.label}</span>
+        </div>
+        <div className="epActionBarDo">
+          {bustedAudioUrl && (
+            <a href={bustedAudioUrl} download className="btnGhost">Download MP3</a>
+          )}
+          <Link href={action.href} className="btnPrimary" data-testid="episode-next-action">
+            {action.label}
+          </Link>
+        </div>
       </div>
     </div>
   );
