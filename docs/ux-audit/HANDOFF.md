@@ -16,17 +16,27 @@ before writing App Router code.
 | --- | --- |
 | Working tree | `C:\pod-podcast-quality` (a git worktree — has its own `node_modules`) |
 | Branch | `studio/ux-rebuild-chrome`, pushed, **no PR opened yet** |
-| Base | `origin/main` @ `0d6d1ef` |
+| Base | `origin/main` @ `c38aff0` — **already rebased, do not rebase again** |
+| Backup | tag `backup/studio-pre-rebase` (local) = the pre-rebase tip |
 | Docs | `docs/ux-audit/audit.md` (findings + status), `docs/studio-design.md` (the system) |
 | Screenshots | `docs/ux-audit/before/` and `after/` — 45 PNGs each (15 routes × 1440/768/390) |
 
-Commits on the branch, oldest first:
+Commits on the branch, oldest first (post-rebase hashes):
 
 ```
-03b1c8c feat(studio): page identity moves into the shell chrome
-546473e fix(studio): a11y floor, focus verification, and the audit docs
-55d160e fix(studio): render header actions through a portal, not context
-adeaf7c docs(ux-audit): record the create-flow regression honestly
+8205baf feat(studio): page identity moves into the shell chrome
+0aa29d6 fix(studio): a11y floor, focus verification, and the audit docs
+00054b9 fix(studio): render header actions through a portal, not context
+6f8d1f8 docs(ux-audit): record the create-flow regression honestly
+7b3964c docs(ux-audit): handoff prompt for the next agent
+```
+
+The branch sits directly on top of `c38aff0` (PR #103 — the editorial-hold
+release button and the "receipt" host-name fix), so that work is already
+underneath you. `tsc` and `next build` both pass on the rebased tree. Just:
+
+```bash
+git fetch origin && git checkout studio/ux-rebuild-chrome
 ```
 
 ### What is DONE and verified
