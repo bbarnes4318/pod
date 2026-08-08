@@ -513,6 +513,23 @@ export function minimumTurnsFor(totalWordTarget: number): number {
   return Math.max(8, Math.ceil(totalWordTarget / ASSUMED_WORDS_PER_TURN));
 }
 
+/**
+ * Output allowance for the turn plan, sized from how many turns it must contain.
+ *
+ * A plan is one JSON object per turn — turnIndex, beatIndex, speakerName, an
+ * intent sentence, factRefs, targetWords — which runs about 160 tokens once a
+ * real intent is written. The floor is generous because the cost of being too
+ * low is not a shorter plan but a TRUNCATED one: invalid JSON, a wasted repair,
+ * and then the router walking its entire fallback chain.
+ *
+ * 30% headroom over the floor, because the model may plan more turns than the
+ * minimum and should not be punished for it.
+ */
+export function turnPlanMaxTokens(totalWordTarget: number): number {
+  const turns = minimumTurnsFor(totalWordTarget);
+  return Math.max(7000, Math.ceil(turns * 160 * 1.3) + 1500);
+}
+
 function makeTurnPlanValidator(totalWordTarget: number) {
   const minTurns = minimumTurnsFor(totalWordTarget);
   return function validateTurnPlan(value: unknown): string | null {
@@ -639,7 +656,21 @@ RULES:
 Return valid JSON only:
 {"turns":[{"turnIndex":0,"beatIndex":1,"speakerName":"...","intent":"...","factRefs":[{"type":"...","id":"..."}],"targetWords":45}]}`,
       temperature: 0.6,
-      maxTokens: 7000,
+      // SIZED FROM THE TURN COUNT, not a fixed number.
+      //
+      // 7000 was set when a plan was ~15 turns. The turn floor now demands ~43
+      // for an 8-minute episode, and each turn is a JSON object carrying an
+      // intent sentence, factRefs and targetWords — call it 160 tokens. 43 turns
+      // is over 5,000 tokens of pure payload, and a reasoning model spends more
+      // before it writes any.
+      //
+      // OBSERVED IN PRODUCTION 2026-08-08: the plan came back truncated_json,
+      // the single repair truncated too, and the router then walked the whole
+      // fallback chain — 1,134,739ms on one call, then another 198,048ms hitting
+      // output_limit on the next candidate. Nineteen minutes to produce nothing,
+      // caused by raising the turn floor without raising the budget it has to
+      // fit in.
+      maxTokens: turnPlanMaxTokens(input.totalWordTarget),
       validate: makeTurnPlanValidator(input.totalWordTarget),
     })
   );
