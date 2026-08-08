@@ -3,8 +3,10 @@
 Measured against `main` at `0d6d1ef`, verified by driving the real UI in Chromium
 through the Playwright harness (`tests/e2e/`), not by reading source.
 
-> **Status: partially delivered.** Part 1 (global chrome) is complete and
-> verified across all 15 Studio routes. Parts 2–4 (create-flow rebuild, episode
+> **Status: partially delivered, and NOT mergeable as-is.** Part 1 (global
+> chrome) is in place on all 15 routes and verified for a11y, geometry and
+> spacing — but it regresses the create flow (15 failing tests). See the merge
+> blocker. Parts 2–4 (create-flow rebuild, episode
 > page rebuild, inline-style purge) are **not done**. This document records what
 > was measured, what changed, and exactly what remains — see
 > [What is not done](#what-is-not-done).
@@ -94,7 +96,7 @@ be visible. All 15 files converted; the token spec fails if one returns.
 **Create flow (partial).** The save-status line came out of the page body (it sat
 under a `-0.75rem` negative margin) and into the subbar. Discard moved from below
 the step card — where it changed position on every step — into the topbar. Test
-IDs preserved, so all 22 existing rundown tests still pass.
+IDs preserved — but the suite now fails; see the merge blocker below.
 
 **Episode page (partial).** Title, chips and quality score moved into the
 chrome; the floated score card became `.epScorePill`, a compact topbar badge.
@@ -130,38 +132,47 @@ Postgres, seeded, authenticated through the UI — no Docker required).
 | No card over 32px vertical padding | ✅ |
 | No horizontal scroll | ✅ |
 | `.pageTitle`/`.pageSub` eliminated | ✅ |
-| Existing `studio-rundown.spec.ts` | ⚠️ **UNVERIFIED — see below** |
+| Existing `studio-rundown.spec.ts` | 🔴 **7/22 — REGRESSION, see below** |
 | First control ≤160px | ⚠️ **6/15** |
 | No inline styles | ❌ 437 remain |
 | No raw hex | ❌ 17 remain |
 
 `npx tsc --noEmit` clean. `npm run build` exits 0.
 
-### ⚠️ The rundown regression suite is unverified
+### 🔴 MERGE BLOCKER — the create flow is broken
 
-`studio-rundown.spec.ts` passed 22/22 against `0d6d1ef` **before** any edit. It
-has **not** been re-verified against the chrome work, and it must be before this
-is merged.
+`studio-rundown.spec.ts` passed **22/22** against `0d6d1ef` before any edit.
+After the chrome work, a clean solo run gives **7 passed, 15 failed**.
 
-The last attempt is not evidence either way: two Playwright harnesses were run
-concurrently, and they share a fixed app port (3311) plus a global teardown that
-stops the embedded Postgres. The log shows `database system is shut down`
-part-way through, after which the remaining 14 tests fail in ~2.7s each — the
-signature of a dead database, not of a UI defect. Re-run it **alone**:
+This is a real regression, not a harness artefact. (An earlier run was
+inconclusive because two Playwright harnesses overlapped on the shared fixed
+port; re-running it alone reproduced the failures.)
+
+The failure is the same in every case:
 
 ```
-npx playwright test tests/e2e/studio-rundown.spec.ts --project=desktop
+expect(locator).toBeVisible() failed
+Locator: getByTestId('mode-manual')
+Error: element(s) not found
 ```
 
-One known-real hazard was found and fixed while investigating, and it would
-have hung the create page outright: `StudioPageHeader` originally published
-`actions`/`status` through the same context as the title, with both in the
-`useEffect` dependency array. A React element is a fresh object every render, so
-the deps never compared equal — publish re-rendered the shell, the shell
-re-rendered the page, the page rebuilt the element, and the effect fired again.
-Those two props now render through a **portal** into shell-owned slots, which
-re-renders with the page and touches no shell state. Whether that was the *only*
-cause of the failures above is exactly what the clean re-run has to establish.
+`mode-manual` is the mode control on create step 1, which this work never
+touched. A test-id that vanishes without being edited points at the page failing
+to render at all rather than at a moved control — i.e. a client-side exception
+in `RundownBuilder` or in the header it now mounts.
+
+**Prime suspect: the `<StudioPageHeader>` added to `RundownBuilder`.** It is the
+only structural change to that component, and it is the only page that passes
+`status` (the live save state). One loop was already found and fixed there —
+`actions`/`status` in the effect deps — but the fix has not been re-verified
+against this suite, and the remaining failures may be a second instance of the
+same class of problem.
+
+**Cheapest path back to green:** revert just the `<StudioPageHeader>` block in
+`RundownBuilder.tsx` (restoring the in-body save line and discard button), re-run
+the suite, and confirm 22/22. That isolates the fault to the header integration
+without giving up the chrome on the other 14 routes. Then reintroduce it with the
+browser console open.
 
 `npm run lint` reports 1023 errors repo-wide — **all pre-existing**; the only two
 in files I touched (`StudioShell.tsx:186` setState-in-effect,
