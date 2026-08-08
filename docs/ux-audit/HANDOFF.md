@@ -1,8 +1,13 @@
 # Studio UX rebuild — handoff
 
 You are continuing an unfinished Studio UI/UX rebuild in `bbarnes4318/pod`.
-Roughly a third of the work is done and **the branch is currently broken**. Your
-first job is to unbreak it. Do not start new work before the blocker is closed.
+**Parts 1 and 4 are done and verified; Parts 2 and 3 are not started.** The
+branch is green — `studio-rundown.spec.ts` is back to 22/22 — so start straight
+on Part 3 (see "The one thing I would do next" in `audit.md`).
+
+The blocker section below is kept as a WORKED EXAMPLE, not as outstanding work:
+it is already fixed, and it records a trap you can hit again the moment you move
+another control into the chrome.
 
 Read `AGENTS.md` first. **Next.js 16.2.9** — it has breaking changes from your
 training data. Read the relevant guide in `node_modules/next/dist/docs/01-app/`

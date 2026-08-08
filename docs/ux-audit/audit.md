@@ -126,53 +126,60 @@ Postgres, seeded, authenticated through the UI — no Docker required).
 
 | Check | Result |
 | --- | --- |
-| axe, serious/critical, all 15 routes | ✅ **15/15 zero violations** |
+| Inline `style={{ }}` under `src/app/studio` | ✅ **437 → 0** |
+| Raw hex colours in components | ✅ **17 → 0** |
+| `.pageTitle` / `.pageSub` eliminated | ✅ 15 files → 0 |
+| Existing `studio-rundown.spec.ts` | ✅ **22/22** (regressed to 7, now restored) |
+| axe serious/critical, 15 routes × 3 widths | ⚠️ **44/45** — one contrast finding, below |
 | Exactly one `h1`, naming the page | ✅ |
-| Chrome band heights exactly 56/32 | ✅ |
+| Visible focus ring on a real Tab press | ✅ all three widths |
+| Chrome bands exactly 56/32 (52/28 mobile) | ✅ |
 | No card over 32px vertical padding | ✅ |
 | No horizontal scroll | ✅ |
-| `.pageTitle`/`.pageSub` eliminated | ✅ |
-| Existing `studio-rundown.spec.ts` | 🔴 **7/22 — REGRESSION, see below** |
-| First control ≤160px | ⚠️ **6/15** |
-| No inline styles | ❌ 437 remain |
-| No raw hex | ❌ 17 remain |
+| First control ≤160px | ⚠️ **6/15 desktop** — body content, not chrome |
 
 `npx tsc --noEmit` clean. `npm run build` exits 0.
 
-### 🔴 MERGE BLOCKER — the create flow is broken
+### The create-flow regression, and what actually caused it
 
-`studio-rundown.spec.ts` passed **22/22** against `0d6d1ef` before any edit.
-After the chrome work, a clean solo run gives **7 passed, 15 failed**.
+The suite went 22/22 → 7/22 on this branch, then back to 22/22. Worth recording,
+because the cause was not where it looked.
 
-This is a real regression, not a harness artefact. (An earlier run was
-inconclusive because two Playwright harnesses overlapped on the shared fixed
-port; re-running it alone reproduced the failures.)
+**Portalled content is never server-rendered.** Discard moved from the page body
+into the shell topbar, where it renders through a portal. The spec's
+`gotoCreate()` helper probes for it with a bare `isVisible()` — no auto-wait —
+immediately after `page.goto()`. That probe used to succeed because the button
+was in the server HTML. Now it only exists after hydration, so the probe
+returned false, the draft was never discarded, and the restored draft opened on
+its own saved step, where `mode-manual` does not exist. That is why the FIRST
+test passed and every test after it failed: the first one runs with no draft.
 
-The failure is the same in every case:
+Two wrong turns on the way, both cheap to repeat:
 
-```
-expect(locator).toBeVisible() failed
-Locator: getByTestId('mode-manual')
-Error: element(s) not found
-```
+1. I assumed the page was throwing, because a test-id present in source was
+   absent from the DOM. A five-minute diagnostic (a `pageerror` listener plus a
+   DOM probe) showed the page rendering perfectly with zero console errors. That
+   should have been the first move, not the third.
+2. The first fix waited on `.rundownBuilder` and `step-show` and got 18/22.
+   Both are server-rendered, so waiting on them proves nothing about hydration.
+   The sentinel has to be something that *cannot* exist before hydration —
+   `save-status`, which is itself portalled.
 
-`mode-manual` is the mode control on create step 1, which this work never
-touched. A test-id that vanishes without being edited points at the page failing
-to render at all rather than at a moved control — i.e. a client-side exception
-in `RundownBuilder` or in the header it now mounts.
+Fixed en route: `StudioPageHeader` published `actions`/`status` through context
+with both in the `useEffect` dependency array. A React element is a fresh object
+every render, so the deps never compared equal — publish re-rendered the shell,
+the shell re-rendered the page, the page rebuilt the element, and the effect
+fired again. An infinite render loop on every page carrying `status`. Elements
+now portal; only primitives travel through context.
 
-**Prime suspect: the `<StudioPageHeader>` added to `RundownBuilder`.** It is the
-only structural change to that component, and it is the only page that passes
-`status` (the live save state). One loop was already found and fixed there —
-`actions`/`status` in the effect deps — but the fix has not been re-verified
-against this suite, and the remaining failures may be a second instance of the
-same class of problem.
+### One open accessibility finding
 
-**Cheapest path back to green:** revert just the `<StudioPageHeader>` block in
-`RundownBuilder.tsx` (restoring the in-body save line and discard button), re-run
-the suite, and confirm 22/22. That isolates the fault to the header integration
-without giving up the chrome on the other 14 routes. Then reintroduce it with the
-browser console open.
+`Create` at 768px and 390px: `SERIOUS color-contrast` on the topic-card `.chip`
+elements. `.chip` is `--text-muted` on `--surface-2`, which measures ~6.1:1 in
+isolation and should pass — so the real cause is probably an ancestor opacity or
+a different background under those cards. I did not chase it to ground. It is a
+real finding, not a false positive. Desktop passes; the other 44 route/width
+combinations pass.
 
 `npm run lint` reports 1023 errors repo-wide — **all pre-existing**; the only two
 in files I touched (`StudioShell.tsx:186` setState-in-effect,
@@ -190,43 +197,53 @@ Captured by `tests/e2e/studio-screenshots.spec.ts`
 
 ## What is not done
 
-Stated plainly rather than partially attempted.
-
 ### Part 2 — `/studio/create` three-zone rebuild ❌
 The vertical rundown rail, full-width workspace, fixed preview column with the
 never-moving CTA, dense paginated topic grid, the flow reordering (step 1 asks
-only which show; mode → Topics as two choices + a hybrid checkbox; title and
+only which show; mode → Topics as two choices plus a hybrid checkbox; title and
 description → Review), the dry-run cold-open preview, and the toast slot are all
-**not built**. Only the chrome-hosted save state and discard landed.
+**not built**. What did land: the chrome-hosted save state and Discard, and the
+whole file converted off inline styles.
 
 ### Part 3 — `/studio/episodes/[id]` rebuild ❌
 The production console is still a fallback in the audio-player slot rather than
 the page spine. The broadcast-rundown layout with tally lights and monospace
-per-stage elapsed, streaming transcript lines, inline stage-failure recovery,
-transcript density pass and the fixed bottom action bar are **not built**. Only
-the header moved.
+per-stage elapsed, streaming transcript lines, inline stage-failure recovery and
+the fixed bottom action bar are **not built**. What did land: the header moved
+into the chrome, the floated score card became `.epScorePill`, and the page plus
+`StudioPlayer`, `MixView`, `TranscriptWorkspace`, `RoleTracePanel` and
+`EpisodeDiversityPanel` are all off inline styles — including three separate
+hardcoded colour systems.
 
-### Part 4 — Inline style purge ❌
-**437** `style={{ }}` props and **17** raw hex values remain. The exact hex list
-is in the `studio-tokens.spec.ts` failure output; the worst offenders are
-`StudioPlayer.tsx` (canvas gradient stops `#ffb224`/`#ff5a1f`, and a
-`HOST_COLORS` array duplicating `--host-a`/`--host-b`), `RoleTracePanel.tsx`
-(a whole parallel status palette: `#1f7a4d`/`#a3131b`/`#7a6a1f`), and five
-`#b45309` amber literals in `RundownBuilder.tsx` shadowing `--warning-color`.
+### Part 5 — the scripted proof run ⚠️
+Sign in → complete every create step by clicking → build to finished audio →
+regenerate a line → force a stage failure and recover → repeat at 390px was
+**not run end to end**. Building an episode needs live LLM and TTS calls, and the
+harness is deliberately DB-only. Everything short of "build real audio" *was*
+driven in a real browser at all three widths.
 
-### Part 5 — Proof run ⚠️
-The scripted click-through (sign in → complete every create step → build to
-finished audio → regenerate a line → force and recover a stage failure → repeat
-at 390px) was **not run**. Building an episode end-to-end requires live LLM and
-TTS calls; the harness is explicitly DB-only. Route-level verification at all
-three widths did run.
+### Nine routes still over the 160px first-control budget
+Chrome is 104px (56 + 32 + 16), so every number below is body content.
+Measured desktop / tablet / mobile:
 
-### Nine routes still over the 160px budget
-All of it body content. Show detail (400px) and Episode detail (341px) lead with
-prose and a player; both are inside Parts 2/3. Episodes (179px) and Auditions are
-within ~20–40px and would come down with a spacing pass.
+| Route | 1440 | 768 | 390 |
+| --- | ---: | ---: | ---: |
+| Show detail | 400 | 497 | 641 |
+| Plan | 500 | 520 | 572 |
+| Hosts | 381 | 389 | 392 |
+| Episode detail | 341 | 341 | 344 |
+| New show | 196 | 196 | 270 |
+| Shows | pass | 205 | 217 |
+| Episodes | 166 | 178 | 182 |
+| Settings | 166 | 166 | 178 |
+| Auditions | 167 | 167 | 167 |
+| Publish | pass | pass | 168 |
 
----
+Passing at every width: The Board, Create, Takes, Audio.
+
+Show detail, Episode detail and Plan lead with prose or data by design; the rest
+sit within ~20–40px and would come down with a spacing pass. Show detail and
+Episode detail are inside Parts 2 and 3 anyway.
 
 ## Still weak
 
@@ -247,15 +264,20 @@ as "first control OR first meaningful content ≤160px".
 
 ## The one thing I would do next
 
-**Part 4, the inline-style purge — before Parts 2 or 3.**
+**Part 3 — make the production console the page spine.**
 
-It is the least glamorous item and the highest leverage. Parts 2 and 3 rebuild
-two pages; the purge fixes the reason *every* page looks unrelated to the next,
-and it is what makes the rebuilds cheap — right now a card's padding on the
-create page has no relationship to the same card on the episode page, so any
-layout work gets re-litigated per file. The spec that enforces it already exists
-and already fails, so the work is bounded and verifiable: drive
-`studio-tokens.spec.ts` to green.
+Part 4 is done, so the expensive groundwork is paid for: one spacing scale, one
+colour system, and a spec that fails the moment someone reaches past them. Parts
+2 and 3 are both cheaper than they were.
 
-Start with `RoleTracePanel.tsx` and `StudioPlayer.tsx` — between them they carry
-a complete second colour system that has to die before a third one appears.
+Of the two, Part 3 is worth more. The highest-attention moment in the product is
+the minutes a customer spends watching an episode generate — and today that state
+renders *only because there is no audio player yet*. It is the `else` branch of a
+null check. Meanwhile `createProgress.ts` already returns real per-stage state,
+real elapsed times and real medians, and `retryProductionStage` already resumes
+from a failed stage. The data is all there and it is rendered as a list. Giving
+it the broadcast-rundown treatment — tally on the active stage, monospace
+elapsed, checkmark on completion, failures recoverable in place — is mostly
+layout over an API that already exists.
+
+Part 2 is the larger rebuild and can follow.
