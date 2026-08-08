@@ -104,20 +104,31 @@ const BEATS = [
   { beatIndex: 6, segmentType: "closing", title: "What is still open", goal: "payoff", angle: "unresolved", factRefs: [] },
 ];
 
-// 24 body turns, deliberately unbalanced (13 / 11) and not strictly alternating.
+// PAIRS, not ping-pong.
+//
+// This fixture was 91% strict A/B alternation — the exact pattern the
+// mechanicalAlternation invariant holds an episode for (ceiling 65%), and which
+// the turn-plan validator now rejects outright. A fixture that models the defect
+// cannot test the guard against it, and this one silently did for months.
+//
+// Each host now takes TWO turns in a row: land a claim, then press it. 25 turns,
+// 13/12 — the counts stay UNEQUAL on purpose, because an exact split trips a
+// different invariant ("the signature of a balancing rule, not of a
+// conversation"). Alternation is 12/24 = 50%, inside the 55% plan ceiling.
 const TURN_SPEC: Array<{ speakerName: string; beatIndex: number }> = [
-  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
-  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 2 },
-  { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 },
-  { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 3 },
-  { speakerName: HOST_B, beatIndex: 3 }, { speakerName: HOST_A, beatIndex: 3 },
-  { speakerName: HOST_B, beatIndex: 3 }, { speakerName: HOST_A, beatIndex: 4 },
-  { speakerName: HOST_A, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 },
-  { speakerName: HOST_A, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 5 },
-  { speakerName: HOST_A, beatIndex: 5 }, { speakerName: HOST_B, beatIndex: 5 },
-  { speakerName: HOST_A, beatIndex: 5 }, { speakerName: HOST_B, beatIndex: 6 },
-  { speakerName: HOST_A, beatIndex: 6 }, { speakerName: HOST_B, beatIndex: 6 },
-  { speakerName: HOST_A, beatIndex: 6 }, { speakerName: HOST_B, beatIndex: 6 },
+  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 },
+  { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
+  { speakerName: HOST_A, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 },
+  { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_B, beatIndex: 2 },
+  { speakerName: HOST_A, beatIndex: 3 }, { speakerName: HOST_A, beatIndex: 3 },
+  { speakerName: HOST_B, beatIndex: 3 }, { speakerName: HOST_B, beatIndex: 3 },
+  { speakerName: HOST_A, beatIndex: 4 }, { speakerName: HOST_A, beatIndex: 4 },
+  { speakerName: HOST_B, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 },
+  { speakerName: HOST_A, beatIndex: 5 }, { speakerName: HOST_A, beatIndex: 5 },
+  { speakerName: HOST_B, beatIndex: 5 }, { speakerName: HOST_B, beatIndex: 5 },
+  { speakerName: HOST_A, beatIndex: 6 }, { speakerName: HOST_A, beatIndex: 6 },
+  { speakerName: HOST_B, beatIndex: 6 }, { speakerName: HOST_B, beatIndex: 6 },
+  { speakerName: HOST_A, beatIndex: 6 },
 ];
 
 /** Deterministic per-turn text drawn from that host's exclusive vocabulary. */
@@ -430,7 +441,7 @@ function cleanReport(): CombinedQualityReport {
     } as never,
     judge: cleanJudge(),
     excerpts: [],
-    lineCount: 28,
+    lineCount: 29,
     wordCount: 580,
   };
 }
@@ -441,7 +452,7 @@ function cleanInvariants(): InvariantReport {
     failedCriticalAxes: [],
     worstSeverity: "pass",
     measurements: {
-      lineCount: 28,
+      lineCount: 29,
       coldOpenWords: 100,
       coldOpenLines: 4,
       strictAlternationRatio: 0.5,
@@ -514,7 +525,7 @@ async function main(): Promise<void> {
     assert.equal(segments[0].type, "cold_open", "first segment is not the cold open");
     assert.ok(segments.length > 1, "no body segments were assembled");
     const lines = segments.flatMap((s) => s.lines);
-    assert.equal(lines.length, 28, `expected 4 cold-open + 24 body lines, got ${lines.length}`);
+    assert.equal(lines.length, 29, `expected 4 cold-open + 25 body lines, got ${lines.length}`);
     assert.ok(
       result.coldOpenTournament && result.coldOpenTournament.variants.length === 3,
       "the cold-open tournament did not survive the restructuring"
