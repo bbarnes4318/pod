@@ -194,11 +194,14 @@ export default function AuditionConsole({
         }
       />
 
-      <div className="advNote" style={{ marginTop: "0.9rem", maxWidth: 860 }}>
+      <details className="studioNoteDisclosure">
+        <summary>How promotion works</summary>
+        <p>
         <strong>Nothing is promoted automatically.</strong> Voting picks a winner; changing the voice a
         show actually uses is a separate, deliberate action that records who did it and what it replaced,
         so it can be rolled back.
-      </div>
+        </p>
+      </details>
 
       <button type="button" className="advLink" style={{ marginTop: "0.8rem" }} onClick={() => setShowPack((value) => !value)}>
         {showPack ? "Hide" : "What do they perform?"} ({pack.sceneCount} scenes · {pack.totalWords} words · ~{pack.estimatedMinutes} min · {pack.version})

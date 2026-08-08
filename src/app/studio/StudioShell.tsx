@@ -270,13 +270,25 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
           <div className="studioTopbarRight">
             {header.actions ? <div className="studioTopbarActions">{header.actions}</div> : null}
-            <Link href="/studio/create" className="studioGenerateBtn">
+            {/* Below 720px .studioGenerateLabel is display:none and the icon is
+                aria-hidden, which left this link with NO accessible name at all
+                — axe reports it as a serious link-name violation on every
+                mobile route. The label is explicit so it survives the media
+                query. Same reason for the account button below. */}
+            <Link href="/studio/create" className="studioGenerateBtn" aria-label="Generate an episode">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" /></svg>
               <span className="studioGenerateLabel">Generate</span>
             </Link>
 
             <div className="studioAccount" ref={accountRef}>
-              <button type="button" className="studioAccountBtn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              <button
+                type="button"
+                className="studioAccountBtn"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label={`Account menu for ${displayName}`}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
                 <span className="studioAvatar" aria-hidden="true">{initialsFor(user)}</span>
                 <span className="studioAccountName">{displayName}</span>
                 <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>

@@ -1800,3 +1800,27 @@
 /* The audio library page had no shell classes at all — it rendered its own
    <main> with a hardcoded 960px width and inline padding. */
 .audioLibraryPage { min-width: 0; }
+
+/* Reference notes that used to sit above every control on a page. They are
+   context, not a gate, so they open on demand — progressive disclosure, using
+   the same visual language as .advNote rather than a parallel pattern. */
+.studioNoteDisclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-4);
+}
+.studioNoteDisclosure > summary {
+  cursor: pointer;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text);
+  font-weight: 600;
+  list-style: none;
+}
+.studioNoteDisclosure > summary::-webkit-details-marker { display: none; }
+.studioNoteDisclosure > summary::before { content: "▸ "; color: var(--text-muted); }
+.studioNoteDisclosure[open] > summary::before { content: "▾ "; }
+.studioNoteDisclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius); }
+.studioNoteDisclosure > p { margin: 0; padding: 0 var(--sp-3) var(--sp-3); line-height: 1.55; }

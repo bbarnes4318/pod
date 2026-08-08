@@ -109,9 +109,13 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
         }
       />
 
-      <div className="advNote" style={{ marginTop: "0.9rem", maxWidth: 820 }}>
-        <strong>Personality</strong> controls what the host believes and says. <strong>Voice</strong> controls what the host physically sounds like. Host Studio keeps those separate so changing a voice never erases the character.
-      </div>
+      <details className="studioNoteDisclosure">
+        <summary>How personality and voice differ</summary>
+        <p>
+          <strong>Personality</strong> controls what the host believes and says. <strong>Voice</strong> controls what
+          the host physically sounds like. Hosts keeps those separate so changing a voice never erases the character.
+        </p>
+      </details>
 
       {creating && (
         <div style={{ marginTop: "1.2rem" }}>
