@@ -568,9 +568,47 @@ Delivery field meanings:
           `${seven.trace.violations.length} violation(s).`
       );
     } else {
+      // STOP. Do not quietly re-write the episode on the legacy path.
+      //
+      // The outline-driven path has NONE of the seven-role guarantees: no turn
+      // plan, so no minimum turn count and no alternation ceiling; no novelty
+      // check; no per-host isolation. Its draft therefore fails the very gates
+      // waiting downstream, and the operator pays TWICE — once for the failed
+      // seven-role attempt, again for a fallback whose rejection was certain.
+      //
+      // OBSERVED IN PRODUCTION 2026-08-08, twice on one episode: Anthropic ran
+      // out of funds, the debate architect fell through to free models that
+      // timed out, the pipeline failed, and this branch silently produced a
+      // draft the quality gate then rejected for "100% of adjacent lines
+      // alternate speakers" and "829 spoken words below the floor". 2,155
+      // seconds and real money for an outcome that could never have been
+      // accepted.
+      //
+      // Failing here is cheaper and more truthful: the role trace already
+      // records WHICH role failed and why, which is the part an operator can act
+      // on. SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true restores the old behaviour
+      // for anyone who would genuinely rather have an ungated draft than none.
+      const allowLegacy = process.env.SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK === "true";
+      const failedRole = seven.trace.stageRecords.find((r) => r.status === "failed");
+      const detail =
+        `Seven-role writing pipeline did not complete` +
+        `${failedRole ? ` (${failedRole.role} failed)` : ""}: ${seven.error}`;
+
+      if (!allowLegacy) {
+        result.reasons.push(
+          `${detail}. NOT falling back to the outline-driven path — it carries none of the turn-plan, ` +
+            `alternation or novelty guarantees, so its draft would be rejected by the quality gate anyway and ` +
+            `the run would cost twice for nothing. Fix the failing role and re-run. Set ` +
+            `SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true to accept an ungated draft instead.`
+        );
+        console.error(`[ScriptService] ${detail} — refusing the ungated legacy path.`);
+        throw new Error(detail);
+      }
+
       result.reasons.push(
-        `Seven-role writing pipeline did not complete (${seven.error}); falling back to the outline-driven path. ` +
-          `The role trace records which role failed.`
+        `${detail}; falling back to the outline-driven path because ` +
+          `SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true. That draft has NO turn-plan, alternation or novelty ` +
+          `guarantees and is likely to be rejected by the quality gate.`
       );
       console.warn(`[ScriptService] Seven-role pipeline unavailable: ${seven.error}`);
     }
