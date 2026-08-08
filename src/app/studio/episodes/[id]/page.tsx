@@ -175,6 +175,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           see that the script was held, or that it had been written by the
           emergency fallback rather than the creative pipeline. */}
       <EditorialGatePanel
+        episodeId={episode.id}
         gate={(script?.content as any)?.editorialGate ?? null}
         provenance={(script?.content as any)?.pipelineProvenance ?? null}
         invariants={(script?.content as any)?.productionInvariants ?? null}

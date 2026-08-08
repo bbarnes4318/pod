@@ -51,7 +51,27 @@ export const RETIRED_HOST_SLUGS = [
  * Short and generic tokens are excluded — they would false-positive on real
  * athletes and on ordinary speech.
  */
-const NON_DISTINCTIVE_SLUG_TOKENS = new Set(["the", "forty", "one", "ray"]);
+const NON_DISTINCTIVE_SLUG_TOKENS = new Set([
+  "the",
+  "forty",
+  "one",
+  "ray",
+  // Ordinary English, and ordinary SPORTS English. The exclusion above was
+  // meant to cover exactly this, but the only mechanical rule is "shorter than
+  // four characters", so the epithet halves of "margo-the-receipt" and
+  // "dutch-attendance" banned three common words outright. Script 7f7a122b was
+  // held on castIntegrity for a line reading "…it wasn't his decision" next to
+  // the word "receipt" — no retired host appeared anywhere in it.
+  //
+  // The distinctive halves (margo, louie, otis, linebreak, voltage, laminate)
+  // still carry the check, which is where the detection value actually lives:
+  // nobody says "laminate" by accident in a sports argument, and everybody
+  // says "receipts".
+  "receipt",
+  "receipts",
+  "attendance",
+  "dutch",
+]);
 
 export function retiredHostNameFragments(): string[] {
   const fragments = new Set<string>();

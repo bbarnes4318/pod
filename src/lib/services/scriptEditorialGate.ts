@@ -270,7 +270,50 @@ export interface DownstreamBlockVerdict {
   };
 }
 
-const DECISION_RANK: Record<ScriptEditorialDecision, number> = { pass: 0, review: 1, hold: 2 };
+const DECISION_RANK: Record<ScriptEditorialDecision | "unknown", number> = {
+  pass: 0,
+  review: 1,
+  // An unmeasured script is at least as serious as a measured hold: nobody
+  // knows what is wrong with it. Releasing one therefore takes the same
+  // acknowledgement a hold takes.
+  hold: 2,
+  unknown: 2,
+};
+
+/**
+ * Build the release record for a verdict. Lives here, next to the function that
+ * consumes it, so the writer and the reader cannot drift apart — a release that
+ * the gate would not accept is the exact defect this pairing prevents. Kept free
+ * of any database import so it stays executable in tests and CI.
+ */
+export function buildReleaseRecord(
+  verdict: { decision: ScriptEditorialDecision | "unknown"; reasons: string[] },
+  approvedBy: string,
+  note?: string
+): HumanReleaseRecord {
+  // An "unknown" verdict means the script was never evaluated. Acknowledging
+  // that is the strongest thing a human can assert, so it is recorded at the
+  // "hold" rank — the only rank that outranks every later verdict short of
+  // re-evaluation.
+  const approvedDecision: ScriptEditorialDecision =
+    verdict.decision === "unknown" ? "hold" : verdict.decision;
+  return {
+    approvedBy,
+    approvedAt: new Date().toISOString(),
+    approvedDecision,
+    acknowledgedReasons: verdict.reasons,
+    ...(note?.trim() ? { note: note.trim() } : {}),
+  };
+}
+
+/** True when a recorded release outranks the verdict it is being applied to. */
+function releaseCovers(
+  release: Partial<HumanReleaseRecord> | undefined,
+  decision: ScriptEditorialDecision | "unknown"
+): release is HumanReleaseRecord {
+  if (!release?.approvedBy || !release.approvedDecision) return false;
+  return DECISION_RANK[release.approvedDecision] >= DECISION_RANK[decision];
+}
 
 /**
  * The single source of truth for "may this script spend TTS money".
@@ -300,14 +343,26 @@ export function evaluateDownstreamBlock(
 
   if (!gate || !gate.decision) {
     // No verdict at all is not a pass. In production an unmeasured script is
-    // exactly the thing this gate exists to stop.
-    const blocked = isProduction(env);
-    return {
-      blocked,
-      decision: "unknown",
-      reasons: blocked ? ["Script carries no editorial gate verdict; it has never been evaluated."] : [],
-      failedCriticalAxes: [],
-    };
+    // exactly the thing this gate exists to stop — but a human who has read
+    // that fact and accepted it may still release it, exactly as they may
+    // release a measured hold. Previously this branch returned before the
+    // release was ever consulted, so an unmeasured script had no human remedy
+    // at all.
+    const reasons = ["Script carries no editorial gate verdict; it has never been evaluated."];
+    if (isProduction(env)) {
+      const unknownRelease = blob?.humanRelease;
+      if (releaseCovers(unknownRelease, "unknown")) {
+        return {
+          blocked: false,
+          decision: "unknown",
+          reasons,
+          failedCriticalAxes: [],
+          releasedBy: unknownRelease.approvedBy,
+        };
+      }
+      return { blocked: true, decision: "unknown", reasons, failedCriticalAxes: [] };
+    }
+    return { blocked: false, decision: "unknown", reasons: [], failedCriticalAxes: [] };
   }
 
   const decision = gate.decision;
@@ -325,11 +380,7 @@ export function evaluateDownstreamBlock(
   }
 
   const release = blob?.humanRelease;
-  if (
-    release?.approvedBy &&
-    release.approvedDecision &&
-    DECISION_RANK[release.approvedDecision] >= DECISION_RANK[decision]
-  ) {
+  if (releaseCovers(release, decision)) {
     return { blocked: false, decision, reasons, failedCriticalAxes, releasedBy: release.approvedBy };
   }
 

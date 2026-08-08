@@ -1666,3 +1666,42 @@
   .prodBarSweep::after { display: none; }
   .prodBarTrack.prodBarSweep { background: var(--accent-muted); }
 }
+
+/* ---- Editorial gate: release from hold ----------------------------------
+   The gate panel itself renders on the studio-panel defaults; these rules
+   cover only the release control, which is new. It sits at the bottom of the
+   panel because it is the last resort after reading the reasons above it. */
+.gate-release-actions {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.gate-release-hint { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.gate-release-confirm {
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  font-size: 0.88rem;
+}
+.gate-release-confirm p { margin: 0; }
+.gate-release-note { display: flex; flex-direction: column; gap: 0.3rem; }
+.gate-release-note span { font-size: 0.8rem; color: var(--text-muted); }
+.gate-release-note textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+.gate-release-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.gate-release-ok { margin: 0; font-size: 0.86rem; color: var(--text); }
+.gate-release-err { margin: 0; font-size: 0.86rem; color: var(--danger, #ff6b6b); }

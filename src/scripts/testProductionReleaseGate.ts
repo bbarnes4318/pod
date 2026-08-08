@@ -18,6 +18,7 @@ import {
 import {
   evaluateScriptEditorialGate,
   evaluateDownstreamBlock,
+  buildReleaseRecord,
 } from "../lib/services/scriptEditorialGate";
 import type { CombinedQualityReport } from "../lib/services/scriptQualityJudge";
 import {
@@ -295,6 +296,51 @@ async function main() {
       humanRelease: { approvedBy: "p", approvedAt: "now", approvedDecision: "review", acknowledgedReasons: [] },
     }, PROD);
     assert.equal(v.blocked, true, "a stale, weaker approval must not clear a worse verdict");
+  });
+
+  // The release used to be a promise the product never kept. The guard's error
+  // told operators to "record an explicit release in Studio"; the gate read
+  // `humanRelease`; and NOTHING outside these tests ever wrote it. Clicking
+  // Approve set Script.status, which the gate does not consult, so an approved
+  // script was refused again with the identical message. These cases pin the
+  // writer and the reader together.
+  console.log("\n=== The release a human can actually record ===");
+  await check("what the writer produces is what the gate accepts", () => {
+    const gate = {
+      decision: "hold" as const,
+      reasons: ["68.2% of turns are strict A/B alternation", "Script references retired host name(s): receipt"],
+      failedCriticalAxes: ["mechanicalAlternation", "castIntegrity"],
+    };
+    const record = buildReleaseRecord(gate, "producer@example.com", "  shipping for a timing test  ");
+    const v = evaluateDownstreamBlock({ editorialGate: gate, humanRelease: record }, PROD);
+    assert.equal(v.blocked, false, "the record the writer produces must clear the verdict it was built from");
+    assert.equal(v.releasedBy, "producer@example.com", "the release must be attributable");
+    assert.deepEqual(record.acknowledgedReasons, gate.reasons, "the release stores the reasons the approver was shown");
+    assert.equal(record.note, "shipping for a timing test", "an optional note is trimmed and kept");
+  });
+  await check("a release also clears an UNMEASURED script", () => {
+    const record = buildReleaseRecord({ decision: "unknown", reasons: ["never evaluated"] }, "producer@example.com");
+    assert.equal(record.approvedDecision, "hold", "acknowledging 'unknown' is recorded at the hold rank");
+    const v = evaluateDownstreamBlock({ humanRelease: record }, PROD);
+    assert.equal(v.blocked, false, "a human must have a remedy for a script that was never evaluated");
+    assert.equal(v.releasedBy, "producer@example.com", "the unmeasured release must be attributable too");
+  });
+  await check("an unmeasured script with NO release still blocks", () => {
+    assert.equal(evaluateDownstreamBlock({}, PROD).blocked, true, "absence of a verdict is still not a pass");
+  });
+  await check("a released hold survives the full queue guard", async () => {
+    const gate = { decision: "hold" as const, reasons: ["x"], failedCriticalAxes: ["repetition"] };
+    __setScriptContentLoaderForTests(async () => ({
+      content: { editorialGate: gate, humanRelease: buildReleaseRecord(gate, "producer@example.com") },
+      createdAt: new Date(),
+    }));
+    try {
+      const v = await assertScriptReleasableForProduction("script-released", "tts:generate-segments", PROD);
+      assert.equal(v.blocked, false, "the guard must honour the release the Studio button records");
+      assert.equal(v.releasedBy, "producer@example.com", "attribution must survive the guard");
+    } finally {
+      __setScriptContentLoaderForTests(null);
+    }
   });
 
   console.log("\n=== Queue chain: a held script must never reach TTS ===");
