@@ -130,12 +130,38 @@ Postgres, seeded, authenticated through the UI — no Docker required).
 | No card over 32px vertical padding | ✅ |
 | No horizontal scroll | ✅ |
 | `.pageTitle`/`.pageSub` eliminated | ✅ |
-| Existing `studio-rundown.spec.ts` | ✅ **22/22 still pass** |
+| Existing `studio-rundown.spec.ts` | ⚠️ **UNVERIFIED — see below** |
 | First control ≤160px | ⚠️ **6/15** |
 | No inline styles | ❌ 437 remain |
 | No raw hex | ❌ 17 remain |
 
 `npx tsc --noEmit` clean. `npm run build` exits 0.
+
+### ⚠️ The rundown regression suite is unverified
+
+`studio-rundown.spec.ts` passed 22/22 against `0d6d1ef` **before** any edit. It
+has **not** been re-verified against the chrome work, and it must be before this
+is merged.
+
+The last attempt is not evidence either way: two Playwright harnesses were run
+concurrently, and they share a fixed app port (3311) plus a global teardown that
+stops the embedded Postgres. The log shows `database system is shut down`
+part-way through, after which the remaining 14 tests fail in ~2.7s each — the
+signature of a dead database, not of a UI defect. Re-run it **alone**:
+
+```
+npx playwright test tests/e2e/studio-rundown.spec.ts --project=desktop
+```
+
+One known-real hazard was found and fixed while investigating, and it would
+have hung the create page outright: `StudioPageHeader` originally published
+`actions`/`status` through the same context as the title, with both in the
+`useEffect` dependency array. A React element is a fresh object every render, so
+the deps never compared equal — publish re-rendered the shell, the shell
+re-rendered the page, the page rebuilt the element, and the effect fired again.
+Those two props now render through a **portal** into shell-owned slots, which
+re-renders with the page and touches no shell state. Whether that was the *only*
+cause of the failures above is exactly what the clean re-run has to establish.
 
 `npm run lint` reports 1023 errors repo-wide — **all pre-existing**; the only two
 in files I touched (`StudioShell.tsx:186` setState-in-effect,

@@ -14,12 +14,13 @@ import { logoutAction } from "@/lib/authActions";
  * ------------------------------------------------------------------ */
 export type StudioHeaderCrumb = { label: string; href: string };
 
+/** Only PRIMITIVES travel through context. Elements (actions/status) portal
+ *  into the slots below — see the note in StudioPageHeader for why mixing them
+ *  here produced an infinite render loop. */
 export interface StudioHeaderState {
   title?: string;
   subtitle?: string;
   breadcrumb?: StudioHeaderCrumb[];
-  actions?: React.ReactNode;
-  status?: React.ReactNode;
 }
 
 type HeaderPublish = StudioHeaderState & { id: string; clear?: boolean };
@@ -269,7 +270,7 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
           </div>
 
           <div className="studioTopbarRight">
-            {header.actions ? <div className="studioTopbarActions">{header.actions}</div> : null}
+            <div className="studioTopbarActions" id="studio-topbar-actions" />
             {/* Below 720px .studioGenerateLabel is display:none and the icon is
                 aria-hidden, which left this link with NO accessible name at all
                 — axe reports it as a serious link-name violation on every
@@ -328,7 +329,7 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
             or clear it. Subtitle left, page status (save state, counts) right. */}
         <div className="studioSubbar">
           <span className="studioSubbarText">{header.subtitle ?? ""}</span>
-          {header.status ? <span className="studioSubbarStatus">{header.status}</span> : null}
+          <span className="studioSubbarStatus" id="studio-subbar-status" />
         </div>
 
         <main className="studioMain">{children}</main>
