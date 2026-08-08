@@ -527,7 +527,17 @@ export function minimumTurnsFor(totalWordTarget: number): number {
  */
 export function turnPlanMaxTokens(totalWordTarget: number): number {
   const turns = minimumTurnsFor(totalWordTarget);
-  return Math.max(7000, Math.ceil(turns * 160 * 1.3) + 1500);
+  // 340 tokens per turn is MEASURED, not estimated. claude-opus-5 emitted 15,192
+  // output tokens for a ~43-turn plan in production on 2026-08-08 — it writes
+  // long, specific intents, which is the behaviour we want and roughly double
+  // what a first estimate of 160 assumed.
+  //
+  // Erring high is nearly free and erring low is ruinous: an over-generous cap
+  // costs nothing when the model stops early, while a cap one token short
+  // produces invalid JSON, a wasted repair, and a walk down the whole fallback
+  // chain. That asymmetry is why this is set from the largest observation
+  // rather than the average.
+  return Math.max(7000, Math.ceil(turns * 340 * 1.25) + 2000);
 }
 
 function makeTurnPlanValidator(totalWordTarget: number) {
