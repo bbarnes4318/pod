@@ -425,7 +425,7 @@ export default function RundownBuilder({
           const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
           return (
             <li key={s.key} className={`stepPill step-${state}`} aria-current={state === "active" ? "step" : undefined}>
-              <button type="button" data-testid={`step-${s.key}`} onClick={() => setStep(s.key)} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <button type="button" data-testid={`step-${s.key}`} onClick={() => setStep(s.key)} className="stepPillBtn">
                 <span className="stepDot">{state === "done" ? "✓" : i + 1}</span>
                 <span className="stepLabel">{s.label}</span>
               </button>
@@ -474,13 +474,13 @@ export default function RundownBuilder({
           <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
 
           <label className="fieldLabel mt-3" htmlFor="epDesc">Description <span className="stageHint">(optional)</span></label>
-          <textarea id="epDesc" data-testid="episode-description" className="input" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" style={{ resize: "vertical" }} />
-          <div className="stageHint" style={{ textAlign: "right" }} data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
+          <textarea id="epDesc" data-testid="episode-description" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" className="input u-resizeY" />
+          <div className="stageHint u-right" data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
 
           <div className="fieldLabel mt-2">Mode</div>
           <div className="segRow" role="radiogroup" aria-label="Rundown mode">
             {(["manual", "automatic", "hybrid"] as Mode[]).map((m) => (
-              <button key={m} type="button" data-testid={`mode-${m}`} role="radio" aria-checked={mode === m} className={`segBtn${mode === m ? " on" : ""}`} onClick={() => setMode(m)} style={{ textTransform: "capitalize" }}>{m}</button>
+              <button key={m} type="button" data-testid={`mode-${m}`} role="radio" aria-checked={mode === m} className={`segBtn u-caps${mode === m ? " on" : ""}`} onClick={() => setMode(m)} >{m}</button>
             ))}
           </div>
           <p className="stageHint mt-2">
@@ -528,7 +528,7 @@ export default function RundownBuilder({
               <RundownTray items={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} maxTopics={maxTopics} mode={mode} targetTopicCount={targetTopicCount} estimate={estimate} podcastScoped={podcastScoped} onReorder={reorder} onRemove={removeTopic} onSetLead={setLead} />
             </div>
           </div>
-          {!validation.ok && <p className="stageHint" role="note" style={{ marginTop: "0.6rem", color: "var(--warning-color, #b45309)" }}>{validation.error}</p>}
+          {!validation.ok && <p className="stageHint noteWarn mt-3" role="note">{validation.error}</p>}
           <StepNav onBack={goBack} onNext={goNext} nextLabel="Hosts →" nextDisabled={!validation.ok} />
         </div>
       )}
@@ -542,7 +542,7 @@ export default function RundownBuilder({
                control must not pretend to change it. Read-only, with the real
                place to change it linked. */
             <p className="stageHint mb-2" data-testid="format-inherited">
-              This show uses <strong style={{ color: "var(--text)" }}>{format.displayName}</strong> — change it in{" "}
+              This show uses <strong className="u-strong">{format.displayName}</strong> — change it in{" "}
               <Link href={`/app/podcasts/${podcastId}`}>show settings →</Link>
             </p>
           ) : (
@@ -616,8 +616,8 @@ export default function RundownBuilder({
             ))}
           </select>
           {ttsProvider && hosts.filter((h) => hostIds.includes(h.id)).map((h) => (
-            <div key={h.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
-              <span style={{ width: 120 }}>{h.name}</span>
+            <div key={h.id} className="hostVoiceRow">
+              <span className="hostVoiceName">{h.name}</span>
               <input className="input" placeholder="provider voice id" value={voicePicks[h.id] ?? ""} onChange={(e) => setVoicePicks({ ...voicePicks, [h.id]: e.target.value })} />
             </div>
           ))}
@@ -656,7 +656,7 @@ function AutoPrefs({
   const toggle = (arr: string[], v: string, set: (x: string[]) => void) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   return (
     <details className="advPanel mt-3" data-testid="auto-prefs" open>
-      <summary className="advPanelHead" style={{ cursor: "pointer" }}>Selection preferences <span className="stageHint">— these steer the {mode} pick (separate from the board filters below)</span></summary>
+      <summary className="advPanelHead u-clickable">Selection preferences <span className="stageHint">— these steer the {mode} pick (separate from the board filters below)</span></summary>
       <div className="rundownPrefsGrid mt-3">
         <div>
           <div className="fieldLabel">Sport</div>
@@ -716,7 +716,7 @@ function ReviewStep({
   return (
     <div className="studioCard">
       <h2 className="sectionTitle mt-0">Review the rundown</h2>
-      <dl className="reviewGrid" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.35rem 1rem", margin: 0 }}>
+      <dl className="reviewGrid">
         <dt className="fieldLabel">Title</dt><dd>{title || "Auto-generated"}</dd>
         {description && (<><dt className="fieldLabel">Description</dt><dd data-testid="review-description">{description}</dd></>)}
         <dt className="fieldLabel">Show</dt><dd>{podcast ? podcast.name : "Standalone episode"}</dd>
@@ -724,9 +724,9 @@ function ReviewStep({
         <dt className="fieldLabel">Rundown</dt>
         <dd>
           {mode === "automatic" ? <span>{targetTopicCount} topics selected automatically at creation.</span> : (
-            <ol style={{ margin: 0, paddingLeft: "1.1rem" }} data-testid="review-rundown">
+            <ol className="reviewList" data-testid="review-rundown">
               {orderedSelected.map((t) => (
-                <li key={t.id}>{t.id === lead && <span className="chip chipAccent">★ Lead</span>} {t.title}{t.readiness !== "ready" && <span style={{ color: "var(--warning-color, #b45309)" }}> ⚠ {t.readiness.replace("_", " ")}</span>}</li>
+                <li key={t.id}>{t.id === lead && <span className="chip chipAccent">★ Lead</span>} {t.title}{t.readiness !== "ready" && <span className="noteWarn"> ⚠ {t.readiness.replace("_", " ")}</span>}</li>
               ))}
             </ol>
           )}
@@ -739,11 +739,11 @@ function ReviewStep({
         <dt className="fieldLabel">Estimate</dt><dd>~{estimate.estimatedDurationMinutes} min · ~{estimate.estimatedWords.toLocaleString()} words · {estimate.estimatedCostUsd !== null ? `~$${estimate.estimatedCostUsd.toFixed(2)}` : "cost provider-dependent"}</dd>
       </dl>
       {warnings.length > 0 && (
-        <div role="note" style={{ marginTop: "0.8rem", fontSize: "0.82rem", color: "var(--warning-color, #b45309)" }}>
+        <div role="note" className="noteWarn noteSmall mt-3">
           {warnings.map((t) => <div key={t.id}>⚠ {t.title}: {t.usedByShowRecent ? "recently used by this show" : t.readiness.replace("_", " ")}</div>)}
         </div>
       )}
-      {!validation.ok && <p role="alert" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{validation.error}</p>}
+      {!validation.ok && <p role="alert" className="noteWarn mt-3">{validation.error}</p>}
       <div className="stageActions">
         <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
         <button type="button" data-testid="create-episode" className="btnPrimary u-mlAuto" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting}>
@@ -807,19 +807,19 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
         </div>
       )}
       <p className="stageHint">This is the final rundown the studio actually created (from the backend), in order:</p>
-      <ol style={{ paddingLeft: "1.2rem" }} data-testid="result-final-order">
+      <ol className="reviewList" data-testid="result-final-order">
         {result.finalOrder.map((id, i) => {
           const ref = result.selectedTopics.find((s) => s.id === id);
           return <li key={id} data-testid={`final-${id}`}>{i === 0 && <span className="chip chipAccent">★ Lead</span>} {ref?.title ?? topicsById.get(id)?.title ?? id} {ref && !ref.pinned && <span className="chip">auto</span>}</li>;
         })}
       </ol>
       {result.rejectedTopics.length > 0 && (
-        <div role="note" style={{ marginTop: "0.6rem", fontSize: "0.82rem" }}>
+        <div role="note" className="noteSmall mt-3">
           <div className="fieldLabel">Not included</div>
           <ul className="createReasons">{result.rejectedTopics.map((r, i) => <li key={i}>{topicsById.get(r.id)?.title ?? r.id}: {r.reason}</li>)}</ul>
         </div>
       )}
-      {startError && <p role="alert" data-testid="start-error" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{startError}</p>}
+      {startError && <p role="alert" data-testid="start-error" className="noteWarn mt-3">{startError}</p>}
       <div className="stageActions mt-4">
         <Link href={`/studio/episodes/${result.episodeId}`} className="btnGhost">Open episode</Link>
         <button type="button" data-testid="start-debate" className="btnPrimary u-mlAuto" disabled={starting} aria-busy={starting} onClick={start}>
@@ -836,12 +836,12 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
  *  line of text, which used to make the whole picker jump. */
 function TopicPickerSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading takes" style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+    <div aria-busy="true" aria-label="Loading takes" className="skelStack">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="skelBlock">
           <div className="skelRow mb-4">
             <div className="skelChip" />
-            <div className="skelChip" style={{ width: 60 }} />
+            <div className="skelChip" style={{ "--skel-w": "60px" } as React.CSSProperties} />
           </div>
           <div className="skelLine" />
           <div className="skelLine skelLine--short" />

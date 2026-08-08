@@ -2016,3 +2016,97 @@
 
 /* --error-text, never --error: this is a small text label. */
 .hostBtnRow [data-danger="true"] { color: var(--error-text); }
+
+/* ============================================================
+   Shows — list and headquarters.
+   ============================================================ */
+.showEyebrow {
+  color: var(--accent); font-size: 0.7rem; font-weight: 900;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.showAsideTitle { font-weight: 850; }
+.showAsideBody { color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin-bottom: 0; }
+
+.showHqGrid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr); gap: var(--sp-4); }
+.showPremise { margin: var(--sp-2) 0; line-height: 1.25; }
+.showPromiseBody { color: var(--text-muted); line-height: 1.6; }
+.showChemistry { font-size: 0.84rem; line-height: 1.55; margin-bottom: 0; }
+
+.showStorylineGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--sp-3); }
+.showEpisodeList { display: grid; gap: var(--sp-2); }
+.showEpisodeRow {
+  text-decoration: none; color: inherit;
+  display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3);
+}
+.showEpisodeStage { color: var(--text-muted); font-size: 0.76rem; margin-top: var(--sp-1); }
+.showForgeSummary { cursor: pointer; display: inline-flex; }
+
+/* The empty state used 3rem (48px) of vertical padding — over the 32px card
+   ceiling, and it made "no shows yet" the largest thing on the page. */
+.showEmpty { padding: var(--sp-8) var(--sp-6); text-align: center; }
+.showEmptyGlyph { font-size: 2.6rem; margin-bottom: var(--sp-3); }
+.showEmptyBody { color: var(--text-muted); max-width: 520px; margin: var(--sp-3) auto var(--sp-6); line-height: 1.55; }
+
+.showList { display: grid; gap: var(--sp-3); }
+.showRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; }
+.showRowMain { min-width: 0; flex: 1 1 420px; }
+.showRowChips { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.showRowCadence { color: var(--text-muted); font-size: 0.76rem; }
+.showRowName { margin: 0; font-size: 1.08rem; }
+.showRowFacts { color: var(--text-muted); font-size: 0.8rem; margin-top: var(--sp-2); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+.showRowActions { display: flex; gap: var(--sp-3); align-items: flex-start; flex-wrap: wrap; }
+
+@media (max-width: 900px) { .showHqGrid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   Create flow + Takes board.
+   ============================================================ */
+
+/* The step buttons carried `all: unset`, which removes the focus ring along
+   with everything else — a keyboard user could not see where they were. A
+   plain reset keeps the appearance without destroying focus visibility. */
+.stepPillBtn {
+  display: flex; align-items: center; gap: var(--sp-1);
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.stepPillBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+/* --warning-color, not the #b45309 literal that appeared five times. That
+   amber was a light-theme value and it shadowed the real token. */
+.noteWarn { color: var(--warning-color); }
+.noteSmall { font-size: 0.82rem; }
+
+.hostVoiceRow { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
+.hostVoiceName { width: 120px; }
+
+.reviewGrid { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-4); margin: 0; }
+.reviewList { margin: 0; padding-left: var(--sp-4); }
+
+.skelStack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.skelChip[style] { width: var(--skel-w); }
+
+.takeList { display: flex; flex-direction: column; gap: var(--sp-4); }
+.takeRow { display: flex; gap: var(--sp-6); align-items: center; flex-wrap: wrap; }
+.takeScore { font-size: 1.9rem; width: 74px; text-align: center; flex-shrink: 0; }
+.takeScoreLabel {
+  font-size: 0.62rem; color: var(--text-muted);
+  font-family: var(--font-family); font-weight: 600; margin-top: 2px;
+}
+.takeMain { flex: 1; min-width: 260px; }
+.takeTitle { font-size: 1.05rem; }
+.takeSummary {
+  font-size: 0.82rem; color: var(--text-muted); margin-top: var(--sp-1);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.takeAxes { width: 240px; flex-shrink: 0; }
+.takeAxisRow { grid-template-columns: 80px 1fr 28px; margin-top: var(--sp-1); }
+.takeAxisLabel { font-size: 0.7rem; }
+.takeBarTrack { height: 5px; }
+.scoreBarFill[style] { width: var(--bar-w); }
+
+.u-right { text-align: right; }
+.u-strong { color: var(--text); }
+.u-clickable { cursor: pointer; }
+.u-noShrink { flex-shrink: 0; }
+.u-resizeY { resize: vertical; }

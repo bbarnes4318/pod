@@ -93,24 +93,24 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
         }
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(260px, .65fr)", gap: 14 }}>
-        <section className="studioCard" style={{ padding: "1.25rem" }}>
-          <div style={{ color: "var(--accent)", fontSize: ".68rem", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".1em" }}>The show promise</div>
-          <h2 style={{ margin: ".5rem 0", lineHeight: 1.25 }}>{showForge.bible.premise}</h2>
-          <p style={{ color: "var(--text-secondary)", lineHeight: 1.6 }}>{showForge.bible.audiencePromise}</p>
-          <p style={{ fontSize: ".84rem", lineHeight: 1.55, marginBottom: 0 }}><strong>Host chemistry:</strong> {showForge.bible.hostChemistry}</p>
+      <div className="showHqGrid">
+        <section className="studioCard">
+          <div className="showEyebrow">The show promise</div>
+          <h2 className="showPremise">{showForge.bible.premise}</h2>
+          <p className="showPromiseBody">{showForge.bible.audiencePromise}</p>
+          <p className="showChemistry"><strong>Host chemistry:</strong> {showForge.bible.hostChemistry}</p>
         </section>
 
-        <section className="studioCard" style={{ padding: "1.1rem" }}>
-          <div style={{ fontWeight: 850 }}>Next storyline movement</div>
+        <section className="studioCard">
+          <div className="showAsideTitle">Next storyline movement</div>
           {nextBeat ? (
             <>
-              <div style={{ color: "var(--accent)", fontSize: ".72rem", fontWeight: 850, marginTop: ".8rem" }}>{nextBeat.storylineTitle}</div>
-              <div style={{ fontWeight: 850, marginTop: 5 }}>{nextBeat.beatTitle}</div>
-              <p style={{ color: "var(--text-secondary)", fontSize: ".78rem", lineHeight: 1.5, marginBottom: 0 }}>{nextBeat.beatDirection}</p>
+              <div className="showEyebrow mt-3">{nextBeat.storylineTitle}</div>
+              <div className="showAsideTitle mt-1">{nextBeat.beatTitle}</div>
+              <p className="showAsideBody">{nextBeat.beatDirection}</p>
             </>
           ) : (
-            <p style={{ color: "var(--text-secondary)", fontSize: ".8rem", lineHeight: 1.5 }}>
+            <p className="showAsideBody">
               No season beat is due. The next episode stands alone inside the show bible.
             </p>
           )}
@@ -120,11 +120,11 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
       {showForge.storylines.length > 0 && (
         <section className="mt-6">
           <div className="sectionHead"><h2 className="sectionTitle">Storyline board</h2></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
+          <div className="showStorylineGrid">
             {showForge.storylines.map((storyline) => (
-              <article key={storyline.id} className="studioCard" style={{ padding: "1rem" }}>
+              <article key={storyline.id} className="studioCard">
                 <strong>{storyline.title}</strong>
-                <p style={{ color: "var(--text-secondary)", fontSize: ".78rem", lineHeight: 1.5 }}>{storyline.premise}</p>
+                <p className="showAsideBody">{storyline.premise}</p>
                 <span className="statusPill statusPill--warn">{storyline.beats.length} beats · {storyline.status}</span>
               </article>
             ))}
@@ -138,16 +138,16 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
           <Link href="/studio/create" className="sectionAction">Build a rundown →</Link>
         </div>
         {podcast.episodes.length === 0 ? (
-          <div className="studioCard" style={{ padding: "1rem" }}>No episodes yet. Generate the premiere when the room is ready.</div>
+          <div className="studioCard">No episodes yet. Generate the premiere when the room is ready.</div>
         ) : (
-          <div style={{ display: "grid", gap: 9 }}>
+          <div className="showEpisodeList">
             {podcast.episodes.slice(0, 10).map((episode) => {
               const stage = friendlyStage(episode.status);
               return (
-                <Link key={episode.id} href={`/studio/episodes/${episode.id}`} className="studioCard clickable" style={{ textDecoration: "none", color: "inherit", padding: ".9rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14 }}>
+                <Link key={episode.id} href={`/studio/episodes/${episode.id}`} className="studioCard clickable showEpisodeRow">
                   <div>
-                    <div style={{ fontWeight: 850 }}>{episode.title}</div>
-                    <div style={{ color: "var(--text-muted)", fontSize: ".76rem", marginTop: 4 }}>{stage.label}</div>
+                    <div className="showAsideTitle">{episode.title}</div>
+                    <div className="showEpisodeStage">{stage.label}</div>
                   </div>
                   <span className="btnGhost">{episode.audioUrl ? "Listen" : "Open"}</span>
                 </Link>
@@ -158,7 +158,7 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
       </section>
 
       <details className="mt-8">
-        <summary className="btnGhost" style={{ cursor: "pointer", display: "inline-flex" }}>Edit in Show Forge</summary>
+        <summary className="btnGhost showForgeSummary">Edit in Show Forge</summary>
         <div className="mt-4">
           <PodcastWizard
             hosts={hosts}

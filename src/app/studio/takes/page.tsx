@@ -102,17 +102,17 @@ export default async function TakesBoard({
           )}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+        <div className="takeList">
           {ranked.map(({ t, talk }, rank) => (
-            <div key={t.id} className="studioCard" style={{ display: "flex", gap: "1.25rem", alignItems: "center", flexWrap: "wrap" }}>
-              <div className="scoreBadge" style={{ fontSize: "1.9rem", width: 74, textAlign: "center", flexShrink: 0 }}>
+            <div key={t.id} className="studioCard takeRow">
+              <div className="scoreBadge takeScore">
                 {talk.total}
-                <div style={{ fontSize: "0.62rem", color: "var(--text-secondary)", fontFamily: "var(--font-family)", fontWeight: 600, marginTop: 2 }}>
+                <div className="takeScoreLabel">
                   #{rank + 1}
                 </div>
               </div>
 
-              <div style={{ flex: 1, minWidth: 260 }}>
+              <div className="takeMain">
                 <div className="epMeta mb-1">
                   <span className="chip">{t.sport}</span>
                   {(usage.get(t.id)?.currentOwnerUseCount ?? 0) > 0 && (
@@ -122,32 +122,32 @@ export default async function TakesBoard({
                   {t.status === "pending" && <span className="chip chipAccent">New</span>}
                   <span>{fmtDate(t.createdAt)}</span>
                 </div>
-                <div className="epTitle" style={{ fontSize: "1.05rem" }}>{t.title}</div>
+                <div className="epTitle takeTitle">{t.title}</div>
                 {t.summary && (
-                  <div style={{ fontSize: "0.82rem", color: "var(--text-secondary)", marginTop: "0.3rem", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                  <div className="takeSummary">
                     {t.summary}
                   </div>
                 )}
               </div>
 
-              <div style={{ width: 240, flexShrink: 0 }}>
+              <div className="takeAxes">
                 {[
                   ["Controversy", t.controversyScore],
                   ["Star power", t.starPowerScore],
                   ["Betting heat", t.bettingRelevanceScore],
                   ["Freshness", t.recencyScore],
                 ].map(([label, v]) => (
-                  <div key={label as string} className="axisRow" style={{ gridTemplateColumns: "80px 1fr 28px", marginTop: "0.3rem" }}>
-                    <span style={{ fontSize: "0.7rem" }}>{label}</span>
-                    <div className="scoreBarTrack" style={{ height: 5 }}>
-                      <div className="scoreBarFill" style={{ width: `${Math.min(100, Number(v))}%` }} />
+                  <div key={label as string} className="axisRow takeAxisRow">
+                    <span className="takeAxisLabel">{label}</span>
+                    <div className="scoreBarTrack takeBarTrack">
+                      <div className="scoreBarFill" style={{ "--bar-w": `${Math.min(100, Number(v))}%` } as React.CSSProperties} />
                     </div>
-                    <strong style={{ fontSize: "0.7rem" }}>{Math.round(Number(v))}</strong>
+                    <strong className="takeAxisLabel">{Math.round(Number(v))}</strong>
                   </div>
                 ))}
               </div>
 
-              <Link href={`/studio/create?topic=${t.id}`} className="btnPrimary" style={{ flexShrink: 0 }}>
+              <Link href={`/studio/create?topic=${t.id}`} className="btnPrimary u-noShrink">
                 Use it →
               </Link>
             </div>

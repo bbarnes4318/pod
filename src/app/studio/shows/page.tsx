@@ -30,35 +30,35 @@ export default async function StudioShowsPage() {
       />
 
       {podcasts.length === 0 ? (
-        <section className="studioCard" style={{ padding: "3rem 1.5rem", textAlign: "center" }}>
-          <div style={{ fontSize: "2.6rem", marginBottom: 10 }} aria-hidden="true">🎙️</div>
+        <section className="studioCard showEmpty">
+          <div className="showEmptyGlyph" aria-hidden="true">🎙️</div>
           <h2 className="m-0">No shows yet</h2>
-          <p style={{ color: "var(--text-secondary)", maxWidth: 520, margin: ".65rem auto 1.25rem", lineHeight: 1.55 }}>
+          <p className="showEmptyBody">
             Start with the show bible, assign your hosts, and then generate the premiere inside the same Studio workspace.
           </p>
           <Link href="/studio/shows/new" className="btnPrimary">Build your first show</Link>
         </section>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div className="showList">
           {podcasts.map((podcast) => {
             const cadence = podcast.cadence === "recurring"
               ? podcast.scheduleDays.map((day) => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(" · ")
               : "Manual releases";
             return (
-              <article key={podcast.id} className="studioCard" style={{ padding: "1.1rem 1.2rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0, flex: "1 1 420px" }}>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+              <article key={podcast.id} className="studioCard showRow">
+                <div className="showRowMain">
+                  <div className="showRowChips">
                     <span className="statusPill statusPill--ok">Show</span>
-                    <span style={{ color: "var(--text-muted)", fontSize: ".76rem" }}>{cadence}</span>
+                    <span className="showRowCadence">{cadence}</span>
                   </div>
-                  <h2 style={{ margin: 0, fontSize: "1.08rem" }}>{podcast.name}</h2>
-                  <div style={{ color: "var(--text-secondary)", fontSize: ".8rem", marginTop: 7, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  <h2 className="showRowName">{podcast.name}</h2>
+                  <div className="showRowFacts">
                     <span>{podcast.verticals.join(", ") || "Sports"}</span>
                     <span>{podcast.segmentCount} topic{podcast.segmentCount === 1 ? "" : "s"} per episode</span>
                     <span>{podcast._count.episodes} episode{podcast._count.episodes === 1 ? "" : "s"}</span>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div className="showRowActions">
                   <GenerateShowEpisodeButton podcastId={podcast.id} />
                   <Link href={`/studio/shows/${podcast.id}`} className="btnPrimary">Open show</Link>
                 </div>
