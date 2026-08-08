@@ -113,7 +113,28 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   };
 
   const scriptStyle = input.scriptStyle || "heated-debate";
-  const targetDuration = input.targetDurationMinutes || 12;
+  // 12 was a hardcoded literal with no schema field and no UI control behind it,
+  // so an operator could not change episode length at all — and length is the
+  // single biggest determinant of whether a script passes or is thrown away.
+  //
+  // OBSERVED 2026-08-08: a 12-minute target needs 1,260 spoken words. The same
+  // source material produced 829-850 across repeated attempts, so every run was
+  // rejected under the catastrophic floor after paying for the full pipeline.
+  // Measured across nine runs, this evidence supports roughly 730-850 words —
+  // about six minutes. Asking twelve of a six-minute story cannot succeed, and
+  // padding it to length would reintroduce exactly the filler the rest of the
+  // pipeline strips out.
+  //
+  // Env-configurable rather than schema-backed on purpose: it needs to be
+  // changeable NOW, and a migration plus UI is the right long-term home for it,
+  // not the emergency lever. Clamped to a sane band so a typo cannot request a
+  // ninety-second or three-hour episode.
+  const envDuration = Number(process.env.SCRIPT_TARGET_DURATION_MINUTES);
+  const defaultDuration =
+    Number.isFinite(envDuration) && envDuration >= 3 && envDuration <= 60
+      ? Math.round(envDuration)
+      : 12;
+  const targetDuration = input.targetDurationMinutes || defaultDuration;
   const maxWords = input.maxWords || 2200;
 
   // 1. Load Episode and Validate
@@ -568,9 +589,47 @@ Delivery field meanings:
           `${seven.trace.violations.length} violation(s).`
       );
     } else {
+      // STOP. Do not quietly re-write the episode on the legacy path.
+      //
+      // The outline-driven path has NONE of the seven-role guarantees: no turn
+      // plan, so no minimum turn count and no alternation ceiling; no novelty
+      // check; no per-host isolation. Its draft therefore fails the very gates
+      // waiting downstream, and the operator pays TWICE — once for the failed
+      // seven-role attempt, again for a fallback whose rejection was certain.
+      //
+      // OBSERVED IN PRODUCTION 2026-08-08, twice on one episode: Anthropic ran
+      // out of funds, the debate architect fell through to free models that
+      // timed out, the pipeline failed, and this branch silently produced a
+      // draft the quality gate then rejected for "100% of adjacent lines
+      // alternate speakers" and "829 spoken words below the floor". 2,155
+      // seconds and real money for an outcome that could never have been
+      // accepted.
+      //
+      // Failing here is cheaper and more truthful: the role trace already
+      // records WHICH role failed and why, which is the part an operator can act
+      // on. SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true restores the old behaviour
+      // for anyone who would genuinely rather have an ungated draft than none.
+      const allowLegacy = process.env.SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK === "true";
+      const failedRole = seven.trace.stageRecords.find((r) => r.status === "failed");
+      const detail =
+        `Seven-role writing pipeline did not complete` +
+        `${failedRole ? ` (${failedRole.role} failed)` : ""}: ${seven.error}`;
+
+      if (!allowLegacy) {
+        result.reasons.push(
+          `${detail}. NOT falling back to the outline-driven path — it carries none of the turn-plan, ` +
+            `alternation or novelty guarantees, so its draft would be rejected by the quality gate anyway and ` +
+            `the run would cost twice for nothing. Fix the failing role and re-run. Set ` +
+            `SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true to accept an ungated draft instead.`
+        );
+        console.error(`[ScriptService] ${detail} — refusing the ungated legacy path.`);
+        throw new Error(detail);
+      }
+
       result.reasons.push(
-        `Seven-role writing pipeline did not complete (${seven.error}); falling back to the outline-driven path. ` +
-          `The role trace records which role failed.`
+        `${detail}; falling back to the outline-driven path because ` +
+          `SCRIPT_ALLOW_LEGACY_SCRIPT_FALLBACK=true. That draft has NO turn-plan, alternation or novelty ` +
+          `guarantees and is likely to be rejected by the quality gate.`
       );
       console.warn(`[ScriptService] Seven-role pipeline unavailable: ${seven.error}`);
     }
