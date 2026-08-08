@@ -113,7 +113,28 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   };
 
   const scriptStyle = input.scriptStyle || "heated-debate";
-  const targetDuration = input.targetDurationMinutes || 12;
+  // 12 was a hardcoded literal with no schema field and no UI control behind it,
+  // so an operator could not change episode length at all — and length is the
+  // single biggest determinant of whether a script passes or is thrown away.
+  //
+  // OBSERVED 2026-08-08: a 12-minute target needs 1,260 spoken words. The same
+  // source material produced 829-850 across repeated attempts, so every run was
+  // rejected under the catastrophic floor after paying for the full pipeline.
+  // Measured across nine runs, this evidence supports roughly 730-850 words —
+  // about six minutes. Asking twelve of a six-minute story cannot succeed, and
+  // padding it to length would reintroduce exactly the filler the rest of the
+  // pipeline strips out.
+  //
+  // Env-configurable rather than schema-backed on purpose: it needs to be
+  // changeable NOW, and a migration plus UI is the right long-term home for it,
+  // not the emergency lever. Clamped to a sane band so a typo cannot request a
+  // ninety-second or three-hour episode.
+  const envDuration = Number(process.env.SCRIPT_TARGET_DURATION_MINUTES);
+  const defaultDuration =
+    Number.isFinite(envDuration) && envDuration >= 3 && envDuration <= 60
+      ? Math.round(envDuration)
+      : 12;
+  const targetDuration = input.targetDurationMinutes || defaultDuration;
   const maxWords = input.maxWords || 2200;
 
   // 1. Load Episode and Validate
