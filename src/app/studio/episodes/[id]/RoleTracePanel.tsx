@@ -20,11 +20,13 @@ export interface RoleTracePanelProps {
   trace?: SevenRoleTraceRecord | null;
 }
 
-const TONE = {
-  ok: { fg: "#1f7a4d", bg: "rgba(31,122,77,0.10)", border: "rgba(31,122,77,0.35)", label: "ok" },
-  failed: { fg: "#a3131b", bg: "rgba(163,19,27,0.12)", border: "rgba(163,19,27,0.55)", label: "FAILED" },
-  skipped: { fg: "#7a6a1f", bg: "rgba(122,106,31,0.10)", border: "rgba(122,106,31,0.35)", label: "skipped" },
-} as const;
+// This panel used to carry its own colour system — #1f7a4d / #a3131b / #7a6a1f.
+// Those are LIGHT-theme colours, and the Studio renders on --bg #0E1116: the
+// failure red measured barely above the surface it sat on, so the single most
+// important state here was the hardest one to see. Only the label survives in
+// TS; every colour now comes from --success / --error / --warning through
+// .role-trace-row[data-tone].
+const TONE_LABEL = { ok: "ok", failed: "FAILED", skipped: "skipped" } as const;
 
 function ms(value: number): string {
   if (value < 1000) return `${value} ms`;
@@ -68,7 +70,7 @@ export default function RoleTracePanel({ trace }: RoleTracePanelProps) {
   return (
     <section
       className={`studio-panel role-trace-panel ${blocked ? "gate-hold" : "gate-pass"}`}
-      style={{ borderLeft: `4px solid ${blocked ? TONE.failed.border : TONE.ok.border}` }}
+      data-blocked={blocked ? "true" : "false"}
     >
       <header>
         <h3>Writing roles</h3>
@@ -78,10 +80,7 @@ export default function RoleTracePanel({ trace }: RoleTracePanelProps) {
       </header>
 
       {blocked ? (
-        <p
-          className="gate-blurb gate-warn"
-          style={{ color: TONE.failed.fg, fontWeight: 700 }}
-        >
+        <p className="gate-blurb gate-warn role-trace-alarm">
           {holding.length > 0
             ? `Required role${holding.length === 1 ? "" : "s"} failed: ${holding.join(", ")}. Production is held.`
             : `The pipeline failed after the roles ran: ${trace.pipelineError}`}
@@ -92,78 +91,49 @@ export default function RoleTracePanel({ trace }: RoleTracePanelProps) {
         </p>
       )}
 
-      <ol className="role-trace-list" style={{ listStyle: "none", margin: "1rem 0 0", padding: 0 }}>
+      <ol className="role-trace-list">
         {trace.roles.map((role) => {
-          const tone = TONE[role.status];
           const failedRequired = role.status === "failed" && role.required;
           const model = modelCopy(role);
           return (
             <li
               key={role.role}
-              className={`role-trace-row role-${role.status}`}
-              style={{
-                border: `1px solid ${failedRequired ? TONE.failed.border : tone.border}`,
-                borderLeft: `6px solid ${failedRequired ? TONE.failed.fg : tone.border}`,
-                background: failedRequired ? TONE.failed.bg : tone.bg,
-                borderRadius: 6,
-                padding: "0.7rem 0.9rem",
-                marginBottom: "0.55rem",
-              }}
+              className="role-trace-row"
+              data-tone={failedRequired ? "failed" : role.status}
+              data-required-failure={failedRequired ? "true" : undefined}
             >
-              <div style={{ display: "flex", alignItems: "baseline", gap: "0.6rem", flexWrap: "wrap" }}>
-                <strong style={{ minWidth: "1.6rem" }}>{role.order}/7</strong>
+              <div className="role-trace-head">
+                <strong className="role-trace-order">{role.order}/7</strong>
                 <strong>{role.label}</strong>
-                <code style={{ opacity: 0.75 }}>{role.role}</code>
-                <span
-                  style={{
-                    color: tone.fg,
-                    fontWeight: failedRequired ? 800 : 600,
-                    textTransform: failedRequired ? "uppercase" : "none",
-                    letterSpacing: failedRequired ? "0.04em" : undefined,
-                  }}
-                >
-                  {tone.label}
-                </span>
-                <span style={{ opacity: 0.7 }}>
+                <code className="role-trace-key">{role.role}</code>
+                <span className="role-trace-status">{TONE_LABEL[role.status]}</span>
+                <span className="role-trace-meta">
                   {role.required ? "required" : "optional"}
                   {role.status === "ok" || role.durationMs > 0 ? ` · ${ms(role.durationMs)}` : ""}
                 </span>
               </div>
 
               {failedRequired && (
-                <p style={{ color: TONE.failed.fg, fontWeight: 700, margin: "0.45rem 0 0" }}>
+                <p className="role-trace-alarm role-trace-note">
                   This role is REQUIRED. Its failure holds production: {role.error || "no reason recorded"}
                 </p>
               )}
               {role.status === "failed" && !role.required && (
-                <p style={{ margin: "0.45rem 0 0" }}>
+                <p className="role-trace-note">
                   Optional role failed (does not hold production): {role.error || "no reason recorded"}
                 </p>
               )}
               {role.status === "skipped" && (
-                <p style={{ margin: "0.45rem 0 0", opacity: 0.85 }}>{role.error || "did not run"}</p>
+                <p className="role-trace-note role-trace-dim">{role.error || "did not run"}</p>
               )}
 
-              <dl
-                className="role-trace-facts"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "auto 1fr",
-                  gap: "0.15rem 0.7rem",
-                  margin: "0.5rem 0 0",
-                  fontSize: "0.82rem",
-                }}
-              >
+              <dl className="role-trace-facts">
                 <dt>Routed as</dt>
-                <dd style={{ margin: 0 }}>
-                  <code>{role.llmRole}</code>
-                </dd>
+                <dd><code>{role.llmRole}</code></dd>
                 <dt>Model</dt>
-                <dd style={{ margin: 0, color: model.warn ? TONE.failed.fg : undefined, fontWeight: model.warn ? 600 : undefined }}>
-                  {model.text}
-                </dd>
+                <dd data-warn={model.warn ? "true" : undefined}>{model.text}</dd>
                 <dt>Observation</dt>
-                <dd style={{ margin: 0, opacity: 0.85 }}>
+                <dd className="role-trace-dim">
                   {role.modelObservation === "unobserved"
                     ? "no observation — the serving model is unknown, not assumed"
                     : role.modelObservation === "cost_ledger"
@@ -171,15 +141,15 @@ export default function RoleTracePanel({ trace }: RoleTracePanelProps) {
                     : "provider report"}
                 </dd>
                 <dt>Fallback</dt>
-                <dd style={{ margin: 0, color: role.fallbackFired ? TONE.failed.fg : undefined }}>
+                <dd data-warn={role.fallbackFired ? "true" : undefined}>
                   {role.fallbackFired
                     ? `FIRED — ${role.fallbackReason || "no reason recorded"}`
                     : "none — the requested candidate served the call"}
                 </dd>
                 <dt>Chain</dt>
-                <dd style={{ margin: 0, opacity: 0.75 }}>{role.candidateChain.join(" → ") || "—"}</dd>
+                <dd className="role-trace-dim">{role.candidateChain.join(" → ") || "—"}</dd>
                 <dt>Artifacts</dt>
-                <dd style={{ margin: 0, opacity: 0.75 }}>
+                <dd className="role-trace-dim">
                   in {role.inputArtifacts.length} · out {role.outputArtifacts.length}
                   {role.outputArtifacts.length > 0
                     ? ` (${role.outputArtifacts.map((a) => a.id).join(", ")})`
@@ -188,9 +158,9 @@ export default function RoleTracePanel({ trace }: RoleTracePanelProps) {
               </dl>
 
               {role.violations.length > 0 && (
-                <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
+                <ul className="role-trace-findings">
                   {role.violations.map((violation, i) => (
-                    <li key={i} style={{ fontSize: "0.82rem" }}>
+                    <li key={i}>
                       <code>{violation.kind}</code> — {violation.detail}
                     </li>
                   ))}

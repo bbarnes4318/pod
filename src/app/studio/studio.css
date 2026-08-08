@@ -1824,3 +1824,109 @@
 .studioNoteDisclosure[open] > summary::before { content: "▾ "; }
 .studioNoteDisclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius); }
 .studioNoteDisclosure > p { margin: 0; padding: 0 var(--sp-3) var(--sp-3); line-height: 1.55; }
+
+/* ============================================================
+   Role trace — the seven-role writing trace on an episode.
+   This panel used to define its own colour system in TypeScript
+   (#1f7a4d / #a3131b / #7a6a1f), which were LIGHT-theme values
+   rendered on --bg #0E1116. The failure red sat barely above its
+   own background, so the state that most needed to be seen was
+   the least visible one.
+   ============================================================ */
+.role-trace-panel { border-left: 4px solid var(--success); }
+.role-trace-panel[data-blocked="true"] { border-left-color: var(--error); }
+
+.role-trace-alarm { color: var(--error-text); font-weight: 700; }
+.role-trace-note { margin: var(--sp-2) 0 0; }
+.role-trace-dim { color: var(--text-muted); }
+
+.role-trace-list { list-style: none; margin: var(--sp-4) 0 0; padding: 0; }
+
+.role-trace-row {
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--border-hover);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.role-trace-row[data-tone="ok"] { border-left-color: var(--success); }
+.role-trace-row[data-tone="skipped"] { border-left-color: var(--warning); }
+.role-trace-row[data-tone="failed"] { border-left-color: var(--error); background: var(--error-muted); border-color: var(--error-border); }
+
+.role-trace-head { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; }
+.role-trace-order { min-width: 1.6rem; }
+.role-trace-key { color: var(--text-muted); }
+.role-trace-meta { color: var(--text-muted); }
+
+.role-trace-status { font-weight: 600; color: var(--text-muted); }
+.role-trace-row[data-tone="ok"] .role-trace-status { color: var(--success); }
+.role-trace-row[data-tone="skipped"] .role-trace-status { color: var(--warning); }
+.role-trace-row[data-tone="failed"] .role-trace-status { color: var(--error-text); }
+.role-trace-row[data-required-failure="true"] .role-trace-status {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.role-trace-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: 0.82rem;
+}
+.role-trace-facts dd { margin: 0; }
+/* --error-text, not --error: this is small body copy, where the spec red
+   measures 3.99:1 and fails AA. */
+.role-trace-facts dd[data-warn="true"] { color: var(--error-text); font-weight: 600; }
+
+.role-trace-findings { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }
+.role-trace-findings li { font-size: 0.82rem; }
+
+/* ============================================================
+   Episode player. Colour comes from --host-a/--host-b via
+   [data-seat]; the component supplies only geometry, and only as
+   custom properties, because a span's position is data, not style.
+   ============================================================ */
+.studioPlayer { padding: var(--sp-6); }
+
+.playerTransport { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); flex-wrap: wrap; }
+.playerTransport [data-role="playPause"] {
+  width: 56px; height: 56px; border-radius: 50%; font-size: 1.3rem; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.playerClock { margin-left: auto; font-family: var(--font-mono); font-size: 0.9rem; color: var(--text-muted); }
+.playerClockNow { color: var(--text); }
+
+.playerScrub { position: relative; cursor: pointer; user-select: none; }
+.playerWave { width: 100%; height: 96px; display: block; }
+
+.playerChapterTick {
+  position: absolute;
+  left: var(--tick-at);
+  top: -6px;
+  width: 2px; height: 10px;
+  background: var(--text-muted);
+  border: none; padding: 0; cursor: pointer;
+}
+
+.playerHostStrip { margin-top: var(--sp-2); }
+.playerHostTrack { position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
+.playerHostSpan {
+  position: absolute;
+  left: var(--span-start);
+  width: var(--span-width);
+  top: 0; bottom: 0;
+  opacity: 0.85;
+}
+.playerHostSpan[data-seat="a"] { background: var(--host-a); }
+.playerHostSpan[data-seat="b"] { background: var(--host-b); }
+
+.playerKey { display: flex; gap: var(--sp-6); margin-top: var(--sp-1); font-size: 0.72rem; color: var(--text-muted); }
+.playerKeyHint { margin-left: auto; }
+.playerKeySwatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: var(--sp-1); }
+.playerKeySwatch[data-seat="a"] { background: var(--host-a); }
+.playerKeySwatch[data-seat="b"] { background: var(--host-b); }
+
+.playerActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }

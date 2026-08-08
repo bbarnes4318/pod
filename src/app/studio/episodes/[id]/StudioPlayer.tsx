@@ -34,7 +34,22 @@ interface Props {
 }
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.75];
-const HOST_COLORS = ["#ff5a1f", "#58a6ff"]; // A = signal orange, B = ice blue (functional)
+// Canvas cannot consume a CSS custom property, so the tokens are READ from the
+// document rather than duplicated here. The old literals ("#ff5a1f", "#58a6ff")
+// were a second definition of --host-a/--host-b that drifted: --host-b is
+// #4C8DFF, so the waveform and the transcript disagreed about which blue host B
+// is. Reading the token means one definition, and a theme change reaches the
+// canvas too.
+function cssToken(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+/** Host seat colours, resolved from --host-a / --host-b at paint time. */
+function hostColors(): [string, string] {
+  return [cssToken("--host-a", "#FF5A1F"), cssToken("--host-b", "#4C8DFF")];
+}
 
 function fmt(t: number): string {
   if (!isFinite(t) || t < 0) t = 0;
@@ -171,8 +186,8 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
       const frac = i / n;
       if (frac <= playedFrac) {
         const grad = g.createLinearGradient(0, y, 0, y + bh);
-        grad.addColorStop(0, "#ffb224");
-        grad.addColorStop(1, "#ff5a1f");
+        grad.addColorStop(0, cssToken("--wave-warm", "#FFB224"));
+        grad.addColorStop(1, cssToken("--wave-hot", "#FF5A1F"));
         g.fillStyle = grad;
       } else {
         g.fillStyle = "rgba(151, 160, 181, 0.28)";
@@ -268,7 +283,7 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
   }, [current, duration, chapters]);
 
   return (
-    <div className="studioCard" style={{ padding: "1.5rem" }}>
+    <div className="studioCard studioPlayer">
       {/* NOTE: no crossOrigin on the media element. Setting crossOrigin
           forces the browser to CORS-validate the audio before playing, and the
           media bucket doesn't return Access-Control-Allow-Origin — so the play
@@ -287,12 +302,12 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
       />
 
       {/* Transport row */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.9rem", marginBottom: "1rem", flexWrap: "wrap" }}>
+      <div className="playerTransport">
         <button
           onClick={toggle}
           aria-label={playing ? "Pause" : "Play"}
           className="btnPrimary"
-          style={{ width: 56, height: 56, borderRadius: "50%", fontSize: "1.3rem", padding: 0 }}
+          data-role="playPause"
         >
           {playing ? "❚❚" : "▶"}
         </button>
@@ -301,8 +316,8 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
         <button className="btnGhost" onClick={() => setSpeedIdx((speedIdx + 1) % SPEEDS.length)} aria-label="Playback speed">
           {speed}×
         </button>
-        <div style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "0.9rem", color: "var(--text-secondary)" }}>
-          <span style={{ color: "var(--text-primary)" }}>{fmt(current)}</span> / {fmt(duration)}
+        <div className="playerClock">
+          <span className="playerClockNow">{fmt(current)}</span> / {fmt(duration)}
         </div>
       </div>
 
@@ -315,7 +330,7 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
         aria-valuemax={Math.round(duration)}
         aria-valuenow={Math.round(current)}
         tabIndex={0}
-        style={{ position: "relative", cursor: "pointer", userSelect: "none" }}
+        className="playerScrub"
         onPointerDown={(e) => {
           draggingRef.current = true;
           (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -324,7 +339,7 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
         onPointerMove={(e) => draggingRef.current && seekFrac(fracFromEvent(e))}
         onPointerUp={() => (draggingRef.current = false)}
       >
-        <canvas ref={canvasRef} style={{ width: "100%", height: 96, display: "block" }} />
+        <canvas ref={canvasRef} className="playerWave" />
 
         {/* Chapter tick marks */}
         {chapters.map((c, i) => (
@@ -336,52 +351,40 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
               e.stopPropagation();
               seekFrac(c.startFrac);
             }}
-            style={{
-              position: "absolute",
-              left: `${c.startFrac * 100}%`,
-              top: -6,
-              width: 2,
-              height: 10,
-              background: "var(--text-secondary)",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-            }}
+            className="playerChapterTick"
+            style={{ "--tick-at": `${c.startFrac * 100}%` } as React.CSSProperties}
           />
         ))}
       </div>
 
       {/* Host strip — who's talking */}
       {hostSpans.length > 0 && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ position: "relative", height: 8, borderRadius: 4, overflow: "hidden", background: "var(--bg-tertiary)" }}>
+        <div className="playerHostStrip">
+          <div className="playerHostTrack">
             {hostSpans.map((s, i) => (
               <div
                 key={i}
                 title={hostNames[s.hostSlot]}
+                className="playerHostSpan"
+                data-seat={s.hostSlot === 0 ? "a" : "b"}
                 style={{
-                  position: "absolute",
-                  left: `${s.startFrac * 100}%`,
-                  width: `${Math.max(0.4, (s.endFrac - s.startFrac) * 100)}%`,
-                  top: 0,
-                  bottom: 0,
-                  background: HOST_COLORS[s.hostSlot],
-                  opacity: 0.85,
-                }}
+                  "--span-start": `${s.startFrac * 100}%`,
+                  "--span-width": `${Math.max(0.4, (s.endFrac - s.startFrac) * 100)}%`,
+                } as React.CSSProperties}
               />
             ))}
           </div>
-          <div style={{ display: "flex", gap: "1.25rem", marginTop: 6, fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: HOST_COLORS[0], marginRight: 6 }} />{hostNames[0]}</span>
-            <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: HOST_COLORS[1], marginRight: 6 }} />{hostNames[1]}</span>
-            <span style={{ marginLeft: "auto" }}>space = play · ←/→ = ±5s</span>
+          <div className="playerKey">
+            <span><span className="playerKeySwatch" data-seat="a" />{hostNames[0]}</span>
+            <span><span className="playerKeySwatch" data-seat="b" />{hostNames[1]}</span>
+            <span className="playerKeyHint">space = play · ←/→ = ±5s</span>
           </div>
         </div>
       )}
 
       {/* Chapter chips */}
       {chapters.length > 0 && (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "1rem" }}>
+        <div className="playerActions">
           {chapters.map((c, i) => (
             <button
               key={i}
