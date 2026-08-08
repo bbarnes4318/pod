@@ -199,26 +199,26 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
   };
 
   return (
-    <div className="studioCard" style={{ borderTop: `3px solid ${accent}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+    <div className="studioCard hostCard" style={{ "--host-accent": accent } as React.CSSProperties}>
+      <div className="hostCardHead">
         <div>
-          <div className="displayTitle" style={{ fontSize: "1.55rem", color: accent }}>{host.name}</div>
-          <div style={{ fontSize: "0.84rem", color: "var(--text-secondary)", marginTop: 4 }}>{host.role}</div>
+          <div className="displayTitle hostCardName">{host.name}</div>
+          <div className="hostCardRole">{host.role}</div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
+        <div className="hostCardAside">
           <span className={`chip ${host.isActive ? "chipSuccess" : ""}`}>{host.isActive ? "On air" : "Benched"}</span>
           {host.isShared && <span className="chip">Starter</span>}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "0.9rem 0" }}>
+      <div className="hostChipRow">
         <span className="chip">{labels.energy[host.settings.energy]}</span>
         <span className="chip">{labels.pace[host.settings.pace]}</span>
         <span className="chip">{labels.humor[host.settings.humor]}</span>
         <span className="chip">{labels.pressure[host.settings.pressure]}</span>
       </div>
 
-      <p style={{ fontSize: "0.86rem", lineHeight: 1.55, color: "var(--text-primary)" }}>{host.settings.belief}</p>
+      <p className="hostBelief">{host.settings.belief}</p>
 
       <div className={`provRow ${voiceReady(host.ttsVoiceId) ? "" : "gate-err"}`}>
         <span className={`provBadge ${voiceReady(host.ttsVoiceId) ? "provOk" : "provRisk"}`}>
@@ -227,9 +227,9 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
         {host.voiceSource && <span className="provVoice">{host.voiceSource === "synthetic-stock" ? "Designed voice" : host.voiceSource === "owned" ? "Owned voice" : "Licensed voice"}</span>}
       </div>
 
-      {(message || error) && <div className={`gateResult ${error ? "gate-err" : "gate-ok"}`} style={{ margin: "0.8rem 0" }}>{error || message}</div>}
+      {(message || error) && <div className={`gateResult mt-3 mb-3 ${error ? "gate-err" : "gate-ok"}`}>{error || message}</div>}
 
-      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.9rem" }}>
+      <div className="hostCardActions">
         <button type="button" className="btnPrimary" onClick={play} disabled={busy === "play" || !voiceReady(host.ttsVoiceId)}>
           {busy === "play" ? "Making preview…" : "▶ Hear host"}
         </button>
@@ -244,7 +244,7 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
           </button>
         )}
       </div>
-      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.6rem" }}>Used in {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.</div>
+      <div className="hostCardUsage">Used in {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.</div>
       <audio ref={audioRef} preload="none" />
     </div>
   );
@@ -258,10 +258,10 @@ function ChoiceRow<T extends string>({ title, help, value, options, onChange }: 
   onChange: (value: T) => void;
 }) {
   return (
-    <div style={{ padding: "0.9rem 0", borderBottom: "1px solid var(--border-color)" }}>
-      <div style={{ fontWeight: 700, marginBottom: 3 }}>{title}</div>
-      {help && <div style={{ color: "var(--text-muted)", fontSize: "0.76rem", marginBottom: 8 }}>{help}</div>}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <div className="hostChoiceRow">
+      <div className="hostChoiceTitle">{title}</div>
+      {help && <div className="hostChoiceHelp">{help}</div>}
+      <div className="hostBtnRow">
         {options.map((option) => (
           <button
             key={option.value}
@@ -269,7 +269,7 @@ function ChoiceRow<T extends string>({ title, help, value, options, onChange }: 
             className={value === option.value ? "btnPrimary" : "btnGhost"}
             onClick={() => onChange(option.value)}
             title={option.help}
-            style={{ minWidth: 110 }}
+            data-wide="true"
           >
             {option.label}
           </button>
@@ -406,10 +406,10 @@ function HostEditor({ mode, host, accent, onClose }: {
   const steps = ["Who they are", "How they act", "Voice", "Preview"];
 
   return (
-    <div className="studioCard advPanelWide" style={{ borderTop: `3px solid ${accent}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="studioCard advPanelWide hostCard" style={{ "--host-accent": accent } as React.CSSProperties}>
+      <div className="hostWizardHead">
         <div className="advPanelHead">{mode === "create" ? "Create a host" : `Edit ${host?.name}`}</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div className="hostChipRow m-0">
           {steps.map((title, index) => (
             <button key={title} type="button" className={step === index ? "btnPrimary" : "btnGhost"} onClick={() => setStep(index)}>
               {index + 1}. {title}
@@ -426,7 +426,7 @@ function HostEditor({ mode, host, accent, onClose }: {
           </label>
           <div className="mt-4">
             <div className="fieldLabel">What kind of host are they?</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 }}>
+            <div className="hostPresetGrid">
               {(Object.entries(ROLE_PRESETS) as Array<[HostStudioSettings["rolePreset"], (typeof ROLE_PRESETS)[HostStudioSettings["rolePreset"]]]>).map(([key, preset]) => (
                 <button key={key} type="button" className={settings.rolePreset === key ? "btnPrimary" : "btnGhost"} onClick={() => setSetting("rolePreset", key)} style={{ minHeight: 54 }}>
                   {preset.label}
@@ -442,7 +442,7 @@ function HostEditor({ mode, host, accent, onClose }: {
           )}
           <label className="hostField mt-4">
             <span className="fieldLabel">What do they believe?</span>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Write it like you are explaining the person to a friend.</span>
+            <span className="hostFieldHint">Write it like you are explaining the person to a friend.</span>
             <textarea className="advSelect" rows={4} value={settings.belief} onChange={(event) => setSetting("belief", event.target.value)} placeholder="They believe owners always blame the cheapest person first..." />
           </label>
         </div>
@@ -503,9 +503,9 @@ function HostEditor({ mode, host, accent, onClose }: {
               <span className="fieldLabel">Extra behavior notes</span>
               <textarea className="advSelect" rows={4} value={settings.extraInstructions} onChange={(event) => setSetting("extraInstructions", event.target.value)} />
             </label>
-            <label className="hostField" style={{ marginTop: 8, maxWidth: 240 }}>
+            <label className="hostField hostFieldNarrow mt-2">
               <span className="fieldLabel">Casting priority (1–10)</span>
-              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>Higher priority takes the lead chair. This is not volume.</span>
+              <span className="hostFieldHint">Higher priority takes the lead chair. This is not volume.</span>
               <input className="advSelect" type="number" min={1} max={10} value={settings.castPriority} onChange={(event) => setSetting("castPriority", Number(event.target.value))} />
             </label>
           </details>
@@ -514,16 +514,16 @@ function HostEditor({ mode, host, accent, onClose }: {
 
       {step === 2 && (
         <div className="mt-4">
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
+          <div className="hostModeGrid">
             {([
               ["design", "Design a new voice", "Describe it, hear three choices, and pick one."],
               ["clone", "Clone my voice", "Upload your voice or a voice you have permission to use."],
               ["existing", "Use an existing voice", "Attach a Fish voice you already own or license."],
               ["later", "Choose later", "Save the character now. Audio stays blocked until a voice is added."],
             ] as Array<[VoiceSetupMode, string, string]>).map(([value, title, help]) => (
-              <button key={value} type="button" className={voiceMode === value ? "btnPrimary" : "btnGhost"} onClick={() => setVoiceMode(value)} style={{ minHeight: 90, textAlign: "left" }}>
-                <strong style={{ display: "block" }}>{title}</strong>
-                <span style={{ display: "block", fontSize: "0.74rem", marginTop: 5, opacity: 0.85 }}>{help}</span>
+              <button key={value} type="button" className={voiceMode === value ? "btnPrimary" : "btnGhost"} onClick={() => setVoiceMode(value)} data-tall="true">
+                <strong className="hostModeTitle">{title}</strong>
+                <span className="hostModeHelp">{help}</span>
               </button>
             ))}
           </div>
@@ -550,11 +550,11 @@ function HostEditor({ mode, host, accent, onClose }: {
               <button type="button" className="btnPrimary" onClick={generateDesign} disabled={busy === "design"}>{busy === "design" ? "Creating choices…" : "Create 3 voice choices"}</button>
 
               {candidates.length > 0 && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10, marginTop: "1rem" }}>
+                <div className="hostCandidateGrid">
                   {candidates.map((candidate, index) => (
-                    <div key={candidate.id} className="studioCard" style={{ border: selectedCandidate === index ? `2px solid ${accent}` : undefined }}>
+                    <div key={candidate.id} className="studioCard" data-selected={selectedCandidate === index ? "true" : undefined}>
                       <strong>Choice {index + 1}</strong>
-                      <audio controls src={candidate.audioDataUrl} style={{ width: "100%", margin: "0.7rem 0" }} />
+                      <audio controls src={candidate.audioDataUrl} className="hostAudition" />
                       <button type="button" className={selectedCandidate === index ? "btnPrimary" : "btnGhost"} onClick={() => setSelectedCandidate(index)}>
                         {selectedCandidate === index ? "✓ Selected" : "Use this voice"}
                       </button>
@@ -573,7 +573,7 @@ function HostEditor({ mode, host, accent, onClose }: {
               <label className="hostField">
                 <span className="fieldLabel">Voice recordings</span>
                 <input type="file" accept="audio/*" multiple onChange={(event) => setCloneFiles(Array.from(event.target.files || []).slice(0, 3))} />
-                <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>{cloneFiles.length ? `${cloneFiles.length} recording(s) selected` : "No recordings selected"}</span>
+                <span className="hostFieldHint">{cloneFiles.length ? `${cloneFiles.length} recording(s) selected` : "No recordings selected"}</span>
               </label>
               <label className="hostField mt-4">
                 <span className="fieldLabel">What was said? (optional)</span>
@@ -582,7 +582,7 @@ function HostEditor({ mode, host, accent, onClose }: {
               <ChoiceRow title="Whose voice is this?" value={cloneSource} onChange={setCloneSource} options={[
                 { value: "owned", label: "My voice" }, { value: "licensed", label: "I have permission" },
               ]} />
-              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "0.9rem", border: "1px solid var(--border-color)", borderRadius: 8 }}>
+              <label className="hostConsentRow">
                 <input type="checkbox" checked={cloneConsent} onChange={(event) => setCloneConsent(event.target.checked)} />
                 <span>I confirm that this is my voice or I have written permission from the speaker to clone and use it.</span>
               </label>
@@ -606,8 +606,8 @@ function HostEditor({ mode, host, accent, onClose }: {
 
       {step === 3 && (
         <div className="mt-4">
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>Hear the host in a real situation</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="hostChoiceTitle mb-2">Hear the host in a real situation</div>
+          <div className="hostBtnRow">
             {(["hello", "disagree", "pressure"] as PreviewScenario[]).map((value) => (
               <button key={value} type="button" className={scenario === value ? "btnPrimary" : "btnGhost"} onClick={() => { setScenario(value); setPreviewText(previewLines[value]); }}>
                 {value === "hello" ? "Normal conversation" : value === "disagree" ? "Disagreeing" : "Under pressure"}
@@ -629,9 +629,9 @@ function HostEditor({ mode, host, accent, onClose }: {
         </div>
       )}
 
-      {(message || error) && <div className={`gateResult ${error ? "gate-err" : "gate-ok"}`} style={{ margin: "1rem 0" }}>{error || message}</div>}
+      {(message || error) && <div className={`gateResult mt-4 mb-4 ${error ? "gate-err" : "gate-ok"}`}>{error || message}</div>}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "1.2rem", paddingTop: "1rem", borderTop: "1px solid var(--border-color)" }}>
+      <div className="hostWizardFoot">
         {step > 0 && <button type="button" className="btnGhost" onClick={() => setStep((value) => value - 1)}>Back</button>}
         {step < 3 && <button type="button" className="btnPrimary" onClick={() => setStep((value) => value + 1)}>Next</button>}
         <button type="button" className="btnPrimary u-mlAuto" onClick={save} disabled={busy === "save"}>
@@ -651,15 +651,15 @@ function ArchivedCard({ host }: { host: StudioHostVM }) {
   const restore = async () => { setBusy(true); const result = await unarchiveHost(host.id); if (!result.success) setError(result.error); else router.refresh(); setBusy(false); };
   const remove = async () => { setBusy(true); const result = await deleteHostSafely(host.id); if (!result.success) setError(result.error); else router.refresh(); setBusy(false); };
   return (
-    <div className="studioCard" style={{ opacity: 0.85, borderTop: "3px solid var(--border-hover)" }}>
-      <div className="displayTitle" style={{ fontSize: "1.3rem" }}>{host.name}</div>
-      <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{host.role}</div>
-      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", margin: "0.6rem 0" }}>Used in {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.</div>
+    <div className="studioCard hostCard hostCardArchived">
+      <div className="displayTitle hostCardNameSm">{host.name}</div>
+      <div className="hostCardRole">{host.role}</div>
+      <div className="hostCardUsage mt-3 mb-3">Used in {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.</div>
       {error && <div className="gateResult gate-err">{error}</div>}
       {host.canEdit ? (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="hostBtnRow">
           <button type="button" className="btnGhost" onClick={restore} disabled={busy}>Restore</button>
-          {!referenced && <button type="button" className="btnGhost" onClick={remove} disabled={busy} style={{ color: "var(--error-text)" }}>Delete</button>}
+          {!referenced && <button type="button" className="btnGhost" onClick={remove} disabled={busy} data-danger="true">Delete</button>}
         </div>
       ) : <span className="advNote">Shared host — read only.</span>}
     </div>

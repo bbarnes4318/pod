@@ -1965,3 +1965,54 @@
 .u-selfStart { align-self: flex-start; }
 .u-accent    { color: var(--accent); }
 .u-muted     { color: var(--text-muted); }
+
+/* ============================================================
+   Hosts (Character Studio). The per-host accent arrives as
+   --host-accent; everything else is a class.
+   ============================================================ */
+.hostCard { border-top: 3px solid var(--host-accent, var(--border-hover)); }
+.hostCardArchived { opacity: 0.85; --host-accent: var(--border-hover); }
+
+.hostCardHead { display: flex; justify-content: space-between; gap: var(--sp-4); }
+.hostCardName { font-size: 1.55rem; color: var(--host-accent, var(--accent)); }
+.hostCardNameSm { font-size: 1.3rem; }
+.hostCardRole { font-size: 0.84rem; color: var(--text-muted); margin-top: var(--sp-1); }
+.hostCardAside { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.hostCardActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+.hostCardUsage { font-size: 0.7rem; color: var(--text-muted); margin-top: var(--sp-3); }
+
+.hostChipRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-4) 0; }
+.hostBelief { font-size: 0.86rem; line-height: 1.55; color: var(--text); }
+
+.hostChoiceRow { padding: var(--sp-4) 0; border-bottom: 1px solid var(--border); }
+.hostChoiceTitle { font-weight: 700; margin-bottom: var(--sp-1); }
+.hostChoiceHelp { color: var(--text-muted); font-size: 0.76rem; margin-bottom: var(--sp-2); }
+.hostBtnRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.hostBtnRow [data-wide="true"] { min-width: 110px; }
+
+.hostWizardHead { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.hostWizardFoot {
+  display: flex; gap: var(--sp-2); flex-wrap: wrap;
+  margin-top: var(--sp-6); padding-top: var(--sp-4); border-top: 1px solid var(--border);
+}
+
+.hostPresetGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.hostModeGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-3); }
+.hostModeGrid [data-tall="true"] { min-height: 90px; text-align: left; }
+.hostModeTitle { display: block; }
+.hostModeHelp { display: block; font-size: 0.74rem; margin-top: var(--sp-1); opacity: 0.85; }
+
+.hostCandidateGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--sp-3); margin-top: var(--sp-4); }
+.hostCandidateGrid [data-selected="true"] { border: 2px solid var(--accent); }
+.hostAudition { width: 100%; margin: var(--sp-3) 0; }
+
+.hostFieldHint { font-size: 0.74rem; color: var(--text-muted); }
+.hostFieldNarrow { max-width: 240px; }
+
+.hostConsentRow {
+  display: flex; gap: var(--sp-3); align-items: flex-start;
+  padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius);
+}
+
+/* --error-text, never --error: this is a small text label. */
+.hostBtnRow [data-danger="true"] { color: var(--error-text); }
