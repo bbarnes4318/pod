@@ -244,7 +244,7 @@ export default function ProductionConsole({
                   <div className="prodBarTrack">
                     <div
                       className="prodBarFill"
-                      style={{ width: `${Math.min(100, Math.round((s.progress.done / s.progress.total) * 100))}%` }}
+                      style={{ "--bar-w": `${Math.min(100, Math.round((s.progress.done / s.progress.total) * 100))}%` } as React.CSSProperties}
                     />
                   </div>
                   <div className="prodCount">
@@ -300,7 +300,7 @@ export default function ProductionConsole({
                         // The gate's own reasons, rendered where the customer is.
                         // A correct server-side refusal that never reaches the
                         // screen is only half a guard.
-                        <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
+                        <ul className="prodReasons">
                           {approveReasons.map((r) => <li key={r}>{r}</li>)}
                         </ul>
                       )}
@@ -314,7 +314,7 @@ export default function ProductionConsole({
       </ol>
 
       {vm.stalled && !vm.failure && (
-        <div style={{ padding: "0 1.35rem 0.4rem" }}>
+        <div className="prodFootNote">
           <div className="prodNote prodNote--warn" role="status">
             This step hasn&apos;t been picked up by a production worker yet. Your work is saved — if it doesn&apos;t
             start shortly, restarting the step will re-queue it.

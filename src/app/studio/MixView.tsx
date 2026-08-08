@@ -167,11 +167,11 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
               seekTo(((e.clientX - r.left) / r.width) * vm.totalMs);
             }}>
-              <div className="mixScrubFill" style={{ width: scale(posMs) }} />
-              <div className="mixPlayhead" style={{ left: scale(posMs) }} />
+              <div className="mixScrubFill" style={{ "--at": scale(posMs) } as React.CSSProperties} />
+              <div className="mixPlayhead" style={{ "--at": scale(posMs) } as React.CSSProperties} />
             </div>
             <span className="mixClock">{fmt(posMs)} / {fmt(vm.totalMs)}</span>
-            <audio ref={audioRef} src={vm.episodeAudioUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPlaying(false)} preload="metadata" style={{ display: "none" }} />
+            <audio ref={audioRef} src={vm.episodeAudioUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPlaying(false)} preload="metadata" className="u-hidden" />
           </>
         ) : (
           <div className="stageHint m-0">No stitched mix yet — run a table read below, or voice + mix the episode.</div>
@@ -181,7 +181,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
         ) : (
           <button className="btnGhost mixTableReadBtn" onClick={startTableRead}>🎧 Table read (first exchange)</button>
         )}
-        <audio ref={clipRef} onEnded={onClipEnded} preload="none" style={{ display: "none" }} />
+        <audio ref={clipRef} onEnded={onClipEnded} preload="none" className="u-hidden" />
       </div>
 
       {/* Timeline */}
@@ -195,11 +195,11 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
               <div
                 key={l.lineIndex}
                 className={`mixBlock${active ? " mixBlock-active" : ""}${!l.hasAudio ? " mixBlock-unvoiced" : ""}${l.dirty ? " mixBlock-dirty" : ""}`}
-                style={{ left: scale(l.startMs), width: `calc(${scale(l.durationMs)} - 2px)`, borderColor: colorFor(l.speaker) }}
+                style={{ "--at": scale(l.startMs), "--len": `calc(${scale(l.durationMs)} - 2px)`, "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}
                 title={`${l.speaker}: ${l.textShort}${l.hasAudio ? "" : " (not voiced)"}`}
                 onClick={() => seekTo(l.startMs)}
               >
-                <span className="mixBlockBar" style={{ background: colorFor(l.speaker) }} />
+                <span className="mixBlockBar" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties} />
               </div>
             );
           })}
@@ -217,7 +217,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
           )}
           {/* Cue markers from the real ProductionPlan */}
           {vm.cues.map((c, i) => (
-            <span key={i} className={`mixCue mixCue-${c.type}`} style={{ left: scale(c.startMs) }} title={`${c.type}: ${c.label}`} />
+            <span key={i} className={`mixCue mixCue-${c.type}`} style={{ "--at": scale(c.startMs) } as React.CSSProperties} title={`${c.type}: ${c.label}`} />
           ))}
         </div>
       </div>
@@ -230,7 +230,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
       {/* Per-line re-voice list */}
       <div className="mixLineList">
-        <div className="sectionTitle" style={{ fontSize: "0.95rem", margin: "0 0 0.6rem" }}>Lines — re-voice individually</div>
+        <div className="sectionTitle mixSectionTitle">Lines — re-voice individually</div>
         {!vm.fullyVoiced && (
           <div className="stageHint mb-3">
             Line re-voice re-splices the finished mix, so it needs every line voiced first. Blocks above show which lines aren&apos;t voiced yet.
@@ -241,7 +241,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
             <div className="chip chipAccent mb-2">{seg.title}</div>
             {seg.lines.map((l) => (
               <div key={l.lineIndex} className={`mixLineRow${activeLine?.lineIndex === l.lineIndex ? " mixLineRow-active" : ""}`}>
-                <span className="mixLineSpeaker" style={{ color: colorFor(l.speaker) }}>{l.speaker}</span>
+                <span className="mixLineSpeaker" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}>{l.speaker}</span>
                 <span className="mixLineText" onClick={() => seekTo(l.startMs)} role="button" tabIndex={0}>{l.textShort}</span>
                 {l.hasAudio ? (
                   <button className="tMini" title="Play this line's clip" onClick={() => playClips([l.audioUrl!])}>▶</button>

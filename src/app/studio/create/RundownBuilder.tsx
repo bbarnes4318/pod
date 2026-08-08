@@ -391,13 +391,13 @@ export default function RundownBuilder({
         title="Create an episode"
         subtitle="Pick the takes. We'll build the show."
         status={
-          <span className="createSaveState" data-testid="save-status" data-state={saveState}>
+          <span data-testid="save-status" data-state={saveState}>
             {saveState === "saving" && "Saving…"}
             {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
             {saveState === "error" && (
-              <span className="createSaveErr">
+              <span>
                 Couldn&apos;t save — {saveError}{" "}
-                <button type="button" className="advLink" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
+                <button type="button" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
               </span>
             )}
             {saveState === "idle" && "Draft saves as you build."}
@@ -406,15 +406,15 @@ export default function RundownBuilder({
         actions={
           hasDraft ? (
             confirmingDiscard ? (
-              <span className="createDiscardConfirm" role="alertdialog" aria-label="Confirm discard">
-                <span className="createDiscardWarn">Discard this draft?</span>
-                <button type="button" className="btnGhost" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()}>
+              <span role="alertdialog" aria-label="Confirm discard">
+                <span>Discard this draft?</span>
+                <button type="button" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()}>
                   {discarding ? "Discarding…" : "Yes, discard"}
                 </button>
-                <button type="button" className="advLink" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
+                <button type="button" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
               </span>
             ) : (
-              <button type="button" className="btnGhost" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard draft</button>
+              <button type="button" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard draft</button>
             )
           ) : undefined
         }

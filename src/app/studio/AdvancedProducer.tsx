@@ -124,11 +124,11 @@ export default function AdvancedProducer({
       {open && (
         <>
           {(msg || err) && (
-            <div className={`gateResult ${err ? "gate-err" : "gate-ok"}`} style={{ marginBottom: "0.8rem" }}>
+            <div className={`gateResult mb-3 ${err ? "gate-err" : "gate-ok"}`}>
               {err || msg}
             </div>
           )}
-          <div className="advWrap" style={{ borderTop: "none", paddingTop: 0, marginTop: 0 }}>
+          <div className="advWrap" data-flush="true">
             {/* SCRIPT — real re-generation */}
             <section className="advPanel">
               <div className="advPanelHead">Script — regenerate</div>

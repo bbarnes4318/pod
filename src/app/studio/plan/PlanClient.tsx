@@ -59,7 +59,7 @@ export default function PlanClient({
             </strong>
           </div>
           <div className="scoreBarTrack">
-            <div className={`scoreBarFill${atCap ? " planCapHit" : ""}`} style={{ width: `${usage && usage.limit !== null ? usedPct : 6}%` }} />
+            <div className={`scoreBarFill${atCap ? " planCapHit" : ""}`} style={{ "--bar-w": `${usage && usage.limit !== null ? usedPct : 6}%` } as React.CSSProperties} />
           </div>
           {atCap && <div className="planCapNote">You&apos;ve hit this month&apos;s cap — generation is blocked until you upgrade or it resets.</div>}
           <div className="planUsageSub">Podcasts: {podcastCount}{current.maxPodcasts !== null ? ` / ${current.maxPodcasts}` : " / ∞"}</div>
@@ -87,10 +87,9 @@ export default function PlanClient({
               </ul>
               <button
                 type="button"
-                className={isCurrent ? "btnGhost" : "btnPrimary"}
+                className={`u-full planCta ${isCurrent ? "btnGhost" : "btnPrimary"}`}
                 disabled={isCurrent || busy === p.id}
                 onClick={() => change(p.id)}
-                style={{ width: "100%", marginTop: "auto" }}
               >
                 {isCurrent ? "Your plan" : busy === p.id ? "Switching…" : `Switch to ${p.name}`}
               </button>

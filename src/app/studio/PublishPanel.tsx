@@ -141,7 +141,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
       </div>
 
       {/* The hard gate */}
-      <div className="studioCard publishGate" style={{ borderColor: "var(--border)" }}>
+      <div className="studioCard publishGate" data-plain="true">
         {st.published ? (
           <div className="factPill fact-ok u-selfStart"><span className="factGlyph" aria-hidden="true">✓</span>Published & live on the feed</div>
         ) : (

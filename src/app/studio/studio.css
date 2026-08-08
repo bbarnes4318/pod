@@ -2110,3 +2110,111 @@
 .u-clickable { cursor: pointer; }
 .u-noShrink { flex-shrink: 0; }
 .u-resizeY { resize: vertical; }
+
+/* ============================================================
+   Tail of the purge — the remaining per-component classes.
+   Data-driven values (bar widths, timeline offsets, speaker
+   colour) arrive as custom properties; the styling lives here.
+   ============================================================ */
+
+/* Bars and meters, everywhere. */
+.scoreBarFill[style], .anBarFill[style] { width: var(--bar-w); }
+[style] > .anColBar, .anColBar[style] { height: var(--bar-h); }
+
+/* Audio library. The border literals (#444, #333) were fallbacks that fired
+   whenever --border was in scope anyway, so they never showed — dead colour. */
+.alStatus { min-height: 1.2em; }
+.alChipRow { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.alUpload { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-6); }
+.alFieldGrid { display: grid; gap: var(--sp-2); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.alBlockField { display: block; margin: var(--sp-2) 0; }
+.alTable { width: 100%; border-collapse: collapse; }
+.alRow { border-top: 1px solid var(--border); }
+
+.audList { margin-top: var(--sp-3); max-width: 860px; padding-left: var(--sp-4); }
+
+/* Episode diversity. Same story as the role trace: #e5e5e5 hairlines are a
+   light-theme value that all but vanished on --surface. */
+.divRow { display: flex; gap: var(--sp-2); padding: 2px 0; flex-wrap: wrap; }
+.divRowKey { min-width: 210px; color: var(--text-muted); }
+.divRoleRow { margin: var(--sp-1) 0; padding-left: var(--sp-3); border-left: 2px solid var(--border); }
+.divPanel { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); margin-top: var(--sp-3); }
+.divDim { color: var(--text-muted); font-size: 0.9em; }
+.divSmall { font-size: 0.85em; }
+
+/* Skeletons. */
+.skelChip--xs { width: 48px; }
+.skelChip--sm { width: 62px; }
+.skelChip--btn { width: 96px; height: 30px; }
+.skelChip--tab { width: 104px; height: 42px; }
+.skelLine--h28 { height: 28px; }
+.skelLine--h30 { height: 30px; }
+.skelLine--w26 { width: 26%; }
+.skelLine--w30 { width: 30%; }
+.skelLine--w48 { width: 48%; }
+.skelLine--w55 { width: 55%; }
+.skelLine--w70 { width: 70%; }
+.skelCentered { margin: var(--sp-2) auto 0; }
+.skelBlock--player { height: 104px; }
+.skelHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-6); flex-wrap: wrap; margin-bottom: var(--sp-6); }
+.skelHeadMain { min-width: 0; max-width: 760px; flex: 1; }
+.skelScore { width: 128px; padding: var(--sp-4); }
+
+/* Episodes list + episode page. */
+.epListRow { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.epListTitle { font-size: 1.15rem; }
+.epNote { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; margin: 0; }
+.epNoteSmall { font-size: 0.75rem; color: var(--text-muted); }
+.epStack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.epStackWide { display: flex; flex-direction: column; gap: var(--sp-6); }
+
+/* Mix timeline. */
+.mixScrubFill { width: var(--at); }
+.mixPlayhead { left: var(--at); }
+.mixCue { left: var(--at); }
+.mixSectionTitle { font-size: 0.95rem; margin: 0 0 var(--sp-3); }
+.mixBlockBar { background: var(--speaker-color); }
+.mixLineSpeaker { color: var(--speaker-color); }
+.tSpeaker { color: var(--speaker-color); }
+.tHostDot[data-seat="a"] { background: var(--host-a); }
+.tHostDot[data-seat="b"] { background: var(--host-b); }
+
+/* Publishing. */
+.pubBar { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.pubList { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pubActions { display: flex; gap: var(--sp-3); }
+.pubEpTitle { font-size: 1rem; }
+.pubFeedUrl { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); word-break: break-all; }
+
+/* Production console + misc. */
+.prodReasons { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }
+.prodFootNote { padding: 0 var(--sp-6) var(--sp-1); }
+.planCta { margin-top: auto; }
+.boardResumeNote { margin: var(--sp-2) 0 var(--sp-6); max-width: 440px; }
+.genBtnWrap { display: inline-flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+.genBtnNote { color: var(--text-muted); font-size: 0.75rem; max-width: 280px; }
+.clipActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.advPanel[data-flush="true"] { border-top: none; padding-top: 0; margin-top: 0; }
+[data-plain="true"] { border-color: var(--border); }
+
+/* Takes filters. */
+.takeFilters { display: flex; gap: var(--sp-3); align-items: flex-end; flex-wrap: wrap; margin: var(--sp-1) 0 var(--sp-6); }
+.takeFilter { display: flex; flex-direction: column; gap: var(--sp-1); }
+.takeFilterLabel {
+  font-size: 0.68rem; color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.takeSelect {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3); font-size: 0.82rem; font-family: inherit;
+}
+.takeFilterClear { cursor: pointer; color: var(--text-muted); }
+
+.u-left { text-align: left; }
+.u-nowrap { white-space: nowrap; }
+.u-minw0 { min-width: 0; }
+.u-block { display: block; }
+.u-hidden { display: none; }
+.u-semibold { font-weight: 600; }
+.hostPresetGrid [data-tallish="true"] { min-height: 54px; }

@@ -73,8 +73,8 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
             return (
               <div key={d.date} className="anBarCol" title={`${fmtDate(d.date)} · ${d.downloads} downloads · ${d.plays} plays`}>
                 <div className="anBarStack">
-                  <div className="anBarPlay" style={{ height: `${plH}%` }} />
-                  <div className="anBarDl" style={{ height: `${dlH}%` }} />
+                  <div className="anBarPlay" style={{ "--bar-h": `${plH}%` } as React.CSSProperties} />
+                  <div className="anBarDl" style={{ "--bar-h": `${dlH}%` } as React.CSSProperties} />
                 </div>
               </div>
             );
@@ -97,7 +97,7 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
             summary.byCountry.map((c) => (
               <div key={c.country} className="anRow">
                 <span className="anRowLabel">{c.country === "Unknown" ? "Unknown" : c.country}</span>
-                <div className="anRowTrack"><div className="anRowFill" style={{ width: `${(c.count / maxCountry) * 100}%` }} /></div>
+                <div className="anRowTrack"><div className="anRowFill" style={{ "--bar-w": `${(c.count / maxCountry) * 100}%` } as React.CSSProperties} /></div>
                 <span className="anRowNum">{c.count}</span>
               </div>
             ))
@@ -113,7 +113,7 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
             summary.byApp.map((a) => (
               <div key={a.app} className="anRow">
                 <span className="anRowLabel">{a.app}</span>
-                <div className="anRowTrack"><div className="anRowFill" style={{ width: `${(a.count / maxApp) * 100}%` }} /></div>
+                <div className="anRowTrack"><div className="anRowFill" style={{ "--bar-w": `${(a.count / maxApp) * 100}%` } as React.CSSProperties} /></div>
                 <span className="anRowNum">{a.count}</span>
               </div>
             ))

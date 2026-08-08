@@ -151,20 +151,20 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
             <div key={axis} className="axisRow">
               <span className="u-caps">{axis}</span>
               <div className="scoreBarTrack">
-                <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
+                <div className="scoreBarFill" style={{ "--bar-w": `${(v.score / v.max) * 100}%` } as React.CSSProperties} />
               </div>
               <strong>{v.score}/{v.max}</strong>
             </div>
           ))}
-          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.9rem" }}>
+          <div className="epNoteSmall mt-4">
             Want it higher? Regenerate the script — the gate keeps only stronger output.
           </div>
         </div>
       ) : (
         <div className="studioCard">
           <div className="sectionTitle mb-3">Where this episode stands</div>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
-            This episode is in the <strong style={{ color: "var(--text)" }}>{action.stage.toLowerCase()}</strong> stage.
+          <p className="epNote">
+            This episode is in the <strong className="u-strong">{action.stage.toLowerCase()}</strong> stage.
             Use the tabs above to edit the transcript, produce the audio, or publish once it&apos;s ready.
           </p>
         </div>
@@ -187,7 +187,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
       <div className="studioCard">
         <div className="sectionTitle mb-4">Quick actions</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <div className="epStack">
           {bustedAudioUrl && (
             <a href={bustedAudioUrl} download className="btnGhost">⬇ Download MP3</a>
           )}
@@ -196,7 +196,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           {script && (
             <details className="epOpsDetails">
               <summary>Advanced / ops shortcuts</summary>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.7rem" }}>
+              <div className="epStack mt-3">
                 {episode.status !== "published" && (
                   <Link href={`/admin/rss/${script.id}`} className="btnGhost">📡 Publish to feed (ops)</Link>
                 )}
@@ -230,7 +230,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       label: "Produce",
       hint: "Voices & mix",
       node: (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+        <div className="epStackWide">
           <AdvancedProducer
             episodeId={episode.id}
             canRemix={canRemix}
@@ -274,17 +274,17 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         breadcrumb={[{ label: "Episodes", href: "/studio/episodes" }]}
         actions={
           q ? (
-            <span className="epScorePill" title={`Episode quality ${q.total} out of 100`}>
-              <span className="epScorePillNum">{q.total}</span>
-              <span className="epScorePillUnit">/100</span>
+            <span title={`Episode quality ${q.total} out of 100`}>
+              <span>{q.total}</span>
+              <span>/100</span>
             </span>
           ) : undefined
         }
         status={
           <>
             <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-            <span className="chip">{fmtDuration(episode.durationSeconds)}</span>
-            <span className="chip">{fmtDate(episode.updatedAt)}</span>
+            <span>{fmtDuration(episode.durationSeconds)}</span>
+            <span>{fmtDate(episode.updatedAt)}</span>
           </>
         }
       />

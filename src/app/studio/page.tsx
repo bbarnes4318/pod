@@ -146,7 +146,7 @@ export default async function StudioBoard() {
       {cards.length === 0 ? (
         <div className="emptyNote boardEmpty">
           <div className="boardEmptyTitle">The board is clear</div>
-          <p style={{ margin: "0.5rem 0 1.25rem", maxWidth: 440 }}>
+          <p className="boardResumeNote">
             No takes are waiting yet. Kick off your first episode and the studio will
             pull in fresh sports material, research it, and write the debate.
           </p>

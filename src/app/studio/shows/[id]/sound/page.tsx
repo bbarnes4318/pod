@@ -20,7 +20,7 @@ export default async function StudioPodcastSoundPage({ params }: { params: Promi
         ]}
       />
 
-      <section className="studioCard" style={{ padding: "1.15rem" }}>
+      <section className="studioCard">
         {data.success ? <SoundBranding podcastId={id} data={data} /> : <p role="alert" data-testid="sound-error">{data.error}</p>}
       </section>
     </div>

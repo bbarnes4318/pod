@@ -28,8 +28,8 @@ export default function PanelSkeleton({
       {toolbar && (
         <div className="skelRow mb-4">
           <div className="skelChip" />
-          <div className="skelChip" style={{ width: 62 }} />
-          <div className="skelChip" style={{ width: 48 }} />
+          <div className="skelChip skelChip--sm" />
+          <div className="skelChip skelChip--xs" />
         </div>
       )}
       {Array.from({ length: rows }, (_, i) => (

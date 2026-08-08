@@ -9,37 +9,37 @@ export default function EpisodeLoading() {
   return (
     <div aria-busy="true" aria-label="Loading episode">
       {/* Header: status chips + title on the left, score badge on the right. */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div style={{ minWidth: 0, maxWidth: 760, flex: 1 }}>
+      <div className="skelHead">
+        <div className="skelHeadMain">
           <div className="skelRow mb-3">
             <div className="skelChip" />
-            <div className="skelChip" style={{ width: 58 }} />
-            <div className="skelChip" style={{ width: 66 }} />
+            <div className="skelChip skelChip--sm" />
+            <div className="skelChip skelChip--sm" />
           </div>
-          <div className="skelLine skelLine--title" style={{ height: 30, width: "70%", marginBottom: 0 }} />
+          <div className="skelLine skelLine--title skelLine--h30 skelLine--w70 mb-0" />
         </div>
-        <div className="skelBlock" style={{ width: 128, padding: "0.9rem 1.2rem" }}>
-          <div className="skelLine" style={{ height: 30 }} />
-          <div className="skelLine skelLine--short" style={{ margin: "0.5rem auto 0" }} />
+        <div className="skelBlock skelScore">
+          <div className="skelLine skelLine--h30" />
+          <div className="skelLine skelLine--short skelCentered" />
         </div>
       </div>
 
       {/* Player / production console slot. */}
-      <div className="skelBlock" style={{ height: 104 }}>
+      <div className="skelBlock skelBlock--player">
         <div className="skelLine skelLine--tiny" />
         <div className="skelLine mt-4" />
       </div>
 
       {/* Tab strip, then the active panel. */}
-      <div className="skelRow" style={{ margin: "1.75rem 0 1.25rem" }}>
+      <div className="skelRow mt-6 mb-6">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="skelChip" style={{ width: 104, height: 42 }} />
+          <div className="skelChip skelChip--tab" key={i} />
         ))}
       </div>
       <div className="skelGrid">
         {[0, 1].map((i) => (
           <div key={i} className="skelBlock">
-            <div className="skelLine skelLine--title" style={{ width: "48%" }} />
+            <div className="skelLine skelLine--title skelLine--w48" />
             <div className="skelLine" />
             <div className="skelLine" />
             <div className="skelLine skelLine--short" />

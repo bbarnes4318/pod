@@ -428,7 +428,7 @@ function HostEditor({ mode, host, accent, onClose }: {
             <div className="fieldLabel">What kind of host are they?</div>
             <div className="hostPresetGrid">
               {(Object.entries(ROLE_PRESETS) as Array<[HostStudioSettings["rolePreset"], (typeof ROLE_PRESETS)[HostStudioSettings["rolePreset"]]]>).map(([key, preset]) => (
-                <button key={key} type="button" className={settings.rolePreset === key ? "btnPrimary" : "btnGhost"} onClick={() => setSetting("rolePreset", key)} style={{ minHeight: 54 }}>
+                <button key={key} type="button" className={settings.rolePreset === key ? "btnPrimary" : "btnGhost"} onClick={() => setSetting("rolePreset", key)} data-tallish="true">
                   {preset.label}
                 </button>
               ))}

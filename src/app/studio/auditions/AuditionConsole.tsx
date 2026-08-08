@@ -207,7 +207,7 @@ export default function AuditionConsole({
         {showPack ? "Hide" : "What do they perform?"} ({pack.sceneCount} scenes · {pack.totalWords} words · ~{pack.estimatedMinutes} min · {pack.version})
       </button>
       {showPack && (
-        <ol className="advNote" style={{ marginTop: "0.6rem", maxWidth: 860, paddingLeft: "1.4rem" }}>
+        <ol className="advNote audList">
           {pack.scenes.map((scene) => (
             <li key={scene.id} className="mb-2">
               <strong>{scene.title}</strong> — {scene.listenFor}

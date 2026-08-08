@@ -53,6 +53,12 @@ test.describe("Studio design system is not bypassed", () => {
       lines.forEach((line, i) => {
         if (!line.includes("style={{")) return;
         if (CUSTOM_PROP_ONLY.test(line)) return;
+        // A prettier-wrapped style prop puts the first key on the NEXT line:
+        //   style={{
+        //     "--span-start": `${…}%`,
+        // Judging it by the opening line alone reports it as a violation.
+        const next = (lines[i + 1] ?? "").trim();
+        if (/^(?:"--[\w-]+"|'--[\w-]+')\s*:/.test(next)) return;
         offenders.push(`${rel(file)}:${i + 1}  ${line.trim().slice(0, 100)}`);
       });
     }
@@ -71,6 +77,12 @@ test.describe("Studio design system is not bypassed", () => {
         // Comments describe the palette constantly ("Signal Orange #FF5A1F");
         // documenting a token is not the same as hardcoding one.
         if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) return;
+        // Canvas cannot read a CSS custom property, so StudioPlayer resolves
+        // tokens off the document at paint time. cssToken()'s second argument is
+        // the value to use if the property is missing (SSR, or a stylesheet that
+        // has not applied yet) — a documented mirror of globals.css, not a
+        // second definition. Narrow by design: only a cssToken() fallback.
+        if (/cssToken\(\s*"--[\w-]+"\s*,/.test(line)) return;
         const matches = line.match(HEX);
         if (matches) offenders.push(`${rel(file)}:${i + 1}  ${matches.join(", ")}  ${trimmed.slice(0, 80)}`);
       });

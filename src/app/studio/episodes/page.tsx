@@ -41,9 +41,9 @@ export default async function EpisodesLibrary() {
               const chip = statusChip(ep.status);
               return (
                 <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem" }}>
+                  <div className="epListRow">
                     <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-                    {q && <span className="scoreBadge" style={{ fontSize: "1.15rem" }}>{q.total}<small>/100</small></span>}
+                    {q && <span className="scoreBadge epListTitle">{q.total}<small>/100</small></span>}
                   </div>
                   <span className="epTitle">{ep.title}</span>
                   <div className="epMeta">
@@ -67,7 +67,7 @@ export default async function EpisodesLibrary() {
               const chip = statusChip(ep.status);
               return (
                 <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-                  <span className={`chip ${chip.kind === "accent" ? "chipAccent" : ""}`} style={{ alignSelf: "flex-start" }}>{chip.label}</span>
+                  <span className={`chip u-selfStart ${chip.kind === "accent" ? "chipAccent" : ""}`}>{chip.label}</span>
                   <span className="epTitle">{ep.title}</span>
                   <div className="epMeta">
                     <span>updated {fmtDate(ep.updatedAt)}</span>

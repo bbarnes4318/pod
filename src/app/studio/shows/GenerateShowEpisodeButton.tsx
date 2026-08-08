@@ -23,11 +23,11 @@ export default function GenerateShowEpisodeButton({ podcastId, primary = false }
   };
 
   return (
-    <span style={{ display: "inline-flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+    <span className="genBtnWrap">
       <button type="button" className={primary ? "btnPrimary" : "btnGhost"} disabled={pending} onClick={generate}>
         {pending ? "Queuing…" : "Generate episode"}
       </button>
-      {note && <span role="status" style={{ color: "var(--text-muted)", fontSize: ".75rem", maxWidth: 280 }}>{note}</span>}
+      {note && <span role="status" className="genBtnNote">{note}</span>}
     </span>
   );
 }

@@ -15,7 +15,7 @@ import React from "react";
 export default function StudioLoading() {
   return (
     <div aria-busy="true" aria-label="Loading">
-      <div className="skelLine skelLine--title" style={{ height: 28, width: "30%" }} />
+      <div className="skelLine skelLine--title skelLine--h28 skelLine--w30" />
       <div className="skelLine skelLine--short mb-6" />
       <div className="skelGrid">
         {[0, 1, 2, 3].map((i) => (

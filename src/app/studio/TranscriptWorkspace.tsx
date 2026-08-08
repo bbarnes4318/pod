@@ -183,8 +183,8 @@ function TranscriptEditor({
       <div className="transcriptHead">
         <div className="sectionTitle m-0">Transcript</div>
         <div className="transcriptLegend">
-          <span><span className="legendSwatch" style={{ background: "var(--host-a)" }} />{vm.hostA.name}</span>
-          <span><span className="legendSwatch" style={{ background: "var(--host-b)" }} />{vm.hostB.name}</span>
+          <span><span className="legendSwatch" data-seat="a" />{vm.hostA.name}</span>
+          <span><span className="legendSwatch" data-seat="b" />{vm.hostB.name}</span>
         </div>
       </div>
 
@@ -200,7 +200,7 @@ function TranscriptEditor({
               return (
                 <div key={line.lineIndex} className={`tLine${line.dirty ? " tLine-dirty" : ""}`}>
                   <div className="tLineHead">
-                    <span className="tSpeaker" style={{ color }}>{line.speaker}</span>
+                    <span className="tSpeaker" style={{ "--speaker-color": color } as React.CSSProperties}>{line.speaker}</span>
                     {line.factStatus && <FactPill status={line.factStatus} reason={line.factReason} />}
                     {line.dirty && <span className="chip tDirtyChip" title="Edited since the last fact check">Edited</span>}
                     {line.requestedTone && <span className="chip" title="Requested variant (applied on regeneration)">{line.requestedTone}</span>}

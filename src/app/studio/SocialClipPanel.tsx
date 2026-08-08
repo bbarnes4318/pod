@@ -104,7 +104,7 @@ export default function SocialClipPanel({ episodeId }: { episodeId: string }) {
           <div className="sectionTitle m-0">Social clip</div>
           <div className="clipSub">A vertical 9:16 captioned cut of the spiciest exchange — for promo.</div>
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+        <div className="clipActions">
           <button type="button" className="btnPrimary" onClick={autoGenerate} disabled={busy}>
             {busy ? "Working…" : "⚡ Auto clip"}
           </button>
@@ -126,7 +126,7 @@ export default function SocialClipPanel({ episodeId }: { episodeId: string }) {
                 <span className="clipWarn"> (aim for 20–45s)</span>
               )}
             </span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
+            <div className="clipActions">
               <button type="button" className="btnPrimary" onClick={generateRange} disabled={busy || !range}>Render this range</button>
               <button type="button" className="btnGhost" onClick={() => { setPicker(null); setRange(null); }}>Cancel</button>
             </div>
