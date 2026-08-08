@@ -8,8 +8,11 @@
 
 import type { ScriptEditorialGateResult, ScriptPipelineProvenance } from "@/lib/services/scriptEditorialGate";
 import type { InvariantReport } from "@/lib/services/productionInvariants";
+import ReleaseFromHold from "./ReleaseFromHold";
 
 export interface EditorialGatePanelProps {
+  /** Needed to record a release. Without it the panel stays read-only. */
+  episodeId?: string;
   gate?: Partial<ScriptEditorialGateResult> | null;
   provenance?: ScriptPipelineProvenance | null;
   invariants?: InvariantReport | null;
@@ -51,7 +54,7 @@ function pathCopy(path?: string): { label: string; warn: boolean } {
   return { label: path || "unknown", warn: true };
 }
 
-export default function EditorialGatePanel({ gate, provenance, invariants, humanRelease, legacyRelease }: EditorialGatePanelProps) {
+export default function EditorialGatePanel({ episodeId, gate, provenance, invariants, humanRelease, legacyRelease }: EditorialGatePanelProps) {
   if (!gate?.decision) {
     return (
       <section className="studio-panel gate-panel gate-hold">
@@ -59,6 +62,14 @@ export default function EditorialGatePanel({ gate, provenance, invariants, human
         <p>
           This script carries no editorial verdict. It has never been evaluated, so production will refuse it.
         </p>
+        {episodeId && (
+          <ReleaseFromHold
+            episodeId={episodeId}
+            decision="unknown"
+            reasons={["Script carries no editorial gate verdict; it has never been evaluated."]}
+            releasedBy={humanRelease?.approvedBy ?? null}
+          />
+        )}
       </section>
     );
   }
@@ -174,6 +185,17 @@ export default function EditorialGatePanel({ gate, provenance, invariants, human
           {humanRelease.approvedAt ? ` on ${humanRelease.approvedAt}` : ""}
           {humanRelease.approvedDecision ? ` (acknowledged a “${humanRelease.approvedDecision}” verdict)` : ""}.
         </p>
+      )}
+
+      {/* The remedy the guard's own error message promises. Only shown for
+          verdicts that actually stop production — a pass needs no release. */}
+      {episodeId && gate.decision !== "pass" && (
+        <ReleaseFromHold
+          episodeId={episodeId}
+          decision={gate.decision}
+          reasons={gate.reasons || []}
+          releasedBy={humanRelease?.approvedBy ?? null}
+        />
       )}
     </section>
   );
