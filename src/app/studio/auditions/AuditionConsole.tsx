@@ -203,13 +203,13 @@ export default function AuditionConsole({
         </p>
       </details>
 
-      <button type="button" className="advLink" style={{ marginTop: "0.8rem" }} onClick={() => setShowPack((value) => !value)}>
+      <button type="button" className="advLink mt-3" onClick={() => setShowPack((value) => !value)}>
         {showPack ? "Hide" : "What do they perform?"} ({pack.sceneCount} scenes · {pack.totalWords} words · ~{pack.estimatedMinutes} min · {pack.version})
       </button>
       {showPack && (
         <ol className="advNote" style={{ marginTop: "0.6rem", maxWidth: 860, paddingLeft: "1.4rem" }}>
           {pack.scenes.map((scene) => (
-            <li key={scene.id} style={{ marginBottom: "0.35rem" }}>
+            <li key={scene.id} className="mb-2">
               <strong>{scene.title}</strong> — {scene.listenFor}
             </li>
           ))}
@@ -219,7 +219,7 @@ export default function AuditionConsole({
       {creating && <NewAudition hosts={hosts} onDone={() => setCreating(false)} />}
 
       {auditions.length === 0 && (
-        <div className="emptyNote" style={{ marginTop: "1.5rem" }}>
+        <div className="emptyNote mt-6">
           No auditions yet. Start one, enter two or more voices, then listen without knowing which is which.
         </div>
       )}
@@ -256,7 +256,7 @@ function NewAudition({ hosts, onDone }: { hosts: HostOptionVM[]; onDone: () => v
   };
 
   return (
-    <section className="advPanel" style={{ marginTop: "1.2rem" }}>
+    <section className="advPanel mt-6">
       <div className="advPanelHead">
         <h3>New audition</h3>
       </div>
@@ -275,12 +275,12 @@ function NewAudition({ hosts, onDone }: { hosts: HostOptionVM[]; onDone: () => v
           </select>
         </label>
       </div>
-      <label className="advField" style={{ marginTop: "0.6rem" }}>
+      <label className="advField mt-3">
         <span className="fieldLabel">Why you are running it</span>
         <textarea className="textarea" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
       </label>
       {error && <p className="prodNote prodNote--error">{error}</p>}
-      <div className="stageActions" style={{ marginTop: "0.8rem" }}>
+      <div className="stageActions mt-3">
         <button type="button" className="btnPrimary" onClick={submit} disabled={busy || !title.trim() || !hostId}>
           {busy ? "Creating…" : "Create audition"}
         </button>
@@ -295,7 +295,7 @@ function AuditionCard({ audition, hosts }: { audition: AuditionVM; hosts: HostOp
   const isVoting = audition.status === "voting";
 
   return (
-    <section className="advPanel" style={{ marginTop: "1.4rem" }}>
+    <section className="advPanel mt-6">
       <div className="advPanelHead">
         <div>
           <h3>{audition.title}</h3>
@@ -385,7 +385,7 @@ function DraftStage({ audition, hosts }: { audition: AuditionVM; hosts: HostOpti
         </ul>
       )}
 
-      <div className="grid3" style={{ marginTop: "0.8rem" }}>
+      <div className="grid3 mt-3">
         <label className="advField">
           <span className="fieldLabel">Engine</span>
           <select className="select" value={provider} onChange={(event) => setProvider(event.target.value)}>
@@ -418,7 +418,7 @@ function DraftStage({ audition, hosts }: { audition: AuditionVM; hosts: HostOpti
       {error && <p className="prodNote prodNote--error">{error}</p>}
       {note && <p className="prodNote">{note}</p>}
 
-      <div className="stageActions" style={{ marginTop: "0.8rem" }}>
+      <div className="stageActions mt-3">
         <button type="button" className="btnGhost" onClick={add} disabled={busy || !voiceId.trim() || !partnerHostId}>
           {busy ? "Recording the audition…" : "Add voice and record the pack"}
         </button>
@@ -441,7 +441,7 @@ function ListeningStage({ audition }: { audition: AuditionVM }) {
   const votingOpen = audition.status === "voting";
 
   return (
-    <div style={{ marginTop: "1rem" }}>
+    <div className="mt-4">
       {!audition.unblinded && (
         <p className="advNote">
           You are listening blind. Which engine, voice and model produced each recording is not sent to
@@ -515,11 +515,11 @@ function BallotRow({
   };
 
   return (
-    <div className="advCard" style={{ marginTop: "0.9rem" }}>
+    <div className="advCard mt-4">
       <div className="advCardHead">
         <h4>
           {ballot.blindLabel}
-          {isWinner && <span className="stepPill" style={{ marginLeft: "0.5rem" }}>winner</span>}
+          {isWinner && <span className="stepPill ml-2">winner</span>}
         </h4>
         <span className="advCardSub">
           {ballot.durationSec ? `${Math.floor(ballot.durationSec / 60)}m ${ballot.durationSec % 60}s` : "no audio"}
@@ -529,14 +529,14 @@ function BallotRow({
       </div>
 
       {ballot.ready && ballot.audioUrl ? (
-        <audio controls preload="none" src={ballot.audioUrl} style={{ width: "100%", marginTop: "0.4rem" }} />
+        <audio controls preload="none" src={ballot.audioUrl} className="u-full mt-2" />
       ) : (
         <p className="prodNote prodNote--warn">This candidate did not record: {ballot.problem || "no audio"}</p>
       )}
 
       {votingOpen && ballot.ready && (
         <>
-          <div className="grid2" style={{ marginTop: "0.7rem" }}>
+          <div className="grid2 mt-3">
             {DIMENSIONS.map((dimension) => (
               <label key={dimension} className="advField" title={DIMENSION_COPY[dimension].help}>
                 <span className="fieldLabel">
@@ -559,7 +559,7 @@ function BallotRow({
             ))}
           </div>
 
-          <label className="advField" style={{ marginTop: "0.5rem" }}>
+          <label className="advField mt-2">
             <span className="fieldLabel">Overall — {overall}/5</span>
             <input type="range" min={1} max={5} step={1} value={overall} onChange={(event) => setOverall(Number(event.target.value))} />
           </label>
@@ -569,7 +569,7 @@ function BallotRow({
           </label>
 
           {error && <p className="prodNote prodNote--error">{error}</p>}
-          <div className="stageActions" style={{ marginTop: "0.6rem" }}>
+          <div className="stageActions mt-3">
             <button type="button" className="btnGhost" onClick={save} disabled={busy}>
               {busy ? "Saving…" : saved ? "Update my scores" : "Save my scores"}
             </button>
@@ -620,7 +620,7 @@ function DecisionStage({ audition }: { audition: AuditionVM }) {
   if (!audition.winnerBallotId) return null;
 
   return (
-    <div className="advCard" style={{ marginTop: "1rem" }}>
+    <div className="advCard mt-4">
       <div className="advCardHead">
         <h4>Decision</h4>
         <span className="advCardSub">
@@ -647,7 +647,7 @@ function DecisionStage({ audition }: { audition: AuditionVM }) {
           )}
           {audition.unblinded && (
             <>
-              <label className="advField" style={{ marginTop: "0.6rem" }}>
+              <label className="advField mt-3">
                 <span className="fieldLabel">
                   Confirm by pasting the winning ballot id ({winner?.ballotId ? `${winner.ballotId.slice(0, 8)}…` : "see the reveal table"})
                 </span>
@@ -657,7 +657,7 @@ function DecisionStage({ audition }: { audition: AuditionVM }) {
                 <span className="fieldLabel">Why you are changing the voice</span>
                 <input className="input" value={reason} onChange={(event) => setReason(event.target.value)} />
               </label>
-              <div className="stageActions" style={{ marginTop: "0.5rem" }}>
+              <div className="stageActions mt-2">
                 <button type="button" className="btnPrimary" onClick={promote} disabled={busy || !confirm.trim()}>
                   {busy ? "Promoting…" : `Promote onto ${audition.hostName}`}
                 </button>
@@ -673,7 +673,7 @@ function DecisionStage({ audition }: { audition: AuditionVM }) {
 
 function RevealTable({ rows }: { rows: RevealedVM[] }) {
   return (
-    <div className="advCard" style={{ marginTop: "1rem" }}>
+    <div className="advCard mt-4">
       <div className="advCardHead">
         <h4>Unblinded</h4>
       </div>
@@ -712,7 +712,7 @@ function RevealTable({ rows }: { rows: RevealedVM[] }) {
 
 function PromotionHistory({ promotions }: { promotions: PromotionVM[] }) {
   return (
-    <section className="advPanel" style={{ marginTop: "2rem" }}>
+    <section className="advPanel mt-8">
       <div className="advPanelHead">
         <h3>Voice change history</h3>
       </div>
@@ -751,7 +751,7 @@ function PromotionRow({ promotion }: { promotion: PromotionVM }) {
   };
 
   return (
-    <div className="advCard" style={{ marginTop: "0.7rem" }}>
+    <div className="advCard mt-3">
       <div className="advCardHead">
         <h4>
           {promotion.kind === "rollback" ? "Rolled back" : "Promoted"} — {promotion.hostName}

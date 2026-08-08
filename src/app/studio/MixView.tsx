@@ -156,7 +156,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
   return (
     <div className="mixView">
-      {note && <div className="createAlert" role="status" style={{ marginBottom: "0.9rem" }}>{note}</div>}
+      {note && <div className="createAlert mb-4" role="status">{note}</div>}
 
       {/* Transport */}
       <div className="mixTransport">
@@ -174,7 +174,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
             <audio ref={audioRef} src={vm.episodeAudioUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPlaying(false)} preload="metadata" style={{ display: "none" }} />
           </>
         ) : (
-          <div className="stageHint" style={{ margin: 0 }}>No stitched mix yet — run a table read below, or voice + mix the episode.</div>
+          <div className="stageHint m-0">No stitched mix yet — run a table read below, or voice + mix the episode.</div>
         )}
         {tableReady ? (
           <button className="btnPrimary mixTableReadBtn" onClick={() => playClips(tableLines.map((l) => l.audioUrl!).filter(Boolean))}>▶ Play table read</button>
@@ -209,7 +209,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
         <div className="mixLaneLabel">Music bed</div>
         <div className="mixLane mixBedLane">
           {vm.bed.present ? (
-            <div className="mixBedBlock" style={{ width: "100%" }}>
+            <div className="mixBedBlock u-full">
               <span className="mixBedText">Ducked music bed · {vm.bed.style} mix{vm.bed.sfxDensity ? ` · SFX ${vm.bed.sfxDensity}` : ""}</span>
             </div>
           ) : (
@@ -232,13 +232,13 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
       <div className="mixLineList">
         <div className="sectionTitle" style={{ fontSize: "0.95rem", margin: "0 0 0.6rem" }}>Lines — re-voice individually</div>
         {!vm.fullyVoiced && (
-          <div className="stageHint" style={{ marginBottom: "0.6rem" }}>
+          <div className="stageHint mb-3">
             Line re-voice re-splices the finished mix, so it needs every line voiced first. Blocks above show which lines aren&apos;t voiced yet.
           </div>
         )}
         {vm.segments.map((seg, si) => (
           <div key={si} className="mixSeg">
-            <div className="chip chipAccent" style={{ marginBottom: "0.4rem" }}>{seg.title}</div>
+            <div className="chip chipAccent mb-2">{seg.title}</div>
             {seg.lines.map((l) => (
               <div key={l.lineIndex} className={`mixLineRow${activeLine?.lineIndex === l.lineIndex ? " mixLineRow-active" : ""}`}>
                 <span className="mixLineSpeaker" style={{ color: colorFor(l.speaker) }}>{l.speaker}</span>

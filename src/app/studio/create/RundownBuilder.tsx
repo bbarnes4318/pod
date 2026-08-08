@@ -436,13 +436,13 @@ export default function RundownBuilder({
 
       {/* One-shot notices: seed outcome + reconcile drops, both dismissible. */}
       {seedNote && (
-        <div className="studioCard createAlert" role="status" data-testid="seed-note" style={{ marginBottom: "0.8rem" }}>
+        <div className="studioCard createAlert mb-3" role="status" data-testid="seed-note">
           {seedNote}{" "}
           <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
         </div>
       )}
       {dropNote && (
-        <div className="studioCard createAlert" role="status" data-testid="dropped-note" style={{ marginBottom: "0.8rem" }}>
+        <div className="studioCard createAlert mb-3" role="status" data-testid="dropped-note">
           {dropNote}{" "}
           <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
         </div>
@@ -461,8 +461,8 @@ export default function RundownBuilder({
       {/* ---------------- SHOW ---------------- */}
       {step === "show" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>Where does this episode live?</h2>
-          <div className="segRow" style={{ flexWrap: "wrap", marginBottom: "0.8rem" }}>
+          <h2 className="sectionTitle mt-0">Where does this episode live?</h2>
+          <div className="segRow u-wrap mb-3">
             <button type="button" data-testid="podcast-standalone" className={`segBtn${podcastId === null ? " on" : ""}`} aria-pressed={podcastId === null} onClick={() => onSelectPodcast(null)}>Standalone episode</button>
             {podcasts.map((p) => (
               <button key={p.id} type="button" data-testid={`podcast-${p.id}`} className={`segBtn${podcastId === p.id ? " on" : ""}`} aria-pressed={podcastId === p.id} onClick={() => onSelectPodcast(p.id)}>{p.name}</button>
@@ -473,17 +473,17 @@ export default function RundownBuilder({
           <label className="fieldLabel" htmlFor="epTitle">Episode title <span className="stageHint">(optional)</span></label>
           <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
 
-          <label className="fieldLabel" htmlFor="epDesc" style={{ marginTop: "0.8rem" }}>Description <span className="stageHint">(optional)</span></label>
+          <label className="fieldLabel mt-3" htmlFor="epDesc">Description <span className="stageHint">(optional)</span></label>
           <textarea id="epDesc" data-testid="episode-description" className="input" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" style={{ resize: "vertical" }} />
           <div className="stageHint" style={{ textAlign: "right" }} data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
 
-          <div className="fieldLabel" style={{ marginTop: "0.4rem" }}>Mode</div>
+          <div className="fieldLabel mt-2">Mode</div>
           <div className="segRow" role="radiogroup" aria-label="Rundown mode">
             {(["manual", "automatic", "hybrid"] as Mode[]).map((m) => (
               <button key={m} type="button" data-testid={`mode-${m}`} role="radio" aria-checked={mode === m} className={`segBtn${mode === m ? " on" : ""}`} onClick={() => setMode(m)} style={{ textTransform: "capitalize" }}>{m}</button>
             ))}
           </div>
-          <p className="stageHint" style={{ marginTop: "0.5rem" }}>
+          <p className="stageHint mt-2">
             {mode === "manual" && "You pick every topic and their order."}
             {mode === "automatic" && "The studio selects the strongest eligible topics at creation. You set the target count and preferences."}
             {mode === "hybrid" && "Pin the must-cover topics; the studio fills the rest to your target count."}
@@ -496,9 +496,9 @@ export default function RundownBuilder({
       {step === "topics" && (
         <div>
           {mode !== "manual" && (
-            <div className="studioCard" style={{ marginBottom: "0.8rem" }}>
+            <div className="studioCard mb-3">
               <label className="fieldLabel" htmlFor="targetCount">Target topic count: <strong data-testid="target-count">{targetTopicCount}</strong></label>
-              <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} style={{ width: "100%" }} />
+              <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} className="u-full" />
               {mode === "hybrid" && <p className="stageHint" data-testid="hybrid-slots">{selectedIds.length} pinned · {targetTopicCount} target · {autoSlots} will be selected automatically</p>}
               {mode === "automatic" && <p className="stageHint">{targetTopicCount} topics will be selected automatically at creation.</p>}
               <AutoPrefs
@@ -521,7 +521,7 @@ export default function RundownBuilder({
               {/* In Automatic the kept picks are INACTIVE: the tray shows the
                   automatic plan, and a note explains where the picks went. */}
               {mode === "automatic" && selectedIds.length > 0 && (
-                <p className="stageHint" data-testid="kept-picks-note" style={{ marginTop: 0 }}>
+                <p className="stageHint mt-0" data-testid="kept-picks-note">
                   {selectedIds.length} pick{selectedIds.length === 1 ? "" : "s"} kept for Manual/Hybrid — Automatic ignores them.
                 </p>
               )}
@@ -536,17 +536,17 @@ export default function RundownBuilder({
       {/* ---------------- HOSTS ---------------- */}
       {step === "hosts" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎙 Format &amp; Hosts</h2>
+          <h2 className="sectionTitle mt-0">🎙 Format &amp; Hosts</h2>
           {podcastScoped ? (
             /* A podcast episode INHERITS the show's format server-side, so the
                control must not pretend to change it. Read-only, with the real
                place to change it linked. */
-            <p className="stageHint" data-testid="format-inherited" style={{ marginBottom: 8 }}>
+            <p className="stageHint mb-2" data-testid="format-inherited">
               This show uses <strong style={{ color: "var(--text)" }}>{format.displayName}</strong> — change it in{" "}
               <Link href={`/app/podcasts/${podcastId}`}>show settings →</Link>
             </p>
           ) : (
-            <div className="segRow" style={{ flexWrap: "wrap", marginBottom: 8 }} role="radiogroup" aria-label="Show format">
+            <div className="segRow u-wrap mb-2" role="radiogroup" aria-label="Show format">
               {listShowFormats().map((f) => {
                 const blocked = formatBlockedReason(f.id);
                 return (
@@ -555,7 +555,7 @@ export default function RundownBuilder({
                     title={blocked ?? f.description}
                     onClick={() => { setFormatId(f.id); setHostIds((prev) => prev.slice(0, Math.min(f.speakerMax, MAX_HOSTS))); }}>
                     {f.displayName} ({f.speakerMin === f.speakerMax ? f.speakerMin : `${f.speakerMin}-${f.speakerMax}`} voice{f.speakerMax === 1 ? "" : "s"})
-                    {blocked && <span className="stageHint" style={{ marginLeft: 6 }}>{blocked}</span>}
+                    {blocked && <span className="stageHint ml-2">{blocked}</span>}
                   </button>
                 );
               })}
@@ -571,7 +571,7 @@ export default function RundownBuilder({
               This format supports up to {format.speakerMax} seats; the studio currently voices {MAX_HOSTS} — extra seats are coming soon.
             </p>
           )}
-          <div className="segRow" style={{ flexWrap: "wrap" }}>
+          <div className="segRow u-wrap">
             {hosts.map((h) => {
               const seat = hostIds.indexOf(h.id);
               const on = seat >= 0;
@@ -589,7 +589,7 @@ export default function RundownBuilder({
                         ? [...prev, h.id]
                         : [...prev.slice(0, seatCap - 1), h.id]);
                   }}>
-                  {on && <strong style={{ marginRight: 4 }}>{seat + 1}</strong>}{h.name}
+                  {on && <strong className="mr-12">{seat + 1}</strong>}{h.name}
                 </button>
               );
             })}
@@ -602,12 +602,12 @@ export default function RundownBuilder({
       {/* ---------------- PRODUCTION ---------------- */}
       {step === "production" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>Production</h2>
+          <h2 className="sectionTitle mt-0">Production</h2>
           <div className="fieldLabel">Sound-design level</div>
           <div className="segRow">{PROD_STYLES.map((p) => <button key={p.k} type="button" className={`segBtn${productionStyle === p.k ? " on" : ""}`} aria-pressed={productionStyle === p.k} onClick={() => setProductionStyle(p.k)}>{p.l}</button>)}</div>
-          <div className="fieldLabel" style={{ marginTop: "0.8rem" }}>Reactions &amp; SFX</div>
+          <div className="fieldLabel mt-3">Reactions &amp; SFX</div>
           <div className="segRow">{SFX.map((s) => <button key={s.k} type="button" className={`segBtn${sfxDensity === s.k ? " on" : ""}`} aria-pressed={sfxDensity === s.k} onClick={() => setSfxDensity(s.k)}>{s.l}</button>)}</div>
-          <div className="fieldLabel" style={{ marginTop: "0.8rem" }}>TTS engine</div>
+          <div className="fieldLabel mt-3">TTS engine</div>
           <select className="input" value={ttsProvider} onChange={(e) => { setTtsProvider(e.target.value); setVoicePicks({}); }}>
             {ttsEngines.map((t) => (
               <option key={t.key} value={t.key} disabled={!t.available}>
@@ -655,9 +655,9 @@ function AutoPrefs({
   const leagues = useMemo(() => [...new Set(topics.map((t) => t.leagueId).filter(Boolean) as string[])].sort(), [topics]);
   const toggle = (arr: string[], v: string, set: (x: string[]) => void) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   return (
-    <details className="advPanel" data-testid="auto-prefs" style={{ marginTop: "0.7rem" }} open>
+    <details className="advPanel mt-3" data-testid="auto-prefs" open>
       <summary className="advPanelHead" style={{ cursor: "pointer" }}>Selection preferences <span className="stageHint">— these steer the {mode} pick (separate from the board filters below)</span></summary>
-      <div className="rundownPrefsGrid" style={{ marginTop: "0.6rem" }}>
+      <div className="rundownPrefsGrid mt-3">
         <div>
           <div className="fieldLabel">Sport</div>
           <select className="input" data-testid="pref-sport" value={sport} onChange={(e) => setSport(e.target.value)}>
@@ -673,24 +673,24 @@ function AutoPrefs({
               rendered "0" while the state said null. */}
           <input type="range" min={0} max={100} step={5} value={minDebateScore ?? 0} data-testid="pref-mindebate"
             aria-valuetext={minDebateScore === null ? "any" : String(minDebateScore)}
-            onChange={(e) => { const v = Number(e.target.value); setMinDebateScore(v === 0 ? null : v); }} style={{ width: "100%" }} />
+            onChange={(e) => { const v = Number(e.target.value); setMinDebateScore(v === 0 ? null : v); }} className="u-full" />
         </div>
         {leagues.length > 0 && (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="u-span">
             <div className="fieldLabel">Leagues</div>
-            <div className="segRow" style={{ flexWrap: "wrap" }}>
+            <div className="segRow u-wrap">
               {leagues.map((l) => <button key={l} type="button" data-testid={`pref-league-${l}`} className={`segBtn${leagueIds.includes(l) ? " on" : ""}`} aria-pressed={leagueIds.includes(l)} onClick={() => toggle(leagueIds, l, setLeagueIds)}>{l}</button>)}
             </div>
           </div>
         )}
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="u-span">
           <div className="fieldLabel">Verticals</div>
-          <div className="segRow" style={{ flexWrap: "wrap" }}>
+          <div className="segRow u-wrap">
             {sports.map((s) => <button key={s} type="button" data-testid={`pref-vertical-${s}`} className={`segBtn${verticals.includes(s) ? " on" : ""}`} aria-pressed={verticals.includes(s)} onClick={() => toggle(verticals, s, setVerticals)}>{s}</button>)}
           </div>
           {podcastScoped && <p className="stageHint">Verticals/teams start inherited from the show; change them to override just this episode.</p>}
         </div>
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="u-span">
           <div className="fieldLabel">Team names (comma-separated)</div>
           <input className="input" data-testid="pref-teams" value={teams.join(", ")} placeholder="e.g. Chiefs, Eagles" onChange={(e) => setTeams(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))} />
         </div>
@@ -715,12 +715,12 @@ function ReviewStep({
   const prefSummary = [prefs.sport && `sport ${prefs.sport}`, prefs.verticals.length && `verticals ${prefs.verticals.join("/")}`, prefs.leagueIds.length && `leagues ${prefs.leagueIds.join("/")}`, prefs.teams.length && `teams ${prefs.teams.join("/")}`, prefs.minDebateScore != null && `min debate ${prefs.minDebateScore}`].filter(Boolean).join(" · ");
   return (
     <div className="studioCard">
-      <h2 className="sectionTitle" style={{ marginTop: 0 }}>Review the rundown</h2>
+      <h2 className="sectionTitle mt-0">Review the rundown</h2>
       <dl className="reviewGrid" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.35rem 1rem", margin: 0 }}>
         <dt className="fieldLabel">Title</dt><dd>{title || "Auto-generated"}</dd>
         {description && (<><dt className="fieldLabel">Description</dt><dd data-testid="review-description">{description}</dd></>)}
         <dt className="fieldLabel">Show</dt><dd>{podcast ? podcast.name : "Standalone episode"}</dd>
-        <dt className="fieldLabel">Mode</dt><dd style={{ textTransform: "capitalize" }} data-testid="review-mode">{mode}</dd>
+        <dt className="fieldLabel">Mode</dt><dd className="u-caps" data-testid="review-mode">{mode}</dd>
         <dt className="fieldLabel">Rundown</dt>
         <dd>
           {mode === "automatic" ? <span>{targetTopicCount} topics selected automatically at creation.</span> : (
@@ -746,7 +746,7 @@ function ReviewStep({
       {!validation.ok && <p role="alert" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{validation.error}</p>}
       <div className="stageActions">
         <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
-        <button type="button" data-testid="create-episode" className="btnPrimary" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting} style={{ marginLeft: "auto" }}>
+        <button type="button" data-testid="create-episode" className="btnPrimary u-mlAuto" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting}>
           {submitting && <span className="btnSpin" aria-hidden="true" />}
           {submitting ? "Creating…" : "Create episode"}
         </button>
@@ -792,15 +792,15 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
           of watching a static screen for progress that was never coming. The
           heading now names the state, and the line below says what has to happen
           next in the same breath. */}
-      <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎬 Rundown locked — not started yet</h2>
-      <div className="createAlert" role="status" data-testid="not-started-notice" style={{ marginBottom: "0.8rem" }}>
+      <h2 className="sectionTitle mt-0">🎬 Rundown locked — not started yet</h2>
+      <div className="createAlert mb-3" role="status" data-testid="not-started-notice">
         <strong>Nothing is generating yet.</strong> Your episode is saved as a draft. Press
         <strong> Start the debate</strong> below to begin writing the script — it takes several minutes
         and runs on our servers, so you can close the tab and come back.
       </div>
-      {result.draftCleanupWarning && <div className="createAlert" role="status" data-testid="draft-warning" style={{ marginBottom: "0.6rem" }}>{result.draftCleanupWarning}</div>}
+      {result.draftCleanupWarning && <div className="createAlert mb-3" role="status" data-testid="draft-warning">{result.draftCleanupWarning}</div>}
       {reduced && (
-        <div className="createAlert" role="status" data-testid="reduced-notice" style={{ marginBottom: "0.8rem" }}>
+        <div className="createAlert mb-3" role="status" data-testid="reduced-notice">
           {result.concurrentlyDroppedIds.length > 0
             ? `One or more automatically selected topics became unavailable while the episode was being created. Your episode was created with ${result.finalOrder.length} topic${result.finalOrder.length === 1 ? "" : "s"} instead of ${result.requestedCount}.`
             : `The studio found ${result.finalOrder.length} eligible topic${result.finalOrder.length === 1 ? "" : "s"} (you requested ${result.requestedCount}).`}
@@ -820,9 +820,9 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
         </div>
       )}
       {startError && <p role="alert" data-testid="start-error" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{startError}</p>}
-      <div className="stageActions" style={{ marginTop: "1rem" }}>
+      <div className="stageActions mt-4">
         <Link href={`/studio/episodes/${result.episodeId}`} className="btnGhost">Open episode</Link>
-        <button type="button" data-testid="start-debate" className="btnPrimary" style={{ marginLeft: "auto" }} disabled={starting} aria-busy={starting} onClick={start}>
+        <button type="button" data-testid="start-debate" className="btnPrimary u-mlAuto" disabled={starting} aria-busy={starting} onClick={start}>
           {starting && <span className="btnSpin" aria-hidden="true" />}
           {starting ? "Starting…" : "Start the debate →"}
         </button>
@@ -839,7 +839,7 @@ function TopicPickerSkeleton() {
     <div aria-busy="true" aria-label="Loading takes" style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="skelBlock">
-          <div className="skelRow" style={{ marginBottom: "0.9rem" }}>
+          <div className="skelRow mb-4">
             <div className="skelChip" />
             <div className="skelChip" style={{ width: 60 }} />
           </div>
@@ -853,9 +853,9 @@ function TopicPickerSkeleton() {
 
 function StepNav({ onBack, onNext, nextLabel, nextDisabled }: { onBack: (() => void) | null; onNext: () => void; nextLabel: string; nextDisabled?: boolean }) {
   return (
-    <div className="stageActions" style={{ marginTop: "1rem" }}>
+    <div className="stageActions mt-4">
       {onBack ? <button type="button" data-testid="step-back" className="btnGhost" onClick={onBack}>← Back</button> : <span />}
-      <button type="button" data-testid="step-next" className="btnPrimary" onClick={onNext} disabled={nextDisabled} style={{ marginLeft: "auto" }}>{nextLabel}</button>
+      <button type="button" data-testid="step-next" className="btnPrimary u-mlAuto" onClick={onNext} disabled={nextDisabled}>{nextLabel}</button>
     </div>
   );
 }

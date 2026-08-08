@@ -11,7 +11,7 @@ export default function EpisodeLoading() {
       {/* Header: status chips + title on the left, score badge on the right. */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
         <div style={{ minWidth: 0, maxWidth: 760, flex: 1 }}>
-          <div className="skelRow" style={{ marginBottom: "0.7rem" }}>
+          <div className="skelRow mb-3">
             <div className="skelChip" />
             <div className="skelChip" style={{ width: 58 }} />
             <div className="skelChip" style={{ width: 66 }} />
@@ -27,7 +27,7 @@ export default function EpisodeLoading() {
       {/* Player / production console slot. */}
       <div className="skelBlock" style={{ height: 104 }}>
         <div className="skelLine skelLine--tiny" />
-        <div className="skelLine" style={{ marginTop: "1.1rem" }} />
+        <div className="skelLine mt-4" />
       </div>
 
       {/* Tab strip, then the active panel. */}

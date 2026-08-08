@@ -26,7 +26,7 @@ export default function PanelSkeleton({
     <div className="skelBlock" role="status" aria-busy="true" aria-label={label}>
       <span className="srOnly">{label}</span>
       {toolbar && (
-        <div className="skelRow" style={{ marginBottom: "1.1rem" }}>
+        <div className="skelRow mb-4">
           <div className="skelChip" />
           <div className="skelChip" style={{ width: 62 }} />
           <div className="skelChip" style={{ width: 48 }} />

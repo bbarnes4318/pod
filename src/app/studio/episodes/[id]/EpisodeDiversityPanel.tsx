@@ -60,7 +60,7 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
       {ctx?.historyFingerprint && <Row label="History fingerprint"><code>{ctx.historyFingerprint.slice(0, 16)}…</code></Row>}
 
       {dec && (
-        <div data-testid="diversity-selections" style={{ marginTop: 8 }}>
+        <div data-testid="diversity-selections" className="mt-2">
           <div style={{ fontWeight: 600 }}>Selection decisions</div>
           <RoleBlock d={dec.selectedIntro} />
           <RoleBlock d={dec.selectedOutro} />
@@ -75,7 +75,7 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
       )}
 
       {plan?.cueDiversityDecisions && plan.cueDiversityDecisions.length > 0 && (
-        <div data-testid="diversity-cue-decisions" style={{ marginTop: 8 }}>
+        <div data-testid="diversity-cue-decisions" className="mt-2">
           <div style={{ fontWeight: 600 }}>Cue diversity ({plan.cueDiversityDecisions.length})</div>
           {plan.cueDiversityDecisions.map((c, i) => (
             <div key={i} style={{ fontSize: "0.9em", opacity: 0.85 }}>{c.role}@line{c.lineIndex}: {c.selectedAssetId ?? "(empty)"}{c.selectedFamily ? ` [${c.selectedFamily}]` : ""} — {c.reason}{c.relaxations.length ? ` · relaxed: ${c.relaxations.join(", ")}` : ""}</div>

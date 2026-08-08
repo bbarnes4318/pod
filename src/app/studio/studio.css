@@ -1930,3 +1930,38 @@
 .playerKeySwatch[data-seat="b"] { background: var(--host-b); }
 
 .playerActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+
+/* ============================================================
+   Spacing + layout utilities.
+   These replace ~160 one-off inline styles that used ten different
+   ad-hoc lengths (0.4 / 0.5 / 0.6 / 0.7 / 0.8 / 0.9 / 1 / 1.2 /
+   1.5 / 2rem). Each was SNAPPED onto the seven-step scale, which
+   is why the Studio now lines up across routes. Keep this list
+   short — a utility for every property would just be inline
+   styles with extra steps.
+   ============================================================ */
+.m-0  { margin: 0; }
+.mt-0 { margin-top: 0; }
+.mb-0 { margin-bottom: 0; }
+
+.mt-1 { margin-top: var(--sp-1); }   .mb-1 { margin-bottom: var(--sp-1); }
+.mt-2 { margin-top: var(--sp-2); }   .mb-2 { margin-bottom: var(--sp-2); }
+.mt-3 { margin-top: var(--sp-3); }   .mb-3 { margin-bottom: var(--sp-3); }
+.mt-4 { margin-top: var(--sp-4); }   .mb-4 { margin-bottom: var(--sp-4); }
+.mt-6 { margin-top: var(--sp-6); }   .mb-6 { margin-bottom: var(--sp-6); }
+.mt-8 { margin-top: var(--sp-8); }   .mb-8 { margin-bottom: var(--sp-8); }
+.mt-12 { margin-top: var(--sp-12); } .mb-12 { margin-bottom: var(--sp-12); }
+
+.ml-2 { margin-left: var(--sp-2); }
+.ml-3 { margin-left: var(--sp-3); }
+.mr-12 { margin-right: var(--sp-12); }
+
+.u-mlAuto    { margin-left: auto; }
+.u-full      { width: 100%; }
+.u-wrap      { flex-wrap: wrap; }
+.u-caps      { text-transform: capitalize; }
+.u-span      { grid-column: 1 / -1; }
+.u-flex1     { flex: 1; }
+.u-selfStart { align-self: flex-start; }
+.u-accent    { color: var(--accent); }
+.u-muted     { color: var(--text-muted); }

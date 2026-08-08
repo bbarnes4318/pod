@@ -118,12 +118,12 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
       </details>
 
       {creating && (
-        <div style={{ marginTop: "1.2rem" }}>
+        <div className="mt-6">
           <HostEditor mode="create" host={null} accent="var(--host-a)" onClose={() => setCreating(false)} />
         </div>
       )}
 
-      <div className="grid2" style={{ marginTop: "1.5rem" }}>
+      <div className="grid2 mt-6">
         {active.map((host, index) => (
           <HostCard
             key={host.id}
@@ -136,14 +136,14 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
         ))}
       </div>
 
-      {active.length === 0 && <div className="emptyNote" style={{ marginTop: "1.5rem" }}>No hosts yet. Create one above or copy a starter host.</div>}
+      {active.length === 0 && <div className="emptyNote mt-6">No hosts yet. Create one above or copy a starter host.</div>}
 
       {archived.length > 0 && (
-        <div style={{ marginTop: "2rem" }}>
+        <div className="mt-8">
           <button type="button" className="advLink" onClick={() => setShowArchived((value) => !value)}>
             {showArchived ? "Hide" : "Show"} archived hosts ({archived.length})
           </button>
-          {showArchived && <div className="grid2" style={{ marginTop: "1rem" }}>{archived.map((host) => <ArchivedCard key={host.id} host={host} />)}</div>}
+          {showArchived && <div className="grid2 mt-4">{archived.map((host) => <ArchivedCard key={host.id} host={host} />)}</div>}
         </div>
       )}
     </div>
@@ -236,10 +236,10 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
         {host.canEdit ? (
           <>
             <button type="button" className="btnGhost" onClick={onEdit}>Edit host</button>
-            <button type="button" className="btnGhost" onClick={doArchive} disabled={busy === "archive"} style={{ marginLeft: "auto" }}>Archive</button>
+            <button type="button" className="btnGhost u-mlAuto" onClick={doArchive} disabled={busy === "archive"}>Archive</button>
           </>
         ) : (
-          <button type="button" className="btnGhost" onClick={doClone} disabled={busy === "clone"} style={{ marginLeft: "auto" }}>
+          <button type="button" className="btnGhost u-mlAuto" onClick={doClone} disabled={busy === "clone"}>
             {busy === "clone" ? "Copying…" : "Copy and customize"}
           </button>
         )}
@@ -419,12 +419,12 @@ function HostEditor({ mode, host, accent, onClose }: {
       </div>
 
       {step === 0 && (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="mt-4">
           <label className="hostField">
             <span className="fieldLabel">Host name</span>
             <input className="advSelect" value={name} placeholder={'e.g. Marcus "Money" Ellison'} onChange={(event) => setName(event.target.value)} />
           </label>
-          <div style={{ marginTop: "1rem" }}>
+          <div className="mt-4">
             <div className="fieldLabel">What kind of host are they?</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginTop: 8 }}>
               {(Object.entries(ROLE_PRESETS) as Array<[HostStudioSettings["rolePreset"], (typeof ROLE_PRESETS)[HostStudioSettings["rolePreset"]]]>).map(([key, preset]) => (
@@ -435,12 +435,12 @@ function HostEditor({ mode, host, accent, onClose }: {
             </div>
           </div>
           {settings.rolePreset === "custom" && (
-            <label className="hostField" style={{ marginTop: "1rem" }}>
+            <label className="hostField mt-4">
               <span className="fieldLabel">Describe their job on the show</span>
               <input className="advSelect" value={settings.customRole} onChange={(event) => setSetting("customRole", event.target.value)} placeholder="A blunt former coach who hates excuses" />
             </label>
           )}
-          <label className="hostField" style={{ marginTop: "1rem" }}>
+          <label className="hostField mt-4">
             <span className="fieldLabel">What do they believe?</span>
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Write it like you are explaining the person to a friend.</span>
             <textarea className="advSelect" rows={4} value={settings.belief} onChange={(event) => setSetting("belief", event.target.value)} placeholder="They believe owners always blame the cheapest person first..." />
@@ -449,7 +449,7 @@ function HostEditor({ mode, host, accent, onClose }: {
       )}
 
       {step === 1 && (
-        <div style={{ marginTop: "0.5rem" }}>
+        <div className="mt-2">
           <ChoiceRow title="Energy" value={settings.energy} onChange={(value) => setSetting("energy", value)} options={[
             { value: "calm", label: "Calm" }, { value: "conversational", label: "Conversational" }, { value: "big", label: "Big energy" },
           ]} />
@@ -478,7 +478,7 @@ function HostEditor({ mode, host, accent, onClose }: {
             { value: "steady", label: "Steady" }, { value: "natural", label: "Natural" }, { value: "expressive", label: "Expressive" },
           ]} />
 
-          <div className="hostFormGrid" style={{ marginTop: "1rem" }}>
+          <div className="hostFormGrid mt-4">
             <label className="hostField">
               <span className="fieldLabel">They often… (one habit per line)</span>
               <textarea className="advSelect" rows={5} value={linesToText(settings.argumentPatterns)} onChange={(event) => setSetting("argumentPatterns", textToLines(event.target.value))} placeholder={'Challenges the other host\nUses one concrete example\nAsks who benefited'} />
@@ -497,9 +497,9 @@ function HostEditor({ mode, host, accent, onClose }: {
             </label>
           </div>
 
-          <details style={{ marginTop: "1rem" }}>
+          <details className="mt-4">
             <summary className="advLink">Advanced instructions</summary>
-            <label className="hostField" style={{ marginTop: 8 }}>
+            <label className="hostField mt-2">
               <span className="fieldLabel">Extra behavior notes</span>
               <textarea className="advSelect" rows={4} value={settings.extraInstructions} onChange={(event) => setSetting("extraInstructions", event.target.value)} />
             </label>
@@ -513,7 +513,7 @@ function HostEditor({ mode, host, accent, onClose }: {
       )}
 
       {step === 2 && (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="mt-4">
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>
             {([
               ["design", "Design a new voice", "Describe it, hear three choices, and pick one."],
@@ -529,7 +529,7 @@ function HostEditor({ mode, host, accent, onClose }: {
           </div>
 
           {voiceMode === "design" && (
-            <div style={{ marginTop: "1.2rem" }}>
+            <div className="mt-6">
               <ChoiceRow title="Voice" value={voiceGender} onChange={setVoiceGender} options={[
                 { value: "Woman", label: "Woman" }, { value: "Man", label: "Man" }, { value: "Neutral", label: "Neutral" },
               ]} />
@@ -542,7 +542,7 @@ function HostEditor({ mode, host, accent, onClose }: {
               <ChoiceRow title="Delivery" value={voiceDelivery} onChange={setVoiceDelivery} options={[
                 { value: "Calm", label: "Calm" }, { value: "Conversational", label: "Conversational" }, { value: "High energy", label: "High energy" }, { value: "Authoritative", label: "Authoritative" },
               ]} />
-              <div className="hostFormGrid" style={{ marginTop: "1rem" }}>
+              <div className="hostFormGrid mt-4">
                 <label className="hostField"><span className="fieldLabel">Accent</span><input className="advSelect" value={voiceAccent} onChange={(event) => setVoiceAccent(event.target.value)} /></label>
                 <label className="hostField"><span className="fieldLabel">Anything else?</span><input className="advSelect" value={voiceExtra} onChange={(event) => setVoiceExtra(event.target.value)} placeholder="Light smoker's edge, no announcer sound..." /></label>
                 <label className="hostField hostFieldWide"><span className="fieldLabel">Words used to test the voice</span><textarea className="advSelect" rows={3} maxLength={150} value={designText} onChange={(event) => setDesignText(event.target.value)} /></label>
@@ -566,8 +566,8 @@ function HostEditor({ mode, host, accent, onClose }: {
           )}
 
           {voiceMode === "clone" && (
-            <div style={{ marginTop: "1.2rem" }}>
-              <div className="advNote" style={{ marginBottom: "1rem" }}>
+            <div className="mt-6">
+              <div className="advNote mb-4">
                 Record in a quiet room with one person speaking. At least 10 seconds works; 30–60 seconds usually sounds more natural. Add up to three recordings.
               </div>
               <label className="hostField">
@@ -575,7 +575,7 @@ function HostEditor({ mode, host, accent, onClose }: {
                 <input type="file" accept="audio/*" multiple onChange={(event) => setCloneFiles(Array.from(event.target.files || []).slice(0, 3))} />
                 <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>{cloneFiles.length ? `${cloneFiles.length} recording(s) selected` : "No recordings selected"}</span>
               </label>
-              <label className="hostField" style={{ marginTop: "1rem" }}>
+              <label className="hostField mt-4">
                 <span className="fieldLabel">What was said? (optional)</span>
                 <textarea className="advSelect" rows={3} value={cloneTranscript} onChange={(event) => setCloneTranscript(event.target.value)} placeholder="Paste the exact words from the recording when available." />
               </label>
@@ -590,9 +590,9 @@ function HostEditor({ mode, host, accent, onClose }: {
           )}
 
           {voiceMode === "existing" && (
-            <div style={{ marginTop: "1.2rem" }}>
+            <div className="mt-6">
               <div className="advNote">This is the advanced path. Most users should design or clone a voice instead.</div>
-              <label className="hostField" style={{ marginTop: "1rem" }}><span className="fieldLabel">Fish voice ID</span><input className="advSelect" value={existingVoiceId} onChange={(event) => setExistingVoiceId(event.target.value)} placeholder="32-character voice ID" /></label>
+              <label className="hostField mt-4"><span className="fieldLabel">Fish voice ID</span><input className="advSelect" value={existingVoiceId} onChange={(event) => setExistingVoiceId(event.target.value)} placeholder="32-character voice ID" /></label>
               <ChoiceRow title="Permission" value={existingSource} onChange={setExistingSource} options={[
                 { value: "owned", label: "I own it" }, { value: "licensed", label: "Licensed" }, { value: "synthetic-stock", label: "Designed / stock" },
               ]} />
@@ -600,12 +600,12 @@ function HostEditor({ mode, host, accent, onClose }: {
             </div>
           )}
 
-          {voiceMode === "later" && <div className="advNote" style={{ marginTop: "1rem" }}>The host can be saved, but script-to-audio production will remain blocked until a real voice is attached.</div>}
+          {voiceMode === "later" && <div className="advNote mt-4">The host can be saved, but script-to-audio production will remain blocked until a real voice is attached.</div>}
         </div>
       )}
 
       {step === 3 && (
-        <div style={{ marginTop: "1rem" }}>
+        <div className="mt-4">
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Hear the host in a real situation</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {(["hello", "disagree", "pressure"] as PreviewScenario[]).map((value) => (
@@ -614,12 +614,12 @@ function HostEditor({ mode, host, accent, onClose }: {
               </button>
             ))}
           </div>
-          <label className="hostField" style={{ marginTop: "1rem" }}>
+          <label className="hostField mt-4">
             <span className="fieldLabel">Preview words</span>
             <textarea className="advSelect" rows={4} value={previewText} onChange={(event) => setPreviewText(event.target.value)} />
           </label>
           {voiceMode === "design" && selected ? (
-            <div className="advNote" style={{ marginTop: "1rem" }}>The selected designed voice is playable in the Voice step. Save the host to test that new voice with all three behavior situations.</div>
+            <div className="advNote mt-4">The selected designed voice is playable in the Voice step. Save the host to test that new voice with all three behavior situations.</div>
           ) : (
             <button type="button" className="btnPrimary" onClick={playPreview} disabled={busy === "preview" || !(voiceMode === "existing" ? voiceReady(existingVoiceId) : host && voiceReady(host.ttsVoiceId))}>
               {busy === "preview" ? "Making preview…" : "▶ Play this situation"}
@@ -634,7 +634,7 @@ function HostEditor({ mode, host, accent, onClose }: {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "1.2rem", paddingTop: "1rem", borderTop: "1px solid var(--border-color)" }}>
         {step > 0 && <button type="button" className="btnGhost" onClick={() => setStep((value) => value - 1)}>Back</button>}
         {step < 3 && <button type="button" className="btnPrimary" onClick={() => setStep((value) => value + 1)}>Next</button>}
-        <button type="button" className="btnPrimary" onClick={save} disabled={busy === "save"} style={{ marginLeft: "auto" }}>
+        <button type="button" className="btnPrimary u-mlAuto" onClick={save} disabled={busy === "save"}>
           {busy === "save" ? "Saving…" : mode === "create" ? "Create host" : "Save host"}
         </button>
         <button type="button" className="btnGhost" onClick={onClose}>Cancel</button>

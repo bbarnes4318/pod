@@ -56,14 +56,14 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
       </div>
 
       {!hasData && (
-        <div className="emptyNote" style={{ marginTop: "1.5rem" }}>
+        <div className="emptyNote mt-6">
           No downloads or plays in the last {days} days yet. Real counts appear here as listeners fetch your feed, download, or press play — nothing is fabricated.
         </div>
       )}
 
       {/* Downloads/plays over time */}
-      <div className="studioCard" style={{ marginTop: "1.5rem" }}>
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Over time</div>
+      <div className="studioCard mt-6">
+        <div className="sectionTitle mb-4">Over time</div>
         <div className="anBars" role="img" aria-label="Downloads and plays per day">
           {summary.daily.map((d) => {
             const total = d.downloads + d.plays;
@@ -87,10 +87,10 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
         </div>
       </div>
 
-      <div className="grid2" style={{ marginTop: "1.5rem" }}>
+      <div className="grid2 mt-6">
         {/* By country */}
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By country</div>
+          <div className="sectionTitle mb-4">By country</div>
           {summary.byCountry.length === 0 ? (
             <div className="anMuted">No geo data yet. Country is recorded only when the edge/proxy provides it — no IP lookups.</div>
           ) : (
@@ -106,7 +106,7 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
 
         {/* By app/client */}
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By app / client</div>
+          <div className="sectionTitle mb-4">By app / client</div>
           {summary.byApp.length === 0 ? (
             <div className="anMuted">No client data yet.</div>
           ) : (
@@ -122,8 +122,8 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
       </div>
 
       {/* By episode */}
-      <div className="studioCard" style={{ marginTop: "1.5rem" }}>
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By episode</div>
+      <div className="studioCard mt-6">
+        <div className="sectionTitle mb-4">By episode</div>
         {summary.byEpisode.length === 0 ? (
           <div className="anMuted">No episode activity in this range.</div>
         ) : (

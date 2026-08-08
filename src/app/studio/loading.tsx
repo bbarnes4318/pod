@@ -16,11 +16,11 @@ export default function StudioLoading() {
   return (
     <div aria-busy="true" aria-label="Loading">
       <div className="skelLine skelLine--title" style={{ height: 28, width: "30%" }} />
-      <div className="skelLine skelLine--short" style={{ marginBottom: "1.75rem" }} />
+      <div className="skelLine skelLine--short mb-6" />
       <div className="skelGrid">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="skelBlock">
-            <div className="skelRow" style={{ marginBottom: "1rem" }}>
+            <div className="skelRow mb-4">
               <div className="skelChip" />
             </div>
             <div className="skelLine" />

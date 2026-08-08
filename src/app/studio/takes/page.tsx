@@ -96,9 +96,9 @@ export default async function TakesBoard({
       {ranked.length === 0 ? (
         <div className="emptyNote">
           {filtersActive ? (
-            <>No takes match these filters. Clear them, or <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>generate more topics</Link>.</>
+            <>No takes match these filters. Clear them, or <Link href="/admin/topics" className="u-accent">generate more topics</Link>.</>
           ) : (
-            <>The board is empty. <Link href="/admin/topics" style={{ color: "var(--accent-color)" }}>Generate topics</Link> from fresh sports data to fill it.</>
+            <>The board is empty. <Link href="/admin/topics" className="u-accent">Generate topics</Link> from fresh sports data to fill it.</>
           )}
         </div>
       ) : (
@@ -113,7 +113,7 @@ export default async function TakesBoard({
               </div>
 
               <div style={{ flex: 1, minWidth: 260 }}>
-                <div className="epMeta" style={{ marginBottom: "0.3rem" }}>
+                <div className="epMeta mb-1">
                   <span className="chip">{t.sport}</span>
                   {(usage.get(t.id)?.currentOwnerUseCount ?? 0) > 0 && (
                     <span className="chip">Used by you {usage.get(t.id)!.currentOwnerUseCount}×</span>

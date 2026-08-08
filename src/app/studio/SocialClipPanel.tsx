@@ -101,7 +101,7 @@ export default function SocialClipPanel({ episodeId }: { episodeId: string }) {
     <div className="studioCard">
       <div className="clipHead">
         <div>
-          <div className="sectionTitle" style={{ margin: 0 }}>Social clip</div>
+          <div className="sectionTitle m-0">Social clip</div>
           <div className="clipSub">A vertical 9:16 captioned cut of the spiciest exchange — for promo.</div>
         </div>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
@@ -112,12 +112,12 @@ export default function SocialClipPanel({ episodeId }: { episodeId: string }) {
         </div>
       </div>
 
-      {err && <div className="gateResult gate-err" style={{ marginTop: "0.8rem" }}>{err}</div>}
+      {err && <div className="gateResult gate-err mt-3">{err}</div>}
 
       {picker && (
         <div className="clipPicker">
           {!picker.fullyVoiced && (
-            <div className="advNote" style={{ marginTop: 0 }}>Only voiced lines can be clipped — voice the whole episode for the full range.</div>
+            <div className="advNote mt-0">Only voiced lines can be clipped — voice the whole episode for the full range.</div>
           )}
           <div className="clipPickerBar">
             <span className="clipPickerLabel">

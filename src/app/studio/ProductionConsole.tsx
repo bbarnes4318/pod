@@ -272,7 +272,7 @@ export default function ProductionConsole({
                       {retrying ? "Restarting…" : "Try this step again"}
                     </button>
                   </div>
-                  {retryError && <div style={{ marginTop: "0.5rem" }}>{retryError}</div>}
+                  {retryError && <div className="mt-2">{retryError}</div>}
                 </div>
               )}
 
@@ -358,9 +358,9 @@ export function ConsoleSkeleton() {
   return (
     <section className="prodConsole" aria-busy="true" aria-label="Loading production progress">
       <div className="prodHead">
-        <div className="prodHeadMain" style={{ flex: 1 }}>
+        <div className="prodHeadMain u-flex1">
           <div className="skelChip" />
-          <div className="skelLine skelLine--title" style={{ marginTop: "0.8rem" }} />
+          <div className="skelLine skelLine--title mt-3" />
           <div className="skelLine skelLine--short" />
         </div>
       </div>

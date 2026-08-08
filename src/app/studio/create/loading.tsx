@@ -11,10 +11,10 @@ export default function CreateLoading() {
   return (
     <div aria-busy="true" aria-label="Loading the rundown builder">
       <div className="skelLine skelLine--title" style={{ height: 28, width: "26%" }} />
-      <div className="skelLine skelLine--short" style={{ marginBottom: "1.5rem" }} />
+      <div className="skelLine skelLine--short mb-6" />
 
       {/* Step rail — five pills, same footprint as the real one. */}
-      <div className="skelRow" style={{ marginBottom: "1.5rem" }}>
+      <div className="skelRow mb-6">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="skelChip" style={{ width: 96, height: 30 }} />
         ))}
@@ -24,7 +24,7 @@ export default function CreateLoading() {
         <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="skelBlock">
-              <div className="skelRow" style={{ marginBottom: "0.9rem" }}>
+              <div className="skelRow mb-4">
                 <div className="skelChip" />
                 <div className="skelChip" style={{ width: 60 }} />
               </div>

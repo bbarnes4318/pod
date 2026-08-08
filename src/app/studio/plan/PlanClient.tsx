@@ -66,7 +66,7 @@ export default function PlanClient({
         </div>
       </div>
 
-      {err && <div className="gateResult gate-err" style={{ marginTop: "1rem" }}>{err}</div>}
+      {err && <div className="gateResult gate-err mt-4">{err}</div>}
 
       {/* Tier ladder */}
       <div className="planGrid">

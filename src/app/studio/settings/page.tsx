@@ -53,7 +53,7 @@ export default function StudioSettingsPage() {
             {group.links.map((link) => (
               <Link key={link.href} href={link.href} className="studioCard clickable" style={{ display: "block" }}>
                 <div className="epTitle">{link.label}</div>
-                <div className="epMeta" style={{ marginTop: "0.35rem" }}>{link.sub}</div>
+                <div className="epMeta mt-2">{link.sub}</div>
               </Link>
             ))}
           </div>

@@ -102,7 +102,7 @@ export default function AudioLibrary(props: {
       </nav>
 
       <section aria-label="Upload a new asset" style={{ border: "1px solid var(--border, #444)", borderRadius: 8, padding: "1rem", marginBottom: "1.25rem" }}>
-        <h2 style={{ marginTop: 0 }}>Upload audio</h2>
+        <h2 className="mt-0">Upload audio</h2>
         <form ref={formRef} action={onUpload} data-testid="upload-form">
           <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             <label>Name <input name="name" required maxLength={200} data-testid="upload-name" /></label>
@@ -145,7 +145,7 @@ export default function AudioLibrary(props: {
             <input type="checkbox" name="rightsConfirmed" value="true" data-testid="upload-rights" />{" "}
             I confirm I hold the rights to use this audio in podcast production.
           </label>
-          <label style={{ display: "block", margin: "8px 0" }}>Rights notes <input name="rightsNotes" style={{ width: "100%" }} /></label>
+          <label style={{ display: "block", margin: "8px 0" }}>Rights notes <input name="rightsNotes" className="u-full" /></label>
           <button type="submit" disabled={pending} data-testid="upload-submit">Upload</button>
         </form>
       </section>

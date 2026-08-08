@@ -28,7 +28,7 @@ export default async function EpisodesLibrary() {
 
       {finished.length === 0 && inFlight.length === 0 && (
         <div className="emptyNote">
-          Nothing here yet. <Link href="/studio/create" style={{ color: "var(--accent-color)" }}>Create your first episode</Link>.
+          Nothing here yet. <Link href="/studio/create" className="u-accent">Create your first episode</Link>.
         </div>
       )}
 

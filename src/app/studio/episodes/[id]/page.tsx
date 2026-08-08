@@ -146,10 +146,10 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
     <div className="grid2">
       {q ? (
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quality breakdown</div>
+          <div className="sectionTitle mb-4">Quality breakdown</div>
           {Object.entries(q.axes).map(([axis, v]) => (
             <div key={axis} className="axisRow">
-              <span style={{ textTransform: "capitalize" }}>{axis}</span>
+              <span className="u-caps">{axis}</span>
               <div className="scoreBarTrack">
                 <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
               </div>
@@ -162,7 +162,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         </div>
       ) : (
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.6rem" }}>Where this episode stands</div>
+          <div className="sectionTitle mb-3">Where this episode stands</div>
           <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
             This episode is in the <strong style={{ color: "var(--text)" }}>{action.stage.toLowerCase()}</strong> stage.
             Use the tabs above to edit the transcript, produce the audio, or publish once it&apos;s ready.
@@ -186,7 +186,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
 
       <div className="studioCard">
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quick actions</div>
+        <div className="sectionTitle mb-4">Quick actions</div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
           {bustedAudioUrl && (
             <a href={bustedAudioUrl} download className="btnGhost">⬇ Download MP3</a>
@@ -241,7 +241,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           />
           {mixVm && (
             <div>
-              <div className="sectionHead" style={{ marginTop: 0 }}>
+              <div className="sectionHead mt-0">
                 <h2 className="sectionTitle">Mix & timeline</h2>
               </div>
               <MixView episodeId={episode.id} initialVm={mixVm} />
@@ -307,7 +307,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ---- Everything else, organized into one focused tab at a time ---- */}
-      <div style={{ marginTop: "1.75rem" }}>
+      <div className="mt-6">
         <EpisodeWorkspace tabs={tabs} />
       </div>
     </div>

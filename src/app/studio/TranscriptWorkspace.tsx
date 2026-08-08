@@ -181,14 +181,14 @@ function TranscriptEditor({
   return (
     <div className="studioCard transcriptCard">
       <div className="transcriptHead">
-        <div className="sectionTitle" style={{ margin: 0 }}>Transcript</div>
+        <div className="sectionTitle m-0">Transcript</div>
         <div className="transcriptLegend">
           <span><span className="legendSwatch" style={{ background: "var(--host-a)" }} />{vm.hostA.name}</span>
           <span><span className="legendSwatch" style={{ background: "var(--host-b)" }} />{vm.hostB.name}</span>
         </div>
       </div>
 
-      {note && <div className="createAlert" role="status" style={{ marginBottom: "0.9rem" }}>{note}</div>}
+      {note && <div className="createAlert mb-4" role="status">{note}</div>}
 
       <div className="transcriptScroller">
         {vm.segments.map((seg, si) => (
@@ -271,7 +271,7 @@ function TranscriptEditor({
       </div>
 
       <div className="transcriptFoot">
-        <span className="stageHint" style={{ margin: 0 }}>
+        <span className="stageHint m-0">
           Per-line variants mark the line for the next rewrite. Regenerate rewrites the whole script now:
         </span>
         <div className="transcriptRegen">
@@ -365,7 +365,7 @@ function FactCheckPanel({
 
   return (
     <div className="studioCard factPanel">
-      <div className="sectionTitle" style={{ marginBottom: "0.8rem" }}>Fact check</div>
+      <div className="sectionTitle mb-3">Fact check</div>
 
       <div className="factSummary">
         <span className={`factPill ${fcTone}`}>
@@ -373,7 +373,7 @@ function FactCheckPanel({
           {fcLabel}
         </span>
         {vm.factCheck.coveragePercent != null && (
-          <span className="stageHint" style={{ margin: 0 }}>{vm.factCheck.coveragePercent}% evidence coverage</span>
+          <span className="stageHint m-0">{vm.factCheck.coveragePercent}% evidence coverage</span>
         )}
       </div>
 
@@ -420,7 +420,7 @@ function FactCheckPanel({
             </div>
           )}
           {vm.gate.unresolvedCount > 0 && (
-            <p className="stageHint" style={{ margin: 0 }}>
+            <p className="stageHint m-0">
               Review or regenerate the {vm.gate.unresolvedCount} flagged claim{vm.gate.unresolvedCount === 1 ? "" : "s"} above.
             </p>
           )}

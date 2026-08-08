@@ -32,7 +32,7 @@ export default async function StudioShowsPage() {
       {podcasts.length === 0 ? (
         <section className="studioCard" style={{ padding: "3rem 1.5rem", textAlign: "center" }}>
           <div style={{ fontSize: "2.6rem", marginBottom: 10 }} aria-hidden="true">🎙️</div>
-          <h2 style={{ margin: 0 }}>No shows yet</h2>
+          <h2 className="m-0">No shows yet</h2>
           <p style={{ color: "var(--text-secondary)", maxWidth: 520, margin: ".65rem auto 1.25rem", lineHeight: 1.55 }}>
             Start with the show bible, assign your hosts, and then generate the premiere inside the same Studio workspace.
           </p>

@@ -52,7 +52,7 @@ export default async function PublishPage() {
               <div key={ep.id} className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
                 <div style={{ minWidth: 0 }}>
                   <div className="epTitle" style={{ fontSize: "1rem" }}>{ep.title}</div>
-                  <div className="epMeta" style={{ marginTop: 4 }}>
+                  <div className="epMeta mt-12">
                     <span className="chip chipAccent">{ep.status === "publish_ready" ? "Ready to publish" : "Needs packaging"}</span>
                     <span>{fmtDuration(ep.durationSeconds)}</span>
                   </div>
@@ -74,7 +74,7 @@ export default async function PublishPage() {
         <div className="grid3">
           {published.map((ep) => (
             <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-              <span className="chip chipSuccess" style={{ alignSelf: "flex-start" }}>Live</span>
+              <span className="chip chipSuccess u-selfStart">Live</span>
               <span className="epTitle">{ep.title}</span>
               <div className="epMeta">
                 <span>{fmtDuration(ep.durationSeconds)}</span>

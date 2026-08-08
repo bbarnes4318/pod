@@ -118,7 +118,7 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
       </div>
 
       {showForge.storylines.length > 0 && (
-        <section style={{ marginTop: "1.7rem" }}>
+        <section className="mt-6">
           <div className="sectionHead"><h2 className="sectionTitle">Storyline board</h2></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 12 }}>
             {showForge.storylines.map((storyline) => (
@@ -132,7 +132,7 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
         </section>
       )}
 
-      <section style={{ marginTop: "1.8rem" }}>
+      <section className="mt-8">
         <div className="sectionHead">
           <h2 className="sectionTitle">Episodes in this show</h2>
           <Link href="/studio/create" className="sectionAction">Build a rundown →</Link>
@@ -157,9 +157,9 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
         )}
       </section>
 
-      <details style={{ marginTop: "2rem" }}>
+      <details className="mt-8">
         <summary className="btnGhost" style={{ cursor: "pointer", display: "inline-flex" }}>Edit in Show Forge</summary>
-        <div style={{ marginTop: "1rem" }}>
+        <div className="mt-4">
           <PodcastWizard
             hosts={hosts}
             teams={teams}
