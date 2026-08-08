@@ -498,6 +498,16 @@ export interface TurnPlanEntry {
  */
 const ASSUMED_WORDS_PER_TURN = 27;
 
+/**
+ * Most a turn plan may be strict A/B alternation.
+ *
+ * The production invariant `mechanicalAlternation` holds an episode at 0.65.
+ * This is tighter on purpose: the plan is upstream of the host writers and the
+ * dialogue director, both of which can shift the ratio, so the plan needs
+ * headroom rather than sitting exactly on the line it must not cross.
+ */
+const PLAN_ALTERNATION_CEILING = 0.55;
+
 /** The turn floor an episode's word target implies. */
 export function minimumTurnsFor(totalWordTarget: number): number {
   return Math.max(8, Math.ceil(totalWordTarget / ASSUMED_WORDS_PER_TURN));
@@ -536,6 +546,40 @@ function makeTurnPlanValidator(totalWordTarget: number) {
           `${(turns[i] as Record<string, unknown>).speakerName} holds three consecutive turns ` +
           `(around turn ${i}). Give the other host a turn between them — two in a row is pressing a ` +
           `point, three is a monologue with nobody in the other chair.`
+        );
+      }
+    }
+
+    // ...and no speaker may merely PING-PONG either.
+    //
+    // The no-three-in-a-row rule above, alone, pushed the architect straight
+    // into the opposite wall: it produced 95.3% strict A/B alternation, which
+    // trips the mechanicalAlternation production invariant (ceiling 65%) and put
+    // a finished episode on editorial hold AFTER all seven roles had run.
+    //
+    // Two rules of mine were fighting: one forbade runs of three, and nothing
+    // said that never running two was equally wrong. A plan of pure alternation
+    // satisfies "no three in a row" perfectly while being exactly the mechanical
+    // ping-pong the show is trying not to sound like.
+    //
+    // Enforced HERE rather than left to the downstream gate because here a
+    // repair costs one call, and there it costs a whole episode. The plan
+    // ceiling is deliberately tighter than the invariant's 0.65 so the writers
+    // and the dialogue director have room to move without crossing it.
+    if (turns.length > 1) {
+      let switches = 0;
+      for (let i = 1; i < turns.length; i++) {
+        const prev = String((turns[i - 1] as Record<string, unknown>).speakerName || "").toLowerCase();
+        const here = String((turns[i] as Record<string, unknown>).speakerName || "").toLowerCase();
+        if (here !== prev) switches++;
+      }
+      const alternation = switches / (turns.length - 1);
+      if (alternation > PLAN_ALTERNATION_CEILING) {
+        return (
+          `${(alternation * 100).toFixed(0)}% of this plan is strict A/B alternation; keep it at or under ` +
+          `${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}%. Give each host PAIRS of consecutive turns often ` +
+          `enough to build a point — land a claim, then press it — instead of trading single lines. Two in a ` +
+          `row is the tool; three is not allowed.`
         );
       }
     }
@@ -585,7 +629,7 @@ ${input.topicsEvidence}
 
 RULES:
 - Speakers are exactly: ${input.speakerNames.join(", ")}. Beat 0 (the cold open) is already written — start at beat 1.
-- Do NOT alternate mechanically. A host may hold two or three consecutive turns when the pressure warrants it; a one-word reaction is a legitimate turn.
+- Do NOT alternate mechanically, and this is measured: no more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker, so at least ${(100 - PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of the plan must be a host taking a SECOND turn in a row — land a claim, then press it. EXACTLY TWO in a row is the tool; three consecutive turns is rejected, because by the third the other host has stopped existing. Trading single lines back and forth for a whole episode is ping-pong, not an argument, and is rejected too. A one-word reaction is a legitimate turn.
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
 - Assign each evidence fact to at most ONE turn, on the beat that already owns it.
 - "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line.
