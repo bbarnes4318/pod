@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -23,8 +24,7 @@ export default async function EpisodesLibrary() {
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Episodes</h1>
-      <p className="pageSub">Everything you&apos;ve made — finished shows up top, work-in-progress below.</p>
+      <StudioPageHeader title="Episodes" subtitle="Finished shows up top, work in progress below." />
 
       {finished.length === 0 && inFlight.length === 0 && (
         <div className="emptyNote">

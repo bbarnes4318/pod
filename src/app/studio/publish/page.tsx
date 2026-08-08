@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { fmtDate, fmtDuration } from "../lib";
@@ -23,8 +24,7 @@ export default async function PublishPage() {
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Publish</h1>
-      <p className="pageSub">Get finished episodes onto the public feed, and see what&apos;s already live.</p>
+      <StudioPageHeader title="Publishing" subtitle="Put finished episodes on the public feed." />
 
       <div className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
         <div>

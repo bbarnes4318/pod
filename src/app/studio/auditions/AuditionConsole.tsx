@@ -10,6 +10,7 @@
 // has been unblinded, which requires a winner to already be locked.
 
 import React, { useMemo, useState } from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import { useRouter } from "next/navigation";
 import type {
   AuditionDimension,
@@ -183,18 +184,15 @@ export default function AuditionConsole({
 
   return (
     <div className="fadeUp">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "1rem", flexWrap: "wrap" }}>
-        <div>
-          <h1 className="pageTitle">Voice auditions</h1>
-          <p className="pageSub" style={{ marginBottom: 0, maxWidth: 780 }}>
-            Pick a host voice the way a casting director would: several minutes of the same material,
-            listened to blind, scored on the things that only show up over length.
-          </p>
-        </div>
-        <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)} disabled={!signedIn}>
-          {creating ? "Close" : "+ New audition"}
-        </button>
-      </div>
+      <StudioPageHeader
+        title="Voice auditions"
+        subtitle="Several minutes of the same material, listened to blind, scored over length."
+        actions={
+          <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)} disabled={!signedIn}>
+            {creating ? "Close" : "New audition"}
+          </button>
+        }
+      />
 
       <div className="advNote" style={{ marginTop: "0.9rem", maxWidth: 860 }}>
         <strong>Nothing is promoted automatically.</strong> Voting picks a winner; changing the voice a

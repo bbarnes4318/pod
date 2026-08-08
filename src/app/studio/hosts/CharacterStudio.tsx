@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import { useRouter } from "next/navigation";
 import {
   ROLE_PRESETS,
@@ -98,17 +99,15 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
 
   return (
     <div className="fadeUp">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "1rem", flexWrap: "wrap" }}>
-        <div>
-          <h1 className="pageTitle">Host Studio</h1>
-          <p className="pageSub" style={{ marginBottom: 0, maxWidth: 760 }}>
-            Build who your hosts are, how they behave, and how they sound. No prompt writing or voice-engine knowledge required.
-          </p>
-        </div>
-        <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)}>
-          {creating ? "Close" : "+ Create a host"}
-        </button>
-      </div>
+      <StudioPageHeader
+        title="Hosts"
+        subtitle="Who your hosts are, how they behave, and how they sound."
+        actions={
+          <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)}>
+            {creating ? "Close" : "Create a host"}
+          </button>
+        }
+      />
 
       <div className="advNote" style={{ marginTop: "0.9rem", maxWidth: 820 }}>
         <strong>Personality</strong> controls what the host believes and says. <strong>Voice</strong> controls what the host physically sounds like. Host Studio keeps those separate so changing a voice never erases the character.

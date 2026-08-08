@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -18,18 +19,15 @@ export default async function StudioShowsPage() {
 
   return (
     <div className="fadeUp">
-      <header style={{ display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div>
-          <div style={{ color: "var(--accent)", fontSize: ".72rem", fontWeight: 900, letterSpacing: ".13em", textTransform: "uppercase", marginBottom: 5 }}>Show Studio</div>
-          <h1 className="pageTitle">Shows</h1>
-          <p className="pageSub" style={{ marginBottom: 0, maxWidth: 720 }}>
-            Build the creative world once: premise, cast chemistry, recurring segments, storylines, schedule, sound, and every episode that belongs to it.
-          </p>
-        </div>
-        <Link href="/studio/shows/new" className="btnPrimary" data-testid="studio-open-show-forge">
-          Build a show
-        </Link>
-      </header>
+      <StudioPageHeader
+        title="Shows"
+        subtitle="Build the creative world once: premise, cast, segments, schedule and sound."
+        actions={
+          <Link href="/studio/shows/new" className="btnPrimary" data-testid="studio-open-show-forge">
+            Build a show
+          </Link>
+        }
+      />
 
       {podcasts.length === 0 ? (
         <section className="studioCard" style={{ padding: "3rem 1.5rem", textAlign: "center" }}>

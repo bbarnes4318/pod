@@ -6,6 +6,7 @@
 // are inline SVG (no chart dependency).
 
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import type { AnalyticsSummary } from "@/lib/services/analyticsService";
 
@@ -24,21 +25,19 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
 
   return (
     <div className="fadeUp">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "1rem", flexWrap: "wrap" }}>
-        <div>
-          <h1 className="pageTitle">Analytics</h1>
-          <p className="pageSub" style={{ marginBottom: 0 }}>
-            IAB-style download &amp; listen counts for your episodes — deduped per client per day. Your data only.
-          </p>
-        </div>
-        <div className="anRange">
-          {RANGES.map((r) => (
-            <Link key={r} href={`/studio/analytics?days=${r}`} className={`anRangeBtn${r === days ? " on" : ""}`}>
-              {r}d
-            </Link>
-          ))}
-        </div>
-      </div>
+      <StudioPageHeader
+        title="Analytics"
+        subtitle="Download and listen counts for your episodes, deduped per client per day."
+        actions={
+          <div className="anRange">
+            {RANGES.map((r) => (
+              <Link key={r} href={`/studio/analytics?days=${r}`} className={`anRangeBtn${r === days ? " on" : ""}`}>
+                {r}d
+              </Link>
+            ))}
+          </div>
+        }
+      />
 
       {/* Stat cards */}
       <div className="anStats">

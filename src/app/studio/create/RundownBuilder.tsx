@@ -7,6 +7,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import StudioPageHeader from "../StudioPageHeader";
 import {
   getStudioTopics,
   createStudioEpisode,
@@ -382,6 +383,43 @@ export default function RundownBuilder({
     <div className="rundownBuilder">
       <p aria-live="polite" className="srOnly" style={srOnlyStyle}>{srMsg}</p>
 
+      {/* Identity, save state and the destructive action all live in the shell
+          chrome now. The save line used to sit in the page body under a
+          -0.75rem negative margin, and Discard sat below the step card where it
+          moved every time the step changed. */}
+      <StudioPageHeader
+        title="Create an episode"
+        subtitle="Pick the takes. We'll build the show."
+        status={
+          <span className="createSaveState" data-testid="save-status" data-state={saveState}>
+            {saveState === "saving" && "Saving…"}
+            {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+            {saveState === "error" && (
+              <span className="createSaveErr">
+                Couldn&apos;t save — {saveError}{" "}
+                <button type="button" className="advLink" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
+              </span>
+            )}
+            {saveState === "idle" && "Draft saves as you build."}
+          </span>
+        }
+        actions={
+          hasDraft ? (
+            confirmingDiscard ? (
+              <span className="createDiscardConfirm" role="alertdialog" aria-label="Confirm discard">
+                <span className="createDiscardWarn">Discard this draft?</span>
+                <button type="button" className="btnGhost" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()}>
+                  {discarding ? "Discarding…" : "Yes, discard"}
+                </button>
+                <button type="button" className="advLink" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
+              </span>
+            ) : (
+              <button type="button" className="btnGhost" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard draft</button>
+            )
+          ) : undefined
+        }
+      />
+
       <ol className="stepRail" aria-label="Create steps">
         {STEPS.map((s, i) => {
           const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
@@ -410,20 +448,6 @@ export default function RundownBuilder({
         </div>
       )}
 
-      {/* Save state — visible at all times; failures are never silent. NOT a
-          live region: announcing "Saving…/Saved" on every keystroke spams
-          assistive tech. Failures are announced once via `announce()`. */}
-      <p className="stageHint" data-testid="save-status" style={{ margin: "-0.75rem 0 1rem" }}>
-        {saveState === "saving" && "Saving…"}
-        {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
-        {saveState === "error" && (
-          <span style={{ color: "var(--warning-color, #b45309)" }}>
-            Couldn&apos;t save — {saveError}{" "}
-            <button type="button" className="advLink" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
-          </span>
-        )}
-        {saveState === "idle" && "Draft saves automatically as you build."}
-      </p>
 
       {error && (
         <div className="studioCard createAlert" role="alert" data-testid="create-error">
@@ -612,23 +636,6 @@ export default function RundownBuilder({
         />
       )}
 
-      {/* Destructive action: only offered when a draft exists, and always
-          behind an explicit confirm. */}
-      {hasDraft && (
-        <p style={{ marginTop: "1rem" }}>
-          {confirmingDiscard ? (
-            <span role="alertdialog" aria-label="Confirm discard">
-              <span style={{ color: "var(--warning-color, #b45309)", marginRight: "0.6rem" }}>Discard this draft? Your rundown, picks, and settings are deleted.</span>
-              <button type="button" className="btnGhost" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()} style={{ marginRight: "0.4rem" }}>
-                {discarding ? "Discarding…" : "Yes, discard"}
-              </button>
-              <button type="button" className="advLink" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
-            </span>
-          ) : (
-            <button type="button" className="advLink" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard this draft</button>
-          )}
-        </p>
-      )}
     </div>
   );
 }

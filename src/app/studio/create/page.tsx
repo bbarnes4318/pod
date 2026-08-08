@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { getTopicUsage, resolveTopicReusePolicy } from "@/lib/services/topicUsageService";
@@ -61,10 +62,6 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Build a rundown</h1>
-      <p className="pageSub">
-        Line up the takes, set the order, cast the hosts — a full sports-newsroom rundown. Manual, automatic, or a hybrid of both.
-      </p>
       <RundownBuilder
         podcasts={podcasts}
         initialTopics={topics}

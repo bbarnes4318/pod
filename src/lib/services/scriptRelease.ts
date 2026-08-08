@@ -110,7 +110,8 @@ export async function recordHumanRelease(input: RecordReleaseInput): Promise<Rec
 export async function revokeHumanRelease(scriptId: string): Promise<{ success: boolean; error?: string }> {
   const script = await db.script.findUnique({ where: { id: scriptId }, select: { id: true, content: true } });
   if (!script || !script.content) return { success: false, error: `Script ${scriptId} not found.` };
-  const { humanRelease: _dropped, ...rest } = script.content as Record<string, unknown>;
+  const rest = { ...(script.content as Record<string, unknown>) };
+  delete rest.humanRelease;
   await db.script.update({ where: { id: script.id }, data: { content: rest as never } });
   return { success: true };
 }

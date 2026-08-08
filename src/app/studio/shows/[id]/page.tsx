@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../../StudioPageHeader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -80,23 +81,17 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
 
   return (
     <div className="fadeUp">
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap", marginBottom: "1.35rem" }}>
-        <div>
-          <div style={{ color: "var(--accent)", fontSize: ".7rem", fontWeight: 900, letterSpacing: ".13em", textTransform: "uppercase", marginBottom: 5 }}>
-            Show Headquarters
-          </div>
-          <h1 className="pageTitle">{podcast.name}</h1>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
-            <span className="statusPill statusPill--ok">{cadence}</span>
-            <span style={{ color: "var(--text-muted)", fontSize: ".78rem" }}>{showForge.bible.tone.replace(/_/g, " + ")}</span>
-            <Link href="/studio/shows" style={{ color: "var(--accent)", fontWeight: 700, fontSize: ".8rem" }}>← All shows</Link>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <Link href={`/studio/shows/${podcast.id}/sound`} className="btnGhost">Sound &amp; branding</Link>
-          <GenerateShowEpisodeButton podcastId={podcast.id} primary />
-        </div>
-      </header>
+      <StudioPageHeader
+        title={podcast.name}
+        subtitle={`${cadence} · ${showForge.bible.tone.replace(/_/g, " + ")}`}
+        breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
+        actions={
+          <>
+            <Link href={`/studio/shows/${podcast.id}/sound`} className="btnGhost">Sound and branding</Link>
+            <GenerateShowEpisodeButton podcastId={podcast.id} primary />
+          </>
+        }
+      />
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.35fr) minmax(260px, .65fr)", gap: 14 }}>
         <section className="studioCard" style={{ padding: "1.25rem" }}>

@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "./StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -126,31 +127,15 @@ export default async function StudioBoard() {
   return (
     <div className="fadeUp">
       {/* ---------------- Hero: title, feed health, big Generate CTA --------- */}
-      <header className="boardHead">
-        <div className="boardHeadMain">
-          <h1 className="pageTitle">The Board</h1>
-          <p className="pageSub" style={{ marginBottom: 0 }}>
-            Tonight&apos;s hottest takes, ranked by debate heat. Pick one and the studio
-            handles the rest — research, script, voices, mix.
-          </p>
-        </div>
-        <div className="boardHeadAside">
-          <span
-            className={`statusPill statusPill--${feed.tone}`}
-            title={feed.detail}
-            role="status"
-          >
+      <StudioPageHeader
+        title="The Board"
+        subtitle="Tonight's hottest takes, ranked by debate heat."
+        status={
+          <span className={`statusPill statusPill--${feed.tone}`} title={feed.detail} role="status">
             {feed.label}
           </span>
-          <span className="boardFeedDetail">{feed.detail}</span>
-          <Link href="/studio/create" className="btnPrimary boardHeroCta">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ width: 18, height: 18 }}>
-              <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
-            </svg>
-            Generate Episode
-          </Link>
-        </div>
-      </header>
+        }
+      />
 
       {/* ---------------- Trending takes grid ------------------------------- */}
       <div className="sectionHead">

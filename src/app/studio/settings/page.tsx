@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 
 export const metadata = {
@@ -38,11 +39,10 @@ const GROUPS: { title: string; links: { href: string; label: string; sub: string
 export default function StudioSettingsPage() {
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Settings</h1>
-      <p className="pageSub">
-        Studio preferences and the operator consoles that power production, distribution, and the
-        underlying pipeline.
-      </p>
+      <StudioPageHeader
+        title="Settings"
+        subtitle="Studio preferences and the operator consoles behind production."
+      />
 
       {GROUPS.map((group) => (
         <section key={group.title}>

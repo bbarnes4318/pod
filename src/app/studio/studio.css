@@ -129,17 +129,84 @@
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: var(--studio-topbar-h);
-  padding: 0.7rem 1.6rem;
+  gap: var(--sp-4);
+  /* Fixed, not min-height: the chrome budget is a contract, so a long page
+     title must ellipsize rather than push the fold down. */
+  height: var(--studio-topbar-h);
+  padding: 0 var(--sp-6);
   background: color-mix(in srgb, var(--surface) 85%, transparent);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
-.studioTopbarLeft { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
-.studioTopbarRight { display: flex; align-items: center; gap: 0.8rem; }
+.studioTopbarLeft { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-shrink: 0; }
+.studioTopbarRight { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; margin-left: auto; }
+.studioTopbarActions { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* ---------- Page identity, now living in the topbar ---------- */
+.studioTopbarHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.studioTopbarTitle {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.studioCrumbs { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-shrink: 0; }
+.studioCrumb {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studioCrumb:hover { color: var(--text); }
+/* The separator is decoration, so it is drawn rather than typed — a literal
+   "/" in the markup gets announced by screen readers on every crumb. */
+.studioCrumbs .studioCrumb::after { content: "/"; margin-left: var(--sp-2); color: var(--border-hover); }
+
+/* ---------- Subbar: one line of context, never two ---------- */
+.studioSubbar {
+  position: sticky;
+  top: var(--studio-topbar-h);
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  height: var(--studio-subbar-h);
+  padding: 0 var(--sp-6);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.studioSubbarText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studioSubbarStatus {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
 
 /* Mobile brand shown in the top bar when the rail is off-canvas */
 .studioTopbarBrand {
@@ -278,9 +345,12 @@
 .studioMain {
   flex: 1;
   width: 100%;
-  max-width: 1240px;
+  /* 1240px rendered a narrow centred strip on a 1440 screen with dead margin
+     on both sides. Pages are expected to USE this width (grids, side rails),
+     not stack one column down the middle of it. */
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 2.25rem 2rem 4rem;
+  padding: var(--sp-4) var(--sp-6) var(--sp-8);
   min-width: 0;
 }
 
@@ -289,24 +359,12 @@
    every /studio page — restyled to the token system, names kept).
    ============================================================ */
 
-.pageTitle {
-  font-family: var(--font-display);
-  font-size: 2.4rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  line-height: 0.95;
-  letter-spacing: 0.005em;
-  margin-bottom: 0.4rem;
-  color: var(--text);
-}
-
-.pageSub {
-  color: var(--text-muted);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  margin-bottom: 2rem;
-  max-width: 640px;
-}
+/* .pageTitle and .pageSub are GONE. They were hand-placed in 15 and 13 files
+   respectively and together spent ~100px per route restating what the nav rail
+   already showed. Page identity now belongs to the shell — see
+   <StudioPageHeader>, .studioTopbarTitle and .studioSubbar above. The classes
+   are deliberately not left as no-op aliases: a stray usage should be visible,
+   and tests/e2e/studio-tokens.spec.ts fails the build if one returns. */
 
 .sectionHead {
   display: flex;
@@ -1263,9 +1321,13 @@
 }
 
 @media (max-width: 720px) {
-  .studioTopbar { padding: 0.6rem 1rem; }
-  .studioMain { padding: 1.6rem 1rem 3rem; }
-  .pageTitle { font-size: 1.9rem; }
+  .studioTopbar { height: var(--studio-topbar-h-sm); padding: 0 var(--sp-4); gap: var(--sp-3); }
+  .studioSubbar { top: var(--studio-topbar-h-sm); height: var(--studio-subbar-h-sm); padding: 0 var(--sp-4); }
+  .studioMain { padding: var(--sp-3) var(--sp-4) var(--sp-6); }
+  .studioTopbarTitle { font-size: 1.05rem; }
+  /* At 390px the crumb trail and the account name both compete with the title
+     for the same row. The title wins; the crumb is still reachable via Back. */
+  .studioCrumbs { display: none; }
   .studioGenerateLabel { display: none; }
   .studioGenerateBtn { padding: 0.55rem 0.7rem; }
 }
@@ -1705,3 +1767,36 @@
 .gate-release-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .gate-release-ok { margin: 0; font-size: 0.86rem; color: var(--text); }
 .gate-release-err { margin: 0; font-size: 0.86rem; color: var(--danger, #ff6b6b); }
+
+/* ============================================================
+   Chrome-hosted page controls
+   Pieces that used to sit in the page body and are now published
+   into the topbar/subbar through <StudioPageHeader>.
+   ============================================================ */
+
+/* Episode quality, as a compact topbar badge instead of a floated card
+   that pushed the episode title off to the left. */
+.epScorePill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.epScorePillNum { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+.epScorePillUnit { font-size: 0.7rem; color: var(--text-muted); }
+
+/* Create-flow save state, right-aligned in the subbar. */
+.createSaveState { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.createSaveState[data-state="error"] { color: var(--error-text); }
+.createSaveErr { display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+.createDiscardConfirm { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.createDiscardWarn { color: var(--warning-color); font-size: 0.8rem; white-space: nowrap; }
+
+/* The audio library page had no shell classes at all — it rendered its own
+   <main> with a hardcoded 960px width and inline padding. */
+.audioLibraryPage { min-width: 0; }

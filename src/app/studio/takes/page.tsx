@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -83,11 +84,10 @@ export default async function TakesBoard({
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">The takes board</h1>
-      <p className="pageSub">
-        Every candidate story, ranked by talkability — how argue-worthy it is right now. The bars show
-        exactly why each one is hot.
-      </p>
+      <StudioPageHeader
+        title="Takes"
+        subtitle="Every candidate story, ranked by how argue-worthy it is right now."
+      />
 
       {(sports.length > 0 || leagues.length > 0) && (
         <TakesFilters sports={sports} leagues={leagues} />

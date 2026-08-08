@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../../StudioPageHeader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -268,22 +269,25 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   return (
     <div className="fadeUp">
       {/* ---- Anchor: identity, score, and the player stay fixed above the tabs ---- */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div style={{ minWidth: 0, maxWidth: 760 }}>
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
+      <StudioPageHeader
+        title={episode.title}
+        breadcrumb={[{ label: "Episodes", href: "/studio/episodes" }]}
+        actions={
+          q ? (
+            <span className="epScorePill" title={`Episode quality ${q.total} out of 100`}>
+              <span className="epScorePillNum">{q.total}</span>
+              <span className="epScorePillUnit">/100</span>
+            </span>
+          ) : undefined
+        }
+        status={
+          <>
             <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
             <span className="chip">{fmtDuration(episode.durationSeconds)}</span>
             <span className="chip">{fmtDate(episode.updatedAt)}</span>
-          </div>
-          <h1 className="pageTitle" style={{ marginBottom: 0 }}>{episode.title}</h1>
-        </div>
-        {q && (
-          <div className="studioCard" style={{ padding: "0.9rem 1.2rem", textAlign: "center" }}>
-            <div className="scoreBadge" style={{ fontSize: "2.2rem" }}>{q.total}<small> /100</small></div>
-            <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: 2 }}>episode quality</div>
-          </div>
-        )}
-      </div>
+          </>
+        }
+      />
 
       {episode.audioUrl ? (
         <StudioPlayer

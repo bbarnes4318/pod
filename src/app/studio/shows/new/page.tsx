@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../../StudioPageHeader";
 import { db } from "@/lib/db";
 import { SEED_TEAMS } from "@/lib/data/teamSeed";
 import { verticalForTopic } from "@/lib/verticals";
@@ -75,15 +76,11 @@ export default async function NewStudioShowPage({
 
   return (
     <div className="fadeUp">
-      <div style={{ marginBottom: "1.2rem" }}>
-        <div style={{ color: "var(--accent)", fontSize: ".72rem", fontWeight: 900, letterSpacing: ".14em", textTransform: "uppercase", marginBottom: 5 }}>
-          Show Forge
-        </div>
-        <h1 className="pageTitle">Build your show</h1>
-        <p className="pageSub" style={{ maxWidth: 760 }}>
-          Create the theme, listener promise, cast chemistry, episode rituals, and storylines that every future episode will follow.
-        </p>
-      </div>
+      <StudioPageHeader
+        title="Build your show"
+        subtitle="The theme, promise, cast chemistry and rituals every future episode follows."
+        breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
+      />
       <PodcastWizard hosts={hosts} teams={teams} initial={initial} />
     </div>
   );

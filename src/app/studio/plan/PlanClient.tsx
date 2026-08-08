@@ -6,6 +6,7 @@
 // future billing integration — labelled as such.
 
 import React, { useState } from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import type { PlanConfig } from "@/lib/plans";
 import type { EpisodeUsage } from "@/lib/services/entitlementService";
 import { selectPlan } from "./actions";
@@ -37,8 +38,10 @@ export default function PlanClient({
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Plan &amp; usage</h1>
-      <p className="pageSub">Your tier, what you&apos;ve used this month, and what each plan unlocks.</p>
+      <StudioPageHeader
+        title="Plan and usage"
+        subtitle="Your tier, what you've used this month, and what each plan unlocks."
+      />
 
       {/* Current plan + real usage */}
       <div className="studioCard planCurrent">
