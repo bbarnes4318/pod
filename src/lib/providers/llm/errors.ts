@@ -14,6 +14,10 @@
 //                    Progress to another FREE candidate is allowed so a
 //                    development run is not blocked, but the original failure
 //                    stays visible and paid fallback needs explicit consent.
+//   BILLING          the ACCOUNT behind the credential has no money. Not a bad
+//                    request, not an outage, not a rate limit. Every other model
+//                    on that provider bills the same account, so the router must
+//                    skip them rather than burn through them.
 //
 // Retrying a terminal category burns the request budget and hides the defect;
 // stopping on a recoverable one throws away a working fallback. Both mistakes
@@ -43,6 +47,8 @@ export type LlmErrorCategory =
   | "authentication_failed"
   | "invalid_model"
   | "unsupported_parameter"
+  // ---- billing: the account needs funding, and only a human can do that ----
+  | "insufficient_credit"
   // ---- unclassifiable ----
   | "unknown";
 
@@ -94,6 +100,18 @@ const CONFIGURATION: ReadonlySet<LlmErrorCategory> = new Set<LlmErrorCategory>([
   "unsupported_parameter",
 ]);
 
+/**
+ * The account is out of money.
+ *
+ * Deliberately its OWN group rather than a member of CONFIGURATION. A
+ * configuration failure may advance to another free candidate; a billing failure
+ * must not advance to another model on the same provider, because every one of
+ * them bills the same account and will fail identically. It is also not
+ * TERMINAL: a genuinely different provider, on a different account, is a legitimate
+ * fallback. Neither existing group expresses that, which is why this one exists.
+ */
+const BILLING: ReadonlySet<LlmErrorCategory> = new Set<LlmErrorCategory>(["insufficient_credit"]);
+
 export function isRetryableCategory(category: LlmErrorCategory): boolean {
   return SAME_ENDPOINT_RETRYABLE.has(category);
 }
@@ -108,6 +126,10 @@ export function isTerminalCategory(category: LlmErrorCategory): boolean {
 
 export function isConfigurationCategory(category: LlmErrorCategory): boolean {
   return CONFIGURATION.has(category);
+}
+
+export function isBillingCategory(category: LlmErrorCategory): boolean {
+  return BILLING.has(category);
 }
 
 export interface LlmProviderErrorInit {
@@ -152,6 +174,10 @@ function knownSecrets(): string[] {
     process.env.ZAI_API_KEY,
     process.env.ANTHROPIC_API_KEY,
     process.env.OPENAI_API_KEY,
+    process.env.XAI_API_KEY,
+    process.env.MOONSHOT_API_KEY,
+    process.env.GOOGLE_API_KEY,
+    process.env.GEMINI_API_KEY,
   ]
     .filter((v): v is string => typeof v === "string" && v.trim().length >= 8)
     .map((v) => v.trim());
@@ -168,6 +194,103 @@ export function redactSecrets(text: string): string {
   out = out.replace(/\b(sk-[A-Za-z0-9_-]{8,}|nvapi-[A-Za-z0-9_-]{8,})\b/g, "[REDACTED]");
   out = out.replace(/(Bearer|Authorization|x-api-key)(["':\s]+)[A-Za-z0-9._-]{8,}/gi, "$1$2[REDACTED]");
   return out;
+}
+
+/**
+ * How much of a provider's own message may travel with a classification.
+ *
+ * Error bodies can echo the request back — system prompts, briefs, whole
+ * transcripts. None of that helps an operator and all of it ends up in logs and
+ * downloadable artifacts, so the structured message is bounded here.
+ */
+const MAX_PROVIDER_MESSAGE_CHARS = 300;
+
+export interface ProviderErrorShape {
+  /** The provider's own error type, e.g. "invalid_request_error". */
+  type: string | null;
+  /** The provider's own message: redacted, bounded, never the whole body. */
+  message: string | null;
+  /** True when the body really was the `{error:{type,message}}` envelope. */
+  structured: boolean;
+}
+
+/**
+ * Read the structured error envelope Anthropic and OpenAI both emit.
+ *
+ * Total-failure-tolerant by design: any body that is not that envelope comes
+ * back `structured: false` with nothing extracted, and callers fall back to the
+ * substring rules that have always handled unstructured providers. Nothing here
+ * throws, and nothing here returns a field it did not find.
+ */
+export function parseProviderErrorBody(body: string): ProviderErrorShape {
+  const absent: ProviderErrorShape = { type: null, message: null, structured: false };
+  const raw = String(body ?? "").trim();
+  if (!raw.startsWith("{")) return absent;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return absent;
+  }
+  if (!parsed || typeof parsed !== "object") return absent;
+
+  // `{"type":"error","error":{"type":"invalid_request_error","message":"…"}}`
+  // — the inner node when present, the top level otherwise.
+  const outer = parsed as Record<string, unknown>;
+  const inner = outer.error;
+  const node = (inner && typeof inner === "object" ? inner : outer) as Record<string, unknown>;
+
+  const type = typeof node.type === "string" ? node.type : null;
+  const message = typeof node.message === "string" ? node.message : null;
+  if (type === null && message === null) return absent;
+
+  return {
+    type,
+    message: message === null ? null : redactSecrets(message).slice(0, MAX_PROVIDER_MESSAGE_CHARS),
+    structured: true,
+  };
+}
+
+/**
+ * Language that means "this account has no money", and nothing else.
+ *
+ * Every alternative names currency or an unfunded account explicitly. None of
+ * them can match a malformed request, an unknown field or a bad model id,
+ * because a false positive here sends an operator to go pay a bill that is
+ * already paid while the real defect stays unfixed.
+ */
+const INSUFFICIENT_CREDIT = new RegExp(
+  [
+    "credit balance is too low",
+    "insufficient (credit|credits|funds|balance)",
+    "billing (hard )?limit (has been )?reached",
+    "(purchase|buy|add) (more )?(credits|funds)",
+    "payment (is )?required",
+    "account (is )?(not funded|unfunded)",
+    // OBSERVED 2026-08-05 against live accounts, both arriving as HTTP 429:
+    //   Google  "Your prepayment credits are depleted."
+    //   Z.ai    "Insufficient balance or no resource package. Please recharge."
+    // The Z.ai text already matched on "insufficient balance"; Google's did not
+    // match anything, which is what sent me looking at the status code.
+    "(credit|credits|balance) (are|is )?depleted",
+    "prepayment credits",
+    "please recharge",
+  ].join("|"),
+  "i"
+);
+
+/**
+ * Does this response body say the account needs funding?
+ *
+ * When the provider gave a structured envelope, ONLY its own `message` field is
+ * considered. Scanning the whole body would let echoed request content — a
+ * script line about a team's payroll, say — decide that someone owes money.
+ */
+export function looksLikeInsufficientCredit(body: string): boolean {
+  const shape = parseProviderErrorBody(body);
+  const text = shape.structured ? shape.message ?? "" : String(body ?? "");
+  return INSUFFICIENT_CREDIT.test(text);
 }
 
 /** Which request field, if any, a provider's 400 body specifically names. */
@@ -193,6 +316,37 @@ export function categorizeHttpFailure(
   sentFields: string[] = []
 ): LlmErrorCategory {
   const b = (body || "").toLowerCase();
+
+  // ---- account funding, checked before anything status-specific ----
+  //
+  // Anthropic reports an unfunded account as a 400 `invalid_request_error`. The
+  // 400 rules below would read that as "the request we sent was malformed" and
+  // return `programming_error`, sending an operator to debug code when the only
+  // fix is to add credit — and, because programming_error is TERMINAL, doing it
+  // with a message that says no other model can help for the wrong reason.
+  //
+  // A 402 is unambiguous on its own. Any other status must have the provider
+  // actually NAME the money, so an ordinary bad request keeps its own category.
+  //
+  // 429 IS INCLUDED, and that was a correction. It was excluded on the reasoning
+  // that a spent allowance is `quota_exhausted` and a rate limit must stay a rate
+  // limit — both true, and both irrelevant to what live providers actually send.
+  // Smoke-testing real accounts on 2026-08-05 produced:
+  //
+  //   Google  429  "Your prepayment credits are depleted."
+  //   Z.ai    429  "Insufficient balance or no resource package. Please recharge."
+  //
+  // Neither is a rate limit. Classified as one, the operator is told to wait and
+  // retry, and waiting never adds money — the same misleading advice the 400 case
+  // was fixed to stop giving. A 429 with no funding language in the provider's
+  // OWN message field still falls through to the rate-limit rules untouched.
+  if (status === 402) return "insufficient_credit";
+  if (
+    (status === 400 || status === 403 || status === 429) &&
+    looksLikeInsufficientCredit(body)
+  ) {
+    return "insufficient_credit";
+  }
 
   if (status === 401 || status === 403) return "authentication_failed";
 
@@ -251,6 +405,34 @@ export function categorizeNetworkFailure(err: unknown): LlmErrorCategory {
   }
   if (err instanceof TypeError) return "programming_error";
   return "unknown";
+}
+
+/**
+ * What a human must actually DO about a category.
+ *
+ * Null where there is no single answer. This exists so the operator-facing
+ * surfaces (the canary summary, the readiness report) stop making the reader
+ * translate a taxonomy name into an action — "programming_error" sent people
+ * looking for a bug that was never there.
+ */
+export function operatorAction(category: LlmErrorCategory): string | null {
+  switch (category) {
+    case "insufficient_credit":
+      return (
+        "Fund the provider account. Add credit to the billing plan behind this API key. " +
+        "No model change, retry or fallback clears this — the key is valid and the account is empty."
+      );
+    case "authentication_failed":
+      return "The credential was PRESENT and REJECTED. Rotate or correct this provider's API key.";
+    case "missing_api_key":
+      return "Set this provider's API key.";
+    case "invalid_model":
+      return "The model id is not served by this provider. Correct the route's _LLM_MODEL.";
+    case "quota_exhausted":
+      return "A free-tier allowance is spent. Wait for the window to reset or route this role elsewhere.";
+    default:
+      return null;
+  }
 }
 
 /** One-line, credential-free summary for logs and the ledger. */

@@ -156,6 +156,123 @@ function run() {
   // the baseline that fixed it.
   // =====================================================================
 
+  // =====================================================================
+  // DOCUMENTATION MUST NOT CONTRADICT THE CONTRACT
+  //
+  // The code was already correct. A newly added runbook nevertheless told
+  // operators to run `prisma migrate deploy` from BOTH web and worker, which is
+  // precisely the race this contract exists to prevent. An operator follows the
+  // document, not the test — so a document that contradicts the rule is a real
+  // defect, and is now a failing check.
+  //
+  // Deliberately plain string tests rather than regexes: this checks PROSE, and
+  // a subtly wrong regex would fail open on the exact sentence it must catch.
+  // =====================================================================
+  try {
+    const docsDir = path.join(ROOT, "docs");
+    const docs = fs.existsSync(docsDir) ? fs.readdirSync(docsDir).filter((f) => f.endsWith(".md")) : [];
+    const offenders: string[] = [];
+    for (const file of docs) {
+      for (const raw of fs.readFileSync(path.join(docsDir, file), "utf8").split(/\r?\n/)) {
+        const l = raw.toLowerCase();
+        // Only INSTRUCTIONS matter. Requiring the literal command keeps prose
+        // that merely explains the rule ("two services applying migrations race
+        // each other") from tripping a check aimed at "run it on both".
+        if (!l.includes("migrate deploy")) continue;
+        const saysBoth =
+          (l.includes("both") || l.includes("each")) &&
+          ((l.includes("web") && l.includes("worker")) || l.includes("services"));
+        const tellsWorkerToMigrate =
+          l.includes("worker") && l.includes("migrate deploy") && /\b(run|runs|running)\b/.test(l);
+        // A line that forbids the worker from migrating obviously must not trip.
+        const isProhibition = l.includes("never") || l.includes("must not") || l.includes("do not") || l.includes("don't");
+        if ((saysBoth || tellsWorkerToMigrate) && !isProhibition) {
+          offenders.push(`${file}: ${raw.trim().slice(0, 130)}`);
+        }
+      }
+    }
+    assert(
+      offenders.length === 0,
+      `documentation instructs more than one migration owner:\n      ${offenders.join("\n      ")}\n      ${RULE}`
+    );
+    ok("no document instructs both services to run migrations");
+  } catch (e) { bad("no document instructs both services to run migrations", e); }
+
+  // The runbook must name EVERY migration this branch ships, list the real
+  // operator commands, and keep the two deployment phases distinct. A rollout
+  // document that is merely plausible is how an operator ends up improvising.
+  try {
+    const rollout = path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md");
+    const text = fs.readFileSync(rollout, "utf8");
+    const migrationsDir = path.join(ROOT, "prisma", "migrations");
+    // Scoped to the migrations THIS branch adds — they share the 20260802
+    // date prefix. Older migrations belong to earlier releases and their
+    // runbooks; re-listing them here would say nothing about this deploy.
+    const shipped = fs
+      .readdirSync(migrationsDir)
+      .filter((d) => fs.statSync(path.join(migrationsDir, d)).isDirectory() && d.startsWith("20260802"));
+    const undocumented = shipped.filter((m) => !text.includes(m));
+    assert(
+      undocumented.length === 0,
+      `the rollout document does not name migration(s): ${undocumented.join(", ")}`
+    );
+    ok(`the rollout document names all ${shipped.length} migrations this branch adds`);
+  } catch (e) { bad("the rollout document names all migrations this branch adds", e); }
+
+  try {
+    const text = fs.readFileSync(path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md"), "utf8");
+    const pkgScripts = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).scripts as Record<string, string>;
+    const required = [
+      "verify:predeploy",
+      "verify:release",
+      "queue:pause-production",
+      "queue:production-status",
+      "queue:resume-production",
+      "gate:reevaluate",
+    ];
+    const missingScript = required.filter((s) => !pkgScripts[s]);
+    assert(missingScript.length === 0, `package.json is missing: ${missingScript.join(", ")}`);
+    const undocumentedCmd = required.filter((s) => !text.includes(s));
+    assert(undocumentedCmd.length === 0, `the rollout document never mentions: ${undocumentedCmd.join(", ")}`);
+    ok("the rollout document uses the real, existing operator commands");
+  } catch (e) { bad("the rollout document uses the real, existing operator commands", e); }
+
+  try {
+    const text = fs.readFileSync(path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md"), "utf8").toLowerCase();
+    // The circularity regression: release must never be the BEFORE-deploy step.
+    assert(
+      text.includes("verify:predeploy") && text.includes("before you touch production"),
+      "the pre-deploy phase must be named as the one that runs before production changes"
+    );
+    assert(
+      !/run\s+`?npm run verify:release`?[^.\n]{0,40}before (you )?(touch|chang|deploy)/.test(text),
+      "the document must not ask for release verification before the deploy"
+    );
+    ok("pre-deploy and release are documented as distinct, non-circular phases");
+  } catch (e) { bad("pre-deploy and release are documented as distinct, non-circular phases", e); }
+
+  try {
+    const text = fs.readFileSync(path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md"), "utf8").toLowerCase();
+    assert(
+      !/delete from "?_prisma_migrations"?/.test(text) || text.includes("not an ordinary rollback"),
+      "editing _prisma_migrations must never be presented as ordinary rollback"
+    );
+    assert(text.includes("learning_signal_secret"), "LEARNING_SIGNAL_SECRET must be in the mandatory table");
+    ok("rollback guidance and the mandatory variable table are correct");
+  } catch (e) { bad("rollback guidance and the mandatory variable table are correct", e); }
+
+  try {
+    const rollout = path.join(ROOT, "docs", "PRODUCTION_ROLLOUT.md");
+    assert(fs.existsSync(rollout), "docs/PRODUCTION_ROLLOUT.md is missing");
+    const text = fs.readFileSync(rollout, "utf8").toLowerCase();
+    assert(text.includes("single migration owner"), "the rollout doc must state the single-migration-owner rule");
+    assert(
+      text.includes("worker never runs migrations") || text.includes("worker must not run migrations"),
+      "the rollout doc must state explicitly that the worker never migrates"
+    );
+    ok("the rollout document names one migration owner and excludes the worker");
+  } catch (e) { bad("the rollout document names one migration owner and excludes the worker", e); }
+
   const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
   const migrationDirs = fs.readdirSync(migrationsDir).filter((d) => fs.statSync(path.join(migrationsDir, d)).isDirectory()).sort();
 

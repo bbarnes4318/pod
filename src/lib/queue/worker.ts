@@ -20,6 +20,7 @@ import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports
 import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
 import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
+import { ProductionHoldError } from "./productionGuard";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
 // generate:topics -> generate:research-brief. Without these two chains an
 // episode never leaves 'draft' and a topic never becomes pickable.
@@ -2925,9 +2926,15 @@ interface ChainResult {
   chainedJobId: string | null;
   chainSkippedReason: string | null;
   chainEnqueueError: string | null;
+  /** An EDITORIAL refusal, not an infrastructure failure. Kept separate so the
+   *  Studio can say "held for review" instead of "could not queue", and so a
+   *  hold is never mistaken for something to retry. */
+  chainHeldReason: string | null;
+  chainHeldDecision: string | null;
+  chainHeldAxes: string[] | null;
 }
 
-const NO_CHAIN: ChainResult = { chainedStage: null, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: null };
+const NO_CHAIN: ChainResult = { chainedStage: null, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: null, chainHeldReason: null, chainHeldDecision: null, chainHeldAxes: null };
 
 /**
  * Advance the pipeline one step, based on the episode's CURRENT status.
@@ -2948,11 +2955,24 @@ async function chainProductionStage(scriptId: string): Promise<ChainResult> {
         const j = await fn();
         const id = String(j.id ?? "");
         console.log(`[Worker] Chained ${stage} for episode ${episode.id}: job=${id}`);
-        return { chainedStage: stage, chainedJobId: id, chainSkippedReason: null, chainEnqueueError: null };
+        return { ...NO_CHAIN, chainedStage: stage, chainedJobId: id };
       } catch (e) {
+        // An editorial hold is a DECISION, not a fault. Retrying it would just
+        // spend the same money on the same rejected script, so it is recorded
+        // distinctly and left for a human.
+        if (e instanceof ProductionHoldError) {
+          console.warn(`[Worker] ${stage} HELD for episode ${episode.id}: ${e.verdict.decision} — ${e.verdict.reasons.join(" | ")}`);
+          return {
+            ...NO_CHAIN,
+            chainedStage: stage,
+            chainHeldReason: e.verdict.reasons.join(" | ") || e.message,
+            chainHeldDecision: e.verdict.decision,
+            chainHeldAxes: e.verdict.failedCriticalAxes.length ? e.verdict.failedCriticalAxes : null,
+          };
+        }
         const msg = e instanceof Error ? e.message : "unknown enqueue error";
         console.error(`[Worker] Could not chain ${stage} for episode ${episode.id}: ${msg}`);
-        return { chainedStage: stage, chainedJobId: null, chainSkippedReason: null, chainEnqueueError: msg };
+        return { ...NO_CHAIN, chainedStage: stage, chainEnqueueError: msg };
       }
     };
 

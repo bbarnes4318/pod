@@ -4,6 +4,7 @@ import { db } from "../db";
 import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 import type { EpisodeBuildInput } from "../services/episodeService";
 import { scriptJobIsInFlight, scriptQueueIdentity } from "./scriptQueueIdentity";
+import { assertScriptReleasableForProduction } from "./productionGuard";
 
 export const BACKGROUND_QUEUE_NAME = "podcast-generation";
 export const PRODUCTION_QUEUE_NAME = "podcast-production";
@@ -338,6 +339,10 @@ export interface TtsSegmentJobData {
 }
 
 export async function queueTtsSegmentGenerationJob(data: TtsSegmentJobData) {
+  // Editorial enforcement happens HERE, not at the call sites. See
+  // ./productionGuard for why. Throws ProductionHoldError when the script's
+  // recorded verdict is anything other than `pass` without a human release.
+  await assertScriptReleasableForProduction(data.scriptId, "tts:generate-segments");
   return productionQueue.add("tts:generate-segments", data);
 }
 
@@ -355,6 +360,7 @@ export interface FinalAudioStitchJobData {
 }
 
 export async function queueFinalAudioStitchJob(data: FinalAudioStitchJobData) {
+  await assertScriptReleasableForProduction(data.scriptId, "audio:stitch-final");
   return productionQueue.add("audio:stitch-final", data);
 }
 

@@ -38,6 +38,33 @@ export const RETIRED_HOST_SLUGS = [
   "dutch-attendance",
 ];
 
+/**
+ * Distinctive name fragments belonging to retired hosts, derived from the slugs
+ * above so this list can never drift from the roster.
+ *
+ * Episode e7867729 shipped a topic summary reading "a clean Louie-versus-Margo
+ * fight" long after both hosts were retired: the names were frozen into
+ * TopicCandidate rows at generation time, and nothing downstream ever checked
+ * generated text against the live cast. Scripts, summaries, metadata and show
+ * notes are now validated against this list.
+ *
+ * Short and generic tokens are excluded — they would false-positive on real
+ * athletes and on ordinary speech.
+ */
+const NON_DISTINCTIVE_SLUG_TOKENS = new Set(["the", "forty", "one", "ray"]);
+
+export function retiredHostNameFragments(): string[] {
+  const fragments = new Set<string>();
+  for (const slug of RETIRED_HOST_SLUGS) {
+    for (const token of slug.split("-")) {
+      if (token.length < 4) continue;
+      if (NON_DISTINCTIVE_SLUG_TOKENS.has(token)) continue;
+      fragments.add(token);
+    }
+  }
+  return Array.from(fragments);
+}
+
 // ---------------------------------------------------------------------------
 // Performance profiles
 //

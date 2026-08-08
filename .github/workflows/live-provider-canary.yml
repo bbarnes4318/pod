@@ -1,3 +1,53 @@
+# Private live-provider canary. Publishes nothing; the report is a private
+# workflow artifact.
+#
+# EVERY VARIABLE BELOW MUST EXIST OR THE RUN FAILS AS `configuration_failure`.
+# The repository currently has none of them configured, which is exactly what
+# the first scheduled run hit. The script's preflight names the missing
+# variables and always writes artifacts/live-provider-canary/report.json, so
+# `if-no-files-found: error` below is a genuine signal (no report = the process
+# died before its own finally block) rather than the noise it used to be.
+#
+# ONE RUN NOW EXERCISES: a current story off the live news feeds selected by the
+# real clustering/diversity code, a new research brief on the real research
+# route, ALL SEVEN writing roles, an independent judge proven to sit on a
+# different endpoint than the writers, real Fish AND ElevenLabs renders of the
+# freshly written cold open, Deepgram transcript- and speaker-aware QA on those
+# bytes, a private ffmpeg mix, and a comparison against the durable baseline.
+#
+# SECRETS (credentials and account-scoped ids — never printed, never in the report)
+#   ANTHROPIC_API_KEY
+#   DEEPGRAM_API_KEY
+#   FISH_API_KEY
+#   ELEVENLABS_API_KEY                       (OPTIONAL adapter only)
+#   CANARY_FISH_VOICE_A, CANARY_FISH_VOICE_B
+#   CANARY_ELEVENLABS_VOICE_A, CANARY_ELEVENLABS_VOICE_B  (OPTIONAL adapter
+#     only — production renders on Fish, so these never block a release)
+#   OPENAI_API_KEY / NVIDIA_API_KEY / ZAI_API_KEY  (ONLY if a role below is
+#     pointed at that provider — the preflight adds them to the required list
+#     when, and only when, they are actually reachable from a configured route)
+#
+# VARIABLES (routing decisions — deliberately visible, they appear in the report)
+#   LLM_ROUTING_PROFILE                      (defaults to `custom`)
+#   TOPIC_GENERATION_LLM_PROVIDER / _MODEL
+#   RESEARCH_LLM_PROVIDER / _MODEL
+#   SCRIPT_STORY_EDITOR_LLM_PROVIDER / _MODEL
+#   SCRIPT_DEBATE_ARCHITECT_LLM_PROVIDER / _MODEL
+#   SCRIPT_HOST_A_WRITER_LLM_PROVIDER / _MODEL
+#   SCRIPT_HOST_B_WRITER_LLM_PROVIDER / _MODEL
+#   SCRIPT_DIALOGUE_DIRECTOR_LLM_PROVIDER / _MODEL
+#   SCRIPT_CONTINUITY_EDITOR_LLM_PROVIDER / _MODEL
+#   QUALITY_JUDGE_LLM_PROVIDER / _MODEL      (MUST NOT resolve to the same
+#     endpoint as any authoring role — the run stops before spending if it does)
+#   TRANSCRIPT_QA_PROVIDER                   (defaults to `deepgram`)
+#   TTS_TRANSCRIPT_QA_ENABLED                (defaults to `true`; the canary
+#     refuses to accept a `not_run` semantic-QA outcome)
+#   TRANSCRIPT_QA_MODEL                      (optional; Deepgram default nova-2)
+#   FISH_SCENE_MODEL                         (optional; defaults to the mandated
+#     s2.1-pro-free free tier — never promote it silently)
+#   CANARY_NEWS_FEEDS                        (optional feed override)
+#   CANARY_TARGET_DURATION_MIN               (optional; defaults to 4)
+
 name: Private Live Provider Canary
 
 on:
@@ -11,48 +61,155 @@ permissions:
 jobs:
   canary:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # A full seven-role script plus two live renders, two Deepgram passes and an
+    # ffmpeg mix does not fit in the old 25 minutes.
+    timeout-minutes: 50
     env:
-      NODE_ENV: production
-      LLM_ROUTING_PROFILE: custom
-      SCRIPT_MOVEMENT_LLM_PROVIDER: ${{ secrets.CANARY_LLM_PROVIDER }}
-      SCRIPT_MOVEMENT_LLM_MODEL: ${{ secrets.CANARY_LLM_MODEL }}
-      QUALITY_JUDGE_LLM_PROVIDER: ${{ secrets.CANARY_JUDGE_PROVIDER }}
-      QUALITY_JUDGE_LLM_MODEL: ${{ secrets.CANARY_JUDGE_MODEL }}
+      LLM_ROUTING_PROFILE: ${{ vars.LLM_ROUTING_PROFILE || 'custom' }}
+
+      # ---- one pinned route per role the canary calls. An unpinned role
+      # resolves down the profile chain to whatever happens to be reachable,
+      # which is the silent substitution this canary exists to catch, so the
+      # preflight requires both halves of every pair by name.
+      TOPIC_GENERATION_LLM_PROVIDER: ${{ vars.TOPIC_GENERATION_LLM_PROVIDER }}
+      TOPIC_GENERATION_LLM_MODEL: ${{ vars.TOPIC_GENERATION_LLM_MODEL }}
+      RESEARCH_LLM_PROVIDER: ${{ vars.RESEARCH_LLM_PROVIDER }}
+      RESEARCH_LLM_MODEL: ${{ vars.RESEARCH_LLM_MODEL }}
+      SCRIPT_STORY_EDITOR_LLM_PROVIDER: ${{ vars.SCRIPT_STORY_EDITOR_LLM_PROVIDER }}
+      SCRIPT_STORY_EDITOR_LLM_MODEL: ${{ vars.SCRIPT_STORY_EDITOR_LLM_MODEL }}
+      SCRIPT_DEBATE_ARCHITECT_LLM_PROVIDER: ${{ vars.SCRIPT_DEBATE_ARCHITECT_LLM_PROVIDER }}
+      SCRIPT_DEBATE_ARCHITECT_LLM_MODEL: ${{ vars.SCRIPT_DEBATE_ARCHITECT_LLM_MODEL }}
+      SCRIPT_HOST_A_WRITER_LLM_PROVIDER: ${{ vars.SCRIPT_HOST_A_WRITER_LLM_PROVIDER }}
+      SCRIPT_HOST_A_WRITER_LLM_MODEL: ${{ vars.SCRIPT_HOST_A_WRITER_LLM_MODEL }}
+      SCRIPT_HOST_B_WRITER_LLM_PROVIDER: ${{ vars.SCRIPT_HOST_B_WRITER_LLM_PROVIDER }}
+      SCRIPT_HOST_B_WRITER_LLM_MODEL: ${{ vars.SCRIPT_HOST_B_WRITER_LLM_MODEL }}
+      SCRIPT_DIALOGUE_DIRECTOR_LLM_PROVIDER: ${{ vars.SCRIPT_DIALOGUE_DIRECTOR_LLM_PROVIDER }}
+      SCRIPT_DIALOGUE_DIRECTOR_LLM_MODEL: ${{ vars.SCRIPT_DIALOGUE_DIRECTOR_LLM_MODEL }}
+      SCRIPT_CONTINUITY_EDITOR_LLM_PROVIDER: ${{ vars.SCRIPT_CONTINUITY_EDITOR_LLM_PROVIDER }}
+      SCRIPT_CONTINUITY_EDITOR_LLM_MODEL: ${{ vars.SCRIPT_CONTINUITY_EDITOR_LLM_MODEL }}
+      QUALITY_JUDGE_LLM_PROVIDER: ${{ vars.QUALITY_JUDGE_LLM_PROVIDER }}
+      QUALITY_JUDGE_LLM_MODEL: ${{ vars.QUALITY_JUDGE_LLM_MODEL }}
+
+      # ---- credentials ----
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+      ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
       FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
-      FISH_SCENE_MODEL: ${{ vars.FISH_SCENE_MODEL }}
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+
+      # Fish model policy is nonnegotiable: the free S2.1 tier is the default and
+      # a promotion must be a deliberate repository-variable change.
+      FISH_SCENE_MODEL: ${{ vars.FISH_SCENE_MODEL || 's2.1-pro-free' }}
       CANARY_FISH_VOICE_A: ${{ secrets.CANARY_FISH_VOICE_A }}
       CANARY_FISH_VOICE_B: ${{ secrets.CANARY_FISH_VOICE_B }}
       CANARY_ELEVENLABS_VOICE_A: ${{ secrets.CANARY_ELEVENLABS_VOICE_A }}
       CANARY_ELEVENLABS_VOICE_B: ${{ secrets.CANARY_ELEVENLABS_VOICE_B }}
+
+      # ---- meaning-aware audio QA. `not_run` is not an outcome the canary
+      # accepts: it is the only check that can catch a wrong speaker, a dropped
+      # line or a hallucinated number, and production episode e7867729 shipped
+      # with it disabled precisely because nothing refused that answer.
+      TTS_TRANSCRIPT_QA_ENABLED: ${{ vars.TTS_TRANSCRIPT_QA_ENABLED || 'true' }}
+      TRANSCRIPT_QA_PROVIDER: ${{ vars.TRANSCRIPT_QA_PROVIDER || 'deepgram' }}
+      TRANSCRIPT_QA_MODEL: ${{ vars.TRANSCRIPT_QA_MODEL }}
+      DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+
+      # Production renders with Fish. ElevenLabs is a supported ADAPTER that is
+      # exercised when configured and reported as skipped when it is not — it
+      # never fails a Fish release. Promote it deliberately by listing it here.
+      PRODUCTION_REQUIRED_TTS_PROVIDERS: ${{ vars.PRODUCTION_REQUIRED_TTS_PROVIDERS || 'fish' }}
+      CANARY_OPTIONAL_TTS_PROVIDERS: ${{ vars.CANARY_OPTIONAL_TTS_PROVIDERS || 'elevenlabs' }}
       TTS_PERFORMANCE_QA_STRICT: "true"
+      CANARY_NEWS_FEEDS: ${{ vars.CANARY_NEWS_FEEDS }}
+      CANARY_TARGET_DURATION_MIN: ${{ vars.CANARY_TARGET_DURATION_MIN || '4' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 20 is deprecated on GitHub-hosted runners.
+          node-version: 22
           cache: npm
+      # NODE_ENV is deliberately NOT set job-wide: `npm ci` under
+      # NODE_ENV=production skips devDependencies, and the Prisma CLI is one.
+      # The canary step sets it for itself, and QA strictness is pinned
+      # explicitly by TTS_PERFORMANCE_QA_STRICT above.
       - run: npm ci
       - run: npx prisma generate
+      # Performance QA, the private mix and duration reporting all shell out.
+      # Installed explicitly rather than assumed: a runner image that drops
+      # ffmpeg would otherwise surface as an unrelated provider failure.
+      - name: Ensure ffmpeg and ffprobe
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -version | head -1
+      - name: Preflight contract test (network-free)
+        run: npm run test:canary-preflight
       - uses: actions/cache/restore@v4
         with:
           path: artifacts/live-provider-canary-baseline
           key: live-canary-${{ runner.os }}-${{ github.run_id }}
           restore-keys: live-canary-${{ runner.os }}-
       - name: Run real private canary
+        env:
+          NODE_ENV: production
         run: npm run canary:live-providers
+      - name: Summarize alert class
+        if: always()
+        run: |
+          if [ -f artifacts/live-provider-canary/report.json ]; then
+            node -e "const r=require('./artifacts/live-provider-canary/report.json');
+              const n=(v,d)=>(v===null||v===undefined?d:v);
+              const roles=(r.roles||[]).map(x=>'  - '+x.role+': '+x.status+' | requested '+x.provider+'/'+x.requestedModel+
+                ' | actual '+n(x.actualProvider,'unobserved')+'/'+n(x.actualModel,'unobserved')+
+                (x.fellBack?' | FELL BACK':'')+' | '+x.latencyMs+'ms');
+              const qa=Object.entries(r.semanticQa||{}).map(([p,q])=>'  - '+p+': '+q.status+
+                ' (WER '+(q.wordErrorRate===null?'n/a':(q.wordErrorRate*100).toFixed(1)+'%')+
+                ', speaker '+(q.speakerAttributionErrorRate===null?'n/a':(q.speakerAttributionErrorRate*100).toFixed(1)+'%')+')');
+              const c=r.cost&&r.cost.totals;
+              const lines=['### Live provider canary','',
+                '- status: \`'+r.status+'\`','- alertClass: \`'+r.alertClass+'\`',
+                '- reason: '+n(r.alertReason,'none'),
+                '- **action required**: '+n(r.alertAction,'none'),
+                '- missing variables: '+((r.preflight&&r.preflight.missing.length)?r.preflight.missing.join(', '):'none'),
+                '- judge route: '+n(r.routing&&r.routing.judge,'n/a')+' | independent: '+n(r.routing&&r.routing.independent,'n/a'),
+                '- story: '+n(r.story&&r.story.selectedTitle,'not reached'),
+                '- brief: '+(r.brief?(r.brief.factCount+' grounded fact(s), '+r.brief.citedSourceCount+' cited source(s)'):'not reached'),
+                '- script: '+(r.script?(r.script.lineCount+' lines, judge '+n(r.script.judgeOverall,'n/a')+'/100'):'not reached'),
+                '- role drift: '+(r.roleDrift&&r.roleDrift.ok?'none':n(r.roleDrift&&r.roleDrift.reason,'unproven')),
+                '- fish scene model: '+n(r.fish&&(r.fish.renderedModel||r.fish.resolvedSceneModel),'n/a'),
+                '- private mix: '+(r.mix?(r.mix.path+' ('+n(r.mix.durationMs,'unknown')+'ms, published='+r.mix.published+')'):'not produced'),
+                '- cost: '+(c?(c.calls+' call(s), '+c.tkIn+' in / '+c.tkOut+' out tokens, '+
+                  (c.estimatedCostUsd===null?'unpriced (set LLM_PRICE_<PROVIDER>_IN/_OUT)':'\$'+c.estimatedCostUsd.toFixed(4))):'not measured'),
+                '','**Roles**',...(roles.length?roles:['  - none reached']),
+                '','**Semantic QA**',...(qa.length?qa:['  - not run'])];
+              require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY,lines.join('\n')+'\n');
+              console.log(lines.join('\n'));"
+          else
+            echo "No report.json was produced — the canary process died before its finally block." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      # Only a sound run may move the goalposts. baseline.json is a PROJECTION of
+      # the report (token totals, voice digests, per-role actual models) and is
+      # written by the canary itself only when status=ok — copying the whole
+      # report here would leave cost comparison permanently disabled.
       - name: Stage next baseline
+        if: success()
         run: |
           mkdir -p artifacts/live-provider-canary-baseline
-          cp artifacts/live-provider-canary/report.json artifacts/live-provider-canary-baseline/report.json
+          cp artifacts/live-provider-canary/baseline.json artifacts/live-provider-canary-baseline/baseline.json
       - uses: actions/cache/save@v4
         if: success()
         with:
           path: artifacts/live-provider-canary-baseline
           key: live-canary-${{ runner.os }}-${{ github.run_id }}
+      # Always upload: the report is the diagnosis, and it matters most when the
+      # run failed. A missing file here now means the process was killed.
+      # The audio and the private mix ride along in the same PRIVATE artifact;
+      # nothing here is published, and no storage client is reachable from the
+      # canary at all.
       - uses: actions/upload-artifact@v4
         if: always()
         with:

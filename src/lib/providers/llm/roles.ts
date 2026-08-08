@@ -32,6 +32,12 @@ export type LLMRole =
   | "research_brief"
   | "evidence_extraction"
   | "script_outline"
+  | "script_story_editor"
+  | "script_debate_architect"
+  | "script_host_a_writer"
+  | "script_host_b_writer"
+  | "script_dialogue_director"
+  | "script_continuity_editor"
   | "script_movement"
   | "script_verification"
   | "script_rewrite"
@@ -39,6 +45,7 @@ export type LLMRole =
   | "fact_check"
   | "show_notes"
   | "episode_metadata"
+  | "cold_open_judge"
   | "quality_judge";
 
 /** The three grouped provider configurations that exist today. */
@@ -155,6 +162,103 @@ export const ROLE_DEFINITIONS: Record<LLMRole, RoleDefinition> = {
     userFacingDialogue: false,
     callSites: ["src/lib/services/scriptOutlineEngine.ts → script:outline"],
   },
+  // ---------------------------------------------------------------------
+  // THE SEVEN-ROLE WRITING PIPELINE (src/lib/services/scriptSevenRolePipeline.ts)
+  //
+  // These six roles plus `quality_judge` are the seven separated writing
+  // responsibilities. They exist as distinct ROLES — not distinct prompts on one
+  // role — so the two host writers can be routed to different model families.
+  // That is the only configuration in which "the hosts do not sound like one
+  // model" is a structural fact rather than a hope.
+  //
+  // `script_movement` is deliberately retained: it still backs the legacy
+  // outline-driven path and the single-shot fallback, both of which remain
+  // reachable when the seven-role pipeline cannot complete.
+  // ---------------------------------------------------------------------
+  script_story_editor: {
+    role: "script_story_editor",
+    label: "Story editor (role 1/7)",
+    purpose:
+      "Name what the episode is actually about and the ONE unresolved question the hosts cannot settle by agreeing. Structural judgement, never dialogue.",
+    envPrefix: "SCRIPT_STORY_EDITOR",
+    legacyRollback: "script",
+    legacyBackup: "script",
+    structured: true,
+    reasoning: "on",
+    temperature: 0.5,
+    userFacingDialogue: false,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:story_editor"],
+  },
+  script_debate_architect: {
+    role: "script_debate_architect",
+    label: "Debate architect (role 2/7)",
+    purpose:
+      "Build the movement structure from the spine, assign every fact to exactly one beat, allocate turns, and issue each host an asymmetric private brief.",
+    envPrefix: "SCRIPT_DEBATE_ARCHITECT",
+    legacyRollback: "script",
+    legacyBackup: "script",
+    structured: true,
+    reasoning: "on",
+    temperature: 0.6,
+    userFacingDialogue: false,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:debate_architect"],
+  },
+  script_host_a_writer: {
+    role: "script_host_a_writer",
+    label: "Host A writer (role 3/7)",
+    purpose:
+      "Write host A's lines only, from host A's private brief. Never receives host B's brief, and its output is filtered to host A's assigned turns.",
+    envPrefix: "SCRIPT_HOST_A_WRITER",
+    legacyRollback: "script",
+    legacyBackup: "script",
+    structured: true,
+    reasoning: "off",
+    temperature: 0.85,
+    userFacingDialogue: true,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:host_a_writer"],
+  },
+  script_host_b_writer: {
+    role: "script_host_b_writer",
+    label: "Host B writer (role 4/7)",
+    purpose:
+      "Write host B's lines only, from host B's private brief. Never receives host A's brief, and its output is filtered to host B's assigned turns.",
+    envPrefix: "SCRIPT_HOST_B_WRITER",
+    legacyRollback: "script",
+    legacyBackup: "script",
+    structured: true,
+    reasoning: "off",
+    temperature: 0.85,
+    userFacingDialogue: true,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:host_b_writer"],
+  },
+  script_dialogue_director: {
+    role: "script_dialogue_director",
+    label: "Dialogue director (role 5/7)",
+    purpose:
+      "Repair causality and transitions BETWEEN turns after two writers worked without each other's words. Bounded: it may not collapse the cast into one voice.",
+    envPrefix: "SCRIPT_DIALOGUE_DIRECTOR",
+    legacyRollback: "script",
+    legacyBackup: "script",
+    structured: true,
+    reasoning: "off",
+    temperature: 0.55,
+    userFacingDialogue: true,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:dialogue_director"],
+  },
+  script_continuity_editor: {
+    role: "script_continuity_editor",
+    label: "Continuity editor (role 6/7)",
+    purpose:
+      "Report on callbacks, character history and running bits across the finished draft. A report, never a rewrite.",
+    envPrefix: "SCRIPT_CONTINUITY_EDITOR",
+    legacyRollback: "script",
+    legacyBackup: "verify",
+    structured: true,
+    reasoning: "off",
+    temperature: 0,
+    userFacingDialogue: false,
+    callSites: ["src/lib/services/scriptSevenRolePipeline.ts → seven-role:continuity_editor"],
+  },
   script_movement: {
     role: "script_movement",
     label: "Script movement / dialogue",
@@ -264,6 +368,25 @@ export const ROLE_DEFINITIONS: Record<LLMRole, RoleDefinition> = {
     // Deterministic today: publishAssetsService derives titles/descriptions/
     // chapters from the script and show notes without a model call.
     callSites: [],
+  },
+  cold_open_judge: {
+    role: "cold_open_judge",
+    label: "Cold-open judge",
+    purpose:
+      "Blind-ranks the three cold-open candidates before a word of the episode body is written. Separate from " +
+      "the final editorial judge on purpose: this one decides which of three openings survives, on craft alone, " +
+      "and it must never be the model that wrote them.",
+    envPrefix: "COLD_OPEN_JUDGE",
+    // Same grouped families as the final judge, so an unset COLD_OPEN_JUDGE_*
+    // resolves exactly where the cold-open judge resolved before this role
+    // existed. Declaring the role changes nothing until someone routes it.
+    legacyRollback: "verify",
+    legacyBackup: "verify",
+    structured: true,
+    reasoning: "on",
+    temperature: 0,
+    userFacingDialogue: false,
+    callSites: ["src/lib/services/scriptCreativePipeline.ts → script:cold-open-judge"],
   },
   quality_judge: {
     role: "quality_judge",

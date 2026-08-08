@@ -118,7 +118,32 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
 
     // Conversational architecture — reasoning mode.
     case "script_outline":
+    case "script_story_editor":
+    case "script_debate_architect":
       return [NV.glm(), NV.nemotron(), ZAI_FLASH()];
+
+    // THE TWO HOST WRITERS ARE DELIBERATELY ORDERED DIFFERENTLY.
+    //
+    // This is the one routing decision that makes "the hosts do not sound like
+    // one model" structural instead of aspirational: under this profile host A's
+    // writer reaches for Mistral first and host B's writer for Kimi first, so on
+    // the healthy path two different model families write the two characters. If
+    // one family is unreachable the chains converge and the pipeline still
+    // completes — with the convergence visible in the role trace rather than
+    // hidden, because both records name the model that actually served them.
+    case "script_host_a_writer":
+      return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
+    case "script_host_b_writer":
+      return [NV.kimi(), NV.mistral(), ZAI_FLASH()];
+
+    // Repairing seams between two writers is creative writing, so it stays in
+    // the dialogue family rather than moving to a grader.
+    case "script_dialogue_director":
+      return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
+
+    // A literal audit of callbacks and running bits — cheap and structured.
+    case "script_continuity_editor":
+      return [NV.deepseekFlash(), NV.deepseekPro(), ZAI_FLASH()];
 
     // The creative dialogue roles. Same family for writing and repair, so a
     // repair keeps the writer's voice instead of flattening it into analysis.
@@ -140,6 +165,14 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // judge chain deliberately shares no model with script_movement.
     case "quality_judge":
       return [NV.nemotron(), NV.glm()];
+
+    // The cold-open judge grades three openings the WRITERS produced, so it
+    // shares no model with the dialogue family either. Its order is inverted
+    // against quality_judge on purpose: the opening and the finished script are
+    // two different judgements, and having them land on the same model by
+    // default would make one of the two verdicts redundant for free.
+    case "cold_open_judge":
+      return [NV.glm(), NV.nemotron()];
   }
 }
 
@@ -259,17 +292,45 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     case "quality_judge":
       return [NV.nemotron(), NV.glm()];
 
+    // Neither judge shares a model with the dialogue family, and the two judges
+    // do not share a primary with each other — see the frontier profile.
+    case "cold_open_judge":
+      return [NV.glm(), NV.nemotron()];
+
     // ---- roles below are MEASURED (see the findings block above)
 
     // Outline: Nemotron 7 beats / 3 shifts / 21 s beat GLM-5.2's 7 / 2 / 118 s.
+    // The story editor and the debate architect are the same kind of work —
+    // structure under reasoning — so they inherit the measured outline order.
     case "script_outline":
+    case "script_story_editor":
+    case "script_debate_architect":
       return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
 
     // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s. Mistral is
     // kept as a different-family fallback, not as a co-primary.
     case "script_movement":
     case "script_rewrite":
+    case "script_dialogue_director":
       return [ZAI_FLASH(), NV.mistral()];
+
+    // THE TWO HOST WRITERS GET INVERTED CHAINS ON PURPOSE — see the frontier
+    // profile for the full reasoning. Host A leads with the measured winner
+    // (Z.ai, judge 79 / 143 s); host B leads with Mistral, which measured close
+    // on quality (76) and lost on latency alone. Paying Mistral's latency for
+    // ONE host is the price of two genuinely different minds, and it is a
+    // per-host call rather than three sequential movements, so the episode floor
+    // moves far less than the 536 s dialogue figure suggests. Set
+    // SCRIPT_HOST_B_WRITER_LLM_PROVIDER to collapse them if that trade stops
+    // being worth it — the role trace will show the collapse either way.
+    case "script_host_a_writer":
+      return [ZAI_FLASH(), NV.mistral()];
+    case "script_host_b_writer":
+      return [NV.mistral(), ZAI_FLASH()];
+
+    // Literal transcript audit of callbacks and running bits.
+    case "script_continuity_editor":
+      return [NV.deepseekPro(), ZAI_FLASH()];
 
     // Grading against evidence, independent of the writer. Nemotron: 5/5
     // in-scope, 0 false positives, 13 s. DeepSeek: 0 false positives but 468 s.

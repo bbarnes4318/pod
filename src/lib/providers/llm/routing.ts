@@ -36,11 +36,10 @@ import {
 import { NVIDIA_DEFAULT_BASE_URL } from "./nvidia";
 import { ZAI_DEFAULT_BASE_URL } from "./zai";
 import { withLlmAttribution } from "./costLedger";
-import { StubLLMProvider } from "./stub";
-import { OpenAILLMProvider } from "./openai";
-import { AnthropicLLMProvider } from "./anthropic";
-import { NvidiaNimLLMProvider } from "./nvidia";
-import { ZaiLLMProvider } from "./zai";
+import { XAI_DEFAULT_BASE_URL } from "./xai";
+import { MOONSHOT_DEFAULT_BASE_URL } from "./moonshot";
+import { GOOGLE_DEFAULT_BASE_URL } from "./google";
+import { buildProvider, supportedProviderList } from "./providerRegistry";
 
 export type CandidateSource =
   | "role_override"
@@ -72,6 +71,19 @@ export interface RolePlan {
   /** True when this plan is the untouched pre-feature behavior. */
   isLegacyBypass: boolean;
 }
+
+/**
+ * The one Anthropic model id still named inside provider-agnostic routing.
+ *
+ * Exported and constant rather than inlined because it IS a vendor decision
+ * baked into shared code, and a decision nobody can see is a decision nobody
+ * revisits. Its scope is narrow: it picks a model for a chain that has ALREADY
+ * resolved to Anthropic, it never routes a role TO Anthropic, and VERIFY_MODEL
+ * overrides it entirely. `routingAudit.ts` reports every role that inherits it,
+ * so "the verifier runs on Claude because of a literal in routing.ts" is a
+ * visible fact rather than folklore.
+ */
+export const LEGACY_ANTHROPIC_VERIFY_MODEL = "claude-sonnet-5";
 
 const PAID_PROVIDERS = new Set(["anthropic", "openai"]);
 
@@ -155,8 +167,12 @@ export function resolveLegacyFamily(family: LegacyFamily): { provider: string; m
     base = { provider: (readRoutingEnv("LLM_PROVIDER") || "stub").toLowerCase(), model: undefined };
   }
   const provider = (readRoutingEnv("VERIFY_LLM_PROVIDER") || base.provider).toLowerCase();
+  // The single Anthropic literal left in shared routing, named in factory.ts so
+  // it can be seen and revisited. It picks a model for a chain that has ALREADY
+  // resolved to Anthropic; it never routes a role to Anthropic.
   const model =
-    readRoutingEnv("VERIFY_MODEL") || (provider === "anthropic" ? "claude-sonnet-5" : base.model);
+    readRoutingEnv("VERIFY_MODEL") ||
+    (provider === "anthropic" ? LEGACY_ANTHROPIC_VERIFY_MODEL : base.model);
   return { provider, model };
 }
 
@@ -290,6 +306,12 @@ export function normalizedBaseUrl(provider: string): string {
       ? "https://api.anthropic.com/v1"
       : p === "openai"
       ? "https://api.openai.com/v1"
+      : p === "xai"
+      ? readRoutingEnv("XAI_BASE_URL") || XAI_DEFAULT_BASE_URL
+      : p === "moonshot"
+      ? readRoutingEnv("MOONSHOT_BASE_URL") || MOONSHOT_DEFAULT_BASE_URL
+      : p === "google"
+      ? readRoutingEnv("GOOGLE_BASE_URL") || GOOGLE_DEFAULT_BASE_URL
       : "(none)";
   // Normalize so trailing slashes, case and a default port cannot make one
   // endpoint look like two.
@@ -322,28 +344,20 @@ export function endpointIdentity(c: { provider: string; model?: string }): strin
 
 /** Build a concrete provider. Registered providers only — never a guess. */
 export function instantiateProvider(provider: string, model?: string): LLMProvider {
-  switch (provider.toLowerCase()) {
-    case "nvidia":
-      return new NvidiaNimLLMProvider(model);
-    case "zai":
-      return new ZaiLLMProvider(model);
-    case "anthropic":
-      return new AnthropicLLMProvider(model);
-    case "openai":
-      return new OpenAILLMProvider(model);
-    case "stub":
-      return new StubLLMProvider();
-    default:
-      // A provider name nothing can build is a configuration/programming defect,
-      // not something another model fixes — it stops the chain.
-      throw new LlmProviderError({
-        provider,
-        model: model || "(default)",
-        category: "programming_error",
-        message:
-          `[LLMRouting] Unknown provider '${provider}'. Supported: nvidia, zai, anthropic, openai, stub.`,
-      });
-  }
+  // Single registry — see providerRegistry.ts for why this is not a second
+  // switch. The supported list in the error message comes from the registry too,
+  // so a stale list cannot outlive the code it describes.
+  const built = buildProvider(provider, model);
+  if (built) return built;
+
+  // A provider name nothing can build is a configuration/programming defect,
+  // not something another model fixes — it stops the chain.
+  throw new LlmProviderError({
+    provider,
+    model: model || "(default)",
+    category: "programming_error",
+    message: `[LLMRouting] Unknown provider '${provider}'. Supported: ${supportedProviderList()}.`,
+  });
 }
 
 // ---------------------------------------------------------------- routed provider
@@ -423,6 +437,24 @@ export class RoutedLLMProvider implements LLMProvider {
     let fallbacks = 0;
     let stoppedEarly: { error: unknown; reason: string } | null = null;
 
+    /**
+     * Pass over every remaining candidate that bills the same account, recording
+     * each one as SKIPPED so the log shows what was declined and why. Returns
+     * the new loop index. Used for billing failures, where the next model on the
+     * same provider cannot possibly succeed.
+     */
+    const skipSameProviderFrom = (from: number, provider: string, category: LlmErrorCategory): number => {
+      let j = from;
+      while (j + 1 < this.plan.candidates.length && this.plan.candidates[j + 1].provider === provider) {
+        const skipped = this.plan.candidates[j + 1];
+        failures.push(
+          `${candidateKey(skipped)} [${skipped.source}] SKIPPED — ${category} on the shared ${provider} account credential`
+        );
+        j++;
+      }
+      return j;
+    };
+
     for (let i = 0; i < this.plan.candidates.length; i++) {
       const candidate = this.plan.candidates[i];
       const next = this.plan.candidates[i + 1];
@@ -449,6 +481,15 @@ export class RoutedLLMProvider implements LLMProvider {
         if (decision.verdict === "stop" && next) {
           stoppedEarly = { error: err, reason: decision.reason };
           break;
+        }
+        if (decision.verdict === "skip_provider") {
+          i = skipSameProviderFrom(i, candidate.provider, decision.category);
+          if (i + 1 >= this.plan.candidates.length) {
+            stoppedEarly = { error: err, reason: decision.reason };
+            break;
+          }
+          fallbacks++;
+          continue;
         }
         fallbacks++;
         continue;
@@ -490,6 +531,13 @@ export class RoutedLLMProvider implements LLMProvider {
         if (decision.verdict === "stop" && next) {
           stoppedEarly = { error: err, reason: decision.reason };
           break;
+        }
+        if (decision.verdict === "skip_provider") {
+          i = skipSameProviderFrom(i, candidate.provider, decision.category);
+          if (i + 1 >= this.plan.candidates.length) {
+            stoppedEarly = { error: err, reason: decision.reason };
+            break;
+          }
         }
         fallbacks++;
       }
@@ -741,6 +789,14 @@ export function credentialVarFor(provider: string): string {
       return "ANTHROPIC_API_KEY";
     case "openai":
       return "OPENAI_API_KEY";
+    case "xai":
+      return "XAI_API_KEY";
+    case "moonshot":
+      return "MOONSHOT_API_KEY";
+    case "google":
+      // google.ts accepts GEMINI_API_KEY as an alias; this reports the primary
+      // spelling, which is the one the setup instructions tell operators to set.
+      return "GOOGLE_API_KEY";
     default:
       return "(none required)";
   }

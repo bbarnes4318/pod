@@ -161,5 +161,14 @@ export function analyzeSceneAudioRows(opts: {
       : "Requires a configured external transcription service; reported as not_run when absent — NEVER as passed.",
   });
 
-  return { passed: checks.every((c) => c.status !== "fail"), checks };
+  // `not_run` is NOT a pass in production. The comment two lines above already
+  // promised "NEVER as passed" — but the aggregate below only excluded "fail",
+  // so an unrun meaning-aware check sailed through. Episode e7867729 reached a
+  // published master with no verification of speaker attribution, names, or
+  // numbers precisely through this gap.
+  const productionRequiresRun =
+    process.env.NODE_ENV === "production" && process.env.TTS_TRANSCRIPT_QA_WAIVED !== "true";
+  const unacceptable = (c: { status: string }) =>
+    c.status === "fail" || (productionRequiresRun && c.status === "not_run");
+  return { passed: !checks.some(unacceptable), checks };
 }

@@ -172,6 +172,34 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Repairs podcasts created after the original one-time configuration backfill had run.",
   },
+  {
+    name: "20260802000000_add_blind_voice_audition",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive only: four new tables for blind long-form voice auditions. No FK into any existing table, so it is drop-safe.",
+  },
+  {
+    name: "20260802010000_add_listener_learning",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive only: raw listener signal events, derived aggregates, and versioned per-show production policy. No FK into any existing table.",
+  },
+  {
+    name: "20260802020000_add_script_legacy_release",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive only: one table holding the durable, scoped editorial-gate legacy release. UNIQUE(scriptId) is what makes 'one decision per script' a database invariant rather than a claim in a comment.",
+  },
+  {
+    name: "20260802030000_learning_event_dedupe_index",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive partial unique index making listener-event dedupe a database invariant rather than a boundary convention. Excludes production-side measurements, which carry no listenerHash by design.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;

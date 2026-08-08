@@ -12,7 +12,11 @@
 import { canonicalFormatId, isRegisteredFormat } from "@/lib/formats/showFormatRegistry";
 
 export type IntroTimingStyle =
-  | "full_before"                // full intro plays, then speech
+  // Full intro plays, then speech. NOT a default any more (see below): it is
+  // reachable only when an operator asks for it via getFormatSoundPolicy's
+  // introStyle override. Even then the sonic-logo cap in openingTiming.ts
+  // bounds how much theme may play first.
+  | "full_before"
   | "cold_open_ducked"           // host enters over the intro's ducked tail
   | "short_sting_then_clean"     // brief branded sting, then clean speech
   | "spoken_cold_open_then_theme"// a spoken cold open, then the branded theme
@@ -52,8 +56,14 @@ export interface FormatSoundPolicy {
   protectedClosingPaddingMs: number;
 }
 
+// DEFAULT OPENING IS RESTRAINED.
+//
+// The structural default used to be "full_before" — the whole theme in front of
+// the first host word. With a 31.8s theme asset that shipped an episode whose
+// first spoken word landed at 30.9s. The default is now the short branded
+// sting; "full_before" survives as an explicit operator override only.
 const base = (o: Partial<FormatSoundPolicy> & { formatId: string }): FormatSoundPolicy => ({
-  introStyle: "full_before", outroStyle: "clean_then_outro", bedBehavior: "identity_decides",
+  introStyle: "short_sting_then_clean", outroStyle: "clean_then_outro", bedBehavior: "identity_decides",
   maxTransitionsPerEpisode: 6, maxReactionsPerEpisode: 6, minTransitionGapMs: 1200,
   allowUnderSpeechBeds: true, allowHardHits: true, allowComedy: true, allowCrowd: false,
   allowDataReveal: false, allowBreakingNews: false, allowChapterBridge: false, allowScoreUpdate: false,
@@ -72,7 +82,7 @@ export const FORMAT_SOUND_POLICIES: Record<string, FormatSoundPolicy> = {
     protectedOpeningPaddingMs: 300, protectedClosingPaddingMs: 300,
   }),
   two_host_debate: base({
-    formatId: "two_host_debate", introStyle: "full_before", outroStyle: "rise_under_final",
+    formatId: "two_host_debate", introStyle: "short_sting_then_clean", outroStyle: "rise_under_final",
     maxTransitionsPerEpisode: 5, maxReactionsPerEpisode: 4, minTransitionGapMs: 1300,
     allowHardHits: true, allowComedy: true, allowReactionsDuringOverlap: false,
     preferredCueFamilies: ["topic_reset", "quick_sweep", "disagreement", "agreement"],
@@ -94,13 +104,13 @@ export const FORMAT_SOUND_POLICIES: Record<string, FormatSoundPolicy> = {
     protectedOpeningPaddingMs: 300, protectedClosingPaddingMs: 300,
   }),
   host_and_expert: base({
-    formatId: "host_and_expert", introStyle: "full_before", outroStyle: "clean_then_outro",
+    formatId: "host_and_expert", introStyle: "short_sting_then_clean", outroStyle: "clean_then_outro",
     maxTransitionsPerEpisode: 4, maxReactionsPerEpisode: 3, minTransitionGapMs: 1500,
     allowHardHits: false, allowComedy: true, preferredCueFamilies: ["understated_transition", "topic_reset", "agreement"],
     prohibitedCueFamilies: ["hard_hit", "score_update", "crowd_positive"], protectedOpeningPaddingMs: 300, protectedClosingPaddingMs: 300,
   }),
   three_person_panel: base({
-    formatId: "three_person_panel", introStyle: "full_before", outroStyle: "clean_then_outro",
+    formatId: "three_person_panel", introStyle: "short_sting_then_clean", outroStyle: "clean_then_outro",
     maxTransitionsPerEpisode: 6, maxReactionsPerEpisode: 5, minTransitionGapMs: 1300,
     preferredCueFamilies: ["topic_reset", "quick_sweep", "agreement", "disagreement"], prohibitedCueFamilies: ["score_update", "breaking_news"],
   }),
@@ -133,11 +143,23 @@ export const FORMAT_SOUND_POLICIES: Record<string, FormatSoundPolicy> = {
   }),
 };
 
+/** Operator overrides an explicit caller may layer on top of a format policy.
+ *  Deliberately narrow: this is the ONLY route back to "full_before". */
+export interface FormatSoundPolicyOverrides {
+  introStyle?: IntroTimingStyle;
+}
+
 /** The policy for a format (canonicalized). Falls back to two_host_debate's
- *  policy for any unknown id (the registry default), never to a generic blank. */
-export function getFormatSoundPolicy(formatId: string): FormatSoundPolicy {
+ *  policy for any unknown id (the registry default), never to a generic blank.
+ *  `overrides` is explicit operator intent — nothing sets it implicitly. */
+export function getFormatSoundPolicy(
+  formatId: string,
+  overrides?: FormatSoundPolicyOverrides
+): FormatSoundPolicy {
   const id = canonicalFormatId(formatId);
-  return FORMAT_SOUND_POLICIES[id] ?? FORMAT_SOUND_POLICIES.two_host_debate;
+  const policy = FORMAT_SOUND_POLICIES[id] ?? FORMAT_SOUND_POLICIES.two_host_debate;
+  if (overrides?.introStyle) return { ...policy, introStyle: overrides.introStyle };
+  return policy;
 }
 
 /** Test hook: every registered, generation-ready format has a policy, and no

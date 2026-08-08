@@ -7,6 +7,8 @@ import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import EpisodeWorkspace, { WorkspaceTab } from "./EpisodeWorkspace";
+import EditorialGatePanel from "./EditorialGatePanel";
+import RoleTracePanel from "./RoleTracePanel";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
 import EpisodeDiversityPanel from "./EpisodeDiversityPanel";
@@ -166,6 +168,20 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           </p>
         </div>
       )}
+
+      {/* The editorial verdict and the role-by-role writing trace, shown BEFORE
+          any TTS money is spent. Until now both existed only inside
+          Script.content JSON, so a producer clicking "Record voices" could not
+          see that the script was held, or that it had been written by the
+          emergency fallback rather than the creative pipeline. */}
+      <EditorialGatePanel
+        gate={(script?.content as any)?.editorialGate ?? null}
+        provenance={(script?.content as any)?.pipelineProvenance ?? null}
+        invariants={(script?.content as any)?.productionInvariants ?? null}
+        humanRelease={(script?.content as any)?.humanRelease ?? null}
+        legacyRelease={(script?.content as any)?.legacyRelease ?? null}
+      />
+      <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
 
       <div className="studioCard">
         <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quick actions</div>

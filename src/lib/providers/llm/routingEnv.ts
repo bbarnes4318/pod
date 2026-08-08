@@ -53,6 +53,31 @@ const SNAPSHOT: Record<string, string | undefined> = {
   ZAI_REQUEST_TIMEOUT_MS: process.env.ZAI_REQUEST_TIMEOUT_MS,
   ZAI_MAX_RETRIES: process.env.ZAI_MAX_RETRIES,
 
+  // ---- xAI (Grok) ----
+  XAI_API_KEY: process.env.XAI_API_KEY,
+  XAI_BASE_URL: process.env.XAI_BASE_URL,
+  XAI_MODEL: process.env.XAI_MODEL,
+  XAI_REQUEST_TIMEOUT_MS: process.env.XAI_REQUEST_TIMEOUT_MS,
+  XAI_MAX_RETRIES: process.env.XAI_MAX_RETRIES,
+
+  // ---- Moonshot (Kimi) ----
+  MOONSHOT_API_KEY: process.env.MOONSHOT_API_KEY,
+  MOONSHOT_BASE_URL: process.env.MOONSHOT_BASE_URL,
+  MOONSHOT_MODEL: process.env.MOONSHOT_MODEL,
+  MOONSHOT_REQUEST_TIMEOUT_MS: process.env.MOONSHOT_REQUEST_TIMEOUT_MS,
+  MOONSHOT_MAX_RETRIES: process.env.MOONSHOT_MAX_RETRIES,
+
+  // ---- Google (Gemini, via the OpenAI-compatibility endpoint) ----
+  // GEMINI_API_KEY is listed because google.ts accepts it as an alias; a
+  // computed read of an alias that is never referenced literally would resolve
+  // as unset in the web bundle even with the variable set.
+  GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GOOGLE_BASE_URL: process.env.GOOGLE_BASE_URL,
+  GOOGLE_MODEL: process.env.GOOGLE_MODEL,
+  GOOGLE_REQUEST_TIMEOUT_MS: process.env.GOOGLE_REQUEST_TIMEOUT_MS,
+  GOOGLE_MAX_RETRIES: process.env.GOOGLE_MAX_RETRIES,
+
   // ---- model-id overrides for the profile maps (a wrong catalog id is a
   //      one-variable fix, never a code change) ----
   NVIDIA_MODEL_DEEPSEEK_FLASH: process.env.NVIDIA_MODEL_DEEPSEEK_FLASH,
@@ -94,6 +119,21 @@ const SNAPSHOT: Record<string, string | undefined> = {
   EVIDENCE_LLM_MODEL: process.env.EVIDENCE_LLM_MODEL,
   SCRIPT_OUTLINE_LLM_PROVIDER: process.env.SCRIPT_OUTLINE_LLM_PROVIDER,
   SCRIPT_OUTLINE_LLM_MODEL: process.env.SCRIPT_OUTLINE_LLM_MODEL,
+  // The seven-role writing pipeline. The two HOST WRITER pairs matter most:
+  // pointing them at one provider is how an operator collapses the cast into a
+  // single voice, and pointing them at two is how the separation is kept.
+  SCRIPT_STORY_EDITOR_LLM_PROVIDER: process.env.SCRIPT_STORY_EDITOR_LLM_PROVIDER,
+  SCRIPT_STORY_EDITOR_LLM_MODEL: process.env.SCRIPT_STORY_EDITOR_LLM_MODEL,
+  SCRIPT_DEBATE_ARCHITECT_LLM_PROVIDER: process.env.SCRIPT_DEBATE_ARCHITECT_LLM_PROVIDER,
+  SCRIPT_DEBATE_ARCHITECT_LLM_MODEL: process.env.SCRIPT_DEBATE_ARCHITECT_LLM_MODEL,
+  SCRIPT_HOST_A_WRITER_LLM_PROVIDER: process.env.SCRIPT_HOST_A_WRITER_LLM_PROVIDER,
+  SCRIPT_HOST_A_WRITER_LLM_MODEL: process.env.SCRIPT_HOST_A_WRITER_LLM_MODEL,
+  SCRIPT_HOST_B_WRITER_LLM_PROVIDER: process.env.SCRIPT_HOST_B_WRITER_LLM_PROVIDER,
+  SCRIPT_HOST_B_WRITER_LLM_MODEL: process.env.SCRIPT_HOST_B_WRITER_LLM_MODEL,
+  SCRIPT_DIALOGUE_DIRECTOR_LLM_PROVIDER: process.env.SCRIPT_DIALOGUE_DIRECTOR_LLM_PROVIDER,
+  SCRIPT_DIALOGUE_DIRECTOR_LLM_MODEL: process.env.SCRIPT_DIALOGUE_DIRECTOR_LLM_MODEL,
+  SCRIPT_CONTINUITY_EDITOR_LLM_PROVIDER: process.env.SCRIPT_CONTINUITY_EDITOR_LLM_PROVIDER,
+  SCRIPT_CONTINUITY_EDITOR_LLM_MODEL: process.env.SCRIPT_CONTINUITY_EDITOR_LLM_MODEL,
   SCRIPT_MOVEMENT_LLM_PROVIDER: process.env.SCRIPT_MOVEMENT_LLM_PROVIDER,
   SCRIPT_MOVEMENT_LLM_MODEL: process.env.SCRIPT_MOVEMENT_LLM_MODEL,
   SCRIPT_VERIFY_LLM_PROVIDER: process.env.SCRIPT_VERIFY_LLM_PROVIDER,
@@ -110,6 +150,12 @@ const SNAPSHOT: Record<string, string | undefined> = {
   EPISODE_METADATA_LLM_MODEL: process.env.EPISODE_METADATA_LLM_MODEL,
   QUALITY_JUDGE_LLM_PROVIDER: process.env.QUALITY_JUDGE_LLM_PROVIDER,
   QUALITY_JUDGE_LLM_MODEL: process.env.QUALITY_JUDGE_LLM_MODEL,
+  // Declared with the cold_open_judge role but missed here at the time. Without
+  // these two lines the web bundle resolves the override as unset while the
+  // worker resolves it correctly — the exact web/worker split this file exists
+  // to prevent, and invisible until an episode is judged by two different models.
+  COLD_OPEN_JUDGE_LLM_PROVIDER: process.env.COLD_OPEN_JUDGE_LLM_PROVIDER,
+  COLD_OPEN_JUDGE_LLM_MODEL: process.env.COLD_OPEN_JUDGE_LLM_MODEL,
 };
 
 /**

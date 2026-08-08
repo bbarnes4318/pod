@@ -20,6 +20,7 @@ import type { ActualDialogueTimeline } from "@/lib/audio/dialogueTimeline";
 import { type DetectedAudioGap, gapAllowsReaction, gapAllowsTransition } from "@/lib/audio/waveformAnalysis";
 import { buildProtectedRegions, cueCollidesWithProtected, type ProtectedAudioRegion, type ProtectedLineInput } from "@/lib/audio/protectedRegions";
 import { getFormatSoundPolicy, type FormatSoundPolicy, type IntroTimingStyle, type OutroTimingStyle } from "@/lib/audio/formatSoundPolicy";
+import { capDialogueStartMs, sonicLogoLengthMs } from "@/lib/audio/openingTiming";
 import type { SoundDiversityPolicy } from "@/lib/audio/soundDiversityPolicy";
 import { selectDiverseCue, recordCuePlacement, newWithinEpisodeCueState, type WithinEpisodeCueState, type CrossEpisodeCueHistory, type CueDiversityDecision } from "@/lib/audio/soundCueDiversity";
 import { evaluateSequenceSimilarity, type SequenceSimilarityDecision } from "@/lib/audio/soundSequenceSimilarity";
@@ -174,6 +175,9 @@ export interface PostTtsDirectorInput {
   includeIntro: boolean;
   includeOutro: boolean;
   protectedSpeechPaddingMs: number;
+  /** EXPLICIT operator override of the format's opening treatment. The only way
+   *  back to "full_before" — no default and no config path sets this. */
+  introStyleOverride?: IntroTimingStyle;
   /** PR 4: when present (and mode soft/enforce), WHICH eligible cue asset is
    *  placed becomes diversity-aware (within-episode + recent-catalog). Absent =
    *  exact PR 3 behavior (weighted pick). Reproduce never sets this. */
@@ -202,7 +206,10 @@ function familyPermitted(family: string | null, policy: FormatSoundPolicy, ident
 }
 
 export function directPostTtsSound(input: PostTtsDirectorInput): PostTtsSoundDirectionPlan {
-  const policy = getFormatSoundPolicy(input.formatId);
+  const policy = getFormatSoundPolicy(
+    input.formatId,
+    input.introStyleOverride ? { introStyle: input.introStyleOverride } : undefined
+  );
   const identity = input.frozenProfile.sonicIdentity ?? DEFAULT_SONIC_IDENTITY;
   const warnings: SoundDirectionWarning[] = [];
   const decisions: SoundDirectionDecision[] = [];
@@ -384,11 +391,20 @@ function selectIntroTreatment(dur: number, policy: FormatSoundPolicy, timeline: 
  *  first spoken word enters. Used by the stitcher to place the dialogue timeline
  *  BEFORE the director runs; the director then reproduces the identical value.
  *  0 when there is no intro (clean/disabled/no asset) or a spoken cold open. */
-export function resolveIntroDialogueStartMs(profile: FrozenSoundProfile, formatId: string, includeIntro: boolean, introDurationMs: number | null): number {
+export function resolveIntroDialogueStartMs(
+  profile: FrozenSoundProfile,
+  formatId: string,
+  includeIntro: boolean,
+  introDurationMs: number | null,
+  introStyleOverride?: IntroTimingStyle
+): number {
   if (profile.mode === "clean" || !includeIntro || profile.introEnabled === false) return 0;
   if (!profile.intro || !introDurationMs) return 0;
-  const sel = selectIntroTreatment(introDurationMs, getFormatSoundPolicy(formatId), null);
-  return sel ? Math.max(0, sel.timings.speechEntryMs) : 0;
+  const policy = getFormatSoundPolicy(formatId, introStyleOverride ? { introStyle: introStyleOverride } : undefined);
+  const sel = selectIntroTreatment(introDurationMs, policy, null);
+  // The treatments already cap themselves; capping again here means no stored
+  // or hand-rolled treatment can hand the stitcher an out-of-bounds offset.
+  return sel ? capDialogueStartMs(sel.timings.speechEntryMs) : 0;
 }
 
 function directIntro(input: PostTtsDirectorInput, policy: FormatSoundPolicy, decisions: SoundDirectionDecision[], warnings: SoundDirectionWarning[], fail: (f: SoundDirectionFailure) => void): DirectedIntroPlan | null {
@@ -421,27 +437,33 @@ function introTreatmentTimings(treatment: IntroTimingStyle, dur: number, policy:
   switch (treatment) {
     case "full_before": {
       if (dur < 1200) return null;
-      // The whole theme plays, fades out, THEN speech enters after the opening
-      // pad — the intro is entirely before the protected first words.
-      const speechEntryMs = dur + openPad;
-      return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs, continuesUnderSpeech: false,
-        segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: dur, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: fadeMs, ducked: false }] };
+      // "Full" is bounded by the sonic-logo cap. The ONLY guard here used to be
+      // the 1200ms minimum, so a 31.8s theme produced a 32s pre-roll — the exact
+      // production defect. A theme longer than the cap is CUT (sourceEndMs), so
+      // speech still enters inside MAX_SPEECH_START_MS.
+      const playMs = sonicLogoLengthMs(dur);
+      const outFade = Math.min(fadeMs, Math.max(120, Math.round(playMs * 0.4)));
+      const speechEntryMs = capDialogueStartMs(playMs + openPad);
+      return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs: outFade, continuesUnderSpeech: false,
+        segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: playMs, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: outFade, ducked: false }] };
     }
     case "short_sting_then_clean": {
       if (dur < 300) return null;
-      const stingMs = Math.min(dur, 2500);
+      // Was min(dur, 2500) — a 2500ms sting plus the opening pad already broke
+      // the 2000ms speech-start ceiling on its own.
+      const stingMs = sonicLogoLengthMs(dur);
       const cleanFade = Math.min(fadeMs, 400);
-      const speechEntryMs = stingMs + openPad;
+      const speechEntryMs = capDialogueStartMs(stingMs + openPad);
       return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs: cleanFade, continuesUnderSpeech: false,
         segments: [{ role: "sting", sourceStartMs: 0, sourceEndMs: stingMs, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: cleanFade, ducked: false }] };
     }
     case "cold_open_ducked": {
       if (dur < 1500) return null;
-      // Theme opens at full; the host enters at ~35%. The theme DUCKS a hair
-      // BEFORE the host so it is already ducked when the opening protected region
-      // begins (speech-entry minus the opening pad) — the full-gain lead never
-      // covers protected words, and measurable ducked theme sits under the open.
-      const entry = Math.round(dur * 0.35);
+      // Theme opens at full; the host enters at ~35% — but never later than the
+      // speech-start ceiling (35% of a 31.8s theme is 11.1s of instrumental).
+      // The theme keeps playing DUCKED underneath either way, so capping the
+      // entry shortens the wait without losing the treatment's character.
+      const entry = capDialogueStartMs(Math.round(dur * 0.35));
       const duckPoint = Math.max(1, entry - openPad);
       return { introStartMs: 0, speechEntryMs: entry, duckStartMs: duckPoint, duckGainDb: duck, fadeMs, continuesUnderSpeech: true,
         segments: [
@@ -464,7 +486,7 @@ function introTreatmentTimings(treatment: IntroTimingStyle, dur: number, policy:
     case "minimal": {
       if (dur < 150) return null;
       const cleanMs = Math.min(dur, 1200);
-      const speechEntryMs = cleanMs + openPad;
+      const speechEntryMs = capDialogueStartMs(cleanMs + openPad);
       return { introStartMs: 0, speechEntryMs, duckStartMs: null, duckGainDb: null, fadeMs: 150, continuesUnderSpeech: false,
         segments: [{ role: "clean", sourceStartMs: 0, sourceEndMs: cleanMs, timelineStartMs: 0, gainDb: full, fadeInMs: 20, fadeOutMs: 150, ducked: false }] };
     }

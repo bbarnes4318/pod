@@ -366,7 +366,9 @@ export function countMovement(segments: any[]): { lines: number; words: number }
   return { lines, words };
 }
 
-function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
+/** Body beats grouped into three movements. Shared with the seven-role pipeline
+ *  so both paths cut the episode into acts identically. */
+export function groupIntoMovements(beats: OutlineBeat[]): OutlineBeat[][] {
   if (beats.length <= 3) return [beats];
   const closing = beats[beats.length - 1];
   const body = beats.slice(0, -1);
@@ -438,8 +440,10 @@ ${attributions}${semantic}
 
 ${lineBlocks.join("\n\n")}
 
-Return valid JSON only:
-{ "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": [] } ] }`;
+A line kept as "isFactualClaim":true MUST carry at least one evidenceRefs entry copied VERBATIM from that line's EVIDENCE above — an exact phrase or number as written, never a paraphrase or a source name. Keep each ref to the shortest fragment that pins the fact, TWELVE WORDS AT MOST; one per claim is enough. They are lookup keys, not citations. If the evidence will not support the specific, the correct fix is to make the line qualitative and set "isFactualClaim":false with empty evidenceRefs. A true claim with empty refs is the defect this stage exists to remove, not an acceptable output.
+
+Return valid JSON only. Both shapes:
+{ "rewrites": [ { "lineIndex": 0, "text": "...", "isFactualClaim": true, "evidenceRefs": ["31 of 44 on third down"] }, { "lineIndex": 1, "text": "...", "isFactualClaim": false, "evidenceRefs": [] } ] }`;
 
     try {
       const result = await withLlmStage("script:selfverify-rewrite", () =>
@@ -468,14 +472,34 @@ Return valid JSON only:
   return output;
 }
 
-async function generateEpisodeOutline(
+/**
+ * The beat sheet.
+ *
+ * Exported because the seven-role pipeline's DEBATE ARCHITECT owns this job and
+ * must not re-implement it: the beat contract (6-8 beats, one cold open, one
+ * closing, every fact assigned once, no scheduled jokes) is the same contract
+ * whichever pipeline asks for it. When `spine` is supplied — the story editor's
+ * output in the seven-role pipeline — the beats are built to serve that spine
+ * instead of inventing a second, competing one.
+ */
+export async function generateEpisodeOutline(
   llm: LLMProvider,
   args: OutlineDrivenArgs,
-  creativeSystemPrompt: string
+  creativeSystemPrompt: string,
+  spine?: unknown
 ): Promise<OutlineBeat[]> {
   const prompt = [
     `You are showrunning episode "${args.episodeTitle}" (roughly ${args.targetDuration} minutes).`,
     "",
+    ...(spine
+      ? [
+          "THE STORY EDITOR HAS ALREADY DECIDED WHAT THIS EPISODE IS ABOUT.",
+          "Do not replace the spine, soften it, or add a competing central question.",
+          "Every beat must serve it:",
+          JSON.stringify(spine, null, 2),
+          "",
+        ]
+      : []),
     "TOPICS & EVIDENCE:",
     args.topicsPrompts,
     "",

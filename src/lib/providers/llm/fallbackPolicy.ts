@@ -11,12 +11,22 @@
 import {
   LlmErrorCategory,
   categoryOf,
+  isBillingCategory,
   isConfigurationCategory,
   isContinueCategory,
   isTerminalCategory,
 } from "./errors";
 
-export type FallbackVerdict = "continue" | "stop";
+/**
+ * `skip_provider` is neither "continue" nor "stop".
+ *
+ * It means: this candidate's failure belongs to the ACCOUNT, not the model, so
+ * pass over every remaining candidate that bills the same account — and then
+ * carry on if something genuinely different is left. "continue" would march
+ * through four models on an empty account; "stop" would throw away a working
+ * candidate on an entirely different provider.
+ */
+export type FallbackVerdict = "continue" | "stop" | "skip_provider";
 
 export interface FallbackCandidateInfo {
   provider: string;
@@ -60,6 +70,31 @@ export function fallbackDecision(
 ): FallbackDecision {
   const category = categoryOf(error);
   const here = `${current.provider}/${current.model ?? "(provider-default)"}`;
+
+  // Account funding is decided FIRST, ahead of every other rule.
+  //
+  // An empty account is a property of the CREDENTIAL, not of the model. Trying
+  // the next model on the same provider is guaranteed to fail, and it fails
+  // expensively: one honest billing error becomes a chain of identical noise,
+  // the real cause ends up buried under whatever the last candidate said, and a
+  // paid account that already refused gets hammered on the way past.
+  if (isBillingCategory(category)) {
+    const account = `the ${current.provider} account behind this credential has no funds`;
+    if (!next) {
+      return {
+        verdict: "stop",
+        category,
+        reason: `${category} on ${here}: ${account}, and no candidate remains for this role. Fund the account.`,
+      };
+    }
+    return {
+      verdict: "skip_provider",
+      category,
+      reason:
+        `${category} on ${here}: ${account}. Every remaining ${current.provider} candidate bills the SAME ` +
+        `account, so they are skipped rather than burned through. Fund the account — no model change fixes it.`,
+    };
+  }
 
   if (isTerminalCategory(category)) {
     return {

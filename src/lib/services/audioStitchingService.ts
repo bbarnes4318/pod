@@ -20,6 +20,7 @@ import { AudioQaReport, analyzeEpisodeAudio } from "@/lib/audio/audioQa";
 import { verifyBookends, resolveBookendRequirement, describeBookendAbsence, type BookendVerification, type BookendKind } from "@/lib/audio/bookendQa";
 import { buildRenderDiagnostics, RENDER_DIAGNOSTICS_VERSION, scrubSafeText } from "@/lib/audio/renderDiagnostics";
 import { decidePlanningEngine } from "@/lib/audio/postTtsFlag";
+import { capDialogueStartMs, resolveOpeningPlan } from "@/lib/audio/openingTiming";
 import { runPostTtsDirection, runPostTtsReproduce, type PostTtsBridgeInput } from "@/lib/audio/postTtsStitchBridge";
 import { resolveEffectiveRollout } from "@/lib/audio/soundDiversityFlags";
 import { resolveSoundDiversityPolicy, diversityPolicyOverridesFromEnv, type DiversityMode } from "@/lib/audio/soundDiversityPolicy";
@@ -937,8 +938,13 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       // Post-TTS: the DIRECTOR's intro treatment sets where the first spoken word
       // enters (the dialogue offset). The intro audio itself is produced as
       // gain-segments by the director/executor below — no legacy intro placement.
-      dialogueStartMs = resolveIntroDialogueStartMs(
-        frozenProfile, postTtsFormatId, includeIntro && frozenProfile.intro !== null, introStd?.durationMs ?? null
+      // capDialogueStartMs is belt-and-braces: the director already caps every
+      // treatment's speech entry, and this guarantees the stitcher's offset
+      // agrees with the invariant even if a stored/legacy plan says otherwise.
+      dialogueStartMs = capDialogueStartMs(
+        resolveIntroDialogueStartMs(
+          frozenProfile, postTtsFormatId, includeIntro && frozenProfile.intro !== null, introStd?.durationMs ?? null
+        )
       );
     } else if (plannerEnabled && productionPlan) {
       // Planner path: the plan's intro cue (or its absence) is the call.
@@ -952,19 +958,46 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       introClip = resolved.introClip;
       dialogueStartMs = resolved.dialogueStartMs;
     } else if (introStd) {
+      // First line begins while the intro's tail is still fading — a crossfade,
+      // not a hard cut into silence. But the pre-roll is CAPPED: this used to be
+      // `introStd.durationMs - musicCrossfadeMs` with no upper bound, which put
+      // 30.9s of theme in front of the first host word on a 31.8s asset. A theme
+      // longer than the sonic-logo cap is now CUT, never waited out.
+      const opening = resolveOpeningPlan({
+        introDurationMs: introStd.durationMs,
+        musicCrossfadeMs,
+      });
+      let introPath = introStd.filePath;
+      if (opening.truncated) {
+        // Physically trim the excerpt so the mix carries a sonic logo, not a
+        // faded-to-silence 31s tail riding under the whole conversation.
+        try {
+          const logoPath = path.join(tempDir, "intro-sonic-logo.wav");
+          await runFfmpeg(ffmpegPath, [
+            "-y", "-i", introStd.filePath,
+            "-af", `atrim=0:${(opening.introPlayDurationMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`,
+            "-ar", String(targetSampleRate), "-c:a", "pcm_s16le", logoPath,
+          ]);
+          introPath = logoPath;
+        } catch (trimErr) {
+          // The fade-out below still makes the tail inaudible, so a trim failure
+          // degrades the polish, never the speech-start invariant.
+          soundWarnings.push(`Intro sonic-logo trim failed; relying on the fade-out instead: ${trimErr instanceof Error ? trimErr.message : String(trimErr)}`);
+        }
+        soundWarnings.push(`Intro opening: ${opening.reason}`);
+        console.log(`[Stitcher] ${opening.reason}`);
+      }
       introClip = {
-        filePath: introStd.filePath,
+        filePath: introPath,
         startMs: 0,
-        durationMs: introStd.durationMs,
+        durationMs: opening.introPlayDurationMs,
         kind: "music",
         pan: 0,
         fadeInMs: 20,
-        fadeOutMs: musicCrossfadeMs,
+        fadeOutMs: opening.fadeOutMs,
         gainDb: -2,
       };
-      // First line begins while the intro's tail is still fading — a
-      // crossfade, not a hard cut into silence.
-      dialogueStartMs = Math.max(0, introStd.durationMs - musicCrossfadeMs);
+      dialogueStartMs = opening.dialogueStartMs;
     }
 
     // Stinger-aware gaps: a transition needs room between segments, but ONLY

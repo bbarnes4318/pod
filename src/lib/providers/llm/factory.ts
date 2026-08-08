@@ -1,34 +1,21 @@
 import { LLMProvider } from "./interface";
 import { StubLLMProvider } from "./stub";
-import { OpenAILLMProvider } from "./openai";
-import { AnthropicLLMProvider } from "./anthropic";
-import { NvidiaNimLLMProvider } from "./nvidia";
-import { ZaiLLMProvider } from "./zai";
+import { buildProvider } from "./providerRegistry";
+import { LEGACY_ANTHROPIC_VERIFY_MODEL } from "./routing";
 
 export function getLLMProvider(opts: { provider?: string; model?: string } = {}): LLMProvider {
   const providerType = (opts.provider || process.env.LLM_PROVIDER || "stub").toLowerCase();
 
-  switch (providerType) {
-    case "openai":
-      return new OpenAILLMProvider(opts.model);
-    case "anthropic":
-      return new AnthropicLLMProvider(opts.model);
-    // NVIDIA NIM and Z.ai share the OpenAI wire protocol but are their OWN
-    // providers: each records its own name in the cost ledger, carries its own
-    // credential and timeout configuration, and has its own capability records.
-    // Never fold them into the "openai" case.
-    case "nvidia":
-      return new NvidiaNimLLMProvider(opts.model);
-    case "zai":
-      return new ZaiLLMProvider(opts.model);
-    case "stub":
-    default:
-      return new StubLLMProvider();
-  }
+  // One registry, shared with routing.ts's instantiateProvider — see
+  // providerRegistry.ts. An unknown name falls back to the stub HERE (an unset
+  // LLM_PROVIDER is ordinary in development), whereas the router throws. That
+  // difference is deliberate and is the only reason buildProvider returns null
+  // instead of raising.
+  return buildProvider(providerType, opts.model) ?? new StubLLMProvider();
 }
 
 /** Providers this factory can build. */
-export const SUPPORTED_LLM_PROVIDERS = ["nvidia", "zai", "anthropic", "openai", "stub"] as const;
+export { SUPPORTED_LLM_PROVIDERS } from "./providerRegistry";
 
 /**
  * LLM used for script WRITING specifically. Dialogue quality is extremely
@@ -76,17 +63,17 @@ export function getFactCheckLLMProvider(): LLMProvider {
  * LLM used for VERIFICATION work: the self-verify grounding rewrites and the
  * semantic fact-check reviewer. These are structured grading/rewrite tasks
  * against supplied evidence — not creative generation — so they run on a
- * cheaper model than the script writer by default (claude-sonnet-5 when the
- * chain resolves to Anthropic). Override via VERIFY_LLM_PROVIDER /
- * VERIFY_MODEL. Non-Anthropic and stub chains keep their existing model — we
- * never silently upgrade "stub" to a paid call.
+ * cheaper model than the script writer by default when the chain resolves to
+ * Anthropic. Override via VERIFY_LLM_PROVIDER / VERIFY_MODEL. Non-Anthropic and
+ * stub chains keep their existing model — we never silently upgrade "stub" to a
+ * paid call.
  */
 export function resolveVerifyLLMConfig(): { provider: string; model?: string } {
   const base = resolveFactCheckLLMConfig();
   const provider = (process.env.VERIFY_LLM_PROVIDER || base.provider).toLowerCase();
   const model =
     process.env.VERIFY_MODEL ||
-    (provider === "anthropic" ? "claude-sonnet-5" : base.model);
+    (provider === "anthropic" ? LEGACY_ANTHROPIC_VERIFY_MODEL : base.model);
   return { provider, model };
 }
 

@@ -16,6 +16,7 @@ import type { PlannedLine, TimelineClip } from "./assembly";
 import type { LoadedAsset, ProductionStyle } from "./soundDesign";
 import { shiftTimelineForInsert } from "./soundDesign";
 import type { ProductionCue, ProductionPlan } from "./productionPlan";
+import { resolveOpeningPlan, type OpeningPlan } from "./openingTiming";
 
 /**
  * Voice-free room (ms) a break gap may reserve for its stinger, unless
@@ -109,7 +110,7 @@ export function resolveIntroFromPlan(opts: {
   envIntro?: ResolvedTheme | null;
   musicCrossfadeMs: number;
   warnings: string[];
-}): { introClip: TimelineClip | null; dialogueStartMs: number } {
+}): { introClip: TimelineClip | null; dialogueStartMs: number; opening?: OpeningPlan } {
   const cue = opts.plan.cues.find((c) => c.type === "intro");
   if (!cue) return { introClip: null, dialogueStartMs: 0 };
   const theme: ResolvedTheme | null = cue.assetId
@@ -119,18 +120,26 @@ export function resolveIntroFromPlan(opts: {
     opts.warnings.push(`Plan intro cue skipped: asset '${cue.assetName ?? cue.assetId}' unavailable.`);
     return { introClip: null, dialogueStartMs: 0 };
   }
+  // The pre-roll is CAPPED (openingTiming.ts): a long theme is cut to a sonic
+  // logo rather than delaying the first spoken word behind it.
+  const opening = resolveOpeningPlan({
+    introDurationMs: theme.durationMs,
+    musicCrossfadeMs: opts.musicCrossfadeMs,
+  });
+  if (opening.truncated) opts.warnings.push(`Plan intro cue: ${opening.reason}`);
   return {
     introClip: {
       filePath: theme.filePath,
       startMs: 0,
-      durationMs: theme.durationMs,
+      durationMs: opening.introPlayDurationMs,
       kind: "music",
       pan: 0,
       fadeInMs: cue.fadeInMs,
-      fadeOutMs: opts.musicCrossfadeMs,
+      fadeOutMs: opening.fadeOutMs,
       gainDb: cue.gainDb,
     },
-    dialogueStartMs: Math.max(0, theme.durationMs - opts.musicCrossfadeMs),
+    dialogueStartMs: opening.dialogueStartMs,
+    opening,
   };
 }
 

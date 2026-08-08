@@ -45,6 +45,42 @@ jobs:
         run: npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts
       - name: Independent editorial gate regression
         run: npm run test:editorial-gate
+      # These assert PRODUCTION semantics explicitly (they hand NODE_ENV
+      # "production" to the gate directly), so the relaxed strictness flags on
+      # this job cannot mask a regression the way they did before.
+      - name: Production release gate + failed-episode regression
+        run: npm run test:production-release-gate
+      - name: Semantic repetition regression
+        run: npm run test:semantic-repetition
+      - name: Opening timing and chapter integrity regression
+        run: npm run test:opening-chapter-integrity
+      - name: Story clustering and rundown diversity regression
+        run: npm run test:story-clustering
+      - name: Canary preflight regression
+        run: npm run test:canary-preflight
+      - name: Provider error classification regression
+        run: npm run test:provider-error-classification
+      - name: LLM role routing and judge independence
+        run: npm run test:llm-role-routing
+      # Configuration-only. Fails on a role that resolves to nothing or a judge
+      # grading its own output; a single-provider account passes with warnings.
+      - name: Role routing audit
+        run: npm run audit:llm-routing
+      # Security and release-safety suites added after the independent review.
+      - name: Voice audition authorization matrix
+        run: npm run test:voice-audition-authz
+      - name: Listener-signal abuse resistance
+        run: npm run test:listener-signal-abuse
+      - name: Production readiness false-positive regression
+        run: npm run test:production-readiness
+      - name: Semantic QA acceptance contract
+        run: npm run test:semantic-qa-acceptance
+      - name: Voice audition flow regression
+        run: npm run test:voice-audition
+      - name: Listener learning loop regression
+        run: npm run test:listener-learning
+      - name: Seven-role writing pipeline regression
+        run: npm run test:seven-role-pipeline
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
       - name: Topic freshness and automated research regression
