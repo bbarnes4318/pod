@@ -35,11 +35,30 @@ async function gotoCreate(page: Page) {
     await page.getByTestId("discard-confirm").click();
     await page.waitForLoadState("networkidle").catch(() => {});
   }
-  await expect(page.getByTestId("mode-manual")).toBeVisible();
+  // Step one now asks exactly one question — which show — so the landing
+  // sentinel is the show chooser rather than the mode control.
+  await expect(page.getByTestId("podcast-standalone")).toBeVisible();
 }
 async function toTopics(page: Page) {
   await page.getByTestId("step-topics").click();
   await expect(page.getByTestId("board-filter-note")).toBeVisible();
+}
+/**
+ * Mode moved onto the Topics step: it governs which topics end up in the
+ * rundown, so it now lives with them instead of on the screen you reach first.
+ * This helper keeps each test reading as intent ("choose automatic") rather than
+ * as navigation, and does nothing extra when already on Topics.
+ */
+async function chooseMode(page: Page, mode: "manual" | "automatic" | "hybrid") {
+  if (!(await page.getByTestId("mode-manual").isVisible().catch(() => false))) {
+    await page.getByTestId("step-topics").click();
+  }
+  await page.getByTestId(`mode-${mode}`).click();
+}
+/** Title and description moved to Review, where the rundown they name exists. */
+async function toReview(page: Page) {
+  await page.getByTestId("step-review").click();
+  await expect(page.getByTestId("episode-title")).toBeVisible();
 }
 const pick = (page: Page, id: string) => page.getByTestId(`pick-${id}`).check();
 
@@ -69,7 +88,7 @@ test.describe("Studio rundown — full flows", () => {
 
   test("manual: exact order through select → reorder → lead → remove → create, UI == DB", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
 
     // 1. Initial selection order.
@@ -102,14 +121,14 @@ test.describe("Studio rundown — full flows", () => {
 
   test("automatic: clears stale picks, applies a real backend preference, UI == DB", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await pick(page, T.lead); await pick(page, T.nba);
     expect(await trayOrder(page)).toEqual([T.lead, T.nba]);
 
     // Switch to Automatic → picks + lead cleared, selection disabled.
     await page.getByTestId("step-show").click();
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     expect(await trayOrder(page)).toEqual([]);
     await expect(page.getByTestId(`pick-${T.lead}`)).toBeDisabled();
@@ -134,7 +153,7 @@ test.describe("Studio rundown — full flows", () => {
 
   test("hybrid: pinned order preserved, auto-fill marked, count == target, UI == DB", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-hybrid").click();
+    await chooseMode(page, "hybrid");
     await toTopics(page);
 
     // Pin two, in this order.
@@ -161,7 +180,7 @@ test.describe("Studio rundown — full flows", () => {
 
   test("automatic: reduced rundown is reported honestly when fewer topics qualify", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     // Only ONE seeded NBA topic exists, but ask for 3 → reduced rundown.
     await page.getByTestId("pref-sport").selectOption("NBA");
@@ -189,7 +208,7 @@ test.describe("Studio rundown — full flows", () => {
 
     // Count + verticals + TEAM NAMES (never raw ids) inherited.
     await page.getByTestId("step-show").click();
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     await expect(page.getByTestId("target-count")).toHaveText("4");
     await expect(page.getByTestId("pref-vertical-NFL")).toHaveAttribute("aria-pressed", "true");
@@ -227,7 +246,7 @@ test.describe("Studio rundown — full flows", () => {
   test("inheritance flow B: explicit overrides survive reload and switching to Podcast B", async ({ page }) => {
     await gotoCreate(page);
     await page.getByTestId(`podcast-${E2E.podcastId}`).click();
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     await expect(page.getByTestId("target-count")).toHaveText("4"); // inherited
 
@@ -260,7 +279,8 @@ test.describe("Studio rundown — full flows", () => {
 
   test("resume: a GENUINE second browser context restores the server-side draft", async ({ page, context, browser }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-hybrid").click();
+    await chooseMode(page, "hybrid");
+    await toReview(page);
     await page.getByTestId("episode-description").fill("Rundown notes that must survive.");
     await toTopics(page);
     await pick(page, T.two); await pick(page, T.lead);
@@ -282,8 +302,10 @@ test.describe("Studio rundown — full flows", () => {
       await expect(secondPage.getByTestId("target-count")).toHaveText("3");
       await expect(secondPage.getByTestId("hybrid-slots")).toContainText("2 pinned");
       await expect(secondPage.getByTestId("pref-sport")).toHaveValue("NFL");
-      await secondPage.getByTestId("step-show").click();
+      // Mode is restored on Topics (where it now lives) and the description on
+      // Review. Both assertions are unchanged — only the step they are read on.
       await expect(secondPage.getByTestId("mode-hybrid")).toHaveAttribute("aria-checked", "true");
+      await toReview(secondPage);
       await expect(secondPage.getByTestId("episode-description")).toHaveValue("Rundown notes that must survive.");
     } finally {
       await secondContext.close();
@@ -293,7 +315,7 @@ test.describe("Studio rundown — full flows", () => {
 
   test("startDebate failure: error shown, no redirect, button re-enabled; retry succeeds", async ({ page, request }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await pick(page, T.lead);
     await page.getByTestId("step-review").click();
@@ -321,7 +343,7 @@ test.describe("Studio rundown — full flows", () => {
 
   test("accessibility: keyboard selection, reorder, live region, aria-expanded", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await page.getByTestId(`pick-${T.lead}`).focus();
     await page.keyboard.press("Space");
@@ -342,14 +364,16 @@ test.describe("Studio rundown — full flows", () => {
 test.describe("Studio rundown — Phase 1: no silent data loss", () => {
   test.beforeEach(({}, testInfo) => desktopOnly(testInfo.project.name));
 
-  test("step-1 state (title + mode) survives a reload — the default manual/zero-topics draft persists", async ({ page }) => {
+  test("title + mode survive a reload — the default manual/zero-topics draft persists", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("episode-title").fill("Title typed on step one");
+    await toReview(page);
+    await page.getByTestId("episode-title").fill("Title typed before creating");
     // The draft must actually land server-side despite zero topics selected.
-    const saved = await waitForDraft(E2E.userA.id, (s) => s.title === "Title typed on step one");
+    const saved = await waitForDraft(E2E.userA.id, (s) => s.title === "Title typed before creating");
     expect(saved.mode).toBe("manual");
     await page.reload();
-    await expect(page.getByTestId("episode-title")).toHaveValue("Title typed on step one");
+    await toReview(page);
+    await expect(page.getByTestId("episode-title")).toHaveValue("Title typed before creating");
     await page.getByTestId("discard-draft").click();
     await page.getByTestId("discard-confirm").click();
   });
@@ -368,7 +392,10 @@ test.describe("Studio rundown — Phase 1: no silent data loss", () => {
 
   test("a failed save is VISIBLE and retryable — never silent", async ({ page }) => {
     await gotoCreate(page);
-    // Kill the network for server-action POSTs on this page.
+    await toReview(page);
+    // Kill the network for server-action POSTs on this page. Installed AFTER
+    // the step change so the failure under test is the title edit, not the
+    // navigation that reached the field.
     await page.route("**/studio/create*", (route) =>
       route.request().method() === "POST" ? route.abort() : route.continue()
     );
@@ -384,8 +411,10 @@ test.describe("Studio rundown — Phase 1: no silent data loss", () => {
 
   test("discard requires confirmation, cancel keeps the draft, and the button is absent with no draft", async ({ page }) => {
     await gotoCreate(page);
-    // Fresh page, no draft yet → no discard button rendered.
+    // Fresh page, no draft yet → no discard button rendered. Asserted before
+    // anything navigates, since a step change is itself a draft-creating edit.
     await expect(page.getByTestId("discard-draft")).toHaveCount(0);
+    await toReview(page);
     await page.getByTestId("episode-title").fill("Draft to protect");
     await waitForDraft(E2E.userA.id, (s) => s.title === "Draft to protect");
     // Two-step: cancel keeps everything.
@@ -393,28 +422,31 @@ test.describe("Studio rundown — Phase 1: no silent data loss", () => {
     await expect(page.getByTestId("discard-confirm")).toBeVisible();
     await page.getByTestId("discard-cancel").click();
     await expect(page.getByTestId("episode-title")).toHaveValue("Draft to protect");
-    // Confirm actually discards.
+    // Confirm actually discards. Discarding reloads onto a draft-free page,
+    // which lands on step one — so the title field has to be navigated to again
+    // before its emptiness can be read.
     await page.getByTestId("discard-draft").click();
     await page.getByTestId("discard-confirm").click();
+    await toReview(page);
     await expect(page.getByTestId("episode-title")).toHaveValue("");
   });
 
   test("switching to Automatic keeps manual picks and restores them on switch back", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await pick(page, T.lead); await pick(page, T.two);
     expect(await trayOrder(page)).toEqual([T.lead, T.two]);
 
     await page.getByTestId("step-show").click();
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     // Picks are inactive (tray shows the automatic plan) but NOT deleted.
     await expect(page.getByTestId("kept-picks-note")).toContainText("2 picks kept");
     expect(await trayOrder(page)).toEqual([]);
 
     await page.getByTestId("step-show").click();
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await page.getByTestId("step-topics").click();
     expect(await trayOrder(page)).toEqual([T.lead, T.two]);
     await page.getByTestId("discard-draft").click();
@@ -427,12 +459,12 @@ test.describe("Studio rundown — Phase 2: honest controls", () => {
 
   test("automatic creation posts NO lead topic (kept picks and lead both stripped)", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await pick(page, T.lead); await pick(page, T.two);
     await page.getByTestId(`tray-lead-${T.two}`).click(); // explicit lead
     await page.getByTestId("step-show").click();
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     await page.getByTestId("pref-sport").selectOption("NFL");
 
@@ -548,7 +580,7 @@ test.describe("Studio rundown — Phase 2: honest controls", () => {
 
   test("min-debate-score maps 0 to 'any' explicitly (no snap-back surprise)", async ({ page }) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-automatic").click();
+    await chooseMode(page, "automatic");
     await page.getByTestId("step-topics").click();
     await page.getByTestId("pref-mindebate").fill("60");
     await expect(page.getByText("Min debate score: 60")).toBeVisible();
@@ -563,7 +595,7 @@ test.describe("Studio rundown — Phase 2: honest controls", () => {
 test.describe("Studio rundown — responsive", () => {
   test("layout usable across viewports; tray reorderable without drag", async ({ page }, testInfo) => {
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
+    await chooseMode(page, "manual");
     await toTopics(page);
     await pick(page, T.lead); await pick(page, T.two);
     const up = page.getByTestId(`tray-up-${T.two}`);

@@ -7,6 +7,7 @@ import { ownerScope } from "@/lib/ownerScope";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 import { fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
+import { loadStudioDraft } from "@/lib/services/studioDraft";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,23 @@ export default async function StudioBoard() {
 
   const feed = feedHealth(poolCount, newest?.createdAt ?? null);
 
+  // An unfinished rundown is real work the studio is already holding, and the
+  // board was the one screen that never mentioned it — you had to remember you
+  // had a draft and go to Create to find out. The draft is autosaved
+  // server-side, so this is a read of what is already there.
+  const draft = viewer ? await loadStudioDraft(viewer.id) : null;
+  const draftStepLabel: Record<string, string> = {
+    show: "choosing a show", topics: "picking topics", hosts: "choosing hosts",
+    production: "setting production", review: "ready to create",
+  };
+  const draftSummary = draft
+    ? draft.mode === "automatic"
+      ? `${draft.targetTopicCount} topics chosen for you`
+      : draft.selectedTopicIds.length
+        ? `${draft.selectedTopicIds.length} topic${draft.selectedTopicIds.length === 1 ? "" : "s"} picked`
+        : "nothing picked yet"
+    : null;
+
   return (
     <div className="fadeUp">
       {/* ---------------- Hero: title, feed health, big Generate CTA --------- */}
@@ -136,6 +154,20 @@ export default async function StudioBoard() {
           </span>
         }
       />
+
+      {/* ---------------- Unfinished rundown -------------------------------- */}
+      {draft && (
+        <Link href="/studio/create" className="studioCard boardResume clickable" data-testid="board-resume">
+          <span className="boardResumeMark" aria-hidden="true">▸</span>
+          <span className="boardResumeText">
+            <span className="boardResumeTitle">{draft.title?.trim() || "Untitled episode"}</span>
+            <span className="boardResumeMeta">
+              You left off {draftStepLabel[draft.activeStep] ?? "building"} · {draftSummary}
+            </span>
+          </span>
+          <span className="boardResumeGo">Pick up where you left off</span>
+        </Link>
+      )}
 
       {/* ---------------- Trending takes grid ------------------------------- */}
       <div className="sectionHead">

@@ -65,6 +65,20 @@ export interface TopicRundownPickerProps {
   cardActions?: (t: StudioTopicVM) => TopicCardAction[];
   /** Ids with an action currently in flight — renders a busy/disabled state. */
   pendingActionIds?: string[];
+  /**
+   * Opt-in density. The default single-column list is what Admin uses and is
+   * unchanged; Studio's create flow now has a wide workspace column to fill, so
+   * it asks for a grid. Opt-in rather than a rewrite, because the two surfaces
+   * genuinely want different things from the same component.
+   */
+  dense?: boolean;
+  /**
+   * Opt-in pagination. Undefined = render everything, exactly as before. With a
+   * page size the list pages instead of running to an unbounded scroll — the
+   * pool can be hundreds of takes and every card carries a checkbox, so an
+   * unpaged list is also an unpaged tab order.
+   */
+  pageSize?: number;
 }
 
 export default function TopicRundownPicker({
@@ -76,6 +90,8 @@ export default function TopicRundownPicker({
   announce,
   cardActions,
   pendingActionIds,
+  dense,
+  pageSize,
 }: TopicRundownPickerProps) {
   const [query, setQuery] = useState("");
   const [sport, setSport] = useState("");
@@ -98,6 +114,14 @@ export default function TopicRundownPicker({
       return true;
     });
   }, [topics, query, sport, league, status, readiness]);
+
+  // Paging is derived, never stored beyond the page number — so a filter change
+  // that shortens the list can't strand the user on a page that no longer
+  // exists. Without a pageSize this is a single page containing everything.
+  const [page, setPage] = useState(0);
+  const pageCount = pageSize ? Math.max(1, Math.ceil(filtered.length / pageSize)) : 1;
+  const safePage = Math.min(page, pageCount - 1);
+  const visible = pageSize ? filtered.slice(safePage * pageSize, safePage * pageSize + pageSize) : filtered;
 
   const selectedSet = new Set(selectedIds);
   const pending = new Set(pendingActionIds ?? []);
@@ -172,8 +196,8 @@ export default function TopicRundownPicker({
       {filtered.length === 0 ? (
         <div className="emptyNote">No takes match these filters.</div>
       ) : (
-        <ul className="rundownPickerList" style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {filtered.map((t) => {
+        <ul className={`rundownPickerList${dense ? " rundownPickerList--dense" : ""}`} style={{ listStyle: "none", padding: 0, margin: 0, display: dense ? "grid" : "flex", flexDirection: dense ? undefined : "column", gap: "0.6rem" }}>
+          {visible.map((t) => {
             const selected = selectedSet.has(t.id);
             const canSelect = t.eligible || selected;
             const expanded = expandedId === t.id;
@@ -278,6 +302,26 @@ export default function TopicRundownPicker({
             );
           })}
         </ul>
+      )}
+
+      {pageSize && pageCount > 1 && (
+        <nav className="pickerPager" aria-label="Take pages">
+          <button
+            type="button" className="btnGhost" data-testid="picker-prev"
+            disabled={safePage === 0} onClick={() => setPage(safePage - 1)}
+          >
+            Previous
+          </button>
+          <span className="pickerPagerCount" data-testid="picker-page">
+            {safePage * pageSize + 1}–{Math.min(filtered.length, (safePage + 1) * pageSize)} of {filtered.length}
+          </span>
+          <button
+            type="button" className="btnGhost" data-testid="picker-next"
+            disabled={safePage >= pageCount - 1} onClick={() => setPage(safePage + 1)}
+          >
+            Next
+          </button>
+        </nav>
       )}
     </div>
   );

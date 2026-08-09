@@ -326,7 +326,6 @@ export default function RundownBuilder({
   );
 
   const goNext = () => { const i = STEPS.findIndex((s) => s.key === step); if (i < STEPS.length - 1) setStep(STEPS[i + 1].key); };
-  const goBack = () => { const i = STEPS.findIndex((s) => s.key === step); if (i > 0) setStep(STEPS[i - 1].key); setError(null); };
 
   const changeTarget = (n: number) => { setTargetTopicCount(n); setTargetCountDirty(true); };
   const markPrefsDirty = () => setPrefsDirty(true);
@@ -379,9 +378,39 @@ export default function RundownBuilder({
   const stepIndex = STEPS.findIndex((s) => s.key === step);
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - selectedIds.length) : mode === "automatic" ? targetTopicCount : 0;
 
+  // What the rail shows UNDER each step name. A rail that only lists step names
+  // makes you open a step to remember what you put in it; this answers the
+  // question in place.
+  const railValue: Record<RundownStep, string> = {
+    show: podcastId ? podcasts.find((p) => p.id === podcastId)?.name ?? "Show" : "Standalone",
+    topics:
+      mode === "automatic" ? `${targetTopicCount} chosen for you`
+      : mode === "hybrid" ? `${selectedIds.length} pinned + ${autoSlots}`
+      : selectedIds.length ? `${selectedIds.length} picked` : "Nothing picked yet",
+    hosts: hosts.filter((h) => hostIds.includes(h.id)).map((h) => h.name).join(" + ") || "No hosts",
+    production: `${productionStyle} · ${sfxDensity}`,
+    review: `~${estimate.estimatedDurationMinutes} min`,
+  };
+
+  // The topic the show will open on — the lead if one is set, otherwise
+  // whatever sits first in the rundown. Automatic has no lead until creation,
+  // so it has nothing honest to preview.
+  const leadPreview =
+    mode === "automatic" ? null
+    : orderedSelected.find((t) => t.id === leadTopicId) ?? orderedSelected[0] ?? null;
+
+  // The one CTA. It sits in the preview column at a fixed spot and changes its
+  // verb, never its position — the old flow put Next at the bottom of whichever
+  // card was open, so the button moved every time the step did.
+  const ctaDisabled =
+    step === "topics" ? !validation.ok
+    : step === "hosts" ? hostIds.length < Math.min(format.speakerMin, MAX_HOSTS)
+    : step === "review" ? !validation.ok || submitting
+    : false;
+
   return (
-    <div className="rundownBuilder">
-      <p aria-live="polite" className="srOnly" style={srOnlyStyle}>{srMsg}</p>
+    <div className="rundownBuilder createLayout">
+      <p aria-live="polite" className="srOnly">{srMsg}</p>
 
       {/* Identity, save state and the destructive action all live in the shell
           chrome now. The save line used to sit in the page body under a
@@ -420,101 +449,155 @@ export default function RundownBuilder({
         }
       />
 
-      <ol className="stepRail" aria-label="Create steps">
-        {STEPS.map((s, i) => {
-          const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
-          return (
-            <li key={s.key} className={`stepPill step-${state}`} aria-current={state === "active" ? "step" : undefined}>
-              <button type="button" data-testid={`step-${s.key}`} onClick={() => setStep(s.key)} className="stepPillBtn">
-                <span className="stepDot">{state === "done" ? "✓" : i + 1}</span>
-                <span className="stepLabel">{s.label}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
+      {/* ---- ZONE 1: the rundown rail ----
+          Vertical, and it carries VALUES, not just step names: what show, how
+          many topics, which hosts. The old horizontal pill strip could only say
+          which step you were on, so remembering what you had chosen meant
+          opening the step again. */}
+      <nav className="createRail" aria-label="Create steps">
+        <ol className="createRailList">
+          {STEPS.map((s, i) => {
+            const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
+            return (
+              <li key={s.key}>
+                <button
+                  type="button"
+                  data-testid={`step-${s.key}`}
+                  onClick={() => { setStep(s.key); setError(null); }}
+                  className={`createRailBtn step-${state}`}
+                  aria-current={state === "active" ? "step" : undefined}
+                >
+                  <span className="stepDot">{state === "done" ? "✓" : i + 1}</span>
+                  <span className="createRailText">
+                    <span className="createRailLabel">{s.label}</span>
+                    <span className="createRailValue">{railValue[s.key]}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
 
-      {/* One-shot notices: seed outcome + reconcile drops, both dismissible. */}
-      {seedNote && (
-        <div className="studioCard createAlert mb-3" role="status" data-testid="seed-note">
-          {seedNote}{" "}
-          <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
-        </div>
-      )}
-      {dropNote && (
-        <div className="studioCard createAlert mb-3" role="status" data-testid="dropped-note">
-          {dropNote}{" "}
-          <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
-        </div>
-      )}
-
-
-      {error && (
-        <div className="studioCard createAlert" role="alert" data-testid="create-error">
-          <strong>{error}</strong>
-          {rejected.length > 0 && (
-            <ul className="createReasons">{rejected.map((r, i) => <li key={i}>{topicTitle(byId, r.id)}: {r.reason}</li>)}</ul>
+      {/* ---- ZONE 2: the workspace ---- */}
+      <div className="createWork">
+        {/* One slot for everything the studio has to say. Notices used to be
+            inserted into the document above the step card, so every message
+            pushed the whole form down and the control you were about to click
+            moved out from under the cursor. This slot overlays instead. */}
+        <div className="createToasts" role="presentation">
+          {seedNote && (
+            <div className="createToast" role="status" data-testid="seed-note">
+              <span>{seedNote}</span>
+              <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {dropNote && (
+            <div className="createToast" role="status" data-testid="dropped-note">
+              <span>{dropNote}</span>
+              <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {inheritNote && (
+            <div className="createToast" role="status" data-testid="inherit-note">
+              <span>↩ {inheritNote}</span>
+              <button type="button" className="advLink" onClick={() => setInheritNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {error && (
+            <div className="createToast createToast--error" role="alert" data-testid="create-error">
+              <span>
+                <strong>{error}</strong>
+                {rejected.length > 0 && (
+                  <ul className="createReasons">{rejected.map((r, i) => <li key={i}>{topicTitle(byId, r.id)}: {r.reason}</li>)}</ul>
+                )}
+              </span>
+            </div>
           )}
         </div>
-      )}
 
       {/* ---------------- SHOW ---------------- */}
+      {/* Step one asks ONE question. Title, description and mode all used to be
+          crammed in here, which meant the first screen of the flow was four
+          unrelated decisions deep before you had said what you were making. */}
       {step === "show" && (
         <div className="studioCard">
           <h2 className="sectionTitle mt-0">Where does this episode live?</h2>
-          <div className="segRow u-wrap mb-3">
+          <p className="stageHint mb-3">A show lends the episode its format, hosts and topic preferences. A standalone episode starts from studio defaults.</p>
+          <div className="segRow u-wrap">
             <button type="button" data-testid="podcast-standalone" className={`segBtn${podcastId === null ? " on" : ""}`} aria-pressed={podcastId === null} onClick={() => onSelectPodcast(null)}>Standalone episode</button>
             {podcasts.map((p) => (
               <button key={p.id} type="button" data-testid={`podcast-${p.id}`} className={`segBtn${podcastId === p.id ? " on" : ""}`} aria-pressed={podcastId === p.id} onClick={() => onSelectPodcast(p.id)}>{p.name}</button>
             ))}
           </div>
-          {inheritNote && <p className="stageHint" role="status" data-testid="inherit-note">↩ {inheritNote}</p>}
-
-          <label className="fieldLabel" htmlFor="epTitle">Episode title <span className="stageHint">(optional)</span></label>
-          <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
-
-          <label className="fieldLabel mt-3" htmlFor="epDesc">Description <span className="stageHint">(optional)</span></label>
-          <textarea id="epDesc" data-testid="episode-description" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" className="input u-resizeY" />
-          <div className="stageHint u-right" data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
-
-          <div className="fieldLabel mt-2">Mode</div>
-          <div className="segRow" role="radiogroup" aria-label="Rundown mode">
-            {(["manual", "automatic", "hybrid"] as Mode[]).map((m) => (
-              <button key={m} type="button" data-testid={`mode-${m}`} role="radio" aria-checked={mode === m} className={`segBtn u-caps${mode === m ? " on" : ""}`} onClick={() => setMode(m)} >{m}</button>
-            ))}
-          </div>
-          <p className="stageHint mt-2">
-            {mode === "manual" && "You pick every topic and their order."}
-            {mode === "automatic" && "The studio selects the strongest eligible topics at creation. You set the target count and preferences."}
-            {mode === "hybrid" && "Pin the must-cover topics; the studio fills the rest to your target count."}
-          </p>
-          <StepNav onBack={null} onNext={goNext} nextLabel="Choose topics →" />
         </div>
       )}
 
       {/* ---------------- TOPICS ---------------- */}
       {step === "topics" && (
         <div>
-          {mode !== "manual" && (
-            <div className="studioCard mb-3">
-              <label className="fieldLabel" htmlFor="targetCount">Target topic count: <strong data-testid="target-count">{targetTopicCount}</strong></label>
-              <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} className="u-full" />
-              {mode === "hybrid" && <p className="stageHint" data-testid="hybrid-slots">{selectedIds.length} pinned · {targetTopicCount} target · {autoSlots} will be selected automatically</p>}
-              {mode === "automatic" && <p className="stageHint">{targetTopicCount} topics will be selected automatically at creation.</p>}
-              <AutoPrefs
-                mode={mode} topics={topics} podcastScoped={podcastScoped}
-                verticals={verticals} setVerticals={(v) => { setVerticals(v); markPrefsDirty(); }}
-                leagueIds={leagueIds} setLeagueIds={(v) => { setLeagueIds(v); markPrefsDirty(); }}
-                sport={sport} setSport={(v) => { setSport(v); markPrefsDirty(); }}
-                teams={teams} setTeams={(v) => { setTeams(v); markPrefsDirty(); }}
-                minDebateScore={minDebateScore} setMinDebateScore={(v) => { setMinDebateScore(v); markPrefsDirty(); }}
-              />
+          {/* Mode lives WITH the topics it governs. It used to sit on step one,
+              where it decided the behaviour of a screen you had not reached. */}
+          <div className="studioCard mb-3">
+            <div className="fieldLabel">How should the topics be chosen?</div>
+            <div className="segRow" role="radiogroup" aria-label="How topics are chosen">
+              <button
+                type="button" data-testid="mode-manual" role="radio" aria-checked={mode === "manual"}
+                className={`segBtn${mode === "manual" || mode === "hybrid" ? " on" : ""}`}
+                onClick={() => setMode("manual")}
+              >
+                I&apos;ll pick them
+              </button>
+              <button
+                type="button" data-testid="mode-automatic" role="radio" aria-checked={mode === "automatic"}
+                className={`segBtn${mode === "automatic" ? " on" : ""}`}
+                onClick={() => setMode("automatic")}
+              >
+                The studio picks
+              </button>
             </div>
-          )}
+            {/* Hybrid is not a third way of working — it is picking your own and
+                letting the studio top the rundown up. Modelled as what it is. */}
+            {mode !== "automatic" && (
+              <div className="createHybrid">
+                <button
+                  type="button" data-testid="mode-hybrid" role="checkbox" aria-checked={mode === "hybrid"}
+                  id="hybridToggle" className={`checkBox${mode === "hybrid" ? " on" : ""}`}
+                  onClick={() => setMode(mode === "hybrid" ? "manual" : "hybrid")}
+                >
+                  {mode === "hybrid" ? "✓" : ""}
+                </button>
+                <label htmlFor="hybridToggle">Let the studio fill the rest up to my target count</label>
+              </div>
+            )}
+            <p className="stageHint mt-2">
+              {mode === "manual" && "You pick every topic and their order."}
+              {mode === "automatic" && "The studio selects the strongest eligible topics at creation. You set the target count and preferences."}
+              {mode === "hybrid" && "Pin the must-cover topics; the studio fills the rest to your target count."}
+            </p>
+
+            {mode !== "manual" && (
+              <div className="mt-3">
+                <label className="fieldLabel" htmlFor="targetCount">Target topic count: <strong data-testid="target-count">{targetTopicCount}</strong></label>
+                <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} className="u-full" />
+                {mode === "hybrid" && <p className="stageHint" data-testid="hybrid-slots">{selectedIds.length} pinned · {targetTopicCount} target · {autoSlots} will be selected automatically</p>}
+                {mode === "automatic" && <p className="stageHint">{targetTopicCount} topics will be selected automatically at creation.</p>}
+                <AutoPrefs
+                  mode={mode} topics={topics} podcastScoped={podcastScoped}
+                  verticals={verticals} setVerticals={(v) => { setVerticals(v); markPrefsDirty(); }}
+                  leagueIds={leagueIds} setLeagueIds={(v) => { setLeagueIds(v); markPrefsDirty(); }}
+                  sport={sport} setSport={(v) => { setSport(v); markPrefsDirty(); }}
+                  teams={teams} setTeams={(v) => { setTeams(v); markPrefsDirty(); }}
+                  minDebateScore={minDebateScore} setMinDebateScore={(v) => { setMinDebateScore(v); markPrefsDirty(); }}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="rundownTwoCol">
             <div>
               {loadingTopics ? <TopicPickerSkeleton /> : (
-                <TopicRundownPicker topics={topics} selectedIds={selectedIds} onToggle={toggleTopic} selectionDisabled={mode === "automatic"} podcastScoped={podcastScoped} announce={announce} />
+                <TopicRundownPicker topics={topics} selectedIds={selectedIds} onToggle={toggleTopic} selectionDisabled={mode === "automatic"} podcastScoped={podcastScoped} announce={announce} dense pageSize={12} />
               )}
             </div>
             <div className="rundownTrayCol">
@@ -528,15 +611,13 @@ export default function RundownBuilder({
               <RundownTray items={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} maxTopics={maxTopics} mode={mode} targetTopicCount={targetTopicCount} estimate={estimate} podcastScoped={podcastScoped} onReorder={reorder} onRemove={removeTopic} onSetLead={setLead} />
             </div>
           </div>
-          {!validation.ok && <p className="stageHint noteWarn mt-3" role="note">{validation.error}</p>}
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Hosts →" nextDisabled={!validation.ok} />
         </div>
       )}
 
       {/* ---------------- HOSTS ---------------- */}
       {step === "hosts" && (
         <div className="studioCard">
-          <h2 className="sectionTitle mt-0">🎙 Format &amp; Hosts</h2>
+          <h2 className="sectionTitle mt-0">Format and hosts</h2>
           {podcastScoped ? (
             /* A podcast episode INHERITS the show's format server-side, so the
                control must not pretend to change it. Read-only, with the real
@@ -595,7 +676,6 @@ export default function RundownBuilder({
             })}
             {hosts.length === 0 && <span className="stageHint">No active hosts — <Link href="/studio/hosts">add one →</Link></span>}
           </div>
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < Math.min(format.speakerMin, MAX_HOSTS)} />
         </div>
       )}
 
@@ -621,21 +701,103 @@ export default function RundownBuilder({
               <input className="input" placeholder="provider voice id" value={voicePicks[h.id] ?? ""} onChange={(e) => setVoicePicks({ ...voicePicks, [h.id]: e.target.value })} />
             </div>
           ))}
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Review →" />
         </div>
       )}
 
       {/* ---------------- REVIEW ---------------- */}
+      {/* Naming the episode is a REVIEW decision. On step one you have not yet
+          chosen the topics, so there is nothing to name it after. */}
       {step === "review" && (
         <ReviewStep
           mode={mode} podcast={podcasts.find((p) => p.id === podcastId) ?? null}
           orderedSelected={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} targetTopicCount={targetTopicCount}
           hosts={hosts.filter((h) => hostIds.includes(h.id))} ttsProvider={ttsProvider} productionStyle={productionStyle}
-          sfxDensity={sfxDensity} title={title} description={description} estimate={estimate} validation={validation}
-          prefs={{ verticals, leagueIds, teams, sport, minDebateScore }} submitting={submitting} onBack={goBack} onSubmit={submit}
+          sfxDensity={sfxDensity} title={title} setTitle={setTitle} description={description} setDescription={setDescription}
+          estimate={estimate} validation={validation}
+          prefs={{ verticals, leagueIds, teams, sport, minDebateScore }}
         />
       )}
+      </div>
 
+      {/* ---- ZONE 3: the preview ----
+          What you have actually built so far, and the one button that moves it
+          forward. Both stay put: the column is sticky and the CTA is pinned to
+          the bottom of it, so the primary action occupies the same pixels on
+          every step. */}
+      <aside className="createPreview" aria-label="Episode so far">
+        <div className="createPreviewBody">
+          <div className="createPreviewTitle">Episode so far</div>
+          <dl className="createPreviewList">
+            <dt>Show</dt>
+            <dd>{podcastId ? podcasts.find((p) => p.id === podcastId)?.name ?? "Show" : "Standalone"}</dd>
+            <dt>Rundown</dt>
+            <dd>
+              {mode === "automatic" ? (
+                <span>{targetTopicCount} chosen at creation</span>
+              ) : orderedSelected.length === 0 ? (
+                <span className="createPreviewEmpty">Nothing picked yet</span>
+              ) : (
+                <ol className="createPreviewOrder" data-testid="preview-rundown">
+                  {orderedSelected.map((t, i) => (
+                    <li key={t.id}>
+                      <span className="createPreviewNum">{i + 1}</span>
+                      <span className="createPreviewTopic">{t.title}</span>
+                    </li>
+                  ))}
+                  {autoSlots > 0 && <li className="createPreviewAuto">+ {autoSlots} auto-filled</li>}
+                </ol>
+              )}
+            </dd>
+            <dt>Hosts</dt>
+            <dd>{hosts.filter((h) => hostIds.includes(h.id)).map((h) => h.name).join(" + ") || "Default pairing"}</dd>
+            <dt>Runtime</dt>
+            <dd>~{estimate.estimatedDurationMinutes} min · ~{estimate.estimatedWords.toLocaleString()} words</dd>
+          </dl>
+
+          {/* The cold open, from its INPUTS. This is deliberately not a
+              generated script: writing one means calling the script pipeline,
+              which this work is not allowed to touch and which costs a real
+              model call. What it shows is exactly what the opener will be built
+              from, so a weak lead is visible before you pay for it. */}
+          {step === "review" && leadPreview && (
+            <div className="createColdOpen" data-testid="cold-open-preview">
+              <div className="createPreviewTitle">The show opens on</div>
+              <p className="createColdOpenTopic">{leadPreview.title}</p>
+              {leadPreview.summary && <p className="createColdOpenWhy">{leadPreview.summary}</p>}
+              <p className="createColdOpenMeta">
+                {leadPreview.evidenceCount} evidence item{leadPreview.evidenceCount === 1 ? "" : "s"} ·{" "}
+                {leadPreview.sourceCount} source{leadPreview.sourceCount === 1 ? "" : "s"} · debate {Math.round(leadPreview.debateScore)}
+              </p>
+              <p className="createColdOpenNote">
+                These are the inputs the opener is written from, not the script itself.
+              </p>
+            </div>
+          )}
+
+          {!validation.ok && step !== "show" && (
+            <p className="noteWarn createPreviewWarn" role="note">{validation.error}</p>
+          )}
+        </div>
+
+        <div className="createPreviewCta">
+          {step === "review" ? (
+            <button
+              type="button" data-testid="create-episode" className="btnPrimary u-full"
+              onClick={submit} disabled={ctaDisabled} aria-busy={submitting}
+            >
+              {submitting && <span className="btnSpin" aria-hidden="true" />}
+              {submitting ? "Creating…" : "Create episode"}
+            </button>
+          ) : (
+            <button
+              type="button" data-testid="step-next" className="btnPrimary u-full"
+              onClick={goNext} disabled={ctaDisabled}
+            >
+              Continue to {STEPS[stepIndex + 1].label.toLowerCase()}
+            </button>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -701,13 +863,14 @@ function AutoPrefs({
 
 /* ---------------- Review ---------------- */
 function ReviewStep({
-  mode, podcast, orderedSelected, leadTopicId, targetTopicCount, hosts, ttsProvider, productionStyle, sfxDensity, title, description, estimate, validation, prefs, submitting, onBack, onSubmit,
+  mode, podcast, orderedSelected, leadTopicId, targetTopicCount, hosts, ttsProvider, productionStyle, sfxDensity,
+  title, setTitle, description, setDescription, estimate, validation, prefs,
 }: {
   mode: Mode; podcast: BuilderPodcast | null; orderedSelected: StudioTopicVM[]; leadTopicId: string | null; targetTopicCount: number;
-  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string; title: string; description: string;
+  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string;
+  title: string; setTitle: (v: string) => void; description: string; setDescription: (v: string) => void;
   estimate: ReturnType<typeof estimateRundown>; validation: { ok: boolean; error?: string };
   prefs: { verticals: string[]; leagueIds: string[]; teams: string[]; sport: string; minDebateScore: number | null };
-  submitting: boolean; onBack: () => void; onSubmit: () => void;
 }) {
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - orderedSelected.length) : mode === "automatic" ? targetTopicCount : 0;
   const lead = leadTopicId && orderedSelected.some((t) => t.id === leadTopicId) ? leadTopicId : orderedSelected[0]?.id;
@@ -716,8 +879,16 @@ function ReviewStep({
   return (
     <div className="studioCard">
       <h2 className="sectionTitle mt-0">Review the rundown</h2>
-      <dl className="reviewGrid">
-        <dt className="fieldLabel">Title</dt><dd>{title || "Auto-generated"}</dd>
+
+      {/* Naming happens here, where the rundown is finally visible. */}
+      <label className="fieldLabel" htmlFor="epTitle">Episode title <span className="stageHint">(optional)</span></label>
+      <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
+
+      <label className="fieldLabel mt-3" htmlFor="epDesc">Description <span className="stageHint">(optional)</span></label>
+      <textarea id="epDesc" data-testid="episode-description" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" className="input u-resizeY" />
+      <div className="stageHint u-right" data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
+
+      <dl className="reviewGrid mt-4">
         {description && (<><dt className="fieldLabel">Description</dt><dd data-testid="review-description">{description}</dd></>)}
         <dt className="fieldLabel">Show</dt><dd>{podcast ? podcast.name : "Standalone episode"}</dd>
         <dt className="fieldLabel">Mode</dt><dd className="u-caps" data-testid="review-mode">{mode}</dd>
@@ -744,13 +915,6 @@ function ReviewStep({
         </div>
       )}
       {!validation.ok && <p role="alert" className="noteWarn mt-3">{validation.error}</p>}
-      <div className="stageActions">
-        <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
-        <button type="button" data-testid="create-episode" className="btnPrimary u-mlAuto" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting}>
-          {submitting && <span className="btnSpin" aria-hidden="true" />}
-          {submitting ? "Creating…" : "Create episode"}
-        </button>
-      </div>
     </div>
   );
 }
@@ -851,16 +1015,6 @@ function TopicPickerSkeleton() {
   );
 }
 
-function StepNav({ onBack, onNext, nextLabel, nextDisabled }: { onBack: (() => void) | null; onNext: () => void; nextLabel: string; nextDisabled?: boolean }) {
-  return (
-    <div className="stageActions mt-4">
-      {onBack ? <button type="button" data-testid="step-back" className="btnGhost" onClick={onBack}>← Back</button> : <span />}
-      <button type="button" data-testid="step-next" className="btnPrimary u-mlAuto" onClick={onNext} disabled={nextDisabled}>{nextLabel}</button>
-    </div>
-  );
-}
-
-const srOnlyStyle: React.CSSProperties = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 };
 function topicTitle(byId: Map<string, StudioTopicVM>, id: string): string { return byId.get(id)?.title ?? id; }
 function buildVoiceOverrides(picks: Record<string, string>, engine: string): Record<string, { provider: string; voiceId: string }> | undefined {
   if (!engine) return undefined;

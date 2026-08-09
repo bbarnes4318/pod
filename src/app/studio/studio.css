@@ -761,29 +761,233 @@
    CREATE STEPPER — streaming take → episode flow
    ============================================================ */
 
-/* Progress rail */
-.stepRail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  list-style: none;
-  margin: 0 0 1.5rem;
-  padding: 0;
+/* ============================================================
+   CREATE FLOW — three zones.
+
+   Rail (what you have decided) | workspace (the one decision in
+   front of you) | preview (what it adds up to, and the single
+   button that moves it on). The rail and the preview are sticky
+   and the CTA is pinned to the bottom of the preview, so the
+   primary action sits on the same pixels on every step. It used
+   to live at the bottom of whichever card was open, which meant
+   it moved every time the step did.
+   ============================================================ */
+.createLayout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 300px;
+  gap: var(--sp-6);
+  align-items: start;
 }
+.createStick {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+}
+
+.createRail {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+  min-width: 0;
+}
+.createRailList { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.createRailBtn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.createRailBtn:hover { background: var(--surface); }
+.createRailBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.createRailText { display: grid; gap: 1px; min-width: 0; }
+.createRailLabel { font-size: 0.82rem; font-weight: 700; }
+.createRailValue {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.createRailBtn.step-active {
+  background: var(--accent-muted);
+  border-color: var(--accent-border, var(--border));
+  color: var(--accent);
+}
+.createRailBtn.step-active .createRailValue { color: var(--text); }
+.createRailBtn.step-done { color: var(--text); }
+
+/* ---- Workspace ---- */
+.createWork { min-width: 0; position: relative; }
+
+/* ---- The single notice slot ----
+   Notices used to be inserted into the document above the step card, so every
+   message pushed the form down and the control under the cursor moved. This
+   slot overlays the top of the workspace instead. */
+.createToasts {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-2));
+  z-index: 20;
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.createToasts:empty { display: none; }
+.createToast {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}
+.createToast--error { border-color: var(--error-border); background: var(--error-muted); }
+
+/* ---- Hybrid as what it is: an option on top of picking your own ---- */
+.createHybrid { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.createHybrid label { font-size: 0.85rem; color: var(--text); cursor: pointer; }
+.checkBox {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--border-hover);
+  background: var(--surface-2);
+  color: var(--bg);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.checkBox.on { background: var(--accent); border-color: var(--accent); }
+.checkBox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- Preview column ---- */
+.createPreview {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--studio-topbar-h) - var(--studio-subbar-h) - var(--sp-12));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.createPreviewBody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); }
+.createPreviewTitle {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.createPreviewList { margin: 0; display: grid; gap: var(--sp-1); font-size: 0.82rem; }
+.createPreviewList dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-top: var(--sp-2);
+}
+.createPreviewList dd { margin: 0; color: var(--text); }
+.createPreviewEmpty { color: var(--text-muted); }
+.createPreviewOrder { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.createPreviewOrder li { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--sp-2); }
+.createPreviewNum { font-family: var(--font-mono); color: var(--text-muted); }
+.createPreviewTopic { overflow: hidden; text-overflow: ellipsis; }
+.createPreviewAuto { color: var(--text-muted); font-style: italic; }
+.createPreviewWarn { margin-top: var(--sp-3); font-size: 0.8rem; }
+
+.createColdOpen { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.createColdOpenTopic { margin: 0; font-size: 0.9rem; font-weight: 700; color: var(--text); line-height: 1.4; }
+.createColdOpenWhy { margin: var(--sp-2) 0 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+.createColdOpenMeta {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.createColdOpenNote { margin: var(--sp-2) 0 0; font-size: 0.72rem; color: var(--text-muted); font-style: italic; }
+
+.createPreviewCta { padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+/* ---- Dense, paged take grid ---- */
+.rundownPickerList--dense { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.pickerPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.pickerPagerCount { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted); }
+
+/* ---- Unfinished rundown, on The Board ---- */
+.boardResume {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  text-decoration: none;
+  border-color: var(--accent-border, var(--border));
+  background: var(--accent-muted);
+}
+.boardResumeMark { color: var(--accent); font-size: 1rem; }
+.boardResumeText { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.boardResumeTitle { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boardResumeMeta { font-size: 0.78rem; color: var(--text-muted); }
+.boardResumeGo { font-size: 0.8rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .boardResume { flex-wrap: wrap; }
+  .boardResumeGo { width: 100%; }
+}
+
+@media (max-width: 1180px) {
+  /* The preview drops under the workspace before the rail does — the rail is
+     navigation and stays useful narrow; the preview needs its width. */
+  .createLayout { grid-template-columns: 170px minmax(0, 1fr); }
+  .createPreview { grid-column: 1 / -1; position: static; max-height: none; }
+}
+@media (max-width: 860px) {
+  .createLayout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+  .createRail { position: static; }
+  .createRailList { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-1); overflow-x: auto; }
+  .createRailValue { display: none; }
+}
+
+/* A small status pill. It used to be the create flow's step chip; the rail no
+   longer needs one, but the audition console still labels with it. */
 .stepPill {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.35rem 0.7rem 0.35rem 0.4rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
   color: var(--text-muted);
   background: var(--surface);
   white-space: nowrap;
 }
+
 .stepDot {
   width: 20px;
   height: 20px;
