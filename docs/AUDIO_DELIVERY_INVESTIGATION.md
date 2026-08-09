@@ -260,6 +260,30 @@ is outstanding:
   unit test and by inspection of the exact strings now sent to Fish; it has
   **not** been confirmed by ear.
 
+### A1 — the two-sources-of-truth hazard is not hypothetical
+
+Read from the production `AiHost` table, and cross-checked against the
+`voiceMap` actually used to render episode `0c90db5b`:
+
+| Host | Prod `ttsVoiceId` | `roster.ts` says | Match? |
+|---|---|---|---|
+| Bernadette Zabala (`fa4ba92d`, slug `bernie-line-two`) | `c176f96ab88b4fb39f74e19165bacbdc` | `c73dbfe6a10249968409a343ea13a37e` | **No** |
+| Cal "Red Eye" Mercer (`28ddbd52`) | `36780e7121b84d5c9c24cbd2f15eaaa4` | `PLACEHOLDER_VOICE_ID` | **No** |
+
+Both live hosts are rendering on voices the roster does not declare. The roster
+is not the source of truth it presents itself as, and nothing detects the drift.
+
+Two further defects surfaced by the same query:
+
+- **There are two active hosts named "Bernadette Zabala"** — `1ae9a0a6`
+  (slug `bernadette-zabala`) and `fa4ba92d` (slug `bernie-line-two`) — both
+  active, both pointing at the same voice id. Casting currently disambiguates
+  only by the pinned `Episode.hostIds`.
+- **`Tom Sloan` is active with `ttsVoiceId = "PLACEHOLDER_USER_VOICE"`**, a
+  literal string. It would fail Fish's 32-hex reference-id validation the moment
+  he is cast — at render time, after the script is written and paid for. This is
+  precisely the failure A1's preflight is meant to move earlier.
+
 Also outstanding from Part A: A1 (single source of truth for voice assignment,
 preflight eligibility, boot assertion — note `Cal Mercer's ttsVoiceId` is still
 `PLACEHOLDER_VOICE_ID` in the roster, which is an independent and real delivery
