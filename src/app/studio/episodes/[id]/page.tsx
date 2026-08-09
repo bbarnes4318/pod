@@ -17,6 +17,7 @@ import PublishPanel from "../../PublishPanel";
 import AdvancedProducer, { AppliedVoice } from "../../AdvancedProducer";
 import SocialClipPanel from "../../SocialClipPanel";
 import ProductionConsole from "../../ProductionConsole";
+import StartDebateButton from "./StartDebateButton";
 import { getCreateProgressVM } from "@/lib/services/createProgress";
 import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
@@ -340,9 +341,20 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           {bustedAudioUrl && (
             <a href={bustedAudioUrl} download className="btnGhost">Download MP3</a>
           )}
-          <Link href={action.href} className="btnPrimary" data-testid="episode-next-action">
-            {action.label}
-          </Link>
+          {/* nextActionFor points some statuses at the episode page itself —
+              which, ON that page, is a button that navigates nowhere. For an
+              unstarted draft the honest control is the one that actually starts
+              the work; for anything else already sitting on its own target,
+              the console below is the answer and a second dead button is not. */}
+          {action.href === `/studio/episodes/${episode.id}` ? (
+            episode.status === "draft" && !script ? (
+              <StartDebateButton episodeId={episode.id} />
+            ) : null
+          ) : (
+            <Link href={action.href} className="btnPrimary" data-testid="episode-next-action">
+              {action.label}
+            </Link>
+          )}
         </div>
       </div>
     </div>

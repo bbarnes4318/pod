@@ -24,7 +24,13 @@ export function nextActionFor(episode: { id: string; status: string }): NextActi
   const ep = `/studio/episodes/${episode.id}`;
   switch (episode.status) {
     case "draft":
-      return { stage: "Script", label: "Watch it being written", href: ep };
+      // "Watch it being written" was a promise the product could not keep. A
+      // draft is an episode whose script job has NOT been queued — nothing is
+      // being written, so there is nothing to watch, and the link pointed at
+      // the episode page, which on that page navigates nowhere. The label now
+      // names what actually has to happen, and the episode page carries the
+      // button that does it.
+      return { stage: "Script", label: "Start the debate", href: ep };
     case "script_draft":
       return { stage: "Script", label: "Read & approve the script", href: `${ep}#transcript` };
     case "script_approved":
