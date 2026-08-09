@@ -244,6 +244,76 @@ Mercer, now, same scene — note the anger signature, previously absent:
 
 ---
 
+## A1 (second run) — the A/B render, and an honest reading of it
+
+Rendered 2026-08-09 **without a deploy**: the script, cast, voice ids and scene
+boundaries were read from production, and the same 11 scenes were re-rendered
+locally on the fixed cue path through the real `synthesizeFishDialogueScene`
+(best-of-N, strict QA — identical to the production path).
+
+| | |
+|---|---|
+| `docs/audio-comparison/0c90db5b-before.mp3` | The audio **actually shipped** from production — the 11 selected scene renders, concatenated. 570.4 s |
+| `docs/audio-comparison/0c90db5b-after.mp3` | The same 11 scenes re-rendered on the fixed cue path. 572.3 s |
+
+44 Fish requests, 683 s wall clock.
+
+**The fix demonstrably reaches the engine.** The literal request text for scene 0
+now begins:
+
+```
+<|speaker:0|>[cold open, arriving mid-energy, hooking fast, no throat-clearing]
+[Low, lightly weathered, close-mic and brisk; blunt dry conversation with one
+ person, never polished, analytical, narrated, or announced. He reacts before he
+ explains; angry here means slower, quieter, more precise — never louder;
+ speaking to the other host, reacting in this moment, never reading] Hang in there. …
+```
+
+Previously that scene carried only the truncated character cue and no scene
+shading at all.
+
+### Measured delivery, before vs after
+
+Both cuts scored with the project's own `analyzeSpokenPerformanceBuffer` —
+the same analyzer the production QA gate uses.
+
+| Metric | Before | After |
+|---|---|---|
+| Mean loudness range (LRA) | 2.89 LU | **3.05 LU** |
+| Mean pause std-dev | 0.121 s | 0.115 s |
+| Mean QA score | 97.8 | 97.8 |
+| Scenes with more dynamic range | — | 8 / 11 |
+
+**Verdict — stated carefully.** I cannot listen to audio, so this is a
+measurement, not a listening verdict. The measurement shows a **small**
+improvement: +0.16 LU mean loudness range, more dynamic range in 8 of 11 scenes,
+and an identical mean QA score. A 0.16 LU shift across 11 stochastic renders is
+**within sampling noise** and I will not claim it as proof of an audible change.
+
+What *is* proven is the mechanism: the scene shading and the full manner
+direction now reach Fish, and previously they provably did not. Whether Fish
+meaningfully acts on that additional bracket text is a separate question these
+numbers do not settle. **The owner needs to listen to the two files.** If they
+sound the same, the conclusion is not that the diagnosis was wrong — the cue
+truncation was real and is proven — but that Fish weights inline bracket
+direction weakly, which would make the engine choice (A3) the more important
+lever, not the cue text.
+
+### A side-effect worth flagging: the QA gate is tight
+
+Rendering surfaced something the shipped path hides. Non-peak scenes request
+only **2** candidates (`performanceCandidateCount` returns 3 only for
+`cold_open` and `argument_escalation`). On the first attempt, scene 3 had *both*
+candidates rejected — "Flat vocal dynamics: 2.5 LU LRA; minimum 2.6 LU" and
+"90% of pauses cluster around one timing value" — and threw
+`quality_gate_failed`. Scene 0 needed 4 candidates to find one that passed.
+
+That matters because of the A0 hardening committed in the previous run: a failed
+scene now fails the **episode**. With a gate this tight and only two candidates
+on most scenes, that will fail real episodes. Either the candidate floor for
+non-peak scenes must rise, or the failure path needs a bounded retry before it
+gives up. **This is an open risk, not a resolved item.**
+
 ## Not done — stated plainly
 
 **No audio was rendered and no listening comparison was made.** Every A0b
