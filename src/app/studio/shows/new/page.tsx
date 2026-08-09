@@ -78,7 +78,7 @@ export default async function NewStudioShowPage({
     <div className="fadeUp">
       <StudioPageHeader
         title="Build your show"
-        subtitle="The theme, promise, cast chemistry and rituals every future episode follows."
+        subtitle="The theme, listener promise, cast chemistry and rituals every future episode follows."
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
       />
       <PodcastWizard hosts={hosts} teams={teams} initial={initial} hideIdentity />
