@@ -1,197 +1,209 @@
-# Studio design system
+# The Studio design system
 
-The Studio's palette was never the problem. `src/app/globals.css` `:root` already
-held a coherent, well-reasoned token set. The problem was that nothing was
-obliged to use it: 437 `style={{ … }}` props across `src/app/studio/**` bypassed
-the stylesheet entirely, and the same page furniture was hand-rebuilt on every
-route.
-
-This document is the inventory and the rules. It **references** the existing
-tokens rather than redefining them — if a value is not here, look in
-`globals.css`, and if you need a new one, add it there.
-
----
-
-## Tokens (defined in `src/app/globals.css`)
-
-Do not introduce a parallel palette. Do not write a hex value in a component;
-`tests/e2e/studio-tokens.spec.ts` fails the build if you do.
-
-| Purpose | Token |
-| --- | --- |
-| App background | `--bg` `#0E1116` |
-| Cards, panels | `--surface` `#161A21` |
-| Elevated / advanced panels, wells, inputs | `--surface-2` `#1E242D` |
-| Hairlines | `--border` `#2A313B`, hover `--border-hover` |
-| Body text | `--text` `#EDEFF2` |
-| Secondary text | `--text-muted` `#9BA3AF` |
-| Primary / live / Generate **only** | `--accent` `#FF5A1F` (+ `-hover`, `-press`) |
-| Host identity, seats 0–3 | `--host-a` … `--host-d` |
-| Status | `--success` `--warning` `--error` |
-| Small red **text** | `--error-text` — see below |
-| Display face | `--font-display` |
-| Timecodes, tallies, IDs | `--font-mono` |
-
-### The `--error` / `--error-text` distinction is load-bearing
-
-`--error` `#E5484D` is the spec value and is correct for **fills and borders**,
-which only need 3:1. As small body text on an elevated panel it measures 3.99:1
-and fails AA. `--error-text` `#FF6B6E` exists for that case. Use the right one;
-they are not interchangeable.
-
-### Spacing
-
-Seven steps, and nothing between them:
-
-```
---sp-1: 4px   --sp-2: 8px   --sp-3: 12px  --sp-4: 16px
---sp-6: 24px  --sp-8: 32px  --sp-12: 48px
-```
-
-**48px is the ceiling.** Before this scale the Studio mixed
-`0.4 / 0.6 / 0.75 / 0.8 / 1.25 / 1.75 / 2 / 2.25rem` with no relationship
-between the values, which is why nothing lined up across routes.
-
-No card or `<section>` may spend more than **32px** of vertical padding.
-Enforced by `studio-chrome.spec.ts`.
-
-### Shell metrics
-
-```
---studio-rail: 248px          --studio-rail-collapsed: 76px
---studio-topbar-h: 56px       --studio-subbar-h: 32px
---studio-topbar-h-sm: 52px    --studio-subbar-h-sm: 28px   (≤720px)
-```
+What the rules are, and why each one exists. Every rule here is enforced by a
+spec in `tests/e2e/` — if it is not enforced, it is not in this document.
 
 ---
 
 ## Chrome
 
-Page identity belongs to the **shell**, never to the page body.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ ⌂ brand │ Page title  · breadcrumb │ [actions] [Generate] [◉]│  56px  topbar
-├─────────────────────────────────────────────────────────────┤
-│ One line of subtitle                     status, right-aligned│  32px  subbar
-├─────────────────────────────────────────────────────────────┤
-│ main.studioMain — padding 16 / 24 / 32, max-width 1400px      │
-```
-
-### `<StudioPageHeader>`
+The shell owns page identity. A page never draws its own title.
 
 ```tsx
 <StudioPageHeader
-  title="Create an episode"                    // sentence case, goes in the topbar
-  subtitle="Pick the takes. We'll build the show."   // ONE line, subbar
-  breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}  // ancestors only
-  actions={<button className="btnPrimary">Build a show</button>}
-  status={<span>Saved 4:12 PM</span>}          // right side of the subbar
+  title="Episodes"                      // sentence case, shown in the topbar
+  subtitle="Finished shows up top."     // one line, in the subbar; omit rather than pad
+  breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
+  actions={<Link className="btnPrimary">Build a show</Link>}   // topbar
+  status={<span>Saved 14:02</span>}                            // subbar, right
 />
 ```
 
-**Why it is a client component.** The title has to render inside the shell's
-topbar, which sits *above* the page in the tree, and RSC has no way to pass data
-upward. Pages stay server components: they render this client component with
-plain serializable props. `actions` and `status` take `ReactNode`, which a
-server component may legally pass to a client component, so server-rendered
-buttons still work.
+| Band | Desktop | ≤720px |
+| --- | --- | --- |
+| Topbar | 56px | 52px |
+| Subbar | 32px | 28px |
+| `.studioMain` padding | `16 / 24 / 32px` | `12 / 16 / 24px` |
+| `.studioMain` max-width | 1400px | — |
 
-The visible title in the topbar is a `<div>`. `StudioPageHeader` emits the real
-`<h1>` with `.srOnly`, so the document has exactly one `h1`, it names the page,
-and it is present in the server HTML rather than appearing after hydration.
+The topbar uses `height`, not `min-height`: a long title ellipsizes rather than
+pushing the fold down.
 
-A route → title fallback map in `StudioShell` means the topbar is never empty on
-first paint, and never empty for a route that has not adopted the component yet.
+**Pages stay server components.** `StudioPageHeader` is a client component
+because RSC cannot pass data upward, but `actions` and `status` accept
+`ReactNode`, which a server component may hand to a client component — so
+server-rendered buttons work unchanged.
 
-`.pageTitle` and `.pageSub` are **deleted**, not aliased. A stray usage should be
-visible, and the token spec fails if one returns.
+### Two channels, deliberately different
 
----
+- `title` / `subtitle` / `breadcrumb` are **primitives**, published through
+  context. Effect deps compare by value, so publishing settles in one pass.
+- `actions` / `status` are **elements**, rendered through a **portal**. They must
+  not go through context: a React element is a fresh object every render, so
+  effect deps containing one never compare equal — publish re-renders the shell,
+  the shell re-renders the page, the page builds a new element, and the effect
+  fires again. That is an infinite loop, and it hung every page carrying
+  `status` until it was split out.
 
-## Component inventory
+### Portalled content is never server-rendered
 
-### Shell (`StudioShell.tsx`)
-| Class | Role |
-| --- | --- |
-| `.studioShell` | Grid: nav rail + body. `data-collapsed`, `data-mobile-open` |
-| `.studioSidebar` / `.studioNavLink` | Primary nav, `aria-current="page"` on the active item |
-| `.studioTopbar` | Fixed 56px. **Height, not min-height** — a long title ellipsizes rather than pushing the fold down |
-| `.studioTopbarHead` / `.studioTopbarTitle` | Page identity; `text-overflow: ellipsis` |
-| `.studioCrumbs` / `.studioCrumb` | Ancestors. Separator drawn with `::after`, never typed, so it is not announced |
-| `.studioTopbarActions` | Page-level controls, left of Generate |
-| `.studioGenerateBtn` | The **one** accent CTA in the chrome |
-| `.studioSubbar` / `.studioSubbarText` / `.studioSubbarStatus` | 32px, one line, `--text-muted` |
-| `.studioMain` | max-width 1400px, padding `--sp-4 --sp-6 --sp-8` |
+This is the single most load-bearing fact in the system, and it caused three
+separate failures on this branch.
 
-### Page primitives
-| Class | Role |
-| --- | --- |
-| `.studioCard` | Surface panel. 20px vertical padding — under the 32px ceiling |
-| `.sectionHead` / `.sectionTitle` / `.sectionAction` | In-page section heading row |
-| `.grid2` / `.grid3` | Auto-fit responsive grids. Prefer these over a single centred column — `.studioMain` is 1400px and pages are expected to use it |
-| `.emptyNote` | Empty state. Must contain a call to action, not just prose |
-| `.btnPrimary` / `.btnGhost` | The two button levels |
-| `.advPanel` / `.advLink` / `.advNote` | Progressive disclosure. **Use these**, do not invent a parallel pattern |
-| `.studioNoteDisclosure` | `<details>` for reference copy that used to sit above every control |
-| `.chip` / `.chipAccent` / `.chipSuccess` | Compact metadata |
-| `.statusPill--{ok,warn,err,live}` | Pipeline state |
-| `.srOnly` | Visually hidden, still announced |
-| `PanelSkeleton.tsx` | Loading. Skeletons, never spinners, for anything over 200ms |
+Anything in `actions` or `status` is **client-only by construction**. It appears
+on hydration, not in the initial HTML. Consequences:
 
-### Chrome-hosted page controls
-| Class | Role |
-| --- | --- |
-| `.epScorePill` | Episode quality as a topbar badge, replacing a floated score card |
-| `.createSaveState` | Create-flow save state in the subbar (was a `<p>` with a `-0.75rem` negative margin) |
-| `.createDiscardConfirm` | Two-step discard, in the topbar so it stops moving between steps |
+- Do not put anything there that must exist for a pre-hydration or no-JS reader.
+- **Never assert or measure against chrome content without waiting for it.**
+  `StudioPageHeader` sets `data-header-ready="true"` on its `.srOnly` h1 once
+  every slot the page fills is in the DOM. Wait for that, not for a duration.
+
+The readiness signal is a *passive* effect keyed on the resolved portal host —
+not part of the layout effect that finds it. The layout effect only locates the
+node; the content is not committed until the re-render `setHost` triggers.
+
+> **The general rule, learned three times:** a check that can pass *before* a
+> transition proves nothing about the transition.
 
 ---
 
-## Rules
+## Spacing
 
-**One accent per screen.** `--accent` is documented as primary / live / Generate
-only. If two things are orange, neither reads as the action.
+One scale. `--sp-1: 4px`, `--sp-2: 8`, `--sp-3: 12`, `--sp-4: 16`, `--sp-6: 24`,
+`--sp-8: 32`, `--sp-12: 48`.
 
-**The signature element is the rundown rail** — the broadcast rundown with tally
-lights and monospace timecodes, shared by the create flow and the episode page.
-Spend the boldness there and keep everything else quiet.
+48px is the ceiling. No card carries more than 32px of vertical padding. Ad-hoc
+values (`0.4 / 0.6 / 0.75 / 2.25rem`) are gone — 160 of them were snapped onto
+this scale, which is why pages now line up across routes.
 
-**Motion.** 120ms state changes, 200ms reveals, 320ms ceiling. Every looping cue
-needs a static form under `prefers-reduced-motion` — a spinner that vanishes
-reads as "finished", not as "reduced".
+Utilities exist for the common cases: `.mt-*`, `.mb-*`, `.u-*`.
 
-**Progressive disclosure.** Advanced options collapsed by default.
+---
 
-**Recognition over recall.** A topic card shows headline, sport, freshness and
-talkability at a glance. Never make someone scroll back to check what they
-picked.
+## Colour
 
-**Peak-end.** The moment an episode finishes rendering is designed — tally cuts,
-waveform resolves, player opens cued to the cold open. Not a toast.
+Every colour is a token in `globals.css`. Components hold none.
+
+| Token | Use |
+| --- | --- |
+| `--bg` `--surface` `--surface-2` | page, card, raised card |
+| `--text` `--text-muted` | body, secondary |
+| `--accent` | **primary actions, live state and Generate only** |
+| `--host-a` … `--host-d` | seat-indexed host identity |
+| `--error` / `--error-text` | fills and borders (3:1) / small text (AA) |
+| `--success` `--warning` | terminal and cautionary states |
+
+### Never recede text with opacity
+
+Opacity does not know about contrast. Four AA failures on this branch were all
+this one instinct:
+
+| Element | Measured | Cause |
+| --- | ---: | --- |
+| console ticker line | 3.29:1 | `opacity: 0.6` on `--text-muted` |
+| unselectable take card | 4.04:1 | `opacity: 0.72` on the card |
+| active tab hint | 4.25:1 | `opacity: 0.9` on `--accent` |
+
+To make something secondary, **change the token** — `--text-muted` on
+`--surface` is 6.85:1 and reads as recessive without breaking the floor. To mark
+something unavailable, change the **border** (dashed) and disable the control;
+the reason text must stay fully legible, because it is the thing the user needs
+most at that moment.
+
+### Two escape hatches, both narrow
+
+1. **CSS custom properties for data-driven geometry.** A value that comes from
+   the data cannot live in a stylesheet:
+   ```tsx
+   <div className="playerHostSpan" style={{ "--span-start": "63.2%" }} />
+   ```
+   Setting a real CSS property inline is still a violation.
+2. **`cssToken()` fallbacks.** Canvas cannot read a custom property, so
+   `StudioPlayer` resolves tokens off the document at paint time. The second
+   argument is a documented mirror of `globals.css`, not a second definition.
+
+---
+
+## Layout
+
+**Use the width.** `.studioMain` is 1400px and pages are expected to use it —
+grids and side rails, not one column down the middle.
+
+Two established multi-zone patterns:
+
+- **Create** — rail (what you decided) | workspace (the decision in front of
+  you) | preview (what it adds up to, and the CTA). The rail and preview are
+  sticky; the CTA is pinned to the bottom of the preview so the primary action
+  occupies the same pixels on every step.
+- **Episode** — console spine, tabbed workspace, sticky action bar. The bar is
+  `position: sticky; bottom: 0` as the last element, **not** `fixed`: it takes
+  its own space at the end of the document, so it can never cover the last row
+  of a panel.
+
+### First-control budget
+
+The first control a page owns sits within **160px of the viewport top** at every
+width. Chrome is 104px, leaving 56px of body.
+
+Measured across `main.studioMain` plus the two chrome slots — the page's own
+controls count wherever they render. Shell furniture does not: it is identical
+on every route and would satisfy the budget everywhere while proving nothing.
+
+One documented exception, carrying its real number:
+`/studio/plan` at 488px, held at a 540px ceiling. A pricing ladder's CTA cannot
+precede the plan's name and price. See `audit.md`.
 
 ---
 
 ## Copy
 
-- Sentence case. Not Title Case Headers.
-- Buttons are verbs, and the verb survives the transition: "Publish" → "Published."
-- User vocabulary: "Episode length", never `targetDurationMs`.
-- No emoji doing decoration's job in section headings.
+- Sentence case. Not Title Case, not UPPERCASE outside a styled label.
+- Buttons are verbs, and the verb survives: "Record the voices", not "Voices".
+- The user's vocabulary, not the system's: "takes", "shows", "episodes" —
+  never "entities", "records", "jobs".
 - **Never use the word "booked."**
-- No "Oops!", no exclamation marks, no apologising errors. Say what broke and
-  what to do next.
+- No decorative emoji in section headings.
+- Errors say what happened and what to do. No "Oops!", no exclamation marks, no
+  apologising. A refusal states its reason.
+- Progress never lies: a filled bar means a real counted fraction, a sweep means
+  "running, no honest percentage exists". Only voicing has a real denominator.
 
 ---
 
 ## Accessibility floor
 
-- Text ≥ 4.5:1, UI elements ≥ 3:1. Respect `--error` vs `--error-text`.
-- Visible focus ring on everything interactive. `style={{ all: "unset" }}` kills
-  focus visibility — that is a keyboard dead end, not a style choice.
-- Full keyboard path through the create flow; tab order matches visual order.
-- Preserve the existing `role="tablist"`, `aria-current` and `aria-live` usage.
-- Nothing scrolls horizontally at 390px.
+Enforced by `studio-a11y.spec.ts` on 15 routes × 3 widths: **zero serious or
+critical axe violations**.
 
-Enforced by `tests/e2e/studio-a11y.spec.ts` (axe, serious + critical),
-`studio-chrome.spec.ts` (geometry) and `studio-tokens.spec.ts` (static).
+- Exactly one `<h1>` per page, naming the page, present in the server HTML.
+- Every control has an accessible name — including when a media query hides its
+  label. Two mobile controls failed this because the icon was `aria-hidden` and
+  the label was `display: none`.
+- A visible focus ring on a real Tab press. Test it with actual key presses:
+  `element.focus()` does not reliably match `:focus-visible`.
+- Colour is never the only carrier of meaning. The console rundown says its
+  state in words beside the tally lamp.
+- Hover-only affordances get `@media (hover: none)` treatment — a wide tablet is
+  still a touch screen.
+- Reordering with CSS `order` is fine when DOM order still reads correctly to a
+  screen reader, as on the mobile console header.
+
+---
+
+## Enforcement
+
+| Spec | Guards |
+| --- | --- |
+| `studio-chrome` | band heights, first-control budget, card padding ceiling, no horizontal scroll |
+| `studio-tokens` | no inline `style={{ }}`, no raw hex, no `.pageTitle`; `.pageSub` across all of `src/app` |
+| `studio-a11y` | axe serious+critical, single h1, real-Tab focus ring |
+| `studio-rundown` | the create flow end to end (24 tests) |
+| `studio-screenshots` | 15 routes × 3 widths into `docs/ux-audit/` |
+
+**Scope your guards to the scope of what they guard.** The `.pageSub` check runs
+across all of `src/app`, not just `src/app/studio/**`, because the class it
+guards was deleted globally — and the original studio-scoped check saw nothing
+while a component outside that directory rendered unstyled for an entire branch.
+
+**Do not batch `studio-rundown` with `sound-diversity`.** They share seeded data;
+see the harness note in `audit.md`.

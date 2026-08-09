@@ -2035,6 +2035,19 @@
 }
 .prodTickerLine--voiced .prodTickerText { color: var(--text); }
 
+@media (max-width: 720px) {
+  /* On a phone the header's pill + headline + subtitle stack to ~100px, which
+     pushed the blocking action below the fold of the first screen. The action
+     goes first instead — when the studio is waiting on you, that is the thing
+     worth the top of the screen. DOM order is unchanged, so a screen reader
+     still hears the state before the button.
+     .prodSub is the episode title, which the topbar is already showing on this
+     route; repeating it here buys nothing and costs a line. */
+  .prodHeadAction { order: -1; width: 100%; }
+  .prodHeadAction .btnPrimary { width: 100%; justify-content: center; }
+  .prodSub { display: none; }
+}
+
 @media (max-width: 560px) {
   .prodRundownHead,
   .prodStage { grid-template-columns: 14px 2ch minmax(0, 1fr) 6ch; padding: 0 0.9rem; }
