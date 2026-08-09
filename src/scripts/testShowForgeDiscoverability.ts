@@ -26,7 +26,14 @@ assert(listenerLayout.includes("SOURCE_COMMIT"), "the visible build marker is no
 assert(listenerNav.includes('label: "Creator Studio"'), "listener navigation still presents show creation as a listener feature");
 assert(studioShell.includes('href: "/studio/shows"'), "Studio navigation does not expose the Shows workspace");
 assert(studioShell.includes('label: "Shows"'), "Studio navigation does not name the Shows workspace clearly");
-assert(shows.includes("Show Studio"), "the canonical Shows page does not establish the creator workspace");
+// "Show Studio" was an eyebrow above an in-page <h1>. The Studio UX rebuild
+// moved page identity into the shell chrome, so this page establishes itself by
+// publishing a title into the topbar while sitting inside the Studio shell —
+// which the two assertions directly above already prove exposes a Shows
+// workspace. Checking that the identity is PUBLISHED is a stronger contract
+// than a grep for decoration: it fails if the page stops naming itself at all.
+assert(shows.includes("<StudioPageHeader"), "the canonical Shows page does not publish its identity to the shell");
+assert(shows.includes('title="Shows"'), "the canonical Shows page does not name itself in the chrome");
 assert(shows.includes("Build a show"), "the canonical Shows page has no unmistakable Show Forge entry point");
 assert(forge.includes("Build your show"), "the Studio creation route does not present Show Forge");
 assert(forge.includes("theme, listener promise, cast chemistry"), "the Studio creation route does not explain the real show-building experience");

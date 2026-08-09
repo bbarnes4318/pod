@@ -83,11 +83,11 @@ export default function AudioLibrary(props: {
     <div data-testid="audio-library">
       <audio ref={audioRef} onEnded={() => setPlayingId(null)} data-testid="preview-audio" />
       {/* Screen-reader-visible processing/status line; also visible text. */}
-      <p aria-live="polite" role="status" data-testid="library-status" style={{ minHeight: "1.2em" }}>
+      <p aria-live="polite" role="status" data-testid="library-status" className="alStatus">
         {pending ? "Working…" : status}
       </p>
 
-      <nav aria-label="Library filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "0.75rem 0" }}>
+      <nav aria-label="Library filters" className="alChipRow">
         {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
           <button
             key={f}
@@ -101,10 +101,10 @@ export default function AudioLibrary(props: {
         ))}
       </nav>
 
-      <section aria-label="Upload a new asset" style={{ border: "1px solid var(--border, #444)", borderRadius: 8, padding: "1rem", marginBottom: "1.25rem" }}>
-        <h2 style={{ marginTop: 0 }}>Upload audio</h2>
+      <section aria-label="Upload a new asset" className="alUpload">
+        <h2 className="mt-0">Upload audio</h2>
         <form ref={formRef} action={onUpload} data-testid="upload-form">
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div className="alFieldGrid">
             <label>Name <input name="name" required maxLength={200} data-testid="upload-name" /></label>
             <label>Kind{" "}
               <select name="kind" value={uploadKind} onChange={(e) => setUploadKind(e.target.value)} data-testid="upload-kind">
@@ -141,18 +141,18 @@ export default function AudioLibrary(props: {
             <label>Audio file <input type="file" name="file" accept="audio/*" required data-testid="upload-file" /></label>
             <label>Rights document (PDF/PNG/JPEG, optional) <input type="file" name="rightsDocument" accept=".pdf,.png,.jpg,.jpeg" /></label>
           </div>
-          <label style={{ display: "block", margin: "8px 0" }}>
+          <label className="alBlockField">
             <input type="checkbox" name="rightsConfirmed" value="true" data-testid="upload-rights" />{" "}
             I confirm I hold the rights to use this audio in podcast production.
           </label>
-          <label style={{ display: "block", margin: "8px 0" }}>Rights notes <input name="rightsNotes" style={{ width: "100%" }} /></label>
+          <label className="alBlockField">Rights notes <input name="rightsNotes" className="u-full" /></label>
           <button type="submit" disabled={pending} data-testid="upload-submit">Upload</button>
         </form>
       </section>
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }} data-testid="asset-table">
+      <table className="alTable" data-testid="asset-table">
         <thead>
-          <tr style={{ textAlign: "left" }}>
+          <tr className="u-left">
             <th>Name</th><th>Kind</th><th>Source</th><th>Duration</th><th>License</th><th>Rights</th><th>Status</th><th>Used</th><th>Actions</th>
           </tr>
         </thead>
@@ -161,7 +161,7 @@ export default function AudioLibrary(props: {
             <tr><td colSpan={9} data-testid="empty-state">Nothing here yet.</td></tr>
           )}
           {visible.map((a) => (
-            <tr key={a.id} data-testid={`asset-${a.id}`} style={{ borderTop: "1px solid var(--border, #333)" }}>
+            <tr key={a.id} data-testid={`asset-${a.id}`} className="alRow">
               <td>{a.name}{a.isArchived ? " (archived)" : ""}</td>
               <td>{a.kind}{a.category ? `/${a.category}` : ""}</td>
               <td>{a.scopeLabel}</td>
@@ -175,7 +175,7 @@ export default function AudioLibrary(props: {
               </td>
               <td>{a.processingStatus}</td>
               <td>{props.usage[a.id] ?? 0}</td>
-              <td style={{ whiteSpace: "nowrap" }}>
+              <td className="u-nowrap">
                 <button type="button" onClick={() => togglePreview(a)} aria-pressed={playingId === a.id} data-testid={`preview-${a.id}`}>
                   {playingId === a.id ? "Stop" : "Preview"}
                 </button>{" "}

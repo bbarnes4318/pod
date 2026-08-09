@@ -108,7 +108,27 @@
   /* Studio shell metrics (consumed by studio.css) */
   --studio-rail: 248px;
   --studio-rail-collapsed: 76px;
-  --studio-topbar-h: 60px;
+  /* The topbar now carries the page title, so it earns its height instead of
+     holding only brand + Generate. 56 + a 32px subbar is far less chrome than
+     the old 60px bar PLUS a 2.4rem .pageTitle and a .pageSub on every page. */
+  --studio-topbar-h: 56px;
+  --studio-subbar-h: 32px;
+  --studio-topbar-h-sm: 52px;
+  --studio-subbar-h-sm: 28px;
+
+  /* ------------------------------------------------------------
+     Vertical rhythm. The Studio mixed 0.4/0.6/0.75/0.8/1.25/1.75/
+     2/2.25rem gaps with no relationship between them, so nothing
+     lined up across routes. These seven steps are the only legal
+     vertical gaps; 48px is the ceiling.
+     ------------------------------------------------------------ */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-12: 48px;
 }
 
 * {

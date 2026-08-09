@@ -5,10 +5,16 @@
 // fixed anchor; everything else is grouped into a small set of tabs so the user
 // sees one focused workspace at a time instead of an endless vertical stack.
 //
-// Panels are rendered once and shown/hidden with `hidden` (not unmounted), so
-// stateful children (MixView scrub position, TranscriptWorkspace edits,
-// PublishPanel polling) keep their state across tab switches — and every panel
-// still mounts on load exactly as it did in the old single-scroll layout.
+// Panels mount on FIRST VISIT and are never unmounted after that. Once mounted
+// they are shown/hidden with `hidden`, so stateful children (MixView scrub
+// position, TranscriptWorkspace edits, PublishPanel polling) keep their state
+// across tab switches.
+//
+// They used to all mount on page load. Every panel that fetches or polls on
+// mount — publishing assets, the social clip, the diversity report — did so on
+// every episode page view, including for the majority of views that only ever
+// look at the overview. Deferring costs nothing on the tab you are looking at
+// and skips the work for the ones you are not.
 
 import React, { useEffect, useState } from "react";
 
@@ -21,6 +27,13 @@ export interface WorkspaceTab {
 
 export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
   const [active, setActive] = useState(tabs[0]?.key ?? "");
+  // Every tab that has ever been opened. Add-only: a panel is never torn down,
+  // so nothing a user typed into one is lost by looking at another.
+  const [seen, setSeen] = useState<Set<string>>(() => new Set(tabs[0] ? [tabs[0].key] : []));
+  const open = (key: string) => {
+    setActive(key);
+    setSeen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  };
 
   // Tabs are addressable by hash (#transcript, #produce, …) so anything on the
   // page — notably the production console's "Read the draft" checkpoint CTA —
@@ -29,7 +42,7 @@ export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
   useEffect(() => {
     const applyHash = () => {
       const key = window.location.hash.replace(/^#/, "");
-      if (key && tabs.some((t) => t.key === key)) setActive(key);
+      if (key && tabs.some((t) => t.key === key)) open(key);
     };
     applyHash();
     window.addEventListener("hashchange", applyHash);
@@ -54,7 +67,7 @@ export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
               aria-selected={isActive}
               aria-controls={`eppanel-${t.key}`}
               className={`epTab${isActive ? " active" : ""}`}
-              onClick={() => setActive(t.key)}
+              onClick={() => open(t.key)}
             >
               <span className="epTabLabel">{t.label}</span>
               <span className="epTabHint">{t.hint}</span>
@@ -74,7 +87,7 @@ export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
             hidden={!isActive}
             className="epTabPanel"
           >
-            {t.node}
+            {seen.has(t.key) ? t.node : null}
           </div>
         );
       })}

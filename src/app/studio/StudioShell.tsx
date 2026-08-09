@@ -1,9 +1,71 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/lib/authActions";
+
+/* ------------------------------------------------------------------ *
+ * Page header channel.
+ *
+ * The topbar belongs to the shell but its title belongs to the page,
+ * and RSC cannot pass data upward. Pages publish here through
+ * <StudioPageHeader>; the shell renders whatever is current.
+ * ------------------------------------------------------------------ */
+export type StudioHeaderCrumb = { label: string; href: string };
+
+/** Only PRIMITIVES travel through context. Elements (actions/status) portal
+ *  into the slots below — see the note in StudioPageHeader for why mixing them
+ *  here produced an infinite render loop. */
+export interface StudioHeaderState {
+  title?: string;
+  subtitle?: string;
+  breadcrumb?: StudioHeaderCrumb[];
+}
+
+type HeaderPublish = StudioHeaderState & { id: string; clear?: boolean };
+
+const StudioHeaderContext = createContext<{ setHeader: (next: HeaderPublish) => void }>({
+  setHeader: () => {},
+});
+
+export function useStudioHeader() {
+  return useContext(StudioHeaderContext);
+}
+
+/**
+ * Fallback titles, so the topbar is never empty on first paint and never
+ * empty for a route that has not adopted <StudioPageHeader> yet. Longest
+ * prefix wins, so /studio/shows/new resolves before /studio/shows.
+ */
+const ROUTE_TITLES: { prefix: string; title: string; exact?: boolean }[] = [
+  { prefix: "/studio", title: "The Board", exact: true },
+  { prefix: "/studio/shows/new", title: "Build your show" },
+  { prefix: "/studio/shows", title: "Shows" },
+  { prefix: "/studio/create", title: "Create an episode" },
+  { prefix: "/studio/episodes", title: "Episodes" },
+  { prefix: "/studio/takes", title: "Takes" },
+  { prefix: "/studio/hosts", title: "Hosts" },
+  { prefix: "/studio/auditions", title: "Voice auditions" },
+  { prefix: "/studio/audio", title: "Audio" },
+  { prefix: "/studio/publish", title: "Publishing" },
+  { prefix: "/studio/analytics", title: "Analytics" },
+  { prefix: "/studio/plan", title: "Plan and usage" },
+  { prefix: "/studio/settings", title: "Settings" },
+];
+
+function fallbackTitle(pathname: string): string {
+  let best = "Studio";
+  let bestLen = -1;
+  for (const entry of ROUTE_TITLES) {
+    const hit = entry.exact ? pathname === entry.prefix : pathname === entry.prefix || pathname.startsWith(entry.prefix + "/") || pathname === entry.prefix;
+    if (hit && entry.prefix.length > bestLen) {
+      best = entry.title;
+      bestLen = entry.prefix.length;
+    }
+  }
+  return best;
+}
 
 /* ------------------------------------------------------------------ *
  * Navigation model. Studio owns the complete creator journey:
@@ -99,6 +161,22 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   const [menuOpen, setMenuOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
 
+  // Whatever page is currently mounted owns the topbar. `ownerId` guards the
+  // React unmount order: on navigation the incoming page's effect runs before
+  // the outgoing page's cleanup, so a naive setState(null) on unmount would
+  // wipe the title that just arrived.
+  const [header, setHeaderState] = useState<StudioHeaderState & { ownerId?: string }>({});
+  const setHeader = useCallback((next: HeaderPublish) => {
+    setHeaderState((current) => {
+      if (next.clear) return current.ownerId === next.id ? {} : current;
+      const { id, clear: _clear, ...rest } = next;
+      return { ...rest, ownerId: id };
+    });
+  }, []);
+  const headerApi = useMemo(() => ({ setHeader }), [setHeader]);
+
+  const pageTitle = header.title ?? fallbackTitle(pathname);
+
   useEffect(() => {
     try {
       if (localStorage.getItem(RAIL_KEY) === "1") setCollapsed(true);
@@ -140,6 +218,7 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
 
   return (
+    <StudioHeaderContext.Provider value={headerApi}>
     <div className="studioShell" data-collapsed={collapsed ? "true" : "false"} data-mobile-open={mobileOpen ? "true" : "false"}>
       <aside className="studioSidebar" aria-label="Studio navigation">
         <Link href="/studio" className="studioBrand" aria-label="Take Machine — Studio home">
@@ -176,14 +255,41 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
             <Link href="/studio" className="studioTopbarBrand" aria-label="Take Machine — Studio home"><span className="onAirDot" aria-hidden="true" />Take<em>Machine</em></Link>
           </div>
 
+          {/* The page's identity, in the bar that used to hold none of it. */}
+          <div className="studioTopbarHead">
+            {header.breadcrumb?.length ? (
+              <nav className="studioCrumbs" aria-label="Breadcrumb">
+                {header.breadcrumb.map((crumb) => (
+                  <Link key={crumb.href} href={crumb.href} className="studioCrumb">
+                    {crumb.label}
+                  </Link>
+                ))}
+              </nav>
+            ) : null}
+            <div className="studioTopbarTitle" title={pageTitle}>{pageTitle}</div>
+          </div>
+
           <div className="studioTopbarRight">
-            <Link href="/studio/create" className="studioGenerateBtn">
+            <div className="studioTopbarActions" id="studio-topbar-actions" />
+            {/* Below 720px .studioGenerateLabel is display:none and the icon is
+                aria-hidden, which left this link with NO accessible name at all
+                — axe reports it as a serious link-name violation on every
+                mobile route. The label is explicit so it survives the media
+                query. Same reason for the account button below. */}
+            <Link href="/studio/create" className="studioGenerateBtn" aria-label="Generate an episode">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" /></svg>
               <span className="studioGenerateLabel">Generate</span>
             </Link>
 
             <div className="studioAccount" ref={accountRef}>
-              <button type="button" className="studioAccountBtn" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}>
+              <button
+                type="button"
+                className="studioAccountBtn"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                aria-label={`Account menu for ${displayName}`}
+                onClick={() => setMenuOpen((open) => !open)}
+              >
                 <span className="studioAvatar" aria-hidden="true">{initialsFor(user)}</span>
                 <span className="studioAccountName">{displayName}</span>
                 <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
@@ -219,8 +325,16 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
           </div>
         </header>
 
+        {/* One line, always present so the layout never shifts as pages set
+            or clear it. Subtitle left, page status (save state, counts) right. */}
+        <div className="studioSubbar">
+          <span className="studioSubbarText">{header.subtitle ?? ""}</span>
+          <span className="studioSubbarStatus" id="studio-subbar-status" />
+        </div>
+
         <main className="studioMain">{children}</main>
       </div>
     </div>
+    </StudioHeaderContext.Provider>
   );
 }

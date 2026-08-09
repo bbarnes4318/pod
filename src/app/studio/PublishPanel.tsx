@@ -64,7 +64,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
 
       {/* Compliance status — icon + label + colour, never colour alone */}
       <div className="studioCard">
-        <div className="sectionTitle" style={{ marginBottom: "0.7rem" }}>Compliance</div>
+        <div className="sectionTitle mb-3">Compliance</div>
         {st.betting ? (
           <>
             <div className="factSummary">
@@ -83,7 +83,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
             {c.prohibited.length > 0 && (
               <ul className="createReasons">{c.prohibited.map((p, i) => <li key={i}>{p.label}: “{p.match}”</li>)}</ul>
             )}
-            <p className="stageHint" style={{ marginTop: "0.6rem" }}>
+            <p className="stageHint mt-3">
               Responsible-gambling disclaimer + 1-800-GAMBLER is a hard publish requirement here. &quot;Prepare assets&quot; injects it into the show notes.
             </p>
           </>
@@ -96,7 +96,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
 
       {/* Auto-assets */}
       <div className="studioCard">
-        <div className="sectionTitle" style={{ marginBottom: "0.7rem" }}>Assets</div>
+        <div className="sectionTitle mb-3">Assets</div>
         <div className="pubAssets">
           <div className="pubCover">
             {coverUrl ? (
@@ -115,18 +115,18 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
                 </button>
               ))}
             </div>
-            <div className="stageHint" style={{ marginTop: "0.5rem" }}>Current: <strong>{st.title}</strong></div>
-            <button className="btnGhost" style={{ marginTop: "0.8rem" }} disabled={busy === "prepare"} onClick={() => run("prepare", () => preparePublishAssets(episodeId, { regenerateCover: !!coverUrl }))}>
+            <div className="stageHint mt-2">Current: <strong>{st.title}</strong></div>
+            <button className="btnGhost mt-3" disabled={busy === "prepare"} onClick={() => run("prepare", () => preparePublishAssets(episodeId, { regenerateCover: !!coverUrl }))}>
               {busy === "prepare" ? "Preparing…" : coverUrl ? "Regenerate assets" : "Prepare assets (cover + disclaimer)"}
             </button>
-            {!st.hasShowNotes && <p className="stageHint" style={{ marginTop: "0.5rem" }}>Show notes aren&apos;t generated yet — finish the Assets stage first.</p>}
+            {!st.hasShowNotes && <p className="stageHint mt-2">Show notes aren&apos;t generated yet — finish the Assets stage first.</p>}
           </div>
         </div>
       </div>
 
       {/* Distribution */}
       <div className="studioCard">
-        <div className="sectionTitle" style={{ marginBottom: "0.7rem" }}>Distribution</div>
+        <div className="sectionTitle mb-3">Distribution</div>
         <div className="pubUrlRow">
           <span className="pubUrlLabel">RSS feed</span>
           <code className="pubUrl">{feedUrl}</code>
@@ -141,9 +141,9 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
       </div>
 
       {/* The hard gate */}
-      <div className="studioCard publishGate" style={{ borderColor: "var(--border)" }}>
+      <div className="studioCard publishGate" data-plain="true">
         {st.published ? (
-          <div className="factPill fact-ok" style={{ alignSelf: "flex-start" }}><span className="factGlyph" aria-hidden="true">✓</span>Published & live on the feed</div>
+          <div className="factPill fact-ok u-selfStart"><span className="factGlyph" aria-hidden="true">✓</span>Published & live on the feed</div>
         ) : (
           <>
             {/* The button reflects the server gate rather than contradicting it.
@@ -166,7 +166,7 @@ export default function PublishPanel({ episodeId, origin }: { episodeId: string;
                 </ul>
               </div>
             )}
-            <p className="stageHint" style={{ margin: 0 }}>Enforces the fact-check gate and, for betting content, the responsible-gambling gate — server-side.</p>
+            <p className="stageHint m-0">Enforces the fact-check gate and, for betting content, the responsible-gambling gate — server-side.</p>
           </>
         )}
       </div>

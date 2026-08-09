@@ -107,7 +107,7 @@ export default function AdvancedProducer({
     <div className="studioCard advCard">
       <div className="advCardHead">
         <div>
-          <div className="sectionTitle" style={{ margin: 0 }}>Advanced producer</div>
+          <div className="sectionTitle m-0">Advanced producer</div>
           <div className="advCardSub">Per-stage control on this same episode — every knob drives real generation.</div>
         </div>
         <button
@@ -124,11 +124,11 @@ export default function AdvancedProducer({
       {open && (
         <>
           {(msg || err) && (
-            <div className={`gateResult ${err ? "gate-err" : "gate-ok"}`} style={{ marginBottom: "0.8rem" }}>
+            <div className={`gateResult mb-3 ${err ? "gate-err" : "gate-ok"}`}>
               {err || msg}
             </div>
           )}
-          <div className="advWrap" style={{ borderTop: "none", paddingTop: 0, marginTop: 0 }}>
+          <div className="advWrap" data-flush="true">
             {/* SCRIPT — real re-generation */}
             <section className="advPanel">
               <div className="advPanelHead">Script — regenerate</div>
@@ -153,7 +153,7 @@ export default function AdvancedProducer({
                   <button type="button" className={`segBtn${maxWords === null ? " on" : ""}`} onClick={() => setMaxWords(null)}>Auto</button>
                 </div>
               </div>
-              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={regen} disabled={busy === "script"} aria-busy={busy === "script"}>
+              <button type="button" className="btnPrimary u-full mt-2" onClick={regen} disabled={busy === "script"} aria-busy={busy === "script"}>
                 {busy === "script" && <span className="btnSpin" aria-hidden="true" />}
                 {busy === "script" ? "Rewriting…" : "Regenerate script"}
               </button>
@@ -183,7 +183,7 @@ export default function AdvancedProducer({
                   ))}
                 </div>
               </div>
-              <button type="button" className="btnPrimary" style={{ width: "100%", marginTop: "0.4rem" }} onClick={remix} disabled={busy === "mix" || !canRemix} aria-busy={busy === "mix"}>
+              <button type="button" className="btnPrimary u-full mt-2" onClick={remix} disabled={busy === "mix" || !canRemix} aria-busy={busy === "mix"}>
                 {busy === "mix" && <span className="btnSpin" aria-hidden="true" />}
                 {busy === "mix" ? "Re-mixing…" : "Re-mix audio"}
               </button>
@@ -207,7 +207,7 @@ export default function AdvancedProducer({
                   {appliedVoices.map((v) => (
                     <div key={v.host} className="advVoiceRow">
                       <span className="advVoiceHost">{v.host}</span>
-                      <span className="advApplied" style={{ flex: 1 }}>{v.provider}: {v.voiceId}</span>
+                      <span className="advApplied u-flex1">{v.provider}: {v.voiceId}</span>
                     </div>
                   ))}
                 </div>

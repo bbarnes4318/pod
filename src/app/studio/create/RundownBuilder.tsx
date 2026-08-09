@@ -7,6 +7,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import StudioPageHeader from "../StudioPageHeader";
 import {
   getStudioTopics,
   createStudioEpisode,
@@ -325,7 +326,6 @@ export default function RundownBuilder({
   );
 
   const goNext = () => { const i = STEPS.findIndex((s) => s.key === step); if (i < STEPS.length - 1) setStep(STEPS[i + 1].key); };
-  const goBack = () => { const i = STEPS.findIndex((s) => s.key === step); if (i > 0) setStep(STEPS[i - 1].key); setError(null); };
 
   const changeTarget = (n: number) => { setTargetTopicCount(n); setTargetCountDirty(true); };
   const markPrefsDirty = () => setPrefsDirty(true);
@@ -378,151 +378,256 @@ export default function RundownBuilder({
   const stepIndex = STEPS.findIndex((s) => s.key === step);
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - selectedIds.length) : mode === "automatic" ? targetTopicCount : 0;
 
+  // What the rail shows UNDER each step name. A rail that only lists step names
+  // makes you open a step to remember what you put in it; this answers the
+  // question in place.
+  const railValue: Record<RundownStep, string> = {
+    show: podcastId ? podcasts.find((p) => p.id === podcastId)?.name ?? "Show" : "Standalone",
+    topics:
+      mode === "automatic" ? `${targetTopicCount} chosen for you`
+      : mode === "hybrid" ? `${selectedIds.length} pinned + ${autoSlots}`
+      : selectedIds.length ? `${selectedIds.length} picked` : "Nothing picked yet",
+    hosts: hosts.filter((h) => hostIds.includes(h.id)).map((h) => h.name).join(" + ") || "No hosts",
+    production: `${productionStyle} · ${sfxDensity}`,
+    review: `~${estimate.estimatedDurationMinutes} min`,
+  };
+
+  // The topic the show will open on — the lead if one is set, otherwise
+  // whatever sits first in the rundown. Automatic has no lead until creation,
+  // so it has nothing honest to preview.
+  const leadPreview =
+    mode === "automatic" ? null
+    : orderedSelected.find((t) => t.id === leadTopicId) ?? orderedSelected[0] ?? null;
+
+  // The one CTA. It sits in the preview column at a fixed spot and changes its
+  // verb, never its position — the old flow put Next at the bottom of whichever
+  // card was open, so the button moved every time the step did.
+  const ctaDisabled =
+    step === "topics" ? !validation.ok
+    : step === "hosts" ? hostIds.length < Math.min(format.speakerMin, MAX_HOSTS)
+    : step === "review" ? !validation.ok || submitting
+    : false;
+
   return (
-    <div className="rundownBuilder">
-      <p aria-live="polite" className="srOnly" style={srOnlyStyle}>{srMsg}</p>
+    <div className="rundownBuilder createLayout">
+      <p aria-live="polite" className="srOnly">{srMsg}</p>
 
-      <ol className="stepRail" aria-label="Create steps">
-        {STEPS.map((s, i) => {
-          const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
-          return (
-            <li key={s.key} className={`stepPill step-${state}`} aria-current={state === "active" ? "step" : undefined}>
-              <button type="button" data-testid={`step-${s.key}`} onClick={() => setStep(s.key)} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                <span className="stepDot">{state === "done" ? "✓" : i + 1}</span>
-                <span className="stepLabel">{s.label}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-
-      {/* One-shot notices: seed outcome + reconcile drops, both dismissible. */}
-      {seedNote && (
-        <div className="studioCard createAlert" role="status" data-testid="seed-note" style={{ marginBottom: "0.8rem" }}>
-          {seedNote}{" "}
-          <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
-        </div>
-      )}
-      {dropNote && (
-        <div className="studioCard createAlert" role="status" data-testid="dropped-note" style={{ marginBottom: "0.8rem" }}>
-          {dropNote}{" "}
-          <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
-        </div>
-      )}
-
-      {/* Save state — visible at all times; failures are never silent. NOT a
-          live region: announcing "Saving…/Saved" on every keystroke spams
-          assistive tech. Failures are announced once via `announce()`. */}
-      <p className="stageHint" data-testid="save-status" style={{ margin: "-0.75rem 0 1rem" }}>
-        {saveState === "saving" && "Saving…"}
-        {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
-        {saveState === "error" && (
-          <span style={{ color: "var(--warning-color, #b45309)" }}>
-            Couldn&apos;t save — {saveError}{" "}
-            <button type="button" className="advLink" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
+      {/* Identity, save state and the destructive action all live in the shell
+          chrome now. The save line used to sit in the page body under a
+          -0.75rem negative margin, and Discard sat below the step card where it
+          moved every time the step changed. */}
+      <StudioPageHeader
+        title="Create an episode"
+        subtitle="Pick the takes. We'll build the show."
+        status={
+          <span data-testid="save-status" data-state={saveState}>
+            {saveState === "saving" && "Saving…"}
+            {saveState === "saved" && `Saved${savedAt ? ` ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+            {saveState === "error" && (
+              <span>
+                Couldn&apos;t save — {saveError}{" "}
+                <button type="button" data-testid="save-retry" onClick={() => void saveNow(stateSnapshot)}>Retry</button>
+              </span>
+            )}
+            {saveState === "idle" && "Draft saves as you build."}
           </span>
-        )}
-        {saveState === "idle" && "Draft saves automatically as you build."}
-      </p>
+        }
+        actions={
+          hasDraft ? (
+            confirmingDiscard ? (
+              <span role="alertdialog" aria-label="Confirm discard">
+                <span>Discard this draft?</span>
+                <button type="button" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()}>
+                  {discarding ? "Discarding…" : "Yes, discard"}
+                </button>
+                <button type="button" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
+              </span>
+            ) : (
+              <button type="button" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard draft</button>
+            )
+          ) : undefined
+        }
+      />
 
-      {error && (
-        <div className="studioCard createAlert" role="alert" data-testid="create-error">
-          <strong>{error}</strong>
-          {rejected.length > 0 && (
-            <ul className="createReasons">{rejected.map((r, i) => <li key={i}>{topicTitle(byId, r.id)}: {r.reason}</li>)}</ul>
+      {/* ---- ZONE 1: the rundown rail ----
+          Vertical, and it carries VALUES, not just step names: what show, how
+          many topics, which hosts. The old horizontal pill strip could only say
+          which step you were on, so remembering what you had chosen meant
+          opening the step again. */}
+      <nav className="createRail" aria-label="Create steps">
+        <ol className="createRailList">
+          {STEPS.map((s, i) => {
+            const state = i < stepIndex ? "done" : i === stepIndex ? "active" : "todo";
+            return (
+              <li key={s.key}>
+                <button
+                  type="button"
+                  data-testid={`step-${s.key}`}
+                  onClick={() => { setStep(s.key); setError(null); }}
+                  className={`createRailBtn step-${state}`}
+                  aria-current={state === "active" ? "step" : undefined}
+                >
+                  <span className="stepDot">{state === "done" ? "✓" : i + 1}</span>
+                  <span className="createRailText">
+                    <span className="createRailLabel">{s.label}</span>
+                    <span className="createRailValue">{railValue[s.key]}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+
+      {/* ---- ZONE 2: the workspace ---- */}
+      <div className="createWork">
+        {/* One slot for everything the studio has to say. Notices used to be
+            inserted into the document above the step card, so every message
+            pushed the whole form down and the control you were about to click
+            moved out from under the cursor. This slot overlays instead. */}
+        <div className="createToasts" role="presentation">
+          {seedNote && (
+            <div className="createToast" role="status" data-testid="seed-note">
+              <span>{seedNote}</span>
+              <button type="button" className="advLink" onClick={() => setSeedNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {dropNote && (
+            <div className="createToast" role="status" data-testid="dropped-note">
+              <span>{dropNote}</span>
+              <button type="button" className="advLink" onClick={() => setDropNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {inheritNote && (
+            <div className="createToast" role="status" data-testid="inherit-note">
+              <span>↩ {inheritNote}</span>
+              <button type="button" className="advLink" onClick={() => setInheritNote(null)}>Dismiss</button>
+            </div>
+          )}
+          {error && (
+            <div className="createToast createToast--error" role="alert" data-testid="create-error">
+              <span>
+                <strong>{error}</strong>
+                {rejected.length > 0 && (
+                  <ul className="createReasons">{rejected.map((r, i) => <li key={i}>{topicTitle(byId, r.id)}: {r.reason}</li>)}</ul>
+                )}
+              </span>
+            </div>
           )}
         </div>
-      )}
 
       {/* ---------------- SHOW ---------------- */}
+      {/* Step one asks ONE question. Title, description and mode all used to be
+          crammed in here, which meant the first screen of the flow was four
+          unrelated decisions deep before you had said what you were making. */}
       {step === "show" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>Where does this episode live?</h2>
-          <div className="segRow" style={{ flexWrap: "wrap", marginBottom: "0.8rem" }}>
+          <h2 className="sectionTitle mt-0">Where does this episode live?</h2>
+          <p className="stageHint mb-3">A show lends the episode its format, hosts and topic preferences. A standalone episode starts from studio defaults.</p>
+          <div className="segRow u-wrap">
             <button type="button" data-testid="podcast-standalone" className={`segBtn${podcastId === null ? " on" : ""}`} aria-pressed={podcastId === null} onClick={() => onSelectPodcast(null)}>Standalone episode</button>
             {podcasts.map((p) => (
               <button key={p.id} type="button" data-testid={`podcast-${p.id}`} className={`segBtn${podcastId === p.id ? " on" : ""}`} aria-pressed={podcastId === p.id} onClick={() => onSelectPodcast(p.id)}>{p.name}</button>
             ))}
           </div>
-          {inheritNote && <p className="stageHint" role="status" data-testid="inherit-note">↩ {inheritNote}</p>}
-
-          <label className="fieldLabel" htmlFor="epTitle">Episode title <span className="stageHint">(optional)</span></label>
-          <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
-
-          <label className="fieldLabel" htmlFor="epDesc" style={{ marginTop: "0.8rem" }}>Description <span className="stageHint">(optional)</span></label>
-          <textarea id="epDesc" data-testid="episode-description" className="input" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" style={{ resize: "vertical" }} />
-          <div className="stageHint" style={{ textAlign: "right" }} data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
-
-          <div className="fieldLabel" style={{ marginTop: "0.4rem" }}>Mode</div>
-          <div className="segRow" role="radiogroup" aria-label="Rundown mode">
-            {(["manual", "automatic", "hybrid"] as Mode[]).map((m) => (
-              <button key={m} type="button" data-testid={`mode-${m}`} role="radio" aria-checked={mode === m} className={`segBtn${mode === m ? " on" : ""}`} onClick={() => setMode(m)} style={{ textTransform: "capitalize" }}>{m}</button>
-            ))}
-          </div>
-          <p className="stageHint" style={{ marginTop: "0.5rem" }}>
-            {mode === "manual" && "You pick every topic and their order."}
-            {mode === "automatic" && "The studio selects the strongest eligible topics at creation. You set the target count and preferences."}
-            {mode === "hybrid" && "Pin the must-cover topics; the studio fills the rest to your target count."}
-          </p>
-          <StepNav onBack={null} onNext={goNext} nextLabel="Choose topics →" />
         </div>
       )}
 
       {/* ---------------- TOPICS ---------------- */}
       {step === "topics" && (
         <div>
-          {mode !== "manual" && (
-            <div className="studioCard" style={{ marginBottom: "0.8rem" }}>
-              <label className="fieldLabel" htmlFor="targetCount">Target topic count: <strong data-testid="target-count">{targetTopicCount}</strong></label>
-              <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} style={{ width: "100%" }} />
-              {mode === "hybrid" && <p className="stageHint" data-testid="hybrid-slots">{selectedIds.length} pinned · {targetTopicCount} target · {autoSlots} will be selected automatically</p>}
-              {mode === "automatic" && <p className="stageHint">{targetTopicCount} topics will be selected automatically at creation.</p>}
-              <AutoPrefs
-                mode={mode} topics={topics} podcastScoped={podcastScoped}
-                verticals={verticals} setVerticals={(v) => { setVerticals(v); markPrefsDirty(); }}
-                leagueIds={leagueIds} setLeagueIds={(v) => { setLeagueIds(v); markPrefsDirty(); }}
-                sport={sport} setSport={(v) => { setSport(v); markPrefsDirty(); }}
-                teams={teams} setTeams={(v) => { setTeams(v); markPrefsDirty(); }}
-                minDebateScore={minDebateScore} setMinDebateScore={(v) => { setMinDebateScore(v); markPrefsDirty(); }}
-              />
+          {/* Mode lives WITH the topics it governs. It used to sit on step one,
+              where it decided the behaviour of a screen you had not reached. */}
+          <div className="studioCard mb-3">
+            <div className="fieldLabel">How should the topics be chosen?</div>
+            <div className="segRow" role="radiogroup" aria-label="How topics are chosen">
+              <button
+                type="button" data-testid="mode-manual" role="radio" aria-checked={mode === "manual"}
+                className={`segBtn${mode === "manual" || mode === "hybrid" ? " on" : ""}`}
+                onClick={() => setMode("manual")}
+              >
+                I&apos;ll pick them
+              </button>
+              <button
+                type="button" data-testid="mode-automatic" role="radio" aria-checked={mode === "automatic"}
+                className={`segBtn${mode === "automatic" ? " on" : ""}`}
+                onClick={() => setMode("automatic")}
+              >
+                The studio picks
+              </button>
             </div>
-          )}
+            {/* Hybrid is not a third way of working — it is picking your own and
+                letting the studio top the rundown up. Modelled as what it is. */}
+            {mode !== "automatic" && (
+              <div className="createHybrid">
+                <button
+                  type="button" data-testid="mode-hybrid" role="checkbox" aria-checked={mode === "hybrid"}
+                  id="hybridToggle" className={`checkBox${mode === "hybrid" ? " on" : ""}`}
+                  onClick={() => setMode(mode === "hybrid" ? "manual" : "hybrid")}
+                >
+                  {mode === "hybrid" ? "✓" : ""}
+                </button>
+                <label htmlFor="hybridToggle">Let the studio fill the rest up to my target count</label>
+              </div>
+            )}
+            <p className="stageHint mt-2">
+              {mode === "manual" && "You pick every topic and their order."}
+              {mode === "automatic" && "The studio selects the strongest eligible topics at creation. You set the target count and preferences."}
+              {mode === "hybrid" && "Pin the must-cover topics; the studio fills the rest to your target count."}
+            </p>
+
+            {mode !== "manual" && (
+              <div className="mt-3">
+                <label className="fieldLabel" htmlFor="targetCount">Target topic count: <strong data-testid="target-count">{targetTopicCount}</strong></label>
+                <input id="targetCount" type="range" min={1} max={maxTopics} value={targetTopicCount} onChange={(e) => changeTarget(Number(e.target.value))} className="u-full" />
+                {mode === "hybrid" && <p className="stageHint" data-testid="hybrid-slots">{selectedIds.length} pinned · {targetTopicCount} target · {autoSlots} will be selected automatically</p>}
+                {mode === "automatic" && <p className="stageHint">{targetTopicCount} topics will be selected automatically at creation.</p>}
+                <AutoPrefs
+                  mode={mode} topics={topics} podcastScoped={podcastScoped}
+                  verticals={verticals} setVerticals={(v) => { setVerticals(v); markPrefsDirty(); }}
+                  leagueIds={leagueIds} setLeagueIds={(v) => { setLeagueIds(v); markPrefsDirty(); }}
+                  sport={sport} setSport={(v) => { setSport(v); markPrefsDirty(); }}
+                  teams={teams} setTeams={(v) => { setTeams(v); markPrefsDirty(); }}
+                  minDebateScore={minDebateScore} setMinDebateScore={(v) => { setMinDebateScore(v); markPrefsDirty(); }}
+                />
+              </div>
+            )}
+          </div>
+
           <div className="rundownTwoCol">
             <div>
               {loadingTopics ? <TopicPickerSkeleton /> : (
-                <TopicRundownPicker topics={topics} selectedIds={selectedIds} onToggle={toggleTopic} selectionDisabled={mode === "automatic"} podcastScoped={podcastScoped} announce={announce} />
+                <TopicRundownPicker topics={topics} selectedIds={selectedIds} onToggle={toggleTopic} selectionDisabled={mode === "automatic"} podcastScoped={podcastScoped} announce={announce} dense pageSize={12} />
               )}
             </div>
             <div className="rundownTrayCol">
               {/* In Automatic the kept picks are INACTIVE: the tray shows the
                   automatic plan, and a note explains where the picks went. */}
               {mode === "automatic" && selectedIds.length > 0 && (
-                <p className="stageHint" data-testid="kept-picks-note" style={{ marginTop: 0 }}>
+                <p className="stageHint mt-0" data-testid="kept-picks-note">
                   {selectedIds.length} pick{selectedIds.length === 1 ? "" : "s"} kept for Manual/Hybrid — Automatic ignores them.
                 </p>
               )}
               <RundownTray items={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} maxTopics={maxTopics} mode={mode} targetTopicCount={targetTopicCount} estimate={estimate} podcastScoped={podcastScoped} onReorder={reorder} onRemove={removeTopic} onSetLead={setLead} />
             </div>
           </div>
-          {!validation.ok && <p className="stageHint" role="note" style={{ marginTop: "0.6rem", color: "var(--warning-color, #b45309)" }}>{validation.error}</p>}
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Hosts →" nextDisabled={!validation.ok} />
         </div>
       )}
 
       {/* ---------------- HOSTS ---------------- */}
       {step === "hosts" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎙 Format &amp; Hosts</h2>
+          <h2 className="sectionTitle mt-0">Format and hosts</h2>
           {podcastScoped ? (
             /* A podcast episode INHERITS the show's format server-side, so the
                control must not pretend to change it. Read-only, with the real
                place to change it linked. */
-            <p className="stageHint" data-testid="format-inherited" style={{ marginBottom: 8 }}>
-              This show uses <strong style={{ color: "var(--text)" }}>{format.displayName}</strong> — change it in{" "}
+            <p className="stageHint mb-2" data-testid="format-inherited">
+              This show uses <strong className="u-strong">{format.displayName}</strong> — change it in{" "}
               <Link href={`/app/podcasts/${podcastId}`}>show settings →</Link>
             </p>
           ) : (
-            <div className="segRow" style={{ flexWrap: "wrap", marginBottom: 8 }} role="radiogroup" aria-label="Show format">
+            <div className="segRow u-wrap mb-2" role="radiogroup" aria-label="Show format">
               {listShowFormats().map((f) => {
                 const blocked = formatBlockedReason(f.id);
                 return (
@@ -531,7 +636,7 @@ export default function RundownBuilder({
                     title={blocked ?? f.description}
                     onClick={() => { setFormatId(f.id); setHostIds((prev) => prev.slice(0, Math.min(f.speakerMax, MAX_HOSTS))); }}>
                     {f.displayName} ({f.speakerMin === f.speakerMax ? f.speakerMin : `${f.speakerMin}-${f.speakerMax}`} voice{f.speakerMax === 1 ? "" : "s"})
-                    {blocked && <span className="stageHint" style={{ marginLeft: 6 }}>{blocked}</span>}
+                    {blocked && <span className="stageHint ml-2">{blocked}</span>}
                   </button>
                 );
               })}
@@ -547,7 +652,7 @@ export default function RundownBuilder({
               This format supports up to {format.speakerMax} seats; the studio currently voices {MAX_HOSTS} — extra seats are coming soon.
             </p>
           )}
-          <div className="segRow" style={{ flexWrap: "wrap" }}>
+          <div className="segRow u-wrap">
             {hosts.map((h) => {
               const seat = hostIds.indexOf(h.id);
               const on = seat >= 0;
@@ -565,25 +670,24 @@ export default function RundownBuilder({
                         ? [...prev, h.id]
                         : [...prev.slice(0, seatCap - 1), h.id]);
                   }}>
-                  {on && <strong style={{ marginRight: 4 }}>{seat + 1}</strong>}{h.name}
+                  {on && <strong className="mr-12">{seat + 1}</strong>}{h.name}
                 </button>
               );
             })}
             {hosts.length === 0 && <span className="stageHint">No active hosts — <Link href="/studio/hosts">add one →</Link></span>}
           </div>
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Production →" nextDisabled={hostIds.length < Math.min(format.speakerMin, MAX_HOSTS)} />
         </div>
       )}
 
       {/* ---------------- PRODUCTION ---------------- */}
       {step === "production" && (
         <div className="studioCard">
-          <h2 className="sectionTitle" style={{ marginTop: 0 }}>Production</h2>
+          <h2 className="sectionTitle mt-0">Production</h2>
           <div className="fieldLabel">Sound-design level</div>
           <div className="segRow">{PROD_STYLES.map((p) => <button key={p.k} type="button" className={`segBtn${productionStyle === p.k ? " on" : ""}`} aria-pressed={productionStyle === p.k} onClick={() => setProductionStyle(p.k)}>{p.l}</button>)}</div>
-          <div className="fieldLabel" style={{ marginTop: "0.8rem" }}>Reactions &amp; SFX</div>
+          <div className="fieldLabel mt-3">Reactions &amp; SFX</div>
           <div className="segRow">{SFX.map((s) => <button key={s.k} type="button" className={`segBtn${sfxDensity === s.k ? " on" : ""}`} aria-pressed={sfxDensity === s.k} onClick={() => setSfxDensity(s.k)}>{s.l}</button>)}</div>
-          <div className="fieldLabel" style={{ marginTop: "0.8rem" }}>TTS engine</div>
+          <div className="fieldLabel mt-3">TTS engine</div>
           <select className="input" value={ttsProvider} onChange={(e) => { setTtsProvider(e.target.value); setVoicePicks({}); }}>
             {ttsEngines.map((t) => (
               <option key={t.key} value={t.key} disabled={!t.available}>
@@ -592,43 +696,108 @@ export default function RundownBuilder({
             ))}
           </select>
           {ttsProvider && hosts.filter((h) => hostIds.includes(h.id)).map((h) => (
-            <div key={h.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginTop: "0.5rem" }}>
-              <span style={{ width: 120 }}>{h.name}</span>
+            <div key={h.id} className="hostVoiceRow">
+              <span className="hostVoiceName">{h.name}</span>
               <input className="input" placeholder="provider voice id" value={voicePicks[h.id] ?? ""} onChange={(e) => setVoicePicks({ ...voicePicks, [h.id]: e.target.value })} />
             </div>
           ))}
-          <StepNav onBack={goBack} onNext={goNext} nextLabel="Review →" />
         </div>
       )}
 
       {/* ---------------- REVIEW ---------------- */}
+      {/* Naming the episode is a REVIEW decision. On step one you have not yet
+          chosen the topics, so there is nothing to name it after. */}
       {step === "review" && (
         <ReviewStep
           mode={mode} podcast={podcasts.find((p) => p.id === podcastId) ?? null}
           orderedSelected={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} targetTopicCount={targetTopicCount}
           hosts={hosts.filter((h) => hostIds.includes(h.id))} ttsProvider={ttsProvider} productionStyle={productionStyle}
-          sfxDensity={sfxDensity} title={title} description={description} estimate={estimate} validation={validation}
-          prefs={{ verticals, leagueIds, teams, sport, minDebateScore }} submitting={submitting} onBack={goBack} onSubmit={submit}
+          sfxDensity={sfxDensity} title={title} setTitle={setTitle} description={description} setDescription={setDescription}
+          estimate={estimate} validation={validation}
+          prefs={{ verticals, leagueIds, teams, sport, minDebateScore }}
         />
       )}
+      </div>
 
-      {/* Destructive action: only offered when a draft exists, and always
-          behind an explicit confirm. */}
-      {hasDraft && (
-        <p style={{ marginTop: "1rem" }}>
-          {confirmingDiscard ? (
-            <span role="alertdialog" aria-label="Confirm discard">
-              <span style={{ color: "var(--warning-color, #b45309)", marginRight: "0.6rem" }}>Discard this draft? Your rundown, picks, and settings are deleted.</span>
-              <button type="button" className="btnGhost" data-testid="discard-confirm" disabled={discarding} onClick={() => void discardDraft()} style={{ marginRight: "0.4rem" }}>
-                {discarding ? "Discarding…" : "Yes, discard"}
-              </button>
-              <button type="button" className="advLink" data-testid="discard-cancel" disabled={discarding} onClick={() => setConfirmingDiscard(false)}>Cancel</button>
-            </span>
-          ) : (
-            <button type="button" className="advLink" data-testid="discard-draft" onClick={() => setConfirmingDiscard(true)}>Discard this draft</button>
+      {/* ---- ZONE 3: the preview ----
+          What you have actually built so far, and the one button that moves it
+          forward. Both stay put: the column is sticky and the CTA is pinned to
+          the bottom of it, so the primary action occupies the same pixels on
+          every step. */}
+      <aside className="createPreview" aria-label="Episode so far">
+        <div className="createPreviewBody">
+          <div className="createPreviewTitle">Episode so far</div>
+          <dl className="createPreviewList">
+            <dt>Show</dt>
+            <dd>{podcastId ? podcasts.find((p) => p.id === podcastId)?.name ?? "Show" : "Standalone"}</dd>
+            <dt>Rundown</dt>
+            <dd>
+              {mode === "automatic" ? (
+                <span>{targetTopicCount} chosen at creation</span>
+              ) : orderedSelected.length === 0 ? (
+                <span className="createPreviewEmpty">Nothing picked yet</span>
+              ) : (
+                <ol className="createPreviewOrder" data-testid="preview-rundown">
+                  {orderedSelected.map((t, i) => (
+                    <li key={t.id}>
+                      <span className="createPreviewNum">{i + 1}</span>
+                      <span className="createPreviewTopic">{t.title}</span>
+                    </li>
+                  ))}
+                  {autoSlots > 0 && <li className="createPreviewAuto">+ {autoSlots} auto-filled</li>}
+                </ol>
+              )}
+            </dd>
+            <dt>Hosts</dt>
+            <dd>{hosts.filter((h) => hostIds.includes(h.id)).map((h) => h.name).join(" + ") || "Default pairing"}</dd>
+            <dt>Runtime</dt>
+            <dd>~{estimate.estimatedDurationMinutes} min · ~{estimate.estimatedWords.toLocaleString()} words</dd>
+          </dl>
+
+          {/* The cold open, from its INPUTS. This is deliberately not a
+              generated script: writing one means calling the script pipeline,
+              which this work is not allowed to touch and which costs a real
+              model call. What it shows is exactly what the opener will be built
+              from, so a weak lead is visible before you pay for it. */}
+          {step === "review" && leadPreview && (
+            <div className="createColdOpen" data-testid="cold-open-preview">
+              <div className="createPreviewTitle">The show opens on</div>
+              <p className="createColdOpenTopic">{leadPreview.title}</p>
+              {leadPreview.summary && <p className="createColdOpenWhy">{leadPreview.summary}</p>}
+              <p className="createColdOpenMeta">
+                {leadPreview.evidenceCount} evidence item{leadPreview.evidenceCount === 1 ? "" : "s"} ·{" "}
+                {leadPreview.sourceCount} source{leadPreview.sourceCount === 1 ? "" : "s"} · debate {Math.round(leadPreview.debateScore)}
+              </p>
+              <p className="createColdOpenNote">
+                These are the inputs the opener is written from, not the script itself.
+              </p>
+            </div>
           )}
-        </p>
-      )}
+
+          {!validation.ok && step !== "show" && (
+            <p className="noteWarn createPreviewWarn" role="note">{validation.error}</p>
+          )}
+        </div>
+
+        <div className="createPreviewCta">
+          {step === "review" ? (
+            <button
+              type="button" data-testid="create-episode" className="btnPrimary u-full"
+              onClick={submit} disabled={ctaDisabled} aria-busy={submitting}
+            >
+              {submitting && <span className="btnSpin" aria-hidden="true" />}
+              {submitting ? "Creating…" : "Create episode"}
+            </button>
+          ) : (
+            <button
+              type="button" data-testid="step-next" className="btnPrimary u-full"
+              onClick={goNext} disabled={ctaDisabled}
+            >
+              Continue to {STEPS[stepIndex + 1].label.toLowerCase()}
+            </button>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -648,9 +817,9 @@ function AutoPrefs({
   const leagues = useMemo(() => [...new Set(topics.map((t) => t.leagueId).filter(Boolean) as string[])].sort(), [topics]);
   const toggle = (arr: string[], v: string, set: (x: string[]) => void) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   return (
-    <details className="advPanel" data-testid="auto-prefs" style={{ marginTop: "0.7rem" }} open>
-      <summary className="advPanelHead" style={{ cursor: "pointer" }}>Selection preferences <span className="stageHint">— these steer the {mode} pick (separate from the board filters below)</span></summary>
-      <div className="rundownPrefsGrid" style={{ marginTop: "0.6rem" }}>
+    <details className="advPanel mt-3" data-testid="auto-prefs" open>
+      <summary className="advPanelHead u-clickable">Selection preferences <span className="stageHint">— these steer the {mode} pick (separate from the board filters below)</span></summary>
+      <div className="rundownPrefsGrid mt-3">
         <div>
           <div className="fieldLabel">Sport</div>
           <select className="input" data-testid="pref-sport" value={sport} onChange={(e) => setSport(e.target.value)}>
@@ -666,24 +835,24 @@ function AutoPrefs({
               rendered "0" while the state said null. */}
           <input type="range" min={0} max={100} step={5} value={minDebateScore ?? 0} data-testid="pref-mindebate"
             aria-valuetext={minDebateScore === null ? "any" : String(minDebateScore)}
-            onChange={(e) => { const v = Number(e.target.value); setMinDebateScore(v === 0 ? null : v); }} style={{ width: "100%" }} />
+            onChange={(e) => { const v = Number(e.target.value); setMinDebateScore(v === 0 ? null : v); }} className="u-full" />
         </div>
         {leagues.length > 0 && (
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="u-span">
             <div className="fieldLabel">Leagues</div>
-            <div className="segRow" style={{ flexWrap: "wrap" }}>
+            <div className="segRow u-wrap">
               {leagues.map((l) => <button key={l} type="button" data-testid={`pref-league-${l}`} className={`segBtn${leagueIds.includes(l) ? " on" : ""}`} aria-pressed={leagueIds.includes(l)} onClick={() => toggle(leagueIds, l, setLeagueIds)}>{l}</button>)}
             </div>
           </div>
         )}
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="u-span">
           <div className="fieldLabel">Verticals</div>
-          <div className="segRow" style={{ flexWrap: "wrap" }}>
+          <div className="segRow u-wrap">
             {sports.map((s) => <button key={s} type="button" data-testid={`pref-vertical-${s}`} className={`segBtn${verticals.includes(s) ? " on" : ""}`} aria-pressed={verticals.includes(s)} onClick={() => toggle(verticals, s, setVerticals)}>{s}</button>)}
           </div>
           {podcastScoped && <p className="stageHint">Verticals/teams start inherited from the show; change them to override just this episode.</p>}
         </div>
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div className="u-span">
           <div className="fieldLabel">Team names (comma-separated)</div>
           <input className="input" data-testid="pref-teams" value={teams.join(", ")} placeholder="e.g. Chiefs, Eagles" onChange={(e) => setTeams(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))} />
         </div>
@@ -694,13 +863,14 @@ function AutoPrefs({
 
 /* ---------------- Review ---------------- */
 function ReviewStep({
-  mode, podcast, orderedSelected, leadTopicId, targetTopicCount, hosts, ttsProvider, productionStyle, sfxDensity, title, description, estimate, validation, prefs, submitting, onBack, onSubmit,
+  mode, podcast, orderedSelected, leadTopicId, targetTopicCount, hosts, ttsProvider, productionStyle, sfxDensity,
+  title, setTitle, description, setDescription, estimate, validation, prefs,
 }: {
   mode: Mode; podcast: BuilderPodcast | null; orderedSelected: StudioTopicVM[]; leadTopicId: string | null; targetTopicCount: number;
-  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string; title: string; description: string;
+  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string;
+  title: string; setTitle: (v: string) => void; description: string; setDescription: (v: string) => void;
   estimate: ReturnType<typeof estimateRundown>; validation: { ok: boolean; error?: string };
   prefs: { verticals: string[]; leagueIds: string[]; teams: string[]; sport: string; minDebateScore: number | null };
-  submitting: boolean; onBack: () => void; onSubmit: () => void;
 }) {
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - orderedSelected.length) : mode === "automatic" ? targetTopicCount : 0;
   const lead = leadTopicId && orderedSelected.some((t) => t.id === leadTopicId) ? leadTopicId : orderedSelected[0]?.id;
@@ -708,18 +878,26 @@ function ReviewStep({
   const prefSummary = [prefs.sport && `sport ${prefs.sport}`, prefs.verticals.length && `verticals ${prefs.verticals.join("/")}`, prefs.leagueIds.length && `leagues ${prefs.leagueIds.join("/")}`, prefs.teams.length && `teams ${prefs.teams.join("/")}`, prefs.minDebateScore != null && `min debate ${prefs.minDebateScore}`].filter(Boolean).join(" · ");
   return (
     <div className="studioCard">
-      <h2 className="sectionTitle" style={{ marginTop: 0 }}>Review the rundown</h2>
-      <dl className="reviewGrid" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "0.35rem 1rem", margin: 0 }}>
-        <dt className="fieldLabel">Title</dt><dd>{title || "Auto-generated"}</dd>
+      <h2 className="sectionTitle mt-0">Review the rundown</h2>
+
+      {/* Naming happens here, where the rundown is finally visible. */}
+      <label className="fieldLabel" htmlFor="epTitle">Episode title <span className="stageHint">(optional)</span></label>
+      <input id="epTitle" data-testid="episode-title" className="input" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} placeholder="Auto-generated if left blank" />
+
+      <label className="fieldLabel mt-3" htmlFor="epDesc">Description <span className="stageHint">(optional)</span></label>
+      <textarea id="epDesc" data-testid="episode-description" value={description} maxLength={MAX_DESCRIPTION_LEN} rows={3} onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESCRIPTION_LEN))} placeholder="Show notes / summary for this episode" className="input u-resizeY" />
+      <div className="stageHint u-right" data-testid="desc-count">{description.length}/{MAX_DESCRIPTION_LEN}</div>
+
+      <dl className="reviewGrid mt-4">
         {description && (<><dt className="fieldLabel">Description</dt><dd data-testid="review-description">{description}</dd></>)}
         <dt className="fieldLabel">Show</dt><dd>{podcast ? podcast.name : "Standalone episode"}</dd>
-        <dt className="fieldLabel">Mode</dt><dd style={{ textTransform: "capitalize" }} data-testid="review-mode">{mode}</dd>
+        <dt className="fieldLabel">Mode</dt><dd className="u-caps" data-testid="review-mode">{mode}</dd>
         <dt className="fieldLabel">Rundown</dt>
         <dd>
           {mode === "automatic" ? <span>{targetTopicCount} topics selected automatically at creation.</span> : (
-            <ol style={{ margin: 0, paddingLeft: "1.1rem" }} data-testid="review-rundown">
+            <ol className="reviewList" data-testid="review-rundown">
               {orderedSelected.map((t) => (
-                <li key={t.id}>{t.id === lead && <span className="chip chipAccent">★ Lead</span>} {t.title}{t.readiness !== "ready" && <span style={{ color: "var(--warning-color, #b45309)" }}> ⚠ {t.readiness.replace("_", " ")}</span>}</li>
+                <li key={t.id}>{t.id === lead && <span className="chip chipAccent">★ Lead</span>} {t.title}{t.readiness !== "ready" && <span className="noteWarn"> ⚠ {t.readiness.replace("_", " ")}</span>}</li>
               ))}
             </ol>
           )}
@@ -732,18 +910,11 @@ function ReviewStep({
         <dt className="fieldLabel">Estimate</dt><dd>~{estimate.estimatedDurationMinutes} min · ~{estimate.estimatedWords.toLocaleString()} words · {estimate.estimatedCostUsd !== null ? `~$${estimate.estimatedCostUsd.toFixed(2)}` : "cost provider-dependent"}</dd>
       </dl>
       {warnings.length > 0 && (
-        <div role="note" style={{ marginTop: "0.8rem", fontSize: "0.82rem", color: "var(--warning-color, #b45309)" }}>
+        <div role="note" className="noteWarn noteSmall mt-3">
           {warnings.map((t) => <div key={t.id}>⚠ {t.title}: {t.usedByShowRecent ? "recently used by this show" : t.readiness.replace("_", " ")}</div>)}
         </div>
       )}
-      {!validation.ok && <p role="alert" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{validation.error}</p>}
-      <div className="stageActions">
-        <button type="button" className="btnGhost" onClick={onBack}>← Back</button>
-        <button type="button" data-testid="create-episode" className="btnPrimary" onClick={onSubmit} disabled={!validation.ok || submitting} aria-busy={submitting} style={{ marginLeft: "auto" }}>
-          {submitting && <span className="btnSpin" aria-hidden="true" />}
-          {submitting ? "Creating…" : "Create episode"}
-        </button>
-      </div>
+      {!validation.ok && <p role="alert" className="noteWarn mt-3">{validation.error}</p>}
     </div>
   );
 }
@@ -785,37 +956,37 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
           of watching a static screen for progress that was never coming. The
           heading now names the state, and the line below says what has to happen
           next in the same breath. */}
-      <h2 className="sectionTitle" style={{ marginTop: 0 }}>🎬 Rundown locked — not started yet</h2>
-      <div className="createAlert" role="status" data-testid="not-started-notice" style={{ marginBottom: "0.8rem" }}>
+      <h2 className="sectionTitle mt-0">🎬 Rundown locked — not started yet</h2>
+      <div className="createAlert mb-3" role="status" data-testid="not-started-notice">
         <strong>Nothing is generating yet.</strong> Your episode is saved as a draft. Press
         <strong> Start the debate</strong> below to begin writing the script — it takes several minutes
         and runs on our servers, so you can close the tab and come back.
       </div>
-      {result.draftCleanupWarning && <div className="createAlert" role="status" data-testid="draft-warning" style={{ marginBottom: "0.6rem" }}>{result.draftCleanupWarning}</div>}
+      {result.draftCleanupWarning && <div className="createAlert mb-3" role="status" data-testid="draft-warning">{result.draftCleanupWarning}</div>}
       {reduced && (
-        <div className="createAlert" role="status" data-testid="reduced-notice" style={{ marginBottom: "0.8rem" }}>
+        <div className="createAlert mb-3" role="status" data-testid="reduced-notice">
           {result.concurrentlyDroppedIds.length > 0
             ? `One or more automatically selected topics became unavailable while the episode was being created. Your episode was created with ${result.finalOrder.length} topic${result.finalOrder.length === 1 ? "" : "s"} instead of ${result.requestedCount}.`
             : `The studio found ${result.finalOrder.length} eligible topic${result.finalOrder.length === 1 ? "" : "s"} (you requested ${result.requestedCount}).`}
         </div>
       )}
       <p className="stageHint">This is the final rundown the studio actually created (from the backend), in order:</p>
-      <ol style={{ paddingLeft: "1.2rem" }} data-testid="result-final-order">
+      <ol className="reviewList" data-testid="result-final-order">
         {result.finalOrder.map((id, i) => {
           const ref = result.selectedTopics.find((s) => s.id === id);
           return <li key={id} data-testid={`final-${id}`}>{i === 0 && <span className="chip chipAccent">★ Lead</span>} {ref?.title ?? topicsById.get(id)?.title ?? id} {ref && !ref.pinned && <span className="chip">auto</span>}</li>;
         })}
       </ol>
       {result.rejectedTopics.length > 0 && (
-        <div role="note" style={{ marginTop: "0.6rem", fontSize: "0.82rem" }}>
+        <div role="note" className="noteSmall mt-3">
           <div className="fieldLabel">Not included</div>
           <ul className="createReasons">{result.rejectedTopics.map((r, i) => <li key={i}>{topicsById.get(r.id)?.title ?? r.id}: {r.reason}</li>)}</ul>
         </div>
       )}
-      {startError && <p role="alert" data-testid="start-error" style={{ color: "var(--warning-color, #b45309)", marginTop: "0.6rem" }}>{startError}</p>}
-      <div className="stageActions" style={{ marginTop: "1rem" }}>
+      {startError && <p role="alert" data-testid="start-error" className="noteWarn mt-3">{startError}</p>}
+      <div className="stageActions mt-4">
         <Link href={`/studio/episodes/${result.episodeId}`} className="btnGhost">Open episode</Link>
-        <button type="button" data-testid="start-debate" className="btnPrimary" style={{ marginLeft: "auto" }} disabled={starting} aria-busy={starting} onClick={start}>
+        <button type="button" data-testid="start-debate" className="btnPrimary u-mlAuto" disabled={starting} aria-busy={starting} onClick={start}>
           {starting && <span className="btnSpin" aria-hidden="true" />}
           {starting ? "Starting…" : "Start the debate →"}
         </button>
@@ -829,12 +1000,12 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
  *  line of text, which used to make the whole picker jump. */
 function TopicPickerSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading takes" style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+    <div aria-busy="true" aria-label="Loading takes" className="skelStack">
       {[0, 1, 2, 3].map((i) => (
         <div key={i} className="skelBlock">
-          <div className="skelRow" style={{ marginBottom: "0.9rem" }}>
+          <div className="skelRow mb-4">
             <div className="skelChip" />
-            <div className="skelChip" style={{ width: 60 }} />
+            <div className="skelChip" style={{ "--skel-w": "60px" } as React.CSSProperties} />
           </div>
           <div className="skelLine" />
           <div className="skelLine skelLine--short" />
@@ -844,16 +1015,6 @@ function TopicPickerSkeleton() {
   );
 }
 
-function StepNav({ onBack, onNext, nextLabel, nextDisabled }: { onBack: (() => void) | null; onNext: () => void; nextLabel: string; nextDisabled?: boolean }) {
-  return (
-    <div className="stageActions" style={{ marginTop: "1rem" }}>
-      {onBack ? <button type="button" data-testid="step-back" className="btnGhost" onClick={onBack}>← Back</button> : <span />}
-      <button type="button" data-testid="step-next" className="btnPrimary" onClick={onNext} disabled={nextDisabled} style={{ marginLeft: "auto" }}>{nextLabel}</button>
-    </div>
-  );
-}
-
-const srOnlyStyle: React.CSSProperties = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 };
 function topicTitle(byId: Map<string, StudioTopicVM>, id: string): string { return byId.get(id)?.title ?? id; }
 function buildVoiceOverrides(picks: Record<string, string>, engine: string): Record<string, { provider: string; voiceId: string }> | undefined {
   if (!engine) return undefined;

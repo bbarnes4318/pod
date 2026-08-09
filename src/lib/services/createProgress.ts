@@ -26,6 +26,19 @@ import {
 
 export type { ProgressStageVM } from "@/lib/studio/productionProgress";
 
+/**
+ * One line of the script as the console streams it. This is a READ of what has
+ * already been written — the script rows that exist and the AudioSegment rows
+ * that are `ready` — never a prediction of what is coming. A line is `voiced`
+ * only when its own segment row says ready.
+ */
+export interface ProgressLineVM {
+  lineIndex: number;
+  speaker: string;
+  text: string;
+  voiced: boolean;
+}
+
 export interface CreateProgressVM {
   ok: boolean;
   error?: string;
@@ -45,6 +58,15 @@ export interface CreateProgressVM {
   /** True when no job was ever picked up and nothing has moved for a while. */
   stalled: boolean;
   script: { id: string; lineCount: number; estMinutes: number | null; quality: number | null } | null;
+  /**
+   * A short window of the script around the voicing frontier — the last few
+   * lines that have been recorded plus the next few waiting. Empty until a
+   * script exists. Windowed rather than complete: the full transcript already
+   * has its own tab, and the console only needs to show that work is landing.
+   */
+  recentLines: ProgressLineVM[];
+  /** Total lines the window is drawn from, so the console can say "12 of 148". */
+  voicedCount: number;
   audioUrl: string | null;
   durationSeconds: number | null;
   /** How long the client should wait before polling again, in ms. 0 = stop. */
@@ -113,6 +135,8 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
     failure: null,
     stalled: false,
     script: null,
+    recentLines: [],
+    voicedCount: 0,
     audioUrl: null,
     durationSeconds: null,
     pollAfterMs: 4000,
@@ -140,15 +164,29 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
   let lineCount = 0;
   let estMinutes: number | null = null;
   let quality: number | null = null;
+  // The script's lines in order, kept only long enough to cut the console's
+  // streaming window out of them. Never returned whole.
+  const scriptLines: { lineIndex: number; speaker: string; text: string }[] = [];
   if (scriptRow) {
     // Script.content is untyped Json; read defensively rather than trust a shape.
     const content = (scriptRow.content ?? {}) as {
-      segments?: { lines?: { text?: string }[] }[];
+      segments?: { lines?: { text?: string; lineIndex?: unknown; speakerName?: unknown }[] }[];
       estimatedDurationMinutes?: unknown;
       quality?: { total?: unknown };
     };
     for (const seg of Array.isArray(content.segments) ? content.segments : []) {
-      for (const ln of seg?.lines ?? []) if (ln?.text) lineCount++;
+      for (const ln of seg?.lines ?? []) {
+        if (!ln?.text) continue;
+        // lineIndex is what the TTS worker keys AudioSegment rows on, so it is
+        // the only correct join key. Fall back to the running ordinal for older
+        // scripts written before the field existed.
+        scriptLines.push({
+          lineIndex: typeof ln.lineIndex === "number" ? ln.lineIndex : lineCount,
+          speaker: typeof ln.speakerName === "string" ? ln.speakerName : "",
+          text: ln.text,
+        });
+        lineCount++;
+      }
     }
     estMinutes = typeof content.estimatedDurationMinutes === "number" ? content.estimatedDurationMinutes : null;
     quality = typeof content.quality?.total === "number" ? content.quality.total : null;
@@ -185,12 +223,18 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
 
   // ---- Real voicing progress ----------------------------------------------
   let voicing: VoicingProgress | null = null;
+  const voicedIndexes = new Set<number>();
   if (scriptRow) {
-    const [ready, failed, rowCount] = await Promise.all([
-      db.audioSegment.count({ where: { scriptId: scriptRow.id, status: "ready" } }),
+    const [readyRows, failed, rowCount] = await Promise.all([
+      // The ready rows do double duty: their count is the voicing numerator and
+      // their lineIndexes mark which script lines the console may show as
+      // recorded. One read, not two.
+      db.audioSegment.findMany({ where: { scriptId: scriptRow.id, status: "ready" }, select: { lineIndex: true } }),
       db.audioSegment.count({ where: { scriptId: scriptRow.id, status: "failed" } }),
       db.audioSegment.count({ where: { scriptId: scriptRow.id } }),
     ]);
+    const ready = readyRows.length;
+    for (const r of readyRows) voicedIndexes.add(r.lineIndex);
     if (rowCount > 0 || lineCount > 0) {
       voicing = { done: ready, total: lineCount > 0 ? lineCount : null, failed, unit: "lines" };
     }
@@ -234,6 +278,29 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
     mixFailureReason,
   });
 
+  // ---- The streaming window ------------------------------------------------
+  // Anchored on the voicing frontier: the last few lines actually recorded, plus
+  // the next few waiting their turn, so the list advances as the worker works.
+  // Before any line is voiced the window is simply the top of the script, which
+  // is the honest thing to show the moment the writing lands.
+  const TRAIL = 5;
+  const LEAD = 3;
+  const frontier = scriptLines.reduce(
+    (last, ln, i) => (voicedIndexes.has(ln.lineIndex) ? i : last),
+    -1
+  );
+  const from = frontier < 0 ? 0 : Math.max(0, frontier - (TRAIL - 1));
+  const recentLines: ProgressLineVM[] = scriptLines
+    .slice(from, frontier < 0 ? TRAIL + LEAD : frontier + 1 + LEAD)
+    .map((ln) => ({
+      lineIndex: ln.lineIndex,
+      speaker: ln.speaker,
+      // Trimmed for the wire: this is a ticker, not the transcript, and the
+      // full text is one tab away.
+      text: ln.text.length > 220 ? `${ln.text.slice(0, 219).trimEnd()}…` : ln.text,
+      voiced: voicedIndexes.has(ln.lineIndex),
+    }));
+
   return base({
     title: episode.title,
     status: episode.status,
@@ -246,6 +313,8 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
     stalled: derived.stalled,
     pollAfterMs: derived.pollAfterMs,
     script: scriptRow ? { id: scriptRow.id, lineCount, estMinutes, quality } : null,
+    recentLines,
+    voicedCount: voicedIndexes.size,
     audioUrl: episode.audioUrl,
     durationSeconds: episode.durationSeconds,
   });

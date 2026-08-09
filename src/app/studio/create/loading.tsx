@@ -10,23 +10,23 @@ import React from "react";
 export default function CreateLoading() {
   return (
     <div aria-busy="true" aria-label="Loading the rundown builder">
-      <div className="skelLine skelLine--title" style={{ height: 28, width: "26%" }} />
-      <div className="skelLine skelLine--short" style={{ marginBottom: "1.5rem" }} />
+      <div className="skelLine skelLine--title skelLine--h28 skelLine--w26" />
+      <div className="skelLine skelLine--short mb-6" />
 
       {/* Step rail — five pills, same footprint as the real one. */}
-      <div className="skelRow" style={{ marginBottom: "1.5rem" }}>
+      <div className="skelRow mb-6">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="skelChip" style={{ width: 96, height: 30 }} />
+          <div className="skelChip skelChip--btn" key={i} />
         ))}
       </div>
 
       <div className="rundownTwoCol">
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
+        <div className="skelStack">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="skelBlock">
-              <div className="skelRow" style={{ marginBottom: "0.9rem" }}>
+              <div className="skelRow mb-4">
                 <div className="skelChip" />
-                <div className="skelChip" style={{ width: 60 }} />
+                <div className="skelChip skelChip--sm" />
               </div>
               <div className="skelLine" />
               <div className="skelLine skelLine--short" />
@@ -35,7 +35,7 @@ export default function CreateLoading() {
         </div>
         <div className="rundownTrayCol">
           <div className="skelBlock">
-            <div className="skelLine skelLine--title" style={{ width: "55%" }} />
+            <div className="skelLine skelLine--title skelLine--w55" />
             <div className="skelLine" />
             <div className="skelLine" />
             <div className="skelLine skelLine--short" />

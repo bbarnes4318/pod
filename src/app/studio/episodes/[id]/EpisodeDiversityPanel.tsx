@@ -15,16 +15,16 @@ interface StoredPlan { cueDiversityDecisions?: CueDecision[]; cueSequence?: stri
 interface PostTtsDiag { planningEngine?: string; planningVersion?: number; diversity?: { renderMode?: string; contextSource?: string; diversityFingerprint?: string } }
 
 function Row({ label, children, testid }: { label: string; children: React.ReactNode; testid?: string }) {
-  return <div style={{ display: "flex", gap: 8, padding: "2px 0", flexWrap: "wrap" }}><span style={{ minWidth: 210, opacity: 0.7 }}>{label}</span><span data-testid={testid}>{children}</span></div>;
+  return <div className="divRow"><span className="divRowKey">{label}</span><span data-testid={testid}>{children}</span></div>;
 }
 function RoleBlock({ d }: { d: RoleDecision | null }) {
   if (!d) return null;
   const excluded = d.candidates.filter((c) => c.excluded);
   return (
-    <div data-testid={`diversity-role-${d.role}`} style={{ margin: "4px 0", paddingLeft: 10, borderLeft: "2px solid var(--u-hairline-2, #e5e5e5)" }}>
+    <div data-testid={`diversity-role-${d.role}`} className="divRoleRow">
       <div><strong>{d.role}</strong>: {d.selectedAssetId ?? "(none)"} — {d.reason}</div>
-      <div style={{ opacity: 0.8, fontSize: "0.9em" }}>candidates {d.eligibleCount}/{d.poolSize} · asset streak {d.assetStreak} · family streak {d.familyStreak}{d.relaxations.length ? ` · relaxed: ${d.relaxations.join(", ")}` : ""}</div>
-      {excluded.length > 0 && <div style={{ opacity: 0.7, fontSize: "0.9em" }}>excluded: {excluded.map((c) => `${c.assetId} (${c.exclusionReason ?? "?"})`).join("; ")}</div>}
+      <div className="divDim">candidates {d.eligibleCount}/{d.poolSize} · asset streak {d.assetStreak} · family streak {d.familyStreak}{d.relaxations.length ? ` · relaxed: ${d.relaxations.join(", ")}` : ""}</div>
+      {excluded.length > 0 && <div className="divDim">excluded: {excluded.map((c) => `${c.assetId} (${c.exclusionReason ?? "?"})`).join("; ")}</div>}
     </div>
   );
 }
@@ -46,8 +46,8 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
   const seq = plan?.sequenceSimilarity;
 
   return (
-    <section data-testid="episode-diversity" aria-label="Sound diversity" style={{ border: "1px solid var(--u-hairline-2, var(--border, #e5e5e5))", borderRadius: 8, padding: 12, marginTop: 12 }}>
-      <h3 style={{ margin: "0 0 8px" }}>Sound diversity</h3>
+    <section data-testid="episode-diversity" aria-label="Sound diversity" className="divPanel">
+      <h3 className="mt-0 mb-2">Sound diversity</h3>
 
       <Row label="Post-TTS engine"><strong data-testid="diversity-engine">{engine ?? "—"}</strong></Row>
       <Row label="Diversity engine version">{dec ? `decision v${(ctx?.version ?? "?")} / policy v${ctx?.policyVersion ?? "?"}` : "—"}</Row>
@@ -60,8 +60,8 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
       {ctx?.historyFingerprint && <Row label="History fingerprint"><code>{ctx.historyFingerprint.slice(0, 16)}…</code></Row>}
 
       {dec && (
-        <div data-testid="diversity-selections" style={{ marginTop: 8 }}>
-          <div style={{ fontWeight: 600 }}>Selection decisions</div>
+        <div data-testid="diversity-selections" className="mt-2">
+          <div className="u-semibold">Selection decisions</div>
           <RoleBlock d={dec.selectedIntro} />
           <RoleBlock d={dec.selectedOutro} />
           <RoleBlock d={dec.selectedBed} />
@@ -75,10 +75,10 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
       )}
 
       {plan?.cueDiversityDecisions && plan.cueDiversityDecisions.length > 0 && (
-        <div data-testid="diversity-cue-decisions" style={{ marginTop: 8 }}>
-          <div style={{ fontWeight: 600 }}>Cue diversity ({plan.cueDiversityDecisions.length})</div>
+        <div data-testid="diversity-cue-decisions" className="mt-2">
+          <div className="u-semibold">Cue diversity ({plan.cueDiversityDecisions.length})</div>
           {plan.cueDiversityDecisions.map((c, i) => (
-            <div key={i} style={{ fontSize: "0.9em", opacity: 0.85 }}>{c.role}@line{c.lineIndex}: {c.selectedAssetId ?? "(empty)"}{c.selectedFamily ? ` [${c.selectedFamily}]` : ""} — {c.reason}{c.relaxations.length ? ` · relaxed: ${c.relaxations.join(", ")}` : ""}</div>
+            <div key={i} className="divDim">{c.role}@line{c.lineIndex}: {c.selectedAssetId ?? "(empty)"}{c.selectedFamily ? ` [${c.selectedFamily}]` : ""} — {c.reason}{c.relaxations.length ? ` · relaxed: ${c.relaxations.join(", ")}` : ""}</div>
           ))}
         </div>
       )}
@@ -88,7 +88,7 @@ export default async function EpisodeDiversityPanel({ episodeId }: { episodeId: 
           max {seq.maxSimilarity.toFixed(2)} vs threshold {seq.threshold.toFixed(2)} ({seq.comparisons} compared){seq.overThreshold ? " — OVER" : " — under"}{seq.relaxation ? ` · ${seq.relaxation}` : ""}
         </Row>
       )}
-      {plan?.cueSequence && plan.cueSequence.length > 0 && <Row label="Cue sequence" testid="diversity-cue-sequence"><code style={{ fontSize: "0.85em" }}>{plan.cueSequence.join(" › ")}</code></Row>}
+      {plan?.cueSequence && plan.cueSequence.length > 0 && <Row label="Cue sequence" testid="diversity-cue-sequence"><code className="divSmall">{plan.cueSequence.join(" › ")}</code></Row>}
 
       <Row label="Relaxations" testid="diversity-relaxations">{dec?.relaxations && dec.relaxations.length ? dec.relaxations.join(", ") : "none"}</Row>
       {dec?.warnings && dec.warnings.length > 0 && <Row label="Warnings" testid="diversity-warnings">{dec.warnings.join("; ")}</Row>}

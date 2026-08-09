@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "./StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -6,6 +7,7 @@ import { ownerScope } from "@/lib/ownerScope";
 import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 import { fmtDuration, fmtDate, FINISHED_STATUSES, statusChip } from "./lib";
+import { loadStudioDraft } from "@/lib/services/studioDraft";
 
 export const dynamic = "force-dynamic";
 
@@ -123,34 +125,49 @@ export default async function StudioBoard() {
 
   const feed = feedHealth(poolCount, newest?.createdAt ?? null);
 
+  // An unfinished rundown is real work the studio is already holding, and the
+  // board was the one screen that never mentioned it — you had to remember you
+  // had a draft and go to Create to find out. The draft is autosaved
+  // server-side, so this is a read of what is already there.
+  const draft = viewer ? await loadStudioDraft(viewer.id) : null;
+  const draftStepLabel: Record<string, string> = {
+    show: "choosing a show", topics: "picking topics", hosts: "choosing hosts",
+    production: "setting production", review: "ready to create",
+  };
+  const draftSummary = draft
+    ? draft.mode === "automatic"
+      ? `${draft.targetTopicCount} topics chosen for you`
+      : draft.selectedTopicIds.length
+        ? `${draft.selectedTopicIds.length} topic${draft.selectedTopicIds.length === 1 ? "" : "s"} picked`
+        : "nothing picked yet"
+    : null;
+
   return (
     <div className="fadeUp">
       {/* ---------------- Hero: title, feed health, big Generate CTA --------- */}
-      <header className="boardHead">
-        <div className="boardHeadMain">
-          <h1 className="pageTitle">The Board</h1>
-          <p className="pageSub" style={{ marginBottom: 0 }}>
-            Tonight&apos;s hottest takes, ranked by debate heat. Pick one and the studio
-            handles the rest — research, script, voices, mix.
-          </p>
-        </div>
-        <div className="boardHeadAside">
-          <span
-            className={`statusPill statusPill--${feed.tone}`}
-            title={feed.detail}
-            role="status"
-          >
+      <StudioPageHeader
+        title="The Board"
+        subtitle="Tonight's hottest takes, ranked by debate heat."
+        status={
+          <span className={`statusPill statusPill--${feed.tone}`} title={feed.detail} role="status">
             {feed.label}
           </span>
-          <span className="boardFeedDetail">{feed.detail}</span>
-          <Link href="/studio/create" className="btnPrimary boardHeroCta">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ width: 18, height: 18 }}>
-              <path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" />
-            </svg>
-            Generate Episode
-          </Link>
-        </div>
-      </header>
+        }
+      />
+
+      {/* ---------------- Unfinished rundown -------------------------------- */}
+      {draft && (
+        <Link href="/studio/create" className="studioCard boardResume clickable" data-testid="board-resume">
+          <span className="boardResumeMark" aria-hidden="true">▸</span>
+          <span className="boardResumeText">
+            <span className="boardResumeTitle">{draft.title?.trim() || "Untitled episode"}</span>
+            <span className="boardResumeMeta">
+              You left off {draftStepLabel[draft.activeStep] ?? "building"} · {draftSummary}
+            </span>
+          </span>
+          <span className="boardResumeGo">Pick up where you left off</span>
+        </Link>
+      )}
 
       {/* ---------------- Trending takes grid ------------------------------- */}
       <div className="sectionHead">
@@ -161,7 +178,7 @@ export default async function StudioBoard() {
       {cards.length === 0 ? (
         <div className="emptyNote boardEmpty">
           <div className="boardEmptyTitle">The board is clear</div>
-          <p style={{ margin: "0.5rem 0 1.25rem", maxWidth: 440 }}>
+          <p className="boardResumeNote">
             No takes are waiting yet. Kick off your first episode and the studio will
             pull in fresh sports material, research it, and write the debate.
           </p>

@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../../StudioPageHeader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -136,34 +137,45 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const chip = statusChip(episode.status);
   const action = nextActionFor(episode);
 
-  // Seed the production console server-side so the pre-audio state paints with
-  // real progress instead of a skeleton. Only needed while there is no master.
-  const progressVm = episode.audioUrl ? null : await getCreateProgressVM(episode.id);
+  // Seed the production console server-side so it paints with real progress
+  // instead of a skeleton.
+  //
+  // The console used to be the `else` branch of "is there audio yet" — which
+  // meant the moment a master existed the pipeline went invisible, even though
+  // show notes, chapters and cover art are still being written after it, and a
+  // re-mix runs the mix stage again on an episode that already has audio. The
+  // console is now the page's spine and runs alongside the player until the
+  // pipeline is genuinely finished. The three terminal statuses are the ones
+  // productionStageForStatus maps to "done", so skipping the read for them
+  // costs a finished episode exactly what it cost before: nothing.
+  const PIPELINE_FINISHED = new Set(["content_ready", "publish_ready", "published"]);
+  const progressVm = PIPELINE_FINISHED.has(episode.status) ? null : await getCreateProgressVM(episode.id);
+  const showConsole = !episode.audioUrl || (progressVm ? !progressVm.done : false);
 
   // ---- Overview tab: quality breakdown + quick actions (the calm landing) ----
   const overviewNode = (
     <div className="grid2">
       {q ? (
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quality breakdown</div>
+          <div className="sectionTitle mb-4">Quality breakdown</div>
           {Object.entries(q.axes).map(([axis, v]) => (
             <div key={axis} className="axisRow">
-              <span style={{ textTransform: "capitalize" }}>{axis}</span>
+              <span className="u-caps">{axis}</span>
               <div className="scoreBarTrack">
-                <div className="scoreBarFill" style={{ width: `${(v.score / v.max) * 100}%` }} />
+                <div className="scoreBarFill" style={{ "--bar-w": `${(v.score / v.max) * 100}%` } as React.CSSProperties} />
               </div>
               <strong>{v.score}/{v.max}</strong>
             </div>
           ))}
-          <div style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginTop: "0.9rem" }}>
+          <div className="epNoteSmall mt-4">
             Want it higher? Regenerate the script — the gate keeps only stronger output.
           </div>
         </div>
       ) : (
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.6rem" }}>Where this episode stands</div>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", lineHeight: 1.6, margin: 0 }}>
-            This episode is in the <strong style={{ color: "var(--text)" }}>{action.stage.toLowerCase()}</strong> stage.
+          <div className="sectionTitle mb-3">Where this episode stands</div>
+          <p className="epNote">
+            This episode is in the <strong className="u-strong">{action.stage.toLowerCase()}</strong> stage.
             Use the tabs above to edit the transcript, produce the audio, or publish once it&apos;s ready.
           </p>
         </div>
@@ -185,8 +197,8 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
 
       <div className="studioCard">
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Quick actions</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <div className="sectionTitle mb-4">Quick actions</div>
+        <div className="epStack">
           {bustedAudioUrl && (
             <a href={bustedAudioUrl} download className="btnGhost">⬇ Download MP3</a>
           )}
@@ -195,7 +207,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           {script && (
             <details className="epOpsDetails">
               <summary>Advanced / ops shortcuts</summary>
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem", marginTop: "0.7rem" }}>
+              <div className="epStack mt-3">
                 {episode.status !== "published" && (
                   <Link href={`/admin/rss/${script.id}`} className="btnGhost">📡 Publish to feed (ops)</Link>
                 )}
@@ -229,7 +241,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       label: "Produce",
       hint: "Voices & mix",
       node: (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+        <div className="epStackWide">
           <AdvancedProducer
             episodeId={episode.id}
             canRemix={canRemix}
@@ -240,7 +252,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           />
           {mixVm && (
             <div>
-              <div className="sectionHead" style={{ marginTop: 0 }}>
+              <div className="sectionHead mt-0">
                 <h2 className="sectionTitle">Mix & timeline</h2>
               </div>
               <MixView episodeId={episode.id} initialVm={mixVm} />
@@ -268,24 +280,27 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   return (
     <div className="fadeUp">
       {/* ---- Anchor: identity, score, and the player stay fixed above the tabs ---- */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div style={{ minWidth: 0, maxWidth: 760 }}>
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.6rem" }}>
+      <StudioPageHeader
+        title={episode.title}
+        breadcrumb={[{ label: "Episodes", href: "/studio/episodes" }]}
+        actions={
+          q ? (
+            <span title={`Episode quality ${q.total} out of 100`}>
+              <span>{q.total}</span>
+              <span>/100</span>
+            </span>
+          ) : undefined
+        }
+        status={
+          <>
             <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-            <span className="chip">{fmtDuration(episode.durationSeconds)}</span>
-            <span className="chip">{fmtDate(episode.updatedAt)}</span>
-          </div>
-          <h1 className="pageTitle" style={{ marginBottom: 0 }}>{episode.title}</h1>
-        </div>
-        {q && (
-          <div className="studioCard" style={{ padding: "0.9rem 1.2rem", textAlign: "center" }}>
-            <div className="scoreBadge" style={{ fontSize: "2.2rem" }}>{q.total}<small> /100</small></div>
-            <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: 2 }}>episode quality</div>
-          </div>
-        )}
-      </div>
+            <span>{fmtDuration(episode.durationSeconds)}</span>
+            <span>{fmtDate(episode.updatedAt)}</span>
+          </>
+        }
+      />
 
-      {episode.audioUrl ? (
+      {episode.audioUrl && (
         <StudioPlayer
           episodeId={episode.id}
           audioUrl={bustedAudioUrl!}
@@ -294,17 +309,41 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           hostSpans={hostSpans}
           hostNames={[hostA.name, hostB.name]}
         />
-      ) : (
-        /* Until there is audio, this slot is the LIVE production console rather
-           than a static "No audio yet" card. It polls real pipeline state, so
-           the page no longer requires a manual browser refresh to progress. The
-           first read is done here on the server, so it paints already-populated. */
-        <ProductionConsole episodeId={episode.id} initialVm={progressVm ?? undefined} />
+      )}
+
+      {/* The live rundown. It polls real pipeline state, so the page never needs
+          a manual refresh to move forward, and the first read is done on the
+          server so it paints already-populated. */}
+      {showConsole && (
+        <div className={episode.audioUrl ? "mt-6" : undefined}>
+          <ProductionConsole episodeId={episode.id} initialVm={progressVm ?? undefined} />
+        </div>
       )}
 
       {/* ---- Everything else, organized into one focused tab at a time ---- */}
-      <div style={{ marginTop: "1.75rem" }}>
+      <div className="mt-6">
         <EpisodeWorkspace tabs={tabs} />
+      </div>
+
+      {/* ---- The action bar ----
+          One place, always on screen, that says what this episode needs next.
+          Before this the next step lived wherever that step's panel happened to
+          be, so "what do I do now" was answered by scrolling. Sticky rather
+          than fixed: it takes its own space at the end of the document, so it
+          can never cover the last row of a panel. */}
+      <div className="epActionBar" data-testid="episode-action-bar">
+        <div className="epActionBarWhat">
+          <span className="epActionBarStage">{action.stage}</span>
+          <span className="epActionBarStatus">{chip.label}</span>
+        </div>
+        <div className="epActionBarDo">
+          {bustedAudioUrl && (
+            <a href={bustedAudioUrl} download className="btnGhost">Download MP3</a>
+          )}
+          <Link href={action.href} className="btnPrimary" data-testid="episode-next-action">
+            {action.label}
+          </Link>
+        </div>
       </div>
     </div>
   );

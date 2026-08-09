@@ -156,7 +156,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
   return (
     <div className="mixView">
-      {note && <div className="createAlert" role="status" style={{ marginBottom: "0.9rem" }}>{note}</div>}
+      {note && <div className="createAlert mb-4" role="status">{note}</div>}
 
       {/* Transport */}
       <div className="mixTransport">
@@ -167,21 +167,21 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
               seekTo(((e.clientX - r.left) / r.width) * vm.totalMs);
             }}>
-              <div className="mixScrubFill" style={{ width: scale(posMs) }} />
-              <div className="mixPlayhead" style={{ left: scale(posMs) }} />
+              <div className="mixScrubFill" style={{ "--at": scale(posMs) } as React.CSSProperties} />
+              <div className="mixPlayhead" style={{ "--at": scale(posMs) } as React.CSSProperties} />
             </div>
             <span className="mixClock">{fmt(posMs)} / {fmt(vm.totalMs)}</span>
-            <audio ref={audioRef} src={vm.episodeAudioUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPlaying(false)} preload="metadata" style={{ display: "none" }} />
+            <audio ref={audioRef} src={vm.episodeAudioUrl} onTimeUpdate={onTimeUpdate} onEnded={() => setPlaying(false)} preload="metadata" className="u-hidden" />
           </>
         ) : (
-          <div className="stageHint" style={{ margin: 0 }}>No stitched mix yet — run a table read below, or voice + mix the episode.</div>
+          <div className="stageHint m-0">No stitched mix yet — run a table read below, or voice + mix the episode.</div>
         )}
         {tableReady ? (
           <button className="btnPrimary mixTableReadBtn" onClick={() => playClips(tableLines.map((l) => l.audioUrl!).filter(Boolean))}>▶ Play table read</button>
         ) : (
           <button className="btnGhost mixTableReadBtn" onClick={startTableRead}>🎧 Table read (first exchange)</button>
         )}
-        <audio ref={clipRef} onEnded={onClipEnded} preload="none" style={{ display: "none" }} />
+        <audio ref={clipRef} onEnded={onClipEnded} preload="none" className="u-hidden" />
       </div>
 
       {/* Timeline */}
@@ -195,11 +195,11 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
               <div
                 key={l.lineIndex}
                 className={`mixBlock${active ? " mixBlock-active" : ""}${!l.hasAudio ? " mixBlock-unvoiced" : ""}${l.dirty ? " mixBlock-dirty" : ""}`}
-                style={{ left: scale(l.startMs), width: `calc(${scale(l.durationMs)} - 2px)`, borderColor: colorFor(l.speaker) }}
+                style={{ "--at": scale(l.startMs), "--len": `calc(${scale(l.durationMs)} - 2px)`, "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}
                 title={`${l.speaker}: ${l.textShort}${l.hasAudio ? "" : " (not voiced)"}`}
                 onClick={() => seekTo(l.startMs)}
               >
-                <span className="mixBlockBar" style={{ background: colorFor(l.speaker) }} />
+                <span className="mixBlockBar" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties} />
               </div>
             );
           })}
@@ -209,7 +209,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
         <div className="mixLaneLabel">Music bed</div>
         <div className="mixLane mixBedLane">
           {vm.bed.present ? (
-            <div className="mixBedBlock" style={{ width: "100%" }}>
+            <div className="mixBedBlock u-full">
               <span className="mixBedText">Ducked music bed · {vm.bed.style} mix{vm.bed.sfxDensity ? ` · SFX ${vm.bed.sfxDensity}` : ""}</span>
             </div>
           ) : (
@@ -217,7 +217,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
           )}
           {/* Cue markers from the real ProductionPlan */}
           {vm.cues.map((c, i) => (
-            <span key={i} className={`mixCue mixCue-${c.type}`} style={{ left: scale(c.startMs) }} title={`${c.type}: ${c.label}`} />
+            <span key={i} className={`mixCue mixCue-${c.type}`} style={{ "--at": scale(c.startMs) } as React.CSSProperties} title={`${c.type}: ${c.label}`} />
           ))}
         </div>
       </div>
@@ -230,18 +230,18 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
       {/* Per-line re-voice list */}
       <div className="mixLineList">
-        <div className="sectionTitle" style={{ fontSize: "0.95rem", margin: "0 0 0.6rem" }}>Lines — re-voice individually</div>
+        <div className="sectionTitle mixSectionTitle">Lines — re-voice individually</div>
         {!vm.fullyVoiced && (
-          <div className="stageHint" style={{ marginBottom: "0.6rem" }}>
+          <div className="stageHint mb-3">
             Line re-voice re-splices the finished mix, so it needs every line voiced first. Blocks above show which lines aren&apos;t voiced yet.
           </div>
         )}
         {vm.segments.map((seg, si) => (
           <div key={si} className="mixSeg">
-            <div className="chip chipAccent" style={{ marginBottom: "0.4rem" }}>{seg.title}</div>
+            <div className="chip chipAccent mb-2">{seg.title}</div>
             {seg.lines.map((l) => (
               <div key={l.lineIndex} className={`mixLineRow${activeLine?.lineIndex === l.lineIndex ? " mixLineRow-active" : ""}`}>
-                <span className="mixLineSpeaker" style={{ color: colorFor(l.speaker) }}>{l.speaker}</span>
+                <span className="mixLineSpeaker" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}>{l.speaker}</span>
                 <span className="mixLineText" onClick={() => seekTo(l.startMs)} role="button" tabIndex={0}>{l.textShort}</span>
                 {l.hasAudio ? (
                   <button className="tMini" title="Play this line's clip" onClick={() => playClips([l.audioUrl!])}>▶</button>

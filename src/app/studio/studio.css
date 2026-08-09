@@ -129,17 +129,84 @@
   z-index: 50;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: var(--studio-topbar-h);
-  padding: 0.7rem 1.6rem;
+  gap: var(--sp-4);
+  /* Fixed, not min-height: the chrome budget is a contract, so a long page
+     title must ellipsize rather than push the fold down. */
+  height: var(--studio-topbar-h);
+  padding: 0 var(--sp-6);
   background: color-mix(in srgb, var(--surface) 85%, transparent);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
-.studioTopbarLeft { display: flex; align-items: center; gap: 0.9rem; min-width: 0; }
-.studioTopbarRight { display: flex; align-items: center; gap: 0.8rem; }
+.studioTopbarLeft { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex-shrink: 0; }
+.studioTopbarRight { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; margin-left: auto; }
+.studioTopbarActions { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* ---------- Page identity, now living in the topbar ---------- */
+.studioTopbarHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.studioTopbarTitle {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.studioCrumbs { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-shrink: 0; }
+.studioCrumb {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.studioCrumb:hover { color: var(--text); }
+/* The separator is decoration, so it is drawn rather than typed — a literal
+   "/" in the markup gets announced by screen readers on every crumb. */
+.studioCrumbs .studioCrumb::after { content: "/"; margin-left: var(--sp-2); color: var(--border-hover); }
+
+/* ---------- Subbar: one line of context, never two ---------- */
+.studioSubbar {
+  position: sticky;
+  top: var(--studio-topbar-h);
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  height: var(--studio-subbar-h);
+  padding: 0 var(--sp-6);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.studioSubbarText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studioSubbarStatus {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
 
 /* Mobile brand shown in the top bar when the rail is off-canvas */
 .studioTopbarBrand {
@@ -278,9 +345,12 @@
 .studioMain {
   flex: 1;
   width: 100%;
-  max-width: 1240px;
+  /* 1240px rendered a narrow centred strip on a 1440 screen with dead margin
+     on both sides. Pages are expected to USE this width (grids, side rails),
+     not stack one column down the middle of it. */
+  max-width: 1400px;
   margin: 0 auto;
-  padding: 2.25rem 2rem 4rem;
+  padding: var(--sp-4) var(--sp-6) var(--sp-8);
   min-width: 0;
 }
 
@@ -289,32 +359,30 @@
    every /studio page — restyled to the token system, names kept).
    ============================================================ */
 
-.pageTitle {
-  font-family: var(--font-display);
-  font-size: 2.4rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  line-height: 0.95;
-  letter-spacing: 0.005em;
-  margin-bottom: 0.4rem;
-  color: var(--text);
-}
-
-.pageSub {
-  color: var(--text-muted);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  margin-bottom: 2rem;
-  max-width: 640px;
-}
+/* .pageTitle and .pageSub are GONE. They were hand-placed in 15 and 13 files
+   respectively and together spent ~100px per route restating what the nav rail
+   already showed. Page identity now belongs to the shell — see
+   <StudioPageHeader>, .studioTopbarTitle and .studioSubbar above. The classes
+   are deliberately not left as no-op aliases: a stray usage should be visible,
+   and tests/e2e/studio-tokens.spec.ts fails the build if one returns. */
 
 .sectionHead {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  margin: 2.25rem 0 1rem;
+  /* 2.25rem/36px was never on the spacing scale. On the scale, and smaller:
+     the gap between sections is separation, not ceremony. */
+  margin: var(--sp-6) 0 var(--sp-3);
 }
+/* The FIRST section on a page needs no top gap at all — the subbar's own
+   border already separates it, and 24px of air there is 24px of the 160px
+   first-control budget spent on nothing. StudioPageHeader emits an .srOnly h1
+   and two portals, and a portal renders no node in place, so the element right
+   after that h1 is genuinely the first thing in the body. */
+.srOnly + .sectionHead,
+.srOnly + * > .sectionHead:first-child,
+.srOnly + * .sectionHead:first-child { margin-top: 0; }
 
 .sectionTitle {
   font-family: var(--font-display);
@@ -499,14 +567,17 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* No opacity on either state. --accent on the active tab's wash is 4.81:1 and
+   --text-muted on --surface-2 is 6.13:1; the 0.9 and 0.85 fades that used to sit
+   here pulled the active hint to 4.25:1, under the AA floor. Recede with a
+   token, never by fading one. */
 .epTabHint {
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.01em;
   color: var(--text-muted);
-  opacity: 0.85;
 }
-.epTab.active .epTabHint { color: var(--accent); opacity: 0.9; }
+.epTab.active .epTabHint { color: var(--accent); }
 
 .epTabPanel { animation: fadeUp 0.25s ease both; }
 
@@ -700,29 +771,233 @@
    CREATE STEPPER — streaming take → episode flow
    ============================================================ */
 
-/* Progress rail */
-.stepRail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  list-style: none;
-  margin: 0 0 1.5rem;
-  padding: 0;
+/* ============================================================
+   CREATE FLOW — three zones.
+
+   Rail (what you have decided) | workspace (the one decision in
+   front of you) | preview (what it adds up to, and the single
+   button that moves it on). The rail and the preview are sticky
+   and the CTA is pinned to the bottom of the preview, so the
+   primary action sits on the same pixels on every step. It used
+   to live at the bottom of whichever card was open, which meant
+   it moved every time the step did.
+   ============================================================ */
+.createLayout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) 300px;
+  gap: var(--sp-6);
+  align-items: start;
 }
+.createStick {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+}
+
+.createRail {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+  min-width: 0;
+}
+.createRailList { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.createRailBtn {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.createRailBtn:hover { background: var(--surface); }
+.createRailBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.createRailText { display: grid; gap: 1px; min-width: 0; }
+.createRailLabel { font-size: 0.82rem; font-weight: 700; }
+.createRailValue {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.createRailBtn.step-active {
+  background: var(--accent-muted);
+  border-color: var(--accent-border, var(--border));
+  color: var(--accent);
+}
+.createRailBtn.step-active .createRailValue { color: var(--text); }
+.createRailBtn.step-done { color: var(--text); }
+
+/* ---- Workspace ---- */
+.createWork { min-width: 0; position: relative; }
+
+/* ---- The single notice slot ----
+   Notices used to be inserted into the document above the step card, so every
+   message pushed the form down and the control under the cursor moved. This
+   slot overlays the top of the workspace instead. */
+.createToasts {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-2));
+  z-index: 20;
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.createToasts:empty { display: none; }
+.createToast {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+}
+.createToast--error { border-color: var(--error-border); background: var(--error-muted); }
+
+/* ---- Hybrid as what it is: an option on top of picking your own ---- */
+.createHybrid { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.createHybrid label { font-size: 0.85rem; color: var(--text); cursor: pointer; }
+.checkBox {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--border-hover);
+  background: var(--surface-2);
+  color: var(--bg);
+  font-size: 0.7rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.checkBox.on { background: var(--accent); border-color: var(--accent); }
+.checkBox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- Preview column ---- */
+.createPreview {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4));
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--studio-topbar-h) - var(--studio-subbar-h) - var(--sp-12));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+.createPreviewBody { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-4); }
+.createPreviewTitle {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.createPreviewList { margin: 0; display: grid; gap: var(--sp-1); font-size: 0.82rem; }
+.createPreviewList dt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-top: var(--sp-2);
+}
+.createPreviewList dd { margin: 0; color: var(--text); }
+.createPreviewEmpty { color: var(--text-muted); }
+.createPreviewOrder { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.createPreviewOrder li { display: grid; grid-template-columns: 2ch minmax(0, 1fr); gap: var(--sp-2); }
+.createPreviewNum { font-family: var(--font-mono); color: var(--text-muted); }
+.createPreviewTopic { overflow: hidden; text-overflow: ellipsis; }
+.createPreviewAuto { color: var(--text-muted); font-style: italic; }
+.createPreviewWarn { margin-top: var(--sp-3); font-size: 0.8rem; }
+
+.createColdOpen { margin-top: var(--sp-4); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.createColdOpenTopic { margin: 0; font-size: 0.9rem; font-weight: 700; color: var(--text); line-height: 1.4; }
+.createColdOpenWhy { margin: var(--sp-2) 0 0; font-size: 0.8rem; color: var(--text-muted); line-height: 1.5; }
+.createColdOpenMeta {
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.createColdOpenNote { margin: var(--sp-2) 0 0; font-size: 0.72rem; color: var(--text-muted); font-style: italic; }
+
+.createPreviewCta { padding: var(--sp-3); border-top: 1px solid var(--border); background: var(--surface-2); }
+
+/* ---- Dense, paged take grid ---- */
+.rundownPickerList--dense { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.pickerPager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.pickerPagerCount { font-family: var(--font-mono); font-size: 0.76rem; color: var(--text-muted); }
+
+/* ---- Unfinished rundown, on The Board ---- */
+.boardResume {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  text-decoration: none;
+  border-color: var(--accent-border, var(--border));
+  background: var(--accent-muted);
+}
+.boardResumeMark { color: var(--accent); font-size: 1rem; }
+.boardResumeText { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.boardResumeTitle { font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.boardResumeMeta { font-size: 0.78rem; color: var(--text-muted); }
+.boardResumeGo { font-size: 0.8rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .boardResume { flex-wrap: wrap; }
+  .boardResumeGo { width: 100%; }
+}
+
+@media (max-width: 1180px) {
+  /* The preview drops under the workspace before the rail does — the rail is
+     navigation and stays useful narrow; the preview needs its width. */
+  .createLayout { grid-template-columns: 170px minmax(0, 1fr); }
+  .createPreview { grid-column: 1 / -1; position: static; max-height: none; }
+}
+@media (max-width: 860px) {
+  .createLayout { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+  .createRail { position: static; }
+  .createRailList { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--sp-1); overflow-x: auto; }
+  .createRailValue { display: none; }
+}
+
+/* A small status pill. It used to be the create flow's step chip; the rail no
+   longer needs one, but the audition console still labels with it. */
 .stepPill {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  padding: 0.35rem 0.7rem 0.35rem 0.4rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--border);
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.02em;
   color: var(--text-muted);
   background: var(--surface);
   white-space: nowrap;
 }
+
 .stepDot {
   width: 20px;
   height: 20px;
@@ -859,22 +1134,51 @@
 .transcriptLegend { display: flex; gap: 1rem; font-size: 0.76rem; color: var(--text-muted); }
 .transcriptLegend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .legendSwatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.transcriptScroller { max-height: 560px; overflow-y: auto; padding-right: 0.3rem; }
-.transcriptSeg { margin-bottom: 1.2rem; }
-.transcriptSegTag { margin-bottom: 0.7rem; }
+.transcriptScroller { max-height: 640px; overflow-y: auto; padding-right: 0.3rem; }
+.transcriptSeg { margin-bottom: var(--sp-4); }
+.transcriptSegTag { margin-bottom: var(--sp-2); }
 
+/* ---- Density ----
+   A transcript is read by scanning down it, and the old row spent two stacked
+   blocks and a permanently-reserved action strip on every single line — three
+   rows of chrome for one row of dialogue. The speaker now sits in a fixed left
+   gutter (so the names line up as one scannable column) and the actions are
+   removed from flow entirely until the line is hovered or focused. `display`
+   rather than `opacity` is what reclaims the space; :focus-within still fires
+   from the always-focusable line text, so the buttons appear before a keyboard
+   user can reach them. */
 .tLine {
-  padding: 0.55rem 0.7rem;
+  display: grid;
+  grid-template-columns: 11ch minmax(0, 1fr);
+  gap: 0 var(--sp-3);
+  align-items: baseline;
+  padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius);
   border: 1px solid transparent;
   border-left: 3px solid var(--border);
-  margin-bottom: 0.5rem;
+  margin-bottom: var(--sp-1);
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .tLine:hover { background: var(--surface-2); }
 .tLine-dirty { border-left-color: var(--warning); background: var(--warning-muted); }
-.tLineHead { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.3rem; }
-.tSpeaker { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+.tLineHead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.tLine > :not(.tLineHead) { grid-column: 2; }
+.tSpeaker {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tDirtyChip { background: var(--warning-muted); color: var(--warning); border-color: var(--warning-border); }
 
 .tText {
@@ -917,8 +1221,8 @@
 .citeName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
 .citeLink { color: var(--accent); font-weight: 700; }
 
-.tLineActions { display: flex; gap: 0.35rem; margin-top: 0.45rem; opacity: 0; transition: opacity 0.15s ease; flex-wrap: wrap; }
-.tLine:hover .tLineActions, .tLine:focus-within .tLineActions { opacity: 1; }
+.tLineActions { display: none; gap: 0.35rem; margin-top: var(--sp-2); flex-wrap: wrap; }
+.tLine:hover .tLineActions, .tLine:focus-within .tLineActions { display: flex; }
 .tMini {
   font-size: 0.72rem;
   font-weight: 600;
@@ -1083,6 +1387,22 @@
 @media (max-width: 860px) {
   .transcriptWorkspace { grid-template-columns: 1fr; }
   .factPanel { position: static; }
+}
+
+@media (max-width: 640px) {
+  /* An 11ch gutter is a third of a phone screen. Below this the speaker goes
+     back above the line and the actions stay hover-free — there is no hover on
+     a touch screen, so they are simply always shown. */
+  .tLine { grid-template-columns: minmax(0, 1fr); }
+  .tLine > :not(.tLineHead) { grid-column: 1; }
+  .tLineHead { flex-direction: row; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+  .tLineActions { display: flex; }
+}
+
+/* Hover-reveal is a lie on a device that cannot hover — a wide tablet is still
+   a touch screen. Show the actions outright there. */
+@media (hover: none) {
+  .tLineActions { display: flex; }
 }
 
 /* ============================================================
@@ -1263,9 +1583,13 @@
 }
 
 @media (max-width: 720px) {
-  .studioTopbar { padding: 0.6rem 1rem; }
-  .studioMain { padding: 1.6rem 1rem 3rem; }
-  .pageTitle { font-size: 1.9rem; }
+  .studioTopbar { height: var(--studio-topbar-h-sm); padding: 0 var(--sp-4); gap: var(--sp-3); }
+  .studioSubbar { top: var(--studio-topbar-h-sm); height: var(--studio-subbar-h-sm); padding: 0 var(--sp-4); }
+  .studioMain { padding: var(--sp-3) var(--sp-4) var(--sp-6); }
+  .studioTopbarTitle { font-size: 1.05rem; }
+  /* At 390px the crumb trail and the account name both compete with the title
+     for the same row. The title wins; the crumb is still reachable via Back. */
+  .studioCrumbs { display: none; }
   .studioGenerateLabel { display: none; }
   .studioGenerateBtn { padding: 0.55rem 0.7rem; }
 }
@@ -1360,9 +1684,12 @@
 /* ============================================================
    PLAN & USAGE (Step 9c) — tiers, real usage, gating surface.
    ============================================================ */
-.planCurrent { display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; margin-top: 1.4rem; }
+/* Compressed from a stacked block to one dense row: the current tier is a fact
+   to confirm at a glance, not the headline of the page. The page is FOR the
+   ladder below it. */
+.planCurrent { display: flex; gap: var(--sp-6); flex-wrap: wrap; align-items: center; margin-top: 0; }
 .planCurLabel { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
-.planCurName { font-size: 1.8rem; font-weight: 800; color: var(--text); line-height: 1.1; }
+.planCurName { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1.2; }
 .planCurPrice { font-size: 0.9rem; color: var(--accent); font-weight: 700; }
 .planUsage { flex: 1; min-width: 260px; }
 .planUsageHead { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
@@ -1371,7 +1698,7 @@
 .planCapNote { font-size: 0.76rem; color: var(--warning); margin-top: 0.4rem; }
 .planUsageSub { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.5rem; }
 
-.planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); margin-top: var(--sp-6); }
 .planCard { display: flex; flex-direction: column; }
 .planCardCurrent { border-color: var(--accent); box-shadow: var(--shadow-accent); }
 .planCardHead { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
@@ -1455,6 +1782,7 @@
   line-height: 1.2;
 }
 .prodSub { font-size: 0.84rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
+.prodHeadAction { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; flex-shrink: 0; }
 .prodElapsedWrap { text-align: right; flex-shrink: 0; }
 .prodElapsed {
   font-family: var(--font-mono);
@@ -1473,61 +1801,91 @@
   margin-top: 0.3rem;
 }
 
-/* ---- The stage rail ---- */
-.prodRail { list-style: none; margin: 0; padding: 0.4rem 0; }
+/* ---- The rundown ----
+   A broadcast rundown, not a progress bar: rows of segments with a tally lamp,
+   a segment number, and one shared clock column down the right. The four
+   columns are declared once and reused by the header row, the live rows and the
+   skeleton, so the clock's right edge never moves between states. */
+.prodRundownHead,
 .prodStage {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 18px 3ch minmax(0, 1fr) 7ch;
+  gap: 0 var(--sp-3);
   padding: 0 1.35rem;
 }
-.prodStageMark {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  padding-top: 0.95rem;
+.prodRundownHead {
+  padding-top: var(--sp-2);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
-/* The connector lives in the mark column so it inherits that column's exact
-   centre line no matter how tall the row's body grows. */
-.prodStageMark::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--border);
-}
-.prodStage:first-child .prodStageMark::before { top: 0.95rem; }
-.prodStage:last-child .prodStageMark::before { bottom: calc(100% - 0.95rem); }
-.prodStage--done .prodStageMark::before { background: var(--success); }
+.prodColClock { text-align: right; }
 
-.prodDot {
-  position: relative;
-  z-index: 1;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+.prodRail { list-style: none; margin: 0; padding: 0; }
+.prodStage { align-items: start; }
+.prodStage + .prodStage { border-top: 1px solid var(--border); }
+/* The live row is the one the eye should land on from across the desk. */
+.prodStage--active,
+.prodStage--checkpoint { background: var(--accent-muted); }
+.prodStage--failed { background: var(--error-muted); }
+
+/* The tally lamp. Dark when the segment is not up, lit when it is — the same
+   convention as a camera tally, which is why the active state also pulses. */
+.prodTally {
+  width: 14px;
+  height: 14px;
+  margin-top: 0.95rem;
+  border-radius: 3px;
   display: grid;
   place-items: center;
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   font-weight: 800;
+  line-height: 1;
   background: var(--surface-2);
-  color: var(--text-muted);
-  border: 2px solid var(--surface);
-  box-shadow: 0 0 0 1px var(--border);
-  flex-shrink: 0;
+  color: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
-.prodStage--done .prodDot { background: var(--success); color: var(--bg); box-shadow: 0 0 0 1px var(--success); }
-.prodStage--active .prodDot,
-.prodStage--checkpoint .prodDot { background: var(--accent); color: var(--bg); box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow); }
-.prodStage--active .prodDot { animation: onAirPulse 2s ease-in-out infinite; }
-.prodStage--failed .prodDot { background: var(--error-text); color: var(--bg); box-shadow: 0 0 0 1px var(--error-text); }
+.prodStage--done .prodTally { background: var(--success); box-shadow: none; }
+.prodStage--active .prodTally,
+.prodStage--checkpoint .prodTally {
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+.prodStage--active .prodTally { animation: onAirPulse 2s ease-in-out infinite; }
+.prodStage--failed .prodTally { background: var(--error-text); box-shadow: none; }
+
+.prodStageNum {
+  margin-top: 0.85rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
 
 .prodStageBody { padding: 0.8rem 0 0.95rem; min-width: 0; }
-.prodStageTop { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.prodStageTop { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
 .prodStageLabel { font-size: 0.92rem; font-weight: 700; color: var(--text-muted); }
 .prodStage--active .prodStageLabel,
 .prodStage--checkpoint .prodStageLabel,
 .prodStage--failed .prodStageLabel { color: var(--text); }
+/* State in words as well as in colour — a lamp on its own is not a status. */
+.prodStageState {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.prodStage--active .prodStageState,
+.prodStage--checkpoint .prodStageState { color: var(--accent); }
+.prodStage--done .prodStageState { color: var(--success); }
+.prodStage--failed .prodStageState { color: var(--error-text); }
 .prodStageBlurb {
   font-size: 0.82rem;
   color: var(--text-muted);
@@ -1535,15 +1893,25 @@
   margin: 0.3rem 0 0;
   max-width: 62ch;
 }
-/* Tabular figures + right alignment so a ticking second never shifts the row. */
-.prodStageTime {
-  margin-left: auto;
+.prodStagePace {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin: var(--sp-1) 0 0;
+}
+/* Tabular figures + right alignment so a ticking second never shifts the row,
+   and so two rows' times line up digit for digit. */
+.prodStageClock {
+  margin-top: 0.85rem;
+  text-align: right;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
+.prodStage--active .prodStageClock,
+.prodStage--checkpoint .prodStageClock { color: var(--text); }
+.prodStage--done .prodStageClock { color: var(--text-muted); }
 
 /* ---- Progress affordances ---- */
 .prodBarTrack {
@@ -1610,12 +1978,84 @@
 }
 .prodFoot .btnPrimary { margin-left: auto; }
 .prodSafe { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-muted); }
+.prodRetryError { margin-top: var(--sp-2); }
+
+/* ---- The script ticker ----
+   The lines that exist right now, filling in as each one's audio comes back.
+   Monospace because it is a log of work completing, not prose to be read — the
+   transcript tab is where the script is actually read. */
+.prodTicker { border-top: 1px solid var(--border); padding: var(--sp-4) 1.35rem; }
+.prodTickerHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.prodTickerTitle {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.prodTickerCount {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.prodTickerList { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.prodTickerLine {
+  display: grid;
+  grid-template-columns: 1ch minmax(0, 12ch) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: baseline;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  /* Not-yet-recorded lines are recessive by TOKEN, never by opacity. Fading
+     --text-muted to 60% measured 3.29:1 — the line that says what is coming
+     next was the least legible thing on the page. Muted vs full text is the
+     same distinction every other row in this console already draws, and it
+     holds 6.85:1. */
+  color: var(--text-muted);
+}
+.prodTickerMark { font-family: var(--font-mono); color: var(--text-muted); }
+.prodTickerLine--voiced .prodTickerMark { color: var(--success); }
+.prodTickerSpeaker {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prodTickerLine--voiced .prodTickerText { color: var(--text); }
+
+@media (max-width: 720px) {
+  /* On a phone the header's pill + headline + subtitle stack to ~100px, which
+     pushed the blocking action below the fold of the first screen. The action
+     goes first instead — when the studio is waiting on you, that is the thing
+     worth the top of the screen. DOM order is unchanged, so a screen reader
+     still hears the state before the button.
+     .prodSub is the episode title, which the topbar is already showing on this
+     route; repeating it here buys nothing and costs a line. */
+  .prodHeadAction { order: -1; width: 100%; }
+  .prodHeadAction .btnPrimary { width: 100%; justify-content: center; }
+  .prodSub { display: none; }
+}
 
 @media (max-width: 560px) {
-  .prodStage { grid-template-columns: 34px minmax(0, 1fr); padding: 0 0.9rem; }
-  .prodHead, .prodFoot { padding: 1rem; }
+  .prodRundownHead,
+  .prodStage { grid-template-columns: 14px 2ch minmax(0, 1fr) 6ch; padding: 0 0.9rem; }
+  .prodHead, .prodFoot, .prodTicker { padding-left: 0.9rem; padding-right: 0.9rem; }
   .prodElapsedWrap { text-align: left; }
   .prodFoot .btnPrimary { margin-left: 0; width: 100%; }
+  .prodTickerLine { grid-template-columns: 1ch minmax(0, 1fr); }
+  .prodTickerText { grid-column: 1 / -1; }
 }
 
 /* ============================================================
@@ -1705,3 +2145,503 @@
 .gate-release-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .gate-release-ok { margin: 0; font-size: 0.86rem; color: var(--text); }
 .gate-release-err { margin: 0; font-size: 0.86rem; color: var(--danger, #ff6b6b); }
+
+/* ============================================================
+   Chrome-hosted page controls
+   Pieces that used to sit in the page body and are now published
+   into the topbar/subbar through <StudioPageHeader>.
+   ============================================================ */
+
+/* Episode quality, as a compact topbar badge instead of a floated card
+   that pushed the episode title off to the left. */
+.epScorePill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.epScorePillNum { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+.epScorePillUnit { font-size: 0.7rem; color: var(--text-muted); }
+
+/* Create-flow save state, right-aligned in the subbar. */
+.createSaveState { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+.createSaveState[data-state="error"] { color: var(--error-text); }
+.createSaveErr { display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+.createDiscardConfirm { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.createDiscardWarn { color: var(--warning-color); font-size: 0.8rem; white-space: nowrap; }
+
+/* The audio library page had no shell classes at all — it rendered its own
+   <main> with a hardcoded 960px width and inline padding. */
+.audioLibraryPage { min-width: 0; }
+
+/* Reference notes that used to sit above every control on a page. They are
+   context, not a gate, so they open on demand — progressive disclosure, using
+   the same visual language as .advNote rather than a parallel pattern. */
+.studioNoteDisclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-4);
+}
+.studioNoteDisclosure > summary {
+  cursor: pointer;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text);
+  font-weight: 600;
+  list-style: none;
+}
+.studioNoteDisclosure > summary::-webkit-details-marker { display: none; }
+.studioNoteDisclosure > summary::before { content: "▸ "; color: var(--text-muted); }
+.studioNoteDisclosure[open] > summary::before { content: "▾ "; }
+.studioNoteDisclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius); }
+.studioNoteDisclosure > p { margin: 0; padding: 0 var(--sp-3) var(--sp-3); line-height: 1.55; }
+
+/* ============================================================
+   Role trace — the seven-role writing trace on an episode.
+   This panel used to define its own colour system in TypeScript
+   (#1f7a4d / #a3131b / #7a6a1f), which were LIGHT-theme values
+   rendered on --bg #0E1116. The failure red sat barely above its
+   own background, so the state that most needed to be seen was
+   the least visible one.
+   ============================================================ */
+.role-trace-panel { border-left: 4px solid var(--success); }
+.role-trace-panel[data-blocked="true"] { border-left-color: var(--error); }
+
+.role-trace-alarm { color: var(--error-text); font-weight: 700; }
+.role-trace-note { margin: var(--sp-2) 0 0; }
+.role-trace-dim { color: var(--text-muted); }
+
+.role-trace-list { list-style: none; margin: var(--sp-4) 0 0; padding: 0; }
+
+.role-trace-row {
+  border: 1px solid var(--border);
+  border-left: 6px solid var(--border-hover);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.role-trace-row[data-tone="ok"] { border-left-color: var(--success); }
+.role-trace-row[data-tone="skipped"] { border-left-color: var(--warning); }
+.role-trace-row[data-tone="failed"] { border-left-color: var(--error); background: var(--error-muted); border-color: var(--error-border); }
+
+.role-trace-head { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; }
+.role-trace-order { min-width: 1.6rem; }
+.role-trace-key { color: var(--text-muted); }
+.role-trace-meta { color: var(--text-muted); }
+
+.role-trace-status { font-weight: 600; color: var(--text-muted); }
+.role-trace-row[data-tone="ok"] .role-trace-status { color: var(--success); }
+.role-trace-row[data-tone="skipped"] .role-trace-status { color: var(--warning); }
+.role-trace-row[data-tone="failed"] .role-trace-status { color: var(--error-text); }
+.role-trace-row[data-required-failure="true"] .role-trace-status {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.role-trace-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: 0.82rem;
+}
+.role-trace-facts dd { margin: 0; }
+/* --error-text, not --error: this is small body copy, where the spec red
+   measures 3.99:1 and fails AA. */
+.role-trace-facts dd[data-warn="true"] { color: var(--error-text); font-weight: 600; }
+
+.role-trace-findings { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }
+.role-trace-findings li { font-size: 0.82rem; }
+
+/* ============================================================
+   Episode player. Colour comes from --host-a/--host-b via
+   [data-seat]; the component supplies only geometry, and only as
+   custom properties, because a span's position is data, not style.
+   ============================================================ */
+.studioPlayer { padding: var(--sp-6); }
+
+.playerTransport { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-4); flex-wrap: wrap; }
+.playerTransport [data-role="playPause"] {
+  width: 56px; height: 56px; border-radius: 50%; font-size: 1.3rem; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.playerClock { margin-left: auto; font-family: var(--font-mono); font-size: 0.9rem; color: var(--text-muted); }
+.playerClockNow { color: var(--text); }
+
+.playerScrub { position: relative; cursor: pointer; user-select: none; }
+.playerWave { width: 100%; height: 96px; display: block; }
+
+.playerChapterTick {
+  position: absolute;
+  left: var(--tick-at);
+  top: -6px;
+  width: 2px; height: 10px;
+  background: var(--text-muted);
+  border: none; padding: 0; cursor: pointer;
+}
+
+.playerHostStrip { margin-top: var(--sp-2); }
+.playerHostTrack { position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: var(--surface-2); }
+.playerHostSpan {
+  position: absolute;
+  left: var(--span-start);
+  width: var(--span-width);
+  top: 0; bottom: 0;
+  opacity: 0.85;
+}
+.playerHostSpan[data-seat="a"] { background: var(--host-a); }
+.playerHostSpan[data-seat="b"] { background: var(--host-b); }
+
+.playerKey { display: flex; gap: var(--sp-6); margin-top: var(--sp-1); font-size: 0.72rem; color: var(--text-muted); }
+.playerKeyHint { margin-left: auto; }
+.playerKeySwatch { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: var(--sp-1); }
+.playerKeySwatch[data-seat="a"] { background: var(--host-a); }
+.playerKeySwatch[data-seat="b"] { background: var(--host-b); }
+
+.playerActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+
+/* ============================================================
+   Spacing + layout utilities.
+   These replace ~160 one-off inline styles that used ten different
+   ad-hoc lengths (0.4 / 0.5 / 0.6 / 0.7 / 0.8 / 0.9 / 1 / 1.2 /
+   1.5 / 2rem). Each was SNAPPED onto the seven-step scale, which
+   is why the Studio now lines up across routes. Keep this list
+   short — a utility for every property would just be inline
+   styles with extra steps.
+   ============================================================ */
+.m-0  { margin: 0; }
+.mt-0 { margin-top: 0; }
+.mb-0 { margin-bottom: 0; }
+
+.mt-1 { margin-top: var(--sp-1); }   .mb-1 { margin-bottom: var(--sp-1); }
+.mt-2 { margin-top: var(--sp-2); }   .mb-2 { margin-bottom: var(--sp-2); }
+.mt-3 { margin-top: var(--sp-3); }   .mb-3 { margin-bottom: var(--sp-3); }
+.mt-4 { margin-top: var(--sp-4); }   .mb-4 { margin-bottom: var(--sp-4); }
+.mt-6 { margin-top: var(--sp-6); }   .mb-6 { margin-bottom: var(--sp-6); }
+.mt-8 { margin-top: var(--sp-8); }   .mb-8 { margin-bottom: var(--sp-8); }
+.mt-12 { margin-top: var(--sp-12); } .mb-12 { margin-bottom: var(--sp-12); }
+
+.ml-2 { margin-left: var(--sp-2); }
+.ml-3 { margin-left: var(--sp-3); }
+.mr-12 { margin-right: var(--sp-12); }
+
+.u-mlAuto    { margin-left: auto; }
+.u-full      { width: 100%; }
+.u-wrap      { flex-wrap: wrap; }
+.u-caps      { text-transform: capitalize; }
+.u-span      { grid-column: 1 / -1; }
+.u-flex1     { flex: 1; }
+.u-selfStart { align-self: flex-start; }
+.u-accent    { color: var(--accent); }
+.u-muted     { color: var(--text-muted); }
+
+/* ============================================================
+   Hosts (Character Studio). The per-host accent arrives as
+   --host-accent; everything else is a class.
+   ============================================================ */
+.hostCard { border-top: 3px solid var(--host-accent, var(--border-hover)); }
+.hostCardArchived { opacity: 0.85; --host-accent: var(--border-hover); }
+
+.hostCardHead { display: flex; justify-content: space-between; gap: var(--sp-4); }
+.hostCardName { font-size: 1.55rem; color: var(--host-accent, var(--accent)); }
+.hostCardNameSm { font-size: 1.3rem; }
+.hostCardRole { font-size: 0.84rem; color: var(--text-muted); margin-top: var(--sp-1); }
+.hostCardAside { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.hostCardActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+.hostCardUsage { font-size: 0.7rem; color: var(--text-muted); margin-top: var(--sp-3); }
+
+.hostChipRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-4) 0; }
+.hostBelief { font-size: 0.86rem; line-height: 1.55; color: var(--text); }
+
+.hostChoiceRow { padding: var(--sp-4) 0; border-bottom: 1px solid var(--border); }
+.hostChoiceTitle { font-weight: 700; margin-bottom: var(--sp-1); }
+.hostChoiceHelp { color: var(--text-muted); font-size: 0.76rem; margin-bottom: var(--sp-2); }
+.hostBtnRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.hostBtnRow [data-wide="true"] { min-width: 110px; }
+
+.hostWizardHead { display: flex; justify-content: space-between; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.hostWizardFoot {
+  display: flex; gap: var(--sp-2); flex-wrap: wrap;
+  margin-top: var(--sp-6); padding-top: var(--sp-4); border-top: 1px solid var(--border);
+}
+
+.hostPresetGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
+.hostModeGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-3); }
+.hostModeGrid [data-tall="true"] { min-height: 90px; text-align: left; }
+.hostModeTitle { display: block; }
+.hostModeHelp { display: block; font-size: 0.74rem; margin-top: var(--sp-1); opacity: 0.85; }
+
+.hostCandidateGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: var(--sp-3); margin-top: var(--sp-4); }
+.hostCandidateGrid [data-selected="true"] { border: 2px solid var(--accent); }
+.hostAudition { width: 100%; margin: var(--sp-3) 0; }
+
+.hostFieldHint { font-size: 0.74rem; color: var(--text-muted); }
+.hostFieldNarrow { max-width: 240px; }
+
+.hostConsentRow {
+  display: flex; gap: var(--sp-3); align-items: flex-start;
+  padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius);
+}
+
+/* --error-text, never --error: this is a small text label. */
+.hostBtnRow [data-danger="true"] { color: var(--error-text); }
+
+/* ============================================================
+   Shows — list and headquarters.
+   ============================================================ */
+.showEyebrow {
+  color: var(--accent); font-size: 0.7rem; font-weight: 900;
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+.showAsideTitle { font-weight: 850; }
+.showAsideBody { color: var(--text-muted); font-size: 0.8rem; line-height: 1.5; margin-bottom: 0; }
+
+.showHqGrid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.65fr); gap: var(--sp-4); }
+.showPremise { margin: var(--sp-2) 0; line-height: 1.25; }
+.showPromiseBody { color: var(--text-muted); line-height: 1.6; }
+.showChemistry { font-size: 0.84rem; line-height: 1.55; margin-bottom: 0; }
+
+.showStorylineGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--sp-3); }
+.showEpisodeList { display: grid; gap: var(--sp-2); }
+.showEpisodeRow {
+  text-decoration: none; color: inherit;
+  display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3);
+}
+.showEpisodeStage { color: var(--text-muted); font-size: 0.76rem; margin-top: var(--sp-1); }
+.showForgeSummary { cursor: pointer; display: inline-flex; }
+
+/* The empty state used 3rem (48px) of vertical padding — over the 32px card
+   ceiling, and it made "no shows yet" the largest thing on the page. */
+.showEmpty { padding: var(--sp-8) var(--sp-6); text-align: center; }
+.showEmptyGlyph { font-size: 2.6rem; margin-bottom: var(--sp-3); }
+.showEmptyBody { color: var(--text-muted); max-width: 520px; margin: var(--sp-3) auto var(--sp-6); line-height: 1.55; }
+
+.showList { display: grid; gap: var(--sp-3); }
+.showRow { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; }
+.showRowMain { min-width: 0; flex: 1 1 420px; }
+.showRowChips { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--sp-2); }
+.showRowCadence { color: var(--text-muted); font-size: 0.76rem; }
+.showRowName { margin: 0; font-size: 1.08rem; }
+.showRowFacts { color: var(--text-muted); font-size: 0.8rem; margin-top: var(--sp-2); display: flex; gap: var(--sp-3); flex-wrap: wrap; }
+.showRowActions { display: flex; gap: var(--sp-3); align-items: flex-start; flex-wrap: wrap; }
+
+@media (max-width: 900px) { .showHqGrid { grid-template-columns: 1fr; } }
+
+/* ============================================================
+   Create flow + Takes board.
+   ============================================================ */
+
+/* The step buttons carried `all: unset`, which removes the focus ring along
+   with everything else — a keyboard user could not see where they were. A
+   plain reset keeps the appearance without destroying focus visibility. */
+.stepPillBtn {
+  display: flex; align-items: center; gap: var(--sp-1);
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.stepPillBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm); }
+
+/* --warning-color, not the #b45309 literal that appeared five times. That
+   amber was a light-theme value and it shadowed the real token. */
+.noteWarn { color: var(--warning-color); }
+.noteSmall { font-size: 0.82rem; }
+
+.hostVoiceRow { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
+.hostVoiceName { width: 120px; }
+
+.reviewGrid { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-4); margin: 0; }
+.reviewList { margin: 0; padding-left: var(--sp-4); }
+
+.skelStack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.skelChip[style] { width: var(--skel-w); }
+
+.takeList { display: flex; flex-direction: column; gap: var(--sp-4); }
+.takeRow { display: flex; gap: var(--sp-6); align-items: center; flex-wrap: wrap; }
+.takeScore { font-size: 1.9rem; width: 74px; text-align: center; flex-shrink: 0; }
+.takeScoreLabel {
+  font-size: 0.62rem; color: var(--text-muted);
+  font-family: var(--font-family); font-weight: 600; margin-top: 2px;
+}
+.takeMain { flex: 1; min-width: 260px; }
+.takeTitle { font-size: 1.05rem; }
+.takeSummary {
+  font-size: 0.82rem; color: var(--text-muted); margin-top: var(--sp-1);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.takeAxes { width: 240px; flex-shrink: 0; }
+.takeAxisRow { grid-template-columns: 80px 1fr 28px; margin-top: var(--sp-1); }
+.takeAxisLabel { font-size: 0.7rem; }
+.takeBarTrack { height: 5px; }
+.scoreBarFill[style] { width: var(--bar-w); }
+
+.u-right { text-align: right; }
+.u-strong { color: var(--text); }
+.u-clickable { cursor: pointer; }
+.u-noShrink { flex-shrink: 0; }
+.u-resizeY { resize: vertical; }
+
+/* ============================================================
+   Tail of the purge — the remaining per-component classes.
+   Data-driven values (bar widths, timeline offsets, speaker
+   colour) arrive as custom properties; the styling lives here.
+   ============================================================ */
+
+/* Bars and meters, everywhere. */
+.scoreBarFill[style], .anBarFill[style] { width: var(--bar-w); }
+[style] > .anColBar, .anColBar[style] { height: var(--bar-h); }
+
+/* Audio library. The border literals (#444, #333) were fallbacks that fired
+   whenever --border was in scope anyway, so they never showed — dead colour. */
+.alStatus { min-height: 1.2em; }
+.alChipRow { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: var(--sp-3) 0; }
+.alUpload { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-4); margin-bottom: var(--sp-6); }
+.alFieldGrid { display: grid; gap: var(--sp-2); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.alBlockField { display: block; margin: var(--sp-2) 0; }
+.alTable { width: 100%; border-collapse: collapse; }
+.alRow { border-top: 1px solid var(--border); }
+
+.audList { margin-top: var(--sp-3); max-width: 860px; padding-left: var(--sp-4); }
+
+/* Episode diversity. Same story as the role trace: #e5e5e5 hairlines are a
+   light-theme value that all but vanished on --surface. */
+.divRow { display: flex; gap: var(--sp-2); padding: 2px 0; flex-wrap: wrap; }
+.divRowKey { min-width: 210px; color: var(--text-muted); }
+.divRoleRow { margin: var(--sp-1) 0; padding-left: var(--sp-3); border-left: 2px solid var(--border); }
+.divPanel { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); margin-top: var(--sp-3); }
+.divDim { color: var(--text-muted); font-size: 0.9em; }
+.divSmall { font-size: 0.85em; }
+
+/* Skeletons. */
+.skelChip--xs { width: 48px; }
+.skelChip--sm { width: 62px; }
+.skelChip--btn { width: 96px; height: 30px; }
+.skelChip--tab { width: 104px; height: 42px; }
+.skelLine--h28 { height: 28px; }
+.skelLine--h30 { height: 30px; }
+.skelLine--w26 { width: 26%; }
+.skelLine--w30 { width: 30%; }
+.skelLine--w48 { width: 48%; }
+.skelLine--w55 { width: 55%; }
+.skelLine--w70 { width: 70%; }
+.skelCentered { margin: var(--sp-2) auto 0; }
+.skelBlock--player { height: 104px; }
+.skelHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-6); flex-wrap: wrap; margin-bottom: var(--sp-6); }
+.skelHeadMain { min-width: 0; max-width: 760px; flex: 1; }
+.skelScore { width: 128px; padding: var(--sp-4); }
+
+/* Episodes list + episode page. */
+.epListRow { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.epListTitle { font-size: 1.15rem; }
+.epNote { font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; margin: 0; }
+.epNoteSmall { font-size: 0.75rem; color: var(--text-muted); }
+.epStack { display: flex; flex-direction: column; gap: var(--sp-3); }
+.epStackWide { display: flex; flex-direction: column; gap: var(--sp-6); }
+
+/* ---- Episode action bar ----
+   Sticky, not fixed: it sits at the end of the document and pins to the bottom
+   of the viewport only while there is still content below it, so it can never
+   hide the last row of a panel. The negative margins cancel .studioMain's own
+   padding so the bar spans the full content column and reads as a bar rather
+   than as one more card. */
+.epActionBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin: var(--sp-6) calc(var(--sp-6) * -1) calc(var(--sp-8) * -1);
+  padding: var(--sp-3) var(--sp-6);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.epActionBarWhat { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
+.epActionBarStage {
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.epActionBarStatus { font-size: 0.85rem; color: var(--text); }
+.epActionBarDo { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+@media (max-width: 720px) {
+  .epActionBar {
+    margin: var(--sp-4) calc(var(--sp-4) * -1) calc(var(--sp-6) * -1);
+    padding: var(--sp-2) var(--sp-4);
+  }
+  .epActionBarDo { width: 100%; }
+  .epActionBarDo > * { flex: 1; text-align: center; }
+}
+
+/* Mix timeline. */
+.mixScrubFill { width: var(--at); }
+.mixPlayhead { left: var(--at); }
+.mixCue { left: var(--at); }
+.mixSectionTitle { font-size: 0.95rem; margin: 0 0 var(--sp-3); }
+.mixBlockBar { background: var(--speaker-color); }
+.mixLineSpeaker { color: var(--speaker-color); }
+.tSpeaker { color: var(--speaker-color); }
+.tHostDot[data-seat="a"] { background: var(--host-a); }
+.tHostDot[data-seat="b"] { background: var(--host-b); }
+
+/* Publishing. */
+.pubBar { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+@media (max-width: 720px) {
+  /* Wrapping pushed the feed's two buttons onto a second line and put the
+     first control 168px down. The URL already breaks anywhere, so it is the
+     thing that should give up width, not the actions. */
+  .pubBar { flex-wrap: nowrap; }
+  .pubBar > :first-child { min-width: 0; }
+  .pubActions { flex-shrink: 0; }
+}
+.pubList { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pubActions { display: flex; gap: var(--sp-3); }
+.pubEpTitle { font-size: 1rem; }
+.pubFeedUrl { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); word-break: break-all; }
+
+/* Production console + misc. */
+.prodReasons { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }
+.prodFootNote { padding: 0 var(--sp-6) var(--sp-1); }
+.planCta { margin-top: auto; }
+.boardResumeNote { margin: var(--sp-2) 0 var(--sp-6); max-width: 440px; }
+.genBtnWrap { display: inline-flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+.genBtnNote { color: var(--text-muted); font-size: 0.75rem; max-width: 280px; }
+.clipActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.advPanel[data-flush="true"] { border-top: none; padding-top: 0; margin-top: 0; }
+[data-plain="true"] { border-color: var(--border); }
+
+/* Takes filters. */
+.takeFilters { display: flex; gap: var(--sp-3); align-items: flex-end; flex-wrap: wrap; margin: var(--sp-1) 0 var(--sp-6); }
+.takeFilter { display: flex; flex-direction: column; gap: var(--sp-1); }
+.takeFilterLabel {
+  font-size: 0.68rem; color: var(--text-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.takeSelect {
+  background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3); font-size: 0.82rem; font-family: inherit;
+}
+.takeFilterClear { cursor: pointer; color: var(--text-muted); }
+
+.u-left { text-align: left; }
+.u-nowrap { white-space: nowrap; }
+.u-minw0 { min-width: 0; }
+.u-block { display: block; }
+.u-hidden { display: none; }
+.u-semibold { font-weight: 600; }
+.hostPresetGrid [data-tallish="true"] { min-height: 54px; }

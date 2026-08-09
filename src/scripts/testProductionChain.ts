@@ -178,13 +178,28 @@ check("the console renders a real APPROVE control at the checkpoint", () => {
   // customer to do it.
   assert(/prod-approve-cta/.test(console_), "the checkpoint needs an approve CTA with a stable test id");
   assert(/approveEpisodeScript/.test(console_), "the CTA must call the real owner-gated approval action");
-  // Anchor on the JSX render guard specifically — `s.state === "checkpoint"`
-  // also appears earlier in the `stages.find(...)` that picks the active stage.
-  const at = console_.indexOf('{s.state === "checkpoint" && (');
-  assert(at !== -1, "the checkpoint render block was not found");
-  const checkpointBlock = console_.slice(at, at + 1400);
-  assert(/<button/.test(checkpointBlock), "the checkpoint's primary control must be a button, not only a link");
-  assert(/prod-approve-cta/.test(checkpointBlock), "the approve CTA must be inside the checkpoint block");
+  // The control moved out of the checkpoint ROW and into the console header
+  // during the Studio UX rebuild: when the studio is waiting on the operator,
+  // the button that unblocks it belongs beside the status lamp, not 363px down
+  // a six-stage rundown. It renders in one place or the other, never both.
+  //
+  // Anchoring on the CONTROL rather than on the block it happens to sit in
+  // keeps this contract honest through layout changes while still catching the
+  // regression it exists for: an anchor link masquerading as an action.
+  const ctaAt = console_.indexOf('data-testid="prod-approve-cta"');
+  assert(ctaAt !== -1, "the approve CTA was not found");
+  const openedAt = console_.lastIndexOf("<", ctaAt);
+  assert(
+    console_.slice(openedAt).startsWith("<button"),
+    "the checkpoint's primary control must be a button, not only a link"
+  );
+  assert(/onClick=\{onApprove\}/.test(console_), "the approve CTA must be wired to the approval handler");
+  // Still gated on the checkpoint state: the button must not be offered when
+  // the pipeline is not actually waiting on a human.
+  assert(
+    /active\?\.state === "checkpoint"/.test(console_),
+    "the approve CTA must only render while the active stage is the human checkpoint"
+  );
 });
 
 check("the approval gate's own reasons are rendered to the customer", () => {

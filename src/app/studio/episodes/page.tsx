@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -23,12 +24,11 @@ export default async function EpisodesLibrary() {
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Episodes</h1>
-      <p className="pageSub">Everything you&apos;ve made — finished shows up top, work-in-progress below.</p>
+      <StudioPageHeader title="Episodes" subtitle="Finished shows up top, work in progress below." />
 
       {finished.length === 0 && inFlight.length === 0 && (
         <div className="emptyNote">
-          Nothing here yet. <Link href="/studio/create" style={{ color: "var(--accent-color)" }}>Create your first episode</Link>.
+          Nothing here yet. <Link href="/studio/create" className="u-accent">Create your first episode</Link>.
         </div>
       )}
 
@@ -41,9 +41,9 @@ export default async function EpisodesLibrary() {
               const chip = statusChip(ep.status);
               return (
                 <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem" }}>
+                  <div className="epListRow">
                     <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-                    {q && <span className="scoreBadge" style={{ fontSize: "1.15rem" }}>{q.total}<small>/100</small></span>}
+                    {q && <span className="scoreBadge epListTitle">{q.total}<small>/100</small></span>}
                   </div>
                   <span className="epTitle">{ep.title}</span>
                   <div className="epMeta">
@@ -67,7 +67,7 @@ export default async function EpisodesLibrary() {
               const chip = statusChip(ep.status);
               return (
                 <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-                  <span className={`chip ${chip.kind === "accent" ? "chipAccent" : ""}`} style={{ alignSelf: "flex-start" }}>{chip.label}</span>
+                  <span className={`chip u-selfStart ${chip.kind === "accent" ? "chipAccent" : ""}`}>{chip.label}</span>
                   <span className="epTitle">{ep.title}</span>
                   <div className="epMeta">
                     <span>updated {fmtDate(ep.updatedAt)}</span>

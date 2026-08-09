@@ -1,4 +1,5 @@
 import { fetchMyAudioLibrary } from "./actions";
+import StudioPageHeader from "../StudioPageHeader";
 import AudioLibrary from "./AudioLibrary";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +10,11 @@ export const dynamic = "force-dynamic";
 export default async function AudioLibraryPage() {
   const data = await fetchMyAudioLibrary();
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: "1.5rem 1rem" }}>
-      <h1>My Audio Library</h1>
-      <p style={{ opacity: 0.8 }}>
-        Intros, outros, beds, stingers, and reaction SFX for your shows. Uploads are validated
-        server-side (real audio only), content-hashed, and private to your account.
-      </p>
+    <div className="fadeUp audioLibraryPage">
+      <StudioPageHeader
+        title="Audio"
+        subtitle="Intros, outros, beds, stingers and reaction SFX. Private to your account."
+      />
       {data.success ? (
         <AudioLibrary
           initialAssets={data.assets ?? []}
@@ -24,6 +24,6 @@ export default async function AudioLibraryPage() {
       ) : (
         <p role="alert" data-testid="library-error">{data.error}</p>
       )}
-    </main>
+    </div>
   );
 }

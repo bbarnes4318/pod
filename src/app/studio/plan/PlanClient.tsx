@@ -6,6 +6,7 @@
 // future billing integration — labelled as such.
 
 import React, { useState } from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import type { PlanConfig } from "@/lib/plans";
 import type { EpisodeUsage } from "@/lib/services/entitlementService";
 import { selectPlan } from "./actions";
@@ -37,8 +38,10 @@ export default function PlanClient({
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Plan &amp; usage</h1>
-      <p className="pageSub">Your tier, what you&apos;ve used this month, and what each plan unlocks.</p>
+      <StudioPageHeader
+        title="Plan and usage"
+        subtitle="Your tier, what you've used this month, and what each plan unlocks."
+      />
 
       {/* Current plan + real usage */}
       <div className="studioCard planCurrent">
@@ -56,14 +59,14 @@ export default function PlanClient({
             </strong>
           </div>
           <div className="scoreBarTrack">
-            <div className={`scoreBarFill${atCap ? " planCapHit" : ""}`} style={{ width: `${usage && usage.limit !== null ? usedPct : 6}%` }} />
+            <div className={`scoreBarFill${atCap ? " planCapHit" : ""}`} style={{ "--bar-w": `${usage && usage.limit !== null ? usedPct : 6}%` } as React.CSSProperties} />
           </div>
           {atCap && <div className="planCapNote">You&apos;ve hit this month&apos;s cap — generation is blocked until you upgrade or it resets.</div>}
           <div className="planUsageSub">Podcasts: {podcastCount}{current.maxPodcasts !== null ? ` / ${current.maxPodcasts}` : " / ∞"}</div>
         </div>
       </div>
 
-      {err && <div className="gateResult gate-err" style={{ marginTop: "1rem" }}>{err}</div>}
+      {err && <div className="gateResult gate-err mt-4">{err}</div>}
 
       {/* Tier ladder */}
       <div className="planGrid">
@@ -84,10 +87,9 @@ export default function PlanClient({
               </ul>
               <button
                 type="button"
-                className={isCurrent ? "btnGhost" : "btnPrimary"}
+                className={`u-full planCta ${isCurrent ? "btnGhost" : "btnPrimary"}`}
                 disabled={isCurrent || busy === p.id}
                 onClick={() => change(p.id)}
-                style={{ width: "100%", marginTop: "auto" }}
               >
                 {isCurrent ? "Your plan" : busy === p.id ? "Switching…" : `Switch to ${p.name}`}
               </button>

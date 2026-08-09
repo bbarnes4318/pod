@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 
 export const metadata = {
@@ -38,11 +39,10 @@ const GROUPS: { title: string; links: { href: string; label: string; sub: string
 export default function StudioSettingsPage() {
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Settings</h1>
-      <p className="pageSub">
-        Studio preferences and the operator consoles that power production, distribution, and the
-        underlying pipeline.
-      </p>
+      <StudioPageHeader
+        title="Settings"
+        subtitle="Studio preferences and the operator consoles behind production."
+      />
 
       {GROUPS.map((group) => (
         <section key={group.title}>
@@ -51,9 +51,9 @@ export default function StudioSettingsPage() {
           </div>
           <div className="grid3">
             {group.links.map((link) => (
-              <Link key={link.href} href={link.href} className="studioCard clickable" style={{ display: "block" }}>
+              <Link className="studioCard clickable u-block" key={link.href} href={link.href}>
                 <div className="epTitle">{link.label}</div>
-                <div className="epMeta" style={{ marginTop: "0.35rem" }}>{link.sub}</div>
+                <div className="epMeta mt-2">{link.sub}</div>
               </Link>
             ))}
           </div>

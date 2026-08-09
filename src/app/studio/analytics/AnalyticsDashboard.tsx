@@ -6,6 +6,7 @@
 // are inline SVG (no chart dependency).
 
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import type { AnalyticsSummary } from "@/lib/services/analyticsService";
 
@@ -24,21 +25,19 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
 
   return (
     <div className="fadeUp">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "1rem", flexWrap: "wrap" }}>
-        <div>
-          <h1 className="pageTitle">Analytics</h1>
-          <p className="pageSub" style={{ marginBottom: 0 }}>
-            IAB-style download &amp; listen counts for your episodes — deduped per client per day. Your data only.
-          </p>
-        </div>
-        <div className="anRange">
-          {RANGES.map((r) => (
-            <Link key={r} href={`/studio/analytics?days=${r}`} className={`anRangeBtn${r === days ? " on" : ""}`}>
-              {r}d
-            </Link>
-          ))}
-        </div>
-      </div>
+      <StudioPageHeader
+        title="Analytics"
+        subtitle="Download and listen counts for your episodes, deduped per client per day."
+        actions={
+          <div className="anRange">
+            {RANGES.map((r) => (
+              <Link key={r} href={`/studio/analytics?days=${r}`} className={`anRangeBtn${r === days ? " on" : ""}`}>
+                {r}d
+              </Link>
+            ))}
+          </div>
+        }
+      />
 
       {/* Stat cards */}
       <div className="anStats">
@@ -57,14 +56,14 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
       </div>
 
       {!hasData && (
-        <div className="emptyNote" style={{ marginTop: "1.5rem" }}>
+        <div className="emptyNote mt-6">
           No downloads or plays in the last {days} days yet. Real counts appear here as listeners fetch your feed, download, or press play — nothing is fabricated.
         </div>
       )}
 
       {/* Downloads/plays over time */}
-      <div className="studioCard" style={{ marginTop: "1.5rem" }}>
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>Over time</div>
+      <div className="studioCard mt-6">
+        <div className="sectionTitle mb-4">Over time</div>
         <div className="anBars" role="img" aria-label="Downloads and plays per day">
           {summary.daily.map((d) => {
             const total = d.downloads + d.plays;
@@ -74,8 +73,8 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
             return (
               <div key={d.date} className="anBarCol" title={`${fmtDate(d.date)} · ${d.downloads} downloads · ${d.plays} plays`}>
                 <div className="anBarStack">
-                  <div className="anBarPlay" style={{ height: `${plH}%` }} />
-                  <div className="anBarDl" style={{ height: `${dlH}%` }} />
+                  <div className="anBarPlay" style={{ "--bar-h": `${plH}%` } as React.CSSProperties} />
+                  <div className="anBarDl" style={{ "--bar-h": `${dlH}%` } as React.CSSProperties} />
                 </div>
               </div>
             );
@@ -88,17 +87,17 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
         </div>
       </div>
 
-      <div className="grid2" style={{ marginTop: "1.5rem" }}>
+      <div className="grid2 mt-6">
         {/* By country */}
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By country</div>
+          <div className="sectionTitle mb-4">By country</div>
           {summary.byCountry.length === 0 ? (
             <div className="anMuted">No geo data yet. Country is recorded only when the edge/proxy provides it — no IP lookups.</div>
           ) : (
             summary.byCountry.map((c) => (
               <div key={c.country} className="anRow">
                 <span className="anRowLabel">{c.country === "Unknown" ? "Unknown" : c.country}</span>
-                <div className="anRowTrack"><div className="anRowFill" style={{ width: `${(c.count / maxCountry) * 100}%` }} /></div>
+                <div className="anRowTrack"><div className="anRowFill" style={{ "--bar-w": `${(c.count / maxCountry) * 100}%` } as React.CSSProperties} /></div>
                 <span className="anRowNum">{c.count}</span>
               </div>
             ))
@@ -107,14 +106,14 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
 
         {/* By app/client */}
         <div className="studioCard">
-          <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By app / client</div>
+          <div className="sectionTitle mb-4">By app / client</div>
           {summary.byApp.length === 0 ? (
             <div className="anMuted">No client data yet.</div>
           ) : (
             summary.byApp.map((a) => (
               <div key={a.app} className="anRow">
                 <span className="anRowLabel">{a.app}</span>
-                <div className="anRowTrack"><div className="anRowFill" style={{ width: `${(a.count / maxApp) * 100}%` }} /></div>
+                <div className="anRowTrack"><div className="anRowFill" style={{ "--bar-w": `${(a.count / maxApp) * 100}%` } as React.CSSProperties} /></div>
                 <span className="anRowNum">{a.count}</span>
               </div>
             ))
@@ -123,8 +122,8 @@ export default function AnalyticsDashboard({ summary, days }: { summary: Analyti
       </div>
 
       {/* By episode */}
-      <div className="studioCard" style={{ marginTop: "1.5rem" }}>
-        <div className="sectionTitle" style={{ marginBottom: "0.9rem" }}>By episode</div>
+      <div className="studioCard mt-6">
+        <div className="sectionTitle mb-4">By episode</div>
         {summary.byEpisode.length === 0 ? (
           <div className="anMuted">No episode activity in this range.</div>
         ) : (

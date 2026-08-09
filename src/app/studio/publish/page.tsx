@@ -1,4 +1,5 @@
 import React from "react";
+import StudioPageHeader from "../StudioPageHeader";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { fmtDate, fmtDuration } from "../lib";
@@ -23,15 +24,14 @@ export default async function PublishPage() {
 
   return (
     <div className="fadeUp">
-      <h1 className="pageTitle">Publish</h1>
-      <p className="pageSub">Get finished episodes onto the public feed, and see what&apos;s already live.</p>
+      <StudioPageHeader title="Publishing" subtitle="Put finished episodes on the public feed." />
 
-      <div className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
+      <div className="studioCard pubBar mb-6">
         <div>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>Public feed</div>
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.82rem", color: "var(--text-secondary)", wordBreak: "break-all" }}>{feedUrl}</div>
+          <div className="u-semibold mb-1">Public feed</div>
+          <div className="pubFeedUrl">{feedUrl}</div>
         </div>
-        <div style={{ display: "flex", gap: "0.6rem" }}>
+        <div className="pubActions">
           <a href="/rss" target="_blank" className="btnGhost">Open RSS</a>
           <Link href="/admin/rss" className="btnGhost">Feed console</Link>
         </div>
@@ -41,7 +41,7 @@ export default async function PublishPage() {
       {readyToPublish.length === 0 ? (
         <div className="emptyNote">Nothing queued. Finished episodes appear here once their audio is mixed.</div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+        <div className="pubList">
           {readyToPublish.map((ep) => {
             const sid = ep.scripts[0]?.id;
             const step =
@@ -49,15 +49,15 @@ export default async function PublishPage() {
                 ? { label: "Publish now", href: sid ? `/admin/rss/${sid}` : "/admin/rss" }
                 : { label: "Prepare show assets", href: sid ? `/admin/content-assets/${sid}` : "/admin/content-assets" };
             return (
-              <div key={ep.id} className="studioCard" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="epTitle" style={{ fontSize: "1rem" }}>{ep.title}</div>
-                  <div className="epMeta" style={{ marginTop: 4 }}>
+              <div className="studioCard pubBar" key={ep.id}>
+                <div className="u-minw0">
+                  <div className="epTitle pubEpTitle">{ep.title}</div>
+                  <div className="epMeta mt-12">
                     <span className="chip chipAccent">{ep.status === "publish_ready" ? "Ready to publish" : "Needs packaging"}</span>
                     <span>{fmtDuration(ep.durationSeconds)}</span>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: "0.6rem" }}>
+                <div className="pubActions">
                   <Link href={`/studio/episodes/${ep.id}`} className="btnGhost">▶ Preview</Link>
                   <Link href={step.href} className="btnPrimary">{step.label} →</Link>
                 </div>
@@ -74,7 +74,7 @@ export default async function PublishPage() {
         <div className="grid3">
           {published.map((ep) => (
             <Link key={ep.id} href={`/studio/episodes/${ep.id}`} className="studioCard clickable epCard">
-              <span className="chip chipSuccess" style={{ alignSelf: "flex-start" }}>Live</span>
+              <span className="chip chipSuccess u-selfStart">Live</span>
               <span className="epTitle">{ep.title}</span>
               <div className="epMeta">
                 <span>{fmtDuration(ep.durationSeconds)}</span>
