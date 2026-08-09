@@ -216,11 +216,14 @@ export default function PodcastWizard({ hosts, teams, initial = {}, podcastId, p
   return (
     <div style={{ maxWidth: 980, margin: "0 auto" }}>
       {/* The studio route names the page in its chrome, so the wizard must not
-          repeat it there. Note the classes this block used — .pageTitle and
-          .pageSub — no longer exist ANYWHERE: they were deleted with the old
-          per-page chrome, and this file sits outside src/app/studio/**, so the
-          token spec never caught it still reaching for them. It has been
-          rendering unstyled since. */}
+          repeat it there.
+          This block used to carry .pageTitle/.pageSub. Precisely: .pageSub is
+          now defined nowhere, and .pageTitle survives ONLY in
+          app/admin/layout.css — which admin pages import and this component
+          never does. So the 15 remaining .pageTitle users under /admin are
+          fine; this component was the single one reaching for a class it could
+          not see, on /app and /studio alike. The token spec missed it because
+          that spec is scoped to src/app/studio/** and this file is not. */}
       {!hideIdentity && (
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: "1rem" }}>
           <div>

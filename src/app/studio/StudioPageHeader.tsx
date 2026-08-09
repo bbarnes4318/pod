@@ -57,7 +57,16 @@ export interface StudioPageHeaderProps {
 }
 
 /** Portals `children` into a shell-owned slot once that slot exists in the DOM. */
-function ChromeSlot({ slotId, children }: { slotId: string; children: React.ReactNode }) {
+function ChromeSlot({
+  slotId,
+  children,
+  onPublished,
+}: {
+  slotId: string;
+  children: React.ReactNode;
+  /** Fired once this slot's content is actually in the DOM. */
+  onPublished: () => void;
+}) {
   const [host, setHost] = useState<HTMLElement | null>(null);
 
   // The slot is rendered by the shell, which is above this component in the
@@ -75,6 +84,16 @@ function ChromeSlot({ slotId, children }: { slotId: string; children: React.Reac
     setHost(document.getElementById(slotId));
   }, [slotId]);
 
+  // Deliberately a PASSIVE effect keyed on `host`, not part of the layout
+  // effect above. The layout effect only *finds* the host; the portal content
+  // is not in the DOM until the re-render that `setHost` triggers has
+  // committed. An effect that depends on `host` runs after that commit, so
+  // when this fires the content is genuinely on the page — which is the whole
+  // point of the signal.
+  useEffect(() => {
+    if (host) onPublished();
+  }, [host, onPublished]);
+
   if (!host || children === undefined || children === null) return null;
   return createPortal(children, host);
 }
@@ -85,6 +104,21 @@ export default function StudioPageHeader({ title, subtitle, breadcrumb, actions,
   // has mounted cannot blank the incoming title.
   const id = useId();
   const crumbKey = JSON.stringify(breadcrumb ?? null);
+
+  // How many chrome slots this page actually fills, and how many have landed.
+  // `data-header-ready` goes on the (server-rendered, always present) h1 once
+  // every one of them is in the DOM — a page with no chrome controls is ready
+  // as soon as it mounts.
+  //
+  // This exists because measuring or asserting against the chrome before the
+  // portals land measures a page nobody ever sees. A fixed timeout is a guess;
+  // this is the event itself.
+  const expected = (actions != null ? 1 : 0) + (status != null ? 1 : 0);
+  const [published, setPublished] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const onPublished = React.useCallback(() => setPublished((n) => n + 1), []);
+  const ready = mounted && published >= expected;
 
   useEffect(() => {
     setHeader({ id, title, subtitle, breadcrumb: breadcrumb ?? undefined });
@@ -97,9 +131,9 @@ export default function StudioPageHeader({ title, subtitle, breadcrumb, actions,
 
   return (
     <>
-      <h1 className="srOnly">{title}</h1>
-      <ChromeSlot slotId="studio-topbar-actions">{actions}</ChromeSlot>
-      <ChromeSlot slotId="studio-subbar-status">{status}</ChromeSlot>
+      <h1 className="srOnly" data-header-ready={ready ? "true" : undefined}>{title}</h1>
+      <ChromeSlot slotId="studio-topbar-actions" onPublished={onPublished}>{actions}</ChromeSlot>
+      <ChromeSlot slotId="studio-subbar-status" onPublished={onPublished}>{status}</ChromeSlot>
     </>
   );
 }

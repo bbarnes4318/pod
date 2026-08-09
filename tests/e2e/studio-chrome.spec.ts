@@ -36,10 +36,23 @@ const ROUTES: { name: string; url: string }[] = [
 async function gotoStudio(page: Page, url: string) {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.locator(".studioShell").waitFor({ state: "visible", timeout: 30_000 });
-  // The page header is set from the page during hydration; wait for the shell
-  // to be interactive so the measurement reflects the settled layout.
   await page.locator(".studioTopbar").waitFor({ state: "visible" });
-  await page.waitForTimeout(400);
+  // A page publishes its actions into the chrome through a PORTAL, and
+  // portalled content does not exist until the component has mounted — it is
+  // never in the server HTML. Measuring at a fixed 400ms measured a page the
+  // user never sees: on Show detail the two topbar controls at y=8 had not
+  // appeared yet, so the first control was reported 396px down, and Analytics
+  // — whose only controls are portalled — was reported as having none at all.
+  //
+  // Settle on the network first, then wait for the header to have published.
+  // `data-header-ready` is set by StudioPageHeader once its slots have
+  // resolved, which is the actual event being waited for rather than a guess
+  // at how long it takes.
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await page
+    .locator("[data-header-ready='true']")
+    .waitFor({ state: "attached", timeout: 15_000 })
+    .catch(() => {});
 }
 
 test.describe("Studio chrome budget", () => {

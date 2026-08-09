@@ -109,4 +109,31 @@ test.describe("Studio design system is not bypassed", () => {
         `Use <StudioPageHeader title subtitle /> instead:\n${offenders.join("\n")}`
     ).toEqual([]);
   });
+
+  // This one is deliberately WIDER than src/app/studio/**, because the bug it
+  // catches was: a class deleted from the studio stylesheet was still used by a
+  // component OUTSIDE that directory (PodcastWizard, which /studio/shows/new
+  // renders). The guard's scope did not match the change's scope, so it saw
+  // nothing while the component rendered unstyled on every surface for the rest
+  // of the branch.
+  //
+  // .pageSub is defined in NO stylesheet, so any use of it anywhere is dead.
+  // .pageTitle is deliberately NOT checked here: it is alive and correct in
+  // app/admin/layout.css, which the 15 admin pages that use it do import.
+  test("no component anywhere reaches for .pageSub, which no stylesheet defines", () => {
+    const APP_DIR = path.join(process.cwd(), "src", "app");
+    const offenders: string[] = [];
+    for (const file of studioComponents(APP_DIR)) {
+      const src = fs.readFileSync(file, "utf8");
+      src.split(/\r?\n/).forEach((line, i) => {
+        if (/className=("|`)[^"`]*\bpageSub\b/.test(line)) {
+          offenders.push(`${rel(file)}:${i + 1}  ${line.trim().slice(0, 100)}`);
+        }
+      });
+    }
+    expect(
+      offenders,
+      `.pageSub is defined in no stylesheet — these render unstyled:\n${offenders.join("\n")}`
+    ).toEqual([]);
+  });
 });
