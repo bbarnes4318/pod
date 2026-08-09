@@ -371,8 +371,18 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  margin: 2.25rem 0 1rem;
+  /* 2.25rem/36px was never on the spacing scale. On the scale, and smaller:
+     the gap between sections is separation, not ceremony. */
+  margin: var(--sp-6) 0 var(--sp-3);
 }
+/* The FIRST section on a page needs no top gap at all — the subbar's own
+   border already separates it, and 24px of air there is 24px of the 160px
+   first-control budget spent on nothing. StudioPageHeader emits an .srOnly h1
+   and two portals, and a portal renders no node in place, so the element right
+   after that h1 is genuinely the first thing in the body. */
+.srOnly + .sectionHead,
+.srOnly + * > .sectionHead:first-child,
+.srOnly + * .sectionHead:first-child { margin-top: 0; }
 
 .sectionTitle {
   font-family: var(--font-display);
@@ -1674,9 +1684,12 @@
 /* ============================================================
    PLAN & USAGE (Step 9c) — tiers, real usage, gating surface.
    ============================================================ */
-.planCurrent { display: flex; gap: 2rem; flex-wrap: wrap; align-items: center; margin-top: 1.4rem; }
+/* Compressed from a stacked block to one dense row: the current tier is a fact
+   to confirm at a glance, not the headline of the page. The page is FOR the
+   ladder below it. */
+.planCurrent { display: flex; gap: var(--sp-6); flex-wrap: wrap; align-items: center; margin-top: 0; }
 .planCurLabel { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
-.planCurName { font-size: 1.8rem; font-weight: 800; color: var(--text); line-height: 1.1; }
+.planCurName { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1.2; }
 .planCurPrice { font-size: 0.9rem; color: var(--accent); font-weight: 700; }
 .planUsage { flex: 1; min-width: 260px; }
 .planUsageHead { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.4rem; }
@@ -1685,7 +1698,7 @@
 .planCapNote { font-size: 0.76rem; color: var(--warning); margin-top: 0.4rem; }
 .planUsageSub { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.5rem; }
 
-.planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+.planGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); margin-top: var(--sp-6); }
 .planCard { display: flex; flex-direction: column; }
 .planCardCurrent { border-color: var(--accent); box-shadow: var(--shadow-accent); }
 .planCardHead { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; }
@@ -1769,6 +1782,7 @@
   line-height: 1.2;
 }
 .prodSub { font-size: 0.84rem; color: var(--text-muted); margin: 0; line-height: 1.5; }
+.prodHeadAction { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; flex-shrink: 0; }
 .prodElapsedWrap { text-align: right; flex-shrink: 0; }
 .prodElapsed {
   font-family: var(--font-mono);
@@ -2573,6 +2587,14 @@
 
 /* Publishing. */
 .pubBar { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+@media (max-width: 720px) {
+  /* Wrapping pushed the feed's two buttons onto a second line and put the
+     first control 168px down. The URL already breaks anywhere, so it is the
+     thing that should give up width, not the actions. */
+  .pubBar { flex-wrap: nowrap; }
+  .pubBar > :first-child { min-width: 0; }
+  .pubActions { flex-shrink: 0; }
+}
 .pubList { display: flex; flex-direction: column; gap: var(--sp-3); }
 .pubActions { display: flex; gap: var(--sp-3); }
 .pubEpTitle { font-size: 1rem; }

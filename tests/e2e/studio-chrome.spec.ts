@@ -47,29 +47,52 @@ test.describe("Studio chrome budget", () => {
     test(`${route.name}: first interactive control is within ${FIRST_CONTROL_MAX_Y}px of the top`, async ({ page }) => {
       await gotoStudio(page, route.url);
 
-      // "Interactive" means something the user can act on INSIDE the page —
-      // the shell's own nav/Generate/account would trivially satisfy the
-      // budget and prove nothing, so they are excluded.
+      // The question this measures is "how far must the user travel before
+      // they can DO something", so the roots are everything the PAGE owns:
+      // its body, plus the two chrome slots a page publishes into through
+      // <StudioPageHeader actions/status>. The shell's own furniture — nav,
+      // brand, the global Generate button, the account menu — is persistent
+      // across every route and would satisfy the budget everywhere while
+      // proving nothing, so it stays excluded.
+      //
+      // The first version of this looked only inside main.studioMain, which
+      // was wrong the moment Part 1 moved page actions into the topbar: on
+      // Show detail the page's own "Generate an episode" sits at y≈20 and the
+      // test could not see it, so the route was reported as 400px over budget
+      // while the primary action was in fact the first thing on the screen.
+      // Five routes were mismeasured that way. Note this does NOT excuse the
+      // rest: a page with no early control still fails, which is why Episode
+      // detail, Episodes, New show, Plan, Settings and Publish are not fixed
+      // by this change.
+      //
+      // Lowest y wins rather than first-in-DOM: a control the user can reach
+      // is a control the user can reach, wherever it sits in source order.
       const y = await page.evaluate(() => {
-        const main = document.querySelector("main.studioMain");
-        if (!main) return null;
-        const candidates = main.querySelectorAll<HTMLElement>(
-          "a[href], button, input, select, textarea, [role='button'], [role='tab'], [tabindex]:not([tabindex='-1'])"
-        );
-        for (const el of candidates) {
-          const rect = el.getBoundingClientRect();
-          const style = getComputedStyle(el);
-          const visible =
-            rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-          if (visible) return rect.top;
+        const roots = [
+          document.querySelector("main.studioMain"),
+          document.getElementById("studio-topbar-actions"),
+          document.getElementById("studio-subbar-status"),
+        ].filter(Boolean) as HTMLElement[];
+        if (roots.length === 0) return null;
+        const SELECTOR =
+          "a[href], button, input, select, textarea, [role='button'], [role='tab'], [tabindex]:not([tabindex='-1'])";
+        let best: number | null = null;
+        for (const root of roots) {
+          for (const el of root.querySelectorAll<HTMLElement>(SELECTOR)) {
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            const visible =
+              rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+            if (visible && (best === null || rect.top < best)) best = rect.top;
+          }
         }
-        return null;
+        return best;
       });
 
-      // A route with no in-page control at all (a pure empty state with no
+      // A route with no page-owned control at all (a pure empty state with no
       // call to action) is a different defect; it is reported, not silently
       // passed.
-      expect(y, `${route.name} rendered no interactive control inside main.studioMain`).not.toBeNull();
+      expect(y, `${route.name} rendered no interactive control the page owns`).not.toBeNull();
       expect(
         y as number,
         `${route.name}: first control sits ${Math.round(y as number)}px down. Budget is ${FIRST_CONTROL_MAX_Y}px.`

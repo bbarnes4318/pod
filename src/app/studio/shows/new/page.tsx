@@ -81,7 +81,7 @@ export default async function NewStudioShowPage({
         subtitle="The theme, promise, cast chemistry and rituals every future episode follows."
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
       />
-      <PodcastWizard hosts={hosts} teams={teams} initial={initial} />
+      <PodcastWizard hosts={hosts} teams={teams} initial={initial} hideIdentity />
     </div>
   );
 }

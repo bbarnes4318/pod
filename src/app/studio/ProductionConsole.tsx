@@ -217,7 +217,28 @@ export default function ProductionConsole({
           <h2 className="prodHeadline" data-testid="prod-headline">{vm.headline}</h2>
           <p className="prodSub">{vm.title}</p>
         </div>
-        {headElapsed !== null && !vm.done && (
+        {/* When the console is BLOCKED, the way out belongs next to the status
+            lamp, not buried in whichever row happens to be blocked. It used to
+            sit inside the checkpoint row — 363px down the page on a six-stage
+            rundown — so the one thing the studio was waiting for the operator
+            to do was the last thing they could see. Rendered here or in the
+            row, never both. */}
+        {active?.state === "checkpoint" && (
+          <div className="prodHeadAction">
+            <button
+              type="button"
+              className="btnPrimary"
+              disabled={approving}
+              onClick={onApprove}
+              data-testid="prod-approve-cta"
+            >
+              {approving && <span className="btnSpin" aria-hidden="true" />}
+              {approving ? "Approving…" : "Approve & start production"}
+            </button>
+            <a href={tabHref("transcript")} className="btnGhost" data-testid="prod-review-cta">Read the draft first</a>
+          </div>
+        )}
+        {headElapsed !== null && !vm.done && active?.state !== "checkpoint" && (
           <div className="prodElapsedWrap" aria-hidden="true">
             <div className="prodElapsed">{fmtDur(headElapsed)}</div>
             <div className="prodElapsedLabel">on this step</div>
@@ -316,23 +337,11 @@ export default function ProductionConsole({
                 </div>
               )}
 
+              {/* The buttons for this state live in the console header — see
+                  the note there. What stays here is the reason a refusal
+                  happened, which belongs beside the stage it refused. */}
               {s.state === "checkpoint" && (
                 <>
-                  <div className="prodNoteActions">
-                    {/* The action that actually advances the episode. Everything
-                        downstream is automatic once this is pressed. */}
-                    <button
-                      type="button"
-                      className="btnPrimary"
-                      disabled={approving}
-                      onClick={onApprove}
-                      data-testid="prod-approve-cta"
-                    >
-                      {approving && <span className="btnSpin" aria-hidden="true" />}
-                      {approving ? "Approving…" : "Approve & start production"}
-                    </button>
-                    <a href={tabHref("transcript")} className="btnGhost" data-testid="prod-review-cta">Read the draft first</a>
-                  </div>
                   {approveError && (
                     <div className="prodNote prodNote--error" role="alert" data-testid="prod-approve-error">
                       <div>{approveError}</div>

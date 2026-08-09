@@ -85,12 +85,18 @@ function Choice<T extends string>({ value, current, title, help, onClick }: { va
   );
 }
 
-export default function PodcastWizard({ hosts, teams, initial = {}, podcastId, prefillTopicTitle }: {
+export default function PodcastWizard({ hosts, teams, initial = {}, podcastId, prefillTopicTitle, hideIdentity }: {
   hosts: WizardHost[];
   teams: WizardTeam[];
   initial?: WizardInitial;
   podcastId?: string;
   prefillTopicTitle?: string;
+  /**
+   * Suppress the wizard's own title block. Surfaces that already name the page
+   * in their chrome (the studio shell) pass this; without it the page carries
+   * two <h1>s and ~90px of repeated identity above the first control.
+   */
+  hideIdentity?: boolean;
 }) {
   const router = useRouter();
   const initialForge = initial.showForge || defaultShowForgeState();
@@ -209,14 +215,22 @@ export default function PodcastWizard({ hosts, teams, initial = {}, podcastId, p
 
   return (
     <div style={{ maxWidth: 980, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: "1rem" }}>
-        <div>
-          <div style={{ fontSize: ".72rem", color: "var(--accent)", fontWeight: 900, letterSpacing: ".12em", textTransform: "uppercase" }}>Show Forge</div>
-          <h1 className="pageTitle" style={{ marginBottom: 3 }}>{podcastId ? "Shape the show" : "Build a show people return to"}</h1>
-          <p className="pageSub" style={{ margin: 0 }}>Not a topic filter. A real creative world for every episode.</p>
+      {/* The studio route names the page in its chrome, so the wizard must not
+          repeat it there. Note the classes this block used — .pageTitle and
+          .pageSub — no longer exist ANYWHERE: they were deleted with the old
+          per-page chrome, and this file sits outside src/app/studio/**, so the
+          token spec never caught it still reaching for them. It has been
+          rendering unstyled since. */}
+      {!hideIdentity && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: "1rem" }}>
+          <div>
+            <div style={{ fontSize: ".72rem", color: "var(--accent)", fontWeight: 900, letterSpacing: ".12em", textTransform: "uppercase" }}>Show Forge</div>
+            <h1 style={{ fontFamily: "var(--font-display)", fontSize: "1.6rem", fontWeight: 800, margin: "0 0 3px" }}>{podcastId ? "Shape the show" : "Build a show people return to"}</h1>
+            <p style={{ margin: 0, color: "var(--text-muted)", fontSize: ".9rem" }}>Not a topic filter. A real creative world for every episode.</p>
+          </div>
+          <div style={{ color: "var(--text-muted)", fontSize: ".78rem" }}>Step {step + 1} of {STEPS.length}</div>
         </div>
-        <div style={{ color: "var(--text-muted)", fontSize: ".78rem" }}>Step {step + 1} of {STEPS.length}</div>
-      </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${STEPS.length}, 1fr)`, gap: 5, marginBottom: "1.25rem" }}>
         {STEPS.map((title, index) => (
