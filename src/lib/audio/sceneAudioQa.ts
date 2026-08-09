@@ -168,7 +168,22 @@ export function analyzeSceneAudioRows(opts: {
   // numbers precisely through this gap.
   const productionRequiresRun =
     process.env.NODE_ENV === "production" && process.env.TTS_TRANSCRIPT_QA_WAIVED !== "true";
-  const unacceptable = (c: { status: string }) =>
-    c.status === "fail" || (productionRequiresRun && c.status === "not_run");
+  // ...with ONE exemption, and only one. `transcript_fidelity` is not an unrun
+  // check, it is a DEFERRED one: it is hardcoded not_run at this layer because
+  // the real verification needs the downloaded audio, and the stitcher runs it
+  // per scene (runAudioSemanticQa in sceneStitchingService.ts), strict by
+  // default in production.
+  //
+  // Without this exemption the two rules contradict and scene-mode stitching can
+  // NEVER succeed in production: the check is always not_run here, so the gate
+  // always refuses — and because the thrown message only listed "fail" checks,
+  // it refused while naming nothing. Every retry produced the same empty reason.
+  //
+  // This does not reopen the hole the not_run rule closed. Every other unrun
+  // check still blocks, and when transcription is unavailable the downstream
+  // strict gate fails the stitch there, with a real reason attached.
+  const unacceptable = (c: { status: string; kind: string }) =>
+    c.status === "fail" ||
+    (productionRequiresRun && c.status === "not_run" && c.kind !== "transcript_fidelity");
   return { passed: !checks.some(unacceptable), checks };
 }
