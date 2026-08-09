@@ -422,11 +422,23 @@ test.describe("Studio rundown — Phase 1: no silent data loss", () => {
     await expect(page.getByTestId("discard-confirm")).toBeVisible();
     await page.getByTestId("discard-cancel").click();
     await expect(page.getByTestId("episode-title")).toHaveValue("Draft to protect");
-    // Confirm actually discards. Discarding reloads onto a draft-free page,
-    // which lands on step one — so the title field has to be navigated to again
-    // before its emptiness can be read.
+    // Confirm actually discards. Discarding RELOADS the page, and the reloaded
+    // page lands on step one with no draft — so the title field has to be
+    // navigated to again before its emptiness can be read. Wait for the reload
+    // to hydrate first (save-status is portalled, so it only exists after
+    // hydration); clicking straight away races the navigation and the click is
+    // thrown away by it.
     await page.getByTestId("discard-draft").click();
     await page.getByTestId("discard-confirm").click();
+    // Wait for the NEW document, not just for something that happens to exist
+    // on both. The confirm button is the only correct sentinel here: it is
+    // present right up until the reload replaces the page, and absent
+    // afterwards because a draft-free page renders no discard UI at all.
+    // `save-status` is on the old document too, and `discard-draft` is ALREADY
+    // absent during the confirm step — both resolve instantly against stale DOM
+    // and let the next click race the navigation.
+    await expect(page.getByTestId("discard-confirm")).toHaveCount(0);
+    await expect(page.getByTestId("discard-draft")).toHaveCount(0);
     await toReview(page);
     await expect(page.getByTestId("episode-title")).toHaveValue("");
   });
