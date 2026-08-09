@@ -190,9 +190,18 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     });
     for (const c of sceneQa.checks) console.log(`[SceneStitcher][SceneQA:${c.kind}] ${c.status.toUpperCase()} — ${c.name}: ${c.value}`);
     if (!sceneQa.passed) {
-      throw new Error(
-        `Scene QA failed before assembly: ${sceneQa.checks.filter((c) => c.status === "fail").map((c) => `${c.name} (${c.value})`).join("; ")}`
-      );
+      // Report every check that BLOCKED, not only the ones marked "fail". In
+      // production an unrun meaning-aware check is unacceptable too (see
+      // sceneAudioQa.ts), so filtering to "fail" produced the one message an
+      // operator cannot act on: "Scene QA failed before assembly: " with
+      // nothing after the colon, identical on every retry.
+      const blocking = sceneQa.checks.filter((c) => c.status === "fail" || c.status === "not_run");
+      const detail = blocking.length
+        ? blocking.map((c) => `${c.name} [${c.status}] (${c.value})`).join("; ")
+        : `no check reported fail or not_run — passed=${sceneQa.passed}, checks=${sceneQa.checks
+            .map((c) => `${c.name}:${c.status}`)
+            .join(", ")}`;
+      throw new Error(`Scene QA failed before assembly: ${detail}`);
     }
 
     await db.episode.update({ where: { id: episodeRow.id }, data: { status: "audio_stitching" } });
