@@ -45,13 +45,18 @@ import { resolveEpisodeCast } from "@/lib/services/hostCasting";
 import { generateTtsSegments } from "@/lib/services/ttsSegmentService";
 import { resolveFishSceneModel } from "@/lib/providers/tts/fishDialogue";
 
-export type TtsRenderModeSetting = "legacy_line" | "scene" | "auto";
-export type PersistedRenderMode = "legacy_line" | "scene" | "mixed_fallback" | "performance_conversion";
+// Render-mode policy lives in a DB-free module so it stays unit-testable; it is
+// re-exported here because this is where callers already import it from.
+// (A re-export creates no local binding, so it is imported separately below.)
+import { degradedRenderModesAllowed, readRenderModeSetting } from "./renderModePolicy";
+import type { PersistedRenderMode } from "./renderModePolicy";
 
-export function readRenderModeSetting(env: NodeJS.ProcessEnv = process.env): TtsRenderModeSetting {
-  const v = (env.TTS_RENDER_MODE || "legacy_line").trim().toLowerCase();
-  return v === "scene" || v === "auto" ? (v as TtsRenderModeSetting) : "legacy_line";
-}
+export {
+  degradedRenderModesAllowed,
+  readRenderModeSetting,
+  type TtsRenderModeSetting,
+  type PersistedRenderMode,
+} from "./renderModePolicy";
 
 export function readSceneProviderAllowlist(env: NodeJS.ProcessEnv = process.env): Set<string> {
   const raw = env.TTS_SCENE_PROVIDER_ALLOWLIST ?? "elevenlabs,fish";
@@ -290,6 +295,15 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
   const episodeId = loaded.script.episodeId;
 
   const modeSetting = readRenderModeSetting();
+  // An episode that cannot be performed is a FAILED episode with a visible
+  // reason — never a quiet downgrade to line-by-line synthesis.
+  if (!eligibility.eligible && !degradedRenderModesAllowed()) {
+    throw new SceneGenerationError(
+      "ineligible_cast",
+      `Scene rendering is required but this cast cannot be performed: ${eligibility.reason}. ` +
+        `Fix the cast/engine assignment — the legacy line pipeline is not a production outcome.`
+    );
+  }
   if (modeSetting === "legacy_line" || !eligibility.eligible) {
     const fallbackReason =
       modeSetting === "legacy_line" ? "TTS_RENDER_MODE=legacy_line" : eligibility.reason;
@@ -539,6 +553,29 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
   // Persist the decision that was ACTUALLY taken.
   summary.mode = summary.lineFallbackScenes > 0 ? "mixed_fallback" : "scene";
   await db.episode.update({ where: { id: episodeId }, data: { ttsRenderMode: summary.mode } });
+
+  // `mixed_fallback` is not a valid production outcome: half performed, half
+  // cold-read is worse than nothing because nobody can hear where the seam is.
+  // A failed scene is likewise a failed EPISODE with a visible reason — the
+  // stitcher must never assemble a partially-performed episode and call it
+  // success. (Per-scene retries already happened above via candidates.)
+  if (!degradedRenderModesAllowed()) {
+    if (summary.lineFallbackScenes > 0) {
+      throw new SceneGenerationError(
+        "incomplete_scene_render",
+        `${summary.lineFallbackScenes} of ${summary.sceneCount} scenes fell back to single-line rendering. ` +
+          `Partial performance is not a production outcome; the episode is failed rather than shipped cold.`
+      );
+    }
+    if (summary.failedScenes > 0) {
+      const failed = summary.scenes.filter((s) => s.status !== "ready");
+      throw new SceneGenerationError(
+        "incomplete_scene_render",
+        `${summary.failedScenes} of ${summary.sceneCount} scenes could not be rendered: ` +
+          failed.map((s) => `scene ${s.sceneIndex} (${s.errorCategory ?? "unknown"})`).join(", ")
+      );
+    }
+  }
 
   // Advance the episode exactly like the line pipeline once every scene of the
   // FULL plan is ready (partial/regen runs check the whole plan).
