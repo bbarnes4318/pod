@@ -23,6 +23,10 @@ export interface ConversationGateMetrics {
   strictAlternationRatio: number;
   sameSpeakerBuilds: number;
   portableMonologueStarts: number;
+  /** The run length the script keeps returning to (1 = classic ping-pong). */
+  modalRunLength: number;
+  /** Share of speaker runs sitting at that modal length. High = metronome. */
+  runLengthUniformity: number;
 }
 
 export interface ConversationSemanticReview {
@@ -138,8 +142,16 @@ export function scoreConversationContinuity(segments: ScriptSegment[]): Conversa
   let sameSpeakerBuilds = 0;
   let portableMonologueStarts = 0;
 
+  // Length of every uninterrupted run of lines by one speaker. A real
+  // conversation produces varied runs (1, 3, 1, 1, 2, 4…). A metronome
+  // produces the SAME run length over and over — and it does not matter
+  // whether that length is 1 or 2, which is the case strictAlternationRatio
+  // alone cannot see.
+  const runLengths: number[] = [];
+
   for (const segment of segments) {
     const lines = Array.isArray(segment.lines) ? segment.lines : [];
+    let currentRun = lines.length > 0 ? 1 : 0;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const text = spoken(line);
@@ -151,8 +163,11 @@ export function scoreConversationContinuity(segments: ScriptSegment[]): Conversa
       const switched = prev.speakerName !== line.speakerName;
       if (!switched) {
         sameSpeakerBuilds++;
+        currentRun++;
         continue;
       }
+      runLengths.push(currentRun);
+      currentRun = 1;
 
       alternations++;
       speakerSwitches++;
@@ -167,7 +182,18 @@ export function scoreConversationContinuity(segments: ScriptSegment[]): Conversa
 
       if (spoken(prev).endsWith("?") && !responsive) unansweredQuestions++;
     }
+    if (currentRun > 0) runLengths.push(currentRun);
   }
+
+  // How much of the script marches at one repeated run length.
+  const runHistogram = new Map<number, number>();
+  for (const r of runLengths) runHistogram.set(r, (runHistogram.get(r) ?? 0) + 1);
+  let modalRunLength = 0;
+  let modalRunCount = 0;
+  for (const [length, count] of runHistogram) {
+    if (count > modalRunCount) { modalRunLength = length; modalRunCount = count; }
+  }
+  const runLengthUniformity = runLengths.length > 0 ? modalRunCount / runLengths.length : 0;
 
   const responsiveSwitchRatio = responsiveSwitches / Math.max(1, speakerSwitches);
   const questionResponseRatio = (questionCount - unansweredQuestions) / Math.max(1, questionCount);
@@ -176,10 +202,21 @@ export function scoreConversationContinuity(segments: ScriptSegment[]): Conversa
 
   const responsePoints = Math.min(50, responsiveSwitchRatio * 50);
   const questionPoints = Math.min(15, questionResponseRatio * 15);
-  const buildPoints = Math.min(10, (sameSpeakerBuilds / Math.max(1, adjacentPairs)) * 35);
+  // Same-speaker builds earn credit only when the runs actually VARY. Paying
+  // for raw build count handed a perfect 10 to a script that ran AA BB AA BB
+  // for sixty straight lines — the bonus was subsidising the metronome.
+  const rawBuildPoints = Math.min(10, (sameSpeakerBuilds / Math.max(1, adjacentPairs)) * 35);
+  const buildPoints = runLengthUniformity > 0.6 ? rawBuildPoints * Math.max(0, 1 - (runLengthUniformity - 0.6) / 0.3) : rawBuildPoints;
   const alternationPenalty = strictAlternationRatio > 0.92 ? 12 : strictAlternationRatio > 0.86 ? 6 : 0;
+  // Periodic speaker runs, whatever their period. Catches classic one-line
+  // ping-pong (modal run 1) AND the pair-ping-pong that forbidding
+  // three-in-a-row drove the planner into (modal run 2), which the
+  // alternation ratio scores as a healthy 0.52.
+  const monotonyPenalty = runLengths.length >= 8 && runLengthUniformity > 0.6
+    ? Math.min(25, (runLengthUniformity - 0.6) * 100)
+    : 0;
   const disconnectPenalty = Math.min(25, disconnectedRatio * 35 + portableMonologueStarts * 2.5);
-  const score = Math.max(0, Math.min(100, Math.round(35 + responsePoints + questionPoints + buildPoints - alternationPenalty - disconnectPenalty)));
+  const score = Math.max(0, Math.min(100, Math.round(35 + responsePoints + questionPoints + buildPoints - alternationPenalty - monotonyPenalty - disconnectPenalty)));
 
   return {
     score,
@@ -193,6 +230,8 @@ export function scoreConversationContinuity(segments: ScriptSegment[]): Conversa
     strictAlternationRatio,
     sameSpeakerBuilds,
     portableMonologueStarts,
+    modalRunLength,
+    runLengthUniformity,
   };
 }
 
@@ -311,7 +350,12 @@ function deterministicPass(metrics: ConversationGateMetrics, minScore: number): 
   const enoughSwitches = metrics.speakerSwitches < 4 || metrics.responsiveSwitchRatio >= 0.66;
   const questionsHandled = metrics.questionCount < 2 || metrics.questionResponseRatio >= 0.7;
   const disconnectedBound = metrics.disconnectedSwitches <= Math.max(2, Math.floor(metrics.speakerSwitches * 0.18));
-  const notMechanicalPingPong = metrics.strictAlternationRatio <= 0.94 || metrics.sameSpeakerBuilds >= 2;
+  // `sameSpeakerBuilds >= 2` made this unfireable: any script with two builds
+  // anywhere was declared non-mechanical, so a sixty-line AA/BB metronome
+  // passed. Rhythm is judged on the run-length distribution now.
+  const notMechanicalPingPong =
+    (metrics.strictAlternationRatio <= 0.94 || metrics.sameSpeakerBuilds >= 2) &&
+    metrics.runLengthUniformity <= 0.75;
   return metrics.score >= minScore && enoughSwitches && questionsHandled && disconnectedBound && notMechanicalPingPong;
 }
 

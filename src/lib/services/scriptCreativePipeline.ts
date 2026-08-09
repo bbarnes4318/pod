@@ -540,7 +540,7 @@ export function turnPlanMaxTokens(totalWordTarget: number): number {
   return Math.max(7000, Math.ceil(turns * 340 * 1.25) + 2000);
 }
 
-function makeTurnPlanValidator(totalWordTarget: number) {
+export function makeTurnPlanValidator(totalWordTarget: number) {
   const minTurns = minimumTurnsFor(totalWordTarget);
   return function validateTurnPlan(value: unknown): string | null {
     const turns = (value as { turns?: unknown })?.turns;
@@ -563,16 +563,66 @@ function makeTurnPlanValidator(totalWordTarget: number) {
     // the character interrogating himself, because there was no turn between
     // them for Zabala to answer in. Two consecutive turns is a person pressing
     // a point; three is a monologue that forgot the other chair.
+    // THE TWO RULES BELOW USED TO HAVE EXACTLY ONE SOLUTION.
+    //
+    // A hard cap of two consecutive turns, combined with the alternation
+    // ceiling further down, is not two independent constraints — it is a
+    // simultaneous equation. If every run has length r, alternation is 1/r, so
+    // an alternation ceiling of 0.55 demands r >= 1.82. With r capped at 2 the
+    // only satisfying plan is runs of EXACTLY TWO, forever. The prompt then
+    // said so out loud ("EXACTLY TWO in a row is the tool") and the architect
+    // obliged: episode 0c90db5b ran 28 of its 39 speaker runs at length two,
+    // AA BB AA BB for sixty straight lines. Fixing one-line ping-pong had
+    // simply moved the metronome down an octave, and the owner heard it.
+    //
+    // Runs of three are allowed again, but kept RARE — the original objection
+    // to them was real (a host took three turns and used the third to ask the
+    // absent host a question). Rare threes are what let the plan hit the
+    // alternation ceiling with VARIED run lengths instead of uniform pairs.
+    const runLengths: number[] = [];
     let run = 1;
     for (let i = 1; i < turns.length; i++) {
       const prev = String((turns[i - 1] as Record<string, unknown>).speakerName || "").toLowerCase();
       const here = String((turns[i] as Record<string, unknown>).speakerName || "").toLowerCase();
-      run = here === prev ? run + 1 : 1;
-      if (run > 2) {
+      if (here === prev) {
+        run += 1;
+        if (run > 3) {
+          return (
+            `${(turns[i] as Record<string, unknown>).speakerName} holds four consecutive turns ` +
+            `(around turn ${i}). Give the other host a turn — by the fourth there is nobody in the other chair.`
+          );
+        }
+      } else {
+        runLengths.push(run);
+        run = 1;
+      }
+    }
+    runLengths.push(run);
+
+    const threeRuns = runLengths.filter((r) => r === 3).length;
+    if (runLengths.length >= 6 && threeRuns > Math.ceil(runLengths.length * 0.2)) {
+      return (
+        `${threeRuns} of ${runLengths.length} speaker runs are three turns long; keep three-turn runs to at ` +
+        `most one in five. Three consecutive turns is a rare escalation, not a default.`
+      );
+    }
+
+    // Rhythm must VARY. This is the rule whose absence let the plan collapse
+    // into uniform pairs while satisfying every other constraint perfectly.
+    if (runLengths.length >= 8) {
+      const histogram = new Map<number, number>();
+      for (const r of runLengths) histogram.set(r, (histogram.get(r) ?? 0) + 1);
+      let modalLength = 0;
+      let modalCount = 0;
+      for (const [length, count] of histogram) {
+        if (count > modalCount) { modalLength = length; modalCount = count; }
+      }
+      if (modalCount / runLengths.length > 0.7) {
         return (
-          `${(turns[i] as Record<string, unknown>).speakerName} holds three consecutive turns ` +
-          `(around turn ${i}). Give the other host a turn between them — two in a row is pressing a ` +
-          `point, three is a monologue with nobody in the other chair.`
+          `${modalCount} of ${runLengths.length} speaker runs are exactly ${modalLength} turn(s) long — ` +
+          `that is a metronome, not a conversation. Vary the rhythm: mix single sharp reactions, pairs that ` +
+          `land a claim and press it, and the occasional third turn when the pressure genuinely warrants it. ` +
+          `No single run length may cover more than 70% of the plan.`
         );
       }
     }
@@ -604,9 +654,9 @@ function makeTurnPlanValidator(totalWordTarget: number) {
       if (alternation > PLAN_ALTERNATION_CEILING) {
         return (
           `${(alternation * 100).toFixed(0)}% of this plan is strict A/B alternation; keep it at or under ` +
-          `${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}%. Give each host PAIRS of consecutive turns often ` +
-          `enough to build a point — land a claim, then press it — instead of trading single lines. Two in a ` +
-          `row is the tool; three is not allowed.`
+          `${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}%. Let a host hold the floor for a second turn — ` +
+          `land a claim, then press it — instead of trading single lines. Vary the run lengths rather than ` +
+          `converting every run to a pair: uniform pairs are the same metronome one octave down.`
         );
       }
     }
@@ -656,7 +706,7 @@ ${input.topicsEvidence}
 
 RULES:
 - Speakers are exactly: ${input.speakerNames.join(", ")}. Beat 0 (the cold open) is already written — start at beat 1.
-- Do NOT alternate mechanically, and this is measured: no more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker, so at least ${(100 - PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of the plan must be a host taking a SECOND turn in a row — land a claim, then press it. EXACTLY TWO in a row is the tool; three consecutive turns is rejected, because by the third the other host has stopped existing. Trading single lines back and forth for a whole episode is ping-pong, not an argument, and is rejected too. A one-word reaction is a legitimate turn.
+- RHYTHM MUST VARY, and this is measured three ways. (a) No more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker — trading single lines back and forth for a whole episode is ping-pong, not an argument. (b) No single run length may cover more than 70% of the plan: a script where almost every run is one turn is a metronome, and so is a script where almost every run is two. Both are rejected. (c) At most one run in five may be three turns long, and no host may hold four. Mix them: a single sharp reaction, a pair that lands a claim then presses it, occasionally a third turn when the pressure genuinely warrants it. When you do write three, the third turn must still be aimed at the other host — never a question the absent host is expected to answer. A one-word reaction is a legitimate turn.
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
 - Assign each evidence fact to at most ONE turn, on the beat that already owns it.
 - "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line.
