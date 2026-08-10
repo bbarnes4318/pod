@@ -37,7 +37,18 @@ const fishOverrides = z
 export const hostPerformanceProfileSchema = z
   .object({
     version: z.literal(PERFORMANCE_PROFILE_VERSION),
-    /** Words-per-minute multipliers relative to the voice's natural pace. */
+    /**
+     * NARRATIVE-ONLY. These are words-per-minute multipliers on paper, and they
+     * reach NO engine parameter. Fish's scene payload hardcodes
+     * `prosody.speed: 1`, and that is deliberate rather than an oversight to be
+     * fixed: `speed` is a flat rate multiplier applied to the WHOLE request, and
+     * a scene is one request containing both hosts. It therefore cannot express
+     * the thing this cast is built on — she decelerates while he accelerates.
+     * Wiring these to `prosody.speed` would create a second field that looks
+     * applied and isn't, which is the exact failure this codebase keeps paying
+     * for. Pace reaches the performance through `vocalTextureNotes` (the wpm
+     * ranges) and `angerStyle`, which DO become direction text.
+     */
     baselinePace: pace.default(1.0),
     maxEscalationPace: pace.default(1.15),
     baselineIntensity: intensity.default(4),
@@ -233,6 +244,35 @@ export function parseHostPerformanceProfileForWrite(
  * character wholesale (a loud host deriving as quiet). The two cases are
  * therefore logged differently: absence is silent, invalidity is loud.
  */
+/** Thrown when an active host carries a stored profile that cannot be parsed.
+ *  Caught at preflight so the episode fails BEFORE a script is written. */
+export class InvalidPerformanceProfileError extends Error {
+  readonly hostLabel: string;
+  readonly issues: string[];
+  constructor(hostLabel: string, issues: string[]) {
+    super(
+      `Host '${hostLabel}' has an invalid performanceProfile and cannot be performed: ${issues.join("; ")}. ` +
+        `Fix the stored profile — production does not substitute a derived one.`
+    );
+    this.name = "InvalidPerformanceProfileError";
+    this.hostLabel = hostLabel;
+    this.issues = issues;
+  }
+}
+
+/**
+ * Resolve a host's performance profile.
+ *
+ * An INVALID stored profile is a hard error, never a substitution. Substituting
+ * a derived profile means the host performs as somebody else: the baseball cast
+ * landed with six illegal enum values and Marisol Vandergrift — authored
+ * `slower_quieter` — compiled to "angry here means louder and slower,
+ * stretching words out", the exact inverse of the acoustic contrast the entire
+ * two-hander is built on. The only signal was a console.warn nobody reads.
+ *
+ * An ABSENT profile still derives, because that is a host who was never
+ * authored rather than one whose authoring is being silently discarded.
+ */
 export function resolveHostPerformanceProfile(
   stored: unknown,
   host: HostProfileSource
@@ -240,14 +280,8 @@ export function resolveHostPerformanceProfile(
   if (stored && typeof stored === "object" && !Array.isArray(stored)) {
     const parsed = hostPerformanceProfileSchema.safeParse(stored);
     if (parsed.success) return { profile: parsed.data, source: "stored" };
-    const issues = parsed.error.issues
-      .map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
-      .join("; ");
-    console.warn(
-      `[PerformanceProfile] Host '${host.slug ?? host.name ?? "(unknown)"}' has a STORED profile that failed validation; ` +
-        `falling back to a profile derived from intensityLevel ${host.intensityLevel ?? "(unset)"}. ` +
-        `The authored performance is being discarded — fix the stored profile. Issues: ${issues}`
-    );
+    const issues = parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+    throw new InvalidPerformanceProfileError(host.slug ?? host.name ?? "(unknown)", issues);
   }
   return { profile: deriveProfileFromHostFields(host), source: "derived" };
 }

@@ -75,7 +75,6 @@ const labels = {
   finish: { none: "No punch line", sharp: "Sharp", theatrical: "Big finish" },
   pressure: { louder_faster: "Louder + faster", quieter_sharper: "Quieter + sharper", louder_slower: "Louder + slower" },
   pauses: { tight: "Tight", natural: "Natural", spacious: "Spacious" },
-  fishCreativity: { steady: "Steady", natural: "Natural", expressive: "Expressive" },
 } as const;
 
 function linesToText(lines: string[]): string {
@@ -473,9 +472,6 @@ function HostEditor({ mode, host, accent, onClose }: {
           ]} />
           <ChoiceRow title="Pauses" value={settings.pauses} onChange={(value) => setSetting("pauses", value)} options={[
             { value: "tight", label: "Tight" }, { value: "natural", label: "Natural" }, { value: "spacious", label: "Spacious" },
-          ]} />
-          <ChoiceRow title="Voice variation" help="More expressive creates more variation between takes. It does not change the character's beliefs." value={settings.fishCreativity} onChange={(value) => setSetting("fishCreativity", value)} options={[
-            { value: "steady", label: "Steady" }, { value: "natural", label: "Natural" }, { value: "expressive", label: "Expressive" },
           ]} />
 
           <div className="hostFormGrid mt-4">

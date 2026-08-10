@@ -55,7 +55,6 @@ export const hostStudioSettingsSchema = z.object({
   finish: z.enum(["none", "sharp", "theatrical"]),
   pressure: z.enum(["louder_faster", "quieter_sharper", "louder_slower"]),
   pauses: z.enum(["tight", "natural", "spacious"]),
-  fishCreativity: z.enum(["steady", "natural", "expressive"]),
   castPriority: z.number().int().min(1).max(10),
   argumentPatterns: z.array(z.string().min(1).max(500)).max(20),
   bannedPhrases: z.array(z.string().min(1).max(300)).max(30),
@@ -109,7 +108,6 @@ export function defaultHostStudioSettings(): HostStudioSettings {
     finish: "sharp",
     pressure: "quieter_sharper",
     pauses: "natural",
-    fishCreativity: "natural",
     castPriority: 5,
     argumentPatterns: ["Answer what the other host actually said before adding a new point"],
     bannedPhrases: [],
@@ -154,7 +152,6 @@ export function settingsFromHost(source: HostStudioSource): HostStudioSettings {
     finish: p.killShotBehavior === "never" ? "none" : p.killShotBehavior === "theatrical" ? "theatrical" : "sharp",
     pressure: p.angerStyle === "louder_faster" ? "louder_faster" : p.angerStyle === "louder_slower" ? "louder_slower" : "quieter_sharper",
     pauses: p.preferredPauseStyle,
-    fishCreativity: nearest(p.providerOverrides.fish?.temperature ?? 0.82, [[0.7, "steady"], [0.82, "natural"], [0.93, "expressive"]]),
     castPriority: Math.max(1, Math.min(10, Math.round(source.intensityLevel ?? defaults.castPriority))),
     argumentPatterns: uniqueLines(source.argumentPatterns),
     bannedPhrases: uniqueLines(source.bannedPhrases),
@@ -174,12 +171,6 @@ const paceMap = {
   easy: { baseline: 0.92, peak: 1.05, words: "easy-paced" },
   natural: { baseline: 1.0, peak: 1.16, words: "naturally paced" },
   fast: { baseline: 1.1, peak: 1.3, words: "fast and immediate" },
-} as const;
-
-const creativityMap = {
-  steady: { temperature: 0.7, topP: 0.76 },
-  natural: { temperature: 0.82, topP: 0.86 },
-  expressive: { temperature: 0.93, topP: 0.93 },
 } as const;
 
 export function compileHostStudioProfile(input: HostStudioSettings): CompiledHostStudioProfile {
@@ -233,7 +224,6 @@ export function compileHostStudioProfile(input: HostStudioSettings): CompiledHos
   ].filter(Boolean).join(" ");
 
   const worldview = `${settings.belief.trim()} ${preset.lens}`.trim();
-  const creativity = creativityMap[settings.fishCreativity];
   const performanceProfile = hostPerformanceProfileSchema.parse({
     version: 1,
     baselinePace: pace.baseline,
@@ -251,7 +241,10 @@ export function compileHostStudioProfile(input: HostStudioSettings): CompiledHos
     preferredPauseStyle: settings.pauses,
     maxCueDensity: settings.interruptions === "jumps_in" || settings.energy === "big" ? 2 : 1,
     prohibitedTraits: settings.prohibitedTraits,
-    providerOverrides: { fish: creativity },
+    // Sampling is CAST-WIDE: a Fish scene is one request with one temperature
+    // for every speaker, so a per-host value cannot be honoured. The Studio no
+    // longer offers one rather than offering a control that silently collapses.
+    providerOverrides: {},
   });
 
   const generatedPatterns = [

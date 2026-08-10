@@ -121,6 +121,12 @@ export type SceneErrorCategory =
   | "transcript_mismatch"
   | "quality_gate_failed"
   | "storage_failed"
+  /** Cast cannot be performed as a scene (multi-engine, or a non-scene engine).
+   *  In production this fails the episode instead of degrading it to line TTS. */
+  | "ineligible_cast"
+  /** One or more scenes could not be rendered at full quality. Partly-performed
+   *  and partly-cold audio is worse than none — nobody can hear the seam. */
+  | "incomplete_scene_render"
   | "unknown_provider_failure";
 
 export class SceneGenerationError extends Error {

@@ -33,6 +33,13 @@ export function castPersonaBlocks(format: ShowFormat, cast: AiHost[]): string {
       const legacySignatureNote = Array.isArray(h.catchphrases) && h.catchphrases.length > 0
         ? " Legacy signature lines may exist in the database; they are reference metadata only and must never be quoted, paraphrased, scheduled, or used as dialogue."
         : "";
+      // `bannedPhrases` below is ADVICE TO THE MODEL, not a gate. It is
+      // interpolated into the prompt and nothing downstream rejects a script
+      // for containing one of these strings. The only real enforcement of the
+      // antithesis frames ("that's not X, that's Y" and its cousins) is the
+      // antithesis pass in scriptService — which is exactly why that pass
+      // hard-fails in production instead of warning. Adding a phrase here does
+      // not block it; it only asks.
       return `Host ${i + 1}: ${h.name} (ID: ${h.id})${roleLine}
 - Role: ${h.role}
 - Worldview: ${h.worldview}

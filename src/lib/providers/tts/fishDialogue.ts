@@ -12,6 +12,7 @@ import {
   DialogueSceneResult,
   SceneGenerationError,
   categorizeHttpStatus,
+  type DialogueSceneType,
   type ScenePerformanceContext,
 } from "./sceneTypes";
 import { FISH_REFERENCE_ID_RE } from "./providerIds";
@@ -63,6 +64,12 @@ export interface FishScenePayload {
   };
   voiceOrder: string[];
   directionCues: Record<string, string>;
+  /** Per-host sampling settings that were authored and NOT applied, recorded so
+   *  the discard is inspectable instead of invisible. Empty when none exist. */
+  ignoredPerHostOverrides: Record<string, { temperature?: number; topP?: number }>;
+  /** The scene-level shading cue actually emitted into `text`. Persisted so a
+   *  future "why did this scene sound flat?" is answerable from the row. */
+  sceneCue: string;
   speakerRunCount: number;
 }
 
@@ -118,20 +125,79 @@ function lineHeat(u: { tone?: string; energy?: string }): number {
   return energy + hotTone;
 }
 
-/** Distill the authored delivery style into a compact Fish bracket cue. */
+/** Scene shading, compressed for an inline bracket.
+ *
+ * Fish has NO natural-language `instructions` parameter — the ONLY channel for
+ * direction is bracket text inside `text`. The compiled direction's scene
+ * shading therefore has to be carried here explicitly or it never reaches the
+ * engine at all. It previously did not: the old cue regex stopped at the very
+ * words the shading starts with, so every scene of an episode — cold open,
+ * peak argument and closing alike — was rendered under one identical cue.
+ * That is an episode with no dynamic range by construction. */
+const SCENE_CUE: Record<DialogueSceneType, string> = {
+  cold_open: "cold open, arriving mid-energy, hooking fast, no throat-clearing",
+  conversation: "mid-conversation, reacting to what was just said before adding your own point",
+  argument_escalation: "the disagreement is building, intensity climbing across the exchange",
+  argument_resolution: "the argument is landing, letting the concession breathe",
+  transition: "moving the show to the next block, brief and forward-leaning",
+  news_block: "factual block, clarity first",
+  host_expert_exchange: "question-and-explanation rhythm, answers unhurried",
+  interview_exchange: "interview rhythm, leaving space for the answer",
+  documentary_narration: "narrative continuity, momentum across sentences",
+  rapid_fire: "rapid fire, instant and clipped, no wind-up",
+  closing: "the close, energy settling, landing the goodbye like a real conversation",
+};
+
+/** The scene-level cue, emitted once at the head of the scene. */
+export function sceneShadingCue(sceneType: DialogueSceneType): string {
+  return `[${SCENE_CUE[sceneType] ?? SCENE_CUE.conversation}]`;
+}
+
+/** How this speaker sounds under pressure — a structured profile field, not
+ *  prose. Scraped from the direction string it was silently dropped; read from
+ *  the profile it always survives, and it is what keeps two voices legible as
+ *  two different people during a fight. */
+function angerSignature(anger: ScenePerformanceContext["angerStyle"]): string | null {
+  if (anger === "slower_quieter") return "angry here means slower, quieter, more precise — never louder";
+  if (anger === "louder_slower") return "angry here means louder and slower, stretching words out";
+  return null;
+}
+
+/** Distill the authored delivery style into a compact Fish bracket cue.
+ *
+ * Built from the delivery style prose PLUS the structured profile fields. The
+ * old version took only the first sentence, which made the direction Fish
+ * received a lottery on sentence order: a host whose style opens on timbre
+ * ("Fast, flat Northwest Indiana vowels, smoker's edge.") reached the engine
+ * with no performance instruction whatsoever, while a host whose style opens on
+ * manner kept his. That is exactly how one host ends up flatter than the other. */
 export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | null {
   const direction = (ctx.direction || "").replace(/\s+/g, " ").trim();
   if (!direction) return null;
   const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|The disagreement|Mid-conversation|Your intensity|When genuinely|Never:)|$)/i);
   let style = (match?.[1] || "").trim();
   if (!style) return null;
-  const firstSentence = style.match(/^(.{20,190}?[.!?])(?:\s|$)/)?.[1];
-  style = (firstSentence || style).replace(/[.!?]+$/, "").trim();
-  if (style.length > 170) {
-    const cut = style.slice(0, 170);
+
+  // Take whole sentences up to the budget — not just the first one — so a
+  // timbre-first style still carries its manner clauses through.
+  const BUDGET = 210;
+  const sentences = style.match(/[^.!?]+[.!?]?/g) ?? [style];
+  let taken = "";
+  for (const sentence of sentences) {
+    const next = (taken + sentence).trim();
+    if (taken && next.length > BUDGET) break;
+    taken = next;
+    if (taken.length >= BUDGET) break;
+  }
+  style = (taken || style).replace(/[.!?]+$/, "").trim();
+  if (style.length > BUDGET) {
+    const cut = style.slice(0, BUDGET);
     style = cut.slice(0, Math.max(40, cut.lastIndexOf(" "))).trim();
   }
-  return `[${style}; speaking to the other host, reacting in this moment, never reading]`;
+
+  const anger = angerSignature(ctx.angerStyle);
+  const parts = [style, ...(anger ? [anger] : []), "speaking to the other host, reacting in this moment, never reading"];
+  return `[${parts.join("; ")}]`;
 }
 
 function emotionalCue(
@@ -180,6 +246,12 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
   const baselineApplied = new Set<string>();
   const parts: string[] = [];
   let previousHostId: string | null = null;
+  // Scene shading is a property of the SCENE, not of a speaker, so it is
+  // emitted once at the head of the scene and is not charged to any host's cue
+  // budget — otherwise it would compete with that host's character cue and the
+  // scene would silently lose its shading again.
+  const sceneCue = sceneShadingCue(input.sceneType);
+  let sceneCueApplied = false;
 
   // One authored emotional peak per scene. Per-host budgets allowed every hot
   // speaker to receive a cue, which stamped synthetic emotion over the whole
@@ -200,6 +272,11 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     const cap = cueCapByHost.get(utterance.speakerHostId) ?? 2;
     let used = cuesUsedByHost.get(utterance.speakerHostId) ?? 0;
     const openers: string[] = [];
+
+    if (!sceneCueApplied) {
+      openers.push(sceneCue);
+      sceneCueApplied = true;
+    }
 
     if (!baselineApplied.has(utterance.speakerHostId) && used < cap) {
       const baseline = baselineCueByHost.get(utterance.speakerHostId);
@@ -249,14 +326,42 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     previousHostId = utterance.speakerHostId;
   }
 
-  const temperatures = input.cast
-    .map((cast) => cast.providerOverrides?.temperature)
-    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
-    .sort((a, b) => a - b);
-  const topPs = input.cast
-    .map((cast) => cast.providerOverrides?.topP)
-    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
-    .sort((a, b) => a - b);
+  // SAMPLING IS CAST-WIDE, BY CONSTRUCTION.
+  //
+  // A scene is ONE request containing every speaker, and Fish's /v1/tts takes a
+  // single temperature and top_p for that request. There is no per-utterance
+  // sampling control, so a per-host setting cannot be honoured — not "is not
+  // yet", cannot.
+  //
+  // This used to take the MEDIAN across the cast, which with two hosts is
+  // `Math.floor(2/2) = 1` — the HIGHER value. Vandergrift's deliberately tighter
+  // 0.75/0.85 was discarded and the whole scene rendered at Fettig's 0.95/0.92,
+  // silently. One intentional documented value is honest where a derived blend
+  // is not: a mean would render both characters at a setting neither was
+  // authored for while keeping two per-host inputs alive that do not apply
+  // per host.
+  const temperature = clamp(Number(process.env.FISH_SCENE_TEMPERATURE) || 0.78, 0.55, 0.98);
+  const topP = clamp(Number(process.env.FISH_SCENE_TOP_P) || 0.82, 0.6, 0.98);
+  // Kept only so the discarded intent is visible in providerMetadata rather
+  // than vanishing. Nothing reads these to build the request.
+  const requestedByHost: Record<string, { temperature?: number; topP?: number }> = {};
+  for (const cast of input.cast) {
+    const t = cast.providerOverrides?.temperature;
+    const p = cast.providerOverrides?.topP;
+    if (typeof t === "number" || typeof p === "number") {
+      requestedByHost[cast.speakerHostId] = {
+        ...(typeof t === "number" ? { temperature: t } : {}),
+        ...(typeof p === "number" ? { topP: p } : {}),
+      };
+    }
+  }
+  if (Object.keys(requestedByHost).length > 0) {
+    console.warn(
+      `[FishScene] scene=${input.sceneIndex}: per-host sampling overrides are NOT applied — Fish renders a scene in ` +
+        `one request, so temperature/top_p are cast-wide. Using ${temperature}/${topP}. ` +
+        `Ignored: ${JSON.stringify(requestedByHost)}`
+    );
+  }
   const format = input.format === "wav" ? "wav" : "mp3";
 
   return {
@@ -268,8 +373,8 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       format,
       sample_rate: 44100,
       ...(format === "mp3" ? { mp3_bitrate: 192 as const } : {}),
-      temperature: temperatures.length ? temperatures[Math.floor(temperatures.length / 2)] : 0.78,
-      top_p: topPs.length ? topPs[Math.floor(topPs.length / 2)] : 0.82,
+      temperature,
+      top_p: topP,
       prosody: { speed: 1, volume: 0, normalize_loudness: true },
       chunk_length: envInt("FISH_SCENE_CHUNK_LENGTH", 300, 100, 300),
       normalize: true,
@@ -282,6 +387,8 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     },
     voiceOrder,
     directionCues,
+    ignoredPerHostOverrides: requestedByHost,
+    sceneCue,
     speakerRunCount: parts.length,
   };
 }
@@ -423,6 +530,9 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
       temperature: selected.temperature,
       topP: selected.topP,
       directionCues: payload.directionCues,
+      sceneCue: payload.sceneCue,
+      samplingScope: "cast_wide",
+      ignoredPerHostOverrides: payload.ignoredPerHostOverrides,
       speakerRunCount: payload.speakerRunCount,
       approvedUtteranceCount: input.utterances.length,
       cuedTextPreview: payload.body.text.slice(0, 500),

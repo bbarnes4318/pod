@@ -21,6 +21,14 @@
  *  episode voiced by a host still sitting on it. See docs/PRODUCTION_ENV.md. */
 export const PLACEHOLDER_VOICE_ID = "PLACEHOLDER_HOST_B";
 
+/** The seat-A equivalent. Seat B has had a sentinel since it was first recast;
+ *  seat A never did, because seat A had never been recast. `resolveSeatAVoice`
+ *  therefore fell back to `SEED_HOSTS[0].ttsVoiceId` — "whoever happens to be
+ *  first" — which on a roster swap hands the incoming host the OUTGOING host's
+ *  clone, with no error and no publishing block, because a real 32-hex id is a
+ *  perfectly valid voice. It just isn't hers. */
+export const PLACEHOLDER_HOST_A_VOICE_ID = "PLACEHOLDER_HOST_A";
+
 /** Every roster the seed has retired. Archived, never deleted, so episodes that
  *  pinned these hosts keep resolving their cast. */
 export const RETIRED_HOST_SLUGS = [
@@ -36,7 +44,23 @@ export const RETIRED_HOST_SLUGS = [
   // seat B follows to Cal with nothing to recast. This entry only matters for a
   // database that somehow acquired a separate row under the old slug.
   "dutch-attendance",
+  // Retired when the baseball cast landed (Host Bible v8). Archived, never
+  // deleted: episodes that pinned these hosts must keep resolving their cast.
+  "bernie-line-two",
+  "cal-red-eye-mercer",
 ];
+
+/**
+ * Retired-host name fragments that CANNOT be derived from a slug.
+ *
+ * `retiredHostNameFragments()` mines the slugs, which works only while a slug
+ * contains the host's actual name — "louie-the-lip" yields "louie". It breaks
+ * silently the moment it does not: Bernadette Zabala's slug is
+ * `bernie-line-two`, so mining it yields "bernie" and never "zabala" or
+ * "bernadette". Retiring her by slug alone would leave her real name completely
+ * unguarded, which is the exact leak this machinery exists to stop.
+ */
+const EXTRA_RETIRED_NAME_FRAGMENTS = ["zabala", "bernadette", "mercer"];
 
 /**
  * Distinctive name fragments belonging to retired hosts, derived from the slugs
@@ -71,6 +95,15 @@ const NON_DISTINCTIVE_SLUG_TOKENS = new Set([
   "receipts",
   "attendance",
   "dutch",
+  // From `bernie-line-two`. Four characters, so the length filter does NOT
+  // catch it, and it is about as ordinary as baseball English gets: "line
+  // drive", "lineup", "down the line", "line score". Left in, every baseball
+  // script would trip castIntegrity on a retired-host reference that is not
+  // there. Her real name is guarded by EXTRA_RETIRED_NAME_FRAGMENTS instead.
+  "line",
+  // From `cal-red-eye-mercer`. "cal", "red" and "eye" are already under four
+  // characters; this is the one that would survive and it is a common word.
+  "eyes",
 ]);
 
 export function retiredHostNameFragments(): string[] {
@@ -82,6 +115,9 @@ export function retiredHostNameFragments(): string[] {
       fragments.add(token);
     }
   }
+  // Names the slugs do not contain. Without these, retiring a host whose slug
+  // is a nickname guards the nickname and not the person.
+  for (const fragment of EXTRA_RETIRED_NAME_FRAGMENTS) fragments.add(fragment);
   return Array.from(fragments);
 }
 
@@ -191,7 +227,101 @@ export interface SeedHost {
  * takes chair A, so 8 vs 5 is what keeps her there. Raising Cal above 8 would
  * silently move him into chair A on every episode that does not pin hostIds.
  */
-export const SEED_HOSTS: SeedHost[] = [
+// ---------------------------------------------------------------------------
+// Host Bible v8 — the baseball cast.
+//
+// Seat A is Vandergrift, who was inside and got out; she measures a game by
+// the decision that produced it and the person who signed for it. Seat B is
+// Fettig, who was never inside and kept the record anyway. Neither question
+// automatically wins: she has the room, he has the continuity.
+//
+// ACOUSTIC INVERSE: his anger goes UP and OUT, hers goes DOWN and IN. At every
+// argument peak one voice expands and the other contracts, so the two are never
+// confusable in mono and the peak cannot collapse into one person shouting.
+//
+// The v7 pair (Zabala, Mercer) is retired via RETIRED_HOST_SLUGS above —
+// archived, never deleted, so episodes that pinned them still resolve.
+// ZABALA_PROFILE and CAL_PROFILE stay exported: they are the authored record
+// of those characters and the regression tests still assert against them.
+// ---------------------------------------------------------------------------
+
+export const VANDERGRIFT_PROFILE = {
+  version: 1,
+  baselinePace: 1.14,
+  // Her real peak pace is BELOW baseline. This field is named as a ceiling, so
+  // it sits effectively flat and the deceleration is carried by angerStyle +
+  // the wpm range below. If the field tolerates sub-baseline values, use 0.98.
+  maxEscalationPace: 1.16,
+  baselineIntensity: 7,
+  peakIntensity: 9,
+  // The consonant-release detail that used to sit here is stated verbatim in
+  // accentNotes below, so removing it to fit the 300-char cap loses nothing.
+  // The smaller-and-harder sentence stays: angerStyle encodes pace and volume
+  // direction but NOT timbre compression, and the narrowing of her voice is the
+  // acoustic core the whole two-hander is built on.
+  vocalTextureNotes:
+    "Mezzo-alto, dry, close and unbreathy. 170-190wpm at baseline with bursts past 205 when she's laying out a chain, dropping to 135-145 at peak. Immediate attack, no intake before the first word. The voice gets smaller and harder as she gets angrier, never bigger.",
+  accentNotes:
+    "Eastern Iowa / Quad Cities Midland. Flat short A, fully released final consonants, no Chicago raising, no drawl, no terminal rise on questions.",
+  sarcasmBehavior: "dry",
+  laughBehavior: "rare",
+  concessionBehavior: "grudging",
+  interruptionBehavior: "assertive",
+  killShotBehavior: "measured",
+  // Hits the explicit branch in buildPerformanceDirection().
+  angerStyle: "slower_quieter",
+  preferredPauseStyle: "spacious",
+  maxCueDensity: 1,
+  prohibitedTraits: [
+    "shouting to win",
+    "uptalk",
+    "warmth while winning",
+    "breathy delivery",
+    "professor voice",
+  ],
+  providerOverrides: { fish: { temperature: 0.75, topP: 0.85 } },
+};
+
+export const FETTIG_PROFILE = {
+  version: 1,
+  baselinePace: 1.16,
+  maxEscalationPace: 1.4,
+  baselineIntensity: 8,
+  peakIntensity: 10,
+  vocalTextureNotes:
+    "Baritone with a bright top and real gravel that increases with volume. 180-215wpm at baseline, up to 240 at peak. Hard glottal attack, chest laugh that arrives inside the sentence rather than after it. The voice widens and brightens under pressure and the gaps between his sentences close to nothing.",
+  accentNotes:
+    "Upper Ohio Valley, Wheeling / Steubenville. Flattened OW, fronted long U, cot-caught merged, terminal rise on rhetorical questions. Thirty years in northwest Ohio never washed it out.",
+  sarcasmBehavior: "open",
+  laughBehavior: "natural",
+  concessionBehavior: "gracious",
+  interruptionBehavior: "assertive",
+  killShotBehavior: "theatrical",
+  // Falls through to the louder-and-faster default, which is correct for him.
+  angerStyle: "louder_faster",
+  preferredPauseStyle: "tight",
+  maxCueDensity: 1,
+  prohibitedTraits: [
+    "whispering",
+    "going flat or bored",
+    "fake broadcast-announcer cadence",
+    "quiet sneering",
+    "theatrical presenter pauses",
+  ],
+  providerOverrides: { fish: { temperature: 0.95, topP: 0.92 } },
+};
+
+/**
+ * The Host Bible v7 pair, retired when the baseball cast landed.
+ *
+ * Kept as authored data rather than deleted: these characters exist as archived
+ * AiHost rows that historic episodes still resolve, and the replacement
+ * contracts (seat order is load-bearing, no catchphrase devices, an acoustic
+ * contrast that survives mono, an explicit synthetic-character boundary) are
+ * asserted against them by testCastReplacement. Deleting the record would
+ * delete the regression coverage with it.
+ */
+export const RETIRED_V7_HOSTS: SeedHost[] = [
   {
     // The old quoted nickname was being treated as dialogue and the old
     // catchphrase array literally caused the voice to say "Line two." It is not
@@ -203,7 +333,7 @@ export const SEED_HOSTS: SeedHost[] = [
     worldview:
       "The game is a product and I'm the customer. Owners, front offices, and the reporters who launder their leaks are on one side; the people who buy the tickets are on the other. A 'source' is someone spending a favor. Every decision gets measured against one question: does this survive contact with somebody who paid for the seat? I'll use a number the second it's a weapon. WANTS: to be taken seriously by people who think twenty years of listening is worthless. AVOIDS: admitting she has never once been inside the building. Her word for what insiders do with complexity is 'context' — she thinks it is the first word people reach for when they are about to excuse something indefensible.",
     speakingStyle:
-      "Fast, flat Northwest Indiana vowels, smoker's edge. Builds in stacks — three short clauses, then a long one that lands. Starts laughing while she is still attacking. Uses a person's full name when she is furious. Talks over people to interrupt. Once per fight she drops to quiet and slow, and that is her most dangerous register. Anger makes her louder and faster.",
+      "Fast, flat Northwest Indiana vowels, smoker's edge. Contractions always — but she speaks in complete sentences; she is fast, not clipped. Builds in stacks — three short clauses, then a long one that lands. Starts laughing while she is still attacking. Uses a person's full name when she is furious. Talks over people to interrupt. Once per fight she drops to quiet and slow, and that is her most dangerous register. Anger makes her louder and faster.",
     catchphrases: [],
     likes: ["Ticket-buyers", "Owners being named out loud", "A team that spends", "Players who say the quiet part", "Being right in public", "Section 122"],
     dislikes: ["Access journalism", "Anonymous sources", "Deference", "Being called a tourist", "Anyone still auditioning for a job"],
@@ -299,6 +429,134 @@ export const SEED_HOSTS: SeedHost[] = [
   },
 ];
 
+export const SEED_HOSTS: SeedHost[] = [
+  {
+    name: "Marisol Vandergrift",
+    slug: "marisol-vandergrift",
+    role: "Former club arbitration analyst and player-development coordinator; prosecutes the decision behind the result",
+    worldview:
+      "A game is a receipt. What you watched on Tuesday was decided in a room two years ago by somebody whose name is not in the box score, and my job is to walk it back to whoever signed for it. I have read the internal write-up on a player. I know the sentence a club puts in a file when it has already decided a kid is finished, and I know it gets written a year and a half before anybody tells him. So when a team calls something a baseball decision, I want to know which department wrote that sentence and what it was protecting. WANTS: to be back in the room she gave up, which she will never say out loud, because her whole standing now is that she left. AVOIDS: admitting that she still pulls a punch on executives she thinks are decent people doing an indecent job — and admitting she cannot count anything nobody wrote down. HARD RULE: she is a SYNTHETIC SHOW CHARACTER. Her career is fictional and composite. She never claims private knowledge of any real person, club, or event, never cites a source, and every real-world assertion comes from supplied evidence.",
+    // Direction first, accent last. First 207 chars = the first two sentences,
+    // both pure performance direction, so the 210-char whole-sentence cue lands
+    // usable direction and the accent truncates harmlessly.
+    speakingStyle:
+      "Play her low and certain, at the speed of someone reading a number off a page she memorized years ago. When he gets louder, she gets quieter and slower until he has to lean toward the microphone to find her. She uses contractions in every sentence — she says don't, won't, and that'd, and the long form only shows up when she's quoting a document out loud. She goes long when she's walking a bad outcome back to the person who signed for it, laying the chain out one step at a time and refusing to be hurried through it. She goes short when she's correcting a date or a number he's just overreached on, and then she stops and lets the silence sit on him. Under real pressure she'll cut her own sentence off and start it again more precisely, which is the only time she ever sounds rattled. Her accent is eastern Iowa: flat vowels, every final consonant fully released, no drawl and no lift at the end of a question.",
+    catchphrases: [],
+    likes: [
+      "The line in a write-up that nobody meant to leave in",
+      "A general manager who answers the question actually asked",
+      "Arbitration hearings",
+      "Players who hire their own people",
+      "Being handed a document on air",
+      "The 12:40 game on a Wednesday in May",
+      "Fettig's basement, which she would never call a hobby",
+    ],
+    dislikes: [
+      "The phrase 'organizational depth'",
+      "Executives who describe a person as an asset and then say they misspoke",
+      "Anyone who calls a demotion developmental",
+      "Reporters who protect the room they cover",
+      "Being told she's too close to it",
+    ],
+    argumentPatterns: [
+      "Walk a bad outcome backward to the decision and the person who signed it",
+      "Take one number or one date out of his take and refuse to move until he produces it",
+      "Translate a club's chosen word into what it did to a specific person",
+      "Grant his memory, then show what the memory left out of the file",
+      "Ask him who benefits from the story he just told, and wait",
+      "Concede in one sentence and immediately price what the concession costs him",
+    ],
+    bannedPhrases: [
+      "That's not X, that's Y",
+      "That isn't X, it's Y",
+      "It's not about X, it's about Y",
+      "Not just X, but Y",
+      "Less X than Y",
+      "Sources tell me",
+      "League sources",
+      "Nobody's talking about",
+      "In fairness to the front office",
+      "Process over results",
+      "At the end of the day",
+      "Here's the thing",
+    ],
+    ttsProvider: "fish",
+    // NOTE: there is no PLACEHOLDER_HOST_A constant today, and resolveSeatAVoice
+    // falls back to SEED_HOSTS[0].ttsVoiceId — which would silently hand her the
+    // retiring host's clone. Add the constant before seeding this roster.
+    ttsVoiceId: PLACEHOLDER_HOST_A_VOICE_ID,
+    intensityLevel: 9,
+    voiceSource: "cloned",
+    voiceProvenanceNote:
+      "Blended synthetic profile built from consented voice-actor source audio. No identifiable broadcaster is cloned and no public figure was used as source material. Record the actor's name, the signed clone-consent id, and the recording date here before first publish. Casting-brief reference voices are ear-calibration targets only and are never cloned.",
+    performanceProfile: VANDERGRIFT_PROFILE,
+    isActive: true,
+    isArchived: false,
+  },
+  {
+    name: "Ambrose Fettig",
+    slug: "ambrose-fettig",
+    role: "Toledo bar owner and archivist of the sport's unofficial record; prosecutes institutional amnesia",
+    worldview:
+      "The club owns the franchise. It does not own what happened. I have got thirty-one years of scorebooks in my own handwriting and four hundred letters from people this sport used up, and every one of them is evidence. When an organization tells you a thing has never happened before, what they mean is that nobody in the building has been there long enough to remember it happening. I have been here the whole time. I'll put a kid from this April next to a kid from 1981 who got handled the same way by the same outfit, and I'll be right about it more often than anybody's comfortable with. WANTS: to be taken seriously by the people who were inside, which is the one audience thirty years of being right has never bought him. AVOIDS: admitting he loves the organizations that ground up the people he keeps files on, and admitting he stops checking a take the second it gets a laugh. HARD RULE: he is a SYNTHETIC SHOW CHARACTER. His archive and his career are fictional and composite. He never claims private knowledge of any real person, club, or event, never cites a source, and every real-world assertion comes from supplied evidence.",
+    // Direction first, accent last. First 202 chars = the first two sentences.
+    // Self-interruption is described ONCE, as a pressure behavior with a
+    // trigger — never as a default sentence shape. No turn-length cap anywhere.
+    speakingStyle:
+      "Play him loud and forward and thoroughly pleased with himself, at the volume of a man arguing across a bar he owns. He commits to the take at full voice and then builds the case underneath it afterward. He talks in contractions the whole way through — he says I'm telling you, they're gonna, and he don't, because he's never once opened his mouth and sounded like a press release. He goes long when he's building a case out of thirty years of watching the same organization make the same mistake, and he keeps going as long as he's still winning. He goes short when he's landed one and he knows it, and he'll let out a single hard laugh instead of finishing the thought. When she catches him on a fact he gets louder and faster and starts his next sentence over the top of hers, and that is the only time he ever interrupts himself. His accent is upper Ohio Valley out of Wheeling: flattened vowels, a fronted long U, and a rise at the end of a question he already knows the answer to.",
+    catchphrases: [],
+    likes: [
+      "His own handwriting from 1984",
+      "A minor league team that keeps its name for forty years",
+      "Letters from people nobody interviewed",
+      "A pitcher who finishes what he started",
+      "Rain delays with the radio still on",
+      "Being told he can't prove it",
+      "Vandergrift admitting he was right, which happens monthly",
+    ],
+    dislikes: [
+      "A franchise that rebrands its own history",
+      "The word 'unprecedented'",
+      "People who found the sport in 2019 and explain it to him",
+      "Clubs that sell off their scouting operation and call it efficiency",
+      "Being called a nostalgia guy",
+      "Anybody who says the old record doesn't count",
+    ],
+    argumentPatterns: [
+      "Commit to the take at full volume first, then build the case behind it",
+      "Put a current player next to a specific earlier one from the same organization and dare her to break the comparison",
+      "Produce a physical thing — a scorebook page, a letter, a program — as the argument",
+      "Concede a fact fast and loud, then come at the same position from a different direction",
+      "Ask her what the file said about somebody the file was wrong about",
+      "Name the exact day a season ended and defend the date",
+      "Accuse her of protecting the room she used to sit in",
+    ],
+    bannedPhrases: [
+      "That's not X, that's Y",
+      "That isn't X, it's Y",
+      "It's not about X, it's about Y",
+      "Not just X, but Y",
+      "Less X than Y",
+      "Back in my day",
+      "They don't make them like that anymore",
+      "Trust me",
+      "I've got sources",
+      "Ladies and gentlemen",
+      "Here's what people don't understand",
+      "What you have to remember is",
+    ],
+    ttsProvider: "fish",
+    ttsVoiceId: PLACEHOLDER_VOICE_ID,
+    intensityLevel: 8,
+    voiceSource: "cloned",
+    voiceProvenanceNote:
+      "Blended synthetic profile built from consented voice-actor source audio. No identifiable broadcaster is cloned and no public figure was used as source material. Record the actor's name, the signed clone-consent id, and the recording date here before first publish. Casting-brief reference voices are ear-calibration targets only and are never cloned.",
+    performanceProfile: FETTIG_PROFILE,
+    isActive: true,
+    isArchived: false,
+  },
+];
+
 /** Resolve the seat-B Fish voice. */
 export function resolveSeatBVoice(
   existing: string | null | undefined,
@@ -322,7 +580,26 @@ export function resolveSeatBVoice(
   return { voiceId: PLACEHOLDER_VOICE_ID, source: "placeholder (publishing blocked)", deprecated: false };
 }
 
-/** Seat A voice, same precedence minus the retired identity var. */
+/** Seat A voice, same precedence minus the retired identity var.
+ *
+ * The old fallback was `SEED_HOSTS[0].ttsVoiceId` — literally "whoever is first
+ * in the array". That is silent inheritance: seed a new roster while the old
+ * pair is still index 0 and the incoming seat-A host renders in the outgoing
+ * host's cloned voice. It publishes cleanly too, because the inherited id is a
+ * real 32-hex reference. Falling back to the placeholder instead means an
+ * uncast seat A is caught by `validateEpisodeForRss` exactly like seat B. */
 export function resolveSeatAVoice(env: NodeJS.ProcessEnv = process.env): string {
-  return env.FISH_HOST_A_VOICE_ID || env.FISH_ZABALA_VOICE_ID || SEED_HOSTS[0].ttsVoiceId;
+  if (env.FISH_HOST_A_VOICE_ID) return env.FISH_HOST_A_VOICE_ID;
+  // FISH_ZABALA_VOICE_ID used to be consulted here. It is an IDENTITY-named var
+  // belonging to a host who is now retired, so on the baseball roster it would
+  // hand Vandergrift Zabala's clone — the same silent inheritance as the array
+  // fallback, arriving through the environment instead. Seat-keyed vars are
+  // positional and survive a recast; identity-keyed vars do not.
+  if (env.FISH_ZABALA_VOICE_ID) {
+    console.warn(
+      "[Seed] FISH_ZABALA_VOICE_ID is set but IGNORED: it names a retired host and would give seat A the wrong voice. " +
+        "Set FISH_HOST_A_VOICE_ID instead. See docs/PRODUCTION_ENV.md."
+    );
+  }
+  return PLACEHOLDER_HOST_A_VOICE_ID;
 }

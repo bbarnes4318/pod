@@ -31,6 +31,27 @@ import { runIndependentJudgeStage, runSevenRolePipeline } from "./scriptSevenRol
 import type { SevenRoleTrace, SevenRoleTraceRecord } from "./scriptRoles";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
+
+/**
+ * Is the antithesis pass a GATE or a suggestion?
+ *
+ * It was a suggestion. Enforcement required ANTITHESIS_STRICT=true, which
+ * production does not set, so both an unresolved frame and an outright pass
+ * FAILURE shipped behind a console.warn — the owner heard "that's not X,
+ * that's Y" and the system reported success. Under NODE_ENV=production this is
+ * now a gate by default, in code. Turning it off takes a deliberate
+ * ANTITHESIS_ALLOW_SOFT_FAIL=true, not a forgotten variable.
+ *
+ * NOTE ON bannedPhrases: a host's `bannedPhrases` array is interpolated into
+ * the generation prompt (formatScriptPrompts.ts) and is ADVICE TO THE MODEL —
+ * nothing rejects a script for containing one. This pass is the only real
+ * enforcement of the antithesis frames, which is why it must not fail soft.
+ */
+function antithesisEnforced(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.ANTITHESIS_STRICT === "true") return true;
+  if (env.ANTITHESIS_ALLOW_SOFT_FAIL === "true") return false;
+  return env.NODE_ENV === "production";
+}
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 
@@ -1062,16 +1083,22 @@ Delivery field meanings:
     result.antithesis = anti;
     result.reasons.push(...anti.reasons);
 
-    if (anti.linesUnresolved > 0 && process.env.ANTITHESIS_STRICT === "true") {
+    if (anti.linesUnresolved > 0 && antithesisEnforced()) {
       const msg =
-        `Validation failed (ANTITHESIS_STRICT=true): ${anti.linesUnresolved} line(s) still use the ` +
+        `Validation failed: ${anti.linesUnresolved} line(s) still use the ` +
         `balanced-negation frame after ${anti.rounds} rewrite round(s): ` +
         anti.unresolved.map((u) => `#${u.lineIndex} [${u.speakerName}] ${u.kinds.join(",")}`).join("; ");
       result.reasons.push(msg);
       throw new Error(msg);
     }
   } catch (antiErr) {
-    if (process.env.ANTITHESIS_STRICT === "true") throw antiErr;
+    // A pass that ERRORS used to be indistinguishable from a pass that found
+    // nothing: console.warn, push a reason nobody reads, ship the script with
+    // "that's not X, that's Y" intact. Under production the failure is now the
+    // episode's failure, matching the render-mode hardening — an episode that
+    // cannot be produced at full quality fails visibly instead of shipping
+    // degraded.
+    if (antithesisEnforced()) throw antiErr;
     const antiMsg = antiErr instanceof Error ? antiErr.message : String(antiErr);
     console.warn(`[ScriptService] antithesis pass failed: ${antiMsg}`);
     result.reasons.push(`Antithesis pass skipped (error): ${antiMsg}`);

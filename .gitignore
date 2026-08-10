@@ -10,6 +10,12 @@
 !.yarn/releases
 !.yarn/versions
 
+# Agent worktrees. These are full nested checkouts of this repo; inside the
+# tree they swamp `find`, lint and typecheck with code from other branches.
+# Create them OUTSIDE the repo (e.g. C:/pod-worktrees/<name>); this is only a
+# backstop for when one lands here anyway.
+/.claude/worktrees/
+
 # testing
 /coverage
 
