@@ -52,7 +52,6 @@ async function main() {
       finish: "theatrical" as const,
       pressure: "quieter_sharper" as const,
       pauses: "tight" as const,
-      fishCreativity: "expressive" as const,
       bannedPhrases: ["At the end of the day"],
       prohibitedTraits: ["robot voice", "announcer cadence"],
     };
@@ -61,7 +60,9 @@ async function main() {
     assert(/jumps in/i.test(compiled.speakingStyle), "interruption behavior did not reach speaking style");
     assert(compiled.performanceProfile.interruptionBehavior === "assertive", "interruption behavior did not reach TTS profile");
     assert(compiled.performanceProfile.angerStyle === "slower_quieter", "pressure behavior did not reach TTS profile");
-    assert(compiled.performanceProfile.providerOverrides.fish?.temperature === 0.93, "Fish creativity did not reach sampling controls");
+    // Fish renders a scene in ONE request, so temperature is cast-wide and a
+    // per-host control could only ever collapse. The input was removed.
+    assert(compiled.performanceProfile.providerOverrides.fish === undefined, "per-host Fish sampling must no longer be authored — it cannot be applied per host");
     assert(compiled.bannedPhrases.includes("At the end of the day"), "banned phrase was lost");
     assert(compiled.performanceProfile.prohibitedTraits.includes("robot voice"), "delivery prohibition was lost");
   });

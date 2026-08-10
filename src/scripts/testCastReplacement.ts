@@ -17,7 +17,7 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { CAL_PROFILE, SEED_HOSTS, ZABALA_PROFILE, resolveSeatBVoice, PLACEHOLDER_VOICE_ID } from "../lib/hosts/roster";
+import { CAL_PROFILE, RETIRED_V7_HOSTS, SEED_HOSTS, ZABALA_PROFILE, resolveSeatBVoice, PLACEHOLDER_VOICE_ID } from "../lib/hosts/roster";
 import { hostPerformanceProfileSchema } from "../lib/hosts/performanceProfile";
 
 let passed = 0;
@@ -151,14 +151,16 @@ check("seat-B voice resolution prefers the seat var and preserves a working voic
 // 2. The character
 // ---------------------------------------------------------------------------
 
-const cal = SEED_HOSTS.find((h) => h.slug === "cal-red-eye-mercer")!;
-const zabala = SEED_HOSTS.find((h) => h.slug === "bernie-line-two")!;
+const cal = RETIRED_V7_HOSTS.find((h) => h.slug === "cal-red-eye-mercer")!;
+const zabala = RETIRED_V7_HOSTS.find((h) => h.slug === "bernie-line-two")!;
 
-check("the roster is exactly Zabala (seat A) and Mercer (seat B), in that order", () => {
+check("the ACTIVE roster is a two-hander whose seat order is deterministic", () => {
+  // Identity moved to testBaseballCast when the v7 pair retired; what belongs
+  // here is the contract every replacement must satisfy, not who currently
+  // holds the chairs. hostCastingShared compares intensity with `>=`, so any
+  // positive gap is deterministic.
   assert(SEED_HOSTS.length === 2, `expected 2 hosts, got ${SEED_HOSTS.length}`);
-  assert(SEED_HOSTS[0].slug === "bernie-line-two", "Zabala must be index 0 — seat order is load-bearing");
-  assert(SEED_HOSTS[1].slug === "cal-red-eye-mercer", "Mercer must be index 1");
-  assert(SEED_HOSTS[0].intensityLevel - SEED_HOSTS[1].intensityLevel >= 2, "the seating gap must keep Zabala in chair A");
+  assert(SEED_HOSTS[0].intensityLevel > SEED_HOSTS[1].intensityLevel, "seat A must outrank seat B");
 });
 
 check("Cal's performance profile is VALID against the real schema", () => {

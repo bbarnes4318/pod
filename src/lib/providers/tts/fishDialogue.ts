@@ -64,6 +64,9 @@ export interface FishScenePayload {
   };
   voiceOrder: string[];
   directionCues: Record<string, string>;
+  /** Per-host sampling settings that were authored and NOT applied, recorded so
+   *  the discard is inspectable instead of invisible. Empty when none exist. */
+  ignoredPerHostOverrides: Record<string, { temperature?: number; topP?: number }>;
   /** The scene-level shading cue actually emitted into `text`. Persisted so a
    *  future "why did this scene sound flat?" is answerable from the row. */
   sceneCue: string;
@@ -323,14 +326,42 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     previousHostId = utterance.speakerHostId;
   }
 
-  const temperatures = input.cast
-    .map((cast) => cast.providerOverrides?.temperature)
-    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
-    .sort((a, b) => a - b);
-  const topPs = input.cast
-    .map((cast) => cast.providerOverrides?.topP)
-    .filter((value): value is number => typeof value === "number" && value >= 0 && value <= 1)
-    .sort((a, b) => a - b);
+  // SAMPLING IS CAST-WIDE, BY CONSTRUCTION.
+  //
+  // A scene is ONE request containing every speaker, and Fish's /v1/tts takes a
+  // single temperature and top_p for that request. There is no per-utterance
+  // sampling control, so a per-host setting cannot be honoured — not "is not
+  // yet", cannot.
+  //
+  // This used to take the MEDIAN across the cast, which with two hosts is
+  // `Math.floor(2/2) = 1` — the HIGHER value. Vandergrift's deliberately tighter
+  // 0.75/0.85 was discarded and the whole scene rendered at Fettig's 0.95/0.92,
+  // silently. One intentional documented value is honest where a derived blend
+  // is not: a mean would render both characters at a setting neither was
+  // authored for while keeping two per-host inputs alive that do not apply
+  // per host.
+  const temperature = clamp(Number(process.env.FISH_SCENE_TEMPERATURE) || 0.78, 0.55, 0.98);
+  const topP = clamp(Number(process.env.FISH_SCENE_TOP_P) || 0.82, 0.6, 0.98);
+  // Kept only so the discarded intent is visible in providerMetadata rather
+  // than vanishing. Nothing reads these to build the request.
+  const requestedByHost: Record<string, { temperature?: number; topP?: number }> = {};
+  for (const cast of input.cast) {
+    const t = cast.providerOverrides?.temperature;
+    const p = cast.providerOverrides?.topP;
+    if (typeof t === "number" || typeof p === "number") {
+      requestedByHost[cast.speakerHostId] = {
+        ...(typeof t === "number" ? { temperature: t } : {}),
+        ...(typeof p === "number" ? { topP: p } : {}),
+      };
+    }
+  }
+  if (Object.keys(requestedByHost).length > 0) {
+    console.warn(
+      `[FishScene] scene=${input.sceneIndex}: per-host sampling overrides are NOT applied — Fish renders a scene in ` +
+        `one request, so temperature/top_p are cast-wide. Using ${temperature}/${topP}. ` +
+        `Ignored: ${JSON.stringify(requestedByHost)}`
+    );
+  }
   const format = input.format === "wav" ? "wav" : "mp3";
 
   return {
@@ -342,8 +373,8 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       format,
       sample_rate: 44100,
       ...(format === "mp3" ? { mp3_bitrate: 192 as const } : {}),
-      temperature: temperatures.length ? temperatures[Math.floor(temperatures.length / 2)] : 0.78,
-      top_p: topPs.length ? topPs[Math.floor(topPs.length / 2)] : 0.82,
+      temperature,
+      top_p: topP,
       prosody: { speed: 1, volume: 0, normalize_loudness: true },
       chunk_length: envInt("FISH_SCENE_CHUNK_LENGTH", 300, 100, 300),
       normalize: true,
@@ -356,6 +387,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     },
     voiceOrder,
     directionCues,
+    ignoredPerHostOverrides: requestedByHost,
     sceneCue,
     speakerRunCount: parts.length,
   };
@@ -499,6 +531,8 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
       topP: selected.topP,
       directionCues: payload.directionCues,
       sceneCue: payload.sceneCue,
+      samplingScope: "cast_wide",
+      ignoredPerHostOverrides: payload.ignoredPerHostOverrides,
       speakerRunCount: payload.speakerRunCount,
       approvedUtteranceCount: input.utterances.length,
       cuedTextPreview: payload.body.text.slice(0, 500),

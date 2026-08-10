@@ -175,7 +175,8 @@
     "smoke:llm-providers": "tsx --conditions=react-server src/scripts/smokeLlmProviders.ts",
     "write:sample": "tsx --conditions=react-server src/scripts/writeSampleEpisode.ts",
     "test:render-mode-hardening": "tsx --conditions=react-server src/scripts/testRenderModeHardening.ts",
-    "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts"
+    "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts",
+    "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
