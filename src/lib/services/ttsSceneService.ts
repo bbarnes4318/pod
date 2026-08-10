@@ -7,9 +7,12 @@
 // syntax exists ONLY inside the adapters and safe metadata.
 //
 // Rollout contract (Prompt 16):
-//   TTS_RENDER_MODE = legacy_line (default) | scene | auto
+//   TTS_RENDER_MODE — DEV ONLY. Production always renders scenes; degraded
+//     modes additionally require TTS_ALLOW_DEGRADED_RENDER_MODES=true.
 //   TTS_SCENE_PROVIDER_ALLOWLIST = elevenlabs,fish (default)
-//   TTS_SCENE_CANDIDATES_COLD_OPEN / _PEAK / _DEFAULT
+//   FISH_PERFORMANCE_CANDIDATES (1-4) — the REAL best-of-N dial, applied in the
+//     Fish adapter where candidates can be compared. The former
+//     TTS_SCENE_CANDIDATES_* knobs were dead and now refuse to boot.
 //   ELEVENLABS_DIALOGUE_TIMESTAMPS = true (default) | false
 // The decision that was actually taken is PERSISTED on Episode.ttsRenderMode
 // ("scene" | "mixed_fallback" | "legacy_line") — never re-inferred from env.
@@ -25,7 +28,6 @@ import {
   isDialogueSceneProvider,
   SceneGenerationError,
   type DialogueSceneInput,
-  type DialogueSceneType,
   type SceneErrorCategory,
   type ScenePerformanceContext,
   type SceneUtterance,
@@ -52,6 +54,8 @@ import { degradedRenderModesAllowed, readRenderModeSetting } from "./renderModeP
 import type { PersistedRenderMode } from "./renderModePolicy";
 
 export {
+  assertNoDeadSceneCandidateVars,
+  DEAD_SCENE_CANDIDATE_VARS,
   degradedRenderModesAllowed,
   readRenderModeSetting,
   type TtsRenderModeSetting,
@@ -93,15 +97,6 @@ export function decideSceneEligibility(opts: {
   return { eligible: true, provider, reason: "all cast voices on one allowlisted scene-capable engine" };
 }
 
-function candidateCountFor(sceneType: DialogueSceneType, env: NodeJS.ProcessEnv = process.env): number {
-  const n = (name: string, dflt: number) => {
-    const v = Number(env[name]);
-    return Number.isFinite(v) && v >= 1 && v <= 4 ? Math.floor(v) : dflt;
-  };
-  if (sceneType === "cold_open") return n("TTS_SCENE_CANDIDATES_COLD_OPEN", 1);
-  if (sceneType === "argument_escalation") return n("TTS_SCENE_CANDIDATES_PEAK", 1);
-  return n("TTS_SCENE_CANDIDATES_DEFAULT", 1);
-}
 
 /** Deterministic 32-bit seed per scene fingerprint (engines with seed support). */
 export function stableSceneSeed(fingerprint: string, candidateIndex: number): number {
@@ -397,7 +392,10 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
       }
     }
 
-    const candidates = candidateCountFor(scene.sceneType);
+    // Exactly one row per fingerprint. Best-of-N happens INSIDE the adapter
+    // call below, where the candidates can actually be compared; this layer
+    // only records the winner. See DEAD_SCENE_CANDIDATE_VARS.
+    const candidates = 1;
     let sceneReady = false;
     let sceneRenderUnit = renderUnit;
     let firstError: SceneGenerationError | null = null;

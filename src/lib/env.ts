@@ -1,5 +1,6 @@
 import "server-only";
 import Redis from "ioredis";
+import { assertNoDeadSceneCandidateVars } from "./services/renderModePolicy";
 
 /**
  * Checks if a value is a generic placeholder.
@@ -268,6 +269,11 @@ export function assertProductionEnv(): void {
   if (process.env.NODE_ENV !== "production") return;
   // Bypass checks during Next.js static build phase
   if (process.env.NEXT_PHASE === "phase-production-build") return;
+
+  // 0. Knobs that look like quality dials and are not. Refusing to start is the
+  // only way an operator ever learns a variable is dead; a silent no-op means
+  // the next person also believes the episode was rendered best-of-N.
+  assertNoDeadSceneCandidateVars();
 
   // 1. Redis Configuration Checks
   const redisUrl = getRedisUrl();

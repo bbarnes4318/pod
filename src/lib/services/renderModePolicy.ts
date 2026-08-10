@@ -30,3 +30,33 @@ export function readRenderModeSetting(env: NodeJS.ProcessEnv = process.env): Tts
   const v = (env.TTS_RENDER_MODE || "legacy_line").trim().toLowerCase();
   return v === "scene" || v === "auto" ? (v as TtsRenderModeSetting) : "legacy_line";
 }
+
+/** The dead outer candidate knobs. Setting one is a startup error.
+ *
+ * `TTS_SCENE_CANDIDATES_COLD_OPEN` / `_PEAK` / `_DEFAULT` looked like the
+ * best-of-N quality dial and were not. They drove an OUTER loop that writes one
+ * DialogueSceneAudio row per candidate; the row it kept was simply the first
+ * that succeeded, because nothing at this layer can compare two renders. Real
+ * best-of-N lives one level down in `synthesizeFishDialogueScene`, which
+ * requests 3 candidates on cold_open/argument_escalation and 2 elsewhere — in
+ * CODE, not env — and selects on an acoustic QA score.
+ *
+ * Raising an outer knob therefore multiplied spend (outer x inner) for a pick
+ * that was arbitrary. Deleting it silently would leave the same trap for the
+ * next operator who finds the name in a runbook, so setting one now refuses to
+ * start and names the knob that actually works. */
+export const DEAD_SCENE_CANDIDATE_VARS = [
+  "TTS_SCENE_CANDIDATES_COLD_OPEN",
+  "TTS_SCENE_CANDIDATES_PEAK",
+  "TTS_SCENE_CANDIDATES_DEFAULT",
+] as const;
+
+export function assertNoDeadSceneCandidateVars(env: NodeJS.ProcessEnv = process.env): void {
+  const set = DEAD_SCENE_CANDIDATE_VARS.filter((name) => (env[name] ?? "").toString().trim() !== "");
+  if (set.length === 0) return;
+  throw new Error(
+    `${set.join(", ")} ${set.length === 1 ? "is" : "are"} set but ${set.length === 1 ? "does" : "do"} nothing. ` +
+      `Scene best-of-N selection is FISH_PERFORMANCE_CANDIDATES (1-4), which selects on acoustic QA inside the ` +
+      `Fish adapter and defaults to 3 on cold opens and argument peaks. Unset ${set.join(", ")}.`
+  );
+}

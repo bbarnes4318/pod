@@ -176,7 +176,8 @@
     "write:sample": "tsx --conditions=react-server src/scripts/writeSampleEpisode.ts",
     "test:render-mode-hardening": "tsx --conditions=react-server src/scripts/testRenderModeHardening.ts",
     "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts",
-    "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts"
+    "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts",
+    "test:silent-failure-paths": "tsx --conditions=react-server src/scripts/testSilentFailurePaths.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
