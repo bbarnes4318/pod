@@ -312,3 +312,39 @@ forward-fix only — the backfills are idempotent and safe to re-run. Worker
 boot seeding only repairs MISSING starter assets; rolling out changed seed
 bytes is an explicit admin action (new content-versioned assets; old bytes
 preserved for historical renders).
+
+## Auto-deploy on push (added 2026-08-11)
+
+Pushing to `main` now rebuilds both apps automatically. It did not before: Coolify
+had `is_auto_deploy_enabled = true` and a webhook secret generated on both apps,
+but **GitHub had zero webhooks registered** (`gh api repos/bbarnes4318/pod/hooks`
+returned `[]`), so nothing ever notified Coolify. Every deploy was manual, and a
+push looked like it had shipped when it had not.
+
+Two hooks are registered, one per app, because Coolify's manual GitHub flow
+identifies the application by its **webhook secret** and each app has its own:
+
+| app | hook id | URL |
+| --- | --- | --- |
+| take-machine-web | 664154026 | `http://178.156.153.87:8000/webhooks/source/github/events/manual` |
+| take-machine-worker | 664154133 | `…/events/manual?app=worker` |
+
+The `?app=worker` suffix exists only to satisfy GitHub, which rejects a second
+hook whose config URL is byte-identical to an existing one (HTTP 422). Coolify
+routes on the path and ignores the query string, so both deliveries land on the
+same receiver and are told apart by their secrets.
+
+**Both hooks must exist.** Web and worker build separately, and a repo with only
+one hook deploys one of them — the drift that puts a stale worker behind a
+current web is exactly how a fix appears live and does not run.
+
+Verify what is actually running (image tag = built commit) rather than trusting
+the Coolify UI:
+
+```bash
+ssh root@178.156.153.87 'docker ps --format "{{.Image}}  up {{.RunningFor}}" | grep -Ei "xrw61e96|fs2y9"'
+```
+
+Coolify has **no FQDN configured** (`instance_settings.fqdn` is empty), so the
+hook URL is the raw IP over plain HTTP on port 8000. That port is publicly
+reachable. Setting an FQDN with TLS would let these hooks move to HTTPS.
