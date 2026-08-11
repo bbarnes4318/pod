@@ -53,6 +53,30 @@ export interface OutlineDrivenArgs {
   log: (msg: string) => void;
 }
 
+/** Spoken words in one line, counted the way the production gate counts them.
+ *
+ * Deliberately the same normalisation as `spokenWords` in productionInvariants:
+ * two counters that disagree would let a line pass one budget and fail the
+ * other, which is how a budget stops being a budget. */
+export function countSpokenWords(text: string): number {
+  return stripAudioTags(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s']/g, " ")
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+/** The ceiling a rewritten line may not exceed.
+ *
+ * Original length plus a small allowance, because a faithful qualitative
+ * rewrite occasionally needs a word or two ("31 and 5" -> "a bad stretch") and
+ * a zero-tolerance rule would reject good grounding fixes. The allowance is
+ * flat rather than proportional so it cannot compound across a long segment:
+ * six cold-open lines at +20% each is the 29-word overrun that held 4a8880e5. */
+export function rewriteWordBudget(originalText: string): number {
+  return countSpokenWords(originalText) + 3;
+}
+
 export function validateScriptShape(value: unknown): string | null {
   const segments = (value as { segments?: unknown })?.segments;
   if (!Array.isArray(segments)) return "Response is missing the required 'segments' array.";
@@ -427,7 +451,9 @@ export async function rewriteLinesForGrounding(
       const semantic = context.semanticReason
         ? `\n  SEMANTIC REVIEWER FLAG: ${context.semanticReason}`
         : "";
+      const budget = rewriteWordBudget(context.line.text);
       return `LINE ${context.line.lineIndex} — SPEAKER: ${context.line.speakerName}
+  WORD BUDGET: ${budget} words maximum (the current line is ${countSpokenWords(context.line.text)})
   CURRENT TEXT: ${JSON.stringify(context.line.text)}
   VIOLATIONS:
 ${figures || "  (no figure violations)"}
@@ -437,6 +463,8 @@ ${attributions}${semantic}
     });
 
     const prompt = `Rewrite each listed line so every factual detail is supported, or make the line qualitative. Preserve the speaker's intent and the conversational action the line performs on the line before it. Do not polish it into an essay. Keep fragments, pressure, humor, and an ending em dash when present. Introduce no new fact and touch no unlisted line.
+
+LENGTH IS A HARD CONSTRAINT. Each rewritten line must be NO LONGER than the line it replaces — the WORD BUDGET for each line is given below and you may come in under it, never over. Removing an unsupported specific makes a line shorter, not longer; if you find yourself adding a clause to explain the qualitative version, you have written a worse line. This is not a style note: segments carry hard spoken-word budgets downstream (a cold open must perform in 30-45 seconds), those budgets were satisfied when these lines were written, and a rewrite that inflates them fails the episode at the production gate long after every writing role has been paid for.
 
 ${lineBlocks.join("\n\n")}
 
@@ -456,9 +484,29 @@ Return valid JSON only. Both shapes:
       );
       const rewrites = Array.isArray(result?.rewrites) ? result.rewrites : [];
       const requested = new Set(chunk.map((context) => context.line.lineIndex));
+      const originalByIndex = new Map(chunk.map((context) => [context.line.lineIndex, context.line.text]));
       for (const rewrite of rewrites) {
         if (!requested.has(rewrite?.lineIndex)) continue;
         if (typeof rewrite?.text !== "string" || !rewrite.text.trim()) continue;
+        // ENFORCED, not merely requested. Asking a model to stay inside a
+        // budget in the prompt is advice; this is the check. A grounding
+        // rewrite swaps an unsupported specific for qualitative language, which
+        // makes a line shorter — one that comes back materially LONGER has
+        // padded rather than grounded, and the inflation is invisible until a
+        // segment budget fails at the production gate, after every writing role
+        // has already been paid for. Episode 4a8880e5 was held on a cold open
+        // that left the tournament inside 80-120 words and reached the gate at
+        // 149. Over budget, the original line stands: it is already grounded or
+        // already flagged, and keeping it costs nothing this pass had earned.
+        const original = originalByIndex.get(rewrite.lineIndex);
+        if (original !== undefined && countSpokenWords(rewrite.text) > rewriteWordBudget(original)) {
+          console.warn(
+            `[SelfVerify] line ${rewrite.lineIndex} rewrite REJECTED as over budget: ` +
+              `${countSpokenWords(rewrite.text)} words against a ${rewriteWordBudget(original)} ceiling ` +
+              `(original ${countSpokenWords(original)}). Keeping the original line.`
+          );
+          continue;
+        }
         output.set(rewrite.lineIndex, {
           text: rewrite.text,
           evidenceRefs: Array.isArray(rewrite.evidenceRefs) ? rewrite.evidenceRefs : undefined,
