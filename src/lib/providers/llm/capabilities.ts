@@ -315,10 +315,35 @@ const REGISTRY: ModelCapabilities[] = [
     },
   },
   {
-    // LIVE VERIFIED, and the cleanest of the six.
+    // LIVE VERIFIED BY PROBE, AND BROKEN IN PRODUCTION.
+    //
+    // The probe below is accurate and is left intact: this model answered a
+    // contract probe cleanly. Production disagrees, and production wins.
+    //
+    // Observed on the worker 2026-08-10, every occurrence in the log, no
+    // exceptions: `FAILED=unknown` in 14-27ms, which is far too fast to be
+    // inference — the request is being rejected outright. Zero successful
+    // completions. Because the failure lands as UNCLASSIFIED, the router cannot
+    // tell "this model is broken" from "try again", so it stayed in the chain
+    // and taxed every failover with an extra hop:
+    //
+    //   [LLMRouting] role=research_brief UNCLASSIFIED failure on
+    //     nvidia/deepseek-ai/deepseek-v4-pro; advancing to zai/glm-4.7-flash.
+    //     An unclassified category means the error taxonomy in errors.ts needs
+    //     a case for this response.
+    //
+    // Marked capacity-limited, which resolves to live-contract-failed and
+    // filters it out of the default chains — the same treatment its sibling
+    // deepseek-v4-flash already carries, and reversible the moment a live
+    // contract probe passes again. It stays reachable through an explicit role
+    // override for retesting.
+    //
+    // A capability record that says "verified" because a probe once passed is
+    // the same shape as every other stale guarantee in this codebase: it
+    // describes a moment, not the present.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekPro, "deepseek-v4"),
     liveContractVerified: true,
-    availability: "available",
+    availability: "capacity-limited",
     qualityTested: false,
     supportsThinking: true,
     supportsReasoningEffort: true,

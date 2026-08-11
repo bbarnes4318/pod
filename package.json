@@ -178,7 +178,8 @@
     "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts",
     "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts",
     "test:silent-failure-paths": "tsx --conditions=react-server src/scripts/testSilentFailurePaths.ts",
-    "test:rewrite-budget": "tsx --conditions=react-server src/scripts/testRewriteBudget.ts"
+    "test:rewrite-budget": "tsx --conditions=react-server src/scripts/testRewriteBudget.ts",
+    "test:routing-chain-health": "tsx --conditions=react-server src/scripts/testRoutingChainHealth.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
