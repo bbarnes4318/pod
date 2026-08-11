@@ -64,6 +64,42 @@ export function anthropicSupportsSampling(model: string): boolean {
   );
 }
 
+/**
+ * Which quality lever buildBody actually pulls for a model.
+ *
+ * buildBody is an if/else: it sends `temperature` to a sampling-capable model
+ * and only reaches the adaptive-thinking branch when sampling is NOT supported.
+ * That is fine for every model whose two classifications are mutually exclusive,
+ * and silently wrong for one that is BOTH — such a model gets temperature and no
+ * thinking, and no thinking headroom either, with nothing anywhere saying so.
+ *
+ * Extracted as a named function so the branch a model takes is a value that can
+ * be asserted, rather than a control-flow detail you have to re-derive by
+ * reading two matchers and an if/else. Behaviour is unchanged.
+ *
+ *   "sampling"          — temperature is sent; thinking is NOT enabled
+ *   "adaptive-thinking" — thinking:{type:"adaptive"} + max_tokens headroom
+ *   "neither"           — no temperature, no thinking (pre-adaptive, or a model
+ *                         that rejects sampling and has no adaptive support)
+ */
+export type AnthropicTuningMode = "sampling" | "adaptive-thinking" | "neither";
+
+export function anthropicTuningMode(model: string): AnthropicTuningMode {
+  if (anthropicSupportsSampling(model)) return "sampling";
+  if (anthropicSupportsAdaptiveThinking(model)) return "adaptive-thinking";
+  return "neither";
+}
+
+/**
+ * Models the if/else above SHADOWS: both sampling-capable and adaptive-capable,
+ * so the adaptive branch is unreachable for them. Empty is the healthy state.
+ */
+export function anthropicModelsWithShadowedThinking(): string[] {
+  return ANTHROPIC_MODEL_ALLOWLIST.filter(
+    (m) => anthropicSupportsSampling(m) && anthropicSupportsAdaptiveThinking(m)
+  );
+}
+
 /** Models where adaptive thinking is supported and worth enabling. */
 export function anthropicSupportsAdaptiveThinking(model: string): boolean {
   const m = model.toLowerCase();
@@ -146,9 +182,13 @@ export class AnthropicLLMProvider implements LLMProvider {
     if (systemBlocks.length > 0) {
       body.system = systemBlocks;
     }
-    if (this.supportsSampling()) {
+    // Switch on the NAMED mode rather than re-deriving the if/else here, so the
+    // branch this code takes and the branch anthropicTuningMode() reports can
+    // never drift apart. Same behaviour as the original if/else.
+    const mode = anthropicTuningMode(this.model);
+    if (mode === "sampling") {
       if (options.temperature !== undefined) body.temperature = options.temperature;
-    } else if (this.supportsAdaptiveThinking()) {
+    } else if (mode === "adaptive-thinking") {
       // Adaptive thinking is the quality lever on these models (sampling
       // params are gone). Not on by default on Opus 4.7/4.8 — set explicitly.
       body.thinking = { type: "adaptive" };

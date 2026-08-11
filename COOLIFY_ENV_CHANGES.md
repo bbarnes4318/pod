@@ -1,5 +1,31 @@
 # Coolify environment changes
 
+## Verify before merge — two minutes, worker app only
+
+This is the one fact nobody in this pipeline can check from code. The repository
+cannot read production env, so the four values below are unverified until someone
+looks. Open the **worker** app — `take-machine-worker`, UUID
+`xrw61e96a26n3cmhzxglxkf0` — go to **Environment Variables**, and read these keys.
+
+| Key | Should say | If it says something else |
+|---|---|---|
+| `SCRIPT_LLM_MODEL` | `claude-opus-5` | **`claude-opus-4-8` is the value to expect to find** — the local Coolify snapshot in this repo carries it. It is a valid id and will not error, but it is an OLDER generation, so scripts are being written by a previous model at the same price. Fix it to `claude-opus-5` (§1). Anything NOT in `ANTHROPIC_MODEL_ALLOWLIST` is a latent 404 — fix it before merging. |
+| `SCRIPT_LLM_PROVIDER` | `anthropic` | Empty means script writing silently falls back to `LLM_PROVIDER`, so `SCRIPT_LLM_MODEL` is being ignored entirely and the Opus 5 pin is doing nothing. |
+| `ANTHROPIC_MODEL` | `claude-opus-5`, or empty | Empty is fine — the in-code default is `claude-opus-5` as of this branch. A value here that is not on the allowlist 404s the paid backup rung at the moment it fires, which is the worst time to find out. |
+| `LLM_PRICE_ANTHROPIC_IN` / `_OUT` | `5` / `25`, or absent | Absent is the current state and is why every `[LLMCost]` line reads `cost=unpriced`. Set them (§2) to get real dollars. A **wrong** number is worse than none — it produces a confident total that is simply incorrect. |
+
+**Check the scope on each one.** Coolify variables can be saved preview-scoped and
+never reach the production container, which presents exactly like the variable
+being unset. If a value looks right in the UI but behaves as though it is missing,
+confirm through the `/envs` API rather than the UI before changing anything else.
+
+Nothing here blocks the merge on its own — but `SCRIPT_LLM_MODEL` is worth
+resolving first, because it is the difference between the show being written by
+the model that was chosen and by the one that drifted in.
+
+---
+
+
 Everything in this file must be applied **by hand in Coolify**. Production env is
 not in this repository and no code change in this branch can set any of it.
 

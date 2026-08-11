@@ -458,10 +458,17 @@ function profileTests(): void {
         const first = resolveRolePlan("fact_check").candidates[0];
         assert(first.source === "role_override", `expected role_override, got ${first.source}`);
         assert(candidateKey(first) === "zai/glm-4.7-flash", candidateKey(first));
-        // other roles are untouched
+        // Other roles are untouched. Asserted as "did NOT become the override"
+        // rather than by naming the model this role happens to resolve to — the
+        // line used to hardcode deepseek-v4-pro, and when that model was pulled
+        // from the chains the test failed while the property it is named for was
+        // never in question. A leak test should fail when something leaks, not
+        // when an unrelated chain is repaired.
+        const verificationPrimary = candidateKey(resolveRolePlan("script_verification").candidates[0]);
         assert(
-          candidateKey(resolveRolePlan("script_verification").candidates[0]) === "nvidia/deepseek-ai/deepseek-v4-pro",
-          "an override must not leak into another role"
+          verificationPrimary !== "zai/glm-4.7-flash",
+          `an override must not leak into another role — script_verification resolved to ${verificationPrimary}, ` +
+            `which is the model FACT_CHECK_LLM_* was overridden to`
         );
       }
     );
@@ -1204,10 +1211,74 @@ async function challengerTests(): Promise<void> {
         // The outline call comes first and is not part of the comparison. Match
         // on the movement prompt's own opening, not on "story spine" — the
         // movement prompt quotes the spine back, so that would match both.
-        const isOutline = !/^Write MOVEMENT /.test(o.prompt);
-        if (!isOutline) {
+        const isMovement = /^Write MOVEMENT /.test(o.prompt);
+        // THE PRIVATE-AGENDA CALL IS ITS OWN KIND, and it did not used to be.
+        // This fake classified every call as "movement or outline", so when the
+        // outline engine started generating private host agendas the agenda call
+        // was handed the OUTLINE shape and the pipeline died on "did not return a
+        // packet for: Zabala, Mulkey". The test read as a routing failure; the
+        // truth was a fake that had not kept up with a third call kind.
+        const isAgendas = !isMovement && /^Build one PRIVATE agenda/.test(o.prompt);
+        // The cold-open tournament is two more kinds again — write the three
+        // openings, then blind-rank them. Same story as the agendas call: the
+        // fake returned the outline shape and the tournament fell over on
+        // "variantDrafts is not iterable".
+        const isColdOpenWrite = !isMovement && /^Create three COMPLETELY DIFFERENT/.test(o.prompt);
+        const isColdOpenJudge = !isMovement && /^Blind-rank these/.test(o.prompt);
+        // A REPAIR IS A MOVEMENT TOO. Its prompt opens "Repair MOVEMENT", so the
+        // ^Write MOVEMENT test above misses it and it used to fall through to the
+        // outline branch — meaning every repair attempt handed back BEATS. That
+        // is why the failure read "0 spoken words after two targeted repairs":
+        // the repairs were answering with an outline. Excluded from `seen`,
+        // which compares the first-pass inputs the two routes were given.
+        const isRepair = /^Repair MOVEMENT /.test(o.prompt);
+        // The per-character rewrite pass — the fifth call kind this fake did not
+        // know about. Unhandled, it received beats and blew up on
+        // "Cannot read properties of undefined (reading 'map')" when the caller
+        // did result.lines.map(). An empty rewrite is valid and leaves the
+        // movement exactly as the primary wrote it, which is what the final
+        // assertion below needs.
+        const isCharacterPass = /^PRIVATE AGENDA:/.test(o.prompt);
+        const isOutline =
+          !isMovement && !isRepair && !isAgendas && !isColdOpenWrite && !isColdOpenJudge && !isCharacterPass;
+        if (isMovement) {
           seen.push({ who, prompt: o.prompt, systemPrompt: o.systemPrompt, maxTokens: o.maxTokens, temperature: o.temperature });
           if (behavior === "throw") throw new Error("challenger could not complete the movement");
+        }
+        if (isAgendas) {
+          return {
+            agendas: ["Zabala", "Mulkey"].map((speakerName) => ({
+              speakerName,
+              exclusiveFactResponsibility: `${speakerName}'s assigned fact`,
+              protectedBelief: `${speakerName} will not concede the premise`,
+              avoidedConcession: `${speakerName} avoids conceding the timeline`,
+              behavioralTrigger: "being told to wait for the official statement",
+              misconceptionAboutOtherHost: "assumes the other host has already decided",
+              genuineQuestion: "who signed off on the revised number",
+              privateObjective: `get the other host to concede to ${speakerName}`,
+            })),
+          } as unknown as T;
+        }
+        if (isColdOpenWrite) {
+          const coldOpenLines = (variant: string) => [
+            { lineIndex: 0, speakerName: "Zabala", text: `${variant} opening line from Zabala`, tone: "incredulous", energy: "high", pauseBefore: "none", isInterruption: false, evidenceRefs: [], isFactualClaim: false },
+            { lineIndex: 1, speakerName: "Mulkey", text: `${variant} reply from Mulkey`, tone: "dismissive", energy: "medium", pauseBefore: "beat", isInterruption: false, evidenceRefs: [], isFactualClaim: false },
+          ];
+          return {
+            variants: ["accusation", "consequence", "contradiction"].map((id) => ({ id, lines: coldOpenLines(id) })),
+          } as unknown as T;
+        }
+        if (isCharacterPass) {
+          return { lines: [] } as unknown as T;
+        }
+        if (isColdOpenJudge) {
+          return {
+            judgments: [
+              { id: "accusation", score: 90, reasons: ["opens mid-argument"] },
+              { id: "consequence", score: 70, reasons: ["slower entry"] },
+              { id: "contradiction", score: 60, reasons: ["answers too early"] },
+            ],
+          } as unknown as T;
         }
         if (isOutline) {
           return {
@@ -1221,8 +1292,56 @@ async function challengerTests(): Promise<void> {
             })),
           } as unknown as T;
         }
+        // A MOVEMENT HAS TO CLEAR THE WORD FLOOR. This used to return a single
+        // line reading "line" — one spoken word — which was fine until movement
+        // validation grew a minimum ("movement has 0 spoken words; it requires at
+        // least 394") and then retried twice and gave up. The test reported that
+        // as a routing failure; it was a fixture that had not kept up.
+        //
+        // The point of THIS test is that primary and challenger receive
+        // byte-identical INPUTS, so the output only has to be plausible enough to
+        // let the pipeline reach the comparison. Lines vary by index so a
+        // repetition check does not reject them as duplicates.
+        // SPEAKER RUNS ARE VARIED ON PURPOSE. Strict A/B alternation across ten
+        // lines with no same-speaker build and no short reactions trips the
+        // `mechanical turn shape` failure in evaluateMovementQuality — which is
+        // what actually made this movement unusable; the repairs then answered
+        // with beats and the reported symptom became "0 spoken words".
+        const speakerRun = [
+          "Zabala", "Zabala",
+          "Mulkey", "Mulkey", "Mulkey",
+          "Zabala",
+          "Mulkey",
+          "Zabala", "Zabala",
+          "Mulkey",
+        ];
+        const movementLine = (i: number) => {
+          const speaker = speakerRun[i % speakerRun.length];
+          // The writer's identity is IN the text so the splice assertion at the
+          // end can actually tell the two apart. It used to check for the exact
+          // string "line", which stopped meaning anything the moment the fixture
+          // had to grow past one word to clear the movement word floor.
+          const body = [who, ...Array.from({ length: 60 }, (_, w) => `point${i}word${w}`)].join(" ");
+          return {
+            lineIndex: i,
+            speakerName: speaker,
+            text: `${body}.`,
+            tone: speaker === "Zabala" ? "analytical" : "incredulous",
+            energy: "medium",
+            pauseBefore: "none",
+            isInterruption: false,
+            evidenceRefs: [],
+            isFactualClaim: false,
+          };
+        };
         return {
-          segments: [{ type: "topic", title: "t", lines: [{ lineIndex: 0, speakerName: "Zabala", text: "line" }] }],
+          segments: [
+            {
+              type: "topic",
+              title: "t",
+              lines: Array.from({ length: 10 }, (_, i) => movementLine(i)),
+            },
+          ],
           stateAfter: { emotionalTemperature: "warming" },
         } as unknown as T;
       },
@@ -1263,9 +1382,20 @@ async function challengerTests(): Promise<void> {
       out.challenger!.every((c) => (c.error || "").includes("could not complete")),
       "the challenger's real error must be preserved"
     );
+    // The challenger's words must never reach the episode. Each fake writes its
+    // own name into every line, so this is a real check on provenance rather
+    // than on a placeholder string.
+    const movementTexts = out.segments
+      .filter((s: any) => s.type !== "cold_open")
+      .flatMap((s: any) => (s.lines || []).map((l: any) => String(l.text || "")));
+    assert(movementTexts.length > 0, "no movement lines survived into the episode");
     assert(
-      out.segments.every((s: any) => s.lines.every((l: any) => l.text === "line")),
+      movementTexts.every((t: string) => !t.includes("challenger")),
       "the challenger's dialogue must never be spliced into the episode"
+    );
+    assert(
+      movementTexts.every((t: string) => t.includes("primary")),
+      "every movement line must have come from the primary writer"
     );
   });
 }

@@ -29,10 +29,13 @@
 import {
   ANTHROPIC_DEFAULT_MODEL,
   ANTHROPIC_MODEL_ALLOWLIST,
+  anthropicModelsWithShadowedThinking,
   anthropicSupportsAdaptiveThinking,
   anthropicSupportsSampling,
-  isAllowedAnthropicModel,
+  anthropicTuningMode,
+  type AnthropicTuningMode,
 } from "../lib/providers/llm/anthropic";
+import { isAllowedAnthropicModel } from "../lib/providers/llm/anthropic";
 import { allRegisteredModels } from "../lib/providers/llm/capabilities";
 
 let passed = 0,
@@ -49,6 +52,18 @@ function check(name: string, fn: () => void) {
 }
 function assert(c: boolean, m: string) {
   if (!c) throw new Error(m);
+}
+
+/** Assert the branch buildBody takes for a model, by name rather than by flags. */
+function assertMode(model: string, expected: AnthropicTuningMode) {
+  const got = anthropicTuningMode(model);
+  assert(
+    got === expected,
+    `${model} takes the "${got}" branch, expected "${expected}". ` +
+      (expected === "adaptive-thinking"
+        ? "This model is running WITHOUT adaptive thinking and without thinking headroom."
+        : "The request shape sent to this model has changed.")
+  );
 }
 
 /**
@@ -212,21 +227,44 @@ function main() {
 
   // ---- documented consequence of the current wiring ------------------------
 
-  check("DOCUMENTED: adaptive thinking is only sent to models that reject sampling", () => {
-    // buildBody() sends temperature when supportsSampling() is true and ONLY
-    // reaches the adaptive-thinking branch otherwise (if/else-if). So an id that
-    // is both sampling-capable and adaptive-capable — sonnet-4-6 is the one on
-    // the allowlist today — gets temperature and NO thinking, and no thinking
-    // headroom either. That is the current behaviour, asserted here so that
-    // changing it is a deliberate act rather than an accident.
+  // ---- which quality lever each model actually gets ------------------------
+  //
+  // buildBody is an if/else, so a model that is BOTH sampling-capable and
+  // adaptive-capable never reaches the thinking branch: it gets temperature, no
+  // thinking, and no thinking headroom. Worth knowing exactly who that is.
+
+  check("THE SCRIPT MODEL GETS ADAPTIVE THINKING — it is not shadowed", () => {
+    // The question that prompted this section was whether Opus 5 — the script
+    // model — was silently running without its main quality lever. It is not:
+    // Opus 5 rejects sampling params, so supportsSampling() is false, the
+    // if/else falls through to the adaptive branch, and thinking IS enabled
+    // along with LLM_THINKING_HEADROOM_TOKENS of max_tokens headroom.
+    assertMode(ANTHROPIC_DEFAULT_MODEL, "adaptive-thinking");
+    for (const m of ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-opus-4-8", "claude-opus-4-7"]) {
+      assertMode(m, "adaptive-thinking");
+    }
+  });
+
+  check("the pre-adaptive models take neither branch's thinking path", () => {
+    assertMode("claude-haiku-4-5", "sampling");
+    assertMode("claude-haiku-4-5-20251001", "sampling");
+  });
+
+  check("exactly the 4.6 pair is shadowed by the if/else, and nothing newer", () => {
+    // These two are sampling-capable AND adaptive-capable, so the adaptive
+    // branch is unreachable for them. Neither is the script model, and neither
+    // is routed to by any profile — so this is a latent trap for whoever pins
+    // SCRIPT_LLM_MODEL to one of them, not a live regression. Recorded in
+    // docs/known-defects.md rather than fixed, because changing it alters what
+    // is sent to a model and that is a decision, not a cleanup.
+    const shadowed = [...anthropicModelsWithShadowedThinking()].sort().join(",");
     assert(
-      anthropicSupportsSampling("claude-sonnet-4-6") && anthropicSupportsAdaptiveThinking("claude-sonnet-4-6"),
-      "claude-sonnet-4-6 no longer sits in both buckets — re-read buildBody()'s if/else and update this note"
+      shadowed === "claude-opus-4-6,claude-sonnet-4-6",
+      `the set of models whose adaptive thinking is shadowed by buildBody's if/else has CHANGED: [${shadowed}]. ` +
+        `If a CURRENT model has joined it, that model is now running without thinking and without thinking headroom, ` +
+        `and the if/else needs to become two independent checks. See docs/known-defects.md.`
     );
-    assert(
-      !anthropicSupportsSampling(ANTHROPIC_DEFAULT_MODEL) && anthropicSupportsAdaptiveThinking(ANTHROPIC_DEFAULT_MODEL),
-      "the default model no longer takes the adaptive-thinking branch — thinking headroom is silently no longer applied"
-    );
+    for (const m of shadowed) assertMode(m, "sampling");
   });
 
   console.log(`\n${passed} passed, ${failed} failed\n`);

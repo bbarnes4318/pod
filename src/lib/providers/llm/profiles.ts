@@ -140,10 +140,25 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // one family is unreachable the chains converge and the pipeline still
     // completes — with the convergence visible in the role trace rather than
     // hidden, because both records name the model that actually served them.
+    //
+    // HOST B'S FALLBACK ORDER IS INVERTED TOO, and that is the actual fix rather
+    // than a tidiness. The declared inversion above was not enough: Kimi is 404
+    // for this account, so with `kimi -> mistral -> zai` the filter deleted the
+    // primary and BOTH hosts resolved to Mistral first. The inversion was still
+    // there on the page, and the property it exists to create — two families
+    // writing two characters — was silently not happening. Nothing errored; the
+    // episode was just written twice by one model.
+    //
+    // Putting Z.ai ahead of Mistral in host B's fallbacks means the chain
+    // survives Kimi's absence with a DIFFERENT family still leading: host A
+    // resolves to Mistral, host B to Z.ai. The declared intent (Kimi first) is
+    // preserved for the day Kimi becomes reachable, and until then the runnable
+    // chains keep the two hosts apart. testRoutingChainHealth asserts the
+    // runnable side, not just the declared one.
     case "script_host_a_writer":
       return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
     case "script_host_b_writer":
-      return [NV.kimi(), NV.mistral(), ZAI_FLASH()];
+      return [NV.kimi(), ZAI_FLASH(), NV.mistral()];
 
     // Repairing seams between two writers is creative writing, so it stays in
     // the dialogue family rather than moving to a grader.

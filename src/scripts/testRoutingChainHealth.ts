@@ -194,24 +194,33 @@ function main() {
     });
   }
 
-  check(`${PRODUCTION_PROFILE}: the host writers still differ AFTER availability filtering`, () => {
-    // The declared assertion above is not enough on its own, and frontier is the
-    // proof: it declares mistral-then-kimi against kimi-then-mistral, but kimi is
-    // 404 for this account, so BOTH runnable chains collapse to mistral-first and
-    // one model writes both characters. Nothing errors when that happens — the
-    // episode is produced, just with two hosts in one voice. The production
-    // profile is the one that must hold at runtime, so it is asserted here and
-    // frontier's convergence is reported below rather than asserted away.
-    const a = profileChainFor(PRODUCTION_PROFILE, "script_host_a_writer");
-    const b = profileChainFor(PRODUCTION_PROFILE, "script_host_b_writer");
-    assert(a.length > 0 && b.length > 0, "a host writer role has no usable candidate at all");
-    assert(
-      key(a[0]) !== key(b[0]),
-      `both host writers RESOLVE to ${key(a[0])} once unavailable models are filtered out. The declared chains ` +
-        `invert, so this is a filtering collapse, not an edit: a model in one of the two chains has become ` +
-        `non-routable and there is no different-family replacement behind it.`
-    );
-  });
+  // ---- invariant (b), the half that actually bites -------------------------
+  //
+  // Declared distinctness is not enough, and frontier_development was the proof:
+  // it declared mistral-then-kimi against kimi-then-mistral, Kimi is 404 for this
+  // account, and BOTH runnable chains collapsed to Mistral-first. The inversion
+  // was still on the page and the property it exists to create was gone. Nothing
+  // errored — the episode was produced with two hosts in one voice, which is the
+  // exact failure the arrangement exists to prevent and the one no other test in
+  // this repo can see.
+  //
+  // So the RUNNABLE side is a hard assertion for every multi-model profile, not
+  // a printed warning. A profile whose fallback order cannot survive one model
+  // going 404 has not planned for the thing that already happened.
+  for (const profile of MULTI_MODEL_PROFILES) {
+    check(`${profile}: the host writers still differ AFTER availability filtering`, () => {
+      const a = profileChainFor(profile, "script_host_a_writer");
+      const b = profileChainFor(profile, "script_host_b_writer");
+      assert(a.length > 0 && b.length > 0, "a host writer role has no usable candidate at all");
+      assert(
+        key(a[0]) !== key(b[0]),
+        `both host writers RESOLVE to ${key(a[0])} once unavailable models are filtered out. The declared chains ` +
+          `invert, so this is a filtering COLLAPSE rather than an edit: a model in one chain went non-routable and ` +
+          `the fallback behind it is the same model as the other host's primary. Reorder that chain's fallbacks so ` +
+          `a DIFFERENT family leads when the primary is unreachable.`
+      );
+    });
+  }
 
   check("free_independent is still the single-model profile the invariants exempt", () => {
     // If this ever fails, free_independent has gained a second model and the

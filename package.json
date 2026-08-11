@@ -183,7 +183,9 @@
     "test:anthropic-model-ids": "tsx --conditions=react-server src/scripts/testAnthropicModelIds.ts",
     "test:llm-cost-pricing": "tsx --conditions=react-server src/scripts/testLlmCostPricing.ts",
     "test:prompt-cache-stability": "tsx --conditions=react-server src/scripts/testPromptCacheStability.ts",
-    "routing:staleness": "tsx --conditions=react-server src/scripts/routingStaleness.ts"
+    "routing:staleness": "tsx --conditions=react-server src/scripts/routingStaleness.ts",
+    "verify:llm-cost-render": "tsx --conditions=react-server src/scripts/verifyLlmCostRender.ts",
+    "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
