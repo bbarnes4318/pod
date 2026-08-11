@@ -348,3 +348,5 @@ ssh root@178.156.153.87 'docker ps --format "{{.Image}}  up {{.RunningFor}}" | g
 Coolify has **no FQDN configured** (`instance_settings.fqdn` is empty), so the
 hook URL is the raw IP over plain HTTP on port 8000. That port is publicly
 reachable. Setting an FQDN with TLS would let these hooks move to HTTPS.
+
+<!-- webhook delivery verified 2026-08-11 -->
