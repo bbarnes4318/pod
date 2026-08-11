@@ -391,9 +391,16 @@ function profileTests(): void {
         r[0].includes("mistral"),
         `rewrite must go to the creative dialogue model, got ${r[0]}`
       );
+      // Asserted as a PROPERTY, not as one hardcoded id. This line used to
+      // require deepseek-v4-pro by name; when that model was marked non-routable
+      // the chain correctly advanced to Nemotron and the test failed while the
+      // behaviour it is named for was still perfectly correct. Naming a specific
+      // model here makes every legitimate chain repair look like a regression.
+      const [vp, ...vrest] = v[0].split("/");
+      const caps = modelCapabilities(vp, vrest.join("/"));
       assert(
-        v[0].includes("deepseek-v4-pro"),
-        `verification must go to the reasoning model, got ${v[0]}`
+        caps.supportsThinking === true,
+        `verification must go to a reasoning-capable model, got ${v[0]} (supportsThinking=${caps.supportsThinking})`
       );
     });
   });
@@ -1656,16 +1663,27 @@ function verificationDisplayTests(): void {
       "kimi: 404 for this account"
     );
     assert(
-      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")) === "not-quality-tested",
-      "deepseek pro: the endpoint works, the model has not been quality-tested"
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")) === "broken-in-production",
+      "deepseek pro: the contract probe passed and production failed on every attempt — that is its own state, " +
+        "kept separate from the 503 case above because an operator acts on the two differently"
+    );
+    assert(
+      verificationState({
+        ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
+      }) === "not-quality-tested",
+      "restoring availability must return it to 'endpoint works, quality unproven' rather than to 'validated'"
     );
     assert(
       verificationState(modelCapabilities("nvidia", "some/model-nobody-registered")) === "unavailable-for-account",
       "an unregistered model claims nothing"
     );
+    // Both synthetic cases below must also set availability: a non-routable
+    // availability is checked FIRST and would mask the field under test.
     assert(
       verificationState({
         ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
         qualityTested: true,
       }) === "live-contract-passed",
       "quality-tested + live = the only state that means fully validated"
@@ -1674,6 +1692,7 @@ function verificationDisplayTests(): void {
     assert(
       verificationState({
         ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
         liveContractVerified: false,
       }) === "catalog-available",
       "catalog listed, live never attempted"
@@ -1749,20 +1768,29 @@ function verifiedProfileTests(): void {
       const zai = `zai/${MODEL_IDS.zai.glmFlash}`;
       const expected: Partial<Record<LLMRole, [string, string]>> = {
         topic_generation: [zai, `nvidia/${MODEL_IDS.nvidia.glm}`],
-        topic_classification: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        // deepseek-v4-pro was the declared secondary for six of these roles and
+        // is now non-routable (broken-in-production), so each got a real
+        // replacement rung rather than being left as a chain of one. Before the
+        // replacements, this map resolved topic_classification's secondary to
+        // `anthropic/(provider-default)` — the PAID backup — because filtering
+        // had emptied the free chain behind Z.ai.
+        topic_classification: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         topic_ranking: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        research_brief: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        research_brief: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
         // The five MEASURED roles — ordered by the role experiments, not by
         // intent. Changing one of these lines means overriding a measurement,
         // so the evidence in profiles.ts has to change with it.
         script_outline: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
         script_movement: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
-        script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        // GLM-5.2 takes the verification secondary, NOT Z.ai — Z.ai stays
+        // excluded from both verification chains on the schema-failure finding
+        // asserted separately below.
+        script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
         script_rewrite: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
-        fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
-        continuity_report: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, zai],
-        show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        continuity_report: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
         quality_judge: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
       };

@@ -1,5 +1,5 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
-import { recordLlmCall } from "./costLedger";
+import { estimateCostUsd, recordLlmCall } from "./costLedger";
 
 export class OpenAILLMProvider implements LLMProvider {
   name = "openai";
@@ -20,13 +20,18 @@ export class OpenAILLMProvider implements LLMProvider {
       // Measurement only: per-stage cost ledger, provider-reported counts.
       // OpenAI reports cached prompt tokens inside prompt_tokens; break them out.
       const cached = u.prompt_tokens_details?.cached_tokens || 0;
+      const tkIn = (u.prompt_tokens || 0) - cached;
+      const tkOut = u.completion_tokens || 0;
       recordLlmCall({
         provider: this.name,
         model: this.model,
-        tkIn: (u.prompt_tokens || 0) - cached,
-        tkOut: u.completion_tokens || 0,
+        tkIn,
+        tkOut,
         tkCacheRead: cached,
         durationMs,
+        // Same omission the Anthropic adapter carried: usage was recorded but
+        // never priced, so this provider could only ever log `cost=unpriced`.
+        estimatedCostUsd: estimateCostUsd(this.name, { tkIn, tkOut, tkCacheRead: cached }, false),
       });
     }
   }

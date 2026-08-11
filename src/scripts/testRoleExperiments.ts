@@ -36,6 +36,7 @@ import { LLMProvider } from "../lib/providers/llm/interface";
 import { instantiateProvider, providerCredentialPresent, resolveLegacyFamily } from "../lib/providers/llm/routing";
 import {
   MODEL_IDS,
+  isRegisteredModel,
   modelCapabilities,
   shortVerificationLabel,
   verificationState,
@@ -96,11 +97,68 @@ function incumbent(family: "script" | "verify"): Candidate {
   };
 }
 
+/**
+ * HOST-B LATENCY CANDIDATES — measured, not promoted.
+ *
+ * host_b_writer leads with Mistral Medium 3.5 for one reason: keeping two model
+ * FAMILIES writing the two hosts is what makes "the hosts do not sound like one
+ * model" structural rather than aspirational. Mistral measured judge 76 against
+ * Z.ai's 79 — close enough to live with — but 536 s per episode against 143 s.
+ * That latency is the entire cost of the arrangement, and it is being paid for a
+ * quality difference that does not exist.
+ *
+ * The obvious replacement was Kimi K2.6 via NVIDIA, which is 404 for this
+ * account. Two DIRECT integrations already exist for models in other families —
+ * Moonshot (Kimi K3) and xAI (Grok) — and neither has ever been measured on this
+ * role. They are candidates here so that the question can be answered with a
+ * latency column instead of an argument.
+ *
+ * They are added to the MEASUREMENT only. The host_b_writer chain is not touched
+ * by this file, and promotion happens on a human reading of the judge and
+ * latency columns against the documented promotion rule in profiles.ts.
+ */
+const HOST_B_LATENCY_CANDIDATES: Array<{ provider: string; envKey: string; model: () => string }> = [
+  { provider: "moonshot", envKey: "MOONSHOT_API_KEY", model: () => process.env.MOONSHOT_MODEL || MODEL_IDS.moonshot.kimiK3 },
+  { provider: "xai", envKey: "XAI_API_KEY", model: () => process.env.XAI_MODEL || MODEL_IDS.xai.grok43 },
+];
+
 const DIALOGUE_CANDIDATES = (): Candidate[] => [
   nv(MODEL_IDS.nvidia.mistral),
   zaiFlash(),
+  ...HOST_B_LATENCY_CANDIDATES.map((c) => ({
+    label: `${c.provider}/${c.model()}`,
+    provider: c.provider,
+    model: c.model(),
+  })),
   incumbent("script"),
 ];
+
+/**
+ * Say plainly which host-B candidates can and cannot run, BEFORE the experiment
+ * starts rather than as a skipped row in a table two minutes later.
+ *
+ * An unmeasured candidate and a candidate that measured badly look identical in
+ * a results table if you are not reading carefully, and that confusion is the
+ * one this whole harness exists to prevent.
+ */
+function reportHostBCandidates(): void {
+  const missing = HOST_B_LATENCY_CANDIDATES.filter((c) => !process.env[c.envKey]?.trim());
+  const present = HOST_B_LATENCY_CANDIDATES.filter((c) => process.env[c.envKey]?.trim());
+  console.log("\n  HOST-B LATENCY EXPERIMENT (measurement only — this run promotes nothing):");
+  for (const c of present) console.log(`    ${`${c.provider}/${c.model()}`.padEnd(44)} key present — will be measured`);
+  for (const c of missing) {
+    console.log(
+      `    ${`${c.provider}/${c.model()}`.padEnd(44)} SKIPPED — ${c.envKey} is not set in this environment.`
+    );
+  }
+  if (missing.length) {
+    console.log(
+      `    Set ${missing.map((c) => c.envKey).join(" and ")} on the WORKER service to include ` +
+        `${missing.length === 1 ? "it" : "them"}.\n` +
+        `    A skipped candidate is UNMEASURED. It is not a loss, and it must never be read as one.`
+    );
+  }
+}
 
 /**
  * Models excluded from the comparison because their ENDPOINT is unreachable, not
@@ -119,7 +177,9 @@ function unavailableCandidates(): { label: string; state: string; reason: string
       reason:
         caps.availability === "unavailable-for-account"
           ? "404 Not found for this account — the ID does not resolve for the credential in use"
-          : "503 ResourceExhausted — the endpoint would not serve this account",
+          : caps.availability === "broken-in-production"
+            ? "a contract probe passed and real pipeline traffic then failed on every attempt"
+            : "503 ResourceExhausted — the endpoint would not serve this account",
     });
   }
   return out;
@@ -173,6 +233,12 @@ function resolveCandidates(candidates: Candidate[]): Resolved[] {
 /** Verification state of a candidate's model, printed alongside every result. */
 function verificationLabel(c: Candidate): string {
   if (!c.model) return "n/a";
+  // An unregistered model synthesizes to `unavailable-for-account`, which in the
+  // results table renders as UNAVAILABLE and reads as "the provider 404'd us".
+  // For the host-B candidates that is simply false — Moonshot and xAI have
+  // working integrations and no capability record yet. "unregistered" says the
+  // true thing: nothing is claimed about this model either way.
+  if (!isRegisteredModel(c.provider, c.model)) return "unregistered";
   return shortVerificationLabel(verificationState(modelCapabilities(c.provider, c.model)));
 }
 
@@ -188,6 +254,15 @@ function table(rows: Record<string, string | number>[], columns: string[]): void
 }
 
 function writeArtifact(name: string, data: unknown): void {
+  // A dry run measures NOTHING. Writing an artifact anyway leaves a file whose
+  // mtime says "measured just now" and whose contents are all skips — and
+  // `npm run routing:staleness` reads exactly those mtimes to decide whether the
+  // routing assignments still rest on recent evidence. A dry run must not be
+  // able to reset that clock.
+  if (DRY_RUN) {
+    console.log(`\n  artifact: NOT written (${name}) — --dry-run measured nothing, so there is nothing to record.`);
+    return;
+  }
   fs.mkdirSync(ARTIFACT_DIR, { recursive: true });
   const p = path.join(ARTIFACT_DIR, name);
   fs.writeFileSync(p, JSON.stringify(data, null, 2));
@@ -243,6 +318,7 @@ async function dialogueExperiment(): Promise<void> {
   );
 
   reportUnavailable();
+  reportHostBCandidates();
   const resolved = resolveCandidates(DIALOGUE_CANDIDATES());
   // One outline model for ALL candidates, so the dialogue comparison is not
   // contaminated by different episode plans.
@@ -448,6 +524,55 @@ async function dialogueExperiment(): Promise<void> {
   );
 
   writeArtifact("role-experiment-dialogue.json", { experiment: "dialogue", runs, rollup, artifacts });
+
+  // ---- host-B latency arm, recorded separately ---------------------------
+  //
+  // Same schema as the dialogue artifact (runs + rollup), narrowed to the
+  // question it answers: can host_b_writer keep a second model family without
+  // paying Mistral's latency? Written even when every candidate skipped, because
+  // "we could not measure this" is itself the answer on that run and a missing
+  // file is indistinguishable from a forgotten one.
+  const hostBLabels = new Set(
+    HOST_B_LATENCY_CANDIDATES.map((c) => `${c.provider}/${c.model()}`)
+  );
+  const incumbentLabels = new Set([`nvidia/${MODEL_IDS.nvidia.mistral}`, `zai/${MODEL_IDS.zai.glmFlash}`]);
+  const relevant = (label: string) => hostBLabels.has(label) || incumbentLabels.has(label);
+  const measured = rollup.filter(
+    (r) => hostBLabels.has(String(r.candidate)) && String(r.completion) !== "0/3"
+  );
+
+  writeArtifact("role-experiment-dialogue-hostb.json", {
+    experiment: "dialogue-hostb",
+    question:
+      "host_b_writer leads with Mistral Medium 3.5 to keep a second model family writing the second host. " +
+      "Mistral measured judge 76 / 536 s against Z.ai's 79 / 143 s, so the arrangement buys family diversity " +
+      "and pays for it entirely in latency. Can a different family hold the role at a lower latency?",
+    promotionRule:
+      "NOT decided by this file. profiles.ts documents the promotion rule; a candidate is promoted only on a " +
+      "human reading of the judge and latency columns. This artifact records numbers, not a decision.",
+    candidatesConsidered: HOST_B_LATENCY_CANDIDATES.map((c) => ({
+      label: `${c.provider}/${c.model()}`,
+      envKey: c.envKey,
+      keyPresent: Boolean(process.env[c.envKey]?.trim()),
+    })),
+    incumbents: {
+      hostBPrimary: `nvidia/${MODEL_IDS.nvidia.mistral}`,
+      hostAPrimary: `zai/${MODEL_IDS.zai.glmFlash}`,
+      note: "Mistral judge 76 / 536 s and Z.ai judge 79 / 143 s are the 2026-07-26 dialogue figures, not this run.",
+    },
+    // Reading order matters: firstMv x3 is the episode floor, because movements
+    // are sequential. A candidate that wins on judge and loses on firstMv has
+    // not won.
+    rollup: rollup.filter((r) => relevant(String(r.candidate))),
+    runs: runs.filter((r) => relevant(String(r.candidate))),
+    recommendation: measured.length
+      ? `MEASURED: ${measured
+          .map((r) => `${r.candidate} judge ${r.judge} firstMv ${r.firstMv}s episode ${r.secs}s`)
+          .join("; ")}. Compare against Mistral in the rollup above and read latency first — a candidate must ` +
+        `clear the judge bar AND beat 536 s to justify replacing it. Promotion is Jimmy's call.`
+      : "NOT MEASURED on this run — no host-B candidate had a credential present. The host_b_writer chain is " +
+        "unchanged and Mistral remains primary. This is an absence of evidence, not evidence of a tie.",
+  });
 }
 
 // ---------------------------------------------------------------- outline

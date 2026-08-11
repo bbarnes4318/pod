@@ -134,25 +134,101 @@ export function currentLlmStage(): string {
  * produces a confident dollar figure that is simply wrong. Configure
  * LLM_PRICE_<PROVIDER>_IN / _OUT (USD per 1M tokens) to get estimates.
  */
-function rateFor(provider: string): { in: number; out: number } | null {
-  const p = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
-  const inRate = Number(process.env[`LLM_PRICE_${p}_IN`]);
-  const outRate = Number(process.env[`LLM_PRICE_${p}_OUT`]);
-  if (!Number.isFinite(inRate) || !Number.isFinite(outRate)) return null;
-  return { in: inRate, out: outRate };
+export interface LlmRates {
+  in: number;
+  out: number;
+  /** Per-1M rate for cache-READ input tokens. */
+  cacheRead: number;
+  /** Per-1M rate for cache-WRITE (cache-creation) input tokens. */
+  cacheWrite: number;
 }
 
-/** USD estimate, or null when the endpoint is unpriced or no rate is configured. */
+/**
+ * Cache tokens are NOT priced at the input rate, and treating them as if they
+ * were is wrong in both directions at once: a cache read is far cheaper than
+ * fresh input and a cache write is more expensive. Anthropic's published
+ * multipliers are 0.1x input for a read and 1.25x input for a 5-minute write —
+ * so a workload that caches heavily looks ~10x more expensive than it is if
+ * reads are billed as input, which would make the caching work in this same
+ * change set look like a regression on the very dashboard meant to measure it.
+ *
+ * These are DEFAULTS applied only when the operator has not configured an
+ * explicit rate. An operator who sets LLM_PRICE_<PROVIDER>_CACHE_READ overrides
+ * them; anyone whose provider prices cache tokens differently sets that rate
+ * rather than inheriting an Anthropic assumption.
+ */
+const CACHE_READ_MULTIPLIER = 0.1;
+const CACHE_WRITE_MULTIPLIER = 1.25;
+
+/**
+ * Per-1M-token rates, supplied by the OPERATOR.
+ *
+ * `_IN` and `_OUT` are required together — a provider with one and not the
+ * other is a half-configured rate, and half a rate produces a confidently wrong
+ * total rather than an honest "unpriced". The two cache rates are optional and
+ * fall back to the multipliers above.
+ */
+function rateFor(provider: string): LlmRates | null {
+  const p = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const num = (suffix: string): number | null => {
+    const raw = process.env[`LLM_PRICE_${p}_${suffix}`];
+    // An unset variable and an empty one both mean "not configured". Number("")
+    // is 0, which would otherwise read as a genuine zero rate.
+    if (raw === undefined || raw.trim() === "") return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const inRate = num("IN");
+  const outRate = num("OUT");
+  if (inRate === null || outRate === null) return null;
+  return {
+    in: inRate,
+    out: outRate,
+    cacheRead: num("CACHE_READ") ?? inRate * CACHE_READ_MULTIPLIER,
+    cacheWrite: num("CACHE_WRITE") ?? inRate * CACHE_WRITE_MULTIPLIER,
+  };
+}
+
+/** Resolved rates for a provider, or null when unpriced. Exported for tests. */
+export function resolvedRatesFor(provider: string): LlmRates | null {
+  return rateFor(provider);
+}
+
+export interface CostBasis {
+  tkIn: number;
+  tkOut: number;
+  tkCacheRead?: number;
+  tkCacheWrite?: number;
+}
+
+/**
+ * USD estimate, or null when the endpoint is unpriced or no rate is configured.
+ *
+ * Accepts either the four-argument positional form used before cache pricing
+ * existed, or a CostBasis object. The positional form is kept because prices
+ * with no cache tokens are still the common case and rewriting every call site
+ * to build an object would have been churn, not clarity.
+ */
 export function estimateCostUsd(
   provider: string,
-  tkIn: number,
-  tkOut: number,
-  unpriced: boolean
+  basis: CostBasis | number,
+  tkOutOrUnpriced?: number | boolean,
+  unpricedArg?: boolean
 ): number | null {
+  const b: CostBasis =
+    typeof basis === "number" ? { tkIn: basis, tkOut: Number(tkOutOrUnpriced) || 0 } : basis;
+  const unpriced = typeof basis === "number" ? Boolean(unpricedArg) : Boolean(tkOutOrUnpriced);
+
   if (unpriced) return null;
   const rate = rateFor(provider);
   if (!rate) return null;
-  return (tkIn * rate.in + tkOut * rate.out) / 1_000_000;
+  return (
+    ((b.tkIn || 0) * rate.in +
+      (b.tkOut || 0) * rate.out +
+      (b.tkCacheRead || 0) * rate.cacheRead +
+      (b.tkCacheWrite || 0) * rate.cacheWrite) /
+    1_000_000
+  );
 }
 
 export function recordLlmCall(rec: {

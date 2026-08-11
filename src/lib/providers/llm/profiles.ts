@@ -16,7 +16,7 @@
 // Model ids are resolved through env so a catalog rename never requires a code
 // change. See capabilities.ts for the verified/unverified honesty rule.
 
-import { MODEL_IDS, isRoutableByDefault, modelCapabilities } from "./capabilities";
+import { MODEL_IDS, isRoutableByDefault, modelCapabilities, type ModelCapabilities } from "./capabilities";
 import { ALL_ROLES, LLMRole } from "./roles";
 import { readRoutingEnv } from "./routingEnv";
 
@@ -60,6 +60,15 @@ const ZAI_FLASH = (): ProviderModelRef => ({
   provider: "zai",
   model: readRoutingEnv("ZAI_MODEL_GLM_FLASH") || MODEL_IDS.zai.glmFlash,
 });
+
+/**
+ * The role-experiment run whose measurements order the five measured roles
+ * below. Extractable for the same reason the probe date is — see
+ * LLM_CONTRACT_PROBE_DATE. Re-running `npm run test:role-experiments` means
+ * updating this in the same commit, or `npm run routing:staleness` will keep
+ * reporting the age of a run that has been superseded.
+ */
+export const ROLE_EXPERIMENT_DATE = "2026-07-26";
 
 /**
  * LIVE CONTRACT FINDINGS — 2026-07-26 (artifacts/*-contract-report.json)
@@ -267,7 +276,11 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       return [ZAI_FLASH(), NV.glm()];
     case "topic_classification":
     case "show_notes":
-      return [ZAI_FLASH(), NV.deepseekPro()];
+      // Nemotron replaces deepseek-v4-pro as the secondary. Without it these two
+      // filter down to Z.ai alone, and Z.ai is the model that was rate-limited
+      // in production — a single-candidate chain whose one member is the known
+      // flaky one is not a chain.
+      return [ZAI_FLASH(), NV.nemotron()];
     case "episode_metadata":
       return [ZAI_FLASH(), NV.mistral()];
 
@@ -282,11 +295,17 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       // minutes before returning an empty response or timing out. Nemotron was
       // the fallback that actually completed the same briefs, so it must be the
       // primary instead of paying the known-failing attempt on every topic.
-      return [NV.nemotron(), NV.deepseekPro(), ZAI_FLASH()];
+      // The middle rung is now GLM-5.2 rather than deepseek-v4-pro: same
+      // reasoning-capable tier, and it is a THIRD family, so the chain does not
+      // collapse to one lab if Nemotron has a bad day.
+      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
 
-    // Literal transcript audit.
+    // Literal transcript audit. deepseek-v4-pro held the PRIMARY here and is
+    // now non-routable, so every continuity report was starting one guaranteed
+    // failure down. Z.ai leads (cheap, and this is a literal audit rather than
+    // a judgement call) with Nemotron behind it.
     case "continuity_report":
-      return [NV.deepseekPro(), ZAI_FLASH()];
+      return [ZAI_FLASH(), NV.nemotron()];
 
     // Never shares a model with script_movement.
     case "quality_judge":
@@ -328,16 +347,22 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     case "script_host_b_writer":
       return [NV.mistral(), ZAI_FLASH()];
 
-    // Literal transcript audit of callbacks and running bits.
+    // Literal transcript audit of callbacks and running bits. Same story as
+    // continuity_report: deepseek-v4-pro was primary and is now non-routable.
     case "script_continuity_editor":
-      return [NV.deepseekPro(), ZAI_FLASH()];
+      return [ZAI_FLASH(), NV.nemotron()];
 
     // Grading against evidence, independent of the writer. Nemotron: 5/5
-    // in-scope, 0 false positives, 13 s. DeepSeek: 0 false positives but 468 s.
-    // Z.ai is excluded — its structured response failed after repair.
+    // in-scope, 0 false positives, 13 s. DeepSeek measured 0 false positives at
+    // 468 s and was the secondary on that strength; it is now non-routable, so
+    // GLM-5.2 takes the rung. Z.ai stays deliberately excluded from BOTH
+    // verification chains — its structured response omitted required top-level
+    // fields even after a repair pass, and a reviewer that cannot return its
+    // verdict cannot gate a publish. That exclusion is why the replacement had
+    // to be GLM-5.2 rather than the Z.ai flash model used elsewhere.
     case "script_verification":
     case "fact_check":
-      return [NV.nemotron(), NV.deepseekPro()];
+      return [NV.nemotron(), NV.glm()];
   }
 }
 
@@ -359,6 +384,33 @@ export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole):
       // No profile-supplied candidates: legacy resolves to today's grouped
       // configuration; custom resolves to explicit role overrides.
       return [];
+  }
+}
+
+/**
+ * Why a candidate was removed, in words an operator can act on.
+ *
+ * Each non-routable state gets its OWN sentence because they call for different
+ * responses: a 404 is a credential or catalog problem, a 503 clears itself, and
+ * a model that passes a probe but fails every real request needs a human to
+ * decide which of the two measurements to believe. These were once collapsed
+ * into one string, and the result was a chain filter reporting "503 capacity"
+ * for a model that had never returned a 503.
+ */
+function filterReasonFor(availability: ModelCapabilities["availability"]): string {
+  switch (availability) {
+    case "unavailable-for-account":
+      return "the model ID does not resolve for the credential in use (404) — reachable only via an explicit role override";
+    case "capacity-limited":
+      return "the endpoint would not serve this account (503 capacity) — reachable only via an explicit role override";
+    case "broken-in-production":
+      return (
+        "a contract probe passed but real pipeline traffic failed on every attempt (see the capability record for the " +
+        "observation and its date) — reachable only via an explicit role override, which is how it gets retested"
+      );
+    case "available":
+      // Not reachable: available candidates never enter the filtered list.
+      return "routable";
   }
 }
 
@@ -407,10 +459,7 @@ export function filterProfileChain(
     filtered.push({
       ref,
       availability: caps.availability,
-      reason:
-        caps.availability === "unavailable-for-account"
-          ? "the model ID does not resolve for the credential in use (404) — reachable only via an explicit role override"
-          : "the endpoint would not serve this account (503 capacity) — reachable only via an explicit role override",
+      reason: filterReasonFor(caps.availability),
     });
   }
   return { usable, filtered };

@@ -1,5 +1,83 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
-import { recordLlmCall } from "./costLedger";
+import { estimateCostUsd, recordLlmCall } from "./costLedger";
+
+/**
+ * THE ONE PLACE an Anthropic model id is declared valid.
+ *
+ * An id that is not on this list is not merely unusual — it 404s, and it does so
+ * at the moment the paid backup rung actually fires, which is the worst possible
+ * time to discover a typo. `npm run test:anthropic-model-ids` asserts that the
+ * in-code default and every id this repo configures is a member, so an invalid
+ * default cannot ship silently. Adding a model means adding it HERE and adding a
+ * classification row to the same test.
+ *
+ * Verified against Anthropic's current model catalog on 2026-08-11. The 5 family
+ * (opus/sonnet/fable) and Haiku 4.5 are current; the 4.6/4.8 entries are older
+ * generations that remain served and are legal to pin deliberately.
+ */
+export const ANTHROPIC_MODEL_ALLOWLIST = [
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+] as const;
+
+export type AnthropicModelId = (typeof ANTHROPIC_MODEL_ALLOWLIST)[number];
+
+/**
+ * The model used when neither a call-site override nor ANTHROPIC_MODEL is set.
+ *
+ * Opus 5 deliberately: this repository's settled decision is that Opus 5 writes
+ * scripts. It is a current, valid id ($5/$25 per MTok) — an audit note claiming
+ * otherwise was checked against the catalog on 2026-08-11 and did not hold.
+ */
+export const ANTHROPIC_DEFAULT_MODEL: AnthropicModelId = "claude-opus-5";
+
+export function isAllowedAnthropicModel(model: string): boolean {
+  return (ANTHROPIC_MODEL_ALLOWLIST as readonly string[]).includes(model);
+}
+
+/**
+ * Opus 4.7+, Opus 5, Sonnet 5, and Fable 5 reject sampling params (400).
+ * Matched by substring: "opus-5" cannot collide with "opus-4-5", and the
+ * dated legacy ids (opus-4-5-20251101) keep their own separate entries.
+ * A model NOT listed here is assumed to be an older one that still accepts
+ * temperature — adding a new frontier model means adding it to both lists.
+ *
+ * Free function rather than a method so the classification can be asserted
+ * per-id without constructing a provider (which requires a live credential).
+ */
+export function anthropicSupportsSampling(model: string): boolean {
+  const m = model.toLowerCase();
+  return !(
+    m.includes("opus-4-7") ||
+    m.includes("opus-4-8") ||
+    m.includes("opus-5") ||
+    m.includes("sonnet-5") ||
+    m.includes("fable") ||
+    m.includes("mythos")
+  );
+}
+
+/** Models where adaptive thinking is supported and worth enabling. */
+export function anthropicSupportsAdaptiveThinking(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.includes("opus-4-6") ||
+    m.includes("opus-4-7") ||
+    m.includes("opus-4-8") ||
+    m.includes("opus-5") ||
+    m.includes("sonnet-4-6") ||
+    m.includes("sonnet-5") ||
+    m.includes("fable") ||
+    m.includes("mythos")
+  );
+}
 
 /**
  * Anthropic Claude provider, hardened for modern models (Opus 5, Opus 4.7/4.8,
@@ -30,45 +108,21 @@ export class AnthropicLLMProvider implements LLMProvider {
       throw new Error("[Anthropic] Missing or default ANTHROPIC_API_KEY environment variable. Set ANTHROPIC_API_KEY to use Claude for script generation.");
     }
     this.apiKey = key;
-    this.model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-opus-5";
+    this.model = modelOverride || process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL;
   }
 
   getAccumulatedUsage(): LLMUsage {
     return { ...this.usage };
   }
 
-  /**
-   * Opus 4.7+, Opus 5, Sonnet 5, and Fable 5 reject sampling params (400).
-   * Matched by substring: "opus-5" cannot collide with "opus-4-5", and the
-   * dated legacy ids (opus-4-5-20251101) keep their own separate entries.
-   * A model NOT listed here is assumed to be an older one that still accepts
-   * temperature — adding a new frontier model means adding it to both lists.
-   */
+  /** See anthropicSupportsSampling — the classification lives at module scope
+   *  so it can be asserted per-id without a live credential. */
   private supportsSampling(): boolean {
-    const m = this.model.toLowerCase();
-    return !(
-      m.includes("opus-4-7") ||
-      m.includes("opus-4-8") ||
-      m.includes("opus-5") ||
-      m.includes("sonnet-5") ||
-      m.includes("fable") ||
-      m.includes("mythos")
-    );
+    return anthropicSupportsSampling(this.model);
   }
 
-  /** Models where adaptive thinking is supported and worth enabling. */
   private supportsAdaptiveThinking(): boolean {
-    const m = this.model.toLowerCase();
-    return (
-      m.includes("opus-4-6") ||
-      m.includes("opus-4-7") ||
-      m.includes("opus-4-8") ||
-      m.includes("opus-5") ||
-      m.includes("sonnet-4-6") ||
-      m.includes("sonnet-5") ||
-      m.includes("fable") ||
-      m.includes("mythos")
-    );
+    return anthropicSupportsAdaptiveThinking(this.model);
   }
 
   private buildBody(options: GenerateTextOptions, systemPrompt: string | undefined): Record<string, any> {
@@ -144,14 +198,29 @@ export class AnthropicLLMProvider implements LLMProvider {
             this.usage.outputTokens += u.output_tokens || 0;
             this.usage.requestCount += 1;
             // Measurement only: per-stage cost ledger, provider-reported counts.
+            const tkIn = u.input_tokens || 0;
+            const tkOut = u.output_tokens || 0;
+            const tkCacheRead = u.cache_read_input_tokens || 0;
+            const tkCacheWrite = u.cache_creation_input_tokens || 0;
             recordLlmCall({
               provider: this.name,
               model: this.model,
-              tkIn: u.input_tokens || 0,
-              tkOut: u.output_tokens || 0,
-              tkCacheRead: u.cache_read_input_tokens || 0,
-              tkCacheWrite: u.cache_creation_input_tokens || 0,
+              tkIn,
+              tkOut,
+              tkCacheRead,
+              tkCacheWrite,
               durationMs: Date.now() - startedAt,
+              // This provider previously recorded no cost at all, so every
+              // Anthropic call logged `cost=unpriced` no matter how the operator
+              // configured LLM_PRICE_ANTHROPIC_*. Anthropic is the one PAID rung
+              // in the chain, which made the unpriced calls exactly the ones
+              // worth pricing. `unpriced: false` is not an assumption — it is
+              // what capabilities.ts already declares for this provider.
+              estimatedCostUsd: estimateCostUsd(
+                this.name,
+                { tkIn, tkOut, tkCacheRead, tkCacheWrite },
+                false
+              ),
             });
           }
           return data;

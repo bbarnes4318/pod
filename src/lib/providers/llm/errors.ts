@@ -49,8 +49,20 @@ export type LlmErrorCategory =
   | "unsupported_parameter"
   // ---- billing: the account needs funding, and only a human can do that ----
   | "insufficient_credit"
+  // ---- the endpoint refused instantly and said nothing ----
+  | "endpoint_rejected_fast"
   // ---- unclassifiable ----
   | "unknown";
+
+/**
+ * Below this, a failed request did not run inference — nothing generated a
+ * token in the time available, so the endpoint rejected the request outright.
+ *
+ * 50ms is deliberately generous. The observed case (deepseek-v4-pro, 2026-08-10)
+ * failed in 14-27ms; the slowest plausible real completion is orders of
+ * magnitude above this, so the threshold does not need to be tight to be safe.
+ */
+export const IMPLAUSIBLY_FAST_FAILURE_MS = 50;
 
 /** Categories that are safe to retry against the SAME provider/model. */
 const SAME_ENDPOINT_RETRYABLE: ReadonlySet<LlmErrorCategory> = new Set<LlmErrorCategory>([
@@ -80,6 +92,13 @@ const CONTINUE_TO_NEXT_CANDIDATE: ReadonlySet<LlmErrorCategory> = new Set<LlmErr
   "output_limit",
   "structured_output_invalid_after_repair",
   "quota_exhausted",
+  // Advance, but deliberately NOT in the retry set above. An endpoint that
+  // refused in under 50ms will refuse the next request in under 50ms too, so
+  // retrying it is guaranteed waste — while the NEXT candidate is exactly what
+  // should run. This is the same verdict `unknown` already got from the policy's
+  // default branch; the difference is that it is now named, so a model failing
+  // this way is visible as broken rather than filed under "unclassifiable".
+  "endpoint_rejected_fast",
 ]);
 
 /** Categories that stop the chain: no provider swap can fix them. */
@@ -313,7 +332,8 @@ export function namedUnsupportedField(body: string, sentFields: string[]): strin
 export function categorizeHttpFailure(
   status: number,
   body: string,
-  sentFields: string[] = []
+  sentFields: string[] = [],
+  elapsedMs?: number
 ): LlmErrorCategory {
   const b = (body || "").toLowerCase();
 
@@ -392,11 +412,36 @@ export function categorizeHttpFailure(
   if (status === 502 || status === 504) return "temporary_unavailable";
   if (status >= 500) return "provider_internal_error";
 
+  return unknownOrRejectedFast(body, elapsedMs);
+}
+
+/**
+ * Last resort: distinguish "we cannot classify this" from "the endpoint refused
+ * instantly and told us nothing".
+ *
+ * Applied ONLY where the answer would otherwise be `unknown`, so it can never
+ * override a real classification — a genuine 429 that happens to come back in
+ * 20ms is still a rate limit. Two conditions, both required: implausibly fast,
+ * and no body to read. A fast failure that DID explain itself is not this case;
+ * the right fix there is a new rule above, not this fallback.
+ *
+ * The distinction earns its place because the two call for opposite responses.
+ * `unknown` means "the taxonomy in this file needs a case" — a code fix.
+ * `endpoint_rejected_fast`, seen repeatedly on one model, means that model is
+ * not serving this account at all — a capability-record fix, and the reason
+ * deepseek-v4-pro sat in the chain for weeks costing a guaranteed-losing hop on
+ * every failover while its record still read "LIVE VERIFIED".
+ */
+function unknownOrRejectedFast(body: string, elapsedMs?: number): LlmErrorCategory {
+  const noContext = (body || "").trim().length === 0;
+  if (typeof elapsedMs === "number" && elapsedMs < IMPLAUSIBLY_FAST_FAILURE_MS && noContext) {
+    return "endpoint_rejected_fast";
+  }
   return "unknown";
 }
 
 /** Map a thrown network/abort error onto a category. */
-export function categorizeNetworkFailure(err: unknown): LlmErrorCategory {
+export function categorizeNetworkFailure(err: unknown, elapsedMs?: number): LlmErrorCategory {
   const msg = String((err as Error)?.message || err || "").toLowerCase();
   const name = String((err as Error)?.name || "");
   if (name === "AbortError" || /aborted|timeout|timed out/.test(msg)) return "timeout";
@@ -404,7 +449,9 @@ export function categorizeNetworkFailure(err: unknown): LlmErrorCategory {
     return "network_error";
   }
   if (err instanceof TypeError) return "programming_error";
-  return "unknown";
+  // A transport error carries no HTTP body, so the body condition is vacuous
+  // here and timing is the only signal available.
+  return unknownOrRejectedFast("", elapsedMs);
 }
 
 /**
@@ -430,6 +477,13 @@ export function operatorAction(category: LlmErrorCategory): string | null {
       return "The model id is not served by this provider. Correct the route's _LLM_MODEL.";
     case "quota_exhausted":
       return "A free-tier allowance is spent. Wait for the window to reset or route this role elsewhere.";
+    case "endpoint_rejected_fast":
+      return (
+        `The endpoint refused in under ${IMPLAUSIBLY_FAST_FAILURE_MS}ms with an empty body — no inference ran. ` +
+        "Once is noise; repeatedly on the same model means that model is not serving this account, whatever its " +
+        "capability record says. Set its availability to `broken-in-production` in capabilities.ts so the default " +
+        "chains stop paying a guaranteed-losing attempt on every failover, and re-probe before restoring it."
+      );
     default:
       return null;
   }

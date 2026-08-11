@@ -179,7 +179,11 @@
     "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts",
     "test:silent-failure-paths": "tsx --conditions=react-server src/scripts/testSilentFailurePaths.ts",
     "test:rewrite-budget": "tsx --conditions=react-server src/scripts/testRewriteBudget.ts",
-    "test:routing-chain-health": "tsx --conditions=react-server src/scripts/testRoutingChainHealth.ts"
+    "test:routing-chain-health": "tsx --conditions=react-server src/scripts/testRoutingChainHealth.ts",
+    "test:anthropic-model-ids": "tsx --conditions=react-server src/scripts/testAnthropicModelIds.ts",
+    "test:llm-cost-pricing": "tsx --conditions=react-server src/scripts/testLlmCostPricing.ts",
+    "test:prompt-cache-stability": "tsx --conditions=react-server src/scripts/testPromptCacheStability.ts",
+    "routing:staleness": "tsx --conditions=react-server src/scripts/routingStaleness.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

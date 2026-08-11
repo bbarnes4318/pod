@@ -24,6 +24,8 @@ import {
   type StorageProbeResult,
   type WorkerHealthResult,
 } from "../lib/services/readinessProbes";
+import { describeEvidenceAge, STALENESS_LIMIT_DAYS } from "../lib/providers/llm/routingEvidence";
+import { currentRoutingStaleness } from "./routingStaleness";
 
 let failed = 0;
 async function check(name: string, fn: () => void | Promise<void>) {
@@ -509,6 +511,30 @@ async function main() {
     assert.ok(!json.includes(FAKE_SECRET), "the serialized report leaked a secret value");
     assert.ok(!text.includes(FAKE_SECRET), "the rendered report leaked a secret value");
   });
+
+  // ---- routing-evidence freshness: reported, never enforced ---------------
+  //
+  // Stale evidence is a reason to re-measure, not a reason to stop shipping.
+  // A staleness check that blocks a release gets suppressed within a week, and
+  // a suppressed check is worse than no check — so this prints and moves on.
+  // `npm run routing:staleness` is the same evaluation with a nonzero exit, for
+  // anyone who wants it to be enforcing somewhere.
+  console.log("\n  -- routing evidence freshness (WARNING only — never fails this suite) --");
+  {
+    const ages = currentRoutingStaleness();
+    for (const age of ages) console.log(`  ${describeEvidenceAge(age)}`);
+    const stale = ages.filter((a) => a.stale);
+    if (stale.length) {
+      console.log(
+        `\n  WARNING: ${stale.length} of ${ages.length} routing-evidence sources are older than ` +
+          `${STALENESS_LIMIT_DAYS} days. The assignments they justify are not wrong — nothing has\n` +
+          `  re-checked them. Refresh with: ${[...new Set(stale.map((s) => s.source.refreshWith))].join(" ; ")}\n` +
+          `  Run \`npm run routing:staleness\` for the full breakdown.`
+      );
+    } else {
+      console.log(`\n  All ${ages.length} routing-evidence sources are within ${STALENESS_LIMIT_DAYS} days.`);
+    }
+  }
 
   console.log(
     failed === 0 ? "\nAll production readiness checks passed.\n" : `\n${failed} readiness check(s) FAILED.\n`

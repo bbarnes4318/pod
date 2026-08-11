@@ -74,7 +74,7 @@ export interface ModelCapabilities {
    * still reaches the model, which is how it gets retested. It returns to the
    * default profiles only when a live contract probe passes.
    */
-  availability: "available" | "capacity-limited" | "unavailable-for-account";
+  availability: "available" | "capacity-limited" | "unavailable-for-account" | "broken-in-production";
 
   /**
    * Has a role-quality experiment produced evidence for this model in this
@@ -135,10 +135,18 @@ export type VerificationState =
   | "live-contract-passed"
   | "live-contract-failed"
   | "unavailable-for-account"
-  | "not-quality-tested";
+  | "not-quality-tested"
+  | "broken-in-production";
 
 export function verificationState(caps: ModelCapabilities): VerificationState {
   if (caps.availability === "unavailable-for-account") return "unavailable-for-account";
+  // Kept SEPARATE from live-contract-failed on purpose. Both are non-routable,
+  // but they are different claims and the operator acts on them differently: a
+  // capacity failure is the provider saying "not now" and clears itself, while
+  // this one is "the probe and production disagree", which needs a human. They
+  // were merged once and the chain-filter told operators a 503 had happened
+  // when no 503 ever did.
+  if (caps.availability === "broken-in-production") return "broken-in-production";
   if (caps.availability === "capacity-limited") return "live-contract-failed";
   if (caps.liveContractVerified) {
     // The endpoint works. Whether the MODEL works for its role is a separate
@@ -161,6 +169,8 @@ export function describeVerificationState(state: VerificationState): string {
       return "Live contract FAILED — the endpoint exists but would not serve this account (capacity). Removed from the default profile chains until a probe passes.";
     case "unavailable-for-account":
       return "Unavailable for the current account — the ID does not resolve for the key in use. Removed from the default profile chains; reachable only via an explicit role override.";
+    case "broken-in-production":
+      return "BROKEN IN PRODUCTION — a contract probe passed, but real pipeline traffic failed on every attempt. The probe result is retained and is not the current truth. Removed from the default profile chains; reachable only via an explicit role override, which is how it gets retested.";
   }
 }
 
@@ -177,6 +187,8 @@ export function shortVerificationLabel(state: VerificationState): string {
       return "LIVE FAILED";
     case "unavailable-for-account":
       return "UNAVAILABLE";
+    case "broken-in-production":
+      return "PROD BROKEN";
   }
 }
 
@@ -248,7 +260,18 @@ const NVIDIA_STRUCTURED_UNCONFIRMED =
  * to implement. On a lenient endpoint a 200 cannot distinguish "honored" from
  * "silently ignored", so Z.ai's flags were NOT upgraded from acceptance alone.
  */
-const PROBE_RUN = "live probe 2026-07-26";
+/**
+ * The probe date, as DATA rather than as prose inside a sentence.
+ *
+ * `npm run routing:staleness` reads this to answer "how old is the evidence
+ * these routing assignments rest on?". Before it was extractable, the only
+ * record of the date was the paragraph above and a filename nobody re-checked —
+ * so the assignments could age indefinitely without anything saying so.
+ * Re-running the probe means updating this constant in the same commit.
+ */
+export const LLM_CONTRACT_PROBE_DATE = "2026-07-26";
+
+const PROBE_RUN = `live probe ${LLM_CONTRACT_PROBE_DATE}`;
 
 // ---------------------------------------------------------------------------
 
@@ -332,18 +355,23 @@ const REGISTRY: ModelCapabilities[] = [
     //     An unclassified category means the error taxonomy in errors.ts needs
     //     a case for this response.
     //
-    // Marked capacity-limited, which resolves to live-contract-failed and
-    // filters it out of the default chains — the same treatment its sibling
-    // deepseek-v4-flash already carries, and reversible the moment a live
-    // contract probe passes again. It stays reachable through an explicit role
-    // override for retesting.
+    // Marked `broken-in-production`, which is non-routable and filters it out of
+    // the default chains, reversible the moment a live contract probe passes
+    // again. It stays reachable through an explicit role override for retesting.
+    //
+    // It was first marked `capacity-limited` — borrowed from its sibling
+    // deepseek-v4-flash, which really was 503-throttled. That was the wrong
+    // label and it lied downstream: the chain filter renders capacity-limited as
+    // "the endpoint would not serve this account (503 capacity)", and no 503 was
+    // ever observed here. A 14-27ms rejection is not congestion. The distinct
+    // state exists so the filter can say what actually happened.
     //
     // A capability record that says "verified" because a probe once passed is
     // the same shape as every other stale guarantee in this codebase: it
     // describes a moment, not the present.
     ...nvidiaBase(MODEL_IDS.nvidia.deepseekPro, "deepseek-v4"),
     liveContractVerified: true,
-    availability: "capacity-limited",
+    availability: "broken-in-production",
     qualityTested: false,
     supportsThinking: true,
     supportsReasoningEffort: true,
@@ -352,7 +380,15 @@ const REGISTRY: ModelCapabilities[] = [
     supportsNativeJsonSchema: true,
     supportsSeed: true,
     provenance: {
-      catalog: CATALOG_NVIDIA,
+      catalog:
+        CATALOG_NVIDIA +
+        " PRODUCTION OBSERVATION 2026-08-10 (worker log, take-machine-worker): every call to this model failed " +
+        "`FAILED=unknown` in 14-27ms with zero successful completions across the whole log. 14-27ms is a rejection, not " +
+        "inference — nothing generated a token. The router classified it UNCLASSIFIED, so it was retried as if transient " +
+        "and taxed every failover with a guaranteed-losing hop. availability is `broken-in-production` on the strength of " +
+        "that observation, NOT of the contract probe below, which passed and is retained as an accurate record of " +
+        "2026-07-26 and of nothing since. Clear it by re-running `npm run probe:llm-contract -- --model " +
+        "deepseek-ai/deepseek-v4-pro` and seeing it pass against live traffic.",
       requestFields:
         PROBE_RUN + ": chat_template_kwargs.thinking accepted; reasoning_effort accepted BOTH nested and top-level (we send the " +
         "documented nested form); `reasoning_budget` REJECTED (400 Unsupported parameter) — that is Nemotron's field, and the " +
@@ -694,6 +730,11 @@ const byKey = new Map<string, ModelCapabilities>(
  * claim nothing, and shrink nothing": catalog-unavailable, no native JSON, no
  * reasoning fields, no enforceable limits.
  */
+/** True when this exact provider/model has a real record, not a synthesized one. */
+export function isRegisteredModel(provider: string, model: string): boolean {
+  return byKey.has(`${provider}/${model}`.toLowerCase());
+}
+
 export function modelCapabilities(provider: string, model: string): ModelCapabilities {
   const hit = byKey.get(`${provider}/${model}`.toLowerCase());
   if (hit) return hit;

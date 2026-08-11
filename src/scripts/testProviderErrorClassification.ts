@@ -30,6 +30,7 @@ import assert from "node:assert/strict";
 import {
   LlmProviderError,
   categorizeHttpFailure,
+  categorizeNetworkFailure,
   categoryOf,
   isBillingCategory,
   isContinueCategory,
@@ -302,6 +303,76 @@ check("the canary calls an outage provider_failure", () => {
   const err = new LlmProviderError({ provider: "anthropic", model: "m", category: "provider_internal_error", message: "500" });
   assert.equal(classifyProviderError(err), "provider_failure");
   assert.equal(classifyProviderError(new Error("socket hang up")), "provider_failure");
+});
+
+// =============================================================================
+console.log("\n  -- 5b. an instant, silent rejection is not an unclassifiable one --");
+//
+// deepseek-v4-pro, worker log 2026-08-10: every call failed in 14-27ms with an
+// empty body and zero successful completions. 14-27ms cannot contain inference,
+// so the endpoint was refusing outright — but the taxonomy had no case for it,
+// so it landed as `unknown` and read as "our error table needs a new rule" when
+// the truth was "this model is not serving this account". It stayed in the
+// default chains for weeks, taxing every failover with a guaranteed-losing hop.
+
+check("a sub-50ms failure with an empty body is named, not filed under unknown", () => {
+  assert.equal(categorizeHttpFailure(0, "", [], 14), "endpoint_rejected_fast");
+  assert.equal(categorizeHttpFailure(418, "", [], 27), "endpoint_rejected_fast");
+  assert.equal(categorizeNetworkFailure(new Error("boom"), 27), "endpoint_rejected_fast");
+});
+
+check("it does not weaken the existing ambiguous-400 rule", () => {
+  // A 400 with an empty body was ALREADY classified — as programming_error, on
+  // the deliberate reasoning that an ambiguous 400 is our own bad request and
+  // must be terminal rather than something to shrug at. Timing does not get to
+  // overturn that: the fast-rejection rule only ever applies where the answer
+  // would otherwise have been `unknown`.
+  assert.equal(categorizeHttpFailure(400, "", [], 5), "programming_error");
+  assert.equal(isTerminalCategory("programming_error"), true);
+});
+
+check("it is NOT retried against the same endpoint", () => {
+  // The whole point: an endpoint that refused in 20ms will refuse again in 20ms.
+  assert.equal(isRetryableCategory("endpoint_rejected_fast"), false, "retrying an instant rejection is pure waste");
+  assert.equal(
+    new LlmProviderError({ provider: "nvidia", model: "m", category: "endpoint_rejected_fast", message: "x" }).retryable,
+    false
+  );
+});
+
+check("it DOES advance to the next candidate", () => {
+  // Not terminal: another model is exactly what should run. This preserves the
+  // verdict `unknown` already got from the fallback policy's default branch —
+  // the change is that the reason now names the failure instead of shrugging.
+  assert.equal(isContinueCategory("endpoint_rejected_fast"), true);
+  assert.equal(isTerminalCategory("endpoint_rejected_fast"), false, "one bad endpoint must not stop the chain");
+});
+
+check("it never overrides a classification that was actually made", () => {
+  // Timing is a LAST resort. A real 429 that happens to return in 10ms is still
+  // a rate limit, and a 401 is still an auth failure.
+  assert.equal(categorizeHttpFailure(429, BODY_RATE_LIMITED, [], 5), "rate_limited");
+  assert.equal(categorizeHttpFailure(401, BODY_AUTH_REJECTED, [], 5), "authentication_failed");
+  assert.equal(categorizeHttpFailure(500, BODY_OUTAGE, [], 5), "provider_internal_error");
+});
+
+check("a fast failure that explained itself is not this case", () => {
+  // Both conditions are required. A body means the provider told us something,
+  // and the right response is a new rule above — not this fallback.
+  assert.equal(categorizeHttpFailure(418, "teapot", [], 5), "unknown");
+});
+
+check("a slow unclassifiable failure stays unknown", () => {
+  // Guards against the threshold swallowing the genuine unknown case.
+  assert.equal(categorizeHttpFailure(418, "", [], 5000), "unknown");
+  assert.equal(categorizeHttpFailure(418, "", []), "unknown", "no timing supplied = no timing claim");
+  assert.equal(categorizeNetworkFailure(new Error("boom")), "unknown");
+});
+
+check("the operator is told what to DO about it", () => {
+  const action = operatorAction("endpoint_rejected_fast");
+  assert.ok(action, "a category with a known remedy must not return null");
+  assert.match(action!, /broken-in-production/, "the remedy is a capability-record change, and must say so");
 });
 
 // =============================================================================
