@@ -185,6 +185,7 @@
     "test:prompt-cache-stability": "tsx --conditions=react-server src/scripts/testPromptCacheStability.ts",
     "routing:staleness": "tsx --conditions=react-server src/scripts/routingStaleness.ts",
     "verify:llm-cost-render": "tsx --conditions=react-server src/scripts/verifyLlmCostRender.ts",
+    "verify:cache-proof": "tsx --conditions=react-server src/scripts/verifyCacheProof.ts",
     "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts"
   },
   "dependencies": {

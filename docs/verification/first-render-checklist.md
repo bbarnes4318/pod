@@ -12,6 +12,27 @@ thing that was observed.
 
 ---
 
+## The short version — one command
+
+If you only want the caching claim settled:
+
+```bash
+npm run verify:cache-proof            # prints the plan and the cost, spends nothing
+npm run verify:cache-proof -- --yes   # SPENDS REAL MONEY (~$0.30–$0.80)
+```
+
+That runs one episode with **only** the two host-writer roles pinned to Anthropic
+— every other role stays on the free chain — captures the log, and pipes it
+through the verifier. One command in, pass/fail/inconclusive out. It needs
+`ANTHROPIC_API_KEY` (it aborts rather than falling through to a free model), and
+`NVIDIA_API_KEY` + `ZAI_API_KEY` so the rest of the episode does not land on the
+paid rung. Export `LLM_PRICE_ANTHROPIC_IN=5` and `_OUT=25` first, or the pricing
+condition fails for want of a rate.
+
+The rest of this document is the manual version, plus what the output means.
+
+---
+
 ## The one thing to decide first
 
 **Under `verified_development`, Anthropic is the PAID BACKUP.** A healthy episode
@@ -157,11 +178,73 @@ gap — that is the point of setting their rates to an explicit `0`.
 | `0` | All four passed. |
 | `1` | Something was **disproven**. Read the failing condition; do not merge past it. |
 | `3` | Inconclusive only — nothing failed and nothing was proven. |
-| `2` | Bad input: no file, or no `[LLMCost]` lines in it (usually the web log instead of the worker's). |
+| `2` | Bad input: no file, no `[LLMCost]` lines in it (usually the web log instead of the worker's), or a missing `ANTHROPIC_API_KEY`. |
 
 **Exit 3 is not a pass.** A run that could not evaluate a condition has not
 verified it, and reporting it as green is how an unproven claim becomes an
 assumed one.
+
+---
+
+## What each of the three outcomes actually looks like
+
+So you can tell them apart without reading the code.
+
+### PASS — the cache is working (exit 0)
+
+```
+  ✓ cacheRead > 0 on Anthropic calls after the first
+      5 of 6 Anthropic calls followed the first, and every one read from cache (41,204 cached tokens total).
+
+  ✓ zero calls to deepseek-ai/deepseek-v4-pro
+      The model does not appear in this log at all, so no stage paid a guaranteed-losing attempt on it.
+
+  ✓ continuity_report completes on its new primary at the first attempt
+      Served by zai/glm-4.7-flash on the first attempt — no fallback, no retry.
+
+  ✓ cost= shows dollars on the Anthropic rung
+      All 6 Anthropic calls priced; total $0.3120.
+
+4 passed, 0 failed, 0 inconclusive
+```
+
+The number that matters is **cached tokens total**. Large means the private
+brief, spine and evidence packet are being served from cache instead of re-billed
+on every movement — the entire point of the restructure.
+
+### FAIL — something is disproven (exit 1)
+
+```
+  ✗ cacheRead > 0 on Anthropic calls after the first
+      5 of 6 Anthropic calls after the first read NOTHING from cache. The cached prefix is being
+      invalidated between calls — something per-call has got into the static block.
+      Offending stages: script:host-writer:Zabala, script:host-writer:Mercer.
+
+4 passed, 1 failed, 0 inconclusive
+```
+
+Read the named condition and stop. If `test:prompt-cache-stability` passes
+offline but this fails, the bytes are right and the difference is on the wire —
+check that the provider actually received `cacheableContext` rather than a
+concatenated prompt.
+
+### INCONCLUSIVE — nothing was proven (exit 3)
+
+```
+  ? cacheRead > 0 on Anthropic calls after the first
+      No Anthropic-served calls in this log. Under verified_development, Anthropic is the PAID
+      BACKUP and a healthy run never reaches it — so this is the expected shape of a clean render,
+      and it means the caching change is UNPROVEN rather than proven.
+
+1 passed, 0 failed, 3 inconclusive
+
+INCONCLUSIVE IS NOT PASS — a condition that could not be evaluated is unproven.
+```
+
+This is what a **normal** episode produces, and it is the outcome most likely to
+be misread as success. If you see it from `verify:cache-proof` rather than from a
+plain render, the pins did not take — check that `ANTHROPIC_API_KEY` is set in
+the same shell.
 
 ---
 
