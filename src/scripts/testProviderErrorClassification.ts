@@ -376,6 +376,45 @@ check("the operator is told what to DO about it", () => {
 });
 
 // =============================================================================
+console.log("\n  -- 5c. a RETIRED model is not a transient failure --");
+//
+// Observed live 2026-08-12 on a real render: NVIDIA returned 410 Gone for
+// mistral-medium-3.5, retired 2026-08-07. The taxonomy had no 410 case, so it
+// classified as `unknown` and the router treated a permanent retirement as a
+// maybe-transient blip — the same shape as deepseek-v4-pro, different cause.
+
+const BODY_MODEL_RETIRED = JSON.stringify({
+  type: "about:blank",
+  title: "Gone",
+  status: 410,
+  detail:
+    "The model 'mistralai/mistral-medium-3.5-128b' has reached its end of life on 2026-08-07T09:00:00Z and is no longer available.",
+});
+
+check("410 Gone is an invalid model, not unknown", () => {
+  assert.equal(categorizeHttpFailure(410, BODY_MODEL_RETIRED, []), "invalid_model");
+  // Body-independent: a bare 410 is still a retired endpoint.
+  assert.equal(categorizeHttpFailure(410, "", []), "invalid_model");
+});
+
+check("a retired model is never retried against the same endpoint", () => {
+  // Retrying an end-of-life model is guaranteed waste — it will not come back.
+  assert.equal(isRetryableCategory("invalid_model"), false);
+});
+
+check("a retired model does not stop the chain", () => {
+  // It is a configuration failure, not a terminal one: another model is exactly
+  // what should run, and the misconfiguration is still reported.
+  assert.equal(isTerminalCategory("invalid_model"), false);
+});
+
+check("the operator is told to change the route", () => {
+  const action = operatorAction("invalid_model");
+  assert.ok(action, "invalid_model must carry an operator action");
+  assert.match(action!, /model id is not served/i);
+});
+
+// =============================================================================
 console.log("\n  -- the fallback chain does not burn the same account --");
 
 const anthropicOpus: FallbackCandidateInfo = { provider: "anthropic", model: "claude-opus-5", paid: true, source: "role_override" };

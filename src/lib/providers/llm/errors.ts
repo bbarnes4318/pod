@@ -377,6 +377,22 @@ export function categorizeHttpFailure(
     return "programming_error";
   }
 
+  // 410 GONE — the model was real and has been RETIRED.
+  //
+  // Observed live 2026-08-12: NVIDIA returned
+  //   410 {"title":"Gone","detail":"The model 'mistralai/mistral-medium-3.5-128b'
+  //        has reached its end of life on 2026-08-07T09:00:00Z"}
+  // and the taxonomy had no case for it, so it landed as `unknown` — the router
+  // read a PERMANENT retirement as a maybe-transient blip and kept the model in
+  // the chain. Exactly the deepseek-v4-pro shape with a different cause, and the
+  // reason that one went unnoticed for weeks.
+  //
+  // `invalid_model` is the honest category: the id is no longer served, the
+  // remedy is to change the route, and its operator action already says so. It
+  // is a CONFIGURATION failure, so routing advances among the free candidates
+  // and reports it rather than retrying a model that no longer exists.
+  if (status === 410) return "invalid_model";
+
   if (status === 400 || status === 422) {
     if (/content (policy|filter)|policy violation|prohibited|moderation/.test(b)) {
       return "prompt_policy_violation";

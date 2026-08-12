@@ -1,27 +1,38 @@
 # Coolify environment changes
 
-## Verify before merge — two minutes, worker app only
+## Verify before merge — already done, 2026-08-12
 
-This is the one fact nobody in this pipeline can check from code. The repository
-cannot read production env, so the four values below are unverified until someone
-looks. Open the **worker** app — `take-machine-worker`, UUID
-`xrw61e96a26n3cmhzxglxkf0` — go to **Environment Variables**, and read these keys.
+**Checked directly against the running worker container** (`xrw61e96a26n3cmhzxglxkf0`),
+not inferred from a file. Read back with `docker exec <worker> printenv`:
 
-| Key | Should say | If it says something else |
-|---|---|---|
-| `SCRIPT_LLM_MODEL` | `claude-opus-5` | **`claude-opus-4-8` is the value to expect to find** — the local Coolify snapshot in this repo carries it. It is a valid id and will not error, but it is an OLDER generation, so scripts are being written by a previous model at the same price. Fix it to `claude-opus-5` (§1). Anything NOT in `ANTHROPIC_MODEL_ALLOWLIST` is a latent 404 — fix it before merging. |
-| `SCRIPT_LLM_PROVIDER` | `anthropic` | Empty means script writing silently falls back to `LLM_PROVIDER`, so `SCRIPT_LLM_MODEL` is being ignored entirely and the Opus 5 pin is doing nothing. |
-| `ANTHROPIC_MODEL` | `claude-opus-5`, or empty | Empty is fine — the in-code default is `claude-opus-5` as of this branch. A value here that is not on the allowlist 404s the paid backup rung at the moment it fires, which is the worst time to find out. |
-| `LLM_PRICE_ANTHROPIC_IN` / `_OUT` | `5` / `25`, or absent | Absent is the current state and is why every `[LLMCost]` line reads `cost=unpriced`. Set them (§2) to get real dollars. A **wrong** number is worse than none — it produces a confident total that is simply incorrect. |
+| Key | Required | Actual | |
+|---|---|---|---|
+| `SCRIPT_LLM_PROVIDER` | `anthropic` | `anthropic` | ✅ |
+| `SCRIPT_LLM_MODEL` | `claude-opus-5` | `claude-opus-5` | ✅ |
+| `ANTHROPIC_MODEL` | on the allowlist | `claude-sonnet-5` | ✅ |
+| `LLM_ROUTING_PROFILE` | `verified_development` | `verified_development` | ✅ |
+| `ANTHROPIC_API_KEY` / `NVIDIA_API_KEY` / `ZAI_API_KEY` | present | all present | ✅ |
+| `LLM_PRICE_ANTHROPIC_IN` / `_OUT` | `5` / `25` | **absent** | ❌ §2 |
 
-**Check the scope on each one.** Coolify variables can be saved preview-scoped and
-never reach the production container, which presents exactly like the variable
-being unset. If a value looks right in the UI but behaves as though it is missing,
-confirm through the `/envs` API rather than the UI before changing anything else.
+**The model pins in §1 are already correct in production — there is nothing to
+change there.** An earlier draft of this file predicted `SCRIPT_LLM_MODEL` would
+read `claude-opus-4-8`, on the strength of `.env.coolify.local` in this repo.
+That prediction was wrong: that file is a stale local snapshot and does not
+reflect the running worker. §1 is retained below as a record of the required
+values, not as an outstanding action.
 
-Nothing here blocks the merge on its own — but `SCRIPT_LLM_MODEL` is worth
-resolving first, because it is the difference between the show being written by
-the model that was chosen and by the one that drifted in.
+`ANTHROPIC_MODEL=claude-sonnet-5` is correct and deliberate — it is the
+general-purpose model for the cheap structured stages, while `SCRIPT_LLM_MODEL`
+puts script writing on Opus 5. The two are a designed pair; see `.env.example`.
+
+**§2 (pricing) is the only outstanding env change.** Its absence is exactly why
+every `[LLMCost]` line reads `cost=unpriced`.
+
+> **Scope caveat, still live.** Coolify variables can be saved preview-scoped and
+> never reach the production container, which presents exactly like being unset.
+> The table above was read from inside the running container, so it reflects what
+> the worker actually sees — but when you ADD the §2 pricing variables, confirm
+> them the same way rather than trusting the UI.
 
 ---
 
@@ -106,23 +117,44 @@ LLM_PRICE_ANTHROPIC_OUT=25
 - If you re-pin `SCRIPT_LLM_MODEL` to a different model, change these with it —
   nothing derives the rate from the model id.
 
-### Worker only
+### ~~Worker only — NVIDIA and Z.ai rates~~ DO NOT SET: they do nothing
+
+An earlier draft of this file asked for these four:
 
 ```
-LLM_PRICE_NVIDIA_IN=0
-LLM_PRICE_NVIDIA_OUT=0
-LLM_PRICE_ZAI_IN=0
-LLM_PRICE_ZAI_OUT=0
+LLM_PRICE_NVIDIA_IN=0     LLM_PRICE_NVIDIA_OUT=0
+LLM_PRICE_ZAI_IN=0        LLM_PRICE_ZAI_OUT=0
 ```
 
-- NVIDIA and Z.ai are trial/free endpoints, so **$0 is the true current rate**,
-  not a placeholder. Setting them explicitly is what makes the ledger report a
-  measured `$0.0000` instead of `unpriced` — those are different claims, and
-  "unpriced" on the free rungs made the whole cost line unreadable.
-- Worker-only because these two providers serve the pipeline roles, which run on
-  the worker. Adding them to web is harmless if you prefer symmetry.
-- **Set them to a real number the moment either endpoint starts billing.** A
-  stale `0` is the one way this file can produce a confidently wrong total.
+**They have no effect. Do not bother setting them.** Caught by actually running a
+render on 2026-08-12 rather than by reading the code: the NVIDIA and Z.ai
+adapters hardcode `unpriced: true` (`nvidia.ts:45`, `zai.ts:43`), and
+`estimateCostUsd` returns `null` on that flag *before* it ever looks at a rate.
+Every NVIDIA and Z.ai line therefore logs `cost=unpriced` no matter what these
+variables say. Observed directly:
+
+```
+[LLMCost] stage=script:story-spine role=script_story_editor provider=nvidia
+  model=nvidia/nemotron-3-ultra-550b-a55b in=1152 out=1223 ... cost=unpriced
+```
+
+— with `LLM_PRICE_NVIDIA_IN=0` and `_OUT=0` both exported in that shell.
+
+That is arguably correct behaviour: a provider-level "we have no price for this"
+outranking an operator-supplied rate is defensible for a free trial endpoint. It
+is also not what this file previously claimed, and the claim would have had you
+setting four variables and then wondering why the log did not change.
+
+**A question for Jimmy, not a blocker:** should an explicitly configured rate
+override the provider's `unpriced` flag? Today it does not, and
+`test:llm-cost-pricing` asserts the current behaviour deliberately
+(*"an unpriced endpoint stays null even with rates configured"*). Changing it
+would let free rungs report a measured `$0.0000` instead of an absent
+`unpriced` — a real difference when reading a cost summary. Left alone here
+because it is a semantics decision, not a bug fix.
+
+**The Anthropic rates above are unaffected** — that provider is `unpriced: false`
+and prices correctly.
 
 ### Cache rates — deliberately NOT set
 

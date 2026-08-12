@@ -54,9 +54,28 @@ const profiles = source("src/lib/providers/llm/profiles.ts");
 const verifiedStart = profiles.indexOf("function verifiedDevelopmentChain");
 const researchStart = profiles.indexOf('case "research_brief":', verifiedStart);
 const researchBlock = profiles.slice(researchStart, researchStart + 700);
+
+// The known-working research model must lead, and the model that timed out in
+// production must never precede it.
+//
+// ABSENCE COUNTS AS SATISFIED, and that is the whole correction here. This
+// assertion used to be a bare `indexOf(nemotron) < indexOf(deepseekPro)`, which
+// silently required deepseek-v4-pro to STILL BE IN THE CHAIN: drop it entirely
+// and indexOf returns -1, so the comparison reads `592 < -1` and fails. The
+// test then reported a regression at the exact moment the underlying problem
+// was fixed properly — deepseek-v4-pro is now marked broken-in-production and
+// removed from this chain, which is strictly better than ordering it second.
+const nemotronAt = researchBlock.indexOf("NV.nemotron()");
+const deepseekProAt = researchBlock.indexOf("NV.deepseekPro()");
+
 assert.ok(
-  researchBlock.indexOf("NV.nemotron()") < researchBlock.indexOf("NV.deepseekPro()"),
-  "the known-working research model must run before the production timeout model"
+  nemotronAt >= 0,
+  "the known-working research model (Nemotron) is no longer in the research_brief chain at all"
+);
+assert.ok(
+  deepseekProAt === -1 || nemotronAt < deepseekProAt,
+  "the known-working research model must run before the production timeout model " +
+    "(deepseek-v4-pro may also be absent entirely — that is the stronger outcome)"
 );
 
 console.log("Topic freshness automation regression: PASS");
