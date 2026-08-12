@@ -189,7 +189,8 @@
     "verify:cache-proof": "tsx --conditions=react-server src/scripts/verifyCacheProof.ts",
     "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts",
     "test:evidence-ref-contract": "tsx src/scripts/testEvidenceRefContract.ts",
-    "test:word-flow": "tsx src/scripts/testWordFlow.ts"
+    "test:word-flow": "tsx src/scripts/testWordFlow.ts",
+    "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
