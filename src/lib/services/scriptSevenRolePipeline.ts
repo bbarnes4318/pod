@@ -637,13 +637,21 @@ export async function runSevenRolePipeline(
   // Everything the two writers returned, against what survived authorship,
   // novelty and duplicate-turn checks. This is real attrition: the writer meant
   // to ship these words and they were dropped.
+  //
+  // `written` is SEEDED with the cold open (see the coldOpenLines loop above),
+  // so draftLines carries lines the host writers never emitted. Counting those
+  // as "kept" made the first live run report 3,114 kept against 3,009 emitted —
+  // more words surviving than were produced, which is impossible and was the
+  // tell. The cold open has its own row; it must not be counted twice.
+  const coldOpenTurnIndexes = new Set(coldOpenLines.map((l) => l.turnIndex));
+  const writerDraftLines = draftLines.filter((l) => !coldOpenTurnIndexes.has(l.turnIndex));
   wordFlow.record({
     stage: "host_writers",
     kind: "attrition",
     wordsEmitted: writerWordsEmitted,
-    wordsKept: wordsIn(draftLines),
+    wordsKept: wordsIn(writerDraftLines),
     linesEmitted: writerLinesEmitted,
-    linesKept: draftLines.length,
+    linesKept: writerDraftLines.length,
     note: "dropped for foreign authorship, repeated text, or an unallocated turn",
   });
   draftLines.forEach((line, i) => (line.lineIndex = i));
@@ -788,9 +796,17 @@ export async function runSevenRolePipeline(
   const words = countWords(draftLines);
   const severeMinimumWords = Math.round(episodeMinimumWords * 0.6);
 
-  // The whole flow, as one block, against what the seven roles actually produced.
-  // `words` excludes the cold open, which is counted in its own row above.
-  args.log(wordFlow.render(words + wordsIn(coldOpen.segment.lines)));
+  // The whole flow, as one block. `words` counts draftLines, which ALREADY
+  // includes the cold open — adding it again inflated the first live run's
+  // shipped total by 105 words and overstated the survival rate.
+  //
+  // This is also NOT the end of the line. scriptService runs its own gates
+  // after this pipeline returns (rumor-sourcing rejection, the repetition gate,
+  // the evidence sanitiser) and dropped 6 further lines on that run. Those
+  // losses are real attrition and this block cannot see them, because they
+  // happen a stage later in a different module. The number below is
+  // "what the seven roles shipped", not "what reached the listener".
+  args.log(wordFlow.render(words));
 
   if (words < severeMinimumWords) {
     const reason =
