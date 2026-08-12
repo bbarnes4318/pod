@@ -437,12 +437,46 @@ const REGISTRY: ModelCapabilities[] = [
     reasoningBudgetRange: [256, 16384],
     documentedContextWindow: 1_000_000,
     supportsReasoningEffort: true,
-    supportsNativeJsonObject: true,
-    supportsNativeJsonSchema: true,
+    // BOTH JSON FLAGS FORCED FALSE — 2026-08-12, PRODUCTION OUTAGE.
+    //
+    // NVIDIA changed structured-output validation for this model provider-side.
+    // Every structured call now returns:
+    //
+    //   400 ValidationError: 1 validation error for StructuredOutputsParams
+    //   Value error, You must use one kind of structured outputs constraint but
+    //   none are specified: {'json': None, 'regex': None, 'choice': None,
+    //   'grammar': None, 'json_object': None, ...}
+    //
+    // 24 occurrences on the live worker inside one hour. Nemotron fronts 13
+    // roles including script_story_editor — the FIRST role in the seven-role
+    // pipeline — and the failure classifies as `programming_error`, which is
+    // TERMINAL, so the chain never advanced to GLM-5.2 or Z.ai. Every episode
+    // died on its first call.
+    //
+    // NOT caused by the deploy that was live when it appeared: this flag is
+    // byte-identical on 1f1f843 and 929ee3f, and the same code path succeeded
+    // six hours earlier. Reverting would have failed identically.
+    //
+    // Both flags, not just the object one: structuredOutputMode() checks
+    // supportsNativeJsonSchema FIRST, so leaving it true would keep every
+    // schema-bearing call on the broken path.
+    //
+    // Prompt-enforced JSON is the fallback, and it is not a downgrade to
+    // something unproven — it is the path zai/glm-4.7-flash and xai/grok-4.3
+    // already run on successfully every day. Restore these to true only when a
+    // structured-output probe passes again; `npm run probe:llm-structured` is
+    // the thing that would have caught this before production did.
+    supportsNativeJsonObject: false,
+    supportsNativeJsonSchema: false,
     supportsSeed: true,
     provenance: {
       catalog: CATALOG_NVIDIA,
       requestFields:
+        "STRUCTURED OUTPUT BROKEN PROVIDER-SIDE 2026-08-12: response_format json_object AND json_schema both now return " +
+        "400 `StructuredOutputsParams ... none are specified`. Model-specific — z-ai/glm-5.2 on the SAME native-json-object " +
+        "mode still works, so this is not an account or transport problem. Native JSON flags forced false; the model is " +
+        "otherwise healthy and still serves prompt-enforced JSON. Everything below describes the 2026-07-26 probe and was " +
+        "accurate then. " +
         PROBE_RUN + ": chat_template_kwargs.enable_thinking accepted (true and false); top-level `thinking` REJECTED with " +
         "400 `Unsupported parameter(s): thinking` — DeepSeek's alias is genuinely wrong for this model and is never sent. " +
         "Top-level reasoning_budget accepted. reasoning_effort accepted, though we drive depth with the budget (its documented " +
