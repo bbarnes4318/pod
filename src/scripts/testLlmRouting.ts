@@ -146,8 +146,17 @@ const FRONTIER_ENV = {
   LLM_ALLOW_LEGACY_FALLBACK: "true",
   NVIDIA_API_KEY: "nvapi-test-key-value-1234567890",
   ZAI_API_KEY: "zai-test-key-value-1234567890",
+  // The dialogue roles moved to DIRECT providers when Mistral was retired, so
+  // the test env has to carry their credentials too. Without them the provider
+  // cannot even be constructed, routing skips the candidate before any mock is
+  // consulted, and a test that thinks it is exercising the primary is quietly
+  // exercising the fourth rung instead.
+  XAI_API_KEY: "xai-test-key-value-1234567890",
+  MOONSHOT_API_KEY: "moonshot-test-key-value-1234567890",
   NVIDIA_MAX_RETRIES: "0",
   ZAI_MAX_RETRIES: "0",
+  XAI_MAX_RETRIES: "0",
+  MOONSHOT_MAX_RETRIES: "0",
 };
 
 /** The same profile in the DEFAULT comparison mode: no paid fallback at all. */
@@ -220,6 +229,7 @@ function anthropicOk(text: string): Response {
 const NVIDIA_HOST = "integrate.api.nvidia.com";
 const ZAI_HOST = "api.z.ai";
 const ANTHROPIC_HOST = "api.anthropic.com";
+const XAI_HOST = "api.x.ai";
 const OPENAI_HOST = "api.openai.com";
 
 // ================================================================ 1. legacy
@@ -362,12 +372,12 @@ function profileTests(): void {
         research_brief: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
         evidence_extraction: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
         script_outline: "nvidia/z-ai/glm-5.2",
-        script_movement: "nvidia/mistralai/mistral-medium-3.5-128b",
+        script_movement: "xai/grok-4.3",
         script_verification: "nvidia/deepseek-ai/deepseek-v4-pro",
-        script_rewrite: "nvidia/mistralai/mistral-medium-3.5-128b",
+        script_rewrite: "xai/grok-4.3",
         fact_check: "nvidia/deepseek-ai/deepseek-v4-pro",
         show_notes: "nvidia/deepseek-ai/deepseek-v4-flash",
-        episode_metadata: "nvidia/mistralai/mistral-medium-3.5-128b",
+        episode_metadata: "xai/grok-4.3",
         // Deliberately INVERTED against quality_judge: two judging roles led by
         // the same model would make the cold-open pick and the final grade one
         // opinion cast twice.
@@ -388,12 +398,19 @@ function profileTests(): void {
       const r = resolveRolePlan("script_rewrite").candidates.map(candidateKey);
       assert(v[0] !== r[0], `both roles resolved to ${v[0]} — the diagnoser must not be the rewriter`);
       assert(
-        r[0].includes("mistral"),
+        r[0].includes("grok"),
         `rewrite must go to the creative dialogue model, got ${r[0]}`
       );
+      // Asserted as a PROPERTY, not as one hardcoded id. This line used to
+      // require deepseek-v4-pro by name; when that model was marked non-routable
+      // the chain correctly advanced to Nemotron and the test failed while the
+      // behaviour it is named for was still perfectly correct. Naming a specific
+      // model here makes every legitimate chain repair look like a regression.
+      const [vp, ...vrest] = v[0].split("/");
+      const caps = modelCapabilities(vp, vrest.join("/"));
       assert(
-        v[0].includes("deepseek-v4-pro"),
-        `verification must go to the reasoning model, got ${v[0]}`
+        caps.supportsThinking === true,
+        `verification must go to a reasoning-capable model, got ${v[0]} (supportsThinking=${caps.supportsThinking})`
       );
     });
   });
@@ -451,10 +468,17 @@ function profileTests(): void {
         const first = resolveRolePlan("fact_check").candidates[0];
         assert(first.source === "role_override", `expected role_override, got ${first.source}`);
         assert(candidateKey(first) === "zai/glm-4.7-flash", candidateKey(first));
-        // other roles are untouched
+        // Other roles are untouched. Asserted as "did NOT become the override"
+        // rather than by naming the model this role happens to resolve to — the
+        // line used to hardcode deepseek-v4-pro, and when that model was pulled
+        // from the chains the test failed while the property it is named for was
+        // never in question. A leak test should fail when something leaks, not
+        // when an unrelated chain is repaired.
+        const verificationPrimary = candidateKey(resolveRolePlan("script_verification").candidates[0]);
         assert(
-          candidateKey(resolveRolePlan("script_verification").candidates[0]) === "nvidia/deepseek-ai/deepseek-v4-pro",
-          "an override must not leak into another role"
+          verificationPrimary !== "zai/glm-4.7-flash",
+          `an override must not leak into another role — script_verification resolved to ${verificationPrimary}, ` +
+            `which is the model FACT_CHECK_LLM_* was overridden to`
         );
       }
     );
@@ -464,15 +488,18 @@ function profileTests(): void {
     withEnv(FRONTIER_ENV, () => {
       const first = candidateKey(resolveRolePlan("script_movement").candidates[0]);
       assert(first !== "anthropic/claude-opus-5", "SCRIPT_LLM_MODEL must not win over the profile primary");
-      assert(first === "nvidia/mistralai/mistral-medium-3.5-128b", first);
+      assert(first === "xai/grok-4.3", first);
     });
   });
 
   check("a catalog rename is a one-variable fix", () => {
-    withEnv({ ...FRONTIER_ENV, NVIDIA_MODEL_MISTRAL: "mistralai/mistral-medium-9" }, () => {
+    // Demonstrated on XAI_MODEL rather than NVIDIA_MODEL_MISTRAL: Mistral was
+    // retired by its provider, so the variable that used to prove this no longer
+    // points at anything in a chain. The MECHANISM is what is under test.
+    withEnv({ ...FRONTIER_ENV, XAI_MODEL: "grok-9-turbo" }, () => {
       assert(
-        candidateKey(resolveRolePlan("script_movement").candidates[0]) === "nvidia/mistralai/mistral-medium-9",
-        "NVIDIA_MODEL_MISTRAL must override the built-in id"
+        candidateKey(resolveRolePlan("script_movement").candidates[0]) === "xai/grok-9-turbo",
+        "XAI_MODEL must override the built-in id"
       );
     });
   });
@@ -494,13 +521,13 @@ function loopSafetyTests(): void {
     withEnv(
       {
         ...FRONTIER_ENV,
-        SCRIPT_MOVEMENT_LLM_PROVIDER: "nvidia",
-        SCRIPT_MOVEMENT_LLM_MODEL: "mistralai/mistral-medium-3.5-128b",
+        SCRIPT_MOVEMENT_LLM_PROVIDER: "xai",
+        SCRIPT_MOVEMENT_LLM_MODEL: "grok-4.3",
       },
       () => {
         const keys = resolveRolePlan("script_movement").candidates.map(candidateKey);
         assert(new Set(keys).size === keys.length, `duplicate endpoint in chain: ${keys.join(", ")}`);
-        assert(keys.filter((k) => k.includes("mistral-medium-3.5")).length === 1, keys.join(", "));
+        assert(keys.filter((k) => k.includes("grok-4.3")).length === 1, keys.join(", "));
       }
     );
   });
@@ -870,7 +897,11 @@ function stageTests(): void {
     withEnv({ ...FRONTIER_ENV, APP_DEPLOYMENT_STAGE: "development" }, () => {
       const adv = stageAdvisory(["nvidia", "zai", "anthropic"]);
       assert(adv.message === null, `expected no advisory, got: ${adv.message}`);
-      assert(candidateKey(resolveRolePlan("script_movement").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
+      // research_brief rather than script_movement: the dialogue roles moved to
+      // direct providers when Mistral was retired, so script_movement is no
+      // longer NVIDIA-hosted. The point of this line is that the STAGE does not
+      // alter routing, which needs a role that is still NVIDIA-primary.
+      assert(candidateKey(resolveRolePlan("research_brief").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
     });
   });
 
@@ -878,7 +909,11 @@ function stageTests(): void {
     withEnv({ ...FRONTIER_ENV, APP_DEPLOYMENT_STAGE: "staging" }, () => {
       const adv = stageAdvisory(["nvidia"]);
       assert(adv.message === null, `expected no advisory, got: ${adv.message}`);
-      assert(candidateKey(resolveRolePlan("script_movement").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
+      // research_brief rather than script_movement: the dialogue roles moved to
+      // direct providers when Mistral was retired, so script_movement is no
+      // longer NVIDIA-hosted. The point of this line is that the STAGE does not
+      // alter routing, which needs a role that is still NVIDIA-primary.
+      assert(candidateKey(resolveRolePlan("research_brief").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
     });
   });
 
@@ -1197,10 +1232,74 @@ async function challengerTests(): Promise<void> {
         // The outline call comes first and is not part of the comparison. Match
         // on the movement prompt's own opening, not on "story spine" — the
         // movement prompt quotes the spine back, so that would match both.
-        const isOutline = !/^Write MOVEMENT /.test(o.prompt);
-        if (!isOutline) {
+        const isMovement = /^Write MOVEMENT /.test(o.prompt);
+        // THE PRIVATE-AGENDA CALL IS ITS OWN KIND, and it did not used to be.
+        // This fake classified every call as "movement or outline", so when the
+        // outline engine started generating private host agendas the agenda call
+        // was handed the OUTLINE shape and the pipeline died on "did not return a
+        // packet for: Zabala, Mulkey". The test read as a routing failure; the
+        // truth was a fake that had not kept up with a third call kind.
+        const isAgendas = !isMovement && /^Build one PRIVATE agenda/.test(o.prompt);
+        // The cold-open tournament is two more kinds again — write the three
+        // openings, then blind-rank them. Same story as the agendas call: the
+        // fake returned the outline shape and the tournament fell over on
+        // "variantDrafts is not iterable".
+        const isColdOpenWrite = !isMovement && /^Create three COMPLETELY DIFFERENT/.test(o.prompt);
+        const isColdOpenJudge = !isMovement && /^Blind-rank these/.test(o.prompt);
+        // A REPAIR IS A MOVEMENT TOO. Its prompt opens "Repair MOVEMENT", so the
+        // ^Write MOVEMENT test above misses it and it used to fall through to the
+        // outline branch — meaning every repair attempt handed back BEATS. That
+        // is why the failure read "0 spoken words after two targeted repairs":
+        // the repairs were answering with an outline. Excluded from `seen`,
+        // which compares the first-pass inputs the two routes were given.
+        const isRepair = /^Repair MOVEMENT /.test(o.prompt);
+        // The per-character rewrite pass — the fifth call kind this fake did not
+        // know about. Unhandled, it received beats and blew up on
+        // "Cannot read properties of undefined (reading 'map')" when the caller
+        // did result.lines.map(). An empty rewrite is valid and leaves the
+        // movement exactly as the primary wrote it, which is what the final
+        // assertion below needs.
+        const isCharacterPass = /^PRIVATE AGENDA:/.test(o.prompt);
+        const isOutline =
+          !isMovement && !isRepair && !isAgendas && !isColdOpenWrite && !isColdOpenJudge && !isCharacterPass;
+        if (isMovement) {
           seen.push({ who, prompt: o.prompt, systemPrompt: o.systemPrompt, maxTokens: o.maxTokens, temperature: o.temperature });
           if (behavior === "throw") throw new Error("challenger could not complete the movement");
+        }
+        if (isAgendas) {
+          return {
+            agendas: ["Zabala", "Mulkey"].map((speakerName) => ({
+              speakerName,
+              exclusiveFactResponsibility: `${speakerName}'s assigned fact`,
+              protectedBelief: `${speakerName} will not concede the premise`,
+              avoidedConcession: `${speakerName} avoids conceding the timeline`,
+              behavioralTrigger: "being told to wait for the official statement",
+              misconceptionAboutOtherHost: "assumes the other host has already decided",
+              genuineQuestion: "who signed off on the revised number",
+              privateObjective: `get the other host to concede to ${speakerName}`,
+            })),
+          } as unknown as T;
+        }
+        if (isColdOpenWrite) {
+          const coldOpenLines = (variant: string) => [
+            { lineIndex: 0, speakerName: "Zabala", text: `${variant} opening line from Zabala`, tone: "incredulous", energy: "high", pauseBefore: "none", isInterruption: false, evidenceRefs: [], isFactualClaim: false },
+            { lineIndex: 1, speakerName: "Mulkey", text: `${variant} reply from Mulkey`, tone: "dismissive", energy: "medium", pauseBefore: "beat", isInterruption: false, evidenceRefs: [], isFactualClaim: false },
+          ];
+          return {
+            variants: ["accusation", "consequence", "contradiction"].map((id) => ({ id, lines: coldOpenLines(id) })),
+          } as unknown as T;
+        }
+        if (isCharacterPass) {
+          return { lines: [] } as unknown as T;
+        }
+        if (isColdOpenJudge) {
+          return {
+            judgments: [
+              { id: "accusation", score: 90, reasons: ["opens mid-argument"] },
+              { id: "consequence", score: 70, reasons: ["slower entry"] },
+              { id: "contradiction", score: 60, reasons: ["answers too early"] },
+            ],
+          } as unknown as T;
         }
         if (isOutline) {
           return {
@@ -1214,8 +1313,56 @@ async function challengerTests(): Promise<void> {
             })),
           } as unknown as T;
         }
+        // A MOVEMENT HAS TO CLEAR THE WORD FLOOR. This used to return a single
+        // line reading "line" — one spoken word — which was fine until movement
+        // validation grew a minimum ("movement has 0 spoken words; it requires at
+        // least 394") and then retried twice and gave up. The test reported that
+        // as a routing failure; it was a fixture that had not kept up.
+        //
+        // The point of THIS test is that primary and challenger receive
+        // byte-identical INPUTS, so the output only has to be plausible enough to
+        // let the pipeline reach the comparison. Lines vary by index so a
+        // repetition check does not reject them as duplicates.
+        // SPEAKER RUNS ARE VARIED ON PURPOSE. Strict A/B alternation across ten
+        // lines with no same-speaker build and no short reactions trips the
+        // `mechanical turn shape` failure in evaluateMovementQuality — which is
+        // what actually made this movement unusable; the repairs then answered
+        // with beats and the reported symptom became "0 spoken words".
+        const speakerRun = [
+          "Zabala", "Zabala",
+          "Mulkey", "Mulkey", "Mulkey",
+          "Zabala",
+          "Mulkey",
+          "Zabala", "Zabala",
+          "Mulkey",
+        ];
+        const movementLine = (i: number) => {
+          const speaker = speakerRun[i % speakerRun.length];
+          // The writer's identity is IN the text so the splice assertion at the
+          // end can actually tell the two apart. It used to check for the exact
+          // string "line", which stopped meaning anything the moment the fixture
+          // had to grow past one word to clear the movement word floor.
+          const body = [who, ...Array.from({ length: 60 }, (_, w) => `point${i}word${w}`)].join(" ");
+          return {
+            lineIndex: i,
+            speakerName: speaker,
+            text: `${body}.`,
+            tone: speaker === "Zabala" ? "analytical" : "incredulous",
+            energy: "medium",
+            pauseBefore: "none",
+            isInterruption: false,
+            evidenceRefs: [],
+            isFactualClaim: false,
+          };
+        };
         return {
-          segments: [{ type: "topic", title: "t", lines: [{ lineIndex: 0, speakerName: "Zabala", text: "line" }] }],
+          segments: [
+            {
+              type: "topic",
+              title: "t",
+              lines: Array.from({ length: 10 }, (_, i) => movementLine(i)),
+            },
+          ],
           stateAfter: { emotionalTemperature: "warming" },
         } as unknown as T;
       },
@@ -1256,9 +1403,20 @@ async function challengerTests(): Promise<void> {
       out.challenger!.every((c) => (c.error || "").includes("could not complete")),
       "the challenger's real error must be preserved"
     );
+    // The challenger's words must never reach the episode. Each fake writes its
+    // own name into every line, so this is a real check on provenance rather
+    // than on a placeholder string.
+    const movementTexts = out.segments
+      .filter((s: any) => s.type !== "cold_open")
+      .flatMap((s: any) => (s.lines || []).map((l: any) => String(l.text || "")));
+    assert(movementTexts.length > 0, "no movement lines survived into the episode");
     assert(
-      out.segments.every((s: any) => s.lines.every((l: any) => l.text === "line")),
+      movementTexts.every((t: string) => !t.includes("challenger")),
       "the challenger's dialogue must never be spliced into the episode"
+    );
+    assert(
+      movementTexts.every((t: string) => t.includes("primary")),
+      "every movement line must have come from the primary writer"
     );
   });
 }
@@ -1342,15 +1500,19 @@ async function categoryPolicyTests(): Promise<void> {
     await withEnvAsync(FRONTIER_ENV, async () => {
       const m = mockFetch([
         {
-          match: NVIDIA_HOST,
+          // script_movement's primary is xAI/Grok since Mistral was retired, so
+          // the refusal has to come from THERE — a refusal mocked on a host the
+          // chain no longer reaches proves nothing about stopping the chain.
+          match: XAI_HOST,
           respond: (body) =>
-            String(body.model).includes("mistral")
+            String(body.model).includes("grok")
               ? jsonResponse({
                   choices: [{ finish_reason: "stop", message: { refusal: "I cannot write that." } }],
                   usage: { prompt_tokens: 1, completion_tokens: 0 },
                 })
               : jsonResponse({ error: "should not be reached" }, 500),
         },
+        { match: NVIDIA_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
         { match: ZAI_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
         { match: ANTHROPIC_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
       ]);
@@ -1364,7 +1526,9 @@ async function categoryPolicyTests(): Promise<void> {
         assert(err?.category === "safety_refusal", `expected safety_refusal, got ${err?.category}`);
         assert(m.captured.length === 1, `expected exactly ONE request, saw ${m.captured.length}`);
         assert(
-          !m.captured.some((c) => c.url.includes(ZAI_HOST) || c.url.includes(ANTHROPIC_HOST)),
+          !m.captured.some(
+            (c) => c.url.includes(ZAI_HOST) || c.url.includes(ANTHROPIC_HOST) || c.url.includes(NVIDIA_HOST)
+          ),
           "a refusal must not be retried on other providers"
         );
       } finally {
@@ -1618,10 +1782,12 @@ function verificationDisplayTests(): void {
   check("the two verification claims are reported separately per candidate", () => {
     withEnv(FRONTIER_ENV, () => {
       const row = roleRouteReport().find((r) => r.role === "script_movement")!;
-      // script_movement primary is mistral, which the probe DID reach.
-      const primary = row.candidates.find((c) => c.key.includes("mistral"))!;
-      assert(primary.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
-      assert(primary.liveContractVerified === true, "mistral answered the live probe");
+      // script_movement primary is Grok since Mistral was retired. It was
+      // smoke-verified live on 2026-08-12, so it carries the same pair of claims:
+      // the endpoint answers, and nothing has measured whether it is any GOOD.
+      const primary = row.candidates.find((c) => c.key.includes("grok"))!;
+      assert(primary.catalogVerified === true, "the model ID is catalog-confirmed");
+      assert(primary.liveContractVerified === true, "grok answered a live call");
       assert(primary.verification === "not-quality-tested", primary.verification);
       assert(primary.verificationLabel === "live, untested", primary.verificationLabel);
       assert(
@@ -1656,16 +1822,27 @@ function verificationDisplayTests(): void {
       "kimi: 404 for this account"
     );
     assert(
-      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")) === "not-quality-tested",
-      "deepseek pro: the endpoint works, the model has not been quality-tested"
+      verificationState(modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro")) === "broken-in-production",
+      "deepseek pro: the contract probe passed and production failed on every attempt — that is its own state, " +
+        "kept separate from the 503 case above because an operator acts on the two differently"
+    );
+    assert(
+      verificationState({
+        ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
+      }) === "not-quality-tested",
+      "restoring availability must return it to 'endpoint works, quality unproven' rather than to 'validated'"
     );
     assert(
       verificationState(modelCapabilities("nvidia", "some/model-nobody-registered")) === "unavailable-for-account",
       "an unregistered model claims nothing"
     );
+    // Both synthetic cases below must also set availability: a non-routable
+    // availability is checked FIRST and would mask the field under test.
     assert(
       verificationState({
         ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
         qualityTested: true,
       }) === "live-contract-passed",
       "quality-tested + live = the only state that means fully validated"
@@ -1674,6 +1851,7 @@ function verificationDisplayTests(): void {
     assert(
       verificationState({
         ...modelCapabilities("nvidia", "deepseek-ai/deepseek-v4-pro"),
+        availability: "available",
         liveContractVerified: false,
       }) === "catalog-available",
       "catalog listed, live never attempted"
@@ -1749,21 +1927,30 @@ function verifiedProfileTests(): void {
       const zai = `zai/${MODEL_IDS.zai.glmFlash}`;
       const expected: Partial<Record<LLMRole, [string, string]>> = {
         topic_generation: [zai, `nvidia/${MODEL_IDS.nvidia.glm}`],
-        topic_classification: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
+        // deepseek-v4-pro was the declared secondary for six of these roles and
+        // is now non-routable (broken-in-production), so each got a real
+        // replacement rung rather than being left as a chain of one. Before the
+        // replacements, this map resolved topic_classification's secondary to
+        // `anthropic/(provider-default)` — the PAID backup — because filtering
+        // had emptied the free chain behind Z.ai.
+        topic_classification: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         topic_ranking: [`nvidia/${MODEL_IDS.nvidia.glm}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        research_brief: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        research_brief: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        evidence_extraction: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
         // The five MEASURED roles — ordered by the role experiments, not by
         // intent. Changing one of these lines means overriding a measurement,
         // so the evidence in profiles.ts has to change with it.
         script_outline: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
-        script_movement: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
-        script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
-        script_rewrite: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
-        fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
-        continuity_report: [`nvidia/${MODEL_IDS.nvidia.deepseekPro}`, zai],
-        show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.deepseekPro}`],
-        episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        script_movement: [zai, "xai/grok-4.3"],
+        // GLM-5.2 takes the verification secondary, NOT Z.ai — Z.ai stays
+        // excluded from both verification chains on the schema-failure finding
+        // asserted separately below.
+        script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        script_rewrite: [zai, "xai/grok-4.3"],
+        fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
+        continuity_report: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
+        episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         quality_judge: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
       };
       for (const [role, [primary, secondary]] of Object.entries(expected)) {

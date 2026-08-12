@@ -115,20 +115,58 @@ const BEATS = [
 // 13/12 — the counts stay UNEQUAL on purpose, because an exact split trips a
 // different invariant ("the signature of a balancing rule, not of a
 // conversation"). Alternation is 12/24 = 50%, inside the 55% plan ceiling.
+/**
+ * The stub architect's turn plan.
+ *
+ * RUN LENGTHS ARE DELIBERATELY VARIED, and that is not cosmetic. This fixture
+ * used to be a perfect metronome — every speaker run exactly two turns, 12 of 13
+ * runs identical — and the product's turn-plan validator rejects that shape:
+ * "no single run length may cover more than 70% of the plan". So the stub
+ * architect failed validation, every downstream role was skipped, and FOURTEEN
+ * tests in this file failed on one stale fixture. Every one of them reported a
+ * cascade ("not reached — debate_architect failed") rather than the thing it was
+ * written to check, and the suite became something to scroll past.
+ *
+ * The validator is right and is left alone; the fixture was the thing that had
+ * not kept up. Totals are unchanged (13 host A, 12 host B, 25 turns) so the
+ * per-host vocabulary indexing in bodyText() still lines up — only the grouping
+ * moved.
+ *
+ * FOUR RULES APPLY AT ONCE, and they are close to a simultaneous equation — the
+ * comments around validateTurnPlan explain how satisfying them one at a time
+ * walked the real architect into the opposite wall twice. For 25 turns in 14
+ * runs (7 per host) this plan lands:
+ *
+ *   no run longer than 3       max run is 3                          ok
+ *   threes at most 1 in 5      2 of 14 (limit 3)                     ok
+ *   modal length under 70%     7 of 14 are pairs = 50%               ok
+ *   alternation at most 55%    13 switches / 24 gaps = 54.2%         ok
+ *
+ * That last one is the tight one: alternation is (runs - 1) / (turns - 1), so
+ * at 25 turns a FIFTEENTH run would be 58% and fail. Adding a run here means
+ * adding turns too.
+ */
 const TURN_SPEC: Array<{ speakerName: string; beatIndex: number }> = [
-  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 },
-  { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
+  // beat 1 — A×3, B×3 (the two rare threes, spent here and nowhere else)
+  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 },
+  { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
+  // beat 2 — A×2, B×2
   { speakerName: HOST_A, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 },
   { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_B, beatIndex: 2 },
+  // beat 3 — A×2, B×2
   { speakerName: HOST_A, beatIndex: 3 }, { speakerName: HOST_A, beatIndex: 3 },
   { speakerName: HOST_B, beatIndex: 3 }, { speakerName: HOST_B, beatIndex: 3 },
+  // beat 4 — A×2, B×2
   { speakerName: HOST_A, beatIndex: 4 }, { speakerName: HOST_A, beatIndex: 4 },
   { speakerName: HOST_B, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 },
+  // beat 5 — A×2, B×1
   { speakerName: HOST_A, beatIndex: 5 }, { speakerName: HOST_A, beatIndex: 5 },
-  { speakerName: HOST_B, beatIndex: 5 }, { speakerName: HOST_B, beatIndex: 5 },
-  { speakerName: HOST_A, beatIndex: 6 }, { speakerName: HOST_A, beatIndex: 6 },
-  { speakerName: HOST_B, beatIndex: 6 }, { speakerName: HOST_B, beatIndex: 6 },
+  { speakerName: HOST_B, beatIndex: 5 },
+  // beat 6 — the singles: A, B, A, B
   { speakerName: HOST_A, beatIndex: 6 },
+  { speakerName: HOST_B, beatIndex: 6 },
+  { speakerName: HOST_A, beatIndex: 6 },
+  { speakerName: HOST_B, beatIndex: 6 },
 ];
 
 /** Deterministic per-turn text drawn from that host's exclusive vocabulary. */
@@ -171,7 +209,24 @@ function agendaFor(host: string, sentinel: string) {
 
 interface StubCall {
   systemPrompt: string;
+  /**
+   * The cached static prefix. Captured because the host writers send the private
+   * brief, the episode spine and the evidence packet HERE rather than in the
+   * user prompt, so a check that reconstructs only systemPrompt + prompt is
+   * inspecting two thirds of what was actually sent.
+   *
+   * That matters most for the NEGATIVE assertions. "host A's prompt does not
+   * contain host B's brief" passes trivially against text that never included
+   * the block the briefs travel in — the isolation guarantee would read as
+   * green while covering less than it did before.
+   */
+  cacheableContext: string;
   prompt: string;
+}
+
+/** Everything a call actually sent, in the order providers render it. */
+export function stubCallText(c: StubCall): string {
+  return [c.systemPrompt, c.cacheableContext, c.prompt].join("\n");
 }
 
 interface StubOptions {
@@ -230,7 +285,11 @@ class StubProvider implements LLMProvider {
   }
 
   async generateStructuredOutput<T = unknown>(options: GenerateStructuredOutputOptions): Promise<T> {
-    this.calls.push({ systemPrompt: options.systemPrompt || "", prompt: options.prompt || "" });
+    this.calls.push({
+      systemPrompt: options.systemPrompt || "",
+      cacheableContext: (options as { cacheableContext?: string }).cacheableContext || "",
+      prompt: options.prompt || "",
+    });
     const kind = classify(options);
     this.kinds.push(kind);
     const value = this.options.respond(kind, options);
@@ -545,8 +604,11 @@ async function main(): Promise<void> {
     assert.ok(aCalls.length > 0, "host A's writer was never called");
     assert.ok(bCalls.length > 0, "host B's writer was never called");
 
-    const aText = aCalls.map((c) => `${c.systemPrompt}\n${c.prompt}`).join("\n");
-    const bText = bCalls.map((c) => `${c.systemPrompt}\n${c.prompt}`).join("\n");
+    // stubCallText, NOT systemPrompt + prompt: the briefs travel in the cached
+    // static block, and reconstructing two of the three parts would make the
+    // negative assertions below pass without inspecting where a leak would be.
+    const aText = aCalls.map(stubCallText).join("\n");
+    const bText = bCalls.map(stubCallText).join("\n");
 
     // Each writer got its OWN brief...
     assert.ok(aText.includes(SENTINEL_A), "host A's writer never received host A's private brief");
@@ -592,7 +654,7 @@ async function main(): Promise<void> {
     const { result, stubs } = await runPipeline({ respond: { debate_architect: leakyTurnPlan } });
     assert.equal(result.ok, true, `pipeline did not complete: ${result.error}`);
 
-    const aText = stubs.host_a_writer.calls.map((c) => `${c.systemPrompt}\n${c.prompt}`).join("\n");
+    const aText = stubs.host_a_writer.calls.map(stubCallText).join("\n");
     assert.ok(!aText.includes(SENTINEL_B), "the planted leak reached host A's writer verbatim");
     assert.ok(aText.includes("[REDACTED: the other host's private brief]"), "nothing was redacted");
     const breaches = result.trace.violations.filter((v) => v.kind === "isolation_breach");

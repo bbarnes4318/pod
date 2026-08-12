@@ -22,6 +22,7 @@
 import "dotenv/config";
 import { getLLMProvider } from "../lib/providers/llm/factory";
 import { SUPPORTED_LLM_PROVIDERS } from "../lib/providers/llm/factory";
+import { isAllowedAnthropicModel } from "../lib/providers/llm/anthropic";
 
 /** Provider + a model that is CONFIRMED present in that provider's catalog. */
 const CASES: Array<{ provider: string; model: string }> = [
@@ -36,6 +37,20 @@ const CASES: Array<{ provider: string; model: string }> = [
 async function main() {
   const only = process.argv.slice(2).filter((a) => !a.startsWith("--"));
   const cases = only.length ? CASES.filter((c) => only.includes(c.provider)) : CASES;
+
+  // Fail before spending anything if the Anthropic case names an id that is not
+  // a real catalog entry — a 404 here would otherwise read as "out of credit".
+  // The offline guard is `npm run test:anthropic-model-ids`; this is the same
+  // allowlist, checked at the one place that costs money to get wrong.
+  for (const c of cases.filter((x) => x.provider === "anthropic")) {
+    if (!isAllowedAnthropicModel(c.model)) {
+      console.error(
+        `\nABORT: smoke case anthropic/${c.model} is not on ANTHROPIC_MODEL_ALLOWLIST.\n` +
+          `Fix the id (or add it to the allowlist in anthropic.ts) before spending a call on it.\n`
+      );
+      process.exit(1);
+    }
+  }
 
   console.log("\nLive provider smoke test — one completion each. THIS SPENDS MONEY.\n");
   let passed = 0;

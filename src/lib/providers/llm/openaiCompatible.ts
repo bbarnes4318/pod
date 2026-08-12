@@ -322,7 +322,11 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       // such: a role must not be able to claim it reasoned because it asked to.
       reasoningRequested: meta.reasoningRequested,
       reasoningReturned: meta.reasoningReturned,
-      estimatedCostUsd: estimateCostUsd(this.name, tkIn, tkOut, this.config.unpriced),
+      estimatedCostUsd: estimateCostUsd(
+        this.name,
+        { tkIn, tkOut, tkCacheRead: cached },
+        this.config.unpriced
+      ),
     });
   }
 
@@ -375,6 +379,10 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       state.attempts++;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+      // Wall time for THIS attempt. A failure that arrives faster than inference
+      // could possibly have run is evidence in its own right — see
+      // IMPLAUSIBLY_FAST_FAILURE_MS in errors.ts.
+      const attemptStartedAt = Date.now();
       try {
         const response = await fetch(this.endpoint(), {
           method: "POST",
@@ -386,7 +394,12 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         if (response.ok) return await response.json();
 
         const errorText = redactSecrets(await response.text().catch(() => ""));
-        const category = categorizeHttpFailure(response.status, errorText, sentFields);
+        const category = categorizeHttpFailure(
+          response.status,
+          errorText,
+          sentFields,
+          Date.now() - attemptStartedAt
+        );
 
         // NARROW downgrade, and only when the provider NAMES a field we sent.
         // This exists to survive provider drift, not as a normal operating path —
@@ -430,7 +443,7 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         await sleep(delay);
       } catch (err: any) {
         if (err instanceof LlmProviderError) throw err;
-        const category = categorizeNetworkFailure(err);
+        const category = categorizeNetworkFailure(err, Date.now() - attemptStartedAt);
         const wrapped = new LlmProviderError({
           provider: this.name,
           model: this.model,

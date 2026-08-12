@@ -16,7 +16,7 @@
 // Model ids are resolved through env so a catalog rename never requires a code
 // change. See capabilities.ts for the verified/unverified honesty rule.
 
-import { MODEL_IDS, isRoutableByDefault, modelCapabilities } from "./capabilities";
+import { MODEL_IDS, isRoutableByDefault, modelCapabilities, type ModelCapabilities } from "./capabilities";
 import { ALL_ROLES, LLMRole } from "./roles";
 import { readRoutingEnv } from "./routingEnv";
 
@@ -60,6 +60,34 @@ const ZAI_FLASH = (): ProviderModelRef => ({
   provider: "zai",
   model: readRoutingEnv("ZAI_MODEL_GLM_FLASH") || MODEL_IDS.zai.glmFlash,
 });
+
+/**
+ * DIRECT non-NVIDIA dialogue models, added when Mistral was retired.
+ *
+ * These exist because the free routable pool had collapsed to two GLM models
+ * (Z.ai GLM-4.7-flash and GLM-5.2 via NVIDIA) plus Nemotron — and Nemotron is
+ * the quality_judge primary, so using it for a host writer would put a judge on
+ * the chain it grades. Grok and Kimi are the only genuinely different families
+ * this account can currently reach. Both were smoke-verified live on 2026-08-12.
+ */
+const XAI_GROK = (): ProviderModelRef => ({
+  provider: "xai",
+  model: readRoutingEnv("XAI_MODEL") || MODEL_IDS.xai.grok43,
+});
+
+const MOONSHOT_KIMI = (): ProviderModelRef => ({
+  provider: "moonshot",
+  model: readRoutingEnv("MOONSHOT_MODEL") || MODEL_IDS.moonshot.kimiK3,
+});
+
+/**
+ * The role-experiment run whose measurements order the five measured roles
+ * below. Extractable for the same reason the probe date is — see
+ * LLM_CONTRACT_PROBE_DATE. Re-running `npm run test:role-experiments` means
+ * updating this in the same commit, or `npm run routing:staleness` will keep
+ * reporting the age of a run that has been superseded.
+ */
+export const ROLE_EXPERIMENT_DATE = "2026-07-26";
 
 /**
  * LIVE CONTRACT FINDINGS — 2026-07-26 (artifacts/*-contract-report.json)
@@ -131,15 +159,35 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // one family is unreachable the chains converge and the pipeline still
     // completes — with the convergence visible in the role trace rather than
     // hidden, because both records name the model that actually served them.
+    //
+    // HOST B'S FALLBACK ORDER IS INVERTED TOO, and that is the actual fix rather
+    // than a tidiness. The declared inversion above was not enough: Kimi is 404
+    // for this account, so with `kimi -> mistral -> zai` the filter deleted the
+    // primary and BOTH hosts resolved to Mistral first. The inversion was still
+    // there on the page, and the property it exists to create — two families
+    // writing two characters — was silently not happening. Nothing errored; the
+    // episode was just written twice by one model.
+    //
+    // Putting Z.ai ahead of Mistral in host B's fallbacks means the chain
+    // survives Kimi's absence with a DIFFERENT family still leading: host A
+    // resolves to Mistral, host B to Z.ai. The declared intent (Kimi first) is
+    // preserved for the day Kimi becomes reachable, and until then the runnable
+    // chains keep the two hosts apart. testRoutingChainHealth asserts the
+    // runnable side, not just the declared one.
+    // Mistral was retired (410, EOL 2026-08-07) and Kimi was never reachable
+    // through NVIDIA for this account. Both halves of the intended inversion are
+    // now DIRECT integrations that actually answer: Grok for host A, Kimi via
+    // Moonshot for host B. This is closer to the original intent than the map it
+    // replaces — host B was always meant to lead with Kimi.
     case "script_host_a_writer":
-      return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
+      return [XAI_GROK(), NV.kimi(), ZAI_FLASH()];
     case "script_host_b_writer":
-      return [NV.kimi(), NV.mistral(), ZAI_FLASH()];
+      return [NV.kimi(), ZAI_FLASH(), XAI_GROK()];
 
     // Repairing seams between two writers is creative writing, so it stays in
     // the dialogue family rather than moving to a grader.
     case "script_dialogue_director":
-      return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
+      return [XAI_GROK(), NV.kimi(), ZAI_FLASH()];
 
     // A literal audit of callbacks and running bits — cheap and structured.
     case "script_continuity_editor":
@@ -150,7 +198,7 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     case "script_movement":
     case "script_rewrite":
     case "episode_metadata":
-      return [NV.mistral(), NV.kimi(), ZAI_FLASH()];
+      return [XAI_GROK(), NV.kimi(), ZAI_FLASH()];
 
     // Grading against evidence — reasoning mode, independent of the writer.
     case "script_verification":
@@ -267,9 +315,15 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       return [ZAI_FLASH(), NV.glm()];
     case "topic_classification":
     case "show_notes":
-      return [ZAI_FLASH(), NV.deepseekPro()];
+      // Nemotron replaces deepseek-v4-pro as the secondary. Without it these two
+      // filter down to Z.ai alone, and Z.ai is the model that was rate-limited
+      // in production — a single-candidate chain whose one member is the known
+      // flaky one is not a chain.
+      return [ZAI_FLASH(), NV.nemotron()];
     case "episode_metadata":
-      return [ZAI_FLASH(), NV.mistral()];
+      // Mistral retired; Nemotron takes the rung. Metadata is structured
+      // extraction rather than dialogue, so it does not need a creative family.
+      return [ZAI_FLASH(), NV.nemotron()];
 
     // Judgement under comparison.
     case "topic_ranking":
@@ -282,11 +336,17 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       // minutes before returning an empty response or timing out. Nemotron was
       // the fallback that actually completed the same briefs, so it must be the
       // primary instead of paying the known-failing attempt on every topic.
-      return [NV.nemotron(), NV.deepseekPro(), ZAI_FLASH()];
+      // The middle rung is now GLM-5.2 rather than deepseek-v4-pro: same
+      // reasoning-capable tier, and it is a THIRD family, so the chain does not
+      // collapse to one lab if Nemotron has a bad day.
+      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
 
-    // Literal transcript audit.
+    // Literal transcript audit. deepseek-v4-pro held the PRIMARY here and is
+    // now non-routable, so every continuity report was starting one guaranteed
+    // failure down. Z.ai leads (cheap, and this is a literal audit rather than
+    // a judgement call) with Nemotron behind it.
     case "continuity_report":
-      return [NV.deepseekPro(), ZAI_FLASH()];
+      return [ZAI_FLASH(), NV.nemotron()];
 
     // Never shares a model with script_movement.
     case "quality_judge":
@@ -307,37 +367,60 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     case "script_debate_architect":
       return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
 
-    // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s. Mistral is
-    // kept as a different-family fallback, not as a co-primary.
+    // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s, so Z.ai leads
+    // and that measurement still stands. What changed is the FALLBACK: Mistral
+    // was retired by its provider on 2026-08-07 (410 Gone), so the
+    // different-family rung behind Z.ai is now Grok. That is a reachability
+    // repair, not a re-ordering of the measurement — Grok is UNMEASURED on this
+    // role and sits second precisely because nothing has compared it yet.
     case "script_movement":
     case "script_rewrite":
     case "script_dialogue_director":
-      return [ZAI_FLASH(), NV.mistral()];
+      return [ZAI_FLASH(), XAI_GROK()];
 
-    // THE TWO HOST WRITERS GET INVERTED CHAINS ON PURPOSE — see the frontier
-    // profile for the full reasoning. Host A leads with the measured winner
-    // (Z.ai, judge 79 / 143 s); host B leads with Mistral, which measured close
-    // on quality (76) and lost on latency alone. Paying Mistral's latency for
-    // ONE host is the price of two genuinely different minds, and it is a
-    // per-host call rather than three sequential movements, so the episode floor
-    // moves far less than the 536 s dialogue figure suggests. Set
-    // SCRIPT_HOST_B_WRITER_LLM_PROVIDER to collapse them if that trade stops
-    // being worth it — the role trace will show the collapse either way.
+    // THE TWO HOST WRITERS GET INVERTED CHAINS ON PURPOSE — two model families
+    // writing the two characters is what makes "the hosts do not sound like one
+    // model" structural rather than aspirational.
+    //
+    // Host B led with Mistral until its provider retired it on 2026-08-07 (410
+    // Gone), which left BOTH hosts resolving to Z.ai — one model writing both
+    // characters, silently, with nothing erroring. Kimi K3 via Moonshot takes the
+    // primary: smoke-verified live on 2026-08-12, a genuinely different family,
+    // and it collides with neither judge.
+    //
+    // GLM-5.2 was considered and rejected: it is the cold_open_judge primary and
+    // the quality_judge secondary, so putting it on a writer chain would let a
+    // judge grade output it had a hand in. Nemotron was rejected for the same
+    // reason — it is the quality_judge primary.
+    //
+    // WHAT IS AND IS NOT MEASURED. Z.ai leading host A is measured (judge 79 /
+    // 143 s). Kimi leading host B is NOT — it is reachable, different-family and
+    // unproven, chosen because the alternative was no second family at all.
+    // `npm run test:role-experiments dialogue` can now actually run this
+    // comparison: MOONSHOT_API_KEY and XAI_API_KEY are both present on the
+    // worker. Promotion still happens on Jimmy's read of the judge and latency
+    // columns, not here.
     case "script_host_a_writer":
-      return [ZAI_FLASH(), NV.mistral()];
+      return [ZAI_FLASH(), XAI_GROK()];
     case "script_host_b_writer":
-      return [NV.mistral(), ZAI_FLASH()];
+      return [MOONSHOT_KIMI(), ZAI_FLASH()];
 
-    // Literal transcript audit of callbacks and running bits.
+    // Literal transcript audit of callbacks and running bits. Same story as
+    // continuity_report: deepseek-v4-pro was primary and is now non-routable.
     case "script_continuity_editor":
-      return [NV.deepseekPro(), ZAI_FLASH()];
+      return [ZAI_FLASH(), NV.nemotron()];
 
     // Grading against evidence, independent of the writer. Nemotron: 5/5
-    // in-scope, 0 false positives, 13 s. DeepSeek: 0 false positives but 468 s.
-    // Z.ai is excluded — its structured response failed after repair.
+    // in-scope, 0 false positives, 13 s. DeepSeek measured 0 false positives at
+    // 468 s and was the secondary on that strength; it is now non-routable, so
+    // GLM-5.2 takes the rung. Z.ai stays deliberately excluded from BOTH
+    // verification chains — its structured response omitted required top-level
+    // fields even after a repair pass, and a reviewer that cannot return its
+    // verdict cannot gate a publish. That exclusion is why the replacement had
+    // to be GLM-5.2 rather than the Z.ai flash model used elsewhere.
     case "script_verification":
     case "fact_check":
-      return [NV.nemotron(), NV.deepseekPro()];
+      return [NV.nemotron(), NV.glm()];
   }
 }
 
@@ -359,6 +442,38 @@ export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole):
       // No profile-supplied candidates: legacy resolves to today's grouped
       // configuration; custom resolves to explicit role overrides.
       return [];
+  }
+}
+
+/**
+ * Why a candidate was removed, in words an operator can act on.
+ *
+ * Each non-routable state gets its OWN sentence because they call for different
+ * responses: a 404 is a credential or catalog problem, a 503 clears itself, and
+ * a model that passes a probe but fails every real request needs a human to
+ * decide which of the two measurements to believe. These were once collapsed
+ * into one string, and the result was a chain filter reporting "503 capacity"
+ * for a model that had never returned a 503.
+ */
+function filterReasonFor(availability: ModelCapabilities["availability"]): string {
+  switch (availability) {
+    case "unavailable-for-account":
+      return "the model ID does not resolve for the credential in use (404) — reachable only via an explicit role override";
+    case "capacity-limited":
+      return "the endpoint would not serve this account (503 capacity) — reachable only via an explicit role override";
+    case "broken-in-production":
+      return (
+        "a contract probe passed but real pipeline traffic failed on every attempt (see the capability record for the " +
+        "observation and its date) — reachable only via an explicit role override, which is how it gets retested"
+      );
+    case "retired":
+      return (
+        "the provider has END-OF-LIFED this model and it returns 410 Gone — this is permanent, so unlike every other " +
+        "removal here no probe or credential change will restore it; the chain needs a different model"
+      );
+    case "available":
+      // Not reachable: available candidates never enter the filtered list.
+      return "routable";
   }
 }
 
@@ -407,10 +522,7 @@ export function filterProfileChain(
     filtered.push({
       ref,
       availability: caps.availability,
-      reason:
-        caps.availability === "unavailable-for-account"
-          ? "the model ID does not resolve for the credential in use (404) — reachable only via an explicit role override"
-          : "the endpoint would not serve this account (503 capacity) — reachable only via an explicit role override",
+      reason: filterReasonFor(caps.availability),
     });
   }
   return { usable, filtered };

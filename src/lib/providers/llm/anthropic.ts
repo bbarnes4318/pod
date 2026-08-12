@@ -1,5 +1,120 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
-import { recordLlmCall } from "./costLedger";
+import { estimateCostUsd, recordLlmCall } from "./costLedger";
+import { categoryOf } from "./errors";
+
+/**
+ * THE ONE PLACE an Anthropic model id is declared valid.
+ *
+ * An id that is not on this list is not merely unusual — it 404s, and it does so
+ * at the moment the paid backup rung actually fires, which is the worst possible
+ * time to discover a typo. `npm run test:anthropic-model-ids` asserts that the
+ * in-code default and every id this repo configures is a member, so an invalid
+ * default cannot ship silently. Adding a model means adding it HERE and adding a
+ * classification row to the same test.
+ *
+ * Verified against Anthropic's current model catalog on 2026-08-11. The 5 family
+ * (opus/sonnet/fable) and Haiku 4.5 are current; the 4.6/4.8 entries are older
+ * generations that remain served and are legal to pin deliberately.
+ */
+export const ANTHROPIC_MODEL_ALLOWLIST = [
+  "claude-opus-5",
+  "claude-sonnet-5",
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-opus-4-7",
+  "claude-opus-4-6",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "claude-haiku-4-5-20251001",
+] as const;
+
+export type AnthropicModelId = (typeof ANTHROPIC_MODEL_ALLOWLIST)[number];
+
+/**
+ * The model used when neither a call-site override nor ANTHROPIC_MODEL is set.
+ *
+ * Opus 5 deliberately: this repository's settled decision is that Opus 5 writes
+ * scripts. It is a current, valid id ($5/$25 per MTok) — an audit note claiming
+ * otherwise was checked against the catalog on 2026-08-11 and did not hold.
+ */
+export const ANTHROPIC_DEFAULT_MODEL: AnthropicModelId = "claude-opus-5";
+
+export function isAllowedAnthropicModel(model: string): boolean {
+  return (ANTHROPIC_MODEL_ALLOWLIST as readonly string[]).includes(model);
+}
+
+/**
+ * Opus 4.7+, Opus 5, Sonnet 5, and Fable 5 reject sampling params (400).
+ * Matched by substring: "opus-5" cannot collide with "opus-4-5", and the
+ * dated legacy ids (opus-4-5-20251101) keep their own separate entries.
+ * A model NOT listed here is assumed to be an older one that still accepts
+ * temperature — adding a new frontier model means adding it to both lists.
+ *
+ * Free function rather than a method so the classification can be asserted
+ * per-id without constructing a provider (which requires a live credential).
+ */
+export function anthropicSupportsSampling(model: string): boolean {
+  const m = model.toLowerCase();
+  return !(
+    m.includes("opus-4-7") ||
+    m.includes("opus-4-8") ||
+    m.includes("opus-5") ||
+    m.includes("sonnet-5") ||
+    m.includes("fable") ||
+    m.includes("mythos")
+  );
+}
+
+/**
+ * Which quality lever buildBody actually pulls for a model.
+ *
+ * buildBody is an if/else: it sends `temperature` to a sampling-capable model
+ * and only reaches the adaptive-thinking branch when sampling is NOT supported.
+ * That is fine for every model whose two classifications are mutually exclusive,
+ * and silently wrong for one that is BOTH — such a model gets temperature and no
+ * thinking, and no thinking headroom either, with nothing anywhere saying so.
+ *
+ * Extracted as a named function so the branch a model takes is a value that can
+ * be asserted, rather than a control-flow detail you have to re-derive by
+ * reading two matchers and an if/else. Behaviour is unchanged.
+ *
+ *   "sampling"          — temperature is sent; thinking is NOT enabled
+ *   "adaptive-thinking" — thinking:{type:"adaptive"} + max_tokens headroom
+ *   "neither"           — no temperature, no thinking (pre-adaptive, or a model
+ *                         that rejects sampling and has no adaptive support)
+ */
+export type AnthropicTuningMode = "sampling" | "adaptive-thinking" | "neither";
+
+export function anthropicTuningMode(model: string): AnthropicTuningMode {
+  if (anthropicSupportsSampling(model)) return "sampling";
+  if (anthropicSupportsAdaptiveThinking(model)) return "adaptive-thinking";
+  return "neither";
+}
+
+/**
+ * Models the if/else above SHADOWS: both sampling-capable and adaptive-capable,
+ * so the adaptive branch is unreachable for them. Empty is the healthy state.
+ */
+export function anthropicModelsWithShadowedThinking(): string[] {
+  return ANTHROPIC_MODEL_ALLOWLIST.filter(
+    (m) => anthropicSupportsSampling(m) && anthropicSupportsAdaptiveThinking(m)
+  );
+}
+
+/** Models where adaptive thinking is supported and worth enabling. */
+export function anthropicSupportsAdaptiveThinking(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m.includes("opus-4-6") ||
+    m.includes("opus-4-7") ||
+    m.includes("opus-4-8") ||
+    m.includes("opus-5") ||
+    m.includes("sonnet-4-6") ||
+    m.includes("sonnet-5") ||
+    m.includes("fable") ||
+    m.includes("mythos")
+  );
+}
 
 /**
  * Anthropic Claude provider, hardened for modern models (Opus 5, Opus 4.7/4.8,
@@ -30,45 +145,21 @@ export class AnthropicLLMProvider implements LLMProvider {
       throw new Error("[Anthropic] Missing or default ANTHROPIC_API_KEY environment variable. Set ANTHROPIC_API_KEY to use Claude for script generation.");
     }
     this.apiKey = key;
-    this.model = modelOverride || process.env.ANTHROPIC_MODEL || "claude-opus-5";
+    this.model = modelOverride || process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL;
   }
 
   getAccumulatedUsage(): LLMUsage {
     return { ...this.usage };
   }
 
-  /**
-   * Opus 4.7+, Opus 5, Sonnet 5, and Fable 5 reject sampling params (400).
-   * Matched by substring: "opus-5" cannot collide with "opus-4-5", and the
-   * dated legacy ids (opus-4-5-20251101) keep their own separate entries.
-   * A model NOT listed here is assumed to be an older one that still accepts
-   * temperature — adding a new frontier model means adding it to both lists.
-   */
+  /** See anthropicSupportsSampling — the classification lives at module scope
+   *  so it can be asserted per-id without a live credential. */
   private supportsSampling(): boolean {
-    const m = this.model.toLowerCase();
-    return !(
-      m.includes("opus-4-7") ||
-      m.includes("opus-4-8") ||
-      m.includes("opus-5") ||
-      m.includes("sonnet-5") ||
-      m.includes("fable") ||
-      m.includes("mythos")
-    );
+    return anthropicSupportsSampling(this.model);
   }
 
-  /** Models where adaptive thinking is supported and worth enabling. */
   private supportsAdaptiveThinking(): boolean {
-    const m = this.model.toLowerCase();
-    return (
-      m.includes("opus-4-6") ||
-      m.includes("opus-4-7") ||
-      m.includes("opus-4-8") ||
-      m.includes("opus-5") ||
-      m.includes("sonnet-4-6") ||
-      m.includes("sonnet-5") ||
-      m.includes("fable") ||
-      m.includes("mythos")
-    );
+    return anthropicSupportsAdaptiveThinking(this.model);
   }
 
   private buildBody(options: GenerateTextOptions, systemPrompt: string | undefined): Record<string, any> {
@@ -92,9 +183,13 @@ export class AnthropicLLMProvider implements LLMProvider {
     if (systemBlocks.length > 0) {
       body.system = systemBlocks;
     }
-    if (this.supportsSampling()) {
+    // Switch on the NAMED mode rather than re-deriving the if/else here, so the
+    // branch this code takes and the branch anthropicTuningMode() reports can
+    // never drift apart. Same behaviour as the original if/else.
+    const mode = anthropicTuningMode(this.model);
+    if (mode === "sampling") {
       if (options.temperature !== undefined) body.temperature = options.temperature;
-    } else if (this.supportsAdaptiveThinking()) {
+    } else if (mode === "adaptive-thinking") {
       // Adaptive thinking is the quality lever on these models (sampling
       // params are gone). Not on by default on Opus 4.7/4.8 — set explicitly.
       body.thinking = { type: "adaptive" };
@@ -119,11 +214,53 @@ export class AnthropicLLMProvider implements LLMProvider {
     return body;
   }
 
+  /**
+   * FAILURES ARE RECORDED, not just successes.
+   *
+   * This adapter used to write to the ledger only inside `if (response.ok)`, so
+   * a provider that rejected every single call produced ZERO `[LLMCost]` lines
+   * and was invisible to every cost surface. That is not hypothetical: a render
+   * on 2026-08-12 made six Anthropic calls, all rejected for insufficient
+   * credit, and the ledger showed nothing at all — the run read as "Anthropic
+   * was never reached" when Anthropic had been reached and had refused.
+   *
+   * The same blindness is how a RETIRED model went unnoticed for four days.
+   * A dead provider must be loud in the one place people look at cost.
+   */
   private async request(body: Record<string, any>): Promise<any> {
+    const startedAt = Date.now();
+    const state = { attempts: 0, retries: 0 };
+    try {
+      return await this.requestWithRetries(body, state);
+    } catch (err) {
+      recordLlmCall({
+        provider: this.name,
+        model: this.model,
+        tkIn: 0,
+        tkOut: 0,
+        durationMs: Date.now() - startedAt,
+        attempts: state.attempts,
+        retries: state.retries,
+        ok: false,
+        failure: categoryOf(err),
+        // A failed call bills nothing, and `null` (unpriced) would be a
+        // different and wrong claim — this is a measured zero.
+        estimatedCostUsd: 0,
+      });
+      throw err;
+    }
+  }
+
+  private async requestWithRetries(
+    body: Record<string, any>,
+    state: { attempts: number; retries: number }
+  ): Promise<any> {
     const maxRetries = 2;
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      state.attempts++;
+      if (attempt > 0) state.retries++;
       const startedAt = Date.now();
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -144,14 +281,29 @@ export class AnthropicLLMProvider implements LLMProvider {
             this.usage.outputTokens += u.output_tokens || 0;
             this.usage.requestCount += 1;
             // Measurement only: per-stage cost ledger, provider-reported counts.
+            const tkIn = u.input_tokens || 0;
+            const tkOut = u.output_tokens || 0;
+            const tkCacheRead = u.cache_read_input_tokens || 0;
+            const tkCacheWrite = u.cache_creation_input_tokens || 0;
             recordLlmCall({
               provider: this.name,
               model: this.model,
-              tkIn: u.input_tokens || 0,
-              tkOut: u.output_tokens || 0,
-              tkCacheRead: u.cache_read_input_tokens || 0,
-              tkCacheWrite: u.cache_creation_input_tokens || 0,
+              tkIn,
+              tkOut,
+              tkCacheRead,
+              tkCacheWrite,
               durationMs: Date.now() - startedAt,
+              // This provider previously recorded no cost at all, so every
+              // Anthropic call logged `cost=unpriced` no matter how the operator
+              // configured LLM_PRICE_ANTHROPIC_*. Anthropic is the one PAID rung
+              // in the chain, which made the unpriced calls exactly the ones
+              // worth pricing. `unpriced: false` is not an assumption — it is
+              // what capabilities.ts already declares for this provider.
+              estimatedCostUsd: estimateCostUsd(
+                this.name,
+                { tkIn, tkOut, tkCacheRead, tkCacheWrite },
+                false
+              ),
             });
           }
           return data;

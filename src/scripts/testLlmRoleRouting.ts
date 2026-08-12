@@ -369,7 +369,10 @@ async function main() {
       llm: capturingProvider(sink),
       ...hostWriterArgs("Zabala", "Mulkey", BRIEF_A, privateBriefTerms(BRIEF_B as never)),
     });
-    const sent = `${result.isolation.sentSystemPrompt}\n${result.isolation.sentPrompt}`;
+    // `composed` deliberately, not systemPrompt+prompt: the brief and spine now
+    // travel in a third block (the cached static prefix), and reconstructing
+    // only two of the three parts would let a leak through that block pass.
+    const sent = result.isolation.composed;
     for (const term of privateBriefTerms(BRIEF_B as never)) {
       assert.ok(!sent.includes(term), `host B's brief leaked into host A's prompt: "${term.slice(0, 40)}..."`);
     }
@@ -391,7 +394,7 @@ async function main() {
     const result = await writeHostLines({ llm: capturingProvider(sink), ...args });
     assert.ok(result.isolation.redactedTerms.length > 0, "the leak must be caught, not trusted away");
     assert.ok(
-      !`${result.isolation.sentSystemPrompt}\n${result.isolation.sentPrompt}`.includes(BRIEF_B.protectedBelief),
+      !result.isolation.composed.includes(BRIEF_B.protectedBelief),
       "and the phrase must not reach the model"
     );
   });

@@ -210,10 +210,22 @@ async function generateOneColdOpenVariant(
     systemPrompt: string;
   }
 ): Promise<{ id: (typeof IDS)[number]; lines: CreativeScriptLine[] }> {
+  // Same cache-stable split as the host writers: the beat, the agendas and the
+  // evidence packet are identical across all three angles, and only the angle
+  // itself and the output contract vary. The saving is CONDITIONAL here — the
+  // three angles are deliberately spread across different routes when a writer
+  // pool is configured, and a cache is per-model, so a read only lands when two
+  // angles happen to share a route. Structuring it correctly costs nothing and
+  // pays whenever they do.
+  const cacheableStatic = `COLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas
+    .map((a) => `${a.speakerName}: ${JSON.stringify(a)}`)
+    .join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}`;
+
   const result = await withLlmStage(`script:cold-open-variant:${assignment.variantId}`, () =>
     assignment.provider.generateStructuredOutput<{ lines: CreativeScriptLine[] }>({
       systemPrompt: coldOpenSystemPrompt(input.systemPrompt),
-      prompt: `Write ONE 45-second opening for ${JSON.stringify(input.episodeTitle)} on this angle:\n${assignment.variantId} — ${COLD_OPEN_ANGLES[assignment.variantId]}.\n\nCOLD-OPEN BEAT:\n${JSON.stringify(input.coldOpenBeat)}\n\nPRIVATE AGENDAS (keep separate):\n${input.agendas.map((a) => `${a.speakerName}: ${JSON.stringify(a)}`).join("\n")}\n\nEVIDENCE:\n${input.topicsEvidence}\n\n${coldOpenLineContract(input.speakerNames)} Return JSON only: {"lines":[]}`,
+      cacheableContext: cacheableStatic,
+      prompt: `Write ONE 45-second opening for ${JSON.stringify(input.episodeTitle)} on this angle:\n${assignment.variantId} — ${COLD_OPEN_ANGLES[assignment.variantId]}.\n\n${coldOpenLineContract(input.speakerNames)} Return JSON only: {"lines":[]}`,
       temperature: 0.9,
       maxTokens: 4000,
       validate: (value) =>
@@ -773,7 +785,11 @@ export interface HostWriterChunkResult {
   isolation: {
     redactedTerms: string[];
     sentSystemPrompt: string;
+    /** The per-(episode, host) static block sent as a cached prefix. */
+    sentCacheableContext: string;
     sentPrompt: string;
+    /** All three parts joined in render order — use this for isolation checks. */
+    composed: string;
   };
 }
 
@@ -853,13 +869,35 @@ You are the private writer for ${input.hostName}, and ONLY for ${input.hostName}
 - Your character's sentence shapes, evasions, humour, vulnerabilities and aggression are yours to own. Do not converge on a neutral house voice — another writer is writing the other host and the difference between you is the show.
 - Never speak the brief aloud, never name your objective, never explain your own psychology.`;
 
-  const rawPrompt = `MOVEMENT ${input.movementNumber} of ${input.movementCount}.
-
-YOUR PRIVATE BRIEF (${input.hostName} only):
+  // ---------------------------------------------------------------------------
+  // CACHE-STABLE SPLIT.
+  //
+  // A host writer is called once per movement, so roughly six times an episode,
+  // and every one of those calls used to resend the private brief, the spine and
+  // the whole evidence packet interleaved with the movement number, the turn
+  // plan and the transcript so far. Interleaved is the operative word: prompt
+  // caching is a PREFIX match, so a single changing byte early in the text makes
+  // every byte after it uncacheable. The static material sat behind the movement
+  // header, so none of it ever cached and the packet was re-billed at full input
+  // price on every call.
+  //
+  // Everything below `cacheableStatic` is identical for a given (episode, host)
+  // and goes to the provider as a cached block; everything in `rawPrompt` varies
+  // per movement and follows it. BEATS stays dynamic because it genuinely is:
+  // the caller passes `movements[m]`, one movement's beats, not the episode's.
+  //
+  // The providers render systemPrompt → cacheableContext → prompt, so "the
+  // EVIDENCE block above" further down still refers to text that precedes it.
+  const cacheableStatic = `YOUR PRIVATE BRIEF (${input.hostName} only):
 ${JSON.stringify(input.privateBrief, null, 2)}
 
 EPISODE SPINE:
 ${JSON.stringify(input.spine, null, 2)}
+
+EVIDENCE — only the facts assigned to your own turns may be newly introduced, and every specific number, date, result, quote or named-person action you state as true must be in that evidence and carry its ref. With no evidence, argue vividly without a fabricated specific:
+${input.topicsEvidence}`;
+
+  const rawPrompt = `MOVEMENT ${input.movementNumber} of ${input.movementCount}.
 
 BEATS IN PLAY:
 ${JSON.stringify(input.beats, null, 2)}
@@ -870,9 +908,6 @@ ${planView}
 WHAT IS ALREADY ON THE PAGE — continue its emotional and conversational logic. READ IT, RESPOND TO IT, NEVER REPRODUCE IT: any line below has already been spoken aloud, including lines of your own. Repeating one — verbatim or lightly reworded — is the single most obvious sign a script was assembled by a machine, and such a line is dropped without being replaced, leaving your character silent on that turn:
 ${transcriptSoFar}
 
-EVIDENCE — only the facts assigned to your own turns may be newly introduced, and every specific number, date, result, quote or named-person action you state as true must be in that evidence and carry its ref. With no evidence, argue vividly without a fabricated specific:
-${input.topicsEvidence}
-
 Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent first. Then hit targetWords: it is a FLOOR, not a ceiling, and a turn that lands well under it starves the episode — the whole script is rejected outright if the totals come up short, which no amount of good intent recovers.
 
 EVIDENCE REFS ARE NOT DECORATION. Every line you mark "isFactualClaim":true must carry at least one evidenceRefs entry copied VERBATIM from the EVIDENCE block above — an exact phrase or number as written there. Not a paraphrase, not a source name, not a summary. A factual claim with an empty evidenceRefs is treated downstream as UNSUPPORTED and can block the episode from publishing. If you cannot quote the evidence for a specific, do not state that specific.
@@ -882,14 +917,26 @@ KEEP EACH REF SHORT: the shortest exact fragment that pins the fact, TWELVE WORD
 Return valid JSON only. The two lines below show both shapes — an ordinary line, and a line making a factual claim:
 {"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false},{"turnIndex":1,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words that assert a specific number or result","tone":"analytical","energy":"medium","pauseBefore":"beat","isInterruption":false,"evidenceRefs":["31 of 44 on third down"],"isFactualClaim":true}]}`;
 
+  // REDACTION RUNS OVER ALL THREE PARTS, and that is load-bearing rather than
+  // tidy. Splitting the prompt in two would have silently halved the isolation
+  // guarantee if the new static block were left out — the brief and the spine,
+  // the two places a foreign phrase is most likely to surface, both live there
+  // now. redactForeignBrief is deterministic (a fixed term list, ordered
+  // case-insensitive replacement, a constant replacement string), so redacting
+  // the static block does not make it vary between calls: identical input and
+  // identical terms give byte-identical output, which is what keeps the cache
+  // prefix stable. testPromptCacheStability asserts exactly that.
   const redactedSystem = redactForeignBrief(rawSystemPrompt, input.foreignBriefTerms);
+  const redactedStatic = redactForeignBrief(cacheableStatic, input.foreignBriefTerms);
   const redactedPrompt = redactForeignBrief(rawPrompt, input.foreignBriefTerms);
   const sentSystemPrompt = redactedSystem.text;
+  const sentCacheableContext = redactedStatic.text;
   const sentPrompt = redactedPrompt.text;
 
   const result = await withLlmStage(`script:host-writer:${input.hostName}`, () =>
     input.llm.generateStructuredOutput<{ lines: HostWrittenLine[] }>({
       systemPrompt: sentSystemPrompt,
+      cacheableContext: sentCacheableContext,
       prompt: sentPrompt,
       temperature: input.temperature,
       maxTokens: input.maxTokens,
@@ -914,9 +961,17 @@ Return valid JSON only. The two lines below show both shapes — an ordinary lin
       text: String(line.text ?? ""),
     })),
     isolation: {
-      redactedTerms: [...new Set([...redactedSystem.redacted, ...redactedPrompt.redacted])],
+      redactedTerms: [
+        ...new Set([...redactedSystem.redacted, ...redactedStatic.redacted, ...redactedPrompt.redacted]),
+      ],
       sentSystemPrompt,
+      sentCacheableContext,
       sentPrompt,
+      // Every part, in the order the providers render them. Exposed so an
+      // isolation check cannot pass by inspecting only two thirds of what was
+      // actually sent — which is precisely how splitting this prompt could have
+      // weakened the guarantee without any test noticing.
+      composed: [sentSystemPrompt, sentCacheableContext, sentPrompt].join("\n\n"),
     },
   };
 }
