@@ -1,5 +1,6 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
+import { categoryOf } from "./errors";
 
 /**
  * THE ONE PLACE an Anthropic model id is declared valid.
@@ -213,11 +214,53 @@ export class AnthropicLLMProvider implements LLMProvider {
     return body;
   }
 
+  /**
+   * FAILURES ARE RECORDED, not just successes.
+   *
+   * This adapter used to write to the ledger only inside `if (response.ok)`, so
+   * a provider that rejected every single call produced ZERO `[LLMCost]` lines
+   * and was invisible to every cost surface. That is not hypothetical: a render
+   * on 2026-08-12 made six Anthropic calls, all rejected for insufficient
+   * credit, and the ledger showed nothing at all — the run read as "Anthropic
+   * was never reached" when Anthropic had been reached and had refused.
+   *
+   * The same blindness is how a RETIRED model went unnoticed for four days.
+   * A dead provider must be loud in the one place people look at cost.
+   */
   private async request(body: Record<string, any>): Promise<any> {
+    const startedAt = Date.now();
+    const state = { attempts: 0, retries: 0 };
+    try {
+      return await this.requestWithRetries(body, state);
+    } catch (err) {
+      recordLlmCall({
+        provider: this.name,
+        model: this.model,
+        tkIn: 0,
+        tkOut: 0,
+        durationMs: Date.now() - startedAt,
+        attempts: state.attempts,
+        retries: state.retries,
+        ok: false,
+        failure: categoryOf(err),
+        // A failed call bills nothing, and `null` (unpriced) would be a
+        // different and wrong claim — this is a measured zero.
+        estimatedCostUsd: 0,
+      });
+      throw err;
+    }
+  }
+
+  private async requestWithRetries(
+    body: Record<string, any>,
+    state: { attempts: number; retries: number }
+  ): Promise<any> {
     const maxRetries = 2;
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      state.attempts++;
+      if (attempt > 0) state.retries++;
       const startedAt = Date.now();
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {

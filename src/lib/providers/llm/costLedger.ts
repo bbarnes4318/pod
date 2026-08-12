@@ -219,7 +219,28 @@ export function estimateCostUsd(
     typeof basis === "number" ? { tkIn: basis, tkOut: Number(tkOutOrUnpriced) || 0 } : basis;
   const unpriced = typeof basis === "number" ? Boolean(unpricedArg) : Boolean(tkOutOrUnpriced);
 
-  if (unpriced) return null;
+  // AN EXPLICIT RATE OUTRANKS THE PROVIDER'S `unpriced` FLAG.
+  //
+  // The flag means "this integration has no list price" — true of a free trial
+  // endpoint, and the right default. It is NOT a statement that the operator
+  // cannot know better. Previously the flag was checked first and won
+  // unconditionally, so `LLM_PRICE_NVIDIA_IN=0` was silently ignored and every
+  // NVIDIA and Z.ai line logged `cost=unpriced` however the worker was
+  // configured — four variables that did nothing, and a cost summary where the
+  // free rungs were indistinguishable from the unmeasured ones.
+  //
+  // Order now: a configured rate wins if there is one; with no rate the result
+  // is null either way, so the flag still decides every case it used to — it
+  // just no longer overrides an operator who has said what the thing costs.
+  // That keeps "unpriced" meaning "nobody has said what this costs" rather than
+  // "we decided not to look", and makes an explicit 0 a MEASUREMENT: a free rung
+  // reporting $0.0000 is a fact, an absent rate is an absence, and a cost line
+  // should not blur the two.
+  //
+  // `unpriced` is therefore no longer consulted directly — it is subsumed by
+  // "is there a rate?". Kept in the signature because every call site passes it
+  // and it documents the provider's own claim at the point of the call.
+  void unpriced;
   const rate = rateFor(provider);
   if (!rate) return null;
   return (

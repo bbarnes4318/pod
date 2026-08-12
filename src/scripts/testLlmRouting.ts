@@ -146,8 +146,17 @@ const FRONTIER_ENV = {
   LLM_ALLOW_LEGACY_FALLBACK: "true",
   NVIDIA_API_KEY: "nvapi-test-key-value-1234567890",
   ZAI_API_KEY: "zai-test-key-value-1234567890",
+  // The dialogue roles moved to DIRECT providers when Mistral was retired, so
+  // the test env has to carry their credentials too. Without them the provider
+  // cannot even be constructed, routing skips the candidate before any mock is
+  // consulted, and a test that thinks it is exercising the primary is quietly
+  // exercising the fourth rung instead.
+  XAI_API_KEY: "xai-test-key-value-1234567890",
+  MOONSHOT_API_KEY: "moonshot-test-key-value-1234567890",
   NVIDIA_MAX_RETRIES: "0",
   ZAI_MAX_RETRIES: "0",
+  XAI_MAX_RETRIES: "0",
+  MOONSHOT_MAX_RETRIES: "0",
 };
 
 /** The same profile in the DEFAULT comparison mode: no paid fallback at all. */
@@ -220,6 +229,7 @@ function anthropicOk(text: string): Response {
 const NVIDIA_HOST = "integrate.api.nvidia.com";
 const ZAI_HOST = "api.z.ai";
 const ANTHROPIC_HOST = "api.anthropic.com";
+const XAI_HOST = "api.x.ai";
 const OPENAI_HOST = "api.openai.com";
 
 // ================================================================ 1. legacy
@@ -362,12 +372,12 @@ function profileTests(): void {
         research_brief: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
         evidence_extraction: "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
         script_outline: "nvidia/z-ai/glm-5.2",
-        script_movement: "nvidia/mistralai/mistral-medium-3.5-128b",
+        script_movement: "xai/grok-4.3",
         script_verification: "nvidia/deepseek-ai/deepseek-v4-pro",
-        script_rewrite: "nvidia/mistralai/mistral-medium-3.5-128b",
+        script_rewrite: "xai/grok-4.3",
         fact_check: "nvidia/deepseek-ai/deepseek-v4-pro",
         show_notes: "nvidia/deepseek-ai/deepseek-v4-flash",
-        episode_metadata: "nvidia/mistralai/mistral-medium-3.5-128b",
+        episode_metadata: "xai/grok-4.3",
         // Deliberately INVERTED against quality_judge: two judging roles led by
         // the same model would make the cold-open pick and the final grade one
         // opinion cast twice.
@@ -388,7 +398,7 @@ function profileTests(): void {
       const r = resolveRolePlan("script_rewrite").candidates.map(candidateKey);
       assert(v[0] !== r[0], `both roles resolved to ${v[0]} — the diagnoser must not be the rewriter`);
       assert(
-        r[0].includes("mistral"),
+        r[0].includes("grok"),
         `rewrite must go to the creative dialogue model, got ${r[0]}`
       );
       // Asserted as a PROPERTY, not as one hardcoded id. This line used to
@@ -478,15 +488,18 @@ function profileTests(): void {
     withEnv(FRONTIER_ENV, () => {
       const first = candidateKey(resolveRolePlan("script_movement").candidates[0]);
       assert(first !== "anthropic/claude-opus-5", "SCRIPT_LLM_MODEL must not win over the profile primary");
-      assert(first === "nvidia/mistralai/mistral-medium-3.5-128b", first);
+      assert(first === "xai/grok-4.3", first);
     });
   });
 
   check("a catalog rename is a one-variable fix", () => {
-    withEnv({ ...FRONTIER_ENV, NVIDIA_MODEL_MISTRAL: "mistralai/mistral-medium-9" }, () => {
+    // Demonstrated on XAI_MODEL rather than NVIDIA_MODEL_MISTRAL: Mistral was
+    // retired by its provider, so the variable that used to prove this no longer
+    // points at anything in a chain. The MECHANISM is what is under test.
+    withEnv({ ...FRONTIER_ENV, XAI_MODEL: "grok-9-turbo" }, () => {
       assert(
-        candidateKey(resolveRolePlan("script_movement").candidates[0]) === "nvidia/mistralai/mistral-medium-9",
-        "NVIDIA_MODEL_MISTRAL must override the built-in id"
+        candidateKey(resolveRolePlan("script_movement").candidates[0]) === "xai/grok-9-turbo",
+        "XAI_MODEL must override the built-in id"
       );
     });
   });
@@ -508,13 +521,13 @@ function loopSafetyTests(): void {
     withEnv(
       {
         ...FRONTIER_ENV,
-        SCRIPT_MOVEMENT_LLM_PROVIDER: "nvidia",
-        SCRIPT_MOVEMENT_LLM_MODEL: "mistralai/mistral-medium-3.5-128b",
+        SCRIPT_MOVEMENT_LLM_PROVIDER: "xai",
+        SCRIPT_MOVEMENT_LLM_MODEL: "grok-4.3",
       },
       () => {
         const keys = resolveRolePlan("script_movement").candidates.map(candidateKey);
         assert(new Set(keys).size === keys.length, `duplicate endpoint in chain: ${keys.join(", ")}`);
-        assert(keys.filter((k) => k.includes("mistral-medium-3.5")).length === 1, keys.join(", "));
+        assert(keys.filter((k) => k.includes("grok-4.3")).length === 1, keys.join(", "));
       }
     );
   });
@@ -884,7 +897,11 @@ function stageTests(): void {
     withEnv({ ...FRONTIER_ENV, APP_DEPLOYMENT_STAGE: "development" }, () => {
       const adv = stageAdvisory(["nvidia", "zai", "anthropic"]);
       assert(adv.message === null, `expected no advisory, got: ${adv.message}`);
-      assert(candidateKey(resolveRolePlan("script_movement").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
+      // research_brief rather than script_movement: the dialogue roles moved to
+      // direct providers when Mistral was retired, so script_movement is no
+      // longer NVIDIA-hosted. The point of this line is that the STAGE does not
+      // alter routing, which needs a role that is still NVIDIA-primary.
+      assert(candidateKey(resolveRolePlan("research_brief").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
     });
   });
 
@@ -892,7 +909,11 @@ function stageTests(): void {
     withEnv({ ...FRONTIER_ENV, APP_DEPLOYMENT_STAGE: "staging" }, () => {
       const adv = stageAdvisory(["nvidia"]);
       assert(adv.message === null, `expected no advisory, got: ${adv.message}`);
-      assert(candidateKey(resolveRolePlan("script_movement").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
+      // research_brief rather than script_movement: the dialogue roles moved to
+      // direct providers when Mistral was retired, so script_movement is no
+      // longer NVIDIA-hosted. The point of this line is that the STAGE does not
+      // alter routing, which needs a role that is still NVIDIA-primary.
+      assert(candidateKey(resolveRolePlan("research_brief").candidates[0]).startsWith("nvidia/"), "NVIDIA must stay primary");
     });
   });
 
@@ -1479,15 +1500,19 @@ async function categoryPolicyTests(): Promise<void> {
     await withEnvAsync(FRONTIER_ENV, async () => {
       const m = mockFetch([
         {
-          match: NVIDIA_HOST,
+          // script_movement's primary is xAI/Grok since Mistral was retired, so
+          // the refusal has to come from THERE — a refusal mocked on a host the
+          // chain no longer reaches proves nothing about stopping the chain.
+          match: XAI_HOST,
           respond: (body) =>
-            String(body.model).includes("mistral")
+            String(body.model).includes("grok")
               ? jsonResponse({
                   choices: [{ finish_reason: "stop", message: { refusal: "I cannot write that." } }],
                   usage: { prompt_tokens: 1, completion_tokens: 0 },
                 })
               : jsonResponse({ error: "should not be reached" }, 500),
         },
+        { match: NVIDIA_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
         { match: ZAI_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
         { match: ANTHROPIC_HOST, respond: () => jsonResponse({ error: "should not be reached" }, 500) },
       ]);
@@ -1501,7 +1526,9 @@ async function categoryPolicyTests(): Promise<void> {
         assert(err?.category === "safety_refusal", `expected safety_refusal, got ${err?.category}`);
         assert(m.captured.length === 1, `expected exactly ONE request, saw ${m.captured.length}`);
         assert(
-          !m.captured.some((c) => c.url.includes(ZAI_HOST) || c.url.includes(ANTHROPIC_HOST)),
+          !m.captured.some(
+            (c) => c.url.includes(ZAI_HOST) || c.url.includes(ANTHROPIC_HOST) || c.url.includes(NVIDIA_HOST)
+          ),
           "a refusal must not be retried on other providers"
         );
       } finally {
@@ -1755,10 +1782,12 @@ function verificationDisplayTests(): void {
   check("the two verification claims are reported separately per candidate", () => {
     withEnv(FRONTIER_ENV, () => {
       const row = roleRouteReport().find((r) => r.role === "script_movement")!;
-      // script_movement primary is mistral, which the probe DID reach.
-      const primary = row.candidates.find((c) => c.key.includes("mistral"))!;
-      assert(primary.catalogVerified === true, "the NVIDIA model ID is catalog-confirmed");
-      assert(primary.liveContractVerified === true, "mistral answered the live probe");
+      // script_movement primary is Grok since Mistral was retired. It was
+      // smoke-verified live on 2026-08-12, so it carries the same pair of claims:
+      // the endpoint answers, and nothing has measured whether it is any GOOD.
+      const primary = row.candidates.find((c) => c.key.includes("grok"))!;
+      assert(primary.catalogVerified === true, "the model ID is catalog-confirmed");
+      assert(primary.liveContractVerified === true, "grok answered a live call");
       assert(primary.verification === "not-quality-tested", primary.verification);
       assert(primary.verificationLabel === "live, untested", primary.verificationLabel);
       assert(
@@ -1912,16 +1941,16 @@ function verifiedProfileTests(): void {
         // intent. Changing one of these lines means overriding a measurement,
         // so the evidence in profiles.ts has to change with it.
         script_outline: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
-        script_movement: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        script_movement: [zai, "xai/grok-4.3"],
         // GLM-5.2 takes the verification secondary, NOT Z.ai — Z.ai stays
         // excluded from both verification chains on the schema-failure finding
         // asserted separately below.
         script_verification: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
-        script_rewrite: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        script_rewrite: [zai, "xai/grok-4.3"],
         fact_check: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
         continuity_report: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         show_notes: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
-        episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.mistral}`],
+        episode_metadata: [zai, `nvidia/${MODEL_IDS.nvidia.nemotron}`],
         quality_judge: [`nvidia/${MODEL_IDS.nvidia.nemotron}`, `nvidia/${MODEL_IDS.nvidia.glm}`],
       };
       for (const [role, [primary, secondary]] of Object.entries(expected)) {

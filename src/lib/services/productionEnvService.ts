@@ -551,6 +551,9 @@ export function getLlmRoutingChecks(): EnvCheck[] {
   // Reported separately from liveFailed: "the provider throttled us" and "the
   // probe and production disagree" need different responses from the operator.
   const prodBroken = inState("broken-in-production");
+  // Permanent, unlike every other non-routable state — worth its own line so an
+  // operator does not go looking for a probe to re-run.
+  const retired = inState("retired");
 
   const detail =
     (validated.length ? `LIVE CONTRACT PASSED and quality-tested: ${validated.join(", ")}. ` : "") +
@@ -572,6 +575,10 @@ export function getLlmRoutingChecks(): EnvCheck[] {
     (prodBroken.length
       ? `BROKEN IN PRODUCTION (a contract probe passed, but real pipeline traffic failed on every attempt) — REMOVED ` +
         `from the default chains, reachable only via an explicit role override: ${prodBroken.join(", ")}. `
+      : "") +
+    (retired.length
+      ? `RETIRED BY THE PROVIDER (end of life, 410 Gone) — PERMANENTLY removed from every chain; no probe will bring ` +
+        `these back and any role still naming one needs a different model: ${retired.join(", ")}. `
       : "");
 
   checks.push({
@@ -580,13 +587,15 @@ export function getLlmRoutingChecks(): EnvCheck[] {
       liveFailed.length > 0 ||
       noAccount.length > 0 ||
       prodBroken.length > 0 ||
+      retired.length > 0 ||
       untested.length > 0 ||
       catalogOnly.length > 0
         ? "warning"
         : "pass",
     value:
       `${validated.length} live+quality, ${untested.length} live but untested, ` +
-      `${catalogOnly.length} catalog-only, ${liveFailed.length + noAccount.length + prodBroken.length} unreachable`,
+      `${catalogOnly.length} catalog-only, ` +
+      `${liveFailed.length + noAccount.length + prodBroken.length + retired.length} unreachable`,
     message:
       detail +
       "Re-run `npm run probe:llm-contract` after a credential rotation, and `npm run test:role-experiments` to turn " +

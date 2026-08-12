@@ -177,9 +177,33 @@ check("an explicit cache rate of 0 is honoured, not treated as unset", () => {
   });
 });
 
-check("an unpriced endpoint stays null even with rates configured", () => {
+check("an EXPLICIT rate overrides the provider's unpriced flag", () => {
+  // REVERSED DELIBERATELY on 2026-08-12. This used to assert the opposite — that
+  // the flag always won — and the consequence was found by running a render:
+  // NVIDIA and Z.ai hardcode `unpriced: true`, so LLM_PRICE_NVIDIA_* and
+  // LLM_PRICE_ZAI_* were silently ignored and every line logged cost=unpriced
+  // however the worker was configured. Four env variables that did nothing.
+  //
+  // The flag means "this integration has no list price", not "the operator may
+  // not supply one".
   withRates({ LLM_PRICE_ZAI_IN: "1", LLM_PRICE_ZAI_OUT: "2" }, () => {
+    assert.equal(estimateCostUsd("zai", { tkIn: 1_000_000, tkOut: 1_000_000 }, true), 3);
+  });
+});
+
+check("an unpriced endpoint with NO configured rate is still null", () => {
+  // The flag still decides every case it used to; it just no longer outranks a
+  // rate that exists.
+  withRates({ LLM_PRICE_ZAI_IN: undefined, LLM_PRICE_ZAI_OUT: undefined }, () => {
     assert.equal(estimateCostUsd("zai", { tkIn: 1_000_000, tkOut: 1_000_000 }, true), null);
+  });
+});
+
+check("a free rung configured at 0 reports a MEASURED $0, not unpriced", () => {
+  // The distinction the whole change is for: $0.0000 is a fact, unpriced is an
+  // absence, and a cost summary must not blur them.
+  withRates({ LLM_PRICE_NVIDIA_IN: "0", LLM_PRICE_NVIDIA_OUT: "0" }, () => {
+    assert.equal(estimateCostUsd("nvidia", { tkIn: 500_000, tkOut: 500_000 }, true), 0);
   });
 });
 
@@ -190,7 +214,13 @@ check("the positional (provider, tkIn, tkOut, unpriced) form is unchanged", () =
   // Kept so adding cache pricing did not become a rewrite of every call site.
   withRates({ LLM_PRICE_ANTHROPIC_IN: OPUS5_IN, LLM_PRICE_ANTHROPIC_OUT: OPUS5_OUT }, () => {
     assert.equal(estimateCostUsd("anthropic", 1_000_000, 1_000_000, false), 30);
-    assert.equal(estimateCostUsd("anthropic", 1_000_000, 1_000_000, true), null);
+    // With a rate configured, the trailing `unpriced` argument no longer forces
+    // null — see "an EXPLICIT rate overrides the provider's unpriced flag".
+    assert.equal(estimateCostUsd("anthropic", 1_000_000, 1_000_000, true), 30);
+  });
+  // ...and with no rate at all, the positional form is still null.
+  withRates({ LLM_PRICE_ANTHROPIC_IN: undefined, LLM_PRICE_ANTHROPIC_OUT: undefined }, () => {
+    assert.equal(estimateCostUsd("anthropic", 1_000_000, 1_000_000, false), null);
   });
 });
 

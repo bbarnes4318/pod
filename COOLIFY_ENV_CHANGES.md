@@ -117,44 +117,37 @@ LLM_PRICE_ANTHROPIC_OUT=25
 - If you re-pin `SCRIPT_LLM_MODEL` to a different model, change these with it —
   nothing derives the rate from the model id.
 
-### ~~Worker only — NVIDIA and Z.ai rates~~ DO NOT SET: they do nothing
-
-An earlier draft of this file asked for these four:
+### Worker only — the free rungs
 
 ```
-LLM_PRICE_NVIDIA_IN=0     LLM_PRICE_NVIDIA_OUT=0
-LLM_PRICE_ZAI_IN=0        LLM_PRICE_ZAI_OUT=0
+LLM_PRICE_NVIDIA_IN=0
+LLM_PRICE_NVIDIA_OUT=0
+LLM_PRICE_ZAI_IN=0
+LLM_PRICE_ZAI_OUT=0
+LLM_PRICE_XAI_IN=0
+LLM_PRICE_XAI_OUT=0
+LLM_PRICE_MOONSHOT_IN=0
+LLM_PRICE_MOONSHOT_OUT=0
 ```
 
-**They have no effect. Do not bother setting them.** Caught by actually running a
-render on 2026-08-12 rather than by reading the code: the NVIDIA and Z.ai
-adapters hardcode `unpriced: true` (`nvidia.ts:45`, `zai.ts:43`), and
-`estimateCostUsd` returns `null` on that flag *before* it ever looks at a rate.
-Every NVIDIA and Z.ai line therefore logs `cost=unpriced` no matter what these
-variables say. Observed directly:
+- These four providers are trial/free endpoints, so **$0 is the true current
+  rate**, not a placeholder. Setting them explicitly is what makes the ledger
+  report a measured `$0.0000` rather than `unpriced` — those are different
+  claims, and "unpriced" across every free rung made the cost line unreadable.
+- xAI and Moonshot are on this list because the dialogue roles now route to them
+  (see §1 note on Mistral's retirement).
+- **Set a real number the moment any of them starts billing.** A stale `0` is the
+  one way this file can produce a confidently wrong total.
 
-```
-[LLMCost] stage=script:story-spine role=script_story_editor provider=nvidia
-  model=nvidia/nemotron-3-ultra-550b-a55b in=1152 out=1223 ... cost=unpriced
-```
-
-— with `LLM_PRICE_NVIDIA_IN=0` and `_OUT=0` both exported in that shell.
-
-That is arguably correct behaviour: a provider-level "we have no price for this"
-outranking an operator-supplied rate is defensible for a free trial endpoint. It
-is also not what this file previously claimed, and the claim would have had you
-setting four variables and then wondering why the log did not change.
-
-**A question for Jimmy, not a blocker:** should an explicitly configured rate
-override the provider's `unpriced` flag? Today it does not, and
-`test:llm-cost-pricing` asserts the current behaviour deliberately
-(*"an unpriced endpoint stays null even with rates configured"*). Changing it
-would let free rungs report a measured `$0.0000` instead of an absent
-`unpriced` — a real difference when reading a cost summary. Left alone here
-because it is a semantics decision, not a bug fix.
-
-**The Anthropic rates above are unaffected** — that provider is `unpriced: false`
-and prices correctly.
+> **These did nothing until 2026-08-12, and that is worth knowing if you set them
+> before.** The NVIDIA and Z.ai adapters hardcode `unpriced: true`, and
+> `estimateCostUsd` used to return `null` on that flag *before* looking at any
+> rate — so the variables were silently ignored and every line still logged
+> `cost=unpriced`. Found by running a render with them set and watching nothing
+> change. An explicit rate now outranks the flag: the flag means "this
+> integration has no list price", not "the operator may not supply one". With no
+> rate configured the behaviour is unchanged, so nothing that used to report
+> `unpriced` starts inventing a number.
 
 ### Cache rates — deliberately NOT set
 

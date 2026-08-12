@@ -74,7 +74,13 @@ export interface ModelCapabilities {
    * still reaches the model, which is how it gets retested. It returns to the
    * default profiles only when a live contract probe passes.
    */
-  availability: "available" | "capacity-limited" | "unavailable-for-account" | "broken-in-production";
+  availability:
+    | "available"
+    | "capacity-limited"
+    | "unavailable-for-account"
+    | "broken-in-production"
+    /** The provider has END-OF-LIFED it. Permanent — no probe will bring it back. */
+    | "retired";
 
   /**
    * Has a role-quality experiment produced evidence for this model in this
@@ -136,9 +142,13 @@ export type VerificationState =
   | "live-contract-failed"
   | "unavailable-for-account"
   | "not-quality-tested"
-  | "broken-in-production";
+  | "broken-in-production"
+  | "retired";
 
 export function verificationState(caps: ModelCapabilities): VerificationState {
+  // Checked FIRST because it is the only permanent one. A retired model is not
+  // coming back, so it must never be reported as something a probe could clear.
+  if (caps.availability === "retired") return "retired";
   if (caps.availability === "unavailable-for-account") return "unavailable-for-account";
   // Kept SEPARATE from live-contract-failed on purpose. Both are non-routable,
   // but they are different claims and the operator acts on them differently: a
@@ -171,6 +181,8 @@ export function describeVerificationState(state: VerificationState): string {
       return "Unavailable for the current account — the ID does not resolve for the key in use. Removed from the default profile chains; reachable only via an explicit role override.";
     case "broken-in-production":
       return "BROKEN IN PRODUCTION — a contract probe passed, but real pipeline traffic failed on every attempt. The probe result is retained and is not the current truth. Removed from the default profile chains; reachable only via an explicit role override, which is how it gets retested.";
+    case "retired":
+      return "RETIRED by the provider — the model reached end of life and returns 410 Gone. This is PERMANENT: unlike every other non-routable state, no probe and no credential change will restore it. Removed from every chain; the record is kept so the id is recognised rather than looking like a typo.";
   }
 }
 
@@ -189,6 +201,8 @@ export function shortVerificationLabel(state: VerificationState): string {
       return "UNAVAILABLE";
     case "broken-in-production":
       return "PROD BROKEN";
+    case "retired":
+      return "RETIRED";
   }
 }
 
@@ -493,9 +507,28 @@ const REGISTRY: ModelCapabilities[] = [
     // call is a 16,000-token movement, three per episode. See the promotion note
     // in profiles.ts — this is unresolved and is the strongest argument against
     // keeping it as the dialogue primary.
+    // RETIRED BY THE PROVIDER — 2026-08-07. Everything above this line describes
+    // a model that no longer exists; it is kept because a record that recognises
+    // the id is more useful than one that makes it look like a typo.
+    //
+    // Observed live on a real render, 2026-08-12:
+    //   HTTP 410 {"type":"about:blank","title":"Gone","status":410,
+    //    "detail":"The model 'mistralai/mistral-medium-3.5-128b' has reached its
+    //     end of life on 2026-08-07T09:00:00Z and is no longer available."}
+    //
+    // It was still the host_b_writer PRIMARY and the secondary for four more
+    // roles, so every affected call had been paying a guaranteed-losing hop for
+    // four days. It went unnoticed because 410 had no case in the error taxonomy
+    // and classified as `unknown` — the router read a permanent retirement as a
+    // maybe-transient blip. Both halves are fixed: 410 is now `invalid_model`
+    // (errors.ts) and this record is `retired`, which the chain filter strips.
+    //
+    // `retired` rather than `broken-in-production` because the two call for
+    // opposite responses: broken-in-production says "re-probe and it may come
+    // back", and this one never will.
     ...nvidiaBase(MODEL_IDS.nvidia.mistral, "mistral-medium-3-5"),
     liveContractVerified: true,
-    availability: "available",
+    availability: "retired",
     qualityTested: false,
     supportsReasoningEffort: true,
     supportsNativeJsonObject: true,
@@ -609,6 +642,90 @@ const REGISTRY: ModelCapabilities[] = [
         "'spent its entire allowance on reasoning' message rather than as an empty success, and the zai profile sends " +
         "thinking={type:'disabled'} explicitly for roles that do not want it. Give this model room, or turn thinking off. " +
         "max_tokens 16000 accepted (254 completion tokens for a one-sentence answer). " + LIMITS_UNPROBED,
+    },
+  },
+
+  // ---------------- xAI Grok (direct) ----------------
+  //
+  // Added because Mistral's retirement left the dialogue family with no reachable
+  // second model: after filtering, host A and host B both resolved to Z.ai GLM
+  // and one model would have written both characters.
+  //
+  // WHAT THE EVIDENCE ACTUALLY IS, and it is deliberately narrow. `npm run
+  // smoke:llm-providers -- xai` on 2026-08-12 returned a real completion in
+  // 2212ms. That proves the id resolves, the credential works, the account is
+  // funded, and generateText works. It proves NOTHING about structured output or
+  // about writing quality, so the JSON flags below stay false and qualityTested
+  // stays false. Structured calls go through the prompt-enforced path, which is
+  // the safe default rather than a claim.
+  {
+    provider: "xai",
+    model: MODEL_IDS.xai.grok43,
+    catalogVerified: true,
+    liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
+    supportsNativeJsonObject: false,
+    supportsNativeJsonSchema: false,
+    supportsPromptEnforcedJson: true,
+    // The smoke response carried reasoning tokens (reasoning=127), so thinking
+    // genuinely runs. Confirmed by OUTPUT, not by an accepted parameter.
+    supportsThinking: true,
+    supportsReasoningEffort: false,
+    supportsReasoningBudget: false,
+    supportsSeed: false,
+    supportsSystemPrompt: true,
+    supportsStreaming: true,
+    requestParameterProfile: "openai-chat",
+    unpriced: true,
+    provenance: {
+      catalog:
+        "SMOKE VERIFIED 2026-08-12: `npm run smoke:llm-providers -- xai` returned a real completion " +
+        "(2212ms) from api.x.ai. The id, the credential and the account funding are all confirmed live.",
+      requestFields:
+        "NOT probed. Only the default openai-chat shape has been exercised, and only for generateText. " +
+        "response_format, seed and reasoning controls are UNTESTED here — the flags above say so rather " +
+        "than inheriting a sibling's contract. Run `npm run probe:llm-contract -- --model grok-4.3` to upgrade them.",
+      limits:
+        "No measured ceiling. The smoke call used max_tokens 64. " + LIMITS_UNPROBED,
+    },
+  },
+
+  // ---------------- Moonshot Kimi K3 (direct) ----------------
+  //
+  // The same story as Grok, and it also repairs a long-standing gap: Kimi was
+  // always the INTENT for host B in frontier_development, and was unreachable
+  // only because it was routed through NVIDIA, where it 404s for this account.
+  // Direct through Moonshot it works.
+  {
+    provider: "moonshot",
+    model: MODEL_IDS.moonshot.kimiK3,
+    catalogVerified: true,
+    liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
+    supportsNativeJsonObject: false,
+    supportsNativeJsonSchema: false,
+    supportsPromptEnforcedJson: true,
+    supportsThinking: true,
+    supportsReasoningEffort: false,
+    supportsReasoningBudget: false,
+    supportsSeed: false,
+    supportsSystemPrompt: true,
+    supportsStreaming: true,
+    requestParameterProfile: "openai-chat",
+    unpriced: true,
+    provenance: {
+      catalog:
+        "SMOKE VERIFIED 2026-08-12: `npm run smoke:llm-providers -- moonshot` returned a real completion " +
+        "(5257ms) from platform.moonshot.ai, with separate reasoning content in the response.",
+      requestFields:
+        "NOT probed beyond generateText. NOTE — the 2026-08-05 smoke run recorded that kimi-k3 rejected every " +
+        "temperature except 1 with a 400; that did NOT reproduce on 2026-08-12, where the same harness sent " +
+        "temperature 0 and the call succeeded. Recorded as an observation, not as a guarantee: if a 400 naming " +
+        "temperature reappears, this is the note to read first. The adapter already adds answer headroom because " +
+        "this model reasons by default and bills it against max_tokens (see moonshot.ts).",
+      limits: "No measured ceiling. The smoke call used max_tokens 64. " + LIMITS_UNPROBED,
     },
   },
 

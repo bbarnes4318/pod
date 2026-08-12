@@ -11,7 +11,7 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CAL_PROFILE, SEED_HOSTS } from "../lib/hosts/roster";
+import { CAL_PROFILE, RETIRED_HOST_SLUGS, RETIRED_V7_HOSTS, SEED_HOSTS } from "../lib/hosts/roster";
 import { compactFishDeliveryCue } from "../lib/providers/tts/fishDialogue";
 
 let passed = 0;
@@ -32,8 +32,34 @@ function check(name: string, fn: () => void) {
   }
 }
 
-const cal = SEED_HOSTS.find((host) => host.slug === "cal-red-eye-mercer");
-assert(!!cal, "Cal Mercer is missing from the active roster");
+// CAL IS RETIRED, AND THIS TEST STILL MATTERS.
+//
+// The baseball cast (Host Bible v8) replaced him, so he is in RETIRED_V7_HOSTS
+// and RETIRED_HOST_SLUGS rather than SEED_HOSTS. This file used to look him up
+// in SEED_HOSTS and assert "Cal Mercer is missing from the active roster" — which
+// started failing the moment the cast landed on 2026-08-09 and stayed red on
+// main, blocking every PR opened since.
+//
+// It is NOT deleted, because the roster is explicit that these hosts are
+// "archived, never deleted: episodes that pinned these hosts must keep resolving
+// their cast". An archived episode still renders through CAL_PROFILE, so the
+// performance regression this file exists to prevent is still reachable — the
+// dials just have to be read from the archive rather than the active roster.
+//
+// The roster is correct and untouched. Only the lookup moved.
+const cal = RETIRED_V7_HOSTS.find((host) => host.slug === "cal-red-eye-mercer");
+assert(
+  !!cal,
+  "Cal Mercer is missing from RETIRED_V7_HOSTS — archived episodes that pinned him can no longer resolve their cast"
+);
+assert(
+  RETIRED_HOST_SLUGS.includes("cal-red-eye-mercer"),
+  "Cal is no longer listed as retired; if he has been recast as active, this file should read SEED_HOSTS again"
+);
+assert(
+  !SEED_HOSTS.some((host) => host.slug === "cal-red-eye-mercer"),
+  "Cal is back in the ACTIVE roster — that is a cast change, and this test's premise needs revisiting"
+);
 
 console.log("Cal Mercer performance v2\n");
 
