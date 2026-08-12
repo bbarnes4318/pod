@@ -64,6 +64,7 @@ import {
   type PrivateHostAgenda,
   type TurnPlanEntry,
 } from "./scriptCreativePipeline";
+import { WordFlow, wordsIn, wordsInText } from "./scriptWordFlow";
 import {
   SevenRoleTrace,
   artifactRef,
@@ -242,6 +243,7 @@ export async function runSevenRolePipeline(
   args: SevenRolePipelineArgs
 ): Promise<SevenRolePipelineResult> {
   const trace = new SevenRoleTrace({ resolveProvider: args.resolveProvider, log: args.log });
+  const wordFlow = new WordFlow();
   const done = (record: RoleStageRecord) => args.onRoleComplete?.(record);
 
   // The two host writers are two roles. Three hosts would need a third writer
@@ -388,6 +390,35 @@ export async function runSevenRolePipeline(
   done(architectStage.record);
   if (!architectStage.ok) return abort(trace, "debate_architect", architectStage.error);
   const { beats, agendas, coldOpen, turns } = architectStage.value;
+
+  // WHERE THE WORDS GO — capture points, one per transformation.
+  //
+  // The tournament is charged as SELECTION, not waste: writing three cold opens
+  // and shipping one is the design, and the point of measuring it is to know
+  // what that design costs rather than to argue against it.
+  wordFlow.record({
+    stage: "cold_open_tournament",
+    kind: "selection",
+    wordsEmitted: coldOpen.tournament.variants.reduce((n, v) => n + wordsIn(v.lines), 0),
+    wordsKept: wordsIn(coldOpen.segment.lines),
+    linesEmitted: coldOpen.tournament.variants.reduce((n, v) => n + v.lines.length, 0),
+    linesKept: coldOpen.segment.lines.length,
+    note: `${coldOpen.tournament.variants.length} candidate(s), kept "${coldOpen.tournament.selectedId}"`,
+  });
+
+  // The turn plan ships nothing by design — it is scaffolding the listener never
+  // hears. It is recorded so that fact is visible rather than assumed, because
+  // it is also billed twice: once as output here, and again as INPUT to every
+  // host-writer call on every movement.
+  wordFlow.record({
+    stage: "turn_plan",
+    kind: "overhead",
+    wordsEmitted: turns.reduce((n, t) => n + wordsInText(t.intent), 0),
+    wordsKept: 0,
+    linesEmitted: turns.length,
+    linesKept: 0,
+    note: `${turns.length} turn intents, re-read by every writer call`,
+  });
   const [briefA, briefB] = agendas;
   const beatArtifact = architectStage.record.outputArtifacts[0];
   const briefArtifactA = architectStage.record.outputArtifacts[1];
@@ -422,6 +453,11 @@ export async function runSevenRolePipeline(
   for (const line of coldOpenLines) written.set(line.turnIndex, line);
 
   // ------------------------------------------------ ROLES 3 & 4 — host writers
+  // Raw writer output, summed across both hosts and every movement and retry,
+  // before any of the acceptance checks run.
+  let writerWordsEmitted = 0;
+  let writerLinesEmitted = 0;
+
   for (const [role, host, other, brief, foreignBrief, briefArtifact] of [
     ["host_a_writer", hostA, hostB, briefA, briefB, briefArtifactA],
     ["host_b_writer", hostB, hostA, briefB, briefA, briefArtifactB],
@@ -472,6 +508,9 @@ export async function runSevenRolePipeline(
             temperature: args.temperature,
             maxTokens: args.maxTokens,
           });
+
+          writerWordsEmitted += wordsIn(result.lines);
+          writerLinesEmitted += result.lines.length;
 
           // ISOLATION — a redaction means the other host's brief reached the
           // composed prompt and was removed. The script is safe; the leak is not
@@ -595,6 +634,18 @@ export async function runSevenRolePipeline(
   }
 
   const draftLines = [...written.values()].sort((a, b) => a.turnIndex - b.turnIndex);
+  // Everything the two writers returned, against what survived authorship,
+  // novelty and duplicate-turn checks. This is real attrition: the writer meant
+  // to ship these words and they were dropped.
+  wordFlow.record({
+    stage: "host_writers",
+    kind: "attrition",
+    wordsEmitted: writerWordsEmitted,
+    wordsKept: wordsIn(draftLines),
+    linesEmitted: writerLinesEmitted,
+    linesKept: draftLines.length,
+    note: "dropped for foreign authorship, repeated text, or an unallocated turn",
+  });
   draftLines.forEach((line, i) => (line.lineIndex = i));
   args.log(
     `Host writers: ${draftLines.length} lines assembled ` +
@@ -636,6 +687,22 @@ export async function runSevenRolePipeline(
         { violations: guard.violations }
       );
     }
+
+    // A repair replaces a line's text rather than dropping it, so the director
+    // is a TRANSFORM: what matters is whether the repaired script is longer or
+    // shorter than the draft, measured only over the lines it actually touched.
+    const touchedBefore = guard.applied
+      .map((r) => before.find((l) => l.lineIndex === r.lineIndex))
+      .filter(Boolean) as Array<{ text: string }>;
+    wordFlow.record({
+      stage: "dialogue_director",
+      kind: "transform",
+      wordsEmitted: wordsIn(touchedBefore),
+      wordsKept: wordsIn(guard.applied.map((r) => ({ text: r.text }))),
+      linesEmitted: repairs.length,
+      linesKept: guard.applied.length,
+      note: `${guard.applied.length}/${repairs.length} repair(s) accepted`,
+    });
 
     for (const repair of guard.applied) {
       const line = draftLines.find((l) => l.lineIndex === repair.lineIndex);
@@ -720,6 +787,10 @@ export async function runSevenRolePipeline(
   // word count, so it scales with what was actually asked for.
   const words = countWords(draftLines);
   const severeMinimumWords = Math.round(episodeMinimumWords * 0.6);
+
+  // The whole flow, as one block, against what the seven roles actually produced.
+  // `words` excludes the cold open, which is counted in its own row above.
+  args.log(wordFlow.render(words + wordsIn(coldOpen.segment.lines)));
 
   if (words < severeMinimumWords) {
     const reason =

@@ -182,11 +182,14 @@
     "test:routing-chain-health": "tsx --conditions=react-server src/scripts/testRoutingChainHealth.ts",
     "test:anthropic-model-ids": "tsx --conditions=react-server src/scripts/testAnthropicModelIds.ts",
     "test:llm-cost-pricing": "tsx --conditions=react-server src/scripts/testLlmCostPricing.ts",
+    "test:llm-cost-job-scoping": "tsx --conditions=react-server src/scripts/testLlmCostJobScoping.ts",
     "test:prompt-cache-stability": "tsx --conditions=react-server src/scripts/testPromptCacheStability.ts",
     "routing:staleness": "tsx --conditions=react-server src/scripts/routingStaleness.ts",
     "verify:llm-cost-render": "tsx --conditions=react-server src/scripts/verifyLlmCostRender.ts",
     "verify:cache-proof": "tsx --conditions=react-server src/scripts/verifyCacheProof.ts",
-    "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts"
+    "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts",
+    "test:evidence-ref-contract": "tsx src/scripts/testEvidenceRefContract.ts",
+    "test:word-flow": "tsx src/scripts/testWordFlow.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

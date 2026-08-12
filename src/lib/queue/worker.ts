@@ -18,7 +18,7 @@ import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
 import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
-import { withLlmStage, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
+import { withLlmStage, withLlmJob, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { ProductionHoldError } from "./productionGuard";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
@@ -3010,16 +3010,21 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
     },
   });
 
-  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  // Measurement only: per-stage LLM cost for THIS job.
+  //
+  // SCOPED BY JOB ID, not just by the mark. The worker runs jobs concurrently,
+  // so a bare watermark attributes every call the whole process made during this
+  // handler to this handler — which silently inflated a real episode's measured
+  // cost by 50% on 2026-08-10.
   const llmMark = llmCostMark();
   try {
-    const res = await generateScriptForEpisode(job.data);
+    const res = await withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
 
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: "completed",
-        output: { ...res, llmCost: llmCostSince(llmMark) } as any,
+        output: { ...res, llmCost: llmCostSince(llmMark, { jobId: jobLog.id }) } as any,
       },
     });
 
@@ -3033,7 +3038,7 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
         status: "failed",
         error: err.message || "Unknown script generation error",
         // Failed runs still spent tokens — record where they went.
-        output: { llmCost: llmCostSince(llmMark) } as any,
+        output: { llmCost: llmCostSince(llmMark, { jobId: jobLog.id }) } as any,
       },
     });
     throw err;
@@ -3054,10 +3059,15 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
     },
   });
 
-  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  // Measurement only: per-stage LLM cost for THIS job.
+  //
+  // SCOPED BY JOB ID, not just by the mark. The worker runs jobs concurrently,
+  // so a bare watermark attributes every call the whole process made during this
+  // handler to this handler — which silently inflated a real episode's measured
+  // cost by 50% on 2026-08-10.
   const llmMark = llmCostMark();
   try {
-    const res = await factCheckScript({ scriptId, forceRecheck });
+    const res = await withLlmJob(jobLog.id, () => factCheckScript({ scriptId, forceRecheck }));
 
     const summary = (res.summary as any) || {};
     const coverage = (res.evidenceCoverage as any) || {};
@@ -3099,7 +3109,7 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
           issueCount: (summary.totalErrors || 0) + (summary.totalWarnings || 0),
           factCheckResultId: res.id,
           reasons,
-          llmCost: llmCostSince(llmMark),
+          llmCost: llmCostSince(llmMark, { jobId: jobLog.id }),
         } as any,
       },
     });
@@ -3116,7 +3126,7 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
         output: {
           finalStatus: "failed",
           reasons: [err.message || "Execution error"],
-          llmCost: llmCostSince(llmMark),
+          llmCost: llmCostSince(llmMark, { jobId: jobLog.id }),
         } as any,
       },
     });
@@ -3295,17 +3305,22 @@ async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
     },
   });
 
-  // Measurement only: per-stage LLM cost for THIS job (delta from the mark).
+  // Measurement only: per-stage LLM cost for THIS job.
+  //
+  // SCOPED BY JOB ID, not just by the mark. The worker runs jobs concurrently,
+  // so a bare watermark attributes every call the whole process made during this
+  // handler to this handler — which silently inflated a real episode's measured
+  // cost by 50% on 2026-08-10.
   const llmMark = llmCostMark();
   try {
-    const res = await generateEpisodeContentAssets(job.data);
+    const res = await withLlmJob(jobLog.id, () => generateEpisodeContentAssets(job.data));
     const isSkipped = res.finalStatus === "skipped";
 
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: isSkipped ? "skipped" : "completed",
-        output: { ...res, llmCost: llmCostSince(llmMark) } as any,
+        output: { ...res, llmCost: llmCostSince(llmMark, { jobId: jobLog.id }) } as any,
       },
     });
 

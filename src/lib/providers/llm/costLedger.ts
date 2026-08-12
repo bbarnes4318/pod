@@ -19,6 +19,8 @@ import { AsyncLocalStorage } from "async_hooks";
 export interface LlmCallRecord {
   /** Monotonic id — marks survive ledger trimming. */
   id: number;
+  /** The job this call belongs to, when it ran inside withLlmJob(). */
+  jobId?: string;
   stage: string;
   provider: string;
   model: string;
@@ -104,6 +106,33 @@ export interface LlmAttribution {
 }
 
 const attributionStorage = new AsyncLocalStorage<LlmAttribution>();
+
+/**
+ * WHICH JOB a call belongs to.
+ *
+ * Carried in AsyncLocalStorage for exactly the reason the stage label is: the
+ * worker runs several jobs CONCURRENTLY (background concurrency defaults above
+ * 1), and without this the ledger cannot tell them apart.
+ *
+ * That was not a theoretical gap. `llmCostSince(mark)` filtered on nothing but
+ * `id >= mark` — a process-wide watermark — so a job's "cost" was every call the
+ * whole worker made while it ran. A real measurement on 2026-08-10 attributed
+ * 105,946 input and 36,169 output tokens of concurrent `generate:research-brief`
+ * work to one `generate:script` job: 50% more input than the episode actually
+ * used, and it survived into a costing exercise before anyone noticed. Any
+ * per-episode dollar figure taken before this fix is overstated by whatever else
+ * the worker happened to be doing.
+ */
+const jobStorage = new AsyncLocalStorage<string>();
+
+/** Run `fn` with every LLM call inside it attributed to `jobId`. */
+export function withLlmJob<T>(jobId: string, fn: () => T): T {
+  return jobStorage.run(jobId, fn);
+}
+
+export function currentLlmJob(): string | undefined {
+  return jobStorage.getStore();
+}
 
 export function withLlmAttribution<T>(attr: LlmAttribution, fn: () => T): T {
   return attributionStorage.run(attr, fn);
@@ -278,6 +307,7 @@ export function recordLlmCall(rec: {
   const attr = currentLlmAttribution();
   const entry: LlmCallRecord = {
     id: nextId++,
+    jobId: currentLlmJob(),
     stage: rec.stage ?? currentLlmStage(),
     provider: rec.provider,
     model: rec.model,
@@ -320,12 +350,27 @@ export function llmCostMark(): number {
 }
 
 /** Per-stage aggregates for every call recorded at/after `mark`, plus raw calls. */
-export function llmCostSince(mark: number): {
+export function llmCostSince(
+  mark: number,
+  opts?: { jobId?: string }
+): {
   stages: LlmStageAggregate[];
   totals: Omit<LlmStageAggregate, "stage" | "models" | "roles">;
   callCount: number;
 } {
-  const relevant = entries.filter((e) => e.id >= mark);
+  // SCOPE BY JOB WHEN WE KNOW WHICH JOB, and fall back to the watermark when we
+  // do not. The mark alone is not a job boundary: the worker runs jobs
+  // concurrently, so "every call since I started" includes every call OTHER
+  // jobs made while I ran. Explicit jobId wins; otherwise the ambient job from
+  // withLlmJob() is used, so a handler that wraps itself gets clean numbers with
+  // no change at the call site.
+  //
+  // Callers with no job context at all (scripts, one-off harnesses) keep the old
+  // behaviour, which is correct there — nothing else is running.
+  const jobId = opts?.jobId ?? currentLlmJob();
+  const relevant = entries.filter(
+    (e) => e.id >= mark && (jobId === undefined || e.jobId === jobId)
+  );
   const byStage = new Map<string, LlmStageAggregate>();
   for (const e of relevant) {
     const agg = byStage.get(e.stage) || {

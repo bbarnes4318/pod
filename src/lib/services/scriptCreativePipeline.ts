@@ -188,7 +188,7 @@ function coldOpenSystemPrompt(base: string): string {
 }
 
 function coldOpenLineContract(speakerNames: string[]): string {
-  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. Any line with "isFactualClaim":true must also carry at least one evidenceRefs entry copied VERBATIM from the supplied evidence — an exact phrase or number as written there, never a paraphrase or a source name. A claim with empty evidenceRefs counts as unsupported. Legal speakers: ${speakerNames.join(", ")}.`;
+  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. An evidenceRefs entry is a typed record pointer — {"type":"newsItem","id":"..."} — copied EXACTLY from the evidenceRefs already attached to the facts in the supplied evidence. A quoted phrase, a number, or a source name in that field is NOT a reference: the pipeline deletes anything that is not a {type,id} object it recognises, leaving the claim unsupported. Any line with "isFactualClaim":true must carry at least one such object; if you cannot point a specific at one, do not state that specific and leave "isFactualClaim":false. Legal speakers: ${speakerNames.join(", ")}.`;
 }
 
 /**
@@ -552,6 +552,12 @@ export function turnPlanMaxTokens(totalWordTarget: number): number {
   return Math.max(7000, Math.ceil(turns * 340 * 1.25) + 2000);
 }
 
+/**
+ * One sentence. See the enforcement in makeTurnPlanValidator for why this is a
+ * hard limit rather than prompt advice.
+ */
+export const MAX_INTENT_WORDS = 25;
+
 export function makeTurnPlanValidator(totalWordTarget: number) {
   const minTurns = minimumTurnsFor(totalWordTarget);
   return function validateTurnPlan(value: unknown): string | null {
@@ -560,6 +566,34 @@ export function makeTurnPlanValidator(totalWordTarget: number) {
     for (const turn of turns as Array<Record<string, unknown>>) {
       if (typeof turn?.speakerName !== "string" || !turn.speakerName.trim()) return "Every turn needs a speakerName.";
       if (typeof turn?.intent !== "string" || !turn.intent.trim()) return "Every turn needs an intent.";
+
+      // INTENT LENGTH IS ENFORCED, and it is a cost AND a craft control.
+      //
+      // MEASURED 2026-08-10: the turn plan emitted 24,486 output tokens for one
+      // episode — 28% of that episode's entire model output, for an artefact
+      // that ships ZERO words. turnPlanMaxTokens' own comment records 340 output
+      // tokens per turn as the observed rate: roughly 255 words of prose for a
+      // field specified as "the conversational ACTION".
+      //
+      // It costs twice over, because the plan is not just output here — it is
+      // INPUT to both host writers on every movement call, so a bloated intent
+      // is billed once when written and again on each read.
+      //
+      // The craft argument is the stronger one. A 255-word instruction for a
+      // single beat is padding, and padding is where the flat AI cadence comes
+      // from: a writer handed a paragraph tends to render the paragraph instead
+      // of playing the beat. "Concede the attendance point, then press on who
+      // signed off" is eleven words and leaves the writer somewhere to go.
+      const intentWords = turn.intent.trim().split(/\s+/).length;
+      if (intentWords > MAX_INTENT_WORDS) {
+        return (
+          `A turn intent runs ${intentWords} words; the limit is ${MAX_INTENT_WORDS}. ` +
+          `An intent is the conversational ACTION this turn performs on the one before it — ` +
+          `one sentence, not a paragraph. Write "concede the attendance point, then press on who ` +
+          `signed off", not an essay about why the turn matters. The offending intent begins: ` +
+          `"${turn.intent.trim().slice(0, 80)}..."`
+        );
+      }
     }
     // ENFORCED, not merely requested. An under-planned turn count cannot be
     // recovered downstream: the host writers each write only the turns they were
@@ -721,7 +755,7 @@ RULES:
 - RHYTHM MUST VARY, and this is measured three ways. (a) No more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker — trading single lines back and forth for a whole episode is ping-pong, not an argument. (b) No single run length may cover more than 70% of the plan: a script where almost every run is one turn is a metronome, and so is a script where almost every run is two. Both are rejected. (c) At most one run in five may be three turns long, and no host may hold four. Mix them: a single sharp reaction, a pair that lands a claim then presses it, occasionally a third turn when the pressure genuinely warrants it. When you do write three, the third turn must still be aimed at the other host — never a question the absent host is expected to answer. A one-word reaction is a legitimate turn.
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
 - Assign each evidence fact to at most ONE turn, on the beat that already owns it.
-- "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line.
+- "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line. ONE SENTENCE, ${MAX_INTENT_WORDS} WORDS MAXIMUM — this is validated and a longer intent fails the whole plan. An intent is a direction for the writer, not a description of the turn: "concede the attendance point, then press on who signed off" is the shape. Do not explain why the turn matters, do not restate the beat, do not summarise the spine.
 - PLAN AT LEAST ${minimumTurnsFor(input.totalWordTarget)} TURNS. This is arithmetic, not a style note: ${input.totalWordTarget} spoken words at a natural mix of short reactions and full arguments averages about ${ASSUMED_WORDS_PER_TURN} words a turn. Fewer turns than that cannot fill the episode however long you make each one, and stretching turns to compensate produces two monologues instead of an argument. Count the turns before you return them.
 - Total spoken words across all turns should land near ${input.totalWordTarget}; set targetWords per turn accordingly (short reactions 4-15, arguments 35-90).
 
@@ -910,12 +944,18 @@ ${transcriptSoFar}
 
 Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent first. Then hit targetWords: it is a FLOOR, not a ceiling, and a turn that lands well under it starves the episode — the whole script is rejected outright if the totals come up short, which no amount of good intent recovers.
 
-EVIDENCE REFS ARE NOT DECORATION. Every line you mark "isFactualClaim":true must carry at least one evidenceRefs entry copied VERBATIM from the EVIDENCE block above — an exact phrase or number as written there. Not a paraphrase, not a source name, not a summary. A factual claim with an empty evidenceRefs is treated downstream as UNSUPPORTED and can block the episode from publishing. If you cannot quote the evidence for a specific, do not state that specific.
+EVIDENCE REFS ARE NOT DECORATION, AND THEY ARE NOT QUOTES. An evidenceRefs entry is a typed record pointer, copied EXACTLY as an object: {"type":"newsItem","id":"..."} . Your own turns in the plan above already carry the refs assigned to them — the "facts" array on each line marked YOURS. Copy those objects across, unchanged. Do not invent an id, do not retype it from memory, do not substitute a quoted phrase, a source name or a summary: anything that is not one of the objects handed to you is DELETED by the pipeline before the script is saved, which leaves the claim standing with no support at all.
 
-KEEP EACH REF SHORT: the shortest exact fragment that pins the fact, TWELVE WORDS AT MOST — usually just the figure and its subject. One ref per claim is enough. These are lookup keys, not citations, and long quotations blow the output budget and truncate the script into unparseable JSON.
+${ownTurns.some((t) => t.factRefs.length > 0)
+  ? `The refs available to you in this movement are exactly: ${JSON.stringify(
+      Array.from(new Map(ownTurns.flatMap((t) => t.factRefs).map((r) => [`${r.type}:${r.id}`, r])).values())
+    )}. Every line you mark "isFactualClaim":true must carry at least one of them.`
+  : `No facts were assigned to your turns in this movement. That means you may not state a specific number, date, result or named-person action as true here — argue vividly without one, and leave "isFactualClaim":false on every line.`}
+
+If you cannot point a specific at one of those refs, do not state that specific.
 
 Return valid JSON only. The two lines below show both shapes — an ordinary line, and a line making a factual claim:
-{"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false},{"turnIndex":1,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words that assert a specific number or result","tone":"analytical","energy":"medium","pauseBefore":"beat","isInterruption":false,"evidenceRefs":["31 of 44 on third down"],"isFactualClaim":true}]}`;
+{"lines":[{"turnIndex":0,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words","tone":"heated|sarcastic|analytical|dismissive|amused|incredulous|conceding|excited|reflective|setup|transition","energy":"low|medium|high","pauseBefore":"none|beat|breath|long","isInterruption":false,"evidenceRefs":[],"isFactualClaim":false},{"turnIndex":1,"speakerName":${JSON.stringify(input.hostName)},"text":"spoken words that assert a specific number or result","tone":"analytical","energy":"medium","pauseBefore":"beat","isInterruption":false,"evidenceRefs":[{"type":"teamStat","id":"copy-an-id-from-your-facts-array"}],"isFactualClaim":true}]}`;
 
   // REDACTION RUNS OVER ALL THREE PARTS, and that is load-bearing rather than
   // tidy. Splitting the prompt in two would have silently halved the isolation
@@ -933,6 +973,12 @@ Return valid JSON only. The two lines below show both shapes — an ordinary lin
   const sentCacheableContext = redactedStatic.text;
   const sentPrompt = redactedPrompt.text;
 
+  // The refs this writer is permitted to cite: exactly those the architect
+  // assigned to the turns it owns in this movement. Anything else would be
+  // deleted by scriptService's sanitiser, so accepting it here would only move
+  // the failure somewhere it cannot be repaired.
+  const allowedRefKeys = new Set(ownTurns.flatMap((t) => t.factRefs.map((r) => `${r.type}:${r.id}`)));
+
   const result = await withLlmStage(`script:host-writer:${input.hostName}`, () =>
     input.llm.generateStructuredOutput<{ lines: HostWrittenLine[] }>({
       systemPrompt: sentSystemPrompt,
@@ -947,6 +993,54 @@ Return valid JSON only. The two lines below show both shapes — an ordinary lin
         for (const line of lines as Array<Record<string, unknown>>) {
           if (!Number.isInteger(line?.turnIndex)) return "Every line needs an integer turnIndex.";
           if (typeof line?.text !== "string" || !line.text.trim()) return "Every line needs text.";
+
+          // EVIDENCE REFS ARE VALIDATED HERE, WHERE THEY CAN STILL BE FIXED.
+          //
+          // This prompt used to ask for a verbatim text fragment
+          // (`["31 of 44 on third down"]`) while every consumer downstream
+          // required a typed record pointer. scriptService's sanitiser drops
+          // any ref that is not `{type,id}` present in the episode's allowed
+          // source refs, SILENTLY and without a violation — so a writer that
+          // did exactly as it was told had 100% of its citations deleted, and
+          // the fact-check gate then counted the stripped lines as
+          // unsupported claims.
+          //
+          // MEASURED on the 2026-08-11 episode: factualLines=17,
+          // unsupportedClaims=17, and zero evidenceRefs survived into the
+          // saved script for either host. That is not a model failing to
+          // comply — it is the prompt asking for the wrong data type.
+          //
+          // Validating here rather than tightening the sanitiser is the point:
+          // the writer still has the plan in front of it and a rejection comes
+          // back as a repair it can act on. A ref deleted three stages later
+          // is unrecoverable, because nothing downstream knows which record
+          // the line was supposed to point at.
+          const refs = Array.isArray(line.evidenceRefs) ? line.evidenceRefs : [];
+          for (const ref of refs as Array<Record<string, unknown>>) {
+            if (!ref || typeof ref !== "object" || Array.isArray(ref)) {
+              return (
+                `evidenceRefs entries must be objects of the form {"type":"...","id":"..."} copied from ` +
+                `your turn's facts array. Got ${JSON.stringify(ref)} on turn ${line.turnIndex}. ` +
+                `A quoted phrase is not a reference and is discarded by the pipeline.`
+              );
+            }
+            const key = `${String(ref.type)}:${String(ref.id)}`;
+            if (!allowedRefKeys.has(key)) {
+              return (
+                `evidenceRefs entry ${JSON.stringify(ref)} on turn ${line.turnIndex} was not assigned to any ` +
+                `of your turns in this movement. Use only the refs in the facts array of a turn marked YOURS: ` +
+                `${allowedRefKeys.size ? [...allowedRefKeys].join(", ") : "(none were assigned — do not mark lines factual)"}.`
+              );
+            }
+          }
+          if (line.isFactualClaim === true && refs.length === 0) {
+            return (
+              `Turn ${line.turnIndex} is marked "isFactualClaim":true with an empty evidenceRefs. ` +
+              `Either carry one of the refs assigned to your turns, or set "isFactualClaim":false and ` +
+              `remove the specific figure, date, result or named-person action from the line. An unsupported ` +
+              `claim can block the episode from publishing.`
+            );
+          }
         }
         return null;
       },
