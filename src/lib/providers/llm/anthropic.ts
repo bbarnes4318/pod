@@ -299,10 +299,18 @@ export class AnthropicLLMProvider implements LLMProvider {
               // in the chain, which made the unpriced calls exactly the ones
               // worth pricing. `unpriced: false` is not an assumption — it is
               // what capabilities.ts already declares for this provider.
+              //
+              // THE MODEL IS PASSED, and on this provider that is load-bearing
+              // rather than tidy: Anthropic serves several models at rates that
+              // differ by 5x, and the tiering plan runs Opus 5 on the host
+              // writers with a cheaper model everywhere else. Priced per
+              // provider, every cheap call would be billed at the writers' rate.
               estimatedCostUsd: estimateCostUsd(
                 this.name,
                 { tkIn, tkOut, tkCacheRead, tkCacheWrite },
-                false
+                false,
+                undefined,
+                this.model
               ),
             });
           }

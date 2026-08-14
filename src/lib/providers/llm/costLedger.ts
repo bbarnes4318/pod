@@ -197,15 +197,47 @@ const CACHE_WRITE_MULTIPLIER = 1.25;
  * total rather than an honest "unpriced". The two cache rates are optional and
  * fall back to the multipliers above.
  */
-function rateFor(provider: string): LlmRates | null {
-  const p = provider.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+/** Env-var-safe form of a provider or model id: CLAUDE_OPUS_5, Z_AI_GLM_5_2. */
+function envKey(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+}
+
+/**
+ * Rates are per PROVIDER **and** per MODEL, model first.
+ *
+ * WHY THE MODEL TIER HAD TO BE ADDED. Rates were keyed on the provider alone,
+ * which is fine while a provider serves one model and silently wrong the moment
+ * it serves two at different prices. Production ran `LLM_PRICE_ANTHROPIC_IN=5 /
+ * _OUT=25` — Opus 5's rates — applied to every Anthropic call.
+ *
+ * That is exactly the configuration the tiering plan calls for: Opus 5 on the
+ * two host writers and a cheaper Anthropic model on every other role. Under
+ * provider-only rates each cheap call would have been priced AS OPUS — 5x the
+ * true input rate and 5x the true output rate for Haiku 4.5. The ledger would
+ * have reported the tiering change as barely cheaper than no change at all, and
+ * the conclusion drawn from it would have been the opposite of the truth.
+ *
+ * So: `LLM_PRICE_<PROVIDER>_<MODEL>_<FIELD>` wins when set, and
+ * `LLM_PRICE_<PROVIDER>_<FIELD>` remains the fallback. Nothing changes for a
+ * single-model provider; a mixed-tier provider can finally be priced honestly.
+ */
+function rateFor(provider: string, model?: string): LlmRates | null {
+  const p = envKey(provider);
+  const m = model ? envKey(model) : null;
   const num = (suffix: string): number | null => {
-    const raw = process.env[`LLM_PRICE_${p}_${suffix}`];
-    // An unset variable and an empty one both mean "not configured". Number("")
-    // is 0, which would otherwise read as a genuine zero rate.
-    if (raw === undefined || raw.trim() === "") return null;
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : null;
+    // Model-specific first, then the provider-wide fallback.
+    const keys = m
+      ? [`LLM_PRICE_${p}_${m}_${suffix}`, `LLM_PRICE_${p}_${suffix}`]
+      : [`LLM_PRICE_${p}_${suffix}`];
+    for (const key of keys) {
+      const raw = process.env[key];
+      // An unset variable and an empty one both mean "not configured". Number("")
+      // is 0, which would otherwise read as a genuine zero rate.
+      if (raw === undefined || raw.trim() === "") continue;
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
   };
   const inRate = num("IN");
   const outRate = num("OUT");
@@ -218,9 +250,9 @@ function rateFor(provider: string): LlmRates | null {
   };
 }
 
-/** Resolved rates for a provider, or null when unpriced. Exported for tests. */
-export function resolvedRatesFor(provider: string): LlmRates | null {
-  return rateFor(provider);
+/** Resolved rates for a provider/model, or null when unpriced. Exported for tests. */
+export function resolvedRatesFor(provider: string, model?: string): LlmRates | null {
+  return rateFor(provider, model);
 }
 
 export interface CostBasis {
@@ -242,7 +274,8 @@ export function estimateCostUsd(
   provider: string,
   basis: CostBasis | number,
   tkOutOrUnpriced?: number | boolean,
-  unpricedArg?: boolean
+  unpricedArg?: boolean,
+  model?: string
 ): number | null {
   const b: CostBasis =
     typeof basis === "number" ? { tkIn: basis, tkOut: Number(tkOutOrUnpriced) || 0 } : basis;
@@ -270,7 +303,7 @@ export function estimateCostUsd(
   // "is there a rate?". Kept in the signature because every call site passes it
   // and it documents the provider's own claim at the point of the call.
   void unpriced;
-  const rate = rateFor(provider);
+  const rate = rateFor(provider, model);
   if (!rate) return null;
   return (
     ((b.tkIn || 0) * rate.in +

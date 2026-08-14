@@ -190,6 +190,7 @@
     "test:llm-cost-render-parser": "tsx --conditions=react-server src/scripts/testLlmCostRenderParser.ts",
     "test:evidence-ref-contract": "tsx src/scripts/testEvidenceRefContract.ts",
     "test:word-flow": "tsx src/scripts/testWordFlow.ts",
+    "test:per-model-pricing": "tsx src/scripts/testPerModelPricing.ts",
     "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts"
   },
   "dependencies": {
