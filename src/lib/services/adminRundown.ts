@@ -43,6 +43,11 @@ export interface AdminRundownInput {
   ttsVoiceOverrides?: unknown;
   productionStyle?: string;
   sfxDensity?: string;
+  /** Model tier for this episode: "free" | "balanced" | "premium". Admin gets
+   *  the same control as Studio — an operator creating an episode by hand needs
+   *  to decide whether it spends the account's credits just as much as a user
+   *  does, and more often. Flows straight through createRundownEpisode. */
+  qualityTier?: string;
   title?: string;
   description?: string;
   verticals?: string[];

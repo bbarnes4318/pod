@@ -33,6 +33,8 @@ import {
   requestResearchFromRundown,
 } from "./rundownActions";
 import type { ChangedSelection } from "@/lib/services/adminRundown";
+import QualityTierPicker from "@/app/studio/QualityTierPicker";
+import type { QualityTier } from "@/lib/providers/llm/qualityTiers";
 
 interface CreateOutcome {
   episodeId: string;
@@ -58,6 +60,10 @@ export default function AdminRundownBuilder({ onCreated }: { onCreated?: () => v
   const [sport, setSport] = useState("");
   const [minDebateScore, setMinDebateScore] = useState<number | "">("");
 
+  // Which models write this episode. Admin gets showRoutingDetail so an operator
+  // sees the profile name and whether the tier bills real API accounts — the
+  // detail a user does not need and an operator does.
+  const [qualityTier, setQualityTier] = useState<QualityTier | null>(null);
   const [reuseOverride, setReuseOverride] = useState(false);
   const [reuseOverrideReason, setReuseOverrideReason] = useState("");
 
@@ -264,6 +270,9 @@ export default function AdminRundownBuilder({ onCreated }: { onCreated?: () => v
           description: description || undefined,
           sport: sport || undefined,
           minDebateScore: minDebateScore === "" ? undefined : Number(minDebateScore),
+          // Omitted when unchosen so the server still falls back to the
+          // podcast's tier and then the deployment default.
+          qualityTier: qualityTier ?? undefined,
           reuseOverride: reuseOverride || undefined,
         },
         { reuseOverrideReason: reuseOverrideReason || undefined }
@@ -424,6 +433,17 @@ export default function AdminRundownBuilder({ onCreated }: { onCreated?: () => v
             onRemove={removeTopic}
             onSetLead={setLead}
           />
+
+          {/* Which models write this episode. showRoutingDetail is ON here and
+              off in Studio: an operator needs the profile name and whether the
+              tier bills real API accounts; a user needs neither. */}
+          <div className="studioCard" style={{ padding: "0.85rem 1rem" }}>
+            <QualityTierPicker
+              value={qualityTier}
+              onChange={(t) => setQualityTier(t)}
+              showRoutingDetail
+            />
+          </div>
 
           <div className="studioCard" style={{ padding: "0.85rem 1rem" }}>
             <label className="fieldLabel" htmlFor="adminTargetCount">Target topics</label>
