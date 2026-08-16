@@ -19,6 +19,8 @@ import { db } from "../db";
 import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
 import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
 import { withLlmStage, withLlmJob, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
+import { withRoutingProfile } from "../providers/llm/profiles";
+import { profileForTier, toQualityTier } from "../providers/llm/qualityTiers";
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { ProductionHoldError } from "./productionGuard";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
@@ -3018,7 +3020,27 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   // cost by 50% on 2026-08-10.
   const llmMark = llmCostMark();
   try {
-    const res = await withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
+    // THE PODCAST'S CHOSEN TIER ROUTES THIS EPISODE.
+    //
+    // Resolved here rather than inside generateScriptForEpisode because this is
+    // the job boundary: withRoutingProfile scopes the choice to exactly this
+    // handler, so the free episode running concurrently on the next worker slot
+    // keeps its own tier. An env var could not express that — one process
+    // serves every podcast.
+    //
+    // A podcast that has never chosen (qualityTier null) falls through to the
+    // deployment default rather than being forced onto a tier nobody picked.
+    const tierRow = await db.episode
+      .findUnique({
+        where: { id: (job.data as { episodeId?: string }).episodeId || "" },
+        select: { podcast: { select: { qualityTier: true } } },
+      })
+      .catch(() => null);
+    const chosenTier = tierRow?.podcast?.qualityTier;
+    const runScript = () => withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
+    const res = chosenTier
+      ? await withRoutingProfile(profileForTier(toQualityTier(chosenTier)), runScript)
+      : await runScript();
 
     await db.jobLog.update({
       where: { id: jobLog.id },

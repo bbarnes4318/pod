@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
 import { canViewOwned } from "@/lib/ownerScope";
+import { isQualityTier } from "@/lib/providers/llm/qualityTiers";
 import {
   queueResearchBriefGenerationJob,
   queueScriptGenerationJob,
@@ -998,4 +999,39 @@ export async function discardStudioRundownDraft() {
   const ctx = await studioCtx();
   if (!ctx) return { success: false as const, error: "Please sign in." };
   return discardStudioDraftFor(ctx);
+}
+
+/**
+ * Persist the model tier that writes a podcast's dialogue.
+ *
+ * OWNERSHIP IS ENFORCED HERE, not in the component. The picker is a client
+ * component and anything it decides is a suggestion — the only thing standing
+ * between a crafted request and someone else's podcast is this check. It mirrors
+ * canViewOwned() as used by every other action in this file.
+ *
+ * The value is normalised through toQualityTier rather than trusted: a bad tier
+ * string reaching the database would resolve to a fallback at generation time
+ * anyway, so rejecting it at the boundary keeps the stored data meaningful
+ * instead of merely survivable.
+ */
+export async function setPodcastQualityTier(podcastId: string, tier: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Sign in to change this." };
+
+  const podcast = await db.podcast.findUnique({
+    where: { id: podcastId },
+    select: { id: true, ownerId: true, qualityTier: true },
+  });
+  if (!podcast) return { ok: false as const, error: "That podcast no longer exists." };
+  if (!canViewOwned(user, podcast)) {
+    return { ok: false as const, error: "That podcast belongs to someone else." };
+  }
+
+  if (!isQualityTier(tier)) {
+    return { ok: false as const, error: `"${tier}" is not a quality tier.` };
+  }
+
+  await db.podcast.update({ where: { id: podcastId }, data: { qualityTier: tier } });
+  revalidatePath("/studio");
+  return { ok: true as const, tier, previous: podcast.qualityTier ?? null };
 }

@@ -440,6 +440,12 @@ model Podcast {
   teams                 String[] @default([]) // Team.id values; empty = vertical-wide
   segmentCount          Int      @default(3) // maps to the pipeline's targetTopicCount
   hostIds               String[] @default([]) // AiHost.id values
+  // Which model tier writes this show: "free" | "balanced" | "premium".
+  // Nullable ON PURPOSE — null means "never chosen", which is different from
+  // "chose the default", and only the first can be safely migrated later if the
+  // default changes. Resolved through toQualityTier(), which falls back rather
+  // than throwing, so an unrecognised value can never break generation.
+  qualityTier           String?
   owner                 String   @default("listener") // legacy free-text owner; superseded by ownerId
   ownerId               String? // User.id of the creator; null for legacy/pre-auth podcasts
   ownerUser             User?    @relation(fields: [ownerId], references: [id], onDelete: SetNull)

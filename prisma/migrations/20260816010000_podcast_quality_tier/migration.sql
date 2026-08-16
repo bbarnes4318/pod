@@ -1,0 +1,12 @@
+-- Which model tier writes a show: "free" | "balanced" | "premium".
+--
+-- NULLABLE WITH NO DEFAULT, deliberately. A null means "this podcast has never
+-- had a tier chosen", which is genuinely different from "someone chose the
+-- current default" — and only the first can be safely re-migrated if the
+-- default ever changes. Backfilling a value here would erase that distinction
+-- permanently on every existing row.
+--
+-- Unrecognised values are survivable: the application reads this through
+-- toQualityTier(), which falls back to the default rather than throwing, so a
+-- stray value degrades a preference instead of breaking generation.
+ALTER TABLE "Podcast" ADD COLUMN "qualityTier" TEXT;
