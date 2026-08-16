@@ -192,6 +192,7 @@
     "test:word-flow": "tsx src/scripts/testWordFlow.ts",
     "test:per-model-pricing": "tsx src/scripts/testPerModelPricing.ts",
     "test:free-profile": "tsx src/scripts/testFreeProfile.ts",
+    "test:quality-tiers": "tsx src/scripts/testQualityTiers.ts",
     "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts"
   },
   "dependencies": {

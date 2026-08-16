@@ -16,6 +16,7 @@
 // Model ids are resolved through env so a catalog rename never requires a code
 // change. See capabilities.ts for the verified/unverified honesty rule.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { MODEL_IDS, isRoutableByDefault, modelCapabilities, type ModelCapabilities } from "./capabilities";
 import { ALL_ROLES, LLMRole } from "./roles";
 import { readRoutingEnv } from "./routingEnv";
@@ -758,7 +759,49 @@ export function filterProfileChain(
 }
 
 /** The configured profile. Unset or unrecognized → legacy. */
+/**
+ * A profile chosen for ONE unit of work, overriding the env default.
+ *
+ * WHY THIS EXISTS. `activeRoutingProfile()` read the environment and nothing
+ * else, which is correct for a single-tenant deployment and useless the moment
+ * a tier becomes a per-podcast choice: one worker process serves every
+ * podcast, so an env var cannot express "this episode is Free and that one is
+ * Premium". A UI toggle without this seam would have had nowhere to write.
+ *
+ * AsyncLocalStorage rather than a parameter threaded through twenty call sites,
+ * for the same reason withLlmJob and withLlmStage use it: the profile is
+ * ambient context that every provider construction deep in the stack needs, and
+ * threading it would mean touching every intermediate signature to carry a
+ * value none of them use.
+ *
+ * Scope is one job. `withRoutingProfile(tier, () => generateScript(...))` wraps
+ * the whole generation, so every role resolved inside it — including retries and
+ * fallbacks — sees the same tier, and concurrent jobs on different tiers do not
+ * bleed into each other. That last property is not theoretical: the cost ledger
+ * shipped a bug of exactly this shape, where concurrent jobs shared a
+ * process-wide watermark and one episode was billed for another's tokens.
+ */
+const profileStorage = new AsyncLocalStorage<RoutingProfile>();
+
+export function withRoutingProfile<T>(profile: RoutingProfile, fn: () => T): T {
+  return profileStorage.run(profile, fn);
+}
+
+/** The profile chosen for the current job, if any. Exported for diagnostics. */
+export function currentRoutingProfileOverride(): RoutingProfile | undefined {
+  return profileStorage.getStore();
+}
+
+/**
+ * Resolution order: per-job override → environment → legacy.
+ *
+ * The override wins because it is the more specific statement of intent: an
+ * operator sets LLM_ROUTING_PROFILE for the deployment, a user picks a tier for
+ * their podcast, and the user's choice is about their episode.
+ */
 export function activeRoutingProfile(): RoutingProfile {
+  const override = profileStorage.getStore();
+  if (override) return override;
   const raw = (readRoutingEnv("LLM_ROUTING_PROFILE") || "").trim().toLowerCase();
   if ((ROUTING_PROFILES as string[]).includes(raw)) return raw as RoutingProfile;
   return "legacy";
