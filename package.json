@@ -88,6 +88,7 @@
     "test:evidence-context": "tsx src/scripts/testEvidenceContext.ts",
     "test:compliance": "tsx src/scripts/testCompliance.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
+    "test:joblog-reconciliation": "tsx src/scripts/testJobLogReconciliation.ts",
     "test:episode-creation": "tsx --conditions=react-server src/scripts/testEpisodeCreation.ts",
     "ingest:audio-assets": "tsx --conditions=react-server src/scripts/ingestAudioAssets.ts",
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",

@@ -21,6 +21,11 @@ import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routin
 import { withLlmStage, withLlmJob, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { withRoutingProfile } from "../providers/llm/profiles";
 import { profileForTier, toQualityTier } from "../providers/llm/qualityTiers";
+import { reconcileOrphanedJobLogsOnBoot } from "../services/jobLogReconciliation";
+
+// Captured before any job can start, so "predates this process" is a fact
+// rather than a guess made later on.
+const WORKER_STARTED_AT = new Date();
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { ProductionHoldError } from "./productionGuard";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
@@ -181,6 +186,13 @@ reconcileTopicPoolOnBoot()
   .catch((err) =>
     console.error(`[Worker] Topic-pool startup reconciliation failed: ${err.message}`)
   );
+
+// A job killed mid-flight never writes its own ending, so its row stays
+// "running" and the admin table renders a live timer that counts up forever.
+// This process is starting, so nothing that predates it is running here.
+reconcileOrphanedJobLogsOnBoot({ db, processStartedAt: WORKER_STARTED_AT }).catch((err) =>
+  console.error(`[Worker] Job-log reconciliation failed: ${err.message}`)
+);
 
 // Worker concurrency is env-driven and bounded. Production defaults to 1 (the
 // DEPLOYMENT_RUNBOOK recommendation — a single ffmpeg/LLM-heavy job at a time
