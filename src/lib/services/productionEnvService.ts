@@ -11,6 +11,7 @@ import {
 import { modelCapabilities, verificationState } from "@/lib/providers/llm/capabilities";
 import { activeRoutingProfile, routingProfileIsUnrecognized } from "@/lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "@/lib/providers/llm/deploymentStage";
+import { currentEnvNameProblems } from "./envNameGuard";
 
 export interface EnvCheck {
   key: string;
@@ -317,6 +318,30 @@ export function getRequiredProductionEnvChecklist(): EnvCheck[] {
       }
     }
   };
+
+  // 6b. ENVIRONMENT VARIABLE NAMES.
+  //
+  // Checked BEFORE the value checks below, because a malformed NAME does not
+  // produce a bad value — it stops the deployment before any value exists. On
+  // 2026-08-16 a variable called `CEREBRAS API KEY` broke `source` and
+  // `--build-arg` at once, and Coolify's failure handler removed the running web
+  // container: a typo in a text field took the site down with a 503.
+  //
+  // Names only. No value is read or reported, so this is safe against the full
+  // environment including credentials.
+  const nameProblems = currentEnvNameProblems();
+  if (nameProblems.length === 0) {
+    checks.push({ key: "ENV_VARIABLE_NAMES", status: "pass", value: `${Object.keys(process.env).length} names valid` });
+  } else {
+    for (const problem of nameProblems) {
+      checks.push({
+        key: "ENV_VARIABLE_NAMES",
+        status: "fail",
+        value: problem.key,
+        message: `Environment variable "${problem.key}" ${problem.reason} Rename it before the next deploy.`,
+      });
+    }
+  }
 
   checkHttpsUrl("APP_BASE_URL");
   checkHttpsUrl("NEXT_PUBLIC_APP_BASE_URL");

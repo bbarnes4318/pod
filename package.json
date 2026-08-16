@@ -193,7 +193,8 @@
     "test:per-model-pricing": "tsx src/scripts/testPerModelPricing.ts",
     "test:free-profile": "tsx src/scripts/testFreeProfile.ts",
     "test:quality-tiers": "tsx src/scripts/testQualityTiers.ts",
-    "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts"
+    "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts",
+    "test:env-name-guard": "tsx src/scripts/testEnvNameGuard.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
