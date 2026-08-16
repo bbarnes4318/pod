@@ -191,6 +191,7 @@
     "test:evidence-ref-contract": "tsx src/scripts/testEvidenceRefContract.ts",
     "test:word-flow": "tsx src/scripts/testWordFlow.ts",
     "test:per-model-pricing": "tsx src/scripts/testPerModelPricing.ts",
+    "test:free-profile": "tsx src/scripts/testFreeProfile.ts",
     "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts"
   },
   "dependencies": {

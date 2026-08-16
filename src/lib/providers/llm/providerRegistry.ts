@@ -27,6 +27,8 @@ import { ZaiLLMProvider } from "./zai";
 import { XaiLLMProvider } from "./xai";
 import { MoonshotLLMProvider } from "./moonshot";
 import { GoogleLLMProvider } from "./google";
+import { CerebrasLLMProvider } from "./cerebras";
+import { GroqLLMProvider } from "./groq";
 
 /**
  * Every provider this application can build.
@@ -41,6 +43,10 @@ export const SUPPORTED_LLM_PROVIDERS = [
   "anthropic",
   "xai",
   "moonshot",
+  // Free-tier structured-output rungs. Same model id on both, on purpose:
+  // a failover swaps the endpoint without changing the output shape.
+  "cerebras",
+  "groq",
   "google",
   "openai",
   "stub",
@@ -78,6 +84,10 @@ export function buildProvider(provider: string, model?: string): LLMProvider | n
       return new XaiLLMProvider(model);
     case "moonshot":
       return new MoonshotLLMProvider(model);
+    case "cerebras":
+      return new CerebrasLLMProvider(model);
+    case "groq":
+      return new GroqLLMProvider(model);
     case "google":
       return new GoogleLLMProvider(model);
     case "openai":

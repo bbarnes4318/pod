@@ -793,6 +793,10 @@ export function credentialVarFor(provider: string): string {
       return "XAI_API_KEY";
     case "moonshot":
       return "MOONSHOT_API_KEY";
+    case "cerebras":
+      return "CEREBRAS_API_KEY";
+    case "groq":
+      return "GROQ_API_KEY";
     case "google":
       // google.ts accepts GEMINI_API_KEY as an alias; this reports the primary
       // spelling, which is the one the setup instructions tell operators to set.

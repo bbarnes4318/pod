@@ -226,8 +226,114 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
 
 /** Every role on Z.ai's free general-purpose API — deliberately role-agnostic:
  *  the point of this profile is to test one provider across the whole chain. */
-function freeIndependentChain(): ProfileRoleChain {
-  return [ZAI_FLASH()];
+const CEREBRAS_OSS = (): ProviderModelRef => ({
+  provider: "cerebras",
+  model: readRoutingEnv("CEREBRAS_MODEL") || "gpt-oss-120b",
+});
+
+const GROQ_OSS = (): ProviderModelRef => ({
+  provider: "groq",
+  model: readRoutingEnv("GROQ_MODEL") || "openai/gpt-oss-120b",
+});
+
+const GROQ_OSS_SMALL = (): ProviderModelRef => ({
+  provider: "groq",
+  model: "openai/gpt-oss-20b",
+});
+
+/** GLM-5.2 via NVIDIA NIM — slow, but the only free route that honours a schema. */
+const NIM_GLM52 = (): ProviderModelRef => ({ provider: "nvidia", model: "z-ai/glm-5.2" });
+
+/** DeepSeek V4 Flash via NIM. A different lab from GLM — that is the whole point. */
+const NIM_DEEPSEEK = (): ProviderModelRef => ({
+  provider: "nvidia",
+  model: "deepseek-ai/deepseek-v4-flash-0731",
+});
+
+/**
+ * THE FREE TIER — every rung measured on 2026-08-15, none inherited from a
+ * "best free LLM" article.
+ *
+ * The previous version of this function returned `[ZAI_FLASH()]` for every role:
+ * one flaky model doing structural planning, creative dialogue and judging at
+ * once, with no fallback and no separation between the writers and the judge.
+ *
+ * WHAT THE PROBES ESTABLISHED, and why the split below looks the way it does:
+ *
+ * 1. PROVIDER DOMINATES MODEL. The same `gpt-oss-120b` weights answered a
+ *    strict-schema call in 703 ms on Cerebras, 5,238 ms on Groq, and TIMED OUT
+ *    at 300,775 ms on NVIDIA. The old free tier was not slow because its models
+ *    were weak; it was slow because it was all on NVIDIA.
+ *
+ * 2. SCHEMA SUPPORT IS NARROW AND UNADVERTISED. On Groq, only the two gpt-oss
+ *    models honour `json_schema`. `llama-3.3-70b-versatile` — the model that
+ *    headlines every free-tier listicle — returns HTTP 400 for it outright.
+ *
+ * 3. FAST-AND-BROKEN LOSES TO SLOW-AND-CORRECT. GLM-5.2 answers in 5.9 s on
+ *    Z.ai and 50.5 s on NVIDIA, but only the NVIDIA route returns output that
+ *    matches the schema. Z.ai's structured responses omit required fields — the
+ *    same defect that already excluded it from both verification chains.
+ *
+ * 4. THE BEST FREE WRITER IS UNREACHABLE. `moonshotai/kimi-k2.6` (78.5 on
+ *    EQ-Bench longform, the top open model) is listed in NVIDIA's catalogue and
+ *    returns 404 for this account, exactly like Kimi K3 before it.
+ *
+ * TWO WRITER FAMILIES ARE PRESERVED. Host A gets GLM-5.2 (Zhipu, 77.9 creative,
+ * 16.5 slop); Host B gets DeepSeek V4 Flash (DeepSeek, 66.0). One model writing
+ * both hosts is the convergence failure this pipeline keeps rediscovering, and a
+ * free tier is not an excuse to reintroduce it.
+ *
+ * NEITHER WRITER SHARES A MODEL WITH A JUDGE. Judges run gpt-oss, which scores
+ * 35.8 on creative writing and is therefore disqualified from ever writing a
+ * line — but is superb at emitting a verdict that parses.
+ *
+ * THE HONEST COST: the writers take 50 s and 32 s per call against roughly 1 s
+ * on Opus 5, so a free episode spends about 8-10 minutes in the writing stages.
+ * Free is slow. Surfaces that offer it should say so before a user picks it.
+ */
+function freeIndependentChain(role: LLMRole): ProfileRoleChain {
+  switch (role) {
+    // ---- audible dialogue: the only roles where prose quality is the product
+    case "script_host_a_writer":
+      return [NIM_GLM52(), NIM_DEEPSEEK()];
+    case "script_host_b_writer":
+      return [NIM_DEEPSEEK(), NIM_GLM52()];
+
+    // ---- structure and judgement: schema fidelity and latency, not prose.
+    // Cerebras leads everywhere it can; Groq is the same model on a different
+    // company, so a failover changes the endpoint and not the output shape.
+    case "script_story_editor":
+    case "script_outline":
+    case "script_debate_architect":
+    case "script_dialogue_director":
+    case "script_movement":
+    case "script_rewrite":
+    case "script_continuity_editor":
+    case "continuity_report":
+      return [CEREBRAS_OSS(), GROQ_OSS()];
+
+    // Judges and verification. Same models, stated separately because the
+    // no-shared-model-with-writers rule is a property of THIS list.
+    case "quality_judge":
+    case "cold_open_judge":
+    case "script_verification":
+    case "fact_check":
+      return [CEREBRAS_OSS(), GROQ_OSS()];
+
+    // ---- cheap, high-volume, structured. gpt-oss-20b is 1,344 ms and still
+    // schema-strict, which is the right trade for per-topic work.
+    case "topic_generation":
+    case "topic_classification":
+    case "topic_ranking":
+    case "show_notes":
+    case "episode_metadata":
+      return [GROQ_OSS_SMALL(), CEREBRAS_OSS()];
+
+    // ---- long-context consolidation into typed evidence refs.
+    case "research_brief":
+    case "evidence_extraction":
+      return [CEREBRAS_OSS(), GROQ_OSS()];
+  }
 }
 
 /**
@@ -436,7 +542,7 @@ export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole):
     case "frontier_development":
       return frontierChain(role);
     case "free_independent":
-      return freeIndependentChain();
+      return freeIndependentChain(role);
     case "legacy":
     case "custom":
       // No profile-supplied candidates: legacy resolves to today's grouped
