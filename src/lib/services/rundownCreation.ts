@@ -73,6 +73,11 @@ export interface RundownEpisodeInput {
   ttsVoiceOverrides?: unknown;
   productionStyle?: string;
   sfxDensity?: string;
+  /** Model tier for this episode. NOT resolved against the podcast here — the
+   *  worker already falls back episode -> podcast -> deployment default, so
+   *  passing it through unchanged keeps "unchosen" distinguishable from a value
+   *  the resolver invented. */
+  qualityTier?: string;
   title?: string;
   description?: string;
   verticals?: string[];
@@ -129,7 +134,7 @@ export type RundownCreationOutcome =
 interface ResolvedRundownConfiguration {
   draft: { verticals?: string[]; teams?: string[]; hostIds?: string[]; targetTopicCount?: number };
   ownerId: string | null;
-  production: { ttsProvider?: string; ttsVoiceOverrides?: unknown; productionStyle?: string; sfxDensity?: string; minDebateScore?: number };
+  production: { ttsProvider?: string; ttsVoiceOverrides?: unknown; productionStyle?: string; sfxDensity?: string; minDebateScore?: number; qualityTier?: string };
   configuration: EpisodeSnapshotColumns;
   /** Non-fatal resolver notes (e.g. a legacy stored format was degraded). */
   warnings: string[];
@@ -237,6 +242,10 @@ async function resolveRundownConfiguration(
         ttsVoiceOverrides: r.production.ttsVoiceOverrides.value ?? undefined,
         productionStyle: r.production.productionStyle.value ?? undefined,
         sfxDensity: r.production.sfxDensity.value ?? undefined,
+        // Straight from the caller, deliberately bypassing the resolver: there
+        // is no show-level tier to inherit here (the worker handles that), and
+        // routing it through inheritance would turn "unchosen" into a value.
+        qualityTier: input.qualityTier,
         minDebateScore: r.editorial.minDebateScore.value ?? undefined,
       },
       // randomUUID() is the stable per-episode selection seed (snapshot v5):
@@ -284,6 +293,7 @@ export async function createRundownEpisode(
       ttsVoiceOverrides: production.ttsVoiceOverrides,
       productionStyle: production.productionStyle,
       sfxDensity: production.sfxDensity,
+      qualityTier: production.qualityTier,
       // Selection preferences actually reach the backend (auto/hybrid).
       verticals: draft.verticals,
       teams: draft.teams,

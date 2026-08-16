@@ -35,6 +35,10 @@ export interface StudioEpisodeInput {
   ttsVoiceOverrides?: unknown;
   productionStyle?: string;
   sfxDensity?: string;
+  /** Model tier for this episode: "free" | "balanced" | "premium". Omitted when
+   *  the user made no choice, so the server falls back to the podcast's tier and
+   *  then the deployment default rather than acting on an unmade decision. */
+  qualityTier?: string;
   title?: string;
   description?: string;
   // Automatic/Hybrid backend selection PREFERENCES (not board display filters).
@@ -204,6 +208,7 @@ export async function createStudioEpisodeFor(
       ttsVoiceOverrides: input.ttsVoiceOverrides,
       productionStyle: input.productionStyle,
       sfxDensity: input.sfxDensity,
+      qualityTier: input.qualityTier,
       verticals: input.verticals,
       teams: input.teams,
       leagueIds: input.leagueIds,

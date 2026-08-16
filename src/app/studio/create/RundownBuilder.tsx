@@ -25,6 +25,8 @@ import { MAX_DESCRIPTION_LEN, MAX_HOSTS } from "@/lib/episodeLimits";
 import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
 import RundownTray from "@/components/rundown/RundownTray";
 import ProductionConsole from "../ProductionConsole";
+import QualityTierPicker from "../QualityTierPicker";
+import type { QualityTier } from "@/lib/providers/llm/qualityTiers";
 
 type Mode = "manual" | "automatic" | "hybrid";
 export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; format?: string | null; }
@@ -90,6 +92,11 @@ export default function RundownBuilder({
   const [voicePicks, setVoicePicks] = useState<Record<string, string>>(() => voicePicksFromOverrides(d?.ttsVoiceOverrides));
   const [productionStyle, setProductionStyle] = useState<string>(d?.productionStyle ?? "light");
   const [sfxDensity, setSfxDensity] = useState<string>(d?.sfxDensity ?? "medium");
+  // Which models write THIS episode. Starts null — "not chosen" — rather than
+  // pre-selecting a default, so a user who never touches it inherits the show's
+  // tier (or the deployment default for a standalone episode) instead of having
+  // a choice silently made for them.
+  const [qualityTier, setQualityTier] = useState<QualityTier | null>(null);
   const [title, setTitle] = useState<string>(d?.title ?? "");
   const [description, setDescription] = useState<string>(d?.description ?? "");
   // A seed deep-links to the Topics step so the user lands where the topic is.
@@ -352,6 +359,9 @@ export default function RundownBuilder({
         ttsVoiceOverrides: buildVoiceOverrides(voicePicks, ttsProvider),
         productionStyle,
         sfxDensity,
+        // Omitted when unchosen so the server falls back to podcast -> default
+        // rather than receiving a value the user never picked.
+        qualityTier: qualityTier ?? undefined,
         title: title.trim() || undefined,
         description: description.trim() || undefined,
         // Selection preferences (auto/hybrid) — only sent when the user set them,
@@ -682,7 +692,21 @@ export default function RundownBuilder({
       {/* ---------------- PRODUCTION ---------------- */}
       {step === "production" && (
         <div className="studioCard">
-          <h2 className="sectionTitle mt-0">Production</h2>
+          {/* Which models WRITE this episode. FIRST in the Production step,
+              because it is the only control here with a per-episode dollar cost
+              and a ten-minute speed consequence — the rest change how it sounds,
+              this changes what it costs and how long it takes.
+
+              A standalone episode has no podcast to inherit a tier from, so this
+              is the only place the question can be asked for one. Left
+              untouched it inherits the show's tier, then the deployment
+              default. */}
+          <QualityTierPicker value={qualityTier} onChange={(t) => setQualityTier(t)} />
+          {qualityTier === null && podcastId ? (
+            <p className="hintText mt-2">Not set — this episode will use the show&apos;s tier.</p>
+          ) : null}
+
+          <h2 className="sectionTitle mt-4">Production</h2>
           <div className="fieldLabel">Sound-design level</div>
           <div className="segRow">{PROD_STYLES.map((p) => <button key={p.k} type="button" className={`segBtn${productionStyle === p.k ? " on" : ""}`} aria-pressed={productionStyle === p.k} onClick={() => setProductionStyle(p.k)}>{p.l}</button>)}</div>
           <div className="fieldLabel mt-3">Reactions &amp; SFX</div>
