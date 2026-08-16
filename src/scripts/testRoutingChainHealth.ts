@@ -52,16 +52,28 @@ const key = (r: { provider: string; model: string }) => `${r.provider}/${r.model
  * Profiles that route across MULTIPLE model families, and are therefore the
  * ones the independence invariants can apply to.
  *
- * `free_independent` is excluded by design, not by oversight: it points every
- * role at one Z.ai model on purpose, to test one provider across the whole
- * chain. Under it a judge necessarily shares a model with the writer it grades
- * and the two host writers necessarily collapse onto one voice. That is the
- * known cost of that profile and the reason it is a diagnostic rather than a
- * production setting — asserting the invariants against it would either fail
- * permanently or force the profile to stop being what it is. It gets its own
- * assertion below instead.
+ * EXEMPTION RETIRED 2026-08-15. `free_independent` used to be excluded here: it
+ * pointed every role at one Z.ai model, so a judge necessarily graded the writer
+ * it shared a model with and the two hosts necessarily collapsed onto one voice.
+ * The exemption was honest about that being "the known cost of a diagnostic
+ * profile" — but the profile is now offered to users as the free tier, and a
+ * tier a user can select is not a diagnostic.
+ *
+ * It has been rebuilt on measured routes across three providers, so it clears
+ * the same invariants as the paid profiles and is asserted alongside them. The
+ * tripwire that guarded the exemption did its job: it failed the moment the
+ * profile gained a second model, which is exactly when the exemption stopped
+ * being true.
+ *
+ * `balanced` is here for the same reason — it is a paid tier and must not be
+ * held to a lower bar than the free one.
  */
-const MULTI_MODEL_PROFILES: RoutingProfile[] = ["verified_development", "frontier_development"];
+const MULTI_MODEL_PROFILES: RoutingProfile[] = [
+  "verified_development",
+  "frontier_development",
+  "free_independent",
+  "balanced",
+];
 
 /** The profile production is expected to run. */
 const PRODUCTION_PROFILE: RoutingProfile = "verified_development";
@@ -222,16 +234,33 @@ function main() {
     });
   }
 
-  check("free_independent is still the single-model profile the invariants exempt", () => {
-    // If this ever fails, free_independent has gained a second model and the
-    // exemption above needs re-deciding rather than silently continuing.
-    const distinct = new Set<string>();
-    for (const role of ALL_ROLES) for (const ref of declaredProfileChainFor("free_independent", role)) distinct.add(key(ref));
+  check("free_independent spreads across providers rather than betting on one", () => {
+    // The inverse of the assertion this replaces. That one guarded an EXEMPTION
+    // — free_independent was allowed to be one model, and the check existed to
+    // notice if it stopped being one. It has, so the exemption is gone (see
+    // MULTI_MODEL_PROFILES) and the invariants now apply to it directly.
+    //
+    // What remains worth asserting is the property that made the rebuild worth
+    // doing: the free tier must not be one provider's outage away from useless.
+    // Measured 2026-08-15 — the same gpt-oss-120b weights answered in 703 ms on
+    // Cerebras and timed out at 300,775 ms on NVIDIA, so provider spread is
+    // resilience, not neatness.
+    const providers = new Set<string>();
+    const models = new Set<string>();
+    for (const role of ALL_ROLES) {
+      for (const ref of declaredProfileChainFor("free_independent", role)) {
+        providers.add(ref.provider);
+        models.add(key(ref));
+      }
+    }
     assert(
-      distinct.size === 1,
-      `free_independent now routes to ${distinct.size} distinct models (${[...distinct].join(", ")}). It is exempted ` +
-        `from the judge-independence and host-independence invariants ON THE BASIS that it is deliberately one model. ` +
-        `That basis no longer holds — either restore it or bring the profile under the invariants.`
+      providers.size >= 3,
+      `free_independent spans only ${providers.size} provider(s) (${[...providers].join(", ")}). ` +
+        `One provider's outage would take the whole free tier down.`
+    );
+    assert(
+      models.size >= 4,
+      `free_independent routes to only ${models.size} distinct model(s) (${[...models].join(", ")}).`
     );
   });
 

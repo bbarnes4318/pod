@@ -65,13 +65,30 @@ export class MoonshotLLMProvider extends OpenAICompatibleLLMProvider {
     const configured = Number(readRoutingEnv("MOONSHOT_REASONING_HEADROOM_TOKENS"));
     const headroom = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2048;
     return {
-      fields: {},
+      // TEMPERATURE IS PINNED TO 1, and this is the fix for a real dead end.
+      //
+      // Kimi rejects any other value outright:
+      //
+      //   HTTP 400 — "invalid temperature: only 1 is allowed for this model"
+      //
+      // Every caller in this pipeline passes a creative temperature (0.6-0.8),
+      // so EVERY Moonshot call 400'd. Combined with a stale credential that was
+      // returning 404s, the provider looked permanently unreachable and Kimi was
+      // written off as "not available to this account" in two separate places —
+      // including the comment at the top of this file.
+      //
+      // It was never an access problem. Verified 2026-08-15 with temperature 1:
+      // kimi-k3 and kimi-k2.6 both return schema-valid dialogue. This field
+      // overwrites the caller's value because shapeModelFields is applied AFTER
+      // the generic temperature assignment in openaiCompatible.
+      fields: { temperature: 1 },
       maxTokensAdd: headroom,
       diagnostics: {
         reasoningRequested: false,
         note:
-          `moonshot-kimi: no provider-specific fields sent, but +${headroom} tokens of ANSWER HEADROOM are added because ` +
-          `this model reasons by default and bills it against max_tokens. Caller wanted reasoning: ${ctx.wantsReasoning}. ` +
+          `moonshot-kimi: temperature FORCED to 1 (the only value this model accepts; anything else is a 400), ` +
+          `plus +${headroom} tokens of ANSWER HEADROOM because this model reasons by default and bills it ` +
+          `against max_tokens. Caller wanted reasoning: ${ctx.wantsReasoning}. ` +
           "A reasoning-only response is still reported as output_limit, never as an empty success.",
       },
     };

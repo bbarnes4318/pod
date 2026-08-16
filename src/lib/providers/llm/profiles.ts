@@ -25,6 +25,7 @@ export type RoutingProfile =
   | "verified_development"
   | "frontier_development"
   | "free_independent"
+  | "balanced"
   | "custom";
 
 export const ROUTING_PROFILES: RoutingProfile[] = [
@@ -32,6 +33,7 @@ export const ROUTING_PROFILES: RoutingProfile[] = [
   "verified_development",
   "frontier_development",
   "free_independent",
+  "balanced",
   "custom",
 ];
 
@@ -242,6 +244,12 @@ const GROQ_OSS_SMALL = (): ProviderModelRef => ({
 });
 
 /** GLM-5.2 via NVIDIA NIM — slow, but the only free route that honours a schema. */
+/** Nemotron 3 SUPER (not Ultra). 4,663 ms and schema-valid; Ultra took 584,006 ms. */
+const NV_NEMOTRON_SUPER = (): ProviderModelRef => ({
+  provider: "nvidia",
+  model: "nvidia/nemotron-3-super-120b-a12b",
+});
+
 const NIM_GLM52 = (): ProviderModelRef => ({ provider: "nvidia", model: "z-ai/glm-5.2" });
 
 /** DeepSeek V4 Flash via NIM. A different lab from GLM — that is the whole point. */
@@ -291,6 +299,103 @@ const NIM_DEEPSEEK = (): ProviderModelRef => ({
  * on Opus 5, so a free episode spends about 8-10 minutes in the writing stages.
  * Free is slow. Surfaces that offer it should say so before a user picks it.
  */
+const OR_KIMI = (): ProviderModelRef => ({
+  provider: "openrouter",
+  model: readRoutingEnv("OPENROUTER_MODEL") || "moonshotai/kimi-k2.6",
+});
+
+const ANTHROPIC_HAIKU = (): ProviderModelRef => ({ provider: "anthropic", model: "claude-haiku-4-5" });
+
+/**
+ * BALANCED — Kimi writes, Haiku supports. The tier between free and premium.
+ *
+ * The premium tier puts Opus 5 on both host writers at $0.89 an episode, and the
+ * free tier puts GLM-5.2 and DeepSeek there for nothing but takes 8-10 minutes
+ * doing it. Neither is the right default for most episodes, and the gap between
+ * them is a cliff rather than a choice.
+ *
+ * Kimi K2.6 closes it, and the numbers are measured rather than argued.
+ * On 2026-08-15, one identical schema-constrained dialogue request:
+ *
+ *   openrouter  moonshotai/kimi-k2.6      420 ms   schema OK   95 words
+ *   moonshot    kimi-k2.6              45,443 ms   schema OK   47 words
+ *
+ * Priced against the real token counts of episode ade82ba1, K2.6 writes both
+ * hosts for about $0.16 where Opus 5 costs $0.89 — 83% off the single largest
+ * line in the bill. It scores 78.5 on EQ-Bench longform creative writing against
+ * Opus 5's 86.3 and Sonnet 5's 78.3: a real 7.8-point drop on the audible
+ * content, and better prose than anything in the free tier.
+ *
+ * WHY THIS WAS NOT AVAILABLE BEFORE. Kimi was written off twice as unreachable.
+ * It never was: the Moonshot credential was stale, and every call sent a
+ * creative temperature to a model that rejects anything but 1 with a 400. Both
+ * are fixed (moonshot.ts, openrouter.ts) and Kimi answers on both routes.
+ *
+ * SUPPORT ROLES RUN HAIKU 4.5, not gpt-oss. This tier is paid, so it buys the
+ * schema reliability of a frontier-lab small model rather than depending on the
+ * free rungs' constrained decoding. Haiku scores 65.0 on creative writing, which
+ * is why it is nowhere near a host writer.
+ *
+ * The invariants hold as everywhere else: two writer families (Moonshot vs
+ * Anthropic), and no judge shares a model with a writer.
+ */
+function balancedChain(role: LLMRole): ProfileRoleChain {
+  switch (role) {
+    // AUDIBLE DIALOGUE — TWO LABS, NOT ONE MODEL TWICE.
+    //
+    // Host A leads with Kimi K2.6 (Moonshot, 78.5 creative) and host B with
+    // GLM-5.2 (Zhipu, 77.9). Those scores are within a point of each other, so
+    // the split costs almost nothing in quality and buys the thing that actually
+    // makes two hosts sound like two people. Putting Kimi on both — which is
+    // what the first draft of this function did — is precisely the convergence
+    // failure the rest of this file exists to prevent, and it is tempting
+    // exactly because Kimi is the better model.
+    //
+    // The trade is latency, and it is asymmetric on purpose: Kimi answers in
+    // 420 ms on OpenRouter, GLM-5.2 takes ~50 s on NVIDIA. Host B is therefore
+    // the slow side of every movement. That is worth it here because GLM-5.2 is
+    // free and near-identical in quality; a tier that paid twice for one lab's
+    // voice would be worse on both axes.
+    //
+    // HAIKU IS DELIBERATELY *NOT* A WRITER RUNG HERE, for two reasons that
+    // reinforce each other. It scores 65.0 on creative writing — a 13-point drop
+    // that a listener would hear. And it is the primary for every judging and
+    // verification role in this tier, so listing it under a writer would let a
+    // judge grade prose it had written. `npm run test:free-profile` caught
+    // exactly that when Haiku was the third rung, which is the reason this
+    // comment exists rather than a third rung.
+    //
+    // So the writers have two rungs and no further safety net: if both Moonshot
+    // and NVIDIA are down the role fails loudly. That is the right outcome — a
+    // silent downgrade to a judge's model is worse than a visible failure.
+    case "script_host_a_writer":
+      return [OR_KIMI(), NIM_GLM52()];
+    case "script_host_b_writer":
+      return [NIM_GLM52(), OR_KIMI()];
+
+    // DIALOGUE REPAIR is kept clear of the judging chain for the same reason as
+    // in the free tier: these roles rewrite lines, and a judge that shares their
+    // model grades its own edits.
+    case "script_movement":
+    case "script_rewrite":
+    case "script_dialogue_director":
+      return [ANTHROPIC_HAIKU(), CEREBRAS_OSS()];
+
+    // Judges: disjoint from the above, and distinct from each other at the
+    // primary so the cold-open verdict and the whole-script verdict are two
+    // judgements rather than one model asked twice.
+    case "quality_judge":
+      return [GROQ_OSS(), GROQ_OSS_SMALL()];
+    case "cold_open_judge":
+      return [GROQ_OSS_SMALL(), GROQ_OSS()];
+
+    // Everything else runs Haiku with the free strict-schema rungs behind it, so
+    // a billing failure degrades to slow rather than to nothing.
+    default:
+      return [ANTHROPIC_HAIKU(), CEREBRAS_OSS(), GROQ_OSS()];
+  }
+}
+
 function freeIndependentChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
     // ---- audible dialogue: the only roles where prose quality is the product
@@ -312,13 +417,29 @@ function freeIndependentChain(role: LLMRole): ProfileRoleChain {
     case "continuity_report":
       return [CEREBRAS_OSS(), GROQ_OSS()];
 
-    // Judges and verification. Same models, stated separately because the
-    // no-shared-model-with-writers rule is a property of THIS list.
-    case "quality_judge":
-    case "cold_open_judge":
+    // VERIFICATION shares the structural rungs; nothing forbids that, and the
+    // rule it must satisfy — never a host writer's model — holds.
     case "script_verification":
     case "fact_check":
       return [CEREBRAS_OSS(), GROQ_OSS()];
+
+    // THE TWO JUDGES ARE FULLY DISJOINT FROM THE DIALOGUE ROLES, and from each
+    // other at the primary. Both properties are enforced by
+    // test:routing-chain-health, and both were VIOLATED by the first draft of
+    // this profile: every structural role and both judges led with
+    // cerebras/gpt-oss-120b, so a model graded scripts it had helped rewrite and
+    // the two judgements collapsed into one.
+    //
+    // Fixing it needed a fourth schema-capable free route, since three cannot
+    // give two judges distinct primaries AND keep them clear of the dialogue
+    // chain. nemotron-3-super-120b is that route: measured 4,663 ms with valid
+    // schema output on 2026-08-15 — unlike nemotron-3-ULTRA, the incumbent that
+    // took 584,006 ms and then failed validation. Judging is one call per
+    // episode, so 4.7 s is immaterial where it would be fatal on a writer.
+    case "quality_judge":
+      return [GROQ_OSS_SMALL(), NV_NEMOTRON_SUPER()];
+    case "cold_open_judge":
+      return [NV_NEMOTRON_SUPER(), GROQ_OSS_SMALL()];
 
     // ---- cheap, high-volume, structured. gpt-oss-20b is 1,344 ms and still
     // schema-strict, which is the right trade for per-topic work.
@@ -327,7 +448,7 @@ function freeIndependentChain(role: LLMRole): ProfileRoleChain {
     case "topic_ranking":
     case "show_notes":
     case "episode_metadata":
-      return [GROQ_OSS_SMALL(), CEREBRAS_OSS()];
+      return [CEREBRAS_OSS(), GROQ_OSS()];
 
     // ---- long-context consolidation into typed evidence refs.
     case "research_brief":
@@ -543,6 +664,8 @@ export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole):
       return frontierChain(role);
     case "free_independent":
       return freeIndependentChain(role);
+    case "balanced":
+      return balancedChain(role);
     case "legacy":
     case "custom":
       // No profile-supplied candidates: legacy resolves to today's grouped

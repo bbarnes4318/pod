@@ -797,6 +797,8 @@ export function credentialVarFor(provider: string): string {
       return "CEREBRAS_API_KEY";
     case "groq":
       return "GROQ_API_KEY";
+    case "openrouter":
+      return "OPENROUTER_API_KEY";
     case "google":
       // google.ts accepts GEMINI_API_KEY as an alias; this reports the primary
       // spelling, which is the one the setup instructions tell operators to set.

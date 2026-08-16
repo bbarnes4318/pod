@@ -29,6 +29,7 @@ function check(name: string, fn: () => void) {
 }
 
 const chain = (role: string) => declaredProfileChainFor("free_independent", role as any);
+const bal = (role: string) => declaredProfileChainFor("balanced", role as any);
 const key = (r: { provider: string; model: string }) => `${r.provider}/${r.model}`;
 
 function main() {
@@ -114,13 +115,31 @@ function main() {
     }
   });
 
-  check("schema-critical roles route only to strict-schema-capable rungs", () => {
-    // Measured: on Groq only the gpt-oss models honour json_schema —
-    // llama-3.3-70b returns HTTP 400. On Cerebras, gpt-oss is the verified one.
+  check("schema-critical roles route only to PROBE-VERIFIED rungs", () => {
+    // An allowlist, not a pattern. Every entry returned schema-valid JSON for
+    // our real host-writer schema on 2026-08-15, with its measured latency; a
+    // route absent from this list has not been proven and must not carry a role
+    // whose output has to parse.
+    //
+    // Deliberately EXCLUDED, each for a measured reason:
+    //   nvidia/openai/gpt-oss-120b   timed out at 300,775 ms (703 ms on Cerebras)
+    //   groq/llama-3.3-70b-versatile HTTP 400 — no json_schema support at all
+    //   zai/*                        parse OK, shape BAD — omits required fields
+    //   nvidia/nemotron-3-ultra      584,006 ms, then failed validation
+    const VERIFIED_SCHEMA_ROUTES = new Set([
+      "cerebras/gpt-oss-120b", //                        703 ms
+      "groq/openai/gpt-oss-120b", //                   5,238 ms
+      "groq/openai/gpt-oss-20b", //                    1,344 ms
+      "nvidia/nvidia/nemotron-3-super-120b-a12b", //   4,663 ms  (SUPER, not ULTRA)
+      "nvidia/z-ai/glm-5.2", //                       50,548 ms
+      "nvidia/deepseek-ai/deepseek-v4-flash-0731", // 32,094 ms
+    ]);
     for (const role of ["quality_judge", "cold_open_judge", "script_verification", "fact_check", "script_debate_architect"]) {
       for (const rung of chain(role)) {
-        const ok = (rung.provider === "groq" || rung.provider === "cerebras") && /gpt-oss/i.test(rung.model);
-        assert.ok(ok, `${role} rung ${key(rung)} is not a verified strict-schema route`);
+        assert.ok(
+          VERIFIED_SCHEMA_ROUTES.has(key(rung)),
+          `${role} rung ${key(rung)} has not been probe-verified for schema-constrained output`
+        );
       }
     }
   });
@@ -153,7 +172,54 @@ function main() {
     console.log(`     ${String(role).padEnd(28)} ${chain(role).map(key).join("  ->  ")}`);
   }
 
-  console.log(failed === 0 ? "\nAll free-profile checks passed.\n" : `\n${failed} check(s) FAILED.\n`);
+  // ======================================================================
+  // BALANCED — the paid middle tier, held to the same bar as the free one.
+  //
+  // This block exists because the first draft of balancedChain led BOTH host
+  // writers with Kimi K2.6. It was the better model, so both hosts got it, and
+  // the result was one lab writing two characters — the exact convergence
+  // failure the free tier is asserted against. A free-only version of this file
+  // would have passed it without comment.
+  console.log("\n  -- balanced tier --");
+
+  check("balanced: every role resolves with a fallback", () => {
+    for (const role of ALL_ROLES) {
+      assert.ok(bal(role).length >= 2, `balanced role ${role} has no failover`);
+    }
+  });
+
+  check("balanced: the two host writers lead with DIFFERENT labs", () => {
+    const a = bal("script_host_a_writer")[0];
+    const b = bal("script_host_b_writer")[0];
+    assert.notEqual(key(a), key(b), "both hosts lead with the same model — one lab writing two characters");
+  });
+
+  check("balanced: no judge or verifier shares a model with a host writer", () => {
+    const writers = new Set([
+      ...bal("script_host_a_writer").map(key),
+      ...bal("script_host_b_writer").map(key),
+    ]);
+    for (const judge of ["quality_judge", "cold_open_judge", "script_verification", "fact_check"]) {
+      for (const rung of bal(judge)) {
+        assert.ok(!writers.has(key(rung)), `${judge} rung ${key(rung)} also writes a host`);
+      }
+    }
+  });
+
+  check("balanced: no host writer routes to gpt-oss", () => {
+    for (const role of ["script_host_a_writer", "script_host_b_writer"]) {
+      for (const rung of bal(role)) {
+        assert.ok(!/gpt-oss/i.test(rung.model), `${role} routes to ${key(rung)}`);
+      }
+    }
+  });
+
+  console.log("\n  -- balanced resolves to --");
+  for (const role of ["script_host_a_writer", "script_host_b_writer", "script_debate_architect", "quality_judge"]) {
+    console.log(`     ${role.padEnd(28)} ${bal(role).map(key).join("  ->  ")}`);
+  }
+
+  console.log(failed === 0 ? "\nAll profile checks passed.\n" : `\n${failed} check(s) FAILED.\n`);
   process.exit(failed === 0 ? 0 : 1);
 }
 

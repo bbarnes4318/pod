@@ -29,6 +29,7 @@ import { MoonshotLLMProvider } from "./moonshot";
 import { GoogleLLMProvider } from "./google";
 import { CerebrasLLMProvider } from "./cerebras";
 import { GroqLLMProvider } from "./groq";
+import { OpenRouterLLMProvider } from "./openrouter";
 
 /**
  * Every provider this application can build.
@@ -47,6 +48,9 @@ export const SUPPORTED_LLM_PROVIDERS = [
   // a failover swaps the endpoint without changing the output shape.
   "cerebras",
   "groq",
+  // One credential, many labs. The only measured route that makes Kimi both
+  // fast (420 ms) and affordable ($0.65/$3.41) — see openrouter.ts.
+  "openrouter",
   "google",
   "openai",
   "stub",
@@ -88,6 +92,8 @@ export function buildProvider(provider: string, model?: string): LLMProvider | n
       return new CerebrasLLMProvider(model);
     case "groq":
       return new GroqLLMProvider(model);
+    case "openrouter":
+      return new OpenRouterLLMProvider(model);
     case "google":
       return new GoogleLLMProvider(model);
     case "openai":

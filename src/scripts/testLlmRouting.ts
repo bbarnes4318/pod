@@ -425,20 +425,33 @@ function profileTests(): void {
     });
   });
 
-  check("free_independent routes every role to Z.ai, legacy still the backup", () => {
+  // REWRITTEN 2026-08-15. The previous version of this check asserted that
+  // free_independent routed EVERY role to Z.ai glm-4.7-flash — one model doing
+  // structural planning, both hosts' dialogue and its own judging, with no
+  // failover. That was the implementation, so the test passed; it was also the
+  // reason the free tier was unusable, and encoding it here made the defect
+  // look like a specification.
+  //
+  // The tier is now built from measured routes (see profiles.ts). What this
+  // check defends is the property that survived the rewrite: free means free.
+  // Shape invariants — two writer families, judge independence, a failover per
+  // role — are asserted in test:free-profile.
+  check("free_independent never reaches a paid provider", () => {
     withEnv({ ...FRONTIER_ENV, LLM_ROUTING_PROFILE: "free_independent" }, () => {
       for (const role of ALL_ROLES) {
         const plan = resolveRolePlan(role);
-        assert(plan.candidates[0].provider === "zai", `${role}: expected zai primary, got ${plan.candidates[0].provider}`);
-        assert(plan.candidates[0].model === "glm-4.7-flash", `${role}: expected glm-4.7-flash`);
-        assert(
-          plan.candidates.some((c) => c.source === "legacy_backup" && c.provider === "anthropic"),
-          `${role}: the existing provider must remain configured as the backup`
-        );
-        assert(
-          plan.candidates.every((c) => c.provider !== "nvidia"),
-          `${role}: free_independent must not depend on NVIDIA`
-        );
+        assert(plan.candidates.length > 0, `${role}: free_independent resolved to nothing`);
+        // The legacy backup is Anthropic and IS still appended — that is the
+        // documented resilient-mode behaviour and it is gated by
+        // LLM_ALLOW_LEGACY_FALLBACK. What must never happen is a PROFILE rung
+        // that bills money without the operator opting in.
+        for (const c of plan.candidates) {
+          if (c.source === "legacy_backup") continue;
+          assert(
+            !isPaidProvider(c.provider),
+            `${role}: free_independent lists paid ${c.provider}/${c.model} as a profile rung`
+          );
+        }
       }
     });
   });
