@@ -18,6 +18,7 @@ import {
   storylineSequence,
 } from "@/lib/shows/showForge";
 import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
+import QualityTierSection from "./QualityTierSection";
 
 export const dynamic = "force-dynamic";
 
@@ -155,6 +156,13 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
             })}
           </div>
         )}
+      </section>
+
+      {/* Which models write this show. Sits above Show Forge because it is a
+          one-click setting with a real cost and speed consequence, where the
+          Forge is a full editing surface behind a disclosure. */}
+      <section className="mt-8">
+        <QualityTierSection podcastId={podcast.id} initialTier={podcast.qualityTier ?? null} />
       </section>
 
       <details className="mt-8">
