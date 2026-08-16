@@ -497,6 +497,10 @@ export async function createEpisodeDraft(
         ttsProvider: settings.ttsProvider,
         ttsVoiceOverrides: settings.ttsVoiceOverrides,
         soundDesign: settings.soundDesign,
+        // Read from `input`, not `settings`: normalizeEpisodeSettings covers the
+        // TTS/sound-design group only, and a tier that is validated here but
+        // never written lands as NULL, which reads as "the user made no choice".
+        qualityTier: input.qualityTier,
         leagueId: input.leagueId,
         sport: input.sport,
         configuration,

@@ -240,6 +240,53 @@ async function run() {
     assert(db._episodes[0].podcastId === "pod-1" && db._episodes[0].ownerId === "user-1", "podcast + owner stamped");
   });
 
+  // --- quality tier reaches the row ---
+  //
+  // These exist because the tier shipped broken. createEpisodeDraft VALIDATED
+  // qualityTier and then dropped it: normalizeEpisodeSettings covers the
+  // TTS/sound-design group only, so the field passed zod, never reached
+  // createEpisodeRecord, and landed as NULL. Every creation surface funnels
+  // through here, so one omission disabled the picker everywhere at once, and
+  // nothing failed — a NULL tier is indistinguishable from "user picked
+  // nothing". The tier tests that already existed checked the RESOLUTION
+  // function (episode ?? podcast ?? default) in isolation and passed the whole
+  // time. Asserting on the written row is the only thing that catches this.
+  await check("a standalone episode's tier is written to the row", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")], hosts: HOSTS });
+    const r = await createEpisodeDraft(
+      { mode: "manual", selectedTopicIds: ["t1"], ownerId: "user-1", hostIds: ["host-a", "host-b"], qualityTier: "free" },
+      { db }
+    );
+    assert(r.ok, r.error || "draft should be created");
+    assert(
+      db._episodes[0].qualityTier === "free",
+      `episode.qualityTier is ${JSON.stringify(db._episodes[0].qualityTier)} — the user's choice was dropped between validation and the write`
+    );
+  });
+  await check("an episode tier is written even when the episode belongs to a podcast", async () => {
+    const db = makeFakeDb({
+      topics: [goodTopic("t1")], hosts: HOSTS, podcasts: [{ id: "pod-1", ownerId: "user-1" }],
+    });
+    const r = await createEpisodeDraft(
+      { mode: "manual", selectedTopicIds: ["t1"], ownerId: "user-1", podcastId: "pod-1", hostIds: ["host-a", "host-b"], qualityTier: "premium" },
+      { db }
+    );
+    assert(r.ok, r.error || "draft should be created");
+    // The worker resolves episode ?? podcast, so this row must carry the
+    // episode's own value rather than deferring to the show's.
+    assert(db._episodes[0].qualityTier === "premium", "a per-episode tier must override the show's, so it has to be stored");
+  });
+  await check("no tier chosen leaves the column unset rather than guessing one", async () => {
+    const db = makeFakeDb({ topics: [goodTopic("t1")], hosts: HOSTS });
+    const r = await createEpisodeDraft({ mode: "manual", selectedTopicIds: ["t1"], hostIds: ["host-a", "host-b"] }, { db });
+    assert(r.ok, r.error || "draft should be created");
+    const stored = db._episodes[0].qualityTier;
+    assert(
+      stored === undefined || stored === null,
+      `stored ${JSON.stringify(stored)} — a default written here would silently outrank the show's tier forever`
+    );
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }
