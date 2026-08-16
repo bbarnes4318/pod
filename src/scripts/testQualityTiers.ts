@@ -175,6 +175,24 @@ async function main() {
     assert.equal(toQualityTier("free"), "free");
   });
 
+  console.log("\n  -- episode overrides podcast, podcast overrides default --");
+
+  await check("the resolution order is episode -> podcast -> deployment default", () => {
+    // Mirrors the worker's `tierRow?.qualityTier ?? tierRow?.podcast?.qualityTier`.
+    // A standalone episode has NO podcast, so without the episode level the
+    // question "should this one spend my credits?" has nowhere to live — which
+    // is exactly the gap this asserts against.
+    const resolve = (episodeTier: string | null, podcastTier: string | null) =>
+      toQualityTier(episodeTier ?? podcastTier ?? undefined, DEFAULT_QUALITY_TIER);
+
+    assert.equal(resolve("free", "premium"), "free", "the episode's own choice must win");
+    assert.equal(resolve(null, "premium"), "premium", "with no episode choice, the show's preference applies");
+    assert.equal(resolve(null, null), DEFAULT_QUALITY_TIER, "with neither, fall back rather than guess");
+    // The standalone case: no podcast at all.
+    assert.equal(resolve("free", null), "free", "a standalone episode can still choose free");
+    assert.equal(resolve("premium", null), "premium", "and can still choose to spend credits");
+  });
+
   console.log("\n  -- what a user would see --");
   for (const tier of QUALITY_TIERS) {
     const i = tierInfo(tier);

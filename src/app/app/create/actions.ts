@@ -1035,3 +1035,46 @@ export async function setPodcastQualityTier(podcastId: string, tier: string) {
   revalidatePath("/studio");
   return { ok: true as const, tier, previous: podcast.qualityTier ?? null };
 }
+
+/**
+ * Persist the model tier for ONE episode.
+ *
+ * Separate from setPodcastQualityTier because the two answer different
+ * questions. A podcast tier is a standing preference for a show; an episode
+ * tier is "what should THIS one cost me" — and for a standalone episode, which
+ * has no podcast, it is the only place the question can be asked at all.
+ *
+ * Resolution at generation time is episode -> podcast -> deployment default, so
+ * setting this overrides the show's standing preference for this episode only.
+ */
+export async function setEpisodeQualityTier(episodeId: string, tier: string) {
+  const user = await currentUser();
+  if (!user) return { ok: false as const, error: "Sign in to change this." };
+
+  const episode = await db.episode.findUnique({
+    where: { id: episodeId },
+    select: { id: true, ownerId: true, qualityTier: true, status: true },
+  });
+  if (!episode) return { ok: false as const, error: "That episode no longer exists." };
+  if (!canViewOwned(user, episode)) {
+    return { ok: false as const, error: "That episode belongs to someone else." };
+  }
+
+  if (!isQualityTier(tier)) {
+    return { ok: false as const, error: `"${tier}" is not a quality tier.` };
+  }
+
+  // Changing the tier after the script exists would be misleading: the models
+  // that wrote it are already fixed, and the setting would describe a future
+  // that never happens for this episode.
+  if (episode.status !== "draft") {
+    return {
+      ok: false as const,
+      error: "This episode's script has already been written, so its tier can no longer change.",
+    };
+  }
+
+  await db.episode.update({ where: { id: episodeId }, data: { qualityTier: tier } });
+  revalidatePath("/studio");
+  return { ok: true as const, tier, previous: episode.qualityTier ?? null };
+}

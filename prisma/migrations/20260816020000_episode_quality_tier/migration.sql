@@ -1,0 +1,12 @@
+-- Per-EPISODE model tier, alongside the per-podcast one.
+--
+-- A standalone episode has no podcast to inherit a tier from, so without this
+-- column a user creating one cannot choose whether it spends their credits —
+-- the choice silently fell through to the deployment default. It is also an
+-- episode-level question in its own right: a user may want a single premium
+-- episode on an otherwise free show.
+--
+-- Nullable, no default, for the same reason as Podcast.qualityTier: null means
+-- "not chosen at this level" and must stay distinguishable from an explicit
+-- choice that happens to match today's default.
+ALTER TABLE "Episode" ADD COLUMN "qualityTier" TEXT;

@@ -171,6 +171,9 @@ export const CreateEpisodeDraftInputSchema = z
     ttsVoiceOverrides: z.unknown().optional(),
     productionStyle: z.string().trim().min(1).optional(),
     sfxDensity: z.string().trim().min(1).optional(),
+    /** "free" | "balanced" | "premium" — per-episode model tier. See
+     *  EpisodeCreationSettings.qualityTier for why this is episode-level. */
+    qualityTier: z.string().trim().min(1).optional(),
     // Auto-selection narrowing (also honored in hybrid fill).
     minDebateScore: z.number().optional(),
     leagueId: z.string().trim().min(1).optional(),
@@ -590,6 +593,7 @@ export async function buildEpisodeFromTopics(
       ttsVoiceOverrides: input.ttsVoiceOverrides,
       productionStyle: input.productionStyle,
       sfxDensity: input.sfxDensity,
+      qualityTier: input.qualityTier,
       minDebateScore: input.minDebateScore,
       sport: input.sport,
     },

@@ -3030,13 +3030,18 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
     //
     // A podcast that has never chosen (qualityTier null) falls through to the
     // deployment default rather than being forced onto a tier nobody picked.
+    // EPISODE FIRST, THEN PODCAST. A standalone episode has no podcast to
+    // inherit from, so a podcast-only lookup meant a user creating one could not
+    // choose whether it spent their credits — the choice silently fell through
+    // to the deployment default. It is also an episode-level question in its own
+    // right: one premium episode on an otherwise free show is a reasonable ask.
     const tierRow = await db.episode
       .findUnique({
         where: { id: (job.data as { episodeId?: string }).episodeId || "" },
-        select: { podcast: { select: { qualityTier: true } } },
+        select: { qualityTier: true, podcast: { select: { qualityTier: true } } },
       })
       .catch(() => null);
-    const chosenTier = tierRow?.podcast?.qualityTier;
+    const chosenTier = tierRow?.qualityTier ?? tierRow?.podcast?.qualityTier;
     const runScript = () => withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
     const res = chosenTier
       ? await withRoutingProfile(profileForTier(toQualityTier(chosenTier)), runScript)

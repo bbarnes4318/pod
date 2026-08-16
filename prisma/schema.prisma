@@ -661,6 +661,15 @@ model Episode {
   // one, and that error propagated into a design decision before anyone
   // checked. Import the constant; never re-derive this list from a literal.
   status                      String
+  // Which model tier writes THIS episode: "free" | "balanced" | "premium".
+  //
+  // Per-episode as well as per-podcast because a standalone episode has no
+  // podcast to inherit from, and because "what does this one cost me" is an
+  // episode-level question even when a podcast exists — a user may want one
+  // premium episode on an otherwise free show. Resolution order in the worker is
+  // episode -> podcast -> deployment default; null at both levels means the
+  // deployment default, which is how every pre-existing episode behaves.
+  qualityTier                 String?
   description                 String?
   longShowNotes               String?
   durationSeconds             Int?

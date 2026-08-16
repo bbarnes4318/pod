@@ -91,6 +91,16 @@ export interface EpisodeBuildInput {
   productionStyle?: string;
   /** Reaction-SFX density: "subtle" | "medium" | "hype". */
   sfxDensity?: string;
+  /**
+   * Model tier for this episode: "free" | "balanced" | "premium".
+   *
+   * Present at the EPISODE level, not only on the podcast, because a standalone
+   * episode has no podcast to inherit from — without it, a user creating one
+   * could not choose whether it spent their credits. Omitted means "not chosen
+   * here"; the worker falls back to the podcast's tier, then the deployment
+   * default.
+   */
+  qualityTier?: string;
   /** AUTHORIZED override for the exclude_podcast reuse policy on pinned topics
    *  (admin/system callers only). */
   reuseOverride?: boolean;
@@ -468,6 +478,16 @@ export interface EpisodeCreationSettings {
   ttsProvider?: string | null;
   ttsVoiceOverrides?: TtsVoiceOverrides;
   soundDesign?: { style?: string; sfxDensity?: string };
+  /**
+   * Which model tier writes this episode: "free" | "balanced" | "premium".
+   *
+   * Per-EPISODE, not only per-podcast. A standalone episode has no podcast to
+   * inherit from, so without this a user creating one could not choose whether
+   * it spent their credits — the choice silently fell through to the deployment
+   * default. Omitted means "not chosen here"; the worker then falls back to the
+   * podcast's tier and finally to the deployment default.
+   */
+  qualityTier?: string | null;
   /** Used only to derive a default title when none is given. */
   leagueId?: string;
   sport?: string;
@@ -588,6 +608,11 @@ export async function createEpisodeRecord(
         ttsVoiceOverrides: settings.ttsVoiceOverrides ? (settings.ttsVoiceOverrides as unknown as Prisma.InputJsonValue) : undefined,
         soundDesign: soundDesign ? (soundDesign as unknown as Prisma.InputJsonValue) : undefined,
         podcastId: settings.podcastId || undefined,
+        // Per-episode model tier. Null (omitted) means "not chosen here" and the
+        // worker falls back to the podcast's tier, then the deployment default —
+        // so a standalone episode with no podcast can still carry its own
+        // choice about whether it spends the owner's credits.
+        qualityTier: settings.qualityTier || undefined,
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
         formatId: episodeFormatId,
