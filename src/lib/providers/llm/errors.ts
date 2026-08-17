@@ -312,6 +312,49 @@ export function looksLikeInsufficientCredit(body: string): boolean {
   return INSUFFICIENT_CREDIT.test(text);
 }
 
+/**
+ * A limit measured per unit of TIME, which therefore refills on its own.
+ *
+ * "Tokens per minute", "requests per second", "rate limit reached" — all clear
+ * by waiting. A depleted balance or a spent daily allowance does not, and must
+ * keep falling through to `quota_exhausted`.
+ *
+ * Deliberately narrow: it requires an explicit time unit or the words "rate
+ * limit". The bare word "quota" is NOT enough, because that is exactly the
+ * token that misclassified Cerebras (`"param":"quota"`).
+ */
+const REFILLING_RATE_WINDOW = new RegExp(
+  [
+    // "tokens per minute", "requests per min", "TPM/RPM/TPD limit"
+    "per (second|minute|hour)",
+    "\\b(tpm|rpm|rps|tps)\\b",
+    "\\b(requests|tokens)\\s*/\\s*(second|minute|min|hour)",
+    // Generic phrasing that is unambiguously about pacing, not funding.
+    "rate[ _-]?limit",
+    "too many requests",
+    "slow down",
+  ].join("|"),
+  "i"
+);
+
+/**
+ * Does this 429 describe a window that refills, rather than an account that
+ * needs money or a day's allowance that is gone?
+ *
+ * Only the provider's own `message` reaches the test when the body is a
+ * structured envelope — field names like `param` and `code` are metadata about
+ * the error, not the provider's description of it, and letting them vote is how
+ * a per-minute limit came to be treated as a spent allowance.
+ */
+export function looksLikeRefillingRateWindow(body: string): boolean {
+  const shape = parseProviderErrorBody(body);
+  const text = shape.structured ? shape.message ?? "" : String(body ?? "");
+  // Funding language always wins: "monthly credit limit reached" mentions a
+  // time unit but is settled with a payment, not with patience.
+  if (INSUFFICIENT_CREDIT.test(text)) return false;
+  return REFILLING_RATE_WINDOW.test(text);
+}
+
 /** Which request field, if any, a provider's 400 body specifically names. */
 export function namedUnsupportedField(body: string, sentFields: string[]): string | null {
   const b = (body || "").toLowerCase();
@@ -413,7 +456,33 @@ export function categorizeHttpFailure(
   }
 
   if (status === 429) {
-    // A spent free-tier allowance is not a rate limit that clears in seconds.
+    // A REFILLING WINDOW IS CHECKED FIRST, AND THIS ORDER IS THE WHOLE POINT.
+    //
+    // Cerebras refuses an oversized call with:
+    //
+    //   {"message":"Tokens per minute limit exceeded - too many tokens
+    //     processed.","type":"too_many_tokens_error","param":"quota",
+    //     "code":"token_quota_exceeded"}
+    //
+    // The old rule tested /quota|credit|balance/ against the WHOLE body, so
+    // `"param":"quota"` — a field name, not a sentence — classified a
+    // per-minute limit as a spent allowance. `quota_exhausted` is the one 429
+    // that is deliberately never retried, so the router abandoned the provider
+    // instantly instead of waiting out a window that clears in under a minute.
+    //
+    // Cost of that on 2026-08-16: Cerebras answered script:outline (3,262
+    // tokens out, 2.0s), script:private-agendas and script:story-spine, spending
+    // its per-minute budget on the small calls — then refused the big turn-plan.
+    // The chain fell through to Groq (schema violation on the largest schema)
+    // and Anthropic (unfunded) and killed the episode, roughly 50 seconds after
+    // a 60-second wait would have fixed it. Three runs, same shape every time.
+    //
+    // Only the provider's OWN message field is scanned, for the same reason
+    // looksLikeInsufficientCredit does it: field names and echoed request
+    // content must not decide what kind of failure this is.
+    if (looksLikeRefillingRateWindow(body)) return "rate_limited";
+
+    // A spent allowance genuinely does not refill in seconds — moving on is right.
     if (/quota|credit|balance|exceeded your current|insufficient/.test(b)) return "quota_exhausted";
     return "rate_limited";
   }

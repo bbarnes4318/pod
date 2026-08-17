@@ -41,6 +41,7 @@ import {
   describeFailure,
   namedUnsupportedField,
   redactSecrets,
+  type LlmErrorCategory,
 } from "./errors";
 import { StructuredOutputError, buildRepairPrompt, parseStructuredResponse } from "./structured";
 import { ShapeContext, ShapeResult } from "./nvidiaRequestProfiles";
@@ -355,9 +356,31 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
 
   // ---------------------------------------------------------------- transport
 
-  private backoffMs(attempt: number, retryAfterHeader: string | null): number {
+  private backoffMs(
+    attempt: number,
+    retryAfterHeader: string | null,
+    category?: LlmErrorCategory
+  ): number {
     const retryAfter = Number(retryAfterHeader);
     if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 60_000);
+
+    // A RATE WINDOW NEEDS A WAIT SIZED TO THE WINDOW, NOT TO THE ATTEMPT.
+    //
+    // The generic curve starts at ~1s and reaches ~3s on the second attempt, so
+    // with maxRetries=2 the whole retry budget is spent inside four seconds —
+    // still deep inside the same per-minute window that just refused us. Every
+    // attempt is then guaranteed to fail, and the router abandons a provider
+    // that would have worked shortly after.
+    //
+    // Providers that publish a retry-after are honoured above; this floor is for
+    // the ones that do not (Cerebras among them). Sized to clear a per-minute
+    // budget: long enough to be worth doing, short enough that a user watching a
+    // progress bar is not left wondering whether it hung.
+    if (category === "rate_limited") {
+      const floor = Math.min(20_000 + attempt * 20_000, 60_000);
+      return Math.round(floor * (0.85 + Math.random() * 0.3));
+    }
+
     const base = Math.min(1000 * Math.pow(3, attempt), 30_000);
     // Jitter: several worker jobs failing on the same upstream blip must not all
     // come back at the same instant.
@@ -434,7 +457,7 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         });
         if (!err.retryable || attempt === this.config.maxRetries) throw err;
         lastErr = err;
-        const delay = this.backoffMs(attempt, response.headers.get("retry-after"));
+        const delay = this.backoffMs(attempt, response.headers.get("retry-after"), category);
         console.warn(
           `[${this.name}] ${response.status} (${category}) on ${this.model} — retrying in ` +
             `${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${this.config.maxRetries}).`

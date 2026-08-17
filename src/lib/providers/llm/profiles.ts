@@ -591,32 +591,23 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // The story editor and the debate architect are the same kind of work —
     // structure under reasoning — so they inherit the measured outline order.
     //
-    // SUPER, NOT ULTRA, ON THE PRIMARY. Both are Nemotron 3, so this keeps the
-    // measured ordering above; it changes which member of the family answers.
-    // Probed live against production's own NVIDIA account on 2026-08-16, on a
-    // turn-plan schema of the shape this role actually emits (3 beats, >=24
-    // turns, per-turn enums and nested factRefs):
+    // NEMOTRON 3 SUPER IS A CANDIDATE HERE, AND IS DELIBERATELY NOT WIRED YET.
     //
-    //     super  52,583 ms  schema-valid, 27 turns
-    //     ultra 108,444 ms  schema-valid, 24 turns
+    // Probed live against production's NVIDIA account on 2026-08-16, on a
+    // turn-plan schema shaped like what this role emits: super 52,583 ms vs
+    // ultra 108,444 ms, both schema-valid; on a small schema, 2,420 ms vs
+    // 23,385 ms. That is 2x-10x of wall-clock on the critical path of every
+    // episode, so it is worth having.
     //
-    // and on a small two-field schema, 2,420 ms against 23,385 ms. Ultra is
-    // between 2x and 10x slower for output of the same validity, and this role
-    // sits on the critical path of every episode: with four more candidates
-    // behind it, a slow primary is minutes of wall-clock on every run before
-    // anything else is even attempted.
-    //
-    // WHAT THIS DOES NOT CLAIM. Production logged Ultra failing
-    // `structured_output_invalid_after_repair` here five times on 2026-08-16,
-    // and the probe above did NOT reproduce that — Ultra returned valid output
-    // both times. The real schema is stricter than the probe, so the cause of
-    // that failure is still unidentified and this swap is justified on measured
-    // latency alone. If the schema violations continue on Super, they were
-    // never about which Nemotron was answering.
+    // It is not wired because this profile is the OBSERVED-WORKING map, and
+    // Super has not been through `npm run probe:llm-contract`. Two ad-hoc curls
+    // are not that gate, and the gate is what stopped an unverified model
+    // reaching the verified profile — which is precisely its job. Run the
+    // contract probe, record the result, then make the swap.
     case "script_outline":
     case "script_story_editor":
     case "script_debate_architect":
-      return [NV_NEMOTRON_SUPER(), NV.glm(), ZAI_FLASH()];
+      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
 
     // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s, so Z.ai leads
     // and that measurement still stands. What changed is the FALLBACK: Mistral
