@@ -225,3 +225,11 @@
 .genSelect:focus-visible, .genInput:focus-visible, .genRange:focus-visible, .attrEpisode:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
+
+/* The on-demand cost line. Quieter than the panel description above it: it is
+   a standing fact about the schedule and the price, not an alert. */
+.genCostNote {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}

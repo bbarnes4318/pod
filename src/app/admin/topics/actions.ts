@@ -3,7 +3,31 @@
 import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
 import { queueTopicGenerationJob } from "@/lib/queue/podcastQueue";
+import { estimateOnDemandRunCost, type RunCostEstimate } from "@/lib/services/onDemandRunCost";
+import { scheduledTopicRunsPerDay, topicsGenerateCron } from "@/lib/services/sportsIngestSchedule";
 import { revalidatePath } from "next/cache";
+
+/**
+ * What an on-demand topic run costs and how it compares to the schedule.
+ *
+ * The scheduler was cut from eight runs a day to two because the background
+ * fan-out was spending the provider rate limits that foreground episodes needed.
+ * Running it more often is still allowed — it just has to be a decision someone
+ * makes with the price in front of them rather than a cron nobody remembers
+ * setting.
+ */
+export async function fetchOnDemandTopicRunCost(): Promise<{
+  estimate: RunCostEstimate;
+  scheduledRunsPerDay: number;
+  cron: string;
+}> {
+  await requireAdmin();
+  return {
+    estimate: await estimateOnDemandRunCost(db, "generate:topics", { label: "topic generation" }),
+    scheduledRunsPerDay: scheduledTopicRunsPerDay(),
+    cron: topicsGenerateCron(),
+  };
+}
 
 export async function approveTopic(id: string) {
   await requireAdmin();

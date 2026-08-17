@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
-import { triggerTopicGeneration, fetchLatestTopicGenerationLog } from "./actions";
+import { triggerTopicGeneration, fetchLatestTopicGenerationLog, fetchOnDemandTopicRunCost } from "./actions";
 
 interface FormProps {
   onGenerated: () => void;
@@ -60,6 +60,27 @@ export default function TopicGenerationForm({ onGenerated, isLlmStub, hasNoEvide
   const [minScore, setMinScore] = useState(50);
   const [run, setRun] = useState<RunState>({ phase: "idle" });
   const busyRef = useRef(false);
+
+  // What this deployment's own past runs cost, fetched rather than assumed.
+  // Null until it arrives; the panel says it is checking rather than showing a
+  // placeholder figure that could be mistaken for the real one.
+  const [costNote, setCostNote] = useState<string | null>(null);
+  React.useEffect(() => {
+    let live = true;
+    fetchOnDemandTopicRunCost()
+      .then(({ estimate, scheduledRunsPerDay }) => {
+        if (!live) return;
+        const cadence =
+          scheduledRunsPerDay === 1
+            ? "Runs automatically once a day."
+            : `Runs automatically ${scheduledRunsPerDay}× a day.`;
+        setCostNote(`${cadence} ${estimate.summary}`);
+      })
+      .catch(() => live && setCostNote("Runs on a schedule. Cost of an extra run is unavailable right now."));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const sport = leagueId ? LEAGUE_TO_SPORT[leagueId] ?? "" : "";
   const leagueLabel = leagueId || "all-league";
@@ -134,6 +155,14 @@ export default function TopicGenerationForm({ onGenerated, isLlmStub, hasNoEvide
       <div className="genPanelHead">
         <h3 className="genPanelTitle">Generate candidates</h3>
         <p className="genPanelSub">Draft new debate topics from real ingested evidence. Sport follows the league.</p>
+        {/* Scheduled generation was cut from eight runs a day to two, because
+            the background sweep was spending the provider rate limits that
+            foreground episodes then failed on. Extra runs stay available — with
+            the schedule and the measured price stated, so running it "just once
+            more" is a decision rather than a reflex. */}
+        <p className="genPanelSub genCostNote">
+          {costNote ?? "Checking what an extra run costs…"}
+        </p>
       </div>
 
       <form onSubmit={handleSubmit} className="genForm">
