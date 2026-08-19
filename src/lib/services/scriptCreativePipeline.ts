@@ -558,9 +558,44 @@ export function turnPlanMaxTokens(totalWordTarget: number): number {
  */
 export const MAX_INTENT_WORDS = 25;
 
-export function makeTurnPlanValidator(totalWordTarget: number) {
+export interface TurnPlanValidatorOptions {
+  /**
+   * How many attempts the RHYTHM STATISTICS get to be fatal before they become
+   * a recorded warning. Default Infinity — they never stop being fatal, which
+   * is what every direct test of this function asserts.
+   *
+   * WHY A BUDGET EXISTS AT ALL. The rhythm rules below are a joint constraint on
+   * the speaker sequence: mean run length at least 1.82, no run length over 70%
+   * of the plan, threes at most one in five. The feasible band is narrow (see
+   * test:conversation-rhythm, which had to construct a passing fixture by hand),
+   * and hitting it is arithmetic rather than authorship. A frontier model lands
+   * in it; gpt-oss-120b, which is what the FREE tier has for this role, often
+   * does not.
+   *
+   * The comment further down says these rules are enforced here because "a
+   * repair costs one call, and there it costs a whole episode". That was true
+   * when the chain below this role ended in a paid model. On the free tier the
+   * chain is two free rungs and then nothing — so a rhythm statistic the model
+   * cannot hit does not cost one call, it costs the episode, after every earlier
+   * role has already run. That is a worse outcome than a plan whose pacing is
+   * uneven, which the dialogue director and the downstream mechanical-alternation
+   * invariant both still see.
+   *
+   * So: the model gets a real, honest attempt plus its repair. After that a
+   * structurally sound plan is taken, and the violation is logged rather than
+   * thrown. Nothing about CONTENT is relaxed — turn count, intent length, legal
+   * speakers and the four-in-a-row rule stay fatal on every attempt, because
+   * each of those breaks the episode itself rather than its pacing.
+   */
+  rhythmAttempts?: number;
+}
+
+export function makeTurnPlanValidator(totalWordTarget: number, opts: TurnPlanValidatorOptions = {}) {
   const minTurns = minimumTurnsFor(totalWordTarget);
+  const rhythmAttempts = opts.rhythmAttempts ?? Number.POSITIVE_INFINITY;
+  let attempt = 0;
   return function validateTurnPlan(value: unknown): string | null {
+    attempt++;
     const turns = (value as { turns?: unknown })?.turns;
     if (!Array.isArray(turns) || turns.length === 0) return "Missing non-empty 'turns' array.";
     for (const turn of turns as Array<Record<string, unknown>>) {
@@ -645,66 +680,89 @@ export function makeTurnPlanValidator(totalWordTarget: number) {
     }
     runLengths.push(run);
 
-    const threeRuns = runLengths.filter((r) => r === 3).length;
-    if (runLengths.length >= 6 && threeRuns > Math.ceil(runLengths.length * 0.2)) {
-      return (
-        `${threeRuns} of ${runLengths.length} speaker runs are three turns long; keep three-turn runs to at ` +
-        `most one in five. Three consecutive turns is a rare escalation, not a default.`
+    // THE THREE RULES BELOW ARE STATISTICS ABOUT PACING, not statements about
+    // whether the plan is usable — see TurnPlanValidatorOptions.rhythmAttempts
+    // for why that distinction is now load-bearing. They are grouped into one
+    // function so the decision "fatal, or logged?" is made once, in one place,
+    // instead of being spread across three early returns.
+    const rhythmViolation = (): string | null => {
+      const threeRuns = runLengths.filter((r) => r === 3).length;
+      if (runLengths.length >= 6 && threeRuns > Math.ceil(runLengths.length * 0.2)) {
+        return (
+          `${threeRuns} of ${runLengths.length} speaker runs are three turns long; keep three-turn runs to at ` +
+          `most one in five. Three consecutive turns is a rare escalation, not a default.`
+        );
+      }
+
+      // Rhythm must VARY. This is the rule whose absence let the plan collapse
+      // into uniform pairs while satisfying every other constraint perfectly.
+      if (runLengths.length >= 8) {
+        const histogram = new Map<number, number>();
+        for (const r of runLengths) histogram.set(r, (histogram.get(r) ?? 0) + 1);
+        let modalLength = 0;
+        let modalCount = 0;
+        for (const [length, count] of histogram) {
+          if (count > modalCount) { modalLength = length; modalCount = count; }
+        }
+        if (modalCount / runLengths.length > 0.7) {
+          return (
+            `${modalCount} of ${runLengths.length} speaker runs are exactly ${modalLength} turn(s) long — ` +
+            `that is a metronome, not a conversation. Vary the rhythm: mix single sharp reactions, pairs that ` +
+            `land a claim and press it, and the occasional third turn when the pressure genuinely warrants it. ` +
+            `No single run length may cover more than 70% of the plan.`
+          );
+        }
+      }
+
+      // ...and no speaker may merely PING-PONG either.
+      //
+      // The no-three-in-a-row rule above, alone, pushed the architect straight
+      // into the opposite wall: it produced 95.3% strict A/B alternation, which
+      // trips the mechanicalAlternation production invariant (ceiling 65%) and put
+      // a finished episode on editorial hold AFTER all seven roles had run.
+      //
+      // Two rules of mine were fighting: one forbade runs of three, and nothing
+      // said that never running two was equally wrong. A plan of pure alternation
+      // satisfies "no three in a row" perfectly while being exactly the mechanical
+      // ping-pong the show is trying not to sound like.
+      //
+      // Enforced HERE rather than left to the downstream gate because here a
+      // repair costs one call, and there it costs a whole episode. The plan
+      // ceiling is deliberately tighter than the invariant's 0.65 so the writers
+      // and the dialogue director have room to move without crossing it.
+      if (turns.length > 1) {
+        let switches = 0;
+        for (let i = 1; i < turns.length; i++) {
+          const prev = String((turns[i - 1] as Record<string, unknown>).speakerName || "").toLowerCase();
+          const here = String((turns[i] as Record<string, unknown>).speakerName || "").toLowerCase();
+          if (here !== prev) switches++;
+        }
+        const alternation = switches / (turns.length - 1);
+        if (alternation > PLAN_ALTERNATION_CEILING) {
+          return (
+            `${(alternation * 100).toFixed(0)}% of this plan is strict A/B alternation; keep it at or under ` +
+            `${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}%. Let a host hold the floor for a second turn — ` +
+            `land a claim, then press it — instead of trading single lines. Vary the run lengths rather than ` +
+            `converting every run to a pair: uniform pairs are the same metronome one octave down.`
+          );
+        }
+      }
+
+      return null;
+    };
+
+    const rhythm = rhythmViolation();
+    if (rhythm) {
+      if (attempt <= rhythmAttempts) return rhythm;
+      // The model has had its attempt and its repair and still cannot land in
+      // the band. Taking the plan is the lesser failure: pacing is visible to
+      // the dialogue director and to the mechanicalAlternation invariant further
+      // down, while a rejection here ends the episode with nothing to look at.
+      console.warn(
+        `[TurnPlan] ACCEPTING a plan that misses the rhythm band after ${attempt} attempts — ${rhythm} ` +
+          `The plan is structurally sound (turn count, intents and speakers all valid), so it is used rather ` +
+          `than failing the episode over pacing. Expect a flatter conversation from this one.`
       );
-    }
-
-    // Rhythm must VARY. This is the rule whose absence let the plan collapse
-    // into uniform pairs while satisfying every other constraint perfectly.
-    if (runLengths.length >= 8) {
-      const histogram = new Map<number, number>();
-      for (const r of runLengths) histogram.set(r, (histogram.get(r) ?? 0) + 1);
-      let modalLength = 0;
-      let modalCount = 0;
-      for (const [length, count] of histogram) {
-        if (count > modalCount) { modalLength = length; modalCount = count; }
-      }
-      if (modalCount / runLengths.length > 0.7) {
-        return (
-          `${modalCount} of ${runLengths.length} speaker runs are exactly ${modalLength} turn(s) long — ` +
-          `that is a metronome, not a conversation. Vary the rhythm: mix single sharp reactions, pairs that ` +
-          `land a claim and press it, and the occasional third turn when the pressure genuinely warrants it. ` +
-          `No single run length may cover more than 70% of the plan.`
-        );
-      }
-    }
-
-    // ...and no speaker may merely PING-PONG either.
-    //
-    // The no-three-in-a-row rule above, alone, pushed the architect straight
-    // into the opposite wall: it produced 95.3% strict A/B alternation, which
-    // trips the mechanicalAlternation production invariant (ceiling 65%) and put
-    // a finished episode on editorial hold AFTER all seven roles had run.
-    //
-    // Two rules of mine were fighting: one forbade runs of three, and nothing
-    // said that never running two was equally wrong. A plan of pure alternation
-    // satisfies "no three in a row" perfectly while being exactly the mechanical
-    // ping-pong the show is trying not to sound like.
-    //
-    // Enforced HERE rather than left to the downstream gate because here a
-    // repair costs one call, and there it costs a whole episode. The plan
-    // ceiling is deliberately tighter than the invariant's 0.65 so the writers
-    // and the dialogue director have room to move without crossing it.
-    if (turns.length > 1) {
-      let switches = 0;
-      for (let i = 1; i < turns.length; i++) {
-        const prev = String((turns[i - 1] as Record<string, unknown>).speakerName || "").toLowerCase();
-        const here = String((turns[i] as Record<string, unknown>).speakerName || "").toLowerCase();
-        if (here !== prev) switches++;
-      }
-      const alternation = switches / (turns.length - 1);
-      if (alternation > PLAN_ALTERNATION_CEILING) {
-        return (
-          `${(alternation * 100).toFixed(0)}% of this plan is strict A/B alternation; keep it at or under ` +
-          `${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}%. Let a host hold the floor for a second turn — ` +
-          `land a claim, then press it — instead of trading single lines. Vary the run lengths rather than ` +
-          `converting every run to a pair: uniform pairs are the same metronome one octave down.`
-        );
-      }
     }
 
     if (turns.length < minTurns) {
@@ -777,7 +835,15 @@ Return valid JSON only:
       // caused by raising the turn floor without raising the budget it has to
       // fit in.
       maxTokens: turnPlanMaxTokens(input.totalWordTarget),
-      validate: makeTurnPlanValidator(input.totalWordTarget),
+      // TWO ATTEMPTS AT THE RHYTHM BAND, then the plan is taken as it stands.
+      //
+      // That is exactly the first candidate's initial call plus its one repair.
+      // A model that has been shown the arithmetic twice and still cannot hit it
+      // is not going to hit it on the second provider either — and on the free
+      // tier the second provider is the last one, so continuing to reject costs
+      // the episode rather than a call. Content rules stay fatal on every
+      // attempt; only the pacing statistics soften. See TurnPlanValidatorOptions.
+      validate: makeTurnPlanValidator(input.totalWordTarget, { rhythmAttempts: 2 }),
     })
   );
 

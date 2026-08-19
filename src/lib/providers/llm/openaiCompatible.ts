@@ -44,6 +44,13 @@ import {
   type LlmErrorCategory,
 } from "./errors";
 import { StructuredOutputError, buildRepairPrompt, parseStructuredResponse } from "./structured";
+import { clearRateWindow, noteRateWindow, rateWindowRemainingMs } from "./rateWindow";
+
+/**
+ * The longest rate window this transport will absorb before handing the failure
+ * back to the router. See the use site for the arithmetic that set it.
+ */
+const TRANSPORT_RATE_WAIT_CEILING_MS = 5_000;
 import { ShapeContext, ShapeResult } from "./nvidiaRequestProfiles";
 import { readRoutingEnv } from "./routingEnv";
 import { LLMRole } from "./roles";
@@ -364,21 +371,18 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     const retryAfter = Number(retryAfterHeader);
     if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter * 1000, 60_000);
 
-    // A RATE WINDOW NEEDS A WAIT SIZED TO THE WINDOW, NOT TO THE ATTEMPT.
+    // A RATE WINDOW NEEDS A WAIT SIZED TO THE WINDOW, NOT TO THE ATTEMPT — and
+    // that wait no longer lives here.
     //
     // The generic curve starts at ~1s and reaches ~3s on the second attempt, so
-    // with maxRetries=2 the whole retry budget is spent inside four seconds —
-    // still deep inside the same per-minute window that just refused us. Every
-    // attempt is then guaranteed to fail, and the router abandons a provider
-    // that would have worked shortly after.
-    //
-    // Providers that publish a retry-after are honoured above; this floor is for
-    // the ones that do not (Cerebras among them). Sized to clear a per-minute
-    // budget: long enough to be worth doing, short enough that a user watching a
-    // progress bar is not left wondering whether it hung.
+    // with maxRetries=2 the whole retry budget was spent inside four seconds,
+    // still deep inside the per-minute window that had just refused us. It is
+    // now rateWindow.ts that decides, because the window belongs to the ACCOUNT
+    // and every other role calling this provider has to honour the same clock.
+    // The caller sleeps for `rateWindowRemainingMs`, so a `rate_limited` failure
+    // never reaches this function.
     if (category === "rate_limited") {
-      const floor = Math.min(20_000 + attempt * 20_000, 60_000);
-      return Math.round(floor * (0.85 + Math.random() * 0.3));
+      return rateWindowRemainingMs(this.name);
     }
 
     const base = Math.min(1000 * Math.pow(3, attempt), 30_000);
@@ -399,6 +403,22 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
     const sentFields = Object.keys(body);
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      // WAIT OUT A WINDOW THIS PROCESS ALREADY KNOWS IS CLOSED.
+      //
+      // A per-minute budget belongs to the account, so a 429 that another ROLE
+      // collected seconds ago applies to this request too. Sending it anyway is
+      // not an attempt — it is a refusal we have already been told about, and it
+      // costs a rung of a chain that is two rungs deep on the free tier.
+      const cooling = rateWindowRemainingMs(this.name);
+      if (cooling > 0) {
+        console.warn(
+          `[${this.name}] holding ${Math.round(cooling / 1000)}s before calling ${this.model} — this account ` +
+            `refused a request with a per-window limit that has not refilled yet. Waiting is the whole point: ` +
+            `sending now would spend a fallback rung on a certain refusal.`
+        );
+        await sleep(cooling);
+      }
+
       state.attempts++;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
@@ -414,7 +434,13 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           signal: controller.signal,
         });
 
-        if (response.ok) return await response.json();
+        if (response.ok) {
+          // A completed call is proof the budget refilled — better evidence than
+          // the clock we guessed at, so the remembered window is dropped here
+          // rather than left to expire.
+          clearRateWindow(this.name);
+          return await response.json();
+        }
 
         const errorText = redactSecrets(await response.text().catch(() => ""));
         const category = categorizeHttpFailure(
@@ -448,6 +474,18 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           );
         }
 
+        // Remember the window on the ACCOUNT before deciding what to do about
+        // this one request. Whether we retry here or the router moves on, every
+        // other role pointed at this provider needs to know it is closed —
+        // that knowledge is what stops a chain from being spent on refusals.
+        if (category === "rate_limited") {
+          const held = noteRateWindow(this.name, response.headers.get("retry-after"));
+          console.warn(
+            `[${this.name}] rate window recorded for the whole ${this.name} account: no request for ` +
+              `${Math.round(held / 1000)}s. Provider said: ${errorText.slice(0, 200)}`
+          );
+        }
+
         const err = new LlmProviderError({
           provider: this.name,
           model: this.model,
@@ -456,8 +494,31 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           message: `[${this.label()}] HTTP ${response.status}: ${errorText.slice(0, 600) || "(empty body)"}`,
         });
         if (!err.retryable || attempt === this.config.maxRetries) throw err;
-        lastErr = err;
         const delay = this.backoffMs(attempt, response.headers.get("retry-after"), category);
+
+        // A LONG WINDOW IS THE ROUTER'S PROBLEM, NOT THIS LOOP'S.
+        //
+        // `rate_limited` is genuinely retryable — waiting does fix it — but this
+        // loop is the wrong place to do the waiting when the wait is long. It
+        // can only ever retry THIS endpoint, while the router holds a chain of
+        // other accounts it could try immediately and, failing that, will wait
+        // the window out once and re-run the whole chain.
+        //
+        // Sitting here for a minute per attempt turned one saturated minute into
+        // seven (two rungs x three attempts x sixty seconds) before the router
+        // got a say. So: short windows are absorbed here, because a couple of
+        // seconds is cheaper than a fallback; anything longer is handed up with
+        // the window already recorded on the account.
+        if (category === "rate_limited" && delay > TRANSPORT_RATE_WAIT_CEILING_MS) {
+          console.warn(
+            `[${this.name}] ${this.model} is inside a ${Math.round(delay / 1000)}s rate window — handing back to ` +
+              `the router rather than holding this endpoint. The window is recorded, so another account gets ` +
+              `tried first and the wait happens once for the whole chain.`
+          );
+          throw err;
+        }
+
+        lastErr = err;
         console.warn(
           `[${this.name}] ${response.status} (${category}) on ${this.model} — retrying in ` +
             `${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${this.config.maxRetries}).`

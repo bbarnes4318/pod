@@ -121,6 +121,41 @@ function main() {
     assert(m.runLengthUniformity <= 0.7, `fixture should be non-uniform, got ${m.runLengthUniformity.toFixed(2)}`);
   });
 
+  console.log("\nPacing stops being fatal once the model has genuinely tried\n");
+
+  // WHY THIS SECTION EXISTS. The rules above are a joint constraint on the
+  // speaker sequence, and the fixture two checks up had to be hand-built to
+  // satisfy them — that is how narrow the band is. A frontier model lands in it;
+  // gpt-oss-120b, which is what the FREE tier has for this role, often does not,
+  // and on the free tier there is no third rung to fall to. Three consecutive
+  // episodes died at this role. A flat conversation is a worse episode; a
+  // rejected plan is no episode.
+  check("a metronome is rejected for the attempt AND its repair, then accepted", () => {
+    const budgeted = makeTurnPlanValidator(1200, { rhythmAttempts: 2 });
+    const metronome = plan(Array(30).fill(2));
+    assert(budgeted(metronome) !== null, "the first attempt must still be rejected");
+    assert(budgeted(metronome) !== null, "the repair attempt must still be rejected");
+    assert(
+      budgeted(metronome) === null,
+      "after the attempt and its repair, a structurally sound plan must be taken rather than lose the episode"
+    );
+  });
+
+  check("the budget relaxes PACING only — content rules stay fatal for ever", () => {
+    const budgeted = makeTurnPlanValidator(1200, { rhythmAttempts: 2 });
+    const fourInARow = plan([4, 1, 2, 1, 3, 1, 2, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1, 2, 1, 2, 1, 3, 1, 2, 1, 2]);
+    for (let i = 0; i < 5; i++) {
+      const err = budgeted(fourInARow);
+      assert(err !== null && /four consecutive/i.test(err), `attempt ${i + 1} must still reject: got ${err}`);
+    }
+    // A plan too short to fill the episode is the other rule that never softens:
+    // the writers only write the turns they are given, so a short plan is a short
+    // episode, and that dies at the word floor after everything has been paid for.
+    const tooShort = makeTurnPlanValidator(1200, { rhythmAttempts: 0 });
+    const err = tooShort(plan([1, 2, 1, 2]));
+    assert(err !== null && /at least/i.test(err), `a short plan must never be accepted, got: ${err}`);
+  });
+
   console.log(`\n${passed} passed, ${failed} failed\n`);
   if (failed > 0) process.exit(1);
 }

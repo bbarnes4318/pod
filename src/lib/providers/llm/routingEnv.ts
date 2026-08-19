@@ -22,6 +22,7 @@ const SNAPSHOT: Record<string, string | undefined> = {
   LLM_ROUTING_PROFILE: process.env.LLM_ROUTING_PROFILE,
   APP_DEPLOYMENT_STAGE: process.env.APP_DEPLOYMENT_STAGE,
   LLM_ALLOW_LEGACY_FALLBACK: process.env.LLM_ALLOW_LEGACY_FALLBACK,
+  LLM_RATE_WINDOW_PASSES: process.env.LLM_RATE_WINDOW_PASSES,
 
   // ---- existing grouped configuration (unchanged semantics) ----
   LLM_PROVIDER: process.env.LLM_PROVIDER,

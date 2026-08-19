@@ -89,6 +89,7 @@
     "test:compliance": "tsx src/scripts/testCompliance.ts",
     "test:recurring-scheduler": "tsx --conditions=react-server src/scripts/testRecurringScheduler.ts",
     "test:rate-window": "tsx src/scripts/testRateWindowClassification.ts",
+    "test:rate-window-recovery": "tsx --conditions=react-server src/scripts/testRateWindowRecovery.ts",
     "test:on-demand-cost": "tsx src/scripts/testOnDemandRunCost.ts",
     "test:joblog-reconciliation": "tsx src/scripts/testJobLogReconciliation.ts",
     "test:episode-creation": "tsx --conditions=react-server src/scripts/testEpisodeCreation.ts",

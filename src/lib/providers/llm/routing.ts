@@ -40,6 +40,7 @@ import { XAI_DEFAULT_BASE_URL } from "./xai";
 import { MOONSHOT_DEFAULT_BASE_URL } from "./moonshot";
 import { GOOGLE_DEFAULT_BASE_URL } from "./google";
 import { buildProvider, supportedProviderList } from "./providerRegistry";
+import { DEFAULT_RATE_WINDOW_MS, longestRateWindowMs } from "./rateWindow";
 
 export type CandidateSource =
   | "role_override"
@@ -362,6 +363,37 @@ export function instantiateProvider(provider: string, model?: string): LLMProvid
 
 // ---------------------------------------------------------------- routed provider
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * How many EXTRA passes over a role's chain are allowed when the reason it ran
+ * out was a rate window that refills.
+ *
+ * Two by default, so a role can absorb roughly two minutes of a saturated free
+ * account and still finish. That is well inside the 8-12 minutes the free tier
+ * tells the user to expect, and it is the difference between an episode that is
+ * slow and an episode that is gone.
+ *
+ * Set 0 to restore the old behaviour of failing the moment the chain is spent —
+ * useful when measuring how often the windows are actually hit, and useless in
+ * production, because that measurement is exactly what the log lines now carry.
+ *
+ * THE BOUND IS PER ROLE, and that is worth stating plainly rather than
+ * discovering: an episode calls twenty-one roles, so a pathologically saturated
+ * account could in principle add two minutes to each of them. It does not in
+ * practice, because a single successful call clears the window for every role
+ * behind it (rateWindow.ts) — but if an operator ever sees an episode crawling
+ * rather than failing, this is the knob that explains it, and the per-role
+ * `[LLMRouting] ... Waiting Ns` lines are how it shows up in the log.
+ */
+function rateWindowPasses(): number {
+  const raw = Number(readRoutingEnv("LLM_RATE_WINDOW_PASSES"));
+  if (!Number.isFinite(raw) || raw < 0) return 2;
+  return Math.min(Math.floor(raw), 5);
+}
+
 /**
  * Runs a role's candidate chain. One instance per role per caller, so its
  * accumulated usage covers every model it actually used — the self-verify token
@@ -436,6 +468,8 @@ export class RoutedLLMProvider implements LLMProvider {
     };
     let fallbacks = 0;
     let stoppedEarly: { error: unknown; reason: string } | null = null;
+    let rateLimitedThisPass = false;
+    const waitPasses = rateWindowPasses();
 
     /**
      * Pass over every remaining candidate that bills the same account, recording
@@ -455,93 +489,154 @@ export class RoutedLLMProvider implements LLMProvider {
       return j;
     };
 
-    for (let i = 0; i < this.plan.candidates.length; i++) {
-      const candidate = this.plan.candidates[i];
-      const next = this.plan.candidates[i + 1];
-      const key = candidateKey(candidate);
-      const identity = endpointIdentity(candidate);
+    /**
+     * ONE PASS OVER THE CHAIN — and, when the chain ran out because every
+     * candidate was inside a REFILLING window, another pass after waiting it out.
+     *
+     * Exhaustion and refusal are not the same failure, and treating them the same
+     * is what killed the free tier. "Every model I know is currently over its
+     * per-minute budget" is a statement about the next sixty seconds, not about
+     * the request; the identical call succeeds once the window refills. The free
+     * profile is two rungs deep and both rungs sit on free accounts, so a single
+     * saturated minute could take the whole episode with it — after seven roles
+     * had already been paid for.
+     *
+     * Waiting is also what the tier PROMISES. QUALITY_TIER_INFO.free tells the
+     * user 8-12 minutes and says in as many words that this is normal for the
+     * tier and not a stall. A minute spent waiting for a budget to refill is
+     * inside that promise; a dead episode is not.
+     *
+     * Bounded, because a window that never refills is a different problem: after
+     * `waitPasses` extra attempts the chain fails with the whole history, and the
+     * operator sees a rate limit that is not clearing rather than a job that
+     * waits forever. Only a RATE-LIMITED exhaustion re-passes — a terminal stop,
+     * a billing stop or a schema defect still fails immediately, because none of
+     * those is improved by patience.
+     */
+    for (let pass = 0; pass <= waitPasses; pass++) {
+      rateLimitedThisPass = false;
+      for (let i = 0; i < this.plan.candidates.length; i++) {
+        const candidate = this.plan.candidates[i];
+        const next = this.plan.candidates[i + 1];
+        const key = candidateKey(candidate);
+        const identity = endpointIdentity(candidate);
 
-      let provider: LLMProvider;
-      try {
-        provider =
-          this.instances.get(identity) ?? instantiateProvider(candidate.provider, candidate.model);
-        this.instances.set(identity, provider);
-      } catch (err) {
-        // Construction failures are configuration failures (a missing key, an
-        // unbuildable provider). They go through the same policy — including the
-        // rule that a config failure may not silently cross into a paid provider.
-        const decision = fallbackDecision(err, candidate, next, policyCtx);
-        failures.push(`${key} [${candidate.source}] not usable: ${describeFailure(err)}`);
-        categories.push(decision.category);
-        if (!candidate.paid) failedFree.push(key);
-        console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
-        // Only a decision that DECLINED an available candidate is "stopping
-        // early". Running out of candidates is exhaustion, and gets the
-        // exhaustion message below with the whole list.
-        if (decision.verdict === "stop" && next) {
-          stoppedEarly = { error: err, reason: decision.reason };
-          break;
-        }
-        if (decision.verdict === "skip_provider") {
-          i = skipSameProviderFrom(i, candidate.provider, decision.category);
-          if (i + 1 >= this.plan.candidates.length) {
+        let provider: LLMProvider;
+        try {
+          provider =
+            this.instances.get(identity) ?? instantiateProvider(candidate.provider, candidate.model);
+          this.instances.set(identity, provider);
+        } catch (err) {
+          // Construction failures are configuration failures (a missing key, an
+          // unbuildable provider). They go through the same policy — including the
+          // rule that a config failure may not silently cross into a paid provider.
+          const decision = fallbackDecision(err, candidate, next, policyCtx);
+          failures.push(`${key} [${candidate.source}] not usable: ${describeFailure(err)}`);
+          categories.push(decision.category);
+          if (!candidate.paid) failedFree.push(key);
+          console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
+          // Only a decision that DECLINED an available candidate is "stopping
+          // early". Running out of candidates is exhaustion, and gets the
+          // exhaustion message below with the whole list.
+          if (decision.verdict === "stop" && next) {
             stoppedEarly = { error: err, reason: decision.reason };
             break;
+          }
+          if (decision.verdict === "skip_provider") {
+            i = skipSameProviderFrom(i, candidate.provider, decision.category);
+            if (i + 1 >= this.plan.candidates.length) {
+              stoppedEarly = { error: err, reason: decision.reason };
+              break;
+            }
+            fallbacks++;
+            continue;
           }
           fallbacks++;
           continue;
         }
-        fallbacks++;
-        continue;
-      }
 
-      // Paid calls are audited BEFORE they happen, with the whole story: which
-      // free candidates failed, with which categories, and why this was allowed.
-      if (candidate.paid && candidate.source !== "role_override" && fallbacks > 0) {
-        console.warn(
-          formatPaidFallbackAudit({
-            role: this.plan.role,
-            failedFreeCandidates: failedFree,
-            failureCategories: categories.map(String),
-            paidProvider: candidate.provider,
-            paidModel: candidate.model ?? "(provider-default)",
-            reasonPermitted: policyCtx.paidFallbackExplicit
-              ? "LLM_ALLOW_LEGACY_FALLBACK=true was set explicitly (resilient mode)"
-              : "LLM_ALLOW_LEGACY_FALLBACK is true",
-          })
-        );
-      }
-
-      try {
-        return await withLlmAttribution(
-          {
-            role: this.plan.role,
-            profile: this.plan.profile,
-            candidateSource: candidate.source,
-            fallbacks,
-          },
-          () => invoke(provider, opts)
-        );
-      } catch (err) {
-        const decision = fallbackDecision(err, candidate, next, policyCtx);
-        failures.push(`${key} [${candidate.source}] failed (${decision.category}): ${describeFailure(err)}`);
-        categories.push(decision.category);
-        if (!candidate.paid) failedFree.push(key);
-        console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
-        if (decision.verdict === "stop" && next) {
-          stoppedEarly = { error: err, reason: decision.reason };
-          break;
+        // Paid calls are audited BEFORE they happen, with the whole story: which
+        // free candidates failed, with which categories, and why this was allowed.
+        if (candidate.paid && candidate.source !== "role_override" && fallbacks > 0) {
+          console.warn(
+            formatPaidFallbackAudit({
+              role: this.plan.role,
+              failedFreeCandidates: failedFree,
+              failureCategories: categories.map(String),
+              paidProvider: candidate.provider,
+              paidModel: candidate.model ?? "(provider-default)",
+              reasonPermitted: policyCtx.paidFallbackExplicit
+                ? "LLM_ALLOW_LEGACY_FALLBACK=true was set explicitly (resilient mode)"
+                : "LLM_ALLOW_LEGACY_FALLBACK is true",
+            })
+          );
         }
-        if (decision.verdict === "skip_provider") {
-          i = skipSameProviderFrom(i, candidate.provider, decision.category);
-          if (i + 1 >= this.plan.candidates.length) {
+
+        try {
+          return await withLlmAttribution(
+            {
+              role: this.plan.role,
+              profile: this.plan.profile,
+              candidateSource: candidate.source,
+              fallbacks,
+            },
+            () => invoke(provider, opts)
+          );
+        } catch (err) {
+          const decision = fallbackDecision(err, candidate, next, policyCtx);
+          failures.push(`${key} [${candidate.source}] failed (${decision.category}): ${describeFailure(err)}`);
+          categories.push(decision.category);
+          // The one category that says "not yet" rather than "not at all". It is
+          // what earns this chain another pass once the window has refilled.
+          if (decision.category === "rate_limited") rateLimitedThisPass = true;
+          if (!candidate.paid) failedFree.push(key);
+          console.warn(`[LLMRouting] role=${this.plan.role} ${decision.reason}`);
+          if (decision.verdict === "stop" && next) {
             stoppedEarly = { error: err, reason: decision.reason };
             break;
           }
+          if (decision.verdict === "skip_provider") {
+            i = skipSameProviderFrom(i, candidate.provider, decision.category);
+            if (i + 1 >= this.plan.candidates.length) {
+              stoppedEarly = { error: err, reason: decision.reason };
+              break;
+            }
+          }
+          fallbacks++;
         }
-        fallbacks++;
       }
+
+      if (stoppedEarly || !rateLimitedThisPass || pass === waitPasses) break;
+
+      // Sized from what the providers themselves said (rateWindow.ts holds the
+      // retry-after each one published, or the measured 60s default when it
+      // published none), never from a guess made here.
+      const providers = new Set(this.plan.candidates.map((c) => c.provider));
+      const waitMs = longestRateWindowMs(providers) || DEFAULT_RATE_WINDOW_MS;
+      console.warn(
+        `[LLMRouting] role=${this.plan.role} every candidate is inside a rate window that refills. ` +
+          `Waiting ${Math.round(waitMs / 1000)}s and running the chain again ` +
+          `(pass ${pass + 2}/${waitPasses + 1}) rather than failing the episode over a limit that clears.`
+      );
+      failures.push(
+        `— waited ${Math.round(waitMs / 1000)}s for the rate windows to refill, then re-ran the chain —`
+      );
+      await sleep(waitMs);
+      fallbacks = 0;
     }
+
+    // A chain that failed on rate windows AFTER waiting them out is a different
+    // report from a chain that simply ran out, and the difference is what the
+    // next operator needs. Waiting is not going to fix this one: either the
+    // account's window is smaller than this single call needs, or something else
+    // is spending it. Say which question to ask, in the failure itself, rather
+    // than leaving it to be re-derived from a ledger three episodes later.
+    const rateWindowNote =
+      waitPasses > 0 && rateLimitedThisPass
+        ? ` Every rung was still inside a REFILLING rate window after ${waitPasses} wait(s), so patience is not ` +
+          `the answer here: this role's request may be larger than the account's per-window budget can ever ` +
+          `serve, or another workload is spending that budget. Check the request size for this role first.`
+        : "";
 
     const suppressed = this.plan.suppressedPaid.length
       ? ` Paid fallback is DISABLED (LLM_ALLOW_LEGACY_FALLBACK=${
@@ -573,7 +668,7 @@ export class RoutedLLMProvider implements LLMProvider {
       category: categories[categories.length - 1] ?? "unknown",
       message:
         `[LLMRouting] Every candidate for role '${this.plan.role}' failed under profile ` +
-        `'${this.plan.profile}':\n  - ${failures.join("\n  - ")}${suppressed}`,
+        `'${this.plan.profile}':\n  - ${failures.join("\n  - ")}${rateWindowNote}${suppressed}`,
     });
   }
 }
