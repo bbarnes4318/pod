@@ -30,14 +30,30 @@ export const PLANS: Record<PlanId, PlanConfig> = {
     id: "free",
     name: "Free",
     priceLabel: "$0",
-    blurb: "Kick the tires — make a few episodes a month.",
-    maxEpisodesPerMonth: 4,
+    blurb: "Make as many episodes as you like.",
+    /**
+     * NO MONTHLY EPISODE CAP ON FREE — removed deliberately, not overlooked.
+     *
+     * The cap was 4, and it fired on the owner's own account while the free
+     * generation tier was being debugged: "You've used all 4 episodes on the
+     * Free plan this month (resets Sep 1)." A metering fence that blocks the
+     * operator from testing the thing it meters is worse than no fence.
+     *
+     * `null` is the value the whole stack already means by "unlimited" —
+     * getEpisodeUsage returns remaining: null, assertCanCreateEpisode passes
+     * without counting, and PlanClient renders "/ ∞". Nothing else needed
+     * changing, which is what a single source of truth is for.
+     *
+     * The OTHER free-plan limits are untouched and still enforced: one podcast,
+     * standard voices only, no private feeds.
+     */
+    maxEpisodesPerMonth: null,
     premiumVoices: false,
     maxPodcasts: 1,
     privateFeeds: false,
     teamSeats: 1,
     features: [
-      "4 episodes / month",
+      "Unlimited episodes",
       "1 podcast",
       "Standard voices (Fish Audio)",
       "Public RSS + downloads",
