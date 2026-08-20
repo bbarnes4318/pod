@@ -129,13 +129,16 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
             host={host}
             accent={index % 2 === 0 ? "var(--host-a)" : "var(--host-b)"}
             editing={editingId === host.id}
-            onEdit={() => setEditingId(host.id)}
+            // A shared starter cannot be edited in place, so "Edit host" forks it
+            // first and hands back the COPY's id — which is the card that must
+            // open, not the starter that was clicked.
+            onEdit={(hostId) => setEditingId(hostId ?? host.id)}
             onCloseEdit={() => setEditingId(null)}
           />
         ))}
       </div>
 
-      {active.length === 0 && <div className="emptyNote mt-6">No hosts yet. Create one above or copy a starter host.</div>}
+      {active.length === 0 && <div className="emptyNote mt-6">No hosts yet. Create one above, or open a starter host and edit it.</div>}
 
       {archived.length > 0 && (
         <div className="mt-8">
@@ -153,7 +156,8 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
   host: StudioHostVM;
   accent: string;
   editing: boolean;
-  onEdit: () => void;
+  /** Called with the id of the host to open. Omitted = this card's own host. */
+  onEdit: (hostId?: string) => void;
   onCloseEdit: () => void;
 }) {
   const router = useRouter();
@@ -189,11 +193,40 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
     setBusy(null);
   };
 
-  const doClone = async () => {
+  /**
+   * EDIT, WHATEVER IT TAKES.
+   *
+   * A starter host is shared (ownerId null), so it genuinely cannot be edited in
+   * place — one account's rewrite would change the character for everybody. That
+   * constraint is real. What was NOT real was making the user solve it.
+   *
+   * The card used to offer "Copy and customize" on shared hosts and "Edit host"
+   * on owned ones, so the entire roster a new account starts with — every host
+   * they can actually see — showed no Edit button at all. The reasonable
+   * conclusion, and the one that was reached, is that this app cannot edit a
+   * host. A capability nobody can find is a capability that does not exist.
+   *
+   * So the button always says "Edit host" and always opens the editor. When the
+   * host is shared, the fork happens on the way there: clone it, then open the
+   * COPY. The user is told what happened rather than asked to arrange it.
+   */
+  const editHost = async () => {
+    if (host.canEdit) {
+      onEdit();
+      return;
+    }
     setBusy("clone"); setError(null);
     const result = await cloneHostToRoster(host.id);
-    if (!result.success) setError(result.error);
-    else { setMessage("Copied to your roster. Your editable version is ready."); router.refresh(); }
+    if (!result.success) {
+      setError(result.error);
+      setBusy(null);
+      return;
+    }
+    setMessage(`Made your own copy of ${host.name} — opening it now. The starter stays as it was.`);
+    // Open the copy BEFORE refreshing: the refreshed list is what renders the
+    // new card, and it needs to already know that card is the one being edited.
+    onEdit(result.hostId);
+    router.refresh();
     setBusy(null);
   };
 
@@ -232,14 +265,13 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
         <button type="button" className="btnPrimary" onClick={play} disabled={busy === "play" || !voiceReady(host.ttsVoiceId)}>
           {busy === "play" ? "Making preview…" : "▶ Hear host"}
         </button>
-        {host.canEdit ? (
-          <>
-            <button type="button" className="btnGhost" onClick={onEdit}>Edit host</button>
-            <button type="button" className="btnGhost u-mlAuto" onClick={doArchive} disabled={busy === "archive"}>Archive</button>
-          </>
-        ) : (
-          <button type="button" className="btnGhost u-mlAuto" onClick={doClone} disabled={busy === "clone"}>
-            {busy === "clone" ? "Copying…" : "Copy and customize"}
+        {/* Present on EVERY card, owned or shared — see editHost for why. */}
+        <button type="button" className="btnGhost" onClick={editHost} disabled={busy === "clone"}>
+          {busy === "clone" ? "Making your copy…" : "Edit host"}
+        </button>
+        {host.canEdit && (
+          <button type="button" className="btnGhost u-mlAuto" onClick={doArchive} disabled={busy === "archive"}>
+            Archive
           </button>
         )}
       </div>

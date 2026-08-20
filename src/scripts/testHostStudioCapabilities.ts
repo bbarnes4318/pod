@@ -36,6 +36,17 @@ function check(name: string, fn: () => void | Promise<void>) {
 
 const source = (path: string) => readFileSync(join(__dirname, "..", path), "utf8");
 
+/** Source with comments removed, for checks about what a component RENDERS
+ *  rather than what its author wrote about it. A comment naming a removed
+ *  button is documentation, not a button. */
+function withoutComments(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\*)/.test(line))
+    .join("\n");
+}
+
 async function main() {
   console.log("Host Studio personality + voice capabilities\n");
 
@@ -162,6 +173,50 @@ async function main() {
     assert(/requireOwnedHost\(hostId\)/.test(actions), "voice creation is not owner-gated");
     assert(/own this voice or have written permission/i.test(actions), "clone permission attestation is not enforced");
     assert(/visibility", "private"/.test(source("lib/providers/tts/fishVoiceStudio.ts")), "created voices are not private");
+  });
+
+  await check("EVERY host card offers Edit — a shared starter forks on the way in", () => {
+    // THE REGRESSION THIS EXISTS TO PREVENT.
+    //
+    // The card used to render "Edit host" only when `host.canEdit` was true, and
+    // "Copy and customize" otherwise. A new account owns nothing, so every host
+    // on its screen was a shared starter and NOT ONE of them showed an Edit
+    // button. The app looked like it could not edit a host at all. It could —
+    // there is a four-step editor behind that button, voice step included — but
+    // no path led to it, which is the same thing as not having it.
+    //
+    // So: the button is unconditional. If the underlying host is shared, the
+    // handler clones it first and opens the COPY. The gate that remains is on
+    // the DATA (a shared host is still never mutated in place), not on the
+    // user's ability to get where they were going.
+    const ui = source("app/studio/hosts/CharacterStudio.tsx");
+    // Comments stripped first: this check is about what the card RENDERS, and a
+    // comment explaining the old button is not the old button. Checking raw
+    // source would make the prose below fail its own test.
+    const rendered = withoutComments(ui);
+    assert(
+      !rendered.includes("Copy and customize"),
+      "the card still routes shared hosts to a 'Copy and customize' button instead of Edit"
+    );
+    assert(
+      /onClick=\{editHost\}/.test(ui),
+      "the card's edit button no longer goes through editHost, which is what performs the fork"
+    );
+    // The fork must open the COPY. Passing the clone's id back is the whole
+    // mechanism; without it the editor opens on the starter and saves nothing.
+    assert(
+      /onEdit\(result\.hostId\)/.test(ui),
+      "editHost does not open the newly created copy — the fork would be invisible"
+    );
+    assert(
+      /if \(host\.canEdit\) \{\s*onEdit\(\);/.test(ui),
+      "an already-owned host should open directly, with no pointless clone"
+    );
+    // And the server action has to keep handing the id back for any of it to work.
+    assert(
+      /return \{ success: true as const, hostId: copy\.id \}/.test(source("app/studio/hosts/actions.ts")),
+      "cloneHostToRoster no longer returns the new host id"
+    );
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);
