@@ -182,6 +182,7 @@
     "test:render-mode-hardening": "tsx --conditions=react-server src/scripts/testRenderModeHardening.ts",
     "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts",
     "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts",
+    "test:research-brief-stagger": "tsx --conditions=react-server src/scripts/testResearchBriefStagger.ts",
     "test:provider-field-alias": "tsx --conditions=react-server src/scripts/testProviderFieldAlias.ts",
     "test:antithesis-pass": "tsx --conditions=react-server src/scripts/testAntithesisPass.ts",
     "test:silent-failure-paths": "tsx --conditions=react-server src/scripts/testSilentFailurePaths.ts",

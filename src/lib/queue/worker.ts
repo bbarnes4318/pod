@@ -194,6 +194,28 @@ reconcileOrphanedJobLogsOnBoot({ db, processStartedAt: WORKER_STARTED_AT }).catc
   console.error(`[Worker] Job-log reconciliation failed: ${err.message}`)
 );
 
+/**
+ * How far apart to space chained research-brief jobs.
+ *
+ * A topic sweep creates N topics and used to enqueue N brief jobs in the same
+ * instant, each one a multi-call LLM chain aimed at the same two free-tier
+ * accounts. With two background workers they arrived together, tripped the
+ * per-minute limits, waited 60s, re-ran the whole chain, tripped them again,
+ * and every one of them failed after several minutes — a rate-limit storm the
+ * system inflicted entirely on itself. The router's own diagnosis said so:
+ * "another workload is spending that budget." The other workload was us.
+ *
+ * Spacing is NOT throttling: every topic still gets its brief, and nothing is
+ * dropped or capped. They simply do not all start at once, so a window that
+ * refills has time to refill. Set RESEARCH_BRIEF_STAGGER_MS=0 to restore the
+ * old all-at-once behaviour.
+ */
+function researchBriefStaggerMs(index: number): number {
+  const parsed = Number.parseInt(process.env.RESEARCH_BRIEF_STAGGER_MS ?? "", 10);
+  const step = Number.isFinite(parsed) && parsed >= 0 && parsed <= 600_000 ? parsed : 90_000;
+  return step * Math.max(0, index);
+}
+
 // Worker concurrency is env-driven and bounded. Production defaults to 1 (the
 // DEPLOYMENT_RUNBOOK recommendation — a single ffmpeg/LLM-heavy job at a time
 // keeps memory predictable); non-production defaults to 2. An out-of-range or
@@ -644,11 +666,15 @@ async function reconcileTopicPoolOnBoot() {
   );
 
   let repaired = 0;
-  for (const topic of generated) {
+  for (const [repairIndex, topic] of generated.entries()) {
     await db.topicCandidate.update({ where: { id: topic.id }, data: { status: "approved" } });
     await queueResearchBriefGenerationJob(
       { topicId: topic.id },
-      { jobId: `research-brief-${topic.id}`, priority: 1 }
+      {
+        jobId: `research-brief-${topic.id}`,
+        priority: 1,
+        delayMs: researchBriefStaggerMs(repairIndex),
+      }
     );
     repaired++;
   }
@@ -1855,11 +1881,15 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
     // takes a producer could look at but never use.
     let briefJobsQueued = 0;
     const briefEnqueueErrors: string[] = [];
-    for (const topicId of insertedTopicIds) {
+    for (const [briefIndex, topicId] of insertedTopicIds.entries()) {
       try {
         await queueResearchBriefGenerationJob(
           { topicId },
-          { jobId: `research-brief-${topicId}`, priority: 1 }
+          {
+            jobId: `research-brief-${topicId}`,
+            priority: 1,
+            delayMs: researchBriefStaggerMs(briefIndex),
+          }
         );
         briefJobsQueued++;
       } catch (e) {

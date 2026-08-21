@@ -113,7 +113,7 @@ export interface ResearchBriefJobData {
 
 export async function queueResearchBriefGenerationJob(
   data: ResearchBriefJobData,
-  opts?: { jobId?: string; priority?: number }
+  opts?: { jobId?: string; priority?: number; delayMs?: number }
 ) {
   // A deterministic jobId makes the enqueue idempotent: BullMQ ignores a second
   // add with the same id, so an operator double-clicking "Start research"
@@ -121,6 +121,9 @@ export async function queueResearchBriefGenerationJob(
   const jobOptions = {
     ...(opts?.jobId ? { jobId: opts.jobId } : {}),
     ...(typeof opts?.priority === "number" ? { priority: opts.priority } : {}),
+    // Spacing, not throttling: every job still runs, it just does not start in
+    // the same second as its siblings. See staggerDelayMs() at the call site.
+    ...(typeof opts?.delayMs === "number" && opts.delayMs > 0 ? { delay: Math.round(opts.delayMs) } : {}),
   };
   return podcastQueue.add(
     "generate:research-brief",
