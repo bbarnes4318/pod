@@ -80,6 +80,43 @@ const DOWNGRADEABLE_FIELDS = [
   "seed",
 ];
 
+/**
+ * What each provider calls a field we send, when it is not what we call it.
+ *
+ * The downgrade below only fires when the provider NAMES a field we sent, which
+ * is the right rule and was defeated by a rename. NVIDIA accepts a top-level
+ * `reasoning_budget` and then reports it back under its INTERNAL name:
+ *
+ *   HTTP 400: ValueError: thinking_token_budget is not yet supported by the V2
+ *   model runner. Run vLLM with VLLM_USE_V2_MODEL_RUNNER=0 to use
+ *   thinking_token_budget.
+ *
+ * "thinking_token_budget" is not a string we ever sent, so nothing matched,
+ * nothing was stripped, and the re-send never happened. The failure is
+ * deterministic — same request, same 400, forever — so nemotron-3-ultra sat at
+ * the top of the verified_development chain serving ZERO requests while every
+ * call below it fought over free-tier rate limits.
+ *
+ * Aliases are added only from an error a provider actually produced, never
+ * guessed: a wrong alias here would strip a field that was fine.
+ */
+const PROVIDER_FIELD_ALIASES: Record<string, readonly string[]> = {
+  reasoning_budget: ["thinking_token_budget"],
+};
+
+/** The field we sent that this error text names, directly or by the provider's alias. */
+function namedUnsupportedFieldOrAlias(errorText: string, candidateFields: string[]): string | null {
+  const direct = namedUnsupportedField(errorText, candidateFields);
+  if (direct) return direct;
+  const body = (errorText || "").toLowerCase();
+  for (const field of candidateFields) {
+    for (const alias of PROVIDER_FIELD_ALIASES[field] ?? []) {
+      if (body.includes(alias.toLowerCase())) return field;
+    }
+  }
+  return null;
+}
+
 export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
   readonly name: string;
   protected readonly model: string;
@@ -456,7 +493,7 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
         // firing is a signal that a registry record is wrong. An AMBIGUOUS 400
         // never strips anything.
         if (category === "unsupported_parameter") {
-          const named = namedUnsupportedField(errorText, DOWNGRADEABLE_FIELDS.filter((f) => f in body));
+          const named = namedUnsupportedFieldOrAlias(errorText, DOWNGRADEABLE_FIELDS.filter((f) => f in body));
           if (named && !this.downgradedFields.has(named)) {
             this.downgradedFields.add(named);
             state.downgraded = named;
