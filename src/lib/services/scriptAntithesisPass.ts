@@ -5,11 +5,13 @@
 
 import {
   analyzeAntithesis,
-  rewriteInstruction,
+  deterministicAntithesisFix,
+  findAntithesis,
   type AntithesisLine,
   type AntithesisPolicy,
   type AntithesisReport,
 } from "./scriptAntithesis";
+import type { AntithesisRewriteItem, AntithesisRewriteOutcome } from "./scriptOutlineEngine";
 import type { BatchLineRewriter, RewriteContext } from "./scriptSelfVerify";
 import { stripAudioTags } from "../audio/speechText";
 import { scoreConversationContinuity, type ConversationGateMetrics } from "./scriptConversationDirector";
@@ -56,6 +58,11 @@ export interface AntithesisPassReport {
   linesFlagged: number;
   linesCorrected: number;
   linesUnresolved: number;
+  /** Repaired by regex alone, with no model call. */
+  linesFixedDeterministically: number;
+  /** The rewrite PROVIDER failed (not the model declining). Unresolved lines
+   *  after this are unproven, not defiant. */
+  rewriteUnavailable: boolean;
   corrections: Array<{
     lineIndex: number;
     round: number;
@@ -76,6 +83,9 @@ export interface AntithesisPassReport {
 
 export interface AntithesisPassOptions {
   rewrite: BatchLineRewriter;
+  /** Frame-specific rewriter. Falls back to nothing when absent — the
+   *  deterministic cuts still run. */
+  rewriteAntithesis?: (items: AntithesisRewriteItem[]) => Promise<AntithesisRewriteOutcome>;
   maxRounds?: number;
   policy?: AntithesisPolicy;
   evidenceTextFor?: (line: ScriptLineLike) => string;
@@ -259,6 +269,8 @@ export async function antithesisPassAndCorrect(
     linesFlagged: 0,
     linesCorrected: 0,
     linesUnresolved: 0,
+    linesFixedDeterministically: 0,
+    rewriteUnavailable: false,
     corrections: [],
     unresolved: [],
     conversation: {
@@ -275,36 +287,97 @@ export async function antithesisPassAndCorrect(
   };
 
   const everFlagged = new Set<number>();
-  while (report.violations.length > 0 && pass.rounds < maxRounds) {
-    pass.rounds++;
-    const roundItems: Array<{ line: ScriptLineLike; before: string; kinds: string[] }> = [];
-    const contexts: RewriteContext[] = [];
+
+  /**
+   * Apply a candidate line, but never accept one that made the line WORSE.
+   * A rewrite that swaps "that's not X, that's Y" for "same X, new Y" has
+   * traded one frame for another, and keeping it is how a 5-violation script
+   * became a 15-violation script between rounds.
+   */
+  const applyGuarded = (line: ScriptLineLike, candidate: string, before: string): boolean => {
+    const hitsBefore = findAntithesis(before).length;
+    applyRewrite(line, { text: candidate }, before);
+    if (findAntithesis(line.text).length > hitsBefore) {
+      line.text = before;
+      return false;
+    }
+    return line.text !== before;
+  };
+
+  let attempts = 0;
+  // One spare attempt, so a single dead provider call cannot silently eat a
+  // whole round and leave the script looking uncooperative.
+  const maxAttempts = maxRounds + 1;
+
+  while (report.violations.length > 0 && pass.rounds < maxRounds && attempts < maxAttempts) {
+    attempts++;
+
+    // ---- 1. Deterministic cuts. No model, no network, cannot fail. ----
+    const needsModel: Array<{ line: ScriptLineLike; item: AntithesisRewriteItem; kinds: string[] }> = [];
     for (const violation of report.violations) {
       everFlagged.add(violation.lineIndex);
       const line = lineByIndex.get(violation.lineIndex);
       if (!line || typeof line.text !== "string") continue;
-      roundItems.push({ line, before: line.text, kinds: violation.hits.map((hit) => hit.kind) });
-      contexts.push({
+      const kinds = violation.hits.map((hit) => hit.kind);
+      const primary = violation.hits[0];
+      const before = line.text;
+      const cut = primary ? deterministicAntithesisFix(before, primary.kind) : null;
+      if (cut && applyGuarded(line, cut, before)) {
+        pass.linesFixedDeterministically++;
+        pass.corrections.push({ lineIndex: line.lineIndex, round: pass.rounds + 1, kinds, before, after: line.text });
+        continue;
+      }
+      needsModel.push({
         line,
-        evidenceText: options.evidenceTextFor ? options.evidenceTextFor(line) : "",
-        unsupportedFigures: [],
-        unsupportedAttributions: [],
-        semanticReason: rewriteInstruction(violation),
-        attempt: pass.rounds,
+        item: {
+          lineIndex: line.lineIndex,
+          speakerName: String(line.speakerName || "?"),
+          text: before,
+          span: primary?.span ?? before,
+          kind: primary?.kind ?? "not_X_but_Y",
+        },
+        kinds,
       });
     }
 
-    let results: Map<number, RewriteResult>;
-    try { results = await options.rewrite(contexts); }
-    catch { results = new Map(); }
-
-    for (const { line, before, kinds } of roundItems) {
-      const result = results.get(line.lineIndex);
-      if (!result || typeof result.text !== "string" || !result.text.trim()) continue;
-      applyRewrite(line, result, before);
-      pass.corrections.push({ lineIndex: line.lineIndex, round: pass.rounds, kinds, before, after: line.text });
+    if (needsModel.length === 0) {
+      report = analyzeAntithesis(collectLines(segments).map((entry) => entry.entry), options.policy);
+      continue;
     }
-    report = analyzeAntithesis(collectLines(segments).map((item) => item.entry), options.policy);
+
+    // ---- 2. What regex could not cut, the model rewrites. ----
+    if (!options.rewriteAntithesis) break;
+
+    let outcome: AntithesisRewriteOutcome;
+    try {
+      outcome = await options.rewriteAntithesis(needsModel.map((entry) => entry.item));
+    } catch (error: unknown) {
+      outcome = {
+        rewrites: new Map(),
+        hardFailure: true,
+        failureMessage: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    if (outcome.hardFailure && outcome.rewrites.size === 0) {
+      // The call never ran. Do NOT spend a round on it.
+      pass.rewriteUnavailable = true;
+      pass.reasons.push(
+        `Antithesis rewrite call failed and was retried (${outcome.failureMessage ?? "unknown error"}).`
+      );
+      continue;
+    }
+
+    pass.rounds++;
+    for (const { line, kinds } of needsModel) {
+      const rewrite = outcome.rewrites.get(line.lineIndex);
+      if (!rewrite || typeof rewrite.text !== "string" || !rewrite.text.trim()) continue;
+      const before = line.text;
+      if (applyGuarded(line, rewrite.text, before)) {
+        pass.corrections.push({ lineIndex: line.lineIndex, round: pass.rounds, kinds, before, after: line.text });
+      }
+    }
+    report = analyzeAntithesis(collectLines(segments).map((entry) => entry.entry), options.policy);
   }
 
   for (const violation of report.violations) {
@@ -335,5 +408,57 @@ export async function antithesisPassAndCorrect(
 
   pass.conversation = await repairConversation(segments, options);
   pass.reasons.push(...pass.conversation.reasons);
+
+  // Conversation repair REWRITES dialogue, so it can hand back a line carrying
+  // the very frame this pass exists to remove. It used to run after the final
+  // count was taken, which meant a frame this stage introduced itself was never
+  // counted and shipped silently. Re-check, cut what regex can cut, and let the
+  // numbers reflect the script that actually leaves here.
+  const postRepair = analyzeAntithesis(collectLines(segments).map((entry) => entry.entry), options.policy);
+  if (postRepair.violations.length > 0) {
+    for (const violation of postRepair.violations) {
+      const line = lineByIndex.get(violation.lineIndex);
+      if (!line || typeof line.text !== "string") continue;
+      const primary = violation.hits[0];
+      const before = line.text;
+      const cut = primary ? deterministicAntithesisFix(before, primary.kind) : null;
+      if (cut && applyGuarded(line, cut, before)) {
+        pass.linesFixedDeterministically++;
+        pass.corrections.push({
+          lineIndex: line.lineIndex,
+          round: pass.rounds,
+          kinds: violation.hits.map((hit) => hit.kind),
+          before,
+          after: line.text,
+        });
+      }
+    }
+    const settled = analyzeAntithesis(collectLines(segments).map((entry) => entry.entry), options.policy);
+    const reintroduced = settled.violations.filter(
+      (violation) => !pass.unresolved.some((entry) => entry.lineIndex === violation.lineIndex)
+    );
+    for (const violation of reintroduced) {
+      const line = lineByIndex.get(violation.lineIndex);
+      if (line) line.needsHumanReview = true;
+      pass.unresolved.push({
+        lineIndex: violation.lineIndex,
+        speakerName: violation.speakerName,
+        text: violation.text,
+        kinds: violation.hits.map((hit) => hit.kind),
+        reason: `Introduced by conversation repair: ${violation.reason}`,
+      });
+    }
+    const finalReport = summarize(settled);
+    pass.totalHits = finalReport.totalHits;
+    pass.hitsPerHundredLines = finalReport.hitsPerHundredLines;
+    pass.byKind = settled.byKind;
+    pass.linesUnresolved = settled.violations.length;
+    if (reintroduced.length) {
+      pass.reasons.push(
+        `${reintroduced.length} frame(s) were reintroduced by conversation repair and re-checked here.`
+      );
+    }
+  }
+
   return pass;
 }

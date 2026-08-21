@@ -797,3 +797,115 @@ Return valid JSON only with the same schema as the draft: { "segments": [...], "
   const segments = Array.isArray(result?.segments) ? result.segments : [];
   return { segments, stateAfter: normalizeState(result?.stateAfter, draft.stateAfter) };
 }
+
+
+export interface AntithesisRewriteItem {
+  lineIndex: number;
+  speakerName: string;
+  text: string;
+  span: string;
+  kind: string;
+}
+
+export interface AntithesisRewriteOutcome {
+  rewrites: Map<number, { text: string }>;
+  /**
+   * TRUE when the provider call itself failed (timeout, rate limit, malformed
+   * JSON) rather than the model declining to fix a line. The caller MUST NOT
+   * spend a rewrite round on this, and must never report it as "the frame
+   * survived N rounds" — nothing was rewritten because nothing ran.
+   */
+  hardFailure: boolean;
+  failureMessage?: string;
+}
+
+/**
+ * Rewrites lines that carry a balanced-negation frame.
+ *
+ * This deliberately does NOT reuse rewriteLinesForGrounding. That function's
+ * headline instruction is "make every factual detail supported", and it
+ * enforces a shrink-only word ceiling (original + 3) on the documented
+ * assumption that grounding removes specifics. Neither is true here: the frame
+ * is a STYLE defect, the facts are already fine, and the correct repair often
+ * substitutes a concrete detail for the deleted half and lands at the same
+ * length. Routing antithesis work through the grounding rewriter meant the
+ * model optimised for the wrong instruction and any correct fix that came back
+ * was silently discarded as over budget — so the frame survived every round
+ * and the episode died at the gate.
+ */
+export async function rewriteLinesForAntithesis(
+  llm: LLMProvider,
+  items: AntithesisRewriteItem[],
+  systemPrompt: string
+): Promise<AntithesisRewriteOutcome> {
+  const rewrites = new Map<number, { text: string }>();
+  if (items.length === 0) return { rewrites, hardFailure: false };
+
+  let hardFailure = false;
+  let failureMessage: string | undefined;
+  const chunkSize = 12;
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    const chunk = items.slice(index, index + chunkSize);
+    const blocks = chunk
+      .map(
+        (item) => `LINE ${item.lineIndex} — SPEAKER: ${item.speakerName}
+  THE FRAME TO DELETE: ${JSON.stringify(item.span)}
+  WORD CEILING: ${antithesisWordBudget(item.text)} (current line is ${countSpokenWords(item.text)})
+  CURRENT TEXT: ${JSON.stringify(item.text)}`
+      )
+      .join("\n\n");
+
+    const prompt = `Each line below uses a balanced negation — a clause negated and then immediately replaced by its "real" version. It is the loudest tell that a machine wrote the dialogue, and it must be gone.
+
+For every line: DELETE ONE HALF OF THE CONTRAST and keep only the half that is true for that speaker. Do not rebalance it. Do not swap in a synonym for the same shape — "it's less about X than Y", "that wasn't X, it was Y", "not merely X but Y" are all the SAME defect and all forbidden. If the surviving half then says too little, replace the deleted half with something concrete: a number already present in the line, a name already present in the line, a thing that happened, or the speaker cutting themselves off.
+
+DO NOT change what the line means. DO NOT introduce a fact, number, name, quote, or source that is not already in the line. Keep the speaker's voice, keep contractions and fragments, keep a trailing em dash if the line has one. Stay at or under each line's WORD CEILING.
+
+${blocks}
+
+Return valid JSON only:
+{ "rewrites": [ { "lineIndex": 12, "text": "..." } ] }`;
+
+    try {
+      const result = await withLlmStage("script:antithesis-rewrite", () =>
+        llm.generateStructuredOutput<{ rewrites?: Array<{ lineIndex?: number; text?: string }> }>({
+          prompt,
+          systemPrompt,
+          temperature: 0.6,
+          maxTokens: Math.min(220 * chunk.length + 600, 8000),
+        })
+      );
+      const returned = Array.isArray(result?.rewrites) ? result.rewrites : [];
+      const requested = new Map(chunk.map((item) => [item.lineIndex, item.text]));
+      for (const rewrite of returned) {
+        const lineIndex = rewrite?.lineIndex;
+        if (typeof lineIndex !== "number" || !requested.has(lineIndex)) continue;
+        if (typeof rewrite?.text !== "string" || !rewrite.text.trim()) continue;
+        const original = requested.get(lineIndex) as string;
+        if (countSpokenWords(rewrite.text) > antithesisWordBudget(original)) {
+          console.warn(
+            `[Antithesis] line ${lineIndex} rewrite rejected as over budget: ` +
+              `${countSpokenWords(rewrite.text)} words against a ${antithesisWordBudget(original)} ceiling.`
+          );
+          continue;
+        }
+        rewrites.set(lineIndex, { text: rewrite.text });
+      }
+    } catch (error: unknown) {
+      hardFailure = true;
+      failureMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`[Antithesis] batched rewrite call FAILED: ${failureMessage}`);
+    }
+  }
+
+  return { rewrites, hardFailure, failureMessage };
+}
+
+/**
+ * Antithesis repairs are allowed to hold their length. Deleting half a contrast
+ * and replacing it with a concrete detail is a lateral move, not a shrink.
+ */
+export function antithesisWordBudget(originalText: string): number {
+  return Math.ceil(countSpokenWords(originalText) * 1.2) + 4;
+}

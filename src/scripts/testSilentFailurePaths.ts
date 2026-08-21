@@ -4,6 +4,13 @@
 //   3.1 the antithesis pass only enforced under ANTITHESIS_STRICT=true, which
 //       production does not set — so an unresolved "that's not X, that's Y"
 //       frame AND an outright pass failure both shipped behind a console.warn.
+//       REVISED 2026-08-21: hard-failing production on this was worse than the
+//       silence it replaced. The frames survived for mechanical reasons — the
+//       wrong rewrite prompt, correct repairs discarded by a shrink-only word
+//       ceiling, provider errors indistinguishable from refusals — so a style
+//       rule was destroying finished episodes. The closure that matters is that
+//       the degradation is REPORTED (reasons, needsHumanReview, a warn), not
+//       that it is fatal. Fatal is now opt-in.
 //   3.7 TTS_SCENE_CANDIDATES_* looked like the best-of-N quality dial. It drove
 //       an outer loop that kept the FIRST candidate that succeeded, because
 //       nothing at that layer can compare two renders. Raising it multiplied
@@ -24,35 +31,30 @@ function throws(fn: () => unknown): Error | null {
 }
 
 // Mirrors antithesisEnforced() in scriptService, which is module-private
-// because exporting it would widen that module's surface for one test. The
-// policy is small enough to restate and the point is that the DEFAULT is on.
+// because exporting it would widen that module's surface for one test.
 function antithesisEnforced(env: Record<string, string | undefined>): boolean {
-  if (env.ANTITHESIS_STRICT === "true") return true;
   if (env.ANTITHESIS_ALLOW_SOFT_FAIL === "true") return false;
-  return env.NODE_ENV === "production";
+  return env.ANTITHESIS_STRICT === "true";
 }
 
 function main() {
-  console.log("\n3.1 — the antithesis pass is a gate, not a suggestion\n");
+  console.log("\n3.1 — the antithesis pass reports, and only fails when told to\n");
 
-  check("production enforces WITHOUT any variable being set", () => {
-    assert(antithesisEnforced({ NODE_ENV: "production" }),
-      "an unset ANTITHESIS_STRICT must no longer mean 'ship it anyway' in production");
+  check("a surviving style frame does NOT kill a production episode", () => {
+    assert(!antithesisEnforced({ NODE_ENV: "production" }),
+      "a balanced-negation frame is a style defect; it must not destroy a finished episode by default");
   });
 
-  check("turning it off takes a deliberate override, not a forgotten variable", () => {
-    assert(!antithesisEnforced({ NODE_ENV: "production", ANTITHESIS_ALLOW_SOFT_FAIL: "true" }),
-      "the explicit override must still work");
-    // The old failure shape: the ONLY thing standing between a degraded script
-    // and production was a variable nobody had set.
-    assert(antithesisEnforced({ NODE_ENV: "production", ANTITHESIS_STRICT: undefined }),
-      "absence of ANTITHESIS_STRICT must not disable the gate");
-  });
-
-  check("dev stays soft so a local run is not blocked by a rewrite hiccup", () => {
-    assert(!antithesisEnforced({ NODE_ENV: "development" }), "dev should not hard-fail by default");
+  check("hard failure is available, but has to be asked for", () => {
+    assert(antithesisEnforced({ NODE_ENV: "production", ANTITHESIS_STRICT: "true" }),
+      "ANTITHESIS_STRICT=true must still fail the episode for anyone who wants that");
     assert(antithesisEnforced({ NODE_ENV: "development", ANTITHESIS_STRICT: "true" }),
-      "dev must still be able to opt IN");
+      "the opt-in must work in dev too");
+  });
+
+  check("the explicit soft-fail override still wins over strict", () => {
+    assert(!antithesisEnforced({ NODE_ENV: "production", ANTITHESIS_STRICT: "true", ANTITHESIS_ALLOW_SOFT_FAIL: "true" }),
+      "an operator who has explicitly disabled the gate must not be overridden by strict mode");
   });
 
   console.log("\n3.7 — the dead candidate knob refuses to boot\n");

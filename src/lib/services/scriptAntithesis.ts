@@ -48,25 +48,67 @@ export interface AntithesisHit {
 interface Rule {
   kind: AntithesisKind;
   re: RegExp;
+  /**
+   * Deterministic repair. The frame is a SYNTACTIC shape, so for the frames
+   * that are pure syntax the correct edit is pure syntax too: delete the
+   * negated half and keep the half the speaker actually means. No model is
+   * needed or wanted for that — a regex removal always succeeds, where a
+   * rewrite request can fail, time out, or come back with a fresh frame.
+   * Returns null when the shape is too tangled to cut safely.
+   */
+  fix?: (match: RegExpExecArray, text: string) => string | null;
+}
+
+/** Re-capitalize after a cut so a deleted first clause does not leave "that's a collapse." */
+function recapitalize(text: string, at: number): string {
+  if (at !== 0) return text;
+  return text.replace(/^(\s*)([a-z])/, (_all, space: string, ch: string) => space + ch.toUpperCase());
+}
+
+function cutBefore(match: RegExpExecArray, text: string, keepFrom: number): string | null {
+  if (keepFrom <= match.index || keepFrom >= text.length) return null;
+  const cut = (text.slice(0, match.index) + text.slice(keepFrom)).replace(/\s+/g, " ").trim();
+  if (!cut) return null;
+  return recapitalize(cut, match.index);
 }
 
 // Every pattern is anchored on the FRAME, not on vocabulary.
+//
+// A pattern here must match the RHETORICAL frame and nothing else. An
+// over-broad rule is worse than a missing one: the flagged line is handed to a
+// rewriter with the instruction "delete one half of the contrast", which is
+// incoherent for a sentence that has no contrast in it, so the model reshuffles
+// a perfectly good line and often introduces a real frame doing it. Two rules
+// used to match ordinary sports speech — "scored more points than Embiid",
+// "he played well, not great" — and both are narrowed below.
 const RULES: Rule[] = [
   {
     kind: "not_X_but_Y",
-    re: /\b(?:that|this|it|he|she|they)(?:'s|s| is| was| are| were)?\s+(?:not|isn't|isn’t|wasn't|wasn’t|aren't|ain't)\b[^.!?;]{1,70}[,.;]\s*(?:that|this|it|he|she|they)(?:'s|s| is| was| are| were)\b/gi,
+    re: /\b(?:that|this|it|he|she|they)(?:'s|s| is| was| are| were)?\s+(?:not|isn't|isn’t|wasn't|wasn’t|aren't|ain't)\b[^.!?;]{1,70}[,.;]\s*((?:that|this|it|he|she|they)(?:'s|s| is| was| are| were)\b)/gi,
+    // "That's not a slump. That's a collapse." -> "That's a collapse."
+    fix: (m, text) => cutBefore(m, text, m.index + m[0].lastIndexOf(m[1])),
   },
   {
     kind: "not_a_X_a_Y",
-    re: /\b(?:not|no)\s+(?:a|an)\s+\w+(?:\s+\w+){0,3}\s*[,.;—-]\s*(?:a|an)\s+\w+/gi,
+    re: /\b(?:not|no)\s+(?:a|an)\s+\w+(?:\s+\w+){0,3}\s*[,.;—-]\s*((?:a|an)\s+\w+)/gi,
+    // "Not a slump, a collapse." -> "A collapse."
+    fix: (m, text) => cutBefore(m, text, m.index + m[0].lastIndexOf(m[1])),
   },
   {
     kind: "same_X_new_Y",
     re: /\bsame\s+\w+(?:\s+\w+){0,2}\s*[,.;]\s*(?:same|new|different|another)\s+\w+/gi,
   },
   {
+    // NARROWED: the tail must be a noun phrase ("..., not a character flaw."),
+    // which is the frame. A bare adjective tail ("He played well, not great.")
+    // is ordinary speech and is no longer matched.
     kind: "X_comma_not_Y",
-    re: /\b\w+(?:\s+\w+){0,3},\s*not\s+(?:a\s+|an\s+|the\s+)?\w+(?:\s+\w+){0,2}\s*[.!?]/gi,
+    re: /\b(\w+(?:\s+\w+){0,3}),\s*not\s+(?:a|an|the)\s+\w+(?:\s+\w+){0,2}\s*([.!?])/gi,
+    // "It's a coaching decision, not a character flaw." -> "It's a coaching decision."
+    fix: (m, text) =>
+      (text.slice(0, m.index) + m[1] + m[2] + text.slice(m.index + m[0].length))
+        .replace(/\s+/g, " ")
+        .trim() || null,
   },
   {
     kind: "didnt_X_you_Y",
@@ -74,7 +116,9 @@ const RULES: Rule[] = [
   },
   {
     kind: "isnt_about_its_about",
-    re: /\b(?:isn't|isn’t|wasn't|wasn’t|is not|was not)\s+about\b[^.!?;]{0,50}[,.;]\s*(?:it|that|this)(?:'s|s| is| was)\s+about\b/gi,
+    re: /\b(?:isn't|isn’t|wasn't|wasn’t|is not|was not)\s+about\b[^.!?;]{0,50}[,.;]\s*((?:it|that|this)(?:'s|s| is| was)\s+about\b)/gi,
+    // "This isn't about money, it's about respect." -> "It's about respect."
+    fix: (m, text) => cutBefore(m, text, m.index + m[0].lastIndexOf(m[1])),
   },
   {
     kind: "not_just_but",
@@ -85,10 +129,33 @@ const RULES: Rule[] = [
     re: /\b(?:you|that|what\s+you)\s+just\s+(?:described|said|made|gave|told|admitted|explained)\b/gi,
   },
   {
+    // NARROWED: only the copular noun-phrase frame ("less a team than a rumor",
+    // "more a rumor than a team"). The article is what separates the frame from
+    // a plain comparative — "more points than Embiid" and "more range than
+    // anyone" are measurements, not rhetoric, and were being failed as tells.
     kind: "less_X_more_Y",
-    re: /\b(?:less\s+(?:of\s+)?(?:a\s+)?\w+\s+than|more\s+\w+\s+than\s+(?:a\s+)?\w+)\b/gi,
+    re: /\b(?:less|more)\s+(?:of\s+)?(?:a|an)\s+\w+(?:\s+\w+){0,2}\s+than\s+(?:a|an)\s+\w+/gi,
   },
 ];
+
+/**
+ * Try to remove one frame from a line without a model. Returns null when no
+ * rule owns a deterministic cut for that span.
+ */
+export function deterministicAntithesisFix(text: string, kind: AntithesisKind): string | null {
+  const rule = RULES.find((candidate) => candidate.kind === kind);
+  if (!rule || !rule.fix) return null;
+  rule.re.lastIndex = 0;
+  const match = rule.re.exec(text);
+  if (!match) return null;
+  const cut = rule.fix(match, text);
+  if (!cut || !cut.trim()) return null;
+  // Never accept a "repair" that leaves a frame behind or invents a new one.
+  if (findAntithesis(cut).length >= findAntithesis(text).length) return null;
+  // Never accept one that guts the line.
+  if (cut.split(/\s+/).length < 3) return null;
+  return cut;
+}
 
 /** Find every antithesis frame in one spoken line. */
 export function findAntithesis(text: string): AntithesisHit[] {

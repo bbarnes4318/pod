@@ -26,7 +26,7 @@ import { assessScriptQuality } from "./scriptQualityJudge";
 import { evaluateScriptEditorialGate, type ScriptPipelineProvenance } from "./scriptEditorialGate";
 import { evaluateProductionInvariants } from "./productionInvariants";
 import { retiredHostNameFragments } from "../hosts/roster";
-import { generateOutlineDrivenScript, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
+import { generateOutlineDrivenScript, rewriteLinesForAntithesis, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
 import { runIndependentJudgeStage, runSevenRolePipeline } from "./scriptSevenRolePipeline";
 import type { SevenRoleTrace, SevenRoleTraceRecord } from "./scriptRoles";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
@@ -47,10 +47,22 @@ import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
  * nothing rejects a script for containing one. This pass is the only real
  * enforcement of the antithesis frames, which is why it must not fail soft.
  */
+// A STYLE rule does not get to destroy a finished episode.
+//
+// This used to hard-fail in production whenever a single balanced-negation
+// frame survived. In practice the frame survived for reasons that had nothing
+// to do with the writing — the rewriter was handed the wrong prompt, correct
+// repairs were discarded by a shrink-only word ceiling, and a failed provider
+// call was indistinguishable from a model refusing to comply. Fifteen minutes
+// of paid generation died over punctuation-shaped rhetoric that is now cut
+// deterministically anyway. Surviving lines are marked needsHumanReview and
+// surfaced in script review, which is what a style defect warrants.
+//
+// ANTITHESIS_STRICT=true still fails the episode, for anyone who wants the old
+// behaviour deliberately rather than by default.
 function antithesisEnforced(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.ANTITHESIS_STRICT === "true") return true;
   if (env.ANTITHESIS_ALLOW_SOFT_FAIL === "true") return false;
-  return env.NODE_ENV === "production";
+  return env.ANTITHESIS_STRICT === "true";
 }
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
@@ -1071,6 +1083,11 @@ Delivery field meanings:
     const anti = await antithesisPassAndCorrect(finalSegments, {
       maxRounds: Number(process.env.SCRIPT_ANTITHESIS_ROUNDS) || 2,
       rewrite: (items) => rewriteLinesForGrounding(antithesisLlm, items, systemPrompt),
+      // The FRAME rewriter. Separate from the grounding rewriter above, which
+      // conversation repair still uses: that one optimises for factual support
+      // and enforces a shrink-only length ceiling, neither of which describes
+      // the job here.
+      rewriteAntithesis: (items) => rewriteLinesForAntithesis(antithesisLlm, items, systemPrompt),
       evidenceTextFor: (line) => {
         const refs = Array.isArray(line?.evidenceRefs) ? line.evidenceRefs : [];
         const cited = refs
@@ -1083,13 +1100,24 @@ Delivery field meanings:
     result.antithesis = anti;
     result.reasons.push(...anti.reasons);
 
-    if (anti.linesUnresolved > 0 && antithesisEnforced()) {
+    if (anti.linesUnresolved > 0) {
+      const detail = anti.unresolved
+        .map((u) => `#${u.lineIndex} [${u.speakerName}] ${u.kinds.join(",")}`)
+        .join("; ");
+      const provenance = anti.rewriteUnavailable
+        ? `the rewrite provider was unreachable, so these were never actually rewritten`
+        : `${anti.rounds} rewrite round(s)`;
       const msg =
-        `Validation failed: ${anti.linesUnresolved} line(s) still use the ` +
-        `balanced-negation frame after ${anti.rounds} rewrite round(s): ` +
-        anti.unresolved.map((u) => `#${u.lineIndex} [${u.speakerName}] ${u.kinds.join(",")}`).join("; ");
+        `${anti.linesUnresolved} line(s) still use the balanced-negation frame after ` +
+        `${provenance} (${anti.linesFixedDeterministically} cut without a model): ${detail}`;
       result.reasons.push(msg);
-      throw new Error(msg);
+
+      // Strict mode is opt-in, and even then a provider outage is not a
+      // quality verdict — there is nothing to judge if nothing ran.
+      if (antithesisEnforced() && !anti.rewriteUnavailable) {
+        throw new Error(`Validation failed: ${msg}`);
+      }
+      console.warn(`[ScriptService] ${msg} — lines flagged for human review, episode continues.`);
     }
   } catch (antiErr) {
     // A pass that ERRORS used to be indistinguishable from a pass that found
@@ -1099,6 +1127,7 @@ Delivery field meanings:
     // cannot be produced at full quality fails visibly instead of shipping
     // degraded.
     if (antithesisEnforced()) throw antiErr;
+    // Otherwise the pass erroring is a logged degradation, not a dead episode.
     const antiMsg = antiErr instanceof Error ? antiErr.message : String(antiErr);
     console.warn(`[ScriptService] antithesis pass failed: ${antiMsg}`);
     result.reasons.push(`Antithesis pass skipped (error): ${antiMsg}`);
