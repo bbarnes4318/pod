@@ -29,6 +29,66 @@ export function getSportsIngestSeason(now: Date = new Date()): string {
   return env || String(now.getUTCFullYear());
 }
 
+/**
+ * Leagues whose season SPANS the new year and is therefore labelled by the year
+ * it ENDS. The 2026-27 NBA season is season "2027", not "2026".
+ */
+const SPLIT_YEAR_LEAGUES = new Set(["NBA", "NHL", "NCAAB"]);
+
+/**
+ * Leagues that start in autumn and are labelled by the year they BEGIN. The
+ * 2026 NFL season runs Sep 2026 into Feb 2027 and is season "2026" throughout.
+ */
+const AUTUMN_START_LEAGUES = new Set(["NFL", "NCAAF"]);
+
+/**
+ * The season to ingest for ONE league, right now.
+ *
+ * Every league used to be handed the current calendar year, and for two of the
+ * three configured leagues that is correct: MLB 2026 runs inside 2026, and NFL
+ * 2026 is labelled by the year it starts. For NBA it is silently a season out
+ * of date for half the year.
+ *
+ * On 2026-08-23 the ingest asked SportsDataIO for NBA season "2026" and got the
+ * season that ENDED on 2026-04-12 — 1,239 games, all of them already stored and
+ * all of them in the past. Meanwhile the Odds API was returning prices for the
+ * 2026-27 season that starts in October. Those events had no Game row to attach
+ * to, so every odds snapshot was skipped and the job reported
+ * "oddsapi ingest for NBA wrote 0 rows ... matching Game not found in database".
+ * The odds matcher was never the problem: it cannot match a game nobody
+ * ingested.
+ *
+ * Past games are unaffected either way — Game rows persist, so last season stays
+ * available for a podcast to discuss. What was missing was the FUTURE half of
+ * the calendar, which is where an upcoming-game debate has to come from.
+ *
+ * SPORTS_INGEST_SEASON still forces one season across every league, for
+ * backfilling a specific year on purpose.
+ */
+export function seasonForLeague(leagueId: string, now: Date = new Date()): string {
+  const forced = (process.env.SPORTS_INGEST_SEASON || "").trim();
+  if (forced) return forced;
+
+  const league = (leagueId || "").trim().toUpperCase();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1; // 1-12
+
+  if (SPLIT_YEAR_LEAGUES.has(league)) {
+    // Seasons tip over in the summer: from July the relevant season is the one
+    // that tips into NEXT year, which is the one labelled year + 1.
+    return String(month >= 7 ? year + 1 : year);
+  }
+
+  if (AUTUMN_START_LEAGUES.has(league)) {
+    // Jan/Feb are the tail of the PREVIOUS season (playoffs), still labelled by
+    // the year that season began.
+    return String(month <= 2 ? year - 1 : year);
+  }
+
+  // MLB and anything else: one season, inside one calendar year.
+  return String(year);
+}
+
 /** Daily structured-data + odds ingest cadence. Default: 05:15 (provider TZ). */
 export function sportsIngestCron(): string {
   return validateCron(process.env.SPORTS_INGEST_CRON, "15 5 * * *");

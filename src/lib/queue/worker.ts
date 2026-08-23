@@ -81,6 +81,7 @@ import {
   SPORTS_ODDS_DELAY_MS,
   getSportsIngestLeagues,
   getSportsIngestSeason,
+  seasonForLeague,
   sportsIngestCron,
   sportsNewsCron,
   topicsGenerateCron,
@@ -539,17 +540,21 @@ function extractStatRows(record: any, fields: string[]): { statType: string; val
 // child job ids keep it idempotent. Records its own JobLog with what it dispatched.
 async function handleSportsIngestScheduler(job: Job) {
   const leagues = getSportsIngestLeagues();
-  const season = getSportsIngestSeason();
+  // Per league, not one year for all of them. A single calendar year is right
+  // for MLB and NFL and a season out of date for NBA half the year — which is
+  // why the odds job had no upcoming games to attach to. See seasonForLeague().
+  const seasons = Object.fromEntries(leagues.map((league) => [league, seasonForLeague(league)]));
   const dateKey = ingestDateKey();
   const jobLog = await db.jobLog.create({
-    data: { jobType: "scheduler:sports-ingest", status: "running", input: { leagues, season, dateKey } as any, output: {} },
+    data: { jobType: "scheduler:sports-ingest", status: "running", input: { leagues, seasons, dateKey } as any, output: {} },
   });
   const dispatched: any[] = [];
   try {
     for (const league of leagues) {
+      const season = seasons[league];
       const sio = await queueIngestionJob(
         { providerType: "sportsdataio", leagueId: league, sport: "", dateOrRange: season },
-        { jobId: `ingest-sio-${league}-${dateKey}` }
+        { jobId: `ingest-sio-${league}-${dateKey}-${season}` }
       );
       const odds = await queueIngestionJob(
         { providerType: "oddsapi", leagueId: league, sport: "", dateOrRange: "" },
@@ -559,7 +564,7 @@ async function handleSportsIngestScheduler(job: Job) {
     }
     await db.jobLog.update({
       where: { id: jobLog.id },
-      data: { status: "completed", output: { message: `Dispatched ${dispatched.length} league ingest(s).`, season, dateKey, dispatched } as any },
+      data: { status: "completed", output: { message: `Dispatched ${dispatched.length} league ingest(s).`, seasons, dateKey, dispatched } as any },
     });
     console.log(`[Worker] Sports-ingest scheduler dispatched ${dispatched.length} league(s) for ${dateKey}.`);
     return { success: true, dispatched };
