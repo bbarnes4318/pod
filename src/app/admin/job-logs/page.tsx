@@ -264,6 +264,17 @@ export default async function JobLogsPage(props: {
                       </td>
                       <td>
                         <span className={`badge ${badgeClass(log.status)}`}>{log.status.toUpperCase()}</span>
+                        {/* A retry now REUSES its row instead of writing a new
+                            one, so the retry has to say so here or it becomes
+                            invisible. */}
+                        {log.attempt > 1 ? (
+                          <>
+                            <br />
+                            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+                              attempt {log.attempt}
+                            </span>
+                          </>
+                        ) : null}
                       </td>
                       <td>
                         <span style={{ fontSize: "0.85rem", color: "var(--text-primary)" }}>

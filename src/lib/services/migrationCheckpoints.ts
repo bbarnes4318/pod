@@ -200,6 +200,27 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     invariants: [],
     note: "Additive partial unique index making listener-event dedupe a database invariant rather than a boundary convention. Excludes production-side measurements, which carry no listenerHash by design.",
   },
+  {
+    name: "20260816010000_podcast_quality_tier",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive nullable Podcast.qualityTier. Deliberately unbackfilled: null means 'never chosen', which must stay distinguishable from an explicit choice matching today's default.",
+  },
+  {
+    name: "20260816020000_episode_quality_tier",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive nullable Episode.qualityTier, same null semantics as the podcast-level column. A standalone episode has no podcast to inherit a tier from.",
+  },
+  {
+    name: "20260824000000_joblog_queue_job_key",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: [],
+    note: "Additive JobLog.queueJobKey (unique, nullable) + attempt. Makes a JobLog row the identity of one ENQUEUE rather than one attempt, so `attempts: 3` stops writing three rows per run. Existing rows keep queueJobKey NULL; Postgres permits many NULLs under a UNIQUE index, so no backfill is needed.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;

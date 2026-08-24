@@ -888,7 +888,9 @@
 }
 .boardTrailLink { color: var(--text-muted); font-weight: 600; }
 .boardTrailLink:hover { color: var(--text); background: var(--surface-2); }
-.boardTrailHere { color: var(--text); font-weight: 700; }
+/* The level you are on. cursor:default so it never reads as a control — it is
+   the one crumb in the trail that deliberately goes nowhere. */
+.boardTrailHere { color: var(--text); font-weight: 700; cursor: default; }
 .boardTrailSep { color: var(--text-muted); }
 
 .boardTileGrid {

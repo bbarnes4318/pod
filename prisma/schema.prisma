@@ -1120,6 +1120,14 @@ model JobLog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Identity of ONE enqueue of a queue job, shared by every attempt of it
+  // (`${bullmq job id}:${bullmq enqueue timestamp}`). A retry reuses the row
+  // instead of writing a new one, so an admin counting rows counts runs rather
+  // than attempts. Null for job logs written outside the queue (admin actions,
+  // services). Additive (migration 20260824000000).
+  queueJobKey String? @unique
+  attempt     Int     @default(1)
+
   @@index([jobType])
   @@index([status])
   @@index([createdAt])
