@@ -678,6 +678,149 @@
   padding: 0.75rem 1.5rem;
 }
 
+/* ---- Board controls: search / sort / view toggle -------------------------
+   One sticky row, pinned directly under the shell's own subbar (same offset
+   the create flow's rail already uses) so it stays reachable while the list
+   below it — which is the part of the board that can run to 50+ items — is
+   what actually scrolls. Search, sort, and the density toggle are pure
+   client state (see BoardControls.tsx); this bar never triggers a server
+   round-trip the way the league/team chips below it do. */
+.boardControlBar {
+  position: sticky;
+  top: calc(var(--studio-topbar-h) + var(--studio-subbar-h));
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding: 0.6rem 0.75rem;
+  margin: var(--sp-4) 0 var(--sp-3);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: var(--radius-lg);
+}
+
+.boardSearchField {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 220px;
+  min-width: 160px;
+  color: var(--text-muted);
+}
+.boardSearchField svg {
+  position: absolute;
+  left: 0.7rem;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+}
+.boardSearchInput { padding-left: 2.15rem; }
+/* Chrome/Safari's native "clear" glyph inside type=search inherits nothing
+   from .input by default, which looks like a stray mark on this surface. */
+.boardSearchInput::-webkit-search-cancel-button { filter: grayscale(1) opacity(0.6); }
+
+.boardSortField { flex-shrink: 0; }
+.boardControlSelect {
+  width: auto;
+  min-width: 152px;
+  padding: 0.55rem 2rem 0.55rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.boardViewToggle {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.boardViewBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.boardViewBtn + .boardViewBtn { border-left: 1px solid var(--border); }
+.boardViewBtn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.boardViewBtn:hover { color: var(--text); background: var(--surface-2); }
+/* The active view is the one place this bar uses Signal Orange — it is a
+   selected-state, the same exception .boardTile.is-active already carries
+   for the browse chips below it. */
+.boardViewBtn.is-active { color: var(--bg); background: var(--accent); }
+.boardViewBtn.is-active:hover { background: var(--accent-hover); }
+
+/* ---- Dense table view -----------------------------------------------------
+   The alternative to .boardGrid for the same data: one row per take instead
+   of a ~150px card, for scanning many at once rather than reading a few
+   closely. overflow-x on the wrapper (not the page) is what keeps a narrow
+   viewport from scrolling horizontally. */
+.boardTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.boardTable {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+}
+.boardTable thead th {
+  text-align: left;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.boardTableHeatCol { width: 1%; }
+.boardTableLeagueCol { width: 1%; }
+.boardTableActionCol { width: 1%; }
+.boardTableRow td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  vertical-align: middle;
+}
+.boardTableRow:last-child td { border-bottom: none; }
+/* A hint of the lead team's own colour on hover — the row-level echo of what
+   .boardCard--featured does with a full wash, kept to a whisper here since
+   there can be dozens of rows on screen at once. */
+.boardTableRow:hover td {
+  background: color-mix(in srgb, var(--take-accent) 7%, var(--surface-2));
+}
+.boardTableIdent { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.boardTableTitle {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46ch;
+}
+.boardTableWhy {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 34ch;
+}
+.boardTableAction { padding: 0.35rem 0.75rem; font-size: 0.76rem; white-space: nowrap; }
+
 /* Take grid — collapses to one column on phones. */
 .boardGrid {
   display: grid;
@@ -688,6 +831,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
+  /* A hair lighter than the flat --surface .studioCard sets, with blur —
+     depth from translucency rather than a drop shadow, matching the
+     topbar/subbar treatment already used for chrome. */
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(6px);
 }
 .boardCardTop {
   display: flex;
@@ -696,17 +844,23 @@
   flex-wrap: wrap;
   gap: 0.6rem;
 }
+/* 15.7px / semibold — a strict 2-line clamp (inherited from .epTitle) rather
+   than the 3-line one this used to carry. Headlines run long on a sports
+   board ("Is the Padres' bullpen collapse a result of bad roster
+   construction or bad luck?"); three lines of that per card is most of why
+   the old grid read as a wall. Two lines plus an ellipsis is enough to judge
+   whether to open it. */
 .boardCardTitle {
-  font-size: 1.08rem;
-  -webkit-line-clamp: 3;
+  font-size: 0.98rem;
+  font-weight: 600;
   margin: 0.1rem 0;
 }
 .boardWhy {
-  font-size: 0.82rem;
-  line-height: 1.5;
+  font-size: 0.8rem;
+  line-height: 1.45;
   color: var(--text-muted);
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -724,7 +878,21 @@
   vertical-align: 1px;
 }
 .boardCardFoot { margin-top: auto; padding-top: 0.35rem; }
-.boardGenBtn { width: 100%; }
+.boardGenBtn { width: 100%; justify-content: center; }
+/* Solid Signal Orange is reserved for the hottest-three hero cards
+   (.boardCard--featured uses plain .btnPrimary). Every other card — which is
+   most of them, on a healthy board — gets this quiet outline instead, so the
+   page is not fifty identical orange rectangles shouting at once. Still a
+   full-width, easy target; the quiet is in the color, not the size. */
+.boardGenBtn--quiet {
+  font-size: 0.86rem;
+  padding: 0.55rem 1.1rem;
+}
+.boardGenBtn--quiet:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
 
 /* Heat badge — icon + label + score + color, so it never relies on color
    alone. Amber for the hottest, neutral / muted for cooler takes. Signal
@@ -867,56 +1035,76 @@
   box-shadow: none;
 }
 
-/* ---- Browse: League -> Conference -> Team ------------------------------- */
-.boardBrowse { margin-bottom: var(--sp-2); }
+/* ---- Browse: League -> Conference -> Team --------------------------------
+   Same component, same crumbs/tiles/hrefs/testids as the original grid-of-
+   cards version (BoardBrowser.tsx is unchanged) — only the shape changed,
+   from a tall grid of ~140px tiles to a row of chips that wraps. A 32-team
+   league used to be several screens of squares; it is now 3-4 short rows. */
+.boardBrowseLabel {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: var(--sp-4) 0 0.4rem;
+}
+.srOnly + .boardBrowseLabel { margin-top: 0; }
+.boardBrowse {
+  margin-bottom: var(--sp-3);
+  padding: 0.7rem 0.8rem;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border-radius: var(--radius-lg);
+}
 
 .boardTrail {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
-  font-size: 0.82rem;
-  margin-bottom: var(--sp-3);
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  margin-bottom: 0.55rem;
 }
 .boardTrailLink,
 .boardTrailHere {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.24rem 0.5rem;
-  border-radius: var(--radius-sm);
+  gap: 0.35rem;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
 }
-.boardTrailLink { color: var(--text-muted); font-weight: 600; }
-.boardTrailLink:hover { color: var(--text); background: var(--surface-2); }
+.boardTrailLink { color: var(--text-muted); font-weight: 600; background: var(--surface-2); border-color: var(--border); }
+.boardTrailLink:hover { color: var(--text); border-color: var(--border-hover); }
 /* The level you are on. cursor:default so it never reads as a control — it is
    the one crumb in the trail that deliberately goes nowhere. */
-.boardTrailHere { color: var(--text); font-weight: 700; cursor: default; }
+.boardTrailHere { color: var(--text); font-weight: 700; cursor: default; border-color: var(--border-hover); }
 .boardTrailSep { color: var(--text-muted); }
 
+/* Chips, not cards: a flex row that wraps, instead of a grid of squares. */
 .boardTileGrid {
   list-style: none;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
-  gap: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
 }
 .boardTile {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.34rem;
-  height: 100%;
-  padding: 0.95rem 0.6rem 0.7rem;
-  text-align: center;
+  gap: 0.4rem;
+  height: auto;
+  padding: 0.4rem 0.75rem 0.4rem 0.5rem;
+  text-align: left;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  border-radius: 999px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .boardTile:hover {
   background: var(--surface-2);
   border-color: var(--tile-accent);
-  transform: translateY(-2px);
 }
 /* The chosen tile keeps its team colour on the edge so the current filter is
    readable at a glance — with aria-current carrying the same fact for anyone
@@ -927,37 +1115,34 @@
   box-shadow: inset 0 0 0 1px var(--tile-accent);
 }
 /* Nothing waiting here right now. Dimmed, never hidden: a fan looking for a
-   team needs to find it and be told, not have it vanish from the grid. */
-.boardTile.is-quiet { opacity: 0.6; }
+   team needs to find it and be told, not have it vanish from the strip. */
+.boardTile.is-quiet { opacity: 0.55; }
 .boardTile.is-quiet:hover,
 .boardTile.is-quiet:focus-visible { opacity: 1; }
 
 .boardTileLabel {
-  font-size: 0.79rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  line-height: 1.25;
-  color: var(--text);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.boardTileSub {
-  font-size: 0.67rem;
-  color: var(--text-muted);
   line-height: 1.2;
-}
-.boardTileCount {
-  margin-top: auto;
-  padding-top: 0.4rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--text);
-  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.boardTileCount.is-zero { color: var(--text-muted); font-weight: 600; }
+/* Redundant at chip size — the label alone (or the count beside it) already
+   says what this is; a conference name under every one of 130+ team chips
+   was pure repetition. */
+.boardTileSub { display: none; }
+.boardTileCount {
+  margin-top: 0;
+  padding-top: 0;
+  padding-left: 0.4rem;
+  border-left: 1px solid var(--border);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.boardTileCount.is-zero { opacity: 0.75; }
 
 /* ---- Take cards -------------------------------------------------------- */
 .boardCardIdent {
@@ -976,15 +1161,27 @@
   font-weight: 700;
   color: var(--text-muted);
 }
-.boardTeamLine {
-  font-size: 0.78rem;
+/* Team metadata as small pills instead of one wrapped/truncated line — scans
+   as data rather than as a sentence, and each pill's overflow cap matches
+   the crest row above it (see TeamChips in BoardTakeCard.tsx). */
+.boardTeamChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: -0.3rem;
+}
+.boardTeamChip {
+  font-size: 0.68rem;
   font-weight: 600;
   color: var(--text-muted);
-  margin-top: -0.35rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.14rem 0.55rem;
+  line-height: 1.3;
   white-space: nowrap;
 }
+.boardTeamChip--more { color: var(--text); font-weight: 700; }
 
 /* The three that stay in the open. Wider cards, and a wash of the first
    team's own colour — the one place a team colour drives the surface. */
@@ -1024,9 +1221,9 @@
   .boardFeedDetail { text-align: left; }
   .boardHeroCta { width: 100%; }
   .boardGrid, .boardGrid--featured, .boardStrip { grid-template-columns: 1fr; }
-  .boardTileGrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; }
-  .boardTile { padding: 0.75rem 0.4rem 0.6rem; }
-  .boardLogo--lg { width: 38px; height: 38px; }
+  .boardControlBar { flex-wrap: wrap; }
+  .boardSearchField { flex-basis: 100%; }
+  .boardViewToggle { margin-left: 0; }
 }
 
 /* ============================================================
