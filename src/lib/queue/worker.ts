@@ -13,14 +13,27 @@ import { e2eResearchResult } from "../research/e2eResearchStub";
 // Fail loudly on startup if production configuration is invalid
 assertProductionEnv();
 
-import { Worker, Job } from "bullmq";
+import { Worker, Job, UnrecoverableError } from "bullmq";
 import { getRedisClient } from "../redis";
 import { db } from "../db";
 import { getSportsDataProvider, isStubSportsProvider } from "../providers/sports/factory";
 import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
 import { withLlmStage, withLlmJob, llmCostMark, llmCostSince } from "../providers/llm/costLedger";
 import { withRoutingProfile } from "../providers/llm/profiles";
-import { profileForTier, toQualityTier } from "../providers/llm/qualityTiers";
+import {
+  DEFAULT_QUALITY_TIER,
+  formatTierDuration,
+  profileForTier,
+  tierInfo,
+  toQualityTier,
+  type QualityTier,
+} from "../providers/llm/qualityTiers";
+import {
+  budgetExceededMessage,
+  budgetExceededOperatorNote,
+  fmtMinutes,
+  scriptGenerationBudgetMs,
+} from "./scriptBudget";
 import { reconcileOrphanedJobLogsOnBoot } from "../services/jobLogReconciliation";
 
 // Captured before any job can start, so "predates this process" is a fact
@@ -3096,6 +3109,46 @@ async function chainProductionStage(scriptId: string): Promise<ChainResult> {
 }
 
 // 6. Script Generator Handler
+/**
+ * Run `fn`, or give up on it after `budgetMs` — see scriptBudget.ts for why a
+ * ceiling exists at all and how it is sized.
+ *
+ * UnrecoverableError, not a plain throw: script jobs carry `attempts: 3`
+ * (podcastQueue.ts), so an ordinary failure here would re-run the whole thing
+ * twice more and spend three budgets discovering the same wedged provider.
+ *
+ * WHAT THIS DOES NOT DO: cancel the underlying work. No cancellation signal is
+ * plumbed through the routing chain into the provider calls, so the abandoned
+ * run may still be in flight — and may still write its script — after this
+ * fires. What ends here is the JOB: the log row goes terminal with a diagnosis,
+ * the episode stops reading as "generating", and the user gets a verdict and a
+ * retry instead of a spinner. Threading real cancellation down to the fetch is
+ * the honest follow-up; a bounded job is the part that unblocks a user today.
+ */
+async function withScriptBudget<T>(budgetMs: number, tier: QualityTier, fn: () => Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const startedAt = Date.now();
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          // Two audiences, two messages. The operator's names the role to go
+          // look at; the creator's is kept short because humanFailure()
+          // truncates at 220 characters and a diagnosis cut off mid-sentence
+          // helps nobody.
+          console.error(budgetExceededOperatorNote(budgetMs, tier));
+          reject(new UnrecoverableError(budgetExceededMessage(Date.now() - startedAt, tier)));
+        }, budgetMs);
+        // A pending timer must not be the reason this process stays alive.
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
 
@@ -3133,9 +3186,21 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       .catch(() => null);
     const chosenTier = tierRow?.qualityTier ?? tierRow?.podcast?.qualityTier;
     const runScript = () => withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
-    const res = chosenTier
-      ? await withRoutingProfile(profileForTier(toQualityTier(chosenTier)), runScript)
-      : await runScript();
+
+    // The budget is sized against the tier the user was SHOWN. An unchosen tier
+    // routes by the deployment default, so it is measured against the default's
+    // promise — the alternative is holding a user to a window nobody quoted them.
+    const budgetTier = chosenTier ? toQualityTier(chosenTier) : DEFAULT_QUALITY_TIER;
+    const budgetMs = scriptGenerationBudgetMs(budgetTier);
+    console.log(
+      `[Worker] Script Generation budget: ${fmtMinutes(budgetMs)} (${tierInfo(budgetTier).label} tier, expects ${formatTierDuration(budgetTier)})`
+    );
+
+    const res = await withScriptBudget(budgetMs, budgetTier, () =>
+      chosenTier
+        ? withRoutingProfile(profileForTier(toQualityTier(chosenTier)), runScript)
+        : runScript()
+    );
 
     await db.jobLog.update({
       where: { id: jobLog.id },
