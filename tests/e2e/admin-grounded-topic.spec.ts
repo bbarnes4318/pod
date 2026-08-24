@@ -22,10 +22,25 @@ const desktopOnly = (t: { project: { name: string } }) => t.project.name === "de
 
 test.afterAll(async () => { await closeE2eDb(); });
 
+// The heaviest browser flow in the suite, and — being first alphabetically —
+// the one that pays for compiling /admin/episodes. The app under test runs in
+// dev mode, where a route is built on its first request, and the CORE test
+// alone navigates there four times before it creates an episode. Against the
+// 120s default that left no room for the work the test actually asserts, and
+// the two longest tests failed on the clock rather than on a defect: one timed
+// out mid-flow, the other reported ERR_ABORTED on a goto issued while the
+// server was still compiling. Nothing here is skipped or loosened — only the
+// budget is honest about the cold start.
+test.describe.configure({ timeout: 240_000 });
+
 const uniqueTitle = (s: string) => `${s} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
 async function gotoAdmin(page: Page) {
-  await page.goto("/admin/episodes");
+  // An explicit navigation budget: the default is inherited from the test
+  // timeout, so a slow first compile consumed the whole test before the first
+  // assertion ran. domcontentloaded rather than load — the page is asserted on
+  // by its own sentinel below, and waiting for every subresource adds nothing.
+  await page.goto("/admin/episodes", { timeout: 120_000, waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("admin-rundown")).toBeVisible({ timeout: 60_000 });
 }
 

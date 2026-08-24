@@ -82,6 +82,14 @@ test.describe("Audio asset isolation in the browser", () => {
     await page.goto(`/app/podcasts/${E2E.podcastId}/sound`);
     await expect(page.getByTestId("sound-branding")).toBeVisible({ timeout: 60_000 });
     await page.getByTestId("mode-custom").check();
+    // Custom mode arrives with the intro/outro bookends switched on, and the
+    // save refuses an enabled bookend that has no variant behind it
+    // (bookend_enabled_without_asset). This test is about asset ISOLATION, not
+    // bookend configuration, so switch them off rather than drag two more
+    // seeded assets into it — otherwise the save never lands and the real
+    // assertions below never run.
+    await page.getByTestId("intro-enabled").uncheck();
+    await page.getByTestId("outro-enabled").uncheck();
     await page.getByTestId("pool-stinger-add").selectOption(asset!.id);
     await page.getByTestId("sound-save").click();
     await expect(page.getByTestId("sound-status")).not.toContainText("Working", { timeout: 90_000 });

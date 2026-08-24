@@ -1,8 +1,17 @@
 // Sound & Branding UI (PR 2): sonic identity, variant pools, preview resolution.
 // DB-only + UI — no LLM/TTS/network/paid APIs. Uses ORDINARY browser
 // interactions only: real .click() / keyboard — never force:true,
-// dispatchEvent, or direct handler invocation. The persistent player bar is
-// visible throughout; the sticky action footer keeps Save/Preview clickable.
+// dispatchEvent, or direct handler invocation, so a control that something
+// else covers fails these tests rather than being poked through the covering.
+//
+// This page MOVED from /app to /studio. /app/podcasts/[id]/sound is now a
+// redirect shim, and the studio shell — unlike the /app one — renders no
+// persistent player bar (PlayerProvider lives only in src/app/app/layout.tsx).
+// The old precondition here asserted that bar was visible and therefore failed
+// every test in the file at the first line of gotoSound. What it was really
+// protecting is unchanged and still covered: Save and Preview must be
+// reachable and clickable by ordinary mouse and keyboard, under whatever
+// chrome the surface has.
 
 import { test, expect, type Page } from "@playwright/test";
 import { e2eDb, closeE2eDb } from "./db";
@@ -25,11 +34,12 @@ async function seedAssets() {
 }
 
 async function gotoSound(page: Page) {
-  await page.goto(`/app/podcasts/${E2E.podcastId}/sound`);
+  // Straight to where the page actually lives, rather than through the shim.
+  await page.goto(`/studio/shows/${E2E.podcastId}/sound`);
   await expect(page.getByTestId("sound-branding")).toBeVisible();
-  // The persistent player bar must be present so these tests genuinely prove
-  // the sticky footer keeps the actions clickable underneath it.
-  await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
+  // The sticky action footer is what has to stay reachable; assert it is there
+  // before any test relies on clicking Save inside it.
+  await expect(page.getByTestId("sound-actions")).toBeVisible();
 }
 
 test.afterAll(async () => { await closeE2eDb(); });
@@ -47,15 +57,16 @@ test.describe("Sound & Branding", () => {
   });
 
   // Runs on ALL projects (desktop + tablet + mobile): proves a NORMAL mouse
-  // click on Save works with the player bar visible on every viewport.
-  test("Blocker 1: Save is clickable with a normal click while the player bar is visible", async ({ page }) => {
+  // click on Save works on every viewport, including the narrow ones where the
+  // sticky footer and the page content compete for the same pixels.
+  test("Blocker 1: Save is clickable with a normal click", async ({ page }) => {
     await seedAssets();
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
     await page.getByTestId("pool-intro-add").selectOption("e2e-intro-a");
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
-    // No force, no dispatchEvent — an ordinary click. Passes strict actionability
-    // because the sticky footer sits above the fixed player; nothing intercepts.
+    // No force, no dispatchEvent — an ordinary click, which only passes strict
+    // actionability if nothing is covering the button.
     await page.getByTestId("sound-save").click();
     await expect(page.getByTestId("sound-status")).toContainText(/Saved|attention/i, { timeout: 15000 });
     await expect(page.getByTestId("sound-status")).toBeInViewport();

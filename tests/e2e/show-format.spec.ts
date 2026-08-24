@@ -12,14 +12,38 @@ import { e2eDb, closeE2eDb } from "./db";
 const desktopOnly = (t: { project: { name: string } }) => t.project.name === "desktop";
 test.afterAll(async () => { await closeE2eDb(); });
 
+// Kept deliberately in step with studio-rundown.spec.ts's helper of the same
+// name — this copy had drifted from it in two ways, and each one was fatal:
+//
+//   1. It probed for Discard with a bare isVisible() the instant the page
+//      loaded. Discard is portalled into the shell topbar, and portalled
+//      content is never in the server HTML, so the probe answered "no" before
+//      hydration, the draft was never discarded, and the flow reopened on
+//      whatever step that draft had been left on.
+//   2. Discard now takes two clicks — it asks for confirmation.
 async function gotoCreate(page: Page) {
   await page.goto("/studio/create");
+  // save-status is portalled into the shell subbar by <StudioPageHeader>, so
+  // its presence is proof the header mounted — and therefore that Discard is
+  // mounted too, if there is a draft to discard.
+  await page.locator('[data-testid="save-status"]').waitFor({ state: "attached", timeout: 30_000 });
   const discard = page.getByTestId("discard-draft");
   if (await discard.isVisible().catch(() => false)) {
     await discard.click();
+    await page.getByTestId("discard-confirm").click();
     await page.waitForLoadState("networkidle").catch(() => {});
   }
-  await expect(page.getByTestId("mode-manual")).toBeVisible({ timeout: 60_000 });
+  // Step one asks exactly ONE question — which show — so this is the landing
+  // sentinel. `mode-manual` is NOT: it moved onto the topics step, to sit with
+  // the topics it governs.
+  await expect(page.getByTestId("podcast-standalone")).toBeVisible({ timeout: 60_000 });
+}
+
+/** Open the topics step, where the pick-them-yourself control now lives. */
+async function toManualTopics(page: Page) {
+  await page.getByTestId("step-topics").click();
+  await expect(page.getByTestId("board-filter-note")).toBeVisible();
+  await page.getByTestId("mode-manual").click();
 }
 
 test.describe("Show-format engine in the browser", () => {
@@ -29,9 +53,7 @@ test.describe("Show-format engine in the browser", () => {
 
     await gotoCreate(page);
     // Manual mode with one topic so creation succeeds.
-    await page.getByTestId("mode-manual").click();
-    await page.getByTestId("step-topics").click();
-    await expect(page.getByTestId("board-filter-note")).toBeVisible();
+    await toManualTopics(page);
     const firstPick = page.locator('[data-testid^="pick-"]:not([disabled])').first();
     await firstPick.check();
 
@@ -80,9 +102,7 @@ test.describe("Show-format engine in the browser", () => {
     test.skip(!desktopOnly(ti));
     const db = e2eDb();
     await gotoCreate(page);
-    await page.getByTestId("mode-manual").click();
-    await page.getByTestId("step-topics").click();
-    await expect(page.getByTestId("board-filter-note")).toBeVisible();
+    await toManualTopics(page);
     await page.locator('[data-testid^="pick-"]:not([disabled])').first().check();
     await page.getByTestId("step-review").click();
     await page.getByTestId("create-episode").click();
