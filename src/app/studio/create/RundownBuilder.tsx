@@ -14,6 +14,7 @@ import {
   saveStudioRundownDraft,
   discardStudioRundownDraft,
   startDebate,
+  setEpisodeQualityTier,
 } from "../../app/create/actions";
 import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 import type { RundownDraftState, RundownStep } from "@/lib/services/studioDraft";
@@ -26,7 +27,13 @@ import TopicRundownPicker from "@/components/rundown/TopicRundownPicker";
 import RundownTray from "@/components/rundown/RundownTray";
 import ProductionConsole from "../ProductionConsole";
 import QualityTierPicker from "../QualityTierPicker";
-import type { QualityTier } from "@/lib/providers/llm/qualityTiers";
+import {
+  DEFAULT_QUALITY_TIER,
+  formatTierCost,
+  formatTierDuration,
+  tierInfo,
+  type QualityTier,
+} from "@/lib/providers/llm/qualityTiers";
 
 type Mode = "manual" | "automatic" | "hybrid";
 export interface BuilderPodcast { id: string; name: string; verticals: string[]; teamIds: string[]; teamNames: string[]; segmentCount: number; hostIds: string[]; format?: string | null; }
@@ -383,7 +390,8 @@ export default function RundownBuilder({
     } finally { setSubmitting(false); }
   };
 
-  if (result && result.success) return <ResultView result={result} topicsById={byId} />;
+  if (result && result.success)
+    return <ResultView result={result} topicsById={byId} initialTier={qualityTier} inheritsFromShow={!!podcastId} />;
 
   const stepIndex = STEPS.findIndex((s) => s.key === step);
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - selectedIds.length) : mode === "automatic" ? targetTopicCount : 0;
@@ -398,7 +406,12 @@ export default function RundownBuilder({
       : mode === "hybrid" ? `${selectedIds.length} pinned + ${autoSlots}`
       : selectedIds.length ? `${selectedIds.length} picked` : "Nothing picked yet",
     hosts: hosts.filter((h) => hostIds.includes(h.id)).map((h) => h.name).join(" + ") || "No hosts",
-    production: `${productionStyle} · ${sfxDensity}`,
+    // THE TIER LEADS THIS LINE. Sound-design level and SFX density change how
+    // the episode sounds; the tier is the only thing here that decides whether
+    // it costs money and whether it takes three minutes or twelve. A rail that
+    // summarised the Production step as "clean · medium" hid the one setting a
+    // user would want to check before pressing the button.
+    production: `${qualityTier ? tierInfo(qualityTier).label : podcastId ? "Show's tier" : `${tierInfo(DEFAULT_QUALITY_TIER).label} (default)`} · ${productionStyle} · ${sfxDensity}`,
     review: `~${estimate.estimatedDurationMinutes} min`,
   };
 
@@ -737,7 +750,7 @@ export default function RundownBuilder({
           orderedSelected={mode === "automatic" ? [] : orderedSelected} leadTopicId={leadTopicId} targetTopicCount={targetTopicCount}
           hosts={hosts.filter((h) => hostIds.includes(h.id))} ttsProvider={ttsProvider} productionStyle={productionStyle}
           sfxDensity={sfxDensity} title={title} setTitle={setTitle} description={description} setDescription={setDescription}
-          estimate={estimate} validation={validation}
+          estimate={estimate} validation={validation} qualityTier={qualityTier}
           prefs={{ verticals, leagueIds, teams, sport, minDebateScore }}
         />
       )}
@@ -888,10 +901,10 @@ function AutoPrefs({
 /* ---------------- Review ---------------- */
 function ReviewStep({
   mode, podcast, orderedSelected, leadTopicId, targetTopicCount, hosts, ttsProvider, productionStyle, sfxDensity,
-  title, setTitle, description, setDescription, estimate, validation, prefs,
+  title, setTitle, description, setDescription, estimate, validation, prefs, qualityTier,
 }: {
   mode: Mode; podcast: BuilderPodcast | null; orderedSelected: StudioTopicVM[]; leadTopicId: string | null; targetTopicCount: number;
-  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string;
+  hosts: BuilderHost[]; ttsProvider: string; productionStyle: string; sfxDensity: string; qualityTier: QualityTier | null;
   title: string; setTitle: (v: string) => void; description: string; setDescription: (v: string) => void;
   estimate: ReturnType<typeof estimateRundown>; validation: { ok: boolean; error?: string };
   prefs: { verticals: string[]; leagueIds: string[]; teams: string[]; sport: string; minDebateScore: number | null };
@@ -931,6 +944,21 @@ function ReviewStep({
         <dt className="fieldLabel">Hosts</dt><dd>{hosts.map((h) => h.name).join(" + ") || "Default pairing"}</dd>
         <dt className="fieldLabel">Voice</dt><dd>{ttsProvider || "Host default"}</dd>
         <dt className="fieldLabel">Production</dt><dd>{productionStyle} · {sfxDensity} SFX</dd>
+        {/* The review grid summarised every setting that changes how the episode
+            SOUNDS and none of the one that decides what it costs. */}
+        <dt className="fieldLabel">Writing</dt>
+        <dd data-testid="review-tier">
+          {qualityTier ? (
+            <>
+              {tierInfo(qualityTier).label} · {formatTierCost(qualityTier)} · {formatTierDuration(qualityTier)}
+              {tierInfo(qualityTier).speedWarning ? <span className="noteWarn"> ⚠ slower tier</span> : null}
+            </>
+          ) : podcast ? (
+            "Inherits this show's tier"
+          ) : (
+            `${tierInfo(DEFAULT_QUALITY_TIER).label} (default) · ${formatTierCost(DEFAULT_QUALITY_TIER)} · ${formatTierDuration(DEFAULT_QUALITY_TIER)}`
+          )}
+        </dd>
         <dt className="fieldLabel">Estimate</dt><dd>~{estimate.estimatedDurationMinutes} min · ~{estimate.estimatedWords.toLocaleString()} words · {estimate.estimatedCostUsd !== null ? `~$${estimate.estimatedCostUsd.toFixed(2)}` : "cost provider-dependent"}</dd>
       </dl>
       {warnings.length > 0 && (
@@ -944,11 +972,54 @@ function ReviewStep({
 }
 
 /* ---------------- Result (item 13: startDebate error handling) ---------------- */
-function ResultView({ result, topicsById }: { result: Extract<CreateResult, { success: true }>; topicsById: Map<string, StudioTopicVM> }) {
+/**
+ * THE LAST SCREEN BEFORE ANY MONEY IS SPENT.
+ *
+ * "Start the debate" is the button that actually commits an episode to a set of
+ * models — nothing before it calls a paid provider. The tier was choosable four
+ * steps earlier, on the Production step of a five-step wizard, and then never
+ * mentioned again: the rundown, the confirmation copy and the button itself all
+ * stayed silent about whether pressing it would cost $1.75 or nothing, and
+ * whether it would take three minutes or twelve.
+ *
+ * That is not a real choice. A setting buried behind a step the user has
+ * already walked past is one they will not remember making, and the first time
+ * they learn which tier they are on is when the bill or the wait arrives. So
+ * the tier is restated HERE, changeable in place (setEpisodeQualityTier accepts
+ * it for exactly as long as the episode is still a draft, which is now), with
+ * the cost and the duration next to the button that commits to both.
+ */
+function ResultView({
+  result,
+  topicsById,
+  initialTier,
+  inheritsFromShow,
+}: {
+  result: Extract<CreateResult, { success: true }>;
+  topicsById: Map<string, StudioTopicVM>;
+  initialTier: QualityTier | null;
+  inheritsFromShow: boolean;
+}) {
   const reduced = result.finalOrder.length < result.requestedCount;
   const [starting, setStarting] = useState(false);
   const [started, setStarted] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [tier, setTier] = useState<QualityTier | null>(initialTier);
+
+  // What the run will ACTUALLY use when nothing was picked. An unchosen tier
+  // resolves episode -> podcast -> deployment default at generation time
+  // (worker.ts), so the only honest thing to show for a standalone episode is
+  // the deployment default itself rather than a blank.
+  const effective = tier ?? (inheritsFromShow ? null : DEFAULT_QUALITY_TIER);
+
+  const saveTier = async (next: QualityTier) => {
+    if (!result.episodeId) throw new Error("No episode id.");
+    const res = await setEpisodeQualityTier(result.episodeId, next);
+    // QualityTierPicker renders a thrown message inline; returning quietly on a
+    // rejected save would leave the card showing a tier the server never took.
+    if (!res.ok) throw new Error(res.error);
+    setTier(next);
+  };
   const start = async () => {
     setStarting(true); setStartError(null);
     try {
@@ -1007,12 +1078,32 @@ function ResultView({ result, topicsById }: { result: Extract<CreateResult, { su
           <ul className="createReasons">{result.rejectedTopics.map((r, i) => <li key={i}>{topicsById.get(r.id)?.title ?? r.id}: {r.reason}</li>)}</ul>
         </div>
       )}
+      {/* The free-or-paid choice, at the moment it is actually being made. */}
+      <div className="mt-4" data-testid="result-tier">
+        <QualityTierPicker value={tier} onChange={saveTier} disabled={starting} />
+        {tier === null && inheritsFromShow ? (
+          <p className="hintText mt-2">Not set for this episode — it will use the show&apos;s tier.</p>
+        ) : null}
+      </div>
+
       {startError && <p role="alert" data-testid="start-error" className="noteWarn mt-3">{startError}</p>}
+
+      {/* Cost and wait restated ON the commit, not four steps behind it. The
+          free tier's wait is the headline here for the same reason it leads its
+          badge: it is the surprise, and this is the last chance to avoid it. */}
+      {effective ? (
+        <p className="stageHint mt-3" data-testid="start-cost-note">
+          Pressing Start writes this episode with <strong>{tierInfo(effective).label}</strong> —{" "}
+          {formatTierCost(effective)}, about {formatTierDuration(effective)} before the script is ready.
+          {tierInfo(effective).speedWarning ? " That wait is normal for this tier, not a stall." : ""}
+        </p>
+      ) : null}
+
       <div className="stageActions mt-4">
         <Link href={`/studio/episodes/${result.episodeId}`} className="btnGhost">Open episode</Link>
         <button type="button" data-testid="start-debate" className="btnPrimary u-mlAuto" disabled={starting} aria-busy={starting} onClick={start}>
           {starting && <span className="btnSpin" aria-hidden="true" />}
-          {starting ? "Starting…" : "Start the debate →"}
+          {starting ? "Starting…" : effective ? `Start the debate — ${formatTierCost(effective)} →` : "Start the debate →"}
         </button>
       </div>
     </div>

@@ -203,6 +203,7 @@
     "test:per-model-pricing": "tsx src/scripts/testPerModelPricing.ts",
     "test:free-profile": "tsx src/scripts/testFreeProfile.ts",
     "test:quality-tiers": "tsx src/scripts/testQualityTiers.ts",
+    "test:script-budget": "tsx src/scripts/testScriptBudget.ts",
     "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts",
     "test:env-name-guard": "tsx src/scripts/testEnvNameGuard.ts",
     "logos:manifest": "tsx src/scripts/generateSportsLogoManifest.ts",
