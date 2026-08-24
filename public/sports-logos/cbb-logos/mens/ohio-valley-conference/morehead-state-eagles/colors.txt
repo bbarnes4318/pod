@@ -1,0 +1,2 @@
+primary=#094FA3
+alternate=#fed91a

@@ -1,0 +1,2 @@
+primary=#d10000
+alternate=#101010

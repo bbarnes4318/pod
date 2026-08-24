@@ -144,6 +144,13 @@ export default function QualityTierPicker({
 
       {error ? <p className="error" role="alert">{error}</p> : null}
 
+      {/* Colours are token-only, with NO literal fallback. These rules used to
+          read `var(--accent, <some blue>)`: a second definition of the palette
+          that no stylesheet knows about, never the same colour as the token,
+          and the one that renders the day a token is renamed — so the bypass
+          surfaces as a WRONG colour rather than a missing one. globals.css
+          defines every token used here on :root; there is nothing to fall back
+          from. The studio-tokens spec fails the build on a literal here. */}
       <style jsx>{`
         .tier-picker { display: flex; flex-direction: column; gap: 12px; }
         h3 { margin: 0; font-size: 15px; font-weight: 600; }
@@ -152,22 +159,22 @@ export default function QualityTierPicker({
         .option {
           display: flex; flex-direction: column; gap: 4px; text-align: left;
           padding: 12px; border-radius: 10px; cursor: pointer;
-          border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
-          background: var(--surface-2, transparent); color: inherit;
+          border: 1px solid var(--border);
+          background: var(--surface-2); color: inherit;
         }
-        .option:hover:not(:disabled) { border-color: var(--accent, #6aa1ff); }
+        .option:hover:not(:disabled) { border-color: var(--accent); }
         .option:disabled { opacity: 0.6; cursor: default; }
-        .option.selected { border-color: var(--accent, #6aa1ff); box-shadow: inset 0 0 0 1px var(--accent, #6aa1ff); }
+        .option.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
         .name { font-weight: 600; font-size: 14px; }
         .busy { font-weight: 400; opacity: 0.7; font-size: 12px; }
         .badge { font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.85; }
         .summary { font-size: 12px; opacity: 0.7; line-height: 1.35; }
-        .detail { border-radius: 10px; padding: 10px 12px; background: var(--surface-2, rgba(127, 127, 127, 0.08)); }
+        .detail { border-radius: 10px; padding: 10px 12px; background: var(--surface-2); }
         .warn {
           margin: 0 0 8px; font-size: 13px; line-height: 1.4;
           padding: 8px 10px; border-radius: 8px;
-          background: rgba(220, 150, 40, 0.14);
-          border: 1px solid rgba(220, 150, 40, 0.4);
+          background: var(--warning-muted);
+          border: 1px solid var(--warning-border);
         }
         dl { margin: 0; display: flex; flex-direction: column; gap: 6px; }
         dl > div { display: grid; grid-template-columns: 92px 1fr; gap: 8px; }
@@ -176,7 +183,7 @@ export default function QualityTierPicker({
         code { font-size: 12px; }
         .unset, .error { margin: 0; font-size: 12px; }
         .unset { opacity: 0.7; }
-        .error { color: #d66; }
+        .error { color: var(--error-text); }
       `}</style>
     </section>
   );

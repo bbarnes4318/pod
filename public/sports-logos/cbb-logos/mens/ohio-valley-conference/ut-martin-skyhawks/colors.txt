@@ -1,0 +1,2 @@
+primary=#FF6700
+alternate=#102a5c

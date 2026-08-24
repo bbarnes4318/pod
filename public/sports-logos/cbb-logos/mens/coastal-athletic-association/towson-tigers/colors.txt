@@ -1,0 +1,2 @@
+primary=#FFC229
+alternate=#

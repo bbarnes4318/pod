@@ -1,0 +1,2 @@
+primary=#500000
+alternate=#ffffff

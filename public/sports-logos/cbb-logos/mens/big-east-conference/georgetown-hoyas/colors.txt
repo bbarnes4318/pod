@@ -1,0 +1,2 @@
+primary=#110E42
+alternate=#001c58

@@ -1,0 +1,2 @@
+primary=#AD0000
+alternate=#898d8f

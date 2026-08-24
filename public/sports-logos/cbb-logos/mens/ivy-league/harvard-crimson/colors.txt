@@ -1,0 +1,2 @@
+primary=#990000
+alternate=#dbdbdb

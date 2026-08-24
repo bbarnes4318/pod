@@ -1,0 +1,2 @@
+primary=#dc4405
+alternate=#000000

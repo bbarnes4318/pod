@@ -1,0 +1,2 @@
+primary=#ceb888
+alternate=#000000

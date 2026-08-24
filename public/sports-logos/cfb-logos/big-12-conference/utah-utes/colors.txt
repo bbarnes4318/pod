@@ -1,0 +1,2 @@
+primary=#be0000
+alternate=#ffffff

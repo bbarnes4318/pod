@@ -1,0 +1,2 @@
+primary=#860038
+alternate=#ffffff

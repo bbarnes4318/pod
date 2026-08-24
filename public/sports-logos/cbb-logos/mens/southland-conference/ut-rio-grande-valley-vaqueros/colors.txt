@@ -1,0 +1,2 @@
+primary=#dc6000
+alternate=#e1732d

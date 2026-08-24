@@ -1,0 +1,2 @@
+primary=#cc0000
+alternate=#000000

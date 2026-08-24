@@ -1,0 +1,2 @@
+primary=#CE1126
+alternate=#ffe716

@@ -1,0 +1,2 @@
+primary=#EE3024
+alternate=#df3e2e

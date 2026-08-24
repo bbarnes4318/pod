@@ -1,0 +1,2 @@
+primary=#cba052
+alternate=#cba052

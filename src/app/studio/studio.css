@@ -400,6 +400,16 @@
 }
 .sectionAction:hover { color: var(--accent-hover); }
 
+/* A count beside a section title — how much of the board a filter is showing.
+   Not a link, so deliberately quieter than .sectionAction. */
+.sectionCount {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
 .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; }
 
@@ -650,6 +660,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.6rem;
 }
 .boardCardTitle {
@@ -759,12 +770,218 @@
   margin-top: auto;
 }
 
+/* ---- Crests -------------------------------------------------------------
+
+   One box, three states: the mark, a monogram under it for the handful of
+   entries that ship no art (cfb-logos/fbs-independents is an empty folder),
+   and a light plate for marks that are dark in every variant they ship. The
+   manifest measures which is which — see generateSportsLogoManifest.ts. */
+.boardLogo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.boardLogo--sm { width: 18px; height: 18px; }
+.boardLogo--md { width: 26px; height: 26px; }
+.boardLogo--lg { width: 46px; height: 46px; }
+.boardLogo--xl { width: 64px; height: 64px; }
+
+.boardLogoImg {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* Stands IN FOR a mark that does not exist, so it is real reading matter and
+   takes --text: at 9-10px bold, --text-muted lands at 3.3:1 on this surface
+   and fails the contrast floor. */
+.boardLogoMonogram {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.boardLogo--plate {
+  background: var(--logo-plate);
+  padding: 3px;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* ---- Browse: League -> Conference -> Team ------------------------------- */
+.boardBrowse { margin-bottom: var(--sp-2); }
+
+.boardTrail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  margin-bottom: var(--sp-3);
+}
+.boardTrailLink,
+.boardTrailHere {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.24rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+.boardTrailLink { color: var(--text-muted); font-weight: 600; }
+.boardTrailLink:hover { color: var(--text); background: var(--surface-2); }
+.boardTrailHere { color: var(--text); font-weight: 700; }
+.boardTrailSep { color: var(--text-muted); }
+
+.boardTileGrid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+  gap: 0.7rem;
+}
+.boardTile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.34rem;
+  height: 100%;
+  padding: 0.95rem 0.6rem 0.7rem;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+.boardTile:hover {
+  background: var(--surface-2);
+  border-color: var(--tile-accent);
+  transform: translateY(-2px);
+}
+/* The chosen tile keeps its team colour on the edge so the current filter is
+   readable at a glance — with aria-current carrying the same fact for anyone
+   the colour does not reach. */
+.boardTile.is-active {
+  background: var(--surface-2);
+  border-color: var(--tile-accent);
+  box-shadow: inset 0 0 0 1px var(--tile-accent);
+}
+/* Nothing waiting here right now. Dimmed, never hidden: a fan looking for a
+   team needs to find it and be told, not have it vanish from the grid. */
+.boardTile.is-quiet { opacity: 0.6; }
+.boardTile.is-quiet:hover,
+.boardTile.is-quiet:focus-visible { opacity: 1; }
+
+.boardTileLabel {
+  font-size: 0.79rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.boardTileSub {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  line-height: 1.2;
+}
+.boardTileCount {
+  margin-top: auto;
+  padding-top: 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.boardTileCount.is-zero { color: var(--text-muted); font-weight: 600; }
+
+/* ---- Take cards -------------------------------------------------------- */
+.boardCardIdent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.takeCrests {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.takeCrestMore {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.boardTeamLine {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-top: -0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The three that stay in the open. Wider cards, and a wash of the first
+   team's own colour — the one place a team colour drives the surface. */
+.boardGrid--featured {
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+}
+.boardCard--featured {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface);
+  /* Declared after the flat fallback so a browser without color-mix keeps a
+     surface rather than dropping the whole declaration. */
+  background:
+    radial-gradient(115% 85% at 0% 0%, color-mix(in srgb, var(--take-accent) 20%, transparent), transparent 60%),
+    var(--surface);
+  border-color: color-mix(in srgb, var(--take-accent) 34%, var(--border));
+}
+.boardCard--featured::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--take-accent), transparent);
+}
+.boardCard--featured .boardCardTitle { font-size: 1.2rem; }
+.boardRank {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
 @media (max-width: 560px) {
   .boardHead { align-items: flex-start; }
   .boardHeadAside { justify-items: flex-start; width: 100%; }
   .boardFeedDetail { text-align: left; }
   .boardHeroCta { width: 100%; }
-  .boardGrid, .boardStrip { grid-template-columns: 1fr; }
+  .boardGrid, .boardGrid--featured, .boardStrip { grid-template-columns: 1fr; }
+  .boardTileGrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 0.5rem; }
+  .boardTile { padding: 0.75rem 0.4rem 0.6rem; }
+  .boardLogo--lg { width: 38px; height: 38px; }
 }
 
 /* ============================================================

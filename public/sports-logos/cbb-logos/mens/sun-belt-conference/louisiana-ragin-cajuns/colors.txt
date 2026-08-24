@@ -1,0 +1,2 @@
+primary=#ce181e
+alternate=#000000

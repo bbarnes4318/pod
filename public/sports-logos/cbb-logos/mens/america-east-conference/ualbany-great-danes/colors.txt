@@ -1,0 +1,2 @@
+primary=#3D2777
+alternate=#ffffff

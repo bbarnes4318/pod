@@ -1,0 +1,2 @@
+primary=#CD1241
+alternate=#f0f0f0

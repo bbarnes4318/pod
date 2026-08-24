@@ -1,0 +1,2 @@
+primary=#002462
+alternate=#dac792

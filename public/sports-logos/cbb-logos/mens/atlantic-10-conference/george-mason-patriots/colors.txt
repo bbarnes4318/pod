@@ -1,0 +1,2 @@
+primary=#016600
+alternate=#ecb010

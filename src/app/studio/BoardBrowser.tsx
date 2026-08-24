@@ -1,0 +1,96 @@
+import React from "react";
+import Link from "next/link";
+import BoardLogo from "./BoardLogo";
+
+/**
+ * The Board's league → conference → team drill-down.
+ *
+ * Deliberately plain links over URL state rather than a client-side tree: the
+ * whole logo manifest is ~600 teams, and shipping it to the browser to power a
+ * picker would cost more than every take on the page put together. Navigating
+ * by href keeps the payload to the level actually on screen, makes every view
+ * shareable and back-button-correct, and means the drill-down works before (and
+ * without) hydration.
+ *
+ * This component is presentational — the page decides what a level contains.
+ */
+
+export interface BrowseCrumb {
+  label: string;
+  /** Absent on the current level, which is not a link. */
+  href?: string;
+  logo?: string;
+  plate?: boolean;
+}
+
+export interface BrowseTile {
+  key: string;
+  href: string;
+  label: string;
+  /** Conference short name, team count — one short line. */
+  sublabel?: string;
+  logo?: string;
+  plate?: boolean;
+  monogram?: string;
+  /** Takes waiting on this league / conference / team right now. */
+  count: number;
+  active?: boolean;
+  /** Team primary colour, used for the tile's edge when it is chosen. */
+  accent?: string;
+}
+
+export default function BoardBrowser({
+  crumbs,
+  tiles,
+  label,
+}: {
+  crumbs: BrowseCrumb[];
+  tiles: BrowseTile[];
+  /** Names the grid for screen readers: "Leagues", "SEC teams". */
+  label: string;
+}) {
+  return (
+    <div className="boardBrowse">
+      <nav className="boardTrail" aria-label="Browse takes by team">
+        {crumbs.map((c, i) => (
+          <React.Fragment key={`${c.label}-${i}`}>
+            {i > 0 && <span className="boardTrailSep" aria-hidden="true">›</span>}
+            {c.href ? (
+              <Link href={c.href} className="boardTrailLink">
+                {c.logo && <BoardLogo src={c.logo} plate={c.plate} alt="" size="sm" />}
+                {c.label}
+              </Link>
+            ) : (
+              <span className="boardTrailHere" aria-current="page">
+                {c.logo && <BoardLogo src={c.logo} plate={c.plate} alt="" size="sm" />}
+                {c.label}
+              </span>
+            )}
+          </React.Fragment>
+        ))}
+      </nav>
+
+      <ul className="boardTileGrid" aria-label={label}>
+        {tiles.map((t) => (
+          <li key={t.key}>
+            <Link
+              href={t.href}
+              className={`boardTile${t.active ? " is-active" : ""}${t.count === 0 ? " is-quiet" : ""}`}
+              aria-current={t.active ? "true" : undefined}
+              data-testid="board-tile"
+              data-tile={t.key}
+              style={{ "--tile-accent": t.accent || "var(--border-hover)" } as React.CSSProperties}
+            >
+              <BoardLogo src={t.logo} plate={t.plate} monogram={t.monogram} alt="" size="lg" />
+              <span className="boardTileLabel">{t.label}</span>
+              {t.sublabel && <span className="boardTileSub">{t.sublabel}</span>}
+              <span className={`boardTileCount${t.count === 0 ? " is-zero" : ""}`}>
+                {t.count === 0 ? "No takes" : `${t.count} take${t.count === 1 ? "" : "s"}`}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

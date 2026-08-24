@@ -60,6 +60,12 @@
   --host-c: #2EC27E;
   --host-d: #B78AF7;
 
+  /* Light plate behind a team crest that is dark in every variant it ships.
+     ~30 of the ~600 marks in public/sports-logos are (the Pac-12 wordmark is
+     pure black); on --bg they would be an empty square. Off-white rather than
+     #fff so a white-on-transparent mark next to it does not look grey. */
+  --logo-plate: #F2F4F7;
+
   /* ------------------------------------------------------------
      Legacy aliases — load-bearing: every existing page consumes
      these names. They now resolve to the tokens above.

@@ -1,0 +1,2 @@
+primary=#005596
+alternate=#ebebeb
