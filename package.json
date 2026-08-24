@@ -93,6 +93,8 @@
     "test:rate-window-recovery": "tsx --conditions=react-server src/scripts/testRateWindowRecovery.ts",
     "test:on-demand-cost": "tsx src/scripts/testOnDemandRunCost.ts",
     "test:joblog-reconciliation": "tsx src/scripts/testJobLogReconciliation.ts",
+    "diagnose:script-runs": "tsx --conditions=react-server src/scripts/diagnoseScriptRuns.ts",
+    "test:script-run-diagnosis": "tsx --conditions=react-server src/scripts/testScriptRunDiagnosis.ts",
     "test:script-job-budget": "tsx --conditions=react-server src/scripts/testScriptJobBudget.ts",
     "test:episode-job-lock": "tsx --conditions=react-server src/scripts/testEpisodeJobLock.ts",
     "test:job-heartbeat": "tsx --conditions=react-server src/scripts/testJobHeartbeat.ts",
