@@ -50,7 +50,7 @@ interface Recorder {
   dnsCalls: string[];
 }
 
-function makeTransport(rec: Recorder, plan: StubResponse[] | ((hop: number) => StubResponse)) {
+function makeTransport(rec: Recorder, plan: StubResponse[] | ((hop: number) => StubResponse), lookupAll = false) {
   let hop = 0;
   const requestFn: any = (opts: any, cb: (res: any) => void) => {
     const spec = typeof plan === "function" ? plan(hop) : plan[Math.min(hop, plan.length - 1)];
@@ -63,8 +63,38 @@ function makeTransport(rec: Recorder, plan: StubResponse[] | ((hop: number) => S
       end() {
         // Invoke the pinned lookup EXACTLY as node's net stack would, and record
         // the address it hands back. This is what proves the pin.
-        opts.lookup(opts.hostname, { all: false }, (err: Error | null, address: string) => {
+        //
+        // `all` IS A PARAMETER BECAUSE NODE'S IS. This stub hardcoded
+        // `{ all: false }`, so every test here exercised the single-address
+        // convention and none exercised the array one — which is exactly how a
+        // shim that only implemented the first shipped. Since Node 20
+        // autoSelectFamily defaults to true, and for a dual-stack hostname the
+        // real net stack calls lookup with `all: true` and expects
+        // `{address, family}[]`. Answering that with a bare string makes Node
+        // read `addresses[0].address`, get undefined, and throw "Invalid IP
+        // address: undefined" — observed against sports.yahoo.com in
+        // production while v4-only hosts in the same sweep were fine.
+        opts.lookup(opts.hostname, { all: lookupAll }, (err: Error | null, result: any) => {
           if (err) { (listeners["error"] || []).forEach((f) => f(err)); return; }
+          let address: string;
+          if (lookupAll) {
+            if (!Array.isArray(result)) {
+              const e = new Error(
+                `lookup was called with all:true and answered with ${typeof result} instead of an array — ` +
+                  `node would read addresses[0].address and throw "Invalid IP address: undefined"`
+              );
+              (listeners["error"] || []).forEach((f) => f(e));
+              return;
+            }
+            address = result[0]?.address;
+            if (typeof address !== "string") {
+              const e = new Error(`lookup returned an array whose first entry has no string address`);
+              (listeners["error"] || []).forEach((f) => f(e));
+              return;
+            }
+          } else {
+            address = result;
+          }
           rec.connects.push({
             address,
             hostname: opts.hostname,
@@ -98,9 +128,14 @@ function makeTransport(rec: Recorder, plan: StubResponse[] | ((hop: number) => S
   return requestFn;
 }
 
-function deps(rec: Recorder, dns: Record<string, string[]> | ((h: string, call: number) => string[]), plan: StubResponse[] | ((hop: number) => StubResponse)): SafeFetchDeps {
+function deps(
+  rec: Recorder,
+  dns: Record<string, string[]> | ((h: string, call: number) => string[]),
+  plan: StubResponse[] | ((hop: number) => StubResponse),
+  lookupAll = false
+): SafeFetchDeps {
   const perHost: Record<string, number> = {};
-  const transport = makeTransport(rec, plan);
+  const transport = makeTransport(rec, plan, lookupAll);
   return {
     resolve: async (hostname: string) => {
       rec.dnsCalls.push(hostname);
@@ -291,6 +326,39 @@ async function main() {
     assert(res.ok, `expected success, got ${(res as any).category}`);
     assert(rec.dnsCalls.length === 1, `DNS was consulted ${rec.dnsCalls.length}× — it must be resolved ONCE and pinned`);
     assert(rec.connects[0].address === "93.184.216.34", `REBOUND: socket went to ${rec.connects[0].address}`);
+  });
+
+  await check("CORE: the pin answers node's all:true convention, so dual-stack hosts connect", async () => {
+    // THE REGRESSION. node's `lookup` option has two calling conventions:
+    //
+    //   all falsy → cb(err, address: string, family: number)
+    //   all true  → cb(err, addresses: {address, family}[])
+    //
+    // Since node 20 autoSelectFamily defaults to true, so for a hostname with
+    // both A and AAAA records the real net stack takes the SECOND path. The pin
+    // implemented only the first, so node read addresses[0].address, got
+    // undefined, and threw "Invalid IP address: undefined". In production that
+    // killed every sports.yahoo.com fetch — and, downstream, the research
+    // briefs that needed it ("no durable source survived validation") — while
+    // v4-only hosts in the same sweep succeeded, which is what made it look
+    // like a flaky feed rather than a bug in this file.
+    //
+    // Every other test here runs with all:false, which is precisely why this
+    // shipped: the harness only ever exercised the convention that worked.
+    const rec = newRec();
+    const res = await safeFetch(
+      "https://dualstack.test/a",
+      deps(rec, { "dualstack.test": ["93.184.216.34"] }, [{ body: "<p>" + "a".repeat(80) + "</p>" }], true)
+    );
+    assert(res.ok, `all:true lookup failed the fetch: ${(res as any).category} — ${(res as any).internal ?? ""}`);
+    // The pin must STILL be absolute on this path — one address, the validated
+    // one. A shim that answered all:true by handing back every DNS answer would
+    // pass the line above and reintroduce the rebinding hole.
+    assert(rec.connects.length === 1, `expected one connect, got ${rec.connects.length}`);
+    assert(
+      rec.connects[0].address === "93.184.216.34",
+      `all:true path connected to ${rec.connects[0].address} instead of the validated address`
+    );
   });
 
   await check("no cookies, Authorization, or API keys are ever sent", async () => {

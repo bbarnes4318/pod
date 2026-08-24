@@ -95,7 +95,22 @@ check("the worker's active JobLog preserves queueJobId and targetVersion", () =>
   assert(start !== -1, "script worker handler missing");
   const end = worker.indexOf("\nasync function ", start + 1);
   const body = worker.slice(start, end === -1 ? worker.length : end);
-  assert(/input:\s*job\.data as any/.test(body), "worker running log must preserve the tracked job payload");
+
+  // ASSERT THE CONTRACT, NOT THE LINE THAT USED TO IMPLEMENT IT. This required
+  // the literal `input: job.data as any` inside the handler. That write was
+  // refactored into the shared beginJobLog() helper — which still persists the
+  // payload verbatim (`input: json`, on both the create and the retry-reopen
+  // path in jobLogRecord.ts) — so the behaviour this test is named for is
+  // intact, and the check had been failing on main against correct code.
+  //
+  // What actually has to hold is that the handler opens its log through that
+  // helper AND hands it the tracked payload rather than a summary of it: the
+  // job table's episode link and queue identity are read back out of `input`.
+  assert(
+    /beginJobLog\(\s*job,\s*"generate:script",\s*job\.data\s*\)/.test(body),
+    "the script handler must open its JobLog via beginJobLog(job, ...) with the FULL job.data payload — " +
+      "the ops job table reads episode identity and queue identity back out of JobLog.input"
+  );
 });
 
 check("the operations page shows submitted jobs and refreshes without a manual reload", () => {

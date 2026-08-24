@@ -89,7 +89,17 @@ check("generate:topics CHAINS research-brief generation for every new topic", ()
 
 check("one failed brief enqueue does not lose the rest", () => {
   const body = handlerBody("handleTopicGeneration");
-  const loop = body.slice(body.indexOf("for (const topicId of insertedTopicIds)"));
+  // MATCH THE LOOP BY ITS SUBJECT, NOT ITS EXACT HEADER. This searched for the
+  // literal `for (const topicId of insertedTopicIds)`, which stopped existing
+  // when the loop started carrying an index for the stagger delay
+  // (`for (const [briefIndex, topicId] of insertedTopicIds.entries())`).
+  // indexOf then returned -1, slice(-1) handed the assertion the last character
+  // of the handler, and the check failed against code that was — and still is —
+  // correctly guarded. A test that reports a defect the source does not have
+  // costs more than no test: it trains you to read red as noise.
+  const loopStart = body.search(/for \(const [^)]*insertedTopicIds/);
+  assert(loopStart >= 0, "the per-topic brief enqueue loop over insertedTopicIds must exist");
+  const loop = body.slice(loopStart);
   assert(/try \{/.test(loop) && /catch/.test(loop),
     "the per-topic enqueue must be individually guarded — one failure must not abort the other topics' briefs");
 });

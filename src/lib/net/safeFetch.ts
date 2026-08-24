@@ -196,7 +196,46 @@ function requestOnce(
         // THE PIN. node calls this instead of resolving, so the socket can only
         // ever go to the address we already validated. A rebound DNS answer is
         // never consulted, because DNS is never consulted again.
-        lookup: (_hostname: string, _opts: unknown, cb: (err: Error | null, addr: string, fam: number) => void) => {
+        // NODE'S `lookup` HAS TWO CALLING CONVENTIONS, AND THIS SHIM ONLY HONOURED
+        // ONE — which silently broke every dual-stack host.
+        //
+        //   options.all falsy → cb(err, address: string, family: number)
+        //   options.all true  → cb(err, addresses: {address, family}[])
+        //
+        // Since Node 20, `autoSelectFamily` (Happy Eyeballs) defaults to TRUE,
+        // and for a hostname with both A and AAAA records net.connect calls
+        // this with `all: true` so it can race the families. Answering that
+        // with a bare string made Node read `addresses[0].address`, get
+        // `undefined`, and throw:
+        //
+        //   [safeFetch] fetch_failed: sports.yahoo.com: Invalid IP address: undefined
+        //
+        // Observed on every sports.yahoo.com fetch in the production worker log
+        // for 2026-08-24, while espn.com and cbssports.com in the same sweep
+        // were fine — those are v4-only, so Node never took the array path.
+        // The consequence is not a missing feed: research briefs downgrade to
+        // "no durable source survived validation" and the episode dies for want
+        // of grounded facts.
+        //
+        // THE PIN IS UNCHANGED AND STILL ABSOLUTE. Both branches return exactly
+        // the one address already validated above, so DNS is still never
+        // consulted a second time and a rebound answer still cannot be reached.
+        // Returning a single-element array does not let Node try anything else —
+        // there is nothing else in it.
+        lookup: (
+          _hostname: string,
+          opts: unknown,
+          cb: (
+            err: Error | null,
+            addr: string | { address: string; family: number }[],
+            fam?: number
+          ) => void
+        ) => {
+          const wantsAll = !!(opts as { all?: boolean } | null | undefined)?.all;
+          if (wantsAll) {
+            cb(null, [{ address: pinned.address, family: pinned.family }]);
+            return;
+          }
           cb(null, pinned.address, pinned.family);
         },
       } as https.RequestOptions,
