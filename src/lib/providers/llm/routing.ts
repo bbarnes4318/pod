@@ -41,6 +41,7 @@ import { MOONSHOT_DEFAULT_BASE_URL } from "./moonshot";
 import { GOOGLE_DEFAULT_BASE_URL } from "./google";
 import { buildProvider, supportedProviderList } from "./providerRegistry";
 import { DEFAULT_RATE_WINDOW_MS, longestRateWindowMs } from "./rateWindow";
+import { assertJobBudget, budgetedWaitMs, jobBudgetRemainingMs } from "../../jobBudget";
 
 export type CandidateSource =
   | "role_override"
@@ -469,6 +470,8 @@ export class RoutedLLMProvider implements LLMProvider {
     let fallbacks = 0;
     let stoppedEarly: { error: unknown; reason: string } | null = null;
     let rateLimitedThisPass = false;
+    /** Set when the job's wall clock ran out mid-chain. See jobBudget.ts. */
+    let budgetStopped = false;
     const waitPasses = rateWindowPasses();
 
     /**
@@ -520,6 +523,22 @@ export class RoutedLLMProvider implements LLMProvider {
         const next = this.plan.candidates[i + 1];
         const key = candidateKey(candidate);
         const identity = endpointIdentity(candidate);
+
+        // THE WALL CLOCK IS CHECKED BEFORE THE NEXT ACCOUNT, NOT AFTER.
+        //
+        // This chain is the multiplier that made a script job run for 4096
+        // seconds: every rung is worth up to three attempts of up to 240s, and
+        // an episode walks twenty-one of these chains. A rung started with no
+        // time left cannot deliver a script — it can only spend money and
+        // extend a job the operator is already watching in disbelief. Declining
+        // to start it is the whole fix.
+        if (jobBudgetRemainingMs() <= 0) {
+          budgetStopped = true;
+          failures.push(
+            `${key} [${candidate.source}] NOT TRIED — the job's wall-clock budget was already spent`
+          );
+          break;
+        }
 
         let provider: LLMProvider;
         try {
@@ -606,13 +625,21 @@ export class RoutedLLMProvider implements LLMProvider {
         }
       }
 
-      if (stoppedEarly || !rateLimitedThisPass || pass === waitPasses) break;
+      if (budgetStopped || stoppedEarly || !rateLimitedThisPass || pass === waitPasses) break;
 
       // Sized from what the providers themselves said (rateWindow.ts holds the
       // retry-after each one published, or the measured 60s default when it
       // published none), never from a guess made here.
       const providers = new Set(this.plan.candidates.map((c) => c.provider));
-      const waitMs = longestRateWindowMs(providers) || DEFAULT_RATE_WINDOW_MS;
+      // A wait that is CERTAIN to end after the job's deadline buys nothing: the
+      // chain would re-run only to be refused for having no time left. Under a
+      // budget this throws instead, naming the wait it declined to take, so the
+      // job log says "we chose not to wait 60s we did not have" rather than
+      // silently adding another minute to an already-overdue run.
+      const waitMs = budgetedWaitMs(
+        longestRateWindowMs(providers) || DEFAULT_RATE_WINDOW_MS,
+        `role '${this.plan.role}' rate-window wait before chain pass ${pass + 2}/${waitPasses + 1}`
+      );
       console.warn(
         `[LLMRouting] role=${this.plan.role} every candidate is inside a rate window that refills. ` +
           `Waiting ${Math.round(waitMs / 1000)}s and running the chain again ` +
@@ -623,6 +650,23 @@ export class RoutedLLMProvider implements LLMProvider {
       );
       await sleep(waitMs);
       fallbacks = 0;
+    }
+
+    // OUT OF TIME IS NOT OUT OF OPTIONS, and the report must not confuse them.
+    //
+    // Every candidate below may be perfectly healthy; the job simply has no
+    // clock left to try them on. Reporting that as "routing exhausted" would
+    // send the next operator to look for a provider outage that never happened,
+    // so the budget error is raised instead — with the chain's own history
+    // logged first, because that history is where the time actually went.
+    if (budgetStopped) {
+      console.warn(
+        `[LLMRouting] role=${this.plan.role} stopped on the job's wall-clock budget after ` +
+          `${failures.length} candidate(s):\n  - ${failures.join("\n  - ")}`
+      );
+      assertJobBudget(
+        `role '${this.plan.role}' fallback chain under profile '${this.plan.profile}'`
+      );
     }
 
     // A chain that failed on rate windows AFTER waiting them out is a different

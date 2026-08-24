@@ -105,6 +105,22 @@ records.
 |----------|----------|-----------|---------|---------|
 | NVIDIA NIM | `https://integrate.api.nvidia.com/v1` (+`/chat/completions`) | `NVIDIA_API_KEY` | `NVIDIA_REQUEST_TIMEOUT_MS` (240000) | `NVIDIA_MAX_RETRIES` (2) |
 | Z.ai | `https://api.z.ai/api/paas/v4` (+`/chat/completions`) | `ZAI_API_KEY` | `ZAI_REQUEST_TIMEOUT_MS` (240000) | `ZAI_MAX_RETRIES` (2) |
+| Anthropic | `https://api.anthropic.com/v1/messages` | `ANTHROPIC_API_KEY` | `ANTHROPIC_REQUEST_TIMEOUT_MS` (240000) | 2 (fixed) |
+
+### The job budget bounds all of the above
+
+Every timeout in that table governs ONE HTTP request, and they multiply:
+`timeout x attempts x chain rungs x rate-window passes x roles per episode`.
+Nothing multiplied them out until a script job ran for 4096 seconds on
+2026-08-24. A script job now carries a wall-clock budget
+(`SCRIPT_JOB_BUDGET_MS`, default 25 minutes — see `src/lib/jobBudget.ts`):
+
+* the routing chain will not START a rung once the budget is spent;
+* a rate-window wait that cannot fit inside the budget is refused, not taken;
+* each request timeout above is clamped to the budget that remains.
+
+A run stopped this way fails with `budgetExceeded` in its job log, which is a
+different report from a provider failure and points at a different fix.
 
 Z.ai's **general-purpose** API — not the coding-plan endpoint, which is a
 different product with a different shape.

@@ -64,6 +64,7 @@ function antithesisEnforced(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.ANTITHESIS_ALLOW_SOFT_FAIL === "true") return false;
   return env.ANTITHESIS_STRICT === "true";
 }
+import { JobBudgetExceededError } from "../jobBudget";
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 
@@ -695,6 +696,14 @@ Delivery field meanings:
       );
     }
   } catch (outlineErr: any) {
+    // RUNNING OUT OF CLOCK IS NOT A CREATIVE FAILURE, and must not be treated
+    // as one. Every recovery below — retry the creative path, then fall back to
+    // an emergency script — is a way of spending MORE time to rescue quality.
+    // Applied to a job that has already exceeded its wall-clock budget they
+    // would do the one thing the budget exists to prevent, and would end by
+    // shipping a deliberately degraded script for a run whose only defect was
+    // slowness. The budget error passes straight through, unrecovered.
+    if (outlineErr instanceof JobBudgetExceededError) throw outlineErr;
     // A creative-stage failure is NOT a licence to publish an ordinary script.
     //
     // Retry the creative path once before degrading: most failures here are
@@ -875,6 +884,9 @@ Delivery field meanings:
         `+${sv.latencyMs}ms, +${sv.tokensDelta.outputTokens} out / ${sv.tokensDelta.inputTokens} in tokens across ${sv.tokensDelta.requestCount} calls.`
     );
   } catch (svErr: any) {
+    // See the creative-stage catch: a budget stop is not a stage defect, and
+    // "skipped (error)" would file it as one.
+    if (svErr instanceof JobBudgetExceededError) throw svErr;
     console.warn(`[ScriptService] self-verify failed: ${svErr?.message}`);
     result.reasons.push(`Self-verify skipped (error): ${svErr?.message}`);
   }
@@ -1126,6 +1138,7 @@ Delivery field meanings:
     // episode's failure, matching the render-mode hardening — an episode that
     // cannot be produced at full quality fails visibly instead of shipping
     // degraded.
+    if (antiErr instanceof JobBudgetExceededError) throw antiErr;
     if (antithesisEnforced()) throw antiErr;
     // Otherwise the pass erroring is a logged degradation, not a dead episode.
     const antiMsg = antiErr instanceof Error ? antiErr.message : String(antiErr);

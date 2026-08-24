@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { heartbeatState } from "@/lib/queue/jobHeartbeat";
 import AutoRefresh from "./AutoRefresh";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +102,10 @@ function badgeClass(status: string): string {
   if (status === "completed") return "badgeCompleted";
   if (status === "failed") return "badgeFailed";
   if (status === "completed_with_errors") return "badgeWarning";
+  // A duplicate run that the episode lock declined. Not a failure — nothing
+  // broke and nothing was lost — but not work either, so it must not wear the
+  // running badge that started this whole investigation.
+  if (status === "skipped") return "badgeWarning";
   return "badgeRunning";
 }
 
@@ -189,6 +194,7 @@ export default async function JobLogsPage(props: {
               <option value="running">running</option>
               <option value="completed">completed</option>
               <option value="completed_with_errors">completed_with_errors</option>
+              <option value="skipped">skipped</option>
               <option value="failed">failed</option>
             </select>
           </div>
@@ -243,6 +249,26 @@ export default async function JobLogsPage(props: {
                         ? `Running ${elapsedSeconds}s`
                         : `Duration ${elapsedSeconds}s`;
 
+                  // IS IT WORKING, OR IS IT WRECKAGE? A climbing counter alone
+                  // cannot say. Jobs now touch their row while they run
+                  // (jobHeartbeat.ts), so a row that has gone quiet is called
+                  // out here instead of being read as an hour of live work.
+                  const beat =
+                    log.status === "running"
+                      ? heartbeatState(
+                          { createdAt: new Date(log.createdAt), updatedAt: new Date(log.updatedAt) },
+                          new Date(nowMs)
+                        )
+                      : null;
+                  const heartbeatLabel =
+                    beat?.kind === "stale"
+                      ? `no heartbeat for ${Math.round(beat.sinceMs / 60000)}m — almost certainly stranded, not working`
+                      : beat?.kind === "unknown"
+                        ? "no heartbeat recorded (job started before heartbeats shipped)"
+                        : beat
+                          ? `alive ${Math.round(beat.sinceMs / 1000)}s ago`
+                          : null;
+
                   const maskedInput = maskSecrets(log.input);
                   const maskedOutput = maskSecrets(log.output);
                   const maskedError = log.error ? maskSecrets(log.error) : null;
@@ -271,6 +297,19 @@ export default async function JobLogsPage(props: {
                         </span>
                         <br />
                         <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{elapsedLabel}</span>
+                        {heartbeatLabel ? (
+                          <>
+                            <br />
+                            <span
+                              style={{
+                                fontSize: "0.75rem",
+                                color: beat?.kind === "stale" ? "var(--error-color, #d33)" : "var(--text-secondary)",
+                              }}
+                            >
+                              {heartbeatLabel}
+                            </span>
+                          </>
+                        ) : null}
                       </td>
                       <td>
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem", fontSize: "0.85rem" }}>

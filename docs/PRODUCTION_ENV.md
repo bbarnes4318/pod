@@ -85,5 +85,7 @@ These variables are optional. Missing values will trigger **warnings** on readin
 | `DEEPGRAM_API_KEY` | API key for transcription validation | Key from deepgram |
 | `CARTESIA_API_KEY` | Backup TTS Cartesia API key | Key from cartesia |
 | `PODCAST_IMAGE_URL` | Podcast RSS cover image URL | `https://take-machine-media.hel1.your-objectstorage.com/assets/take-machine-cover.png` |
+| `SCRIPT_JOB_BUDGET_MS` | Wall-clock ceiling for ONE script-generation job. Before this existed, the only limits were per-HTTP-request and they multiplied — a single degraded provider account stretched a job to 4096 seconds with no ceiling (2026-08-24). A job that exceeds it stops cleanly and records `budgetExceeded`. Clamped to 5min–2h | `1500000` (25 minutes) |
+| `ANTHROPIC_REQUEST_TIMEOUT_MS` | Per-request timeout for the Anthropic transport. It previously had **none** — a connection that opened and went quiet held a job indefinitely | `240000` |
 
 *Note: SportsDataIO is legacy fallback only and is not required for production deployment.*

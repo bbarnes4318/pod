@@ -1,6 +1,9 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
 import { categoryOf } from "./errors";
+import { JobBudgetExceededError, budgetedWaitMs, clampTimeoutToBudget } from "../../jobBudget";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * THE ONE PLACE an Anthropic model id is declared valid.
@@ -133,10 +136,24 @@ export function anthropicSupportsAdaptiveThinking(model: string): boolean {
  *   honoring retry-after.
  * - Tracks cumulative token usage for cost reporting.
  */
+/**
+ * How long one Anthropic HTTP request may take.
+ *
+ * THIS PROVIDER HAD NO TIMEOUT AT ALL. Every other transport in this directory
+ * arms an AbortController (60s-240s depending on the account); this one called
+ * `fetch` bare, so a connection that opened and then went quiet held the job
+ * until the socket died of old age — which, for a Node client behind a proxy,
+ * can be never. Anthropic is the PAID backup rung, so the request most likely
+ * to hang was also the one running with the operator watching a counter tick
+ * past an hour. 240s matches the other long-form transports.
+ */
+export const ANTHROPIC_DEFAULT_TIMEOUT_MS = 240_000;
+
 export class AnthropicLLMProvider implements LLMProvider {
   name = "anthropic";
   private apiKey: string;
   private model: string;
+  private timeoutMs: number;
   private usage: LLMUsage = { inputTokens: 0, outputTokens: 0, requestCount: 0 };
 
   constructor(modelOverride?: string) {
@@ -146,6 +163,11 @@ export class AnthropicLLMProvider implements LLMProvider {
     }
     this.apiKey = key;
     this.model = modelOverride || process.env.ANTHROPIC_MODEL || ANTHROPIC_DEFAULT_MODEL;
+    const configured = Number(process.env.ANTHROPIC_REQUEST_TIMEOUT_MS);
+    this.timeoutMs =
+      Number.isFinite(configured) && configured >= 1_000
+        ? Math.floor(configured)
+        : ANTHROPIC_DEFAULT_TIMEOUT_MS;
   }
 
   getAccumulatedUsage(): LLMUsage {
@@ -262,6 +284,11 @@ export class AnthropicLLMProvider implements LLMProvider {
       state.attempts++;
       if (attempt > 0) state.retries++;
       const startedAt = Date.now();
+      // Clamped to whatever wall clock the job has left, so the paid rung can
+      // never be the reason a job outruns its budget (see jobBudget.ts).
+      const controller = new AbortController();
+      const attemptTimeoutMs = clampTimeoutToBudget(this.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), attemptTimeoutMs);
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -271,6 +298,7 @@ export class AnthropicLLMProvider implements LLMProvider {
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify(body),
+          signal: controller.signal,
         });
 
         if (response.ok) {
@@ -326,13 +354,27 @@ export class AnthropicLLMProvider implements LLMProvider {
         const retryAfter = Number(response.headers.get("retry-after"));
         const delayMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2000 * Math.pow(4, attempt);
         console.warn(`[Anthropic] ${response.status} — retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt + 1}/${maxRetries}).`);
-        await new Promise((r) => setTimeout(r, delayMs));
+        await sleep(budgetedWaitMs(delayMs, `Anthropic retry backoff for ${this.model}`));
       } catch (err: any) {
         if (err === lastErr) throw err; // non-retryable API error re-thrown above
+        // Out of clock is a decision this loop must not retry away.
+        if (err instanceof JobBudgetExceededError) throw err;
+        if (err?.name === "AbortError") {
+          throw new Error(
+            `[Anthropic] Request timed out after ${attemptTimeoutMs}ms` +
+              (attemptTimeoutMs < this.timeoutMs
+                ? ` (clamped from ${this.timeoutMs}ms by the job's remaining budget).`
+                : ". Raise ANTHROPIC_REQUEST_TIMEOUT_MS if this model legitimately needs longer.")
+          );
+        }
         // Network-level failure — retry unless out of attempts
         lastErr = err;
         if (attempt === maxRetries) throw err;
-        await new Promise((r) => setTimeout(r, 2000 * Math.pow(4, attempt)));
+        await sleep(
+          budgetedWaitMs(2000 * Math.pow(4, attempt), `Anthropic retry backoff for ${this.model}`)
+        );
+      } finally {
+        clearTimeout(timer);
       }
     }
     throw lastErr || new Error("[Anthropic] Request failed.");
