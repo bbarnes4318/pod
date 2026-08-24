@@ -9,6 +9,7 @@ export interface TakeCrest {
   name: string;
   logo: string;
   plate: boolean;
+  opaque: boolean;
   primary?: string;
 }
 
@@ -59,7 +60,7 @@ function Crests({ crests, size }: { crests: TakeCrest[]; size: "sm" | "md" }) {
   return (
     <span className="takeCrests">
       {shown.map((c) => (
-        <BoardLogo key={`${c.leagueId}/${c.slug}`} src={c.logo} plate={c.plate} alt="" size={size} />
+        <BoardLogo key={`${c.leagueId}/${c.slug}`} src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size={size} />
       ))}
       {extra > 0 && <span className="takeCrestMore">+{extra}</span>}
     </span>

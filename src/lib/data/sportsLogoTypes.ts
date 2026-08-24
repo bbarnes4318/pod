@@ -14,8 +14,10 @@ export interface LogoTeam {
   abbr: string;
   /** Public path to the variant chosen for a dark surface. */
   logo: string;
-  /** The mark needs a light plate behind it to be legible. */
+  /** A TRANSPARENT mark too dark to read on the studio surface — back it. */
   plate: boolean;
+  /** The mark carries its own background — clip it to the tile, do not back it. */
+  opaque: boolean;
   /** Team primary colour from the folder's colors.txt, when present. */
   primary?: string;
   alternate?: string;
@@ -28,6 +30,7 @@ export interface LogoConference {
   shortName: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
   teams: LogoTeam[];
 }
 
@@ -41,6 +44,7 @@ export interface LogoLeague {
   slug: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
   /** Empty for the pro leagues; populated for college. */
   conferences: LogoConference[];
   /** Every team in the league, flattened (college included). */

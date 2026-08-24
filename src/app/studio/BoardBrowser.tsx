@@ -21,6 +21,7 @@ export interface BrowseCrumb {
   href?: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
 }
 
 export interface BrowseTile {
@@ -31,6 +32,7 @@ export interface BrowseTile {
   sublabel?: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
   monogram?: string;
   /** Takes waiting on this league / conference / team right now. */
   count: number;
@@ -57,12 +59,12 @@ export default function BoardBrowser({
             {i > 0 && <span className="boardTrailSep" aria-hidden="true">›</span>}
             {c.href ? (
               <Link href={c.href} className="boardTrailLink">
-                {c.logo && <BoardLogo src={c.logo} plate={c.plate} alt="" size="sm" />}
+                {c.logo && <BoardLogo src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size="sm" />}
                 {c.label}
               </Link>
             ) : (
               <span className="boardTrailHere" aria-current="page">
-                {c.logo && <BoardLogo src={c.logo} plate={c.plate} alt="" size="sm" />}
+                {c.logo && <BoardLogo src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size="sm" />}
                 {c.label}
               </span>
             )}
@@ -81,7 +83,7 @@ export default function BoardBrowser({
               data-tile={t.key}
               style={{ "--tile-accent": t.accent || "var(--border-hover)" } as React.CSSProperties}
             >
-              <BoardLogo src={t.logo} plate={t.plate} monogram={t.monogram} alt="" size="lg" />
+              <BoardLogo src={t.logo} plate={t.plate} opaque={t.opaque} monogram={t.monogram} alt="" size="lg" />
               <span className="boardTileLabel">{t.label}</span>
               {t.sublabel && <span className="boardTileSub">{t.sublabel}</span>}
               <span className={`boardTileCount${t.count === 0 ? " is-zero" : ""}`}>

@@ -13,6 +13,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
     "slug": "nfl",
     "logo": "/sports-logos/nfl/nfl-dark.png",
     "plate": false,
+    "opaque": false,
     "conferences": [],
     "teams": [
       {
@@ -20,224 +21,256 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Arizona Cardinals",
         "abbr": "ARI",
         "logo": "/sports-logos/nfl/arizona-cardinals/ARI-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "atlanta-falcons",
         "name": "Atlanta Falcons",
         "abbr": "ATL",
         "logo": "/sports-logos/nfl/atlanta-falcons/ATL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "baltimore-ravens",
         "name": "Baltimore Ravens",
         "abbr": "BAL",
         "logo": "/sports-logos/nfl/baltimore-ravens/BAL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "buffalo-bills",
         "name": "Buffalo Bills",
         "abbr": "BUF",
         "logo": "/sports-logos/nfl/buffalo-bills/BUF-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "carolina-panthers",
         "name": "Carolina Panthers",
         "abbr": "CAR",
         "logo": "/sports-logos/nfl/carolina-panthers/CAR-dark.png",
-        "plate": true
+        "plate": true,
+        "opaque": false
       },
       {
         "slug": "chicago-bears",
         "name": "Chicago Bears",
         "abbr": "CHI",
         "logo": "/sports-logos/nfl/chicago-bears/CHI-dark.png",
-        "plate": true
+        "plate": true,
+        "opaque": false
       },
       {
         "slug": "cincinnati-bengals",
         "name": "Cincinnati Bengals",
         "abbr": "CIN",
         "logo": "/sports-logos/nfl/cincinnati-bengals/CIN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "cleveland-browns",
         "name": "Cleveland Browns",
         "abbr": "CLE",
         "logo": "/sports-logos/nfl/cleveland-browns/CLE-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "dallas-cowboys",
         "name": "Dallas Cowboys",
         "abbr": "DAL",
         "logo": "/sports-logos/nfl/dallas-cowboys/DAL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "denver-broncos",
         "name": "Denver Broncos",
         "abbr": "DEN",
         "logo": "/sports-logos/nfl/denver-broncos/DEN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "detroit-lions",
         "name": "Detroit Lions",
         "abbr": "DET",
         "logo": "/sports-logos/nfl/detroit-lions/DET-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "green-bay-packers",
         "name": "Green Bay Packers",
         "abbr": "GB",
         "logo": "/sports-logos/nfl/green-bay-packers/GB-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "houston-texans",
         "name": "Houston Texans",
         "abbr": "HOU",
         "logo": "/sports-logos/nfl/houston-texans/HOU-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "indianapolis-colts",
         "name": "Indianapolis Colts",
         "abbr": "IND",
         "logo": "/sports-logos/nfl/indianapolis-colts/IND-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "jacksonville-jaguars",
         "name": "Jacksonville Jaguars",
         "abbr": "JAX",
         "logo": "/sports-logos/nfl/jacksonville-jaguars/JAX-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "kansas-city-chiefs",
         "name": "Kansas City Chiefs",
         "abbr": "KC",
         "logo": "/sports-logos/nfl/kansas-city-chiefs/KC-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "las-vegas-raiders",
         "name": "Las Vegas Raiders",
         "abbr": "LV",
         "logo": "/sports-logos/nfl/las-vegas-raiders/LV-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "los-angeles-chargers",
         "name": "Los Angeles Chargers",
         "abbr": "LAC",
         "logo": "/sports-logos/nfl/los-angeles-chargers/LAC-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "los-angeles-rams",
         "name": "Los Angeles Rams",
         "abbr": "LAR",
         "logo": "/sports-logos/nfl/los-angeles-rams/LAR-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "miami-dolphins",
         "name": "Miami Dolphins",
         "abbr": "MIA",
         "logo": "/sports-logos/nfl/miami-dolphins/MIA-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "minnesota-vikings",
         "name": "Minnesota Vikings",
         "abbr": "MIN",
         "logo": "/sports-logos/nfl/minnesota-vikings/MIN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-england-patriots",
         "name": "New England Patriots",
         "abbr": "NE",
         "logo": "/sports-logos/nfl/new-england-patriots/NE-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-orleans-saints",
         "name": "New Orleans Saints",
         "abbr": "NO",
         "logo": "/sports-logos/nfl/new-orleans-saints/NO-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-york-giants",
         "name": "New York Giants",
         "abbr": "NYG",
         "logo": "/sports-logos/nfl/new-york-giants/NYG-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-york-jets",
         "name": "New York Jets",
         "abbr": "NYJ",
         "logo": "/sports-logos/nfl/new-york-jets/NYJ-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "philadelphia-eagles",
         "name": "Philadelphia Eagles",
         "abbr": "PHI",
         "logo": "/sports-logos/nfl/philadelphia-eagles/PHI-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "pittsburgh-steelers",
         "name": "Pittsburgh Steelers",
         "abbr": "PIT",
         "logo": "/sports-logos/nfl/pittsburgh-steelers/PIT-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "san-francisco-49ers",
         "name": "San Francisco 49ers",
         "abbr": "SF",
         "logo": "/sports-logos/nfl/san-francisco-49ers/SF-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "seattle-seahawks",
         "name": "Seattle Seahawks",
         "abbr": "SEA",
         "logo": "/sports-logos/nfl/seattle-seahawks/SEA-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "tampa-bay-buccaneers",
         "name": "Tampa Bay Buccaneers",
         "abbr": "TB",
         "logo": "/sports-logos/nfl/tampa-bay-buccaneers/TB-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "tennessee-titans",
         "name": "Tennessee Titans",
         "abbr": "TEN",
         "logo": "/sports-logos/nfl/tennessee-titans/TEN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "washington-commanders",
         "name": "Washington Commanders",
         "abbr": "WSH",
         "logo": "/sports-logos/nfl/washington-commanders/WSH-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       }
     ]
   },
@@ -249,6 +282,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
     "slug": "nba",
     "logo": "/sports-logos/nba/nba-dark.png",
     "plate": false,
+    "opaque": false,
     "conferences": [],
     "teams": [
       {
@@ -256,210 +290,240 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Atlanta Hawks",
         "abbr": "ATL",
         "logo": "/sports-logos/nba/atlanta-hawks/ATL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "boston-celtics",
         "name": "Boston Celtics",
         "abbr": "BOS",
         "logo": "/sports-logos/nba/boston-celtics/BOS-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "brooklyn-nets",
         "name": "Brooklyn Nets",
         "abbr": "BKN",
         "logo": "/sports-logos/nba/brooklyn-nets/BKN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "charlotte-hornets",
         "name": "Charlotte Hornets",
         "abbr": "CHA",
         "logo": "/sports-logos/nba/charlotte-hornets/CHA-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "chicago-bulls",
         "name": "Chicago Bulls",
         "abbr": "CHI",
         "logo": "/sports-logos/nba/chicago-bulls/CHI-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "cleveland-cavaliers",
         "name": "Cleveland Cavaliers",
         "abbr": "CLE",
         "logo": "/sports-logos/nba/cleveland-cavaliers/CLE-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "dallas-mavericks",
         "name": "Dallas Mavericks",
         "abbr": "DAL",
         "logo": "/sports-logos/nba/dallas-mavericks/DAL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "denver-nuggets",
         "name": "Denver Nuggets",
         "abbr": "DEN",
         "logo": "/sports-logos/nba/denver-nuggets/DEN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "detroit-pistons",
         "name": "Detroit Pistons",
         "abbr": "DET",
         "logo": "/sports-logos/nba/detroit-pistons/DET-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "golden-state-warriors",
         "name": "Golden State Warriors",
         "abbr": "GS",
         "logo": "/sports-logos/nba/golden-state-warriors/GS-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "houston-rockets",
         "name": "Houston Rockets",
         "abbr": "HOU",
         "logo": "/sports-logos/nba/houston-rockets/HOU-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "indiana-pacers",
         "name": "Indiana Pacers",
         "abbr": "IND",
         "logo": "/sports-logos/nba/indiana-pacers/IND-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "la-clippers",
         "name": "LA Clippers",
         "abbr": "LAC",
         "logo": "/sports-logos/nba/la-clippers/LAC-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "los-angeles-lakers",
         "name": "Los Angeles Lakers",
         "abbr": "LAL",
         "logo": "/sports-logos/nba/los-angeles-lakers/LAL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "memphis-grizzlies",
         "name": "Memphis Grizzlies",
         "abbr": "MEM",
         "logo": "/sports-logos/nba/memphis-grizzlies/MEM-primary.svg",
-        "plate": true
+        "plate": true,
+        "opaque": false
       },
       {
         "slug": "miami-heat",
         "name": "Miami Heat",
         "abbr": "MIA",
         "logo": "/sports-logos/nba/miami-heat/MIA-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "milwaukee-bucks",
         "name": "Milwaukee Bucks",
         "abbr": "MIL",
         "logo": "/sports-logos/nba/milwaukee-bucks/MIL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "minnesota-timberwolves",
         "name": "Minnesota Timberwolves",
         "abbr": "MIN",
         "logo": "/sports-logos/nba/minnesota-timberwolves/MIN-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-orleans-pelicans",
         "name": "New Orleans Pelicans",
         "abbr": "NO",
         "logo": "/sports-logos/nba/new-orleans-pelicans/NO-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-york-knicks",
         "name": "New York Knicks",
         "abbr": "NY",
         "logo": "/sports-logos/nba/new-york-knicks/NY-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "oklahoma-city-thunder",
         "name": "Oklahoma City Thunder",
         "abbr": "OKC",
         "logo": "/sports-logos/nba/oklahoma-city-thunder/OKC-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "orlando-magic",
         "name": "Orlando Magic",
         "abbr": "ORL",
         "logo": "/sports-logos/nba/orlando-magic/ORL-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "philadelphia-76ers",
         "name": "Philadelphia 76ers",
         "abbr": "PHI",
         "logo": "/sports-logos/nba/philadelphia-76ers/PHI-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "phoenix-suns",
         "name": "Phoenix Suns",
         "abbr": "PHX",
         "logo": "/sports-logos/nba/phoenix-suns/PHX-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "portland-trail-blazers",
         "name": "Portland Trail Blazers",
         "abbr": "POR",
         "logo": "/sports-logos/nba/portland-trail-blazers/POR-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "sacramento-kings",
         "name": "Sacramento Kings",
         "abbr": "SAC",
         "logo": "/sports-logos/nba/sacramento-kings/SAC-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "san-antonio-spurs",
         "name": "San Antonio Spurs",
         "abbr": "SA",
         "logo": "/sports-logos/nba/san-antonio-spurs/SA-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "toronto-raptors",
         "name": "Toronto Raptors",
         "abbr": "TOR",
         "logo": "/sports-logos/nba/toronto-raptors/TOR-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "utah-jazz",
         "name": "Utah Jazz",
         "abbr": "UTAH",
         "logo": "/sports-logos/nba/utah-jazz/UTAH-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "washington-wizards",
         "name": "Washington Wizards",
         "abbr": "WSH",
         "logo": "/sports-logos/nba/washington-wizards/WSH-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       }
     ]
   },
@@ -471,6 +535,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
     "slug": "mlb",
     "logo": "/sports-logos/mlb/mlb-dark.png",
     "plate": false,
+    "opaque": false,
     "conferences": [],
     "teams": [
       {
@@ -478,210 +543,240 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Arizona Diamondbacks",
         "abbr": "AZ",
         "logo": "/sports-logos/mlb/arizona-diamondbacks/AZ-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "athletics",
         "name": "Athletics",
         "abbr": "ATH",
         "logo": "/sports-logos/mlb/athletics/ATH-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "atlanta-braves",
         "name": "Atlanta Braves",
         "abbr": "ATL",
         "logo": "/sports-logos/mlb/atlanta-braves/ATL-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "baltimore-orioles",
         "name": "Baltimore Orioles",
         "abbr": "BAL",
         "logo": "/sports-logos/mlb/baltimore-orioles/BAL-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "boston-red-sox",
         "name": "Boston Red Sox",
         "abbr": "BOS",
         "logo": "/sports-logos/mlb/boston-red-sox/BOS-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "chicago-cubs",
         "name": "Chicago Cubs",
         "abbr": "CHC",
         "logo": "/sports-logos/mlb/chicago-cubs/CHC-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "chicago-white-sox",
         "name": "Chicago White Sox",
         "abbr": "CWS",
         "logo": "/sports-logos/mlb/chicago-white-sox/CWS-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "cincinnati-reds",
         "name": "Cincinnati Reds",
         "abbr": "CIN",
         "logo": "/sports-logos/mlb/cincinnati-reds/CIN-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "cleveland-guardians",
         "name": "Cleveland Guardians",
         "abbr": "CLE",
         "logo": "/sports-logos/mlb/cleveland-guardians/CLE-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "colorado-rockies",
         "name": "Colorado Rockies",
         "abbr": "COL",
         "logo": "/sports-logos/mlb/colorado-rockies/COL-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "detroit-tigers",
         "name": "Detroit Tigers",
         "abbr": "DET",
         "logo": "/sports-logos/mlb/detroit-tigers/DET-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "houston-astros",
         "name": "Houston Astros",
         "abbr": "HOU",
         "logo": "/sports-logos/mlb/houston-astros/HOU-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "kansas-city-royals",
         "name": "Kansas City Royals",
         "abbr": "KC",
         "logo": "/sports-logos/mlb/kansas-city-royals/KC-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "los-angeles-angels",
         "name": "Los Angeles Angels",
         "abbr": "LAA",
         "logo": "/sports-logos/mlb/los-angeles-angels/LAA-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "los-angeles-dodgers",
         "name": "Los Angeles Dodgers",
         "abbr": "LAD",
         "logo": "/sports-logos/mlb/los-angeles-dodgers/LAD-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "miami-marlins",
         "name": "Miami Marlins",
         "abbr": "MIA",
         "logo": "/sports-logos/mlb/miami-marlins/MIA-primary.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "milwaukee-brewers",
         "name": "Milwaukee Brewers",
         "abbr": "MIL",
         "logo": "/sports-logos/mlb/milwaukee-brewers/MIL-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "minnesota-twins",
         "name": "Minnesota Twins",
         "abbr": "MIN",
         "logo": "/sports-logos/mlb/minnesota-twins/MIN-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-york-mets",
         "name": "New York Mets",
         "abbr": "NYM",
         "logo": "/sports-logos/mlb/new-york-mets/NYM-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "new-york-yankees",
         "name": "New York Yankees",
         "abbr": "NYY",
         "logo": "/sports-logos/mlb/new-york-yankees/NYY-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "philadelphia-phillies",
         "name": "Philadelphia Phillies",
         "abbr": "PHI",
         "logo": "/sports-logos/mlb/philadelphia-phillies/PHI-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "pittsburgh-pirates",
         "name": "Pittsburgh Pirates",
         "abbr": "PIT",
         "logo": "/sports-logos/mlb/pittsburgh-pirates/PIT-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "san-diego-padres",
         "name": "San Diego Padres",
         "abbr": "SD",
         "logo": "/sports-logos/mlb/san-diego-padres/SD-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "san-francisco-giants",
         "name": "San Francisco Giants",
         "abbr": "SF",
         "logo": "/sports-logos/mlb/san-francisco-giants/SF-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "seattle-mariners",
         "name": "Seattle Mariners",
         "abbr": "SEA",
         "logo": "/sports-logos/mlb/seattle-mariners/SEA-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "st-louis-cardinals",
         "name": "St. Louis Cardinals",
         "abbr": "STL",
         "logo": "/sports-logos/mlb/st-louis-cardinals/STL-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "tampa-bay-rays",
         "name": "Tampa Bay Rays",
         "abbr": "TB",
         "logo": "/sports-logos/mlb/tampa-bay-rays/TB-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "texas-rangers",
         "name": "Texas Rangers",
         "abbr": "TEX",
         "logo": "/sports-logos/mlb/texas-rangers/TEX-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "toronto-blue-jays",
         "name": "Toronto Blue Jays",
         "abbr": "TOR",
         "logo": "/sports-logos/mlb/toronto-blue-jays/TOR-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "washington-nationals",
         "name": "Washington Nationals",
         "abbr": "WSH",
         "logo": "/sports-logos/mlb/washington-nationals/WSH-primary-dark.svg",
-        "plate": false
+        "plate": false,
+        "opaque": false
       }
     ]
   },
@@ -691,6 +786,9 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
     "shortName": "CFB",
     "sport": "Football",
     "slug": "cfb-logos",
+    "logo": "/sports-logos/cfb-logos/cfb-logo.jpg",
+    "plate": false,
+    "opaque": true,
     "conferences": [
       {
         "slug": "american-conference",
@@ -698,6 +796,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "American",
         "logo": "/sports-logos/cfb-logos/american-conference/american-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "army-black-knights",
@@ -705,6 +804,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARMY",
             "logo": "/sports-logos/cfb-logos/american-conference/army-black-knights/ARMY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#d3bc8d"
           },
@@ -714,6 +814,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CLT",
             "logo": "/sports-logos/cfb-logos/american-conference/charlotte-49ers/CLT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005035",
             "alternate": "#a49665"
           },
@@ -723,6 +824,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ECU",
             "logo": "/sports-logos/cfb-logos/american-conference/east-carolina-pirates/ECU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#582c83",
             "alternate": "#ffc72c"
           },
@@ -732,6 +834,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FAU",
             "logo": "/sports-logos/cfb-logos/american-conference/florida-atlantic-owls/FAU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003366",
             "alternate": "#cc0000"
           },
@@ -741,6 +844,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MEM",
             "logo": "/sports-logos/cfb-logos/american-conference/memphis-tigers/MEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004991",
             "alternate": "#8e908f"
           },
@@ -750,6 +854,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NAVY",
             "logo": "/sports-logos/cfb-logos/american-conference/navy-midshipmen/NAVY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00225b",
             "alternate": "#b5a67c"
           },
@@ -759,6 +864,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNT",
             "logo": "/sports-logos/cfb-logos/american-conference/north-texas-mean-green/UNT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#068f33",
             "alternate": "#ffffff"
           },
@@ -768,6 +874,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RICE",
             "logo": "/sports-logos/cfb-logos/american-conference/rice-owls/RICE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205b",
             "alternate": "#c1c6c8"
           },
@@ -777,6 +884,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USF",
             "logo": "/sports-logos/cfb-logos/american-conference/south-florida-bulls/USF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006747",
             "alternate": "#cfc493"
           },
@@ -786,6 +894,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TEM",
             "logo": "/sports-logos/cfb-logos/american-conference/temple-owls/TEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a41e35",
             "alternate": "#ffffff"
           },
@@ -795,6 +904,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TULN",
             "logo": "/sports-logos/cfb-logos/american-conference/tulane-green-wave/TULN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006747",
             "alternate": "#418fde"
           },
@@ -804,6 +914,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TLSA",
             "logo": "/sports-logos/cfb-logos/american-conference/tulsa-golden-hurricane/TLSA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003595",
             "alternate": "#d0b787"
           },
@@ -813,6 +924,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UAB",
             "logo": "/sports-logos/cfb-logos/american-conference/uab-blazers/UAB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#1a5632",
             "alternate": "#fdb913"
           },
@@ -822,6 +934,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTSA",
             "logo": "/sports-logos/cfb-logos/american-conference/utsa-roadrunners/UTSA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0c2340",
             "alternate": "#f15a22"
           }
@@ -833,6 +946,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "ACC",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/acc-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "boston-college-eagles",
@@ -840,6 +954,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BC",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/boston-college-eagles/BC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#8c2232",
             "alternate": "#dbcca6"
           },
@@ -849,6 +964,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CAL",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/california-golden-bears/CAL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#ffc72c"
           },
@@ -858,6 +974,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CLEM",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/clemson-tigers/CLEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f56600",
             "alternate": "#ffffff"
           },
@@ -867,6 +984,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DUKE",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/duke-blue-devils/DUKE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539b",
             "alternate": "#ffffff"
           },
@@ -876,6 +994,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FSU",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/florida-state-seminoles/FSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#782f40",
             "alternate": "#ceb888"
           },
@@ -885,6 +1004,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GT",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/georgia-tech-yellow-jackets/GT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b3a369",
             "alternate": "#ffffff"
           },
@@ -894,6 +1014,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LOU",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/louisville-cardinals/LOU-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#c9001f",
             "alternate": "#ffffff"
           },
@@ -903,6 +1024,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MIA",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/miami-hurricanes/MIA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f47423",
             "alternate": "#035131"
           },
@@ -912,6 +1034,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NCSU",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/nc-state-wolfpack/NCSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0000",
             "alternate": "#ffffff"
           },
@@ -921,6 +1044,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNC",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/north-carolina-tar-heels/UNC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7bafd4",
             "alternate": "#13294b"
           },
@@ -930,6 +1054,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PITT",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/pittsburgh-panthers/PITT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003594",
             "alternate": "#ffb81c"
           },
@@ -939,6 +1064,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SMU",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/smu-mustangs/SMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a80000",
             "alternate": "#0033a1"
           },
@@ -948,6 +1074,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STAN",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/stanford-cardinal/STAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#8c1515",
             "alternate": "#ffffff"
           },
@@ -957,6 +1084,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SYR",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/syracuse-orange/SYR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000e54",
             "alternate": "#ff431b"
           },
@@ -966,6 +1094,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UVA",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/virginia-cavaliers/UVA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#232d4b",
             "alternate": "#f84c1e"
           },
@@ -975,6 +1104,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VT",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/virginia-tech-hokies/VT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#6a2c3e",
             "alternate": "#cf4520"
           },
@@ -984,6 +1114,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WAKE",
             "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/wake-forest-demon-deacons/WAKE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ceb888",
             "alternate": "#2c2a29"
           }
@@ -995,6 +1126,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big 12",
         "logo": "/sports-logos/cfb-logos/big-12-conference/big-12-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "arizona-state-sun-devils",
@@ -1002,6 +1134,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ASU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/arizona-state-sun-devils/ASU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc627",
             "alternate": "#8c1d40"
           },
@@ -1011,6 +1144,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARIZ",
             "logo": "/sports-logos/cfb-logos/big-12-conference/arizona-wildcats/ARIZ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0033",
             "alternate": "#003366"
           },
@@ -1020,6 +1154,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BAY",
             "logo": "/sports-logos/cfb-logos/big-12-conference/baylor-bears/BAY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#154734",
             "alternate": "#ffb81c"
           },
@@ -1029,6 +1164,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BYU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/byu-cougars/BYU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0047ba",
             "alternate": "#002e5d"
           },
@@ -1038,6 +1174,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CIN",
             "logo": "/sports-logos/cfb-logos/big-12-conference/cincinnati-bearcats/CIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#e00122"
           },
@@ -1047,6 +1184,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COLO",
             "logo": "/sports-logos/cfb-logos/big-12-conference/colorado-buffaloes/COLO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cfb87c",
             "alternate": "#000000"
           },
@@ -1056,6 +1194,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HOU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/houston-cougars/HOU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c8102e",
             "alternate": "#ffffff"
           },
@@ -1065,6 +1204,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ISU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/iowa-state-cyclones/ISU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ae192d",
             "alternate": "#ffc72a"
           },
@@ -1074,6 +1214,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/kansas-jayhawks/KU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0051ba",
             "alternate": "#e8000d"
           },
@@ -1083,6 +1224,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KSU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/kansas-state-wildcats/KSU-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#330a57",
             "alternate": "#e2e3e4"
           },
@@ -1092,6 +1234,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OKST",
             "logo": "/sports-logos/cfb-logos/big-12-conference/oklahoma-state-cowboys/OKST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fe5c00",
             "alternate": "#000000"
           },
@@ -1101,6 +1244,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TCU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/tcu-horned-frogs/TCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4d1979",
             "alternate": "#ffffff"
           },
@@ -1110,6 +1254,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TTU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/texas-tech-red-raiders/TTU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#da291c",
             "alternate": "#000000"
           },
@@ -1119,6 +1264,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCF",
             "logo": "/sports-logos/cfb-logos/big-12-conference/ucf-knights/UCF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#b4a169"
           },
@@ -1128,6 +1274,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTAH",
             "logo": "/sports-logos/cfb-logos/big-12-conference/utah-utes/UTAH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#be0000",
             "alternate": "#ffffff"
           },
@@ -1137,6 +1284,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WVU",
             "logo": "/sports-logos/cfb-logos/big-12-conference/west-virginia-mountaineers/WVU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#eaaa00",
             "alternate": "#002855"
           }
@@ -1148,6 +1296,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big Ten",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/big-ten-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "illinois-fighting-illini",
@@ -1155,6 +1304,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ILL",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/illinois-fighting-illini/ILL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff5f05",
             "alternate": "#13294b"
           },
@@ -1164,6 +1314,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IU",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/indiana-hoosiers/IU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#970310",
             "alternate": "#ffffff"
           },
@@ -1173,6 +1324,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IOWA",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/iowa-hawkeyes/IOWA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#231f20",
             "alternate": "#fcd116"
           },
@@ -1182,6 +1334,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MD",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/maryland-terrapins/MD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce1126",
             "alternate": "#ffffff"
           },
@@ -1191,6 +1344,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MSU",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/michigan-state-spartans/MSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#173f35",
             "alternate": "#ffffff"
           },
@@ -1200,6 +1354,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MICH",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/michigan-wolverines/MICH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00274c",
             "alternate": "#ffcb05"
           },
@@ -1209,6 +1364,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MINN",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/minnesota-golden-gophers/MINN-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#5e0a2f",
             "alternate": "#fab41c"
           },
@@ -1218,6 +1374,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NEB",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/nebraska-cornhuskers/NEB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e31937",
             "alternate": "#ffffff"
           },
@@ -1227,6 +1384,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NU",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/northwestern-wildcats/NU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f92",
             "alternate": "#ffffff"
           },
@@ -1236,6 +1394,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OSU",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/ohio-state-buckeyes/OSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#a8adb4"
           },
@@ -1245,6 +1404,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ORE",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/oregon-ducks/ORE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00934b",
             "alternate": "#fff41b"
           },
@@ -1254,6 +1414,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PSU",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/penn-state-nittany-lions/PSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#061440",
             "alternate": "#ffffff"
           },
@@ -1263,6 +1424,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PUR",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/purdue-boilermakers/PUR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ceb888",
             "alternate": "#000000"
           },
@@ -1272,6 +1434,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RUTG",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/rutgers-scarlet-knights/RUTG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce0e2d",
             "alternate": "#ffffff"
           },
@@ -1281,6 +1444,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCLA",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/ucla-bruins/UCLA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#2774ae",
             "alternate": "#f2a900"
           },
@@ -1290,6 +1454,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USC",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/usc-trojans/USC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9d2235",
             "alternate": "#ffc72c"
           },
@@ -1299,6 +1464,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WASH",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/washington-huskies/WASH-light.png",
             "plate": true,
+            "opaque": false,
             "primary": "#33006f",
             "alternate": "#e8d3a2"
           },
@@ -1308,6 +1474,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WIS",
             "logo": "/sports-logos/cfb-logos/big-ten-conference/wisconsin-badgers/WIS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a00000",
             "alternate": "#ffffff"
           }
@@ -1318,7 +1485,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Conference USA",
         "shortName": "C-USA",
         "logo": "/sports-logos/cfb-logos/conference-usa/conference-usa-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "delaware-blue-hens",
@@ -1326,6 +1494,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DEL",
             "logo": "/sports-logos/cfb-logos/conference-usa/delaware-blue-hens/DEL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539f",
             "alternate": "#ffd200"
           },
@@ -1335,6 +1504,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FIU",
             "logo": "/sports-logos/cfb-logos/conference-usa/florida-international-panthers/FIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#091f3f",
             "alternate": "#c3993f"
           },
@@ -1344,6 +1514,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JXST",
             "logo": "/sports-logos/cfb-logos/conference-usa/jacksonville-state-gamecocks/JXST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#cc0000",
             "alternate": "#000000"
           },
@@ -1353,6 +1524,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KENN",
             "logo": "/sports-logos/cfb-logos/conference-usa/kennesaw-state-owls/KENN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fdbb30",
             "alternate": "#0b1315"
           },
@@ -1362,6 +1534,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LIB",
             "logo": "/sports-logos/cfb-logos/conference-usa/liberty-flames/LIB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0a254e",
             "alternate": "#b72025"
           },
@@ -1371,6 +1544,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MTSU",
             "logo": "/sports-logos/cfb-logos/conference-usa/middle-tennessee-blue-raiders/MTSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#036eb7",
             "alternate": "#ffffff"
           },
@@ -1380,6 +1554,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MOST",
             "logo": "/sports-logos/cfb-logos/conference-usa/missouri-state-bears/MOST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5e0009",
             "alternate": "#ffffff"
           },
@@ -1389,6 +1564,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NMSU",
             "logo": "/sports-logos/cfb-logos/conference-usa/new-mexico-state-aggies/NMSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7e141b",
             "alternate": "#231f20"
           },
@@ -1398,6 +1574,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SHSU",
             "logo": "/sports-logos/cfb-logos/conference-usa/sam-houston-bearkats/SHSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f56423",
             "alternate": "#ffffff"
           },
@@ -1407,6 +1584,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WKU",
             "logo": "/sports-logos/cfb-logos/conference-usa/western-kentucky-hilltoppers/WKU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e13a3e",
             "alternate": "#ffffff"
           }
@@ -1423,6 +1601,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ND",
             "logo": "/sports-logos/cfb-logos/fbs-independents/notre-dame-fighting-irish/ND-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#062340",
             "alternate": "#c99700"
           },
@@ -1432,6 +1611,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CONN",
             "logo": "/sports-logos/cfb-logos/fbs-independents/uconn-huskies/CONN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0c2340",
             "alternate": "#a2aaad"
           }
@@ -1443,6 +1623,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "MAC",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/mac-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "akron-zips",
@@ -1450,6 +1631,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AKR",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/akron-zips/AKR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#c5b783"
           },
@@ -1459,6 +1641,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BALL",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/ball-state-cardinals/BALL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#ffffff"
           },
@@ -1468,6 +1651,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BGSU",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/bowling-green-falcons/BGSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fd5000",
             "alternate": "#4f2c1d"
           },
@@ -1477,6 +1661,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BUF",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/buffalo-bulls/BUF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005bbb",
             "alternate": "#ffffff"
           },
@@ -1486,6 +1671,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CMU",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/central-michigan-chippewas/CMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4c0027",
             "alternate": "#fbab18"
           },
@@ -1495,6 +1681,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EMU",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/eastern-michigan-eagles/EMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006938",
             "alternate": "#ffffff"
           },
@@ -1504,6 +1691,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KENT",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/kent-state-golden-flashes/KENT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002664",
             "alternate": "#eaab00"
           },
@@ -1513,6 +1701,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MASS",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/massachusetts-minutemen/MASS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#881c1c",
             "alternate": "#ffffff"
           },
@@ -1522,6 +1711,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "M-OH",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/miami-oh-redhawks/M-OH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c41230",
             "alternate": "#ffffff"
           },
@@ -1531,6 +1721,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OHIO",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/ohio-bobcats/OHIO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#154734",
             "alternate": "#ffffff"
           },
@@ -1540,6 +1731,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SAC",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/sacramento-state-hornets/SAC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00573c",
             "alternate": "#cdb97d"
           },
@@ -1549,6 +1741,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TOL",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/toledo-rockets/TOL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0b2240",
             "alternate": "#ffcd00"
           },
@@ -1558,6 +1751,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WMU",
             "logo": "/sports-logos/cfb-logos/mid-american-conference/western-michigan-broncos/WMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#532e1f",
             "alternate": "#f1c500"
           }
@@ -1568,7 +1762,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Mountain West Conference",
         "shortName": "Mountain West",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/mountain-west-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "air-force-falcons",
@@ -1576,6 +1771,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AF",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/air-force-falcons/AF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003594",
             "alternate": "#ffffff"
           },
@@ -1585,6 +1781,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HAW",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/hawaii-rainbow-warriors/HAW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005737",
             "alternate": "#000000"
           },
@@ -1594,6 +1791,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NEV",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/nevada-wolf-pack/NEV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#8a8d8f"
           },
@@ -1603,6 +1801,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNM",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/new-mexico-lobos/UNM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#a7a8aa"
           },
@@ -1612,6 +1811,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NDSU",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/north-dakota-state-bison/NDSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#01402a",
             "alternate": "#ffffff"
           },
@@ -1621,6 +1821,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NIU",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/northern-illinois-huskies/NIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c8102e",
             "alternate": "#000000"
           },
@@ -1630,6 +1831,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SJSU",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/san-jos%C3%A3-state-spartans/SJSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0038a8",
             "alternate": "#ffb81a"
           },
@@ -1639,6 +1841,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNLV",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/unlv-rebels/UNLV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cf0a2c",
             "alternate": "#cac8c8"
           },
@@ -1648,6 +1851,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTEP",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/utep-miners/UTEP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff8200",
             "alternate": "#041e42"
           },
@@ -1657,6 +1861,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WYO",
             "logo": "/sports-logos/cfb-logos/mountain-west-conference/wyoming-cowboys/WYO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f24",
             "alternate": "#ffc425"
           }
@@ -1668,6 +1873,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Pac-12",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/pac-12-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "boise-state-broncos",
@@ -1675,6 +1881,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BOIS",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/boise-state-broncos/BOIS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a0",
             "alternate": "#d64309"
           },
@@ -1684,6 +1891,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CSU",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/colorado-state-rams/CSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004c23",
             "alternate": "#c8c372"
           },
@@ -1693,6 +1901,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FRES",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/fresno-state-bulldogs/FRES-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b1102b",
             "alternate": "#13284c"
           },
@@ -1702,6 +1911,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ORST",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/oregon-state-beavers/ORST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#dc4405",
             "alternate": "#000000"
           },
@@ -1711,6 +1921,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SDSU",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/san-diego-state-aztecs/SDSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a6192e",
             "alternate": "#000000"
           },
@@ -1720,6 +1931,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TXST",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/texas-state-bobcats/TXST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#501214",
             "alternate": "#6a5638"
           },
@@ -1729,6 +1941,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USU",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/utah-state-aggies/USU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0f2439",
             "alternate": "#ffffff"
           },
@@ -1738,6 +1951,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WSU",
             "logo": "/sports-logos/cfb-logos/pac-12-conference/washington-state-cougars/WSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a60f2d",
             "alternate": "#4d4d4d"
           }
@@ -1749,6 +1963,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "SEC",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/sec-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "alabama-crimson-tide",
@@ -1756,6 +1971,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ALA",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/alabama-crimson-tide/ALA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9e1b32",
             "alternate": "#ffffff"
           },
@@ -1765,6 +1981,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARK",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/arkansas-razorbacks/ARK-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#a32136",
             "alternate": "#ffffff"
           },
@@ -1774,6 +1991,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AUB",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/auburn-tigers/AUB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002b5c",
             "alternate": "#f26522"
           },
@@ -1783,6 +2001,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FLA",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/florida-gators/FLA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0021a5",
             "alternate": "#fa4616"
           },
@@ -1792,6 +2011,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UGA",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/georgia-bulldogs/UGA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#2c2a29"
           },
@@ -1801,6 +2021,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UK",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/kentucky-wildcats/UK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a0",
             "alternate": "#ffffff"
           },
@@ -1810,6 +2031,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LSU",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/lsu-tigers/LSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#461d76",
             "alternate": "#fdd023"
           },
@@ -1819,6 +2041,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MSST",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/mississippi-state-bulldogs/MSST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5d1725",
             "alternate": "#c1c6c8"
           },
@@ -1828,6 +2051,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MIZ",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/missouri-tigers/MIZ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f1b82d",
             "alternate": "#000000"
           },
@@ -1837,6 +2061,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OU",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/oklahoma-sooners/OU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#990000",
             "alternate": "#ffffff"
           },
@@ -1846,6 +2071,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MISS",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/ole-miss-rebels/MISS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#13294b",
             "alternate": "#cf142b"
           },
@@ -1855,6 +2081,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SC",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/south-carolina-gamecocks/SC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#73000a",
             "alternate": "#000000"
           },
@@ -1864,6 +2091,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TENN",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/tennessee-volunteers/TENN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff8200",
             "alternate": "#ffffff"
           },
@@ -1873,6 +2101,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TA&M",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/texas-am-aggies/TA%26M-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#500000",
             "alternate": "#ffffff"
           },
@@ -1882,6 +2111,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TEX",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/texas-longhorns/TEX-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#af5c37",
             "alternate": "#ffffff"
           },
@@ -1891,6 +2121,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VAN",
             "logo": "/sports-logos/cfb-logos/southeastern-conference/vanderbilt-commodores/VAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#cfae70"
           }
@@ -1902,6 +2133,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Sun Belt",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/sun-belt-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "app-state-mountaineers",
@@ -1909,6 +2141,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "APP",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/app-state-mountaineers/APP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ffcd00"
           },
@@ -1918,6 +2151,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARST",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/arkansas-state-red-wolves/ARST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#cc092f",
             "alternate": "#000000"
           },
@@ -1927,6 +2161,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CCU",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/coastal-carolina-chanticleers/CCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006f71",
             "alternate": "#a27752"
           },
@@ -1936,6 +2171,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GASO",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/georgia-southern-eagles/GASO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#a3aaae"
           },
@@ -1945,6 +2181,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GAST",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/georgia-state-panthers/GAST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0039a6",
             "alternate": "#ffffff"
           },
@@ -1954,6 +2191,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JMU",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/james-madison-dukes/JMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#450084",
             "alternate": "#cbb677"
           },
@@ -1963,6 +2201,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UL",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/louisiana-ragin-cajuns/UL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce181e",
             "alternate": "#000000"
           },
@@ -1972,6 +2211,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LT",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/louisiana-tech-bulldogs/LT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003087",
             "alternate": "#cb333b"
           },
@@ -1981,6 +2221,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MRSH",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/marshall-thundering-herd/MRSH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00b140",
             "alternate": "#000000"
           },
@@ -1990,6 +2231,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ODU",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/old-dominion-monarchs/ODU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003768",
             "alternate": "#a1d2f1"
           },
@@ -1999,6 +2241,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USA",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/south-alabama-jaguars/USA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205b",
             "alternate": "#bf0d3e"
           },
@@ -2008,6 +2251,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USM",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/southern-miss-golden-eagles/USM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc72c",
             "alternate": "#231f20"
           },
@@ -2017,6 +2261,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TROY",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/troy-trojans/TROY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#862633",
             "alternate": "#b1b1b1"
           },
@@ -2026,6 +2271,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ULM",
             "logo": "/sports-logos/cfb-logos/sun-belt-conference/ul-monroe-warhawks/ULM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#840029",
             "alternate": "#fdb913"
           }
@@ -2039,6 +2285,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARMY",
         "logo": "/sports-logos/cfb-logos/american-conference/army-black-knights/ARMY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#d3bc8d"
       },
@@ -2048,6 +2295,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CLT",
         "logo": "/sports-logos/cfb-logos/american-conference/charlotte-49ers/CLT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005035",
         "alternate": "#a49665"
       },
@@ -2057,6 +2305,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ECU",
         "logo": "/sports-logos/cfb-logos/american-conference/east-carolina-pirates/ECU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#582c83",
         "alternate": "#ffc72c"
       },
@@ -2066,6 +2315,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FAU",
         "logo": "/sports-logos/cfb-logos/american-conference/florida-atlantic-owls/FAU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003366",
         "alternate": "#cc0000"
       },
@@ -2075,6 +2325,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MEM",
         "logo": "/sports-logos/cfb-logos/american-conference/memphis-tigers/MEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004991",
         "alternate": "#8e908f"
       },
@@ -2084,6 +2335,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NAVY",
         "logo": "/sports-logos/cfb-logos/american-conference/navy-midshipmen/NAVY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00225b",
         "alternate": "#b5a67c"
       },
@@ -2093,6 +2345,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNT",
         "logo": "/sports-logos/cfb-logos/american-conference/north-texas-mean-green/UNT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#068f33",
         "alternate": "#ffffff"
       },
@@ -2102,6 +2355,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RICE",
         "logo": "/sports-logos/cfb-logos/american-conference/rice-owls/RICE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205b",
         "alternate": "#c1c6c8"
       },
@@ -2111,6 +2365,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USF",
         "logo": "/sports-logos/cfb-logos/american-conference/south-florida-bulls/USF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006747",
         "alternate": "#cfc493"
       },
@@ -2120,6 +2375,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TEM",
         "logo": "/sports-logos/cfb-logos/american-conference/temple-owls/TEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a41e35",
         "alternate": "#ffffff"
       },
@@ -2129,6 +2385,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TULN",
         "logo": "/sports-logos/cfb-logos/american-conference/tulane-green-wave/TULN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006747",
         "alternate": "#418fde"
       },
@@ -2138,6 +2395,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TLSA",
         "logo": "/sports-logos/cfb-logos/american-conference/tulsa-golden-hurricane/TLSA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003595",
         "alternate": "#d0b787"
       },
@@ -2147,6 +2405,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UAB",
         "logo": "/sports-logos/cfb-logos/american-conference/uab-blazers/UAB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#1a5632",
         "alternate": "#fdb913"
       },
@@ -2156,6 +2415,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTSA",
         "logo": "/sports-logos/cfb-logos/american-conference/utsa-roadrunners/UTSA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0c2340",
         "alternate": "#f15a22"
       },
@@ -2165,6 +2425,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BC",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/boston-college-eagles/BC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#8c2232",
         "alternate": "#dbcca6"
       },
@@ -2174,6 +2435,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CAL",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/california-golden-bears/CAL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#ffc72c"
       },
@@ -2183,6 +2445,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CLEM",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/clemson-tigers/CLEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f56600",
         "alternate": "#ffffff"
       },
@@ -2192,6 +2455,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DUKE",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/duke-blue-devils/DUKE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539b",
         "alternate": "#ffffff"
       },
@@ -2201,6 +2465,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FSU",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/florida-state-seminoles/FSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#782f40",
         "alternate": "#ceb888"
       },
@@ -2210,6 +2475,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GT",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/georgia-tech-yellow-jackets/GT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b3a369",
         "alternate": "#ffffff"
       },
@@ -2219,6 +2485,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LOU",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/louisville-cardinals/LOU-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#c9001f",
         "alternate": "#ffffff"
       },
@@ -2228,6 +2495,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MIA",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/miami-hurricanes/MIA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f47423",
         "alternate": "#035131"
       },
@@ -2237,6 +2505,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NCSU",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/nc-state-wolfpack/NCSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0000",
         "alternate": "#ffffff"
       },
@@ -2246,6 +2515,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNC",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/north-carolina-tar-heels/UNC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7bafd4",
         "alternate": "#13294b"
       },
@@ -2255,6 +2525,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PITT",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/pittsburgh-panthers/PITT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003594",
         "alternate": "#ffb81c"
       },
@@ -2264,6 +2535,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SMU",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/smu-mustangs/SMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a80000",
         "alternate": "#0033a1"
       },
@@ -2273,6 +2545,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STAN",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/stanford-cardinal/STAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#8c1515",
         "alternate": "#ffffff"
       },
@@ -2282,6 +2555,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SYR",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/syracuse-orange/SYR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000e54",
         "alternate": "#ff431b"
       },
@@ -2291,6 +2565,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UVA",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/virginia-cavaliers/UVA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#232d4b",
         "alternate": "#f84c1e"
       },
@@ -2300,6 +2575,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VT",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/virginia-tech-hokies/VT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#6a2c3e",
         "alternate": "#cf4520"
       },
@@ -2309,6 +2585,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WAKE",
         "logo": "/sports-logos/cfb-logos/atlantic-coast-conference/wake-forest-demon-deacons/WAKE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ceb888",
         "alternate": "#2c2a29"
       },
@@ -2318,6 +2595,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ASU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/arizona-state-sun-devils/ASU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc627",
         "alternate": "#8c1d40"
       },
@@ -2327,6 +2605,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARIZ",
         "logo": "/sports-logos/cfb-logos/big-12-conference/arizona-wildcats/ARIZ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0033",
         "alternate": "#003366"
       },
@@ -2336,6 +2615,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BAY",
         "logo": "/sports-logos/cfb-logos/big-12-conference/baylor-bears/BAY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#154734",
         "alternate": "#ffb81c"
       },
@@ -2345,6 +2625,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BYU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/byu-cougars/BYU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0047ba",
         "alternate": "#002e5d"
       },
@@ -2354,6 +2635,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CIN",
         "logo": "/sports-logos/cfb-logos/big-12-conference/cincinnati-bearcats/CIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#e00122"
       },
@@ -2363,6 +2645,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COLO",
         "logo": "/sports-logos/cfb-logos/big-12-conference/colorado-buffaloes/COLO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cfb87c",
         "alternate": "#000000"
       },
@@ -2372,6 +2655,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HOU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/houston-cougars/HOU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c8102e",
         "alternate": "#ffffff"
       },
@@ -2381,6 +2665,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ISU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/iowa-state-cyclones/ISU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ae192d",
         "alternate": "#ffc72a"
       },
@@ -2390,6 +2675,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/kansas-jayhawks/KU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0051ba",
         "alternate": "#e8000d"
       },
@@ -2399,6 +2685,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KSU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/kansas-state-wildcats/KSU-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#330a57",
         "alternate": "#e2e3e4"
       },
@@ -2408,6 +2695,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OKST",
         "logo": "/sports-logos/cfb-logos/big-12-conference/oklahoma-state-cowboys/OKST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fe5c00",
         "alternate": "#000000"
       },
@@ -2417,6 +2705,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TCU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/tcu-horned-frogs/TCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4d1979",
         "alternate": "#ffffff"
       },
@@ -2426,6 +2715,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TTU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/texas-tech-red-raiders/TTU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#da291c",
         "alternate": "#000000"
       },
@@ -2435,6 +2725,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCF",
         "logo": "/sports-logos/cfb-logos/big-12-conference/ucf-knights/UCF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#b4a169"
       },
@@ -2444,6 +2735,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTAH",
         "logo": "/sports-logos/cfb-logos/big-12-conference/utah-utes/UTAH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#be0000",
         "alternate": "#ffffff"
       },
@@ -2453,6 +2745,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WVU",
         "logo": "/sports-logos/cfb-logos/big-12-conference/west-virginia-mountaineers/WVU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#eaaa00",
         "alternate": "#002855"
       },
@@ -2462,6 +2755,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ILL",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/illinois-fighting-illini/ILL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff5f05",
         "alternate": "#13294b"
       },
@@ -2471,6 +2765,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IU",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/indiana-hoosiers/IU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#970310",
         "alternate": "#ffffff"
       },
@@ -2480,6 +2775,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IOWA",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/iowa-hawkeyes/IOWA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#231f20",
         "alternate": "#fcd116"
       },
@@ -2489,6 +2785,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MD",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/maryland-terrapins/MD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce1126",
         "alternate": "#ffffff"
       },
@@ -2498,6 +2795,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MSU",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/michigan-state-spartans/MSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#173f35",
         "alternate": "#ffffff"
       },
@@ -2507,6 +2805,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MICH",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/michigan-wolverines/MICH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00274c",
         "alternate": "#ffcb05"
       },
@@ -2516,6 +2815,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MINN",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/minnesota-golden-gophers/MINN-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#5e0a2f",
         "alternate": "#fab41c"
       },
@@ -2525,6 +2825,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NEB",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/nebraska-cornhuskers/NEB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e31937",
         "alternate": "#ffffff"
       },
@@ -2534,6 +2835,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NU",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/northwestern-wildcats/NU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f92",
         "alternate": "#ffffff"
       },
@@ -2543,6 +2845,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OSU",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/ohio-state-buckeyes/OSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#a8adb4"
       },
@@ -2552,6 +2855,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ORE",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/oregon-ducks/ORE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00934b",
         "alternate": "#fff41b"
       },
@@ -2561,6 +2865,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PSU",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/penn-state-nittany-lions/PSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#061440",
         "alternate": "#ffffff"
       },
@@ -2570,6 +2875,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PUR",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/purdue-boilermakers/PUR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ceb888",
         "alternate": "#000000"
       },
@@ -2579,6 +2885,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RUTG",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/rutgers-scarlet-knights/RUTG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce0e2d",
         "alternate": "#ffffff"
       },
@@ -2588,6 +2895,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCLA",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/ucla-bruins/UCLA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#2774ae",
         "alternate": "#f2a900"
       },
@@ -2597,6 +2905,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USC",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/usc-trojans/USC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9d2235",
         "alternate": "#ffc72c"
       },
@@ -2606,6 +2915,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WASH",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/washington-huskies/WASH-light.png",
         "plate": true,
+        "opaque": false,
         "primary": "#33006f",
         "alternate": "#e8d3a2"
       },
@@ -2615,6 +2925,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WIS",
         "logo": "/sports-logos/cfb-logos/big-ten-conference/wisconsin-badgers/WIS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a00000",
         "alternate": "#ffffff"
       },
@@ -2624,6 +2935,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DEL",
         "logo": "/sports-logos/cfb-logos/conference-usa/delaware-blue-hens/DEL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539f",
         "alternate": "#ffd200"
       },
@@ -2633,6 +2945,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FIU",
         "logo": "/sports-logos/cfb-logos/conference-usa/florida-international-panthers/FIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#091f3f",
         "alternate": "#c3993f"
       },
@@ -2642,6 +2955,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JXST",
         "logo": "/sports-logos/cfb-logos/conference-usa/jacksonville-state-gamecocks/JXST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#cc0000",
         "alternate": "#000000"
       },
@@ -2651,6 +2965,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KENN",
         "logo": "/sports-logos/cfb-logos/conference-usa/kennesaw-state-owls/KENN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fdbb30",
         "alternate": "#0b1315"
       },
@@ -2660,6 +2975,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LIB",
         "logo": "/sports-logos/cfb-logos/conference-usa/liberty-flames/LIB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0a254e",
         "alternate": "#b72025"
       },
@@ -2669,6 +2985,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MTSU",
         "logo": "/sports-logos/cfb-logos/conference-usa/middle-tennessee-blue-raiders/MTSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#036eb7",
         "alternate": "#ffffff"
       },
@@ -2678,6 +2995,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MOST",
         "logo": "/sports-logos/cfb-logos/conference-usa/missouri-state-bears/MOST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5e0009",
         "alternate": "#ffffff"
       },
@@ -2687,6 +3005,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NMSU",
         "logo": "/sports-logos/cfb-logos/conference-usa/new-mexico-state-aggies/NMSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7e141b",
         "alternate": "#231f20"
       },
@@ -2696,6 +3015,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SHSU",
         "logo": "/sports-logos/cfb-logos/conference-usa/sam-houston-bearkats/SHSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f56423",
         "alternate": "#ffffff"
       },
@@ -2705,6 +3025,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WKU",
         "logo": "/sports-logos/cfb-logos/conference-usa/western-kentucky-hilltoppers/WKU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e13a3e",
         "alternate": "#ffffff"
       },
@@ -2714,6 +3035,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ND",
         "logo": "/sports-logos/cfb-logos/fbs-independents/notre-dame-fighting-irish/ND-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#062340",
         "alternate": "#c99700"
       },
@@ -2723,6 +3045,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CONN",
         "logo": "/sports-logos/cfb-logos/fbs-independents/uconn-huskies/CONN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0c2340",
         "alternate": "#a2aaad"
       },
@@ -2732,6 +3055,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AKR",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/akron-zips/AKR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#c5b783"
       },
@@ -2741,6 +3065,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BALL",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/ball-state-cardinals/BALL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#ffffff"
       },
@@ -2750,6 +3075,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BGSU",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/bowling-green-falcons/BGSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fd5000",
         "alternate": "#4f2c1d"
       },
@@ -2759,6 +3085,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BUF",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/buffalo-bulls/BUF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005bbb",
         "alternate": "#ffffff"
       },
@@ -2768,6 +3095,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CMU",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/central-michigan-chippewas/CMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4c0027",
         "alternate": "#fbab18"
       },
@@ -2777,6 +3105,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EMU",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/eastern-michigan-eagles/EMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006938",
         "alternate": "#ffffff"
       },
@@ -2786,6 +3115,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KENT",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/kent-state-golden-flashes/KENT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002664",
         "alternate": "#eaab00"
       },
@@ -2795,6 +3125,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MASS",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/massachusetts-minutemen/MASS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#881c1c",
         "alternate": "#ffffff"
       },
@@ -2804,6 +3135,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "M-OH",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/miami-oh-redhawks/M-OH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c41230",
         "alternate": "#ffffff"
       },
@@ -2813,6 +3145,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OHIO",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/ohio-bobcats/OHIO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#154734",
         "alternate": "#ffffff"
       },
@@ -2822,6 +3155,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SAC",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/sacramento-state-hornets/SAC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00573c",
         "alternate": "#cdb97d"
       },
@@ -2831,6 +3165,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TOL",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/toledo-rockets/TOL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0b2240",
         "alternate": "#ffcd00"
       },
@@ -2840,6 +3175,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WMU",
         "logo": "/sports-logos/cfb-logos/mid-american-conference/western-michigan-broncos/WMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#532e1f",
         "alternate": "#f1c500"
       },
@@ -2849,6 +3185,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AF",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/air-force-falcons/AF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003594",
         "alternate": "#ffffff"
       },
@@ -2858,6 +3195,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HAW",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/hawaii-rainbow-warriors/HAW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005737",
         "alternate": "#000000"
       },
@@ -2867,6 +3205,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NEV",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/nevada-wolf-pack/NEV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#8a8d8f"
       },
@@ -2876,6 +3215,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNM",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/new-mexico-lobos/UNM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#a7a8aa"
       },
@@ -2885,6 +3225,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NDSU",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/north-dakota-state-bison/NDSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#01402a",
         "alternate": "#ffffff"
       },
@@ -2894,6 +3235,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NIU",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/northern-illinois-huskies/NIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c8102e",
         "alternate": "#000000"
       },
@@ -2903,6 +3245,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SJSU",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/san-jos%C3%A3-state-spartans/SJSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0038a8",
         "alternate": "#ffb81a"
       },
@@ -2912,6 +3255,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNLV",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/unlv-rebels/UNLV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cf0a2c",
         "alternate": "#cac8c8"
       },
@@ -2921,6 +3265,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTEP",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/utep-miners/UTEP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff8200",
         "alternate": "#041e42"
       },
@@ -2930,6 +3275,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WYO",
         "logo": "/sports-logos/cfb-logos/mountain-west-conference/wyoming-cowboys/WYO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f24",
         "alternate": "#ffc425"
       },
@@ -2939,6 +3285,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BOIS",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/boise-state-broncos/BOIS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a0",
         "alternate": "#d64309"
       },
@@ -2948,6 +3295,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CSU",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/colorado-state-rams/CSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004c23",
         "alternate": "#c8c372"
       },
@@ -2957,6 +3305,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FRES",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/fresno-state-bulldogs/FRES-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b1102b",
         "alternate": "#13284c"
       },
@@ -2966,6 +3315,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ORST",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/oregon-state-beavers/ORST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#dc4405",
         "alternate": "#000000"
       },
@@ -2975,6 +3325,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SDSU",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/san-diego-state-aztecs/SDSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a6192e",
         "alternate": "#000000"
       },
@@ -2984,6 +3335,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TXST",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/texas-state-bobcats/TXST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#501214",
         "alternate": "#6a5638"
       },
@@ -2993,6 +3345,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USU",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/utah-state-aggies/USU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0f2439",
         "alternate": "#ffffff"
       },
@@ -3002,6 +3355,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WSU",
         "logo": "/sports-logos/cfb-logos/pac-12-conference/washington-state-cougars/WSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a60f2d",
         "alternate": "#4d4d4d"
       },
@@ -3011,6 +3365,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ALA",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/alabama-crimson-tide/ALA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9e1b32",
         "alternate": "#ffffff"
       },
@@ -3020,6 +3375,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARK",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/arkansas-razorbacks/ARK-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#a32136",
         "alternate": "#ffffff"
       },
@@ -3029,6 +3385,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AUB",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/auburn-tigers/AUB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002b5c",
         "alternate": "#f26522"
       },
@@ -3038,6 +3395,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FLA",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/florida-gators/FLA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0021a5",
         "alternate": "#fa4616"
       },
@@ -3047,6 +3405,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UGA",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/georgia-bulldogs/UGA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#2c2a29"
       },
@@ -3056,6 +3415,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UK",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/kentucky-wildcats/UK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a0",
         "alternate": "#ffffff"
       },
@@ -3065,6 +3425,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LSU",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/lsu-tigers/LSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#461d76",
         "alternate": "#fdd023"
       },
@@ -3074,6 +3435,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MSST",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/mississippi-state-bulldogs/MSST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5d1725",
         "alternate": "#c1c6c8"
       },
@@ -3083,6 +3445,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MIZ",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/missouri-tigers/MIZ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f1b82d",
         "alternate": "#000000"
       },
@@ -3092,6 +3455,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OU",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/oklahoma-sooners/OU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#990000",
         "alternate": "#ffffff"
       },
@@ -3101,6 +3465,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MISS",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/ole-miss-rebels/MISS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#13294b",
         "alternate": "#cf142b"
       },
@@ -3110,6 +3475,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SC",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/south-carolina-gamecocks/SC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#73000a",
         "alternate": "#000000"
       },
@@ -3119,6 +3485,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TENN",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/tennessee-volunteers/TENN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff8200",
         "alternate": "#ffffff"
       },
@@ -3128,6 +3495,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TA&M",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/texas-am-aggies/TA%26M-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#500000",
         "alternate": "#ffffff"
       },
@@ -3137,6 +3505,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TEX",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/texas-longhorns/TEX-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#af5c37",
         "alternate": "#ffffff"
       },
@@ -3146,6 +3515,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VAN",
         "logo": "/sports-logos/cfb-logos/southeastern-conference/vanderbilt-commodores/VAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#cfae70"
       },
@@ -3155,6 +3525,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "APP",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/app-state-mountaineers/APP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ffcd00"
       },
@@ -3164,6 +3535,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARST",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/arkansas-state-red-wolves/ARST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#cc092f",
         "alternate": "#000000"
       },
@@ -3173,6 +3545,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CCU",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/coastal-carolina-chanticleers/CCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006f71",
         "alternate": "#a27752"
       },
@@ -3182,6 +3555,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GASO",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/georgia-southern-eagles/GASO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#a3aaae"
       },
@@ -3191,6 +3565,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GAST",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/georgia-state-panthers/GAST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0039a6",
         "alternate": "#ffffff"
       },
@@ -3200,6 +3575,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JMU",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/james-madison-dukes/JMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#450084",
         "alternate": "#cbb677"
       },
@@ -3209,6 +3585,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UL",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/louisiana-ragin-cajuns/UL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce181e",
         "alternate": "#000000"
       },
@@ -3218,6 +3595,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LT",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/louisiana-tech-bulldogs/LT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003087",
         "alternate": "#cb333b"
       },
@@ -3227,6 +3605,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MRSH",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/marshall-thundering-herd/MRSH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00b140",
         "alternate": "#000000"
       },
@@ -3236,6 +3615,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ODU",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/old-dominion-monarchs/ODU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003768",
         "alternate": "#a1d2f1"
       },
@@ -3245,6 +3625,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USA",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/south-alabama-jaguars/USA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205b",
         "alternate": "#bf0d3e"
       },
@@ -3254,6 +3635,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USM",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/southern-miss-golden-eagles/USM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc72c",
         "alternate": "#231f20"
       },
@@ -3263,6 +3645,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TROY",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/troy-trojans/TROY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#862633",
         "alternate": "#b1b1b1"
       },
@@ -3272,6 +3655,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ULM",
         "logo": "/sports-logos/cfb-logos/sun-belt-conference/ul-monroe-warhawks/ULM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#840029",
         "alternate": "#fdb913"
       }
@@ -3283,6 +3667,9 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
     "shortName": "CBB",
     "sport": "Basketball",
     "slug": "cbb-logos",
+    "logo": "/sports-logos/cbb-logos/cbb-logo.png",
+    "plate": false,
+    "opaque": true,
     "conferences": [
       {
         "slug": "america-east-conference",
@@ -3290,6 +3677,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "America East",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/america-east-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "binghamton-bearcats",
@@ -3297,6 +3685,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BING",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/binghamton-bearcats/BING-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00614a",
             "alternate": "#f0f0f0"
           },
@@ -3306,6 +3695,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BRY",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/bryant-bulldogs/BRY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#9f8343"
           },
@@ -3315,6 +3705,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ME",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/maine-black-bears/ME-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#127dbe"
           },
           {
@@ -3323,6 +3714,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNH",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/new-hampshire-wildcats/UNH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004990",
             "alternate": "#c3c4c6"
           },
@@ -3332,6 +3724,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NJIT",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/njit-highlanders/NJIT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ee3024",
             "alternate": "#df3e2e"
           },
@@ -3341,6 +3734,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UALB",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/ualbany-great-danes/UALB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#3d2777",
             "alternate": "#ffffff"
           },
@@ -3350,6 +3744,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UML",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/umass-lowell-river-hawks/UML-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00529c",
             "alternate": "#cf1f2f"
           },
@@ -3359,6 +3754,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UMBC",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/umbc-retrievers/UMBC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ad860a"
           },
@@ -3368,6 +3764,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UVM",
             "logo": "/sports-logos/cbb-logos/mens/america-east-conference/vermont-catamounts/UVM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#154734",
             "alternate": "#ffc72c"
           }
@@ -3379,6 +3776,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "American",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/american-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "charlotte-49ers",
@@ -3386,6 +3784,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CLT",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/charlotte-49ers/CLT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005035",
             "alternate": "#a49665"
           },
@@ -3395,6 +3794,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ECU",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/east-carolina-pirates/ECU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#582c83",
             "alternate": "#ffc72c"
           },
@@ -3404,6 +3804,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FAU",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/florida-atlantic-owls/FAU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003366",
             "alternate": "#cc0000"
           },
@@ -3413,6 +3814,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MEM",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/memphis-tigers/MEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004991",
             "alternate": "#8e908f"
           },
@@ -3422,6 +3824,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNT",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/north-texas-mean-green/UNT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#068f33",
             "alternate": "#ffffff"
           },
@@ -3431,6 +3834,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RICE",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/rice-owls/RICE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205b",
             "alternate": "#c1c6c8"
           },
@@ -3440,6 +3844,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USF",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/south-florida-bulls/USF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006747",
             "alternate": "#cfc493"
           },
@@ -3449,6 +3854,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TEM",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/temple-owls/TEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a41e35",
             "alternate": "#ffffff"
           },
@@ -3458,6 +3864,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TULN",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/tulane-green-wave/TULN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006747",
             "alternate": "#418fde"
           },
@@ -3467,6 +3874,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TLSA",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/tulsa-golden-hurricane/TLSA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003595",
             "alternate": "#d0b787"
           },
@@ -3476,6 +3884,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UAB",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/uab-blazers/UAB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#1a5632",
             "alternate": "#fdb913"
           },
@@ -3485,6 +3894,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTSA",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/utsa-roadrunners/UTSA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0c2340",
             "alternate": "#f15a22"
           },
@@ -3494,6 +3904,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WICH",
             "logo": "/sports-logos/cbb-logos/mens/american-conference/wichita-state-shockers/WICH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffcd00",
             "alternate": "#27251f"
           }
@@ -3504,7 +3915,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "ASUN Conference",
         "shortName": "ASUN",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/asun-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "bellarmine-knights",
@@ -3512,6 +3924,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BELL",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/bellarmine-knights/BELL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -3520,6 +3933,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FGCU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/florida-gulf-coast-eagles/FGCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00885a",
             "alternate": "#076c3b"
           },
@@ -3529,6 +3943,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JAX",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/jacksonville-dolphins/JAX-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00523e"
           },
           {
@@ -3537,6 +3952,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LIP",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/lipscomb-bisons/LIP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#20366c",
             "alternate": "#f6b734"
           },
@@ -3546,6 +3962,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNF",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/north-florida-ospreys/UNF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004b8d",
             "alternate": "#babcbe"
           },
@@ -3555,6 +3972,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "QUC",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/queens-university-royals/QUC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#192c66",
             "alternate": "#857040"
           },
@@ -3564,6 +3982,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STET",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/stetson-hatters/STET-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0a5640",
             "alternate": "#56854e"
           },
@@ -3573,6 +3992,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UWF",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/west-florida-argonauts/UWF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#087dc2",
             "alternate": "#03b186"
           }
@@ -3584,6 +4004,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "A-10",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/atlantic-10-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "davidson-wildcats",
@@ -3591,6 +4012,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DAV",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/davidson-wildcats/DAV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#e51837"
           },
@@ -3600,6 +4022,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DAY",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/dayton-flyers/DAY-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#004b8d",
             "alternate": "#ffffff"
           },
@@ -3609,6 +4032,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DUQ",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/duquesne-dukes/DUQ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002d62",
             "alternate": "#b90b2e"
           },
@@ -3618,6 +4042,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FOR",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/fordham-rams/FOR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#830032",
             "alternate": "#909090"
           },
@@ -3627,6 +4052,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GMU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/george-mason-patriots/GMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#016600",
             "alternate": "#ecb010"
           },
@@ -3636,6 +4062,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GW",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/george-washington-revolutionaries/GW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002843",
             "alternate": "#e8d2a1"
           },
@@ -3645,6 +4072,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LAS",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/la-salle-explorers/LAS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003356",
             "alternate": "#ffce00"
           },
@@ -3654,6 +4082,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LUC",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/loyola-chicago-ramblers/LUC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9d1244"
           },
           {
@@ -3662,6 +4091,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "URI",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/rhode-island-rams/URI-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#091f3f",
             "alternate": "#5ab3e8"
           },
@@ -3671,6 +4101,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RICH",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/richmond-spiders/RICH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9e0712",
             "alternate": "#b90b2e"
           },
@@ -3680,6 +4111,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JOES",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/saint-josephs-hawks/JOES-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#9e1b32",
             "alternate": "#6c6f70"
           },
@@ -3689,6 +4121,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SLU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/saint-louis-billikens/SLU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539c",
             "alternate": "#ebebeb"
           },
@@ -3698,6 +4131,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SBU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/st-bonaventure-bonnies/SBU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#70261d"
           },
           {
@@ -3706,6 +4140,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VCU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/vcu-rams/VCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffaf00",
             "alternate": "#000000"
           }
@@ -3717,6 +4152,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "ACC",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/acc-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "boston-college-eagles",
@@ -3724,6 +4160,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BC",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/boston-college-eagles/BC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#8c2232",
             "alternate": "#dbcca6"
           },
@@ -3733,6 +4170,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CAL",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/california-golden-bears/CAL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#ffc72c"
           },
@@ -3742,6 +4180,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CLEM",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/clemson-tigers/CLEM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f56600",
             "alternate": "#ffffff"
           },
@@ -3751,6 +4190,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DUKE",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/duke-blue-devils/DUKE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539b",
             "alternate": "#ffffff"
           },
@@ -3760,6 +4200,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FSU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/florida-state-seminoles/FSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#782f40",
             "alternate": "#ceb888"
           },
@@ -3769,6 +4210,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GT",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/georgia-tech-yellow-jackets/GT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b3a369",
             "alternate": "#ffffff"
           },
@@ -3778,6 +4220,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LOU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/louisville-cardinals/LOU-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#c9001f",
             "alternate": "#ffffff"
           },
@@ -3787,6 +4230,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MIA",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/miami-hurricanes/MIA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f47423",
             "alternate": "#035131"
           },
@@ -3796,6 +4240,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NCSU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/nc-state-wolfpack/NCSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0000",
             "alternate": "#ffffff"
           },
@@ -3805,6 +4250,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNC",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/north-carolina-tar-heels/UNC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7bafd4",
             "alternate": "#13294b"
           },
@@ -3814,6 +4260,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ND",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/notre-dame-fighting-irish/ND-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#062340",
             "alternate": "#c99700"
           },
@@ -3823,6 +4270,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PITT",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/pittsburgh-panthers/PITT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003594",
             "alternate": "#ffb81c"
           },
@@ -3832,6 +4280,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SMU",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/smu-mustangs/SMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a80000",
             "alternate": "#0033a1"
           },
@@ -3841,6 +4290,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STAN",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/stanford-cardinal/STAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#8c1515",
             "alternate": "#ffffff"
           },
@@ -3850,6 +4300,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SYR",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/syracuse-orange/SYR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000e54",
             "alternate": "#ff431b"
           },
@@ -3859,6 +4310,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UVA",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/virginia-cavaliers/UVA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#232d4b",
             "alternate": "#f84c1e"
           },
@@ -3868,6 +4320,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VT",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/virginia-tech-hokies/VT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#6a2c3e",
             "alternate": "#cf4520"
           },
@@ -3877,6 +4330,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WAKE",
             "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/wake-forest-demon-deacons/WAKE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ceb888",
             "alternate": "#2c2a29"
           }
@@ -3888,6 +4342,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big 12",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/big-12-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "arizona-state-sun-devils",
@@ -3895,6 +4350,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ASU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/arizona-state-sun-devils/ASU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc627",
             "alternate": "#8c1d40"
           },
@@ -3904,6 +4360,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARIZ",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/arizona-wildcats/ARIZ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0033",
             "alternate": "#003366"
           },
@@ -3913,6 +4370,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BAY",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/baylor-bears/BAY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#154734",
             "alternate": "#ffb81c"
           },
@@ -3922,6 +4380,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BYU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/byu-cougars/BYU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0047ba",
             "alternate": "#002e5d"
           },
@@ -3931,6 +4390,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CIN",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/cincinnati-bearcats/CIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#e00122"
           },
@@ -3940,6 +4400,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COLO",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/colorado-buffaloes/COLO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cfb87c",
             "alternate": "#000000"
           },
@@ -3949,6 +4410,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HOU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/houston-cougars/HOU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c8102e",
             "alternate": "#ffffff"
           },
@@ -3958,6 +4420,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ISU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/iowa-state-cyclones/ISU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ae192d",
             "alternate": "#ffc72a"
           },
@@ -3967,6 +4430,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/kansas-jayhawks/KU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0051ba",
             "alternate": "#e8000d"
           },
@@ -3976,6 +4440,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KSU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/kansas-state-wildcats/KSU-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#330a57",
             "alternate": "#e2e3e4"
           },
@@ -3985,6 +4450,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OKST",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/oklahoma-state-cowboys/OKST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fe5c00",
             "alternate": "#000000"
           },
@@ -3994,6 +4460,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TCU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/tcu-horned-frogs/TCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4d1979",
             "alternate": "#ffffff"
           },
@@ -4003,6 +4470,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TTU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/texas-tech-red-raiders/TTU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#da291c",
             "alternate": "#000000"
           },
@@ -4012,6 +4480,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCF",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/ucf-knights/UCF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#b4a169"
           },
@@ -4021,6 +4490,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTAH",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/utah-utes/UTAH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#be0000",
             "alternate": "#ffffff"
           },
@@ -4030,6 +4500,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WVU",
             "logo": "/sports-logos/cbb-logos/mens/big-12-conference/west-virginia-mountaineers/WVU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#eaaa00",
             "alternate": "#002855"
           }
@@ -4041,6 +4512,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big East",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/big-east-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "butler-bulldogs",
@@ -4048,6 +4520,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BTLR",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/butler-bulldogs/BTLR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0d1361",
             "alternate": "#00a3e0"
           },
@@ -4057,6 +4530,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CREI",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/creighton-bluejays/CREI-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005ca9",
             "alternate": "#6cadde"
           },
@@ -4066,6 +4540,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DEP",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/depaul-blue-demons/DEP-light.png",
             "plate": true,
+            "opaque": false,
             "primary": "#2d649c",
             "alternate": "#ce1125"
           },
@@ -4075,6 +4550,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GTWN",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/georgetown-hoyas/GTWN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#110e42",
             "alternate": "#001c58"
           },
@@ -4084,6 +4560,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MARQ",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/marquette-golden-eagles/MARQ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003366",
             "alternate": "#ffcc00"
           },
@@ -4093,6 +4570,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PROV",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/providence-friars/PROV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#a3a19e"
           },
@@ -4102,6 +4580,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HALL",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/seton-hall-pirates/HALL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0857b1",
             "alternate": "#8a8d8f"
           },
@@ -4111,6 +4590,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SJU",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/st-johns-red-storm/SJU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#d10000",
             "alternate": "#101010"
           },
@@ -4120,6 +4600,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CONN",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/uconn-huskies/CONN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0c2340",
             "alternate": "#a2aaad"
           },
@@ -4129,6 +4610,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VILL",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/villanova-wildcats/VILL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205b",
             "alternate": "#13b5ea"
           },
@@ -4138,6 +4620,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "XAV",
             "logo": "/sports-logos/cbb-logos/mens/big-east-conference/xavier-musketeers/XAV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#21304e",
             "alternate": "#a5a7a8"
           }
@@ -4149,6 +4632,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big Sky",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/big-sky-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "eastern-washington-eagles",
@@ -4156,6 +4640,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EWU",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/eastern-washington-eagles/EWU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a10022",
             "alternate": "#abb4bc"
           },
@@ -4165,6 +4650,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IDST",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/idaho-state-bengals/IDST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ef8c00",
             "alternate": "#e9a126"
           },
@@ -4174,6 +4660,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IDHO",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/idaho-vandals/IDHO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#8c6e4a"
           },
@@ -4183,6 +4670,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MONT",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/montana-grizzlies/MONT-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#751d4a",
             "alternate": "#666666"
           },
@@ -4192,6 +4680,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MTST",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/montana-state-bobcats/MTST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205c",
             "alternate": "#bc955c"
           },
@@ -4201,6 +4690,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NAU",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/northern-arizona-lumberjacks/NAU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003976",
             "alternate": "#1b3069"
           },
@@ -4210,6 +4700,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNCO",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/northern-colorado-bears/UNCO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#13558d",
             "alternate": "#ffc533"
           },
@@ -4219,6 +4710,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PRST",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/portland-state-vikings/PRST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00311e",
             "alternate": "#ebebeb"
           },
@@ -4228,6 +4720,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SUU",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/southern-utah-thunderbirds/SUU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c72026",
             "alternate": "#000000"
           },
@@ -4237,6 +4730,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WEB",
             "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/weber-state-wildcats/WEB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#18005a",
             "alternate": "#ebebeb"
           }
@@ -4248,6 +4742,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big South",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/big-south-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "charleston-southern-buccaneers",
@@ -4255,6 +4750,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CHSO",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/charleston-southern-buccaneers/CHSO-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#2e3192",
             "alternate": "#ded090"
           },
@@ -4264,6 +4760,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GWEB",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/gardner-webb-runnin-bulldogs/GWEB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c12535",
             "alternate": "#909090"
           },
@@ -4273,6 +4770,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HPU",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/high-point-panthers/HPU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#330072",
             "alternate": "#ffffff"
           },
@@ -4282,6 +4780,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LONG",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/longwood-lancers/LONG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003273",
             "alternate": "#9ea2a3"
           },
@@ -4291,6 +4790,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PRES",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/presbyterian-blue-hose/PRES-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#194896",
             "alternate": "#990134"
           },
@@ -4300,6 +4800,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RAD",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/radford-highlanders/RAD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#bc1515",
             "alternate": "#c2c3c0"
           },
@@ -4309,6 +4810,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UPST",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/south-carolina-upstate-spartans/UPST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#008545",
             "alternate": "#000000"
           },
@@ -4318,6 +4820,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNCA",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/unc-asheville-bulldogs/UNCA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003da5",
             "alternate": "#ffffff"
           },
@@ -4327,6 +4830,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WIN",
             "logo": "/sports-logos/cbb-logos/mens/big-south-conference/winthrop-eagles/WIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9e0b0e",
             "alternate": "#fdb41e"
           }
@@ -4338,6 +4842,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big Ten",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/big-ten-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "illinois-fighting-illini",
@@ -4345,6 +4850,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ILL",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/illinois-fighting-illini/ILL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff5f05",
             "alternate": "#13294b"
           },
@@ -4354,6 +4860,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IU",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/indiana-hoosiers/IU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#970310",
             "alternate": "#ffffff"
           },
@@ -4363,6 +4870,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IOWA",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/iowa-hawkeyes/IOWA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#231f20",
             "alternate": "#fcd116"
           },
@@ -4372,6 +4880,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MD",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/maryland-terrapins/MD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce1126",
             "alternate": "#ffffff"
           },
@@ -4381,6 +4890,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MSU",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/michigan-state-spartans/MSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#173f35",
             "alternate": "#ffffff"
           },
@@ -4390,6 +4900,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MICH",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/michigan-wolverines/MICH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00274c",
             "alternate": "#ffcb05"
           },
@@ -4399,6 +4910,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MINN",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/minnesota-golden-gophers/MINN-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#5e0a2f",
             "alternate": "#fab41c"
           },
@@ -4408,6 +4920,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NEB",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/nebraska-cornhuskers/NEB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e31937",
             "alternate": "#ffffff"
           },
@@ -4417,6 +4930,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NU",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/northwestern-wildcats/NU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f92",
             "alternate": "#ffffff"
           },
@@ -4426,6 +4940,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OSU",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/ohio-state-buckeyes/OSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#a8adb4"
           },
@@ -4435,6 +4950,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ORE",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/oregon-ducks/ORE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00934b",
             "alternate": "#fff41b"
           },
@@ -4444,6 +4960,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PSU",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/penn-state-nittany-lions/PSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#061440",
             "alternate": "#ffffff"
           },
@@ -4453,6 +4970,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PUR",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/purdue-boilermakers/PUR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ceb888",
             "alternate": "#000000"
           },
@@ -4462,6 +4980,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RUTG",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/rutgers-scarlet-knights/RUTG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce0e2d",
             "alternate": "#ffffff"
           },
@@ -4471,6 +4990,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCLA",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/ucla-bruins/UCLA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#2774ae",
             "alternate": "#f2a900"
           },
@@ -4480,6 +5000,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USC",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/usc-trojans/USC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9d2235",
             "alternate": "#ffc72c"
           },
@@ -4489,6 +5010,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WASH",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/washington-huskies/WASH-light.png",
             "plate": true,
+            "opaque": false,
             "primary": "#33006f",
             "alternate": "#e8d3a2"
           },
@@ -4498,6 +5020,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WIS",
             "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/wisconsin-badgers/WIS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a00000",
             "alternate": "#ffffff"
           }
@@ -4509,6 +5032,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Big West",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/big-west-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "cal-poly-mustangs",
@@ -4516,6 +5040,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CP",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-poly-mustangs/CP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#1e4d2b",
             "alternate": "#eed897"
           },
@@ -4525,6 +5050,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CSUB",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-bakersfield-roadrunners/CSUB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003bab"
           },
           {
@@ -4533,6 +5059,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CSUF",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-fullerton-titans/CSUF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003767",
             "alternate": "#ff8300"
           },
@@ -4542,6 +5069,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CSUN",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-northridge-matadors/CSUN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b50000"
           },
           {
@@ -4550,6 +5078,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CBU",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/california-baptist-lancers/CBU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000080"
           },
           {
@@ -4558,6 +5087,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LBSU",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/long-beach-state-beach/LBSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#f1f2f3"
           },
@@ -4567,6 +5097,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SAC",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/sacramento-state-hornets/SAC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00573c",
             "alternate": "#cdb97d"
           },
@@ -4576,6 +5107,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCI",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-irvine-anteaters/UCI-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002b5c",
             "alternate": "#fec52e"
           },
@@ -4585,6 +5117,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCR",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-riverside-highlanders/UCR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#14234f"
           },
           {
@@ -4593,6 +5126,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCSD",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-san-diego-tritons/UCSD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ffcd00"
           },
@@ -4602,6 +5136,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCSB",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-santa-barbara-gauchos/UCSB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#1e1840",
             "alternate": "#febc11"
           },
@@ -4611,6 +5146,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTU",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/utah-tech-trailblazers/UTU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -4619,6 +5155,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UVU",
             "logo": "/sports-logos/cbb-logos/mens/big-west-conference/utah-valley-wolverines/UVU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004812",
             "alternate": "#e1c736"
           }
@@ -4630,6 +5167,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "CAA",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/caa-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "campbell-fighting-camels",
@@ -4637,6 +5175,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CAM",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/campbell-fighting-camels/CAM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -4645,6 +5184,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COFC",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/charleston-cougars/COFC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7a2531",
             "alternate": "#9e8959"
           },
@@ -4654,6 +5194,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DREX",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/drexel-dragons/DREX-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#020260",
             "alternate": "#ffd65a"
           },
@@ -4663,6 +5204,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ELON",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/elon-phoenix/ELON-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#020303",
             "alternate": "#b59a57"
           },
@@ -4672,6 +5214,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HAMP",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/hampton-pirates/HAMP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0067ac"
           },
           {
@@ -4680,6 +5223,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HOF",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/hofstra-pride/HOF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003594",
             "alternate": "#ffc72c"
           },
@@ -4689,6 +5233,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MONM",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/monmouth-hawks/MONM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#051844"
           },
           {
@@ -4697,6 +5242,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NCAT",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/north-carolina-at-aggies/NCAT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0505aa",
             "alternate": "#004684"
           },
@@ -4706,6 +5252,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NE",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/northeastern-huskies/NE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0001",
             "alternate": "#c2c3c0"
           },
@@ -4715,6 +5262,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STBK",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/stony-brook-seawolves/STBK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#990000"
           },
           {
@@ -4723,6 +5271,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TOW",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/towson-tigers/TOW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc229"
           },
           {
@@ -4731,6 +5280,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNCW",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/unc-wilmington-seahawks/UNCW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00665e",
             "alternate": "#ffda00"
           },
@@ -4740,6 +5290,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "W&M",
             "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/william-mary-tribe/W%26M-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#115740",
             "alternate": "#f0b323"
           }
@@ -4750,7 +5301,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Conference USA",
         "shortName": "C-USA",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/conference-usa-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "delaware-blue-hens",
@@ -4758,6 +5310,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DEL",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/delaware-blue-hens/DEL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539f",
             "alternate": "#ffd200"
           },
@@ -4767,6 +5320,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FIU",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/florida-international-panthers/FIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#091f3f",
             "alternate": "#c3993f"
           },
@@ -4776,6 +5330,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JXST",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/jacksonville-state-gamecocks/JXST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#cc0000",
             "alternate": "#000000"
           },
@@ -4785,6 +5340,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KENN",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/kennesaw-state-owls/KENN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fdbb30",
             "alternate": "#0b1315"
           },
@@ -4794,6 +5350,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LIB",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/liberty-flames/LIB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0a254e",
             "alternate": "#b72025"
           },
@@ -4803,6 +5360,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LT",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/louisiana-tech-bulldogs/LT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003087",
             "alternate": "#cb333b"
           },
@@ -4812,6 +5370,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MTSU",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/middle-tennessee-blue-raiders/MTSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#036eb7",
             "alternate": "#ffffff"
           },
@@ -4821,6 +5380,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MOST",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/missouri-state-bears/MOST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5e0009",
             "alternate": "#ffffff"
           },
@@ -4830,6 +5390,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NMSU",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/new-mexico-state-aggies/NMSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7e141b",
             "alternate": "#231f20"
           },
@@ -4839,6 +5400,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SHSU",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/sam-houston-bearkats/SHSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f56423",
             "alternate": "#ffffff"
           },
@@ -4848,6 +5410,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WKU",
             "logo": "/sports-logos/cbb-logos/mens/conference-usa/western-kentucky-hilltoppers/WKU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e13a3e",
             "alternate": "#ffffff"
           }
@@ -4859,6 +5422,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Horizon",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/horizon-league-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "cleveland-state-vikings",
@@ -4866,6 +5430,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CLE",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/cleveland-state-vikings/CLE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006633",
             "alternate": "#231f20"
           },
@@ -4875,6 +5440,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DETM",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/detroit-mercy-titans/DETM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#165b9e",
             "alternate": "#d31733"
           },
@@ -4884,6 +5450,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GB",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/green-bay-phoenix/GB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006633",
             "alternate": "#ffffff"
           },
@@ -4893,6 +5460,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IUIN",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/iu-indianapolis-jaguars/IUIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a81f30",
             "alternate": "#d59f0f"
           },
@@ -4902,6 +5470,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MILW",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/milwaukee-panthers/MILW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ffc20e"
           },
@@ -4911,6 +5480,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NIU",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/northern-illinois-huskies/NIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c8102e",
             "alternate": "#000000"
           },
@@ -4920,6 +5490,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NKU",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/northern-kentucky-norse/NKU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc82e",
             "alternate": "#000000"
           },
@@ -4929,6 +5500,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OAK",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/oakland-golden-grizzlies/OAK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#04091c",
             "alternate": "#bc955c"
           },
@@ -4938,6 +5510,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PFW",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/purdue-fort-wayne-mastodons/PFW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cfb991",
             "alternate": "#000000"
           },
@@ -4947,6 +5520,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RMU",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/robert-morris-colonials/RMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00214d",
             "alternate": "#a21d2b"
           },
@@ -4956,6 +5530,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WRST",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/wright-state-raiders/WRST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cba052",
             "alternate": "#cba052"
           },
@@ -4965,6 +5540,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "YSU",
             "logo": "/sports-logos/cbb-logos/mens/horizon-league/youngstown-state-penguins/YSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e51935",
             "alternate": "#690717"
           }
@@ -4976,6 +5552,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Ivy",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/ivy-league-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "brown-bears",
@@ -4983,6 +5560,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BRWN",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/brown-bears/BRWN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#411e09",
             "alternate": "#949300"
           },
@@ -4992,6 +5570,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COLU",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/columbia-lions/COLU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7ba4db",
             "alternate": "#183863"
           },
@@ -5001,6 +5580,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COR",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/cornell-big-red/COR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b31b1b",
             "alternate": "#ffffff"
           },
@@ -5010,6 +5590,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DART",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/dartmouth-big-green/DART-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005730",
             "alternate": "#000000"
           },
@@ -5019,6 +5600,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HARV",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/harvard-crimson/HARV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#990000",
             "alternate": "#dbdbdb"
           },
@@ -5028,6 +5610,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PENN",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/pennsylvania-quakers/PENN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#082a74",
             "alternate": "#a6163d"
           },
@@ -5037,6 +5620,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PRIN",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/princeton-tigers/PRIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ff6000"
           },
@@ -5046,6 +5630,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "YALE",
             "logo": "/sports-logos/cbb-logos/mens/ivy-league/yale-bulldogs/YALE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004a81",
             "alternate": "#286dc0"
           }
@@ -5057,6 +5642,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "MAAC",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/maac-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "canisius-golden-griffins",
@@ -5064,6 +5650,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CAN",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/canisius-golden-griffins/CAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004a81",
             "alternate": "#dda50f"
           },
@@ -5073,6 +5660,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FAIR",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/fairfield-stags/FAIR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ebebeb"
           },
@@ -5082,6 +5670,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "IONA",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/iona-gaels/IONA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#6f2c3e",
             "alternate": "#f0ab00"
           },
@@ -5091,6 +5680,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MAN",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/manhattan-jaspers/MAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4f8537",
             "alternate": "#b5b7ba"
           },
@@ -5100,6 +5690,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MRST",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/marist-red-foxes/MRST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e53730",
             "alternate": "#f0f0f0"
           },
@@ -5109,6 +5700,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MRMK",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/merrimack-warriors/MRMK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#2f4f93",
             "alternate": "#e8c535"
           },
@@ -5118,6 +5710,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MSM",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/mount-st-marys-mountaineers/MSM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005596",
             "alternate": "#ebebeb"
           },
@@ -5127,6 +5720,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NIA",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/niagara-purple-eagles/NIA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#69207e",
             "alternate": "#f0f0f0"
           },
@@ -5136,6 +5730,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "QUIN",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/quinnipiac-bobcats/QUIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041b43"
           },
           {
@@ -5144,6 +5739,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RID",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/rider-broncs/RID-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a80532",
             "alternate": "#ebebeb"
           },
@@ -5153,6 +5749,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SHU",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/sacred-heart-pioneers/SHU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a40012",
             "alternate": "#c29472"
           },
@@ -5162,6 +5759,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SPU",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/saint-peters-peacocks/SPU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004cc2"
           },
           {
@@ -5170,6 +5768,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SIE",
             "logo": "/sports-logos/cbb-logos/mens/metro-conference/siena-saints/SIE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#037961",
             "alternate": "#eea60f"
           }
@@ -5181,6 +5780,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "MAC",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/mac-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "akron-zips",
@@ -5188,6 +5788,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AKR",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/akron-zips/AKR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#c5b783"
           },
@@ -5197,6 +5798,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BALL",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/ball-state-cardinals/BALL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#ffffff"
           },
@@ -5206,6 +5808,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BGSU",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/bowling-green-falcons/BGSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#fd5000",
             "alternate": "#4f2c1d"
           },
@@ -5215,6 +5818,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BUF",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/buffalo-bulls/BUF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005bbb",
             "alternate": "#ffffff"
           },
@@ -5224,6 +5828,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CMU",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/central-michigan-chippewas/CMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4c0027",
             "alternate": "#fbab18"
           },
@@ -5233,6 +5838,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EMU",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/eastern-michigan-eagles/EMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006938",
             "alternate": "#ffffff"
           },
@@ -5242,6 +5848,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KENT",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/kent-state-golden-flashes/KENT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002664",
             "alternate": "#eaab00"
           },
@@ -5251,6 +5858,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MASS",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/massachusetts-minutemen/MASS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#881c1c",
             "alternate": "#ffffff"
           },
@@ -5260,6 +5868,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "M-OH",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/miami-oh-redhawks/M-OH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c41230",
             "alternate": "#ffffff"
           },
@@ -5269,6 +5878,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OHIO",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/ohio-bobcats/OHIO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#154734",
             "alternate": "#ffffff"
           },
@@ -5278,6 +5888,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TOL",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/toledo-rockets/TOL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0b2240",
             "alternate": "#ffcd00"
           },
@@ -5287,6 +5898,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WMU",
             "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/western-michigan-broncos/WMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#532e1f",
             "alternate": "#f1c500"
           }
@@ -5298,6 +5910,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "MEAC",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/meac-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "coppin-state-eagles",
@@ -5305,6 +5918,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COPP",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/coppin-state-eagles/COPP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#2e3192",
             "alternate": "#ffd204"
           },
@@ -5314,6 +5928,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DSU",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/delaware-state-hornets/DSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#009cdb",
             "alternate": "#d51c28"
           },
@@ -5323,6 +5938,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HOW",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/howard-bison/HOW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003a63",
             "alternate": "#e51937"
           },
@@ -5332,6 +5948,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UMES",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/maryland-eastern-shore-hawks/UMES-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5c2301",
             "alternate": "#b5b7ba"
           },
@@ -5341,6 +5958,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MORG",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/morgan-state-bears/MORG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#014786",
             "alternate": "#f47937"
           },
@@ -5350,6 +5968,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NORF",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/norfolk-state-spartans/NORF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0c8968",
             "alternate": "#fdb813"
           },
@@ -5359,6 +5978,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NCCU",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/north-carolina-central-eagles/NCCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#880023",
             "alternate": "#c2c3c0"
           },
@@ -5368,6 +5988,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SCST",
             "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/south-carolina-state-bulldogs/SCST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7d1315",
             "alternate": "#104897"
           }
@@ -5379,6 +6000,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "MVC",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/missouri-valley-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "belmont-bruins",
@@ -5386,6 +6008,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BEL",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/belmont-bruins/BEL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#182142",
             "alternate": "#c9262d"
           },
@@ -5395,6 +6018,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BRAD",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/bradley-braves/BRAD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b70002",
             "alternate": "#c0c0c0"
           },
@@ -5404,6 +6028,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DRKE",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/drake-bulldogs/DRKE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005596",
             "alternate": "#bec0c2"
           },
@@ -5413,6 +6038,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EVAN",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/evansville-purple-aces/EVAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#663399",
             "alternate": "#ef6f00"
           },
@@ -5422,6 +6048,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ILST",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/illinois-state-redbirds/ILST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce1126",
             "alternate": "#ffe716"
           },
@@ -5431,6 +6058,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "INST",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/indiana-state-sycamores/INST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00669a",
             "alternate": "#f0f0f0"
           },
@@ -5440,6 +6068,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MUR",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/murray-state-racers/MUR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002148",
             "alternate": "#000e00"
           },
@@ -5449,6 +6078,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNI",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/northern-iowa-panthers/UNI-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#473282",
             "alternate": "#ffffff"
           },
@@ -5458,6 +6088,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SIU",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/southern-illinois-salukis/SIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#85283d",
             "alternate": "#c2c3c0"
           },
@@ -5467,6 +6098,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UIC",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/uic-flames/UIC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#001e62",
             "alternate": "#d50032"
           },
@@ -5476,6 +6108,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VAL",
             "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/valparaiso-beacons/VAL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#794500"
           }
         ]
@@ -5485,7 +6118,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Mountain West Conference",
         "shortName": "Mountain West",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/mountain-west-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "air-force-falcons",
@@ -5493,6 +6127,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AF",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/air-force-falcons/AF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003594",
             "alternate": "#ffffff"
           },
@@ -5502,6 +6137,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GCU",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/grand-canyon-lopes/GCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#522398",
             "alternate": "#ffffff"
           },
@@ -5511,6 +6147,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HAW",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/hawaii-rainbow-warriors/HAW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005737",
             "alternate": "#000000"
           },
@@ -5520,6 +6157,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NEV",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/nevada-wolf-pack/NEV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#8a8d8f"
           },
@@ -5529,6 +6167,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNM",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/new-mexico-lobos/UNM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#a7a8aa"
           },
@@ -5538,6 +6177,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SJSU",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/san-jos%C3%A3-state-spartans/SJSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0038a8",
             "alternate": "#ffb81a"
           },
@@ -5547,6 +6187,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UCD",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/uc-davis-aggies/UCD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002855",
             "alternate": "#c3c4c6"
           },
@@ -5556,6 +6197,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNLV",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/unlv-rebels/UNLV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cf0a2c",
             "alternate": "#cac8c8"
           },
@@ -5565,6 +6207,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTEP",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/utep-miners/UTEP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff8200",
             "alternate": "#041e42"
           },
@@ -5574,6 +6217,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WYO",
             "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/wyoming-cowboys/WYO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f24",
             "alternate": "#ffc425"
           }
@@ -5585,6 +6229,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "NEC",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/northeast-dark.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "central-connecticut-blue-devils",
@@ -5592,6 +6237,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CCSU",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/central-connecticut-blue-devils/CCSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#1b49a2",
             "alternate": "#d1d5d8"
           },
@@ -5601,6 +6247,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CHST",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/chicago-state-cougars/CHST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#006700"
           },
           {
@@ -5609,6 +6256,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FDU",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/fairleigh-dickinson-knights/FDU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#72293c",
             "alternate": "#28334a"
           },
@@ -5617,7 +6265,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "name": "Le Moyne Dolphins",
             "abbr": "LEM",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/le-moyne-dolphins/LEM-dark.png",
-            "plate": false
+            "plate": false,
+            "opaque": false
           },
           {
             "slug": "long-island-university-sharks",
@@ -5625,6 +6274,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LIU",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/long-island-university-sharks/LIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#50c9f7",
             "alternate": "#ffbf00"
           },
@@ -5634,6 +6284,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MERC",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/mercyhurst-lakers/MERC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -5642,6 +6293,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NHVN",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/new-haven-chargers/NHVN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#ffc425"
           },
@@ -5651,6 +6303,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STO",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/stonehill-skyhawks/STO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -5659,6 +6312,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WAG",
             "logo": "/sports-logos/cbb-logos/mens/northeast-conference/wagner-seahawks/WAG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00483a",
             "alternate": "#ffffff"
           }
@@ -5670,6 +6324,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "OVC",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/ohio-valley-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "eastern-illinois-panthers",
@@ -5677,6 +6332,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EIU",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/eastern-illinois-panthers/EIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#bebab9"
           },
@@ -5686,6 +6342,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LIN",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/lindenwood-lions/LIN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -5694,6 +6351,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MORE",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/morehead-state-eagles/MORE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#094fa3",
             "alternate": "#fed91a"
           },
@@ -5703,6 +6361,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SIUE",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/siu-edwardsville-cougars/SIUE-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#eb1c23",
             "alternate": "#080808"
           },
@@ -5712,6 +6371,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SEMO",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/southeast-missouri-state-redhawks/SEMO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c8102e",
             "alternate": "#000000"
           },
@@ -5720,7 +6380,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "name": "Southern Indiana Screaming Eagles",
             "abbr": "USI",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/southern-indiana-screaming-eagles/USI-dark.png",
-            "plate": false
+            "plate": false,
+            "opaque": false
           },
           {
             "slug": "tennessee-state-tigers",
@@ -5728,6 +6389,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TNST",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/tennessee-state-tigers/TNST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#171796",
             "alternate": "#f0f0f0"
           },
@@ -5737,6 +6399,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTM",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/ut-martin-skyhawks/UTM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff6700",
             "alternate": "#102a5c"
           },
@@ -5746,6 +6409,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WIU",
             "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/western-illinois-leathernecks/WIU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4e1e8a",
             "alternate": "#ffc90a"
           }
@@ -5757,6 +6421,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Pac-12",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/pac-12-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "boise-state-broncos",
@@ -5764,6 +6429,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BOIS",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/boise-state-broncos/BOIS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a0",
             "alternate": "#d64309"
           },
@@ -5773,6 +6439,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CSU",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/colorado-state-rams/CSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004c23",
             "alternate": "#c8c372"
           },
@@ -5782,6 +6449,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FRES",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/fresno-state-bulldogs/FRES-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#b1102b",
             "alternate": "#13284c"
           },
@@ -5791,6 +6459,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GONZ",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/gonzaga-bulldogs/GONZ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#c8102e"
           },
@@ -5800,6 +6469,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ORST",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/oregon-state-beavers/ORST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#dc4405",
             "alternate": "#000000"
           },
@@ -5809,6 +6479,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SDSU",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/san-diego-state-aztecs/SDSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a6192e",
             "alternate": "#000000"
           },
@@ -5818,6 +6489,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TXST",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/texas-state-bobcats/TXST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#501214",
             "alternate": "#6a5638"
           },
@@ -5827,6 +6499,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USU",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/utah-state-aggies/USU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0f2439",
             "alternate": "#ffffff"
           },
@@ -5836,6 +6509,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WSU",
             "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/washington-state-cougars/WSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a60f2d",
             "alternate": "#4d4d4d"
           }
@@ -5847,6 +6521,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Patriot",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/patriot-league-light.png",
         "plate": true,
+        "opaque": false,
         "teams": [
           {
             "slug": "american-university-eagles",
@@ -5854,6 +6529,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AMER",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/american-university-eagles/AMER-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c41130",
             "alternate": "#c8102e"
           },
@@ -5863,6 +6539,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARMY",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/army-black-knights/ARMY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#d3bc8d"
           },
@@ -5872,6 +6549,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BU",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/boston-university-terriers/BU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cc0000",
             "alternate": "#ffffff"
           },
@@ -5881,6 +6559,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BUCK",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/bucknell-bison/BUCK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000060",
             "alternate": "#00316e"
           },
@@ -5890,6 +6569,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "COLG",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/colgate-raiders/COLG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#821019",
             "alternate": "#ffffff"
           },
@@ -5899,6 +6579,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HC",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/holy-cross-crusaders/HC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#582c83",
             "alternate": "#ffffff"
           },
@@ -5908,6 +6589,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LAF",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/lafayette-leopards/LAF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#790000",
             "alternate": "#a59474"
           },
@@ -5917,6 +6599,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LEH",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/lehigh-mountain-hawks/LEH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#6c2b2a",
             "alternate": "#b69e70"
           },
@@ -5926,6 +6609,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "L-MD",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/loyola-maryland-greyhounds/L-MD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#76a7a0",
             "alternate": "#c9cbca"
           },
@@ -5935,6 +6619,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NAVY",
             "logo": "/sports-logos/cbb-logos/mens/patriot-league/navy-midshipmen/NAVY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00225b",
             "alternate": "#b5a67c"
           }
@@ -5946,6 +6631,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "SEC",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/sec-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "alabama-crimson-tide",
@@ -5953,6 +6639,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ALA",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/alabama-crimson-tide/ALA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#9e1b32",
             "alternate": "#ffffff"
           },
@@ -5962,6 +6649,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARK",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/arkansas-razorbacks/ARK-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#a32136",
             "alternate": "#ffffff"
           },
@@ -5971,6 +6659,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AUB",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/auburn-tigers/AUB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002b5c",
             "alternate": "#f26522"
           },
@@ -5980,6 +6669,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FLA",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/florida-gators/FLA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0021a5",
             "alternate": "#fa4616"
           },
@@ -5989,6 +6679,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UGA",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/georgia-bulldogs/UGA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ba0c2f",
             "alternate": "#2c2a29"
           },
@@ -5998,6 +6689,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UK",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/kentucky-wildcats/UK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a0",
             "alternate": "#ffffff"
           },
@@ -6007,6 +6699,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LSU",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/lsu-tigers/LSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#461d76",
             "alternate": "#fdd023"
           },
@@ -6016,6 +6709,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MSST",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/mississippi-state-bulldogs/MSST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5d1725",
             "alternate": "#c1c6c8"
           },
@@ -6025,6 +6719,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MIZ",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/missouri-tigers/MIZ-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f1b82d",
             "alternate": "#000000"
           },
@@ -6034,6 +6729,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OU",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/oklahoma-sooners/OU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#990000",
             "alternate": "#ffffff"
           },
@@ -6043,6 +6739,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MISS",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/ole-miss-rebels/MISS-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#13294b",
             "alternate": "#cf142b"
           },
@@ -6052,6 +6749,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SC",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/south-carolina-gamecocks/SC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#73000a",
             "alternate": "#000000"
           },
@@ -6061,6 +6759,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TENN",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/tennessee-volunteers/TENN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff8200",
             "alternate": "#ffffff"
           },
@@ -6070,6 +6769,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TA&M",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/texas-am-aggies/TA%26M-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#500000",
             "alternate": "#ffffff"
           },
@@ -6079,6 +6779,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TEX",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/texas-longhorns/TEX-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#af5c37",
             "alternate": "#ffffff"
           },
@@ -6088,6 +6789,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VAN",
             "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/vanderbilt-commodores/VAN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#cfae70"
           }
@@ -6099,6 +6801,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "SoCon",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/southern-dark.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "chattanooga-mocs",
@@ -6106,6 +6809,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTC",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/chattanooga-mocs/UTC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00386b",
             "alternate": "#dca71d"
           },
@@ -6115,6 +6819,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ETSU",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/east-tennessee-state-buccaneers/ETSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002d61",
             "alternate": "#ffc423"
           },
@@ -6124,6 +6829,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FUR",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/furman-paladins/FUR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#582c83",
             "alternate": "#ffffff"
           },
@@ -6133,6 +6839,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MER",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/mercer-bears/MER-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ff7f29",
             "alternate": "#080808"
           },
@@ -6142,6 +6849,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SAM",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/samford-bulldogs/SAM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005485",
             "alternate": "#bc0023"
           },
@@ -6151,6 +6859,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TNTC",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/tennessee-tech-golden-eagles/TNTC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#5a4099",
             "alternate": "#ffde00"
           },
@@ -6160,6 +6869,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CIT",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/the-citadel-bulldogs/CIT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7badd3",
             "alternate": "#002856"
           },
@@ -6169,6 +6879,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNCG",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/unc-greensboro-spartans/UNCG-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003559",
             "alternate": "#ffd90a"
           },
@@ -6178,6 +6889,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "VMI",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/vmi-keydets/VMI-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ae122a",
             "alternate": "#ffd619"
           },
@@ -6187,6 +6899,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WCU",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/western-carolina-catamounts/WCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f91",
             "alternate": "#bf9e70"
           },
@@ -6196,6 +6909,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WOF",
             "logo": "/sports-logos/cbb-logos/mens/southern-conference/wofford-terriers/WOF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#533b22",
             "alternate": "#f0f0f0"
           }
@@ -6207,6 +6921,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Southland",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/southland-dark.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "east-texas-am-lions",
@@ -6214,6 +6929,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ETAM",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/east-texas-am-lions/ETAM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -6222,6 +6938,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "HCU",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/houston-christian-huskies/HCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00539c"
           },
           {
@@ -6230,6 +6947,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UIW",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/incarnate-word-cardinals/UIW-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#080808"
           },
@@ -6239,6 +6957,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LAM",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/lamar-cardinals/LAM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ebebeb"
           },
@@ -6248,6 +6967,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MCN",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/mcneese-cowboys/MCN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00529c",
             "alternate": "#ffd204"
           },
@@ -6257,6 +6977,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NOLA",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/lsu-new-orleans-privateers/NOLA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005da6",
             "alternate": "#a2a9ae"
           },
@@ -6266,6 +6987,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NICH",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/nicholls-colonels/NICH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#c41230",
             "alternate": "#f0f0f0"
           },
@@ -6275,6 +6997,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NWST",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/northwestern-state-demons/NWST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#492f91",
             "alternate": "#ed6118"
           },
@@ -6284,6 +7007,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SELA",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/se-louisiana-lions/SELA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#215732",
             "alternate": "#ffc72c"
           },
@@ -6293,6 +7017,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SFA",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/stephen-f-austin-lumberjacks/SFA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#393996",
             "alternate": "#bec0c2"
           },
@@ -6302,6 +7027,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AMCC",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/texas-am-corpus-christi-islanders/AMCC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0067c5",
             "alternate": "#007f3e"
           },
@@ -6311,6 +7037,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "RGV",
             "logo": "/sports-logos/cbb-logos/mens/southland-conference/ut-rio-grande-valley-vaqueros/RGV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#dc6000",
             "alternate": "#e1732d"
           }
@@ -6322,6 +7049,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "SWAC",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/swac-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "alabama-am-bulldogs",
@@ -6329,6 +7057,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "AAMU",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alabama-am-bulldogs/AAMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#790000",
             "alternate": "#ffffff"
           },
@@ -6338,6 +7067,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ALST",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alabama-state-hornets/ALST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e9a900",
             "alternate": "#0a0a0a"
           },
@@ -6347,6 +7077,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ALCN",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alcorn-state-braves/ALCN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#4b0058",
             "alternate": "#46166a"
           },
@@ -6356,6 +7087,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UAPB",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/arkansas-pine-bluff-golden-lions/UAPB-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e0aa0f",
             "alternate": "#eaaa00"
           },
@@ -6365,6 +7097,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "BCU",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/bethune-cookman-wildcats/BCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#7b1831",
             "alternate": "#e9aa12"
           },
@@ -6374,6 +7107,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "FAMU",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/florida-am-rattlers/FAMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f89728",
             "alternate": "#00843d"
           },
@@ -6383,6 +7117,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GRAM",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/grambling-tigers/GRAM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ee8601",
             "alternate": "#ffd10a"
           },
@@ -6392,6 +7127,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JKST",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/jackson-state-tigers/JKST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#123297",
             "alternate": "#b5b7ba"
           },
@@ -6401,6 +7137,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MVSU",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/mississippi-valley-state-delta-devils/MVSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005328",
             "alternate": "#cf2d34"
           },
@@ -6410,6 +7147,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PV",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/prairie-view-am-panthers/PV-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#582c83",
             "alternate": "#eaaa00"
           },
@@ -6419,6 +7157,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SOU",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/southern-jaguars/SOU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004b97",
             "alternate": "#ffc82d"
           },
@@ -6428,6 +7167,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TXSO",
             "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/texas-southern-tigers/TXSO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#860038",
             "alternate": "#ffffff"
           }
@@ -6439,6 +7179,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Summit",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/summit-league-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "kansas-city-roos",
@@ -6446,6 +7187,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "KC",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/kansas-city-roos/KC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004b87",
             "alternate": "#ffc72c"
           },
@@ -6455,6 +7197,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UND",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/north-dakota-fighting-hawks/UND-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00a26b",
             "alternate": "#c2c3c0"
           },
@@ -6464,6 +7207,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "NDSU",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/north-dakota-state-bison/NDSU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#01402a",
             "alternate": "#ffffff"
           },
@@ -6473,6 +7217,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "OMA",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/omaha-mavericks/OMA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#e3193e",
             "alternate": "#474648"
           },
@@ -6482,6 +7227,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ORU",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/oral-roberts-golden-eagles/ORU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#002462",
             "alternate": "#dac792"
           },
@@ -6491,6 +7237,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SDAK",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/south-dakota-coyotes/SDAK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#cd1241",
             "alternate": "#f0f0f0"
           },
@@ -6500,6 +7247,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SDST",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/south-dakota-state-jackrabbits/SDST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a0",
             "alternate": "#ffd100"
           },
@@ -6509,6 +7257,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "STMN",
             "logo": "/sports-logos/cbb-logos/mens/summit-league/st-thomas-tommies/STMN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           }
         ]
@@ -6519,6 +7268,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "Sun Belt",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/sun-belt-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "app-state-mountaineers",
@@ -6526,6 +7276,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "APP",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/app-state-mountaineers/APP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000",
             "alternate": "#ffcd00"
           },
@@ -6535,6 +7286,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ARST",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/arkansas-state-red-wolves/ARST-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#cc092f",
             "alternate": "#000000"
           },
@@ -6544,6 +7296,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CCU",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/coastal-carolina-chanticleers/CCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#006f71",
             "alternate": "#a27752"
           },
@@ -6553,6 +7306,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GASO",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/georgia-southern-eagles/GASO-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#041e42",
             "alternate": "#a3aaae"
           },
@@ -6562,6 +7316,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "GAST",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/georgia-state-panthers/GAST-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0039a6",
             "alternate": "#ffffff"
           },
@@ -6571,6 +7326,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "JMU",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/james-madison-dukes/JMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#450084",
             "alternate": "#cbb677"
           },
@@ -6580,6 +7336,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UL",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/louisiana-ragin-cajuns/UL-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ce181e",
             "alternate": "#000000"
           },
@@ -6589,6 +7346,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "MRSH",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/marshall-thundering-herd/MRSH-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00b140",
             "alternate": "#000000"
           },
@@ -6598,6 +7356,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ODU",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/old-dominion-monarchs/ODU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003768",
             "alternate": "#a1d2f1"
           },
@@ -6607,6 +7366,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USA",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/south-alabama-jaguars/USA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#00205b",
             "alternate": "#bf0d3e"
           },
@@ -6616,6 +7376,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USM",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/southern-miss-golden-eagles/USM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ffc72c",
             "alternate": "#231f20"
           },
@@ -6625,6 +7386,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TROY",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/troy-trojans/TROY-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#862633",
             "alternate": "#b1b1b1"
           },
@@ -6634,6 +7396,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ULM",
             "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/ul-monroe-warhawks/ULM-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#840029",
             "alternate": "#fdb913"
           }
@@ -6644,7 +7407,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "United Athletic Conference",
         "shortName": "UAC",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/united-athletic-conference-light.png",
-        "plate": true,
+        "plate": false,
+        "opaque": true,
         "teams": [
           {
             "slug": "abilene-christian-wildcats",
@@ -6652,6 +7416,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "ACU",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/abilene-christian-wildcats/ACU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#592d82",
             "alternate": "#b1b3b3"
           },
@@ -6661,6 +7426,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "APSU",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/austin-peay-governors/APSU-dark.png",
             "plate": true,
+            "opaque": false,
             "primary": "#8e0b0b"
           },
           {
@@ -6669,6 +7435,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "CARK",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/central-arkansas-bears/CARK-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#a7a9ac",
             "alternate": "#8e959a"
           },
@@ -6678,6 +7445,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "EKU",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/eastern-kentucky-colonels/EKU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#660819",
             "alternate": "#f0f0f0"
           },
@@ -6687,6 +7455,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LR",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/little-rock-trojans/LR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#ad0000",
             "alternate": "#898d8f"
           },
@@ -6696,6 +7465,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UNA",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/north-alabama-lions/UNA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#663399"
           },
           {
@@ -6704,6 +7474,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "TAR",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/tarleton-state-texans/TAR-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#000000"
           },
           {
@@ -6712,6 +7483,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "UTA",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/ut-arlington-mavericks/UTA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#004b7c",
             "alternate": "#f58024"
           },
@@ -6721,6 +7493,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "WGA",
             "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/west-georgia-wolves/WGA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#0033a1",
             "alternate": "#db1a21"
           }
@@ -6732,6 +7505,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "shortName": "WCC",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/west-coast-light.png",
         "plate": false,
+        "opaque": false,
         "teams": [
           {
             "slug": "denver-pioneers",
@@ -6739,6 +7513,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "DEN",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/denver-pioneers/DEN-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#98002e",
             "alternate": "#a8996e"
           },
@@ -6748,6 +7523,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "LMU",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/loyola-marymount-lions/LMU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#880029",
             "alternate": "#00345b"
           },
@@ -6757,6 +7533,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PAC",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/pacific-tigers/PAC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#f47820",
             "alternate": "#c2c3c0"
           },
@@ -6766,6 +7543,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PEPP",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/pepperdine-waves/PEPP-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#003a72",
             "alternate": "#dc762f"
           },
@@ -6775,6 +7553,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "PORT",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/portland-pilots/PORT-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#330072",
             "alternate": "#a8b3ba"
           },
@@ -6784,6 +7563,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SMC",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/saint-marys-gaels/SMC-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#d80024",
             "alternate": "#003057"
           },
@@ -6793,6 +7573,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "USD",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/san-diego-toreros/USD-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#2f99d4",
             "alternate": "#2f99d4"
           },
@@ -6802,6 +7583,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SF",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/san-francisco-dons/SF-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#005a36",
             "alternate": "#ffffff"
           },
@@ -6811,6 +7593,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SCU",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/santa-clara-broncos/SCU-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#690b0b",
             "alternate": "#101010"
           },
@@ -6820,6 +7603,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
             "abbr": "SEA",
             "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/seattle-u-redhawks/SEA-dark.png",
             "plate": false,
+            "opaque": false,
             "primary": "#bf2e1a",
             "alternate": "#c2c3c0"
           }
@@ -6833,6 +7617,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BING",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/binghamton-bearcats/BING-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00614a",
         "alternate": "#f0f0f0"
       },
@@ -6842,6 +7627,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BRY",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/bryant-bulldogs/BRY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#9f8343"
       },
@@ -6851,6 +7637,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ME",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/maine-black-bears/ME-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#127dbe"
       },
       {
@@ -6859,6 +7646,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNH",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/new-hampshire-wildcats/UNH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004990",
         "alternate": "#c3c4c6"
       },
@@ -6868,6 +7656,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NJIT",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/njit-highlanders/NJIT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ee3024",
         "alternate": "#df3e2e"
       },
@@ -6877,6 +7666,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UALB",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/ualbany-great-danes/UALB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#3d2777",
         "alternate": "#ffffff"
       },
@@ -6886,6 +7676,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UML",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/umass-lowell-river-hawks/UML-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00529c",
         "alternate": "#cf1f2f"
       },
@@ -6895,6 +7686,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UMBC",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/umbc-retrievers/UMBC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ad860a"
       },
@@ -6904,6 +7696,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UVM",
         "logo": "/sports-logos/cbb-logos/mens/america-east-conference/vermont-catamounts/UVM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#154734",
         "alternate": "#ffc72c"
       },
@@ -6913,6 +7706,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CLT",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/charlotte-49ers/CLT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005035",
         "alternate": "#a49665"
       },
@@ -6922,6 +7716,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ECU",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/east-carolina-pirates/ECU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#582c83",
         "alternate": "#ffc72c"
       },
@@ -6931,6 +7726,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FAU",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/florida-atlantic-owls/FAU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003366",
         "alternate": "#cc0000"
       },
@@ -6940,6 +7736,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MEM",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/memphis-tigers/MEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004991",
         "alternate": "#8e908f"
       },
@@ -6949,6 +7746,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNT",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/north-texas-mean-green/UNT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#068f33",
         "alternate": "#ffffff"
       },
@@ -6958,6 +7756,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RICE",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/rice-owls/RICE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205b",
         "alternate": "#c1c6c8"
       },
@@ -6967,6 +7766,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USF",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/south-florida-bulls/USF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006747",
         "alternate": "#cfc493"
       },
@@ -6976,6 +7776,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TEM",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/temple-owls/TEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a41e35",
         "alternate": "#ffffff"
       },
@@ -6985,6 +7786,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TULN",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/tulane-green-wave/TULN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006747",
         "alternate": "#418fde"
       },
@@ -6994,6 +7796,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TLSA",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/tulsa-golden-hurricane/TLSA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003595",
         "alternate": "#d0b787"
       },
@@ -7003,6 +7806,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UAB",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/uab-blazers/UAB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#1a5632",
         "alternate": "#fdb913"
       },
@@ -7012,6 +7816,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTSA",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/utsa-roadrunners/UTSA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0c2340",
         "alternate": "#f15a22"
       },
@@ -7021,6 +7826,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WICH",
         "logo": "/sports-logos/cbb-logos/mens/american-conference/wichita-state-shockers/WICH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffcd00",
         "alternate": "#27251f"
       },
@@ -7030,6 +7836,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BELL",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/bellarmine-knights/BELL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -7038,6 +7845,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FGCU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/florida-gulf-coast-eagles/FGCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00885a",
         "alternate": "#076c3b"
       },
@@ -7047,6 +7855,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JAX",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/jacksonville-dolphins/JAX-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00523e"
       },
       {
@@ -7055,6 +7864,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LIP",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/lipscomb-bisons/LIP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#20366c",
         "alternate": "#f6b734"
       },
@@ -7064,6 +7874,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNF",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/north-florida-ospreys/UNF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004b8d",
         "alternate": "#babcbe"
       },
@@ -7073,6 +7884,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "QUC",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/queens-university-royals/QUC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#192c66",
         "alternate": "#857040"
       },
@@ -7082,6 +7894,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STET",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/stetson-hatters/STET-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0a5640",
         "alternate": "#56854e"
       },
@@ -7091,6 +7904,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UWF",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-sun-conference/west-florida-argonauts/UWF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#087dc2",
         "alternate": "#03b186"
       },
@@ -7100,6 +7914,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DAV",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/davidson-wildcats/DAV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#e51837"
       },
@@ -7109,6 +7924,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DAY",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/dayton-flyers/DAY-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#004b8d",
         "alternate": "#ffffff"
       },
@@ -7118,6 +7934,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DUQ",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/duquesne-dukes/DUQ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002d62",
         "alternate": "#b90b2e"
       },
@@ -7127,6 +7944,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FOR",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/fordham-rams/FOR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#830032",
         "alternate": "#909090"
       },
@@ -7136,6 +7954,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GMU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/george-mason-patriots/GMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#016600",
         "alternate": "#ecb010"
       },
@@ -7145,6 +7964,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GW",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/george-washington-revolutionaries/GW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002843",
         "alternate": "#e8d2a1"
       },
@@ -7154,6 +7974,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LAS",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/la-salle-explorers/LAS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003356",
         "alternate": "#ffce00"
       },
@@ -7163,6 +7984,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LUC",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/loyola-chicago-ramblers/LUC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9d1244"
       },
       {
@@ -7171,6 +7993,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "URI",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/rhode-island-rams/URI-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#091f3f",
         "alternate": "#5ab3e8"
       },
@@ -7180,6 +8003,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RICH",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/richmond-spiders/RICH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9e0712",
         "alternate": "#b90b2e"
       },
@@ -7189,6 +8013,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JOES",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/saint-josephs-hawks/JOES-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#9e1b32",
         "alternate": "#6c6f70"
       },
@@ -7198,6 +8023,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SLU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/saint-louis-billikens/SLU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539c",
         "alternate": "#ebebeb"
       },
@@ -7207,6 +8033,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SBU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/st-bonaventure-bonnies/SBU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#70261d"
       },
       {
@@ -7215,6 +8042,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VCU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-10-conference/vcu-rams/VCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffaf00",
         "alternate": "#000000"
       },
@@ -7224,6 +8052,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BC",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/boston-college-eagles/BC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#8c2232",
         "alternate": "#dbcca6"
       },
@@ -7233,6 +8062,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CAL",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/california-golden-bears/CAL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#ffc72c"
       },
@@ -7242,6 +8072,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CLEM",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/clemson-tigers/CLEM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f56600",
         "alternate": "#ffffff"
       },
@@ -7251,6 +8082,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DUKE",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/duke-blue-devils/DUKE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539b",
         "alternate": "#ffffff"
       },
@@ -7260,6 +8092,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FSU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/florida-state-seminoles/FSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#782f40",
         "alternate": "#ceb888"
       },
@@ -7269,6 +8102,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GT",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/georgia-tech-yellow-jackets/GT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b3a369",
         "alternate": "#ffffff"
       },
@@ -7278,6 +8112,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LOU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/louisville-cardinals/LOU-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#c9001f",
         "alternate": "#ffffff"
       },
@@ -7287,6 +8122,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MIA",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/miami-hurricanes/MIA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f47423",
         "alternate": "#035131"
       },
@@ -7296,6 +8132,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NCSU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/nc-state-wolfpack/NCSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0000",
         "alternate": "#ffffff"
       },
@@ -7305,6 +8142,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNC",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/north-carolina-tar-heels/UNC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7bafd4",
         "alternate": "#13294b"
       },
@@ -7314,6 +8152,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ND",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/notre-dame-fighting-irish/ND-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#062340",
         "alternate": "#c99700"
       },
@@ -7323,6 +8162,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PITT",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/pittsburgh-panthers/PITT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003594",
         "alternate": "#ffb81c"
       },
@@ -7332,6 +8172,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SMU",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/smu-mustangs/SMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a80000",
         "alternate": "#0033a1"
       },
@@ -7341,6 +8182,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STAN",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/stanford-cardinal/STAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#8c1515",
         "alternate": "#ffffff"
       },
@@ -7350,6 +8192,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SYR",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/syracuse-orange/SYR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000e54",
         "alternate": "#ff431b"
       },
@@ -7359,6 +8202,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UVA",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/virginia-cavaliers/UVA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#232d4b",
         "alternate": "#f84c1e"
       },
@@ -7368,6 +8212,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VT",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/virginia-tech-hokies/VT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#6a2c3e",
         "alternate": "#cf4520"
       },
@@ -7377,6 +8222,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WAKE",
         "logo": "/sports-logos/cbb-logos/mens/atlantic-coast-conference/wake-forest-demon-deacons/WAKE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ceb888",
         "alternate": "#2c2a29"
       },
@@ -7386,6 +8232,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ASU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/arizona-state-sun-devils/ASU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc627",
         "alternate": "#8c1d40"
       },
@@ -7395,6 +8242,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARIZ",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/arizona-wildcats/ARIZ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0033",
         "alternate": "#003366"
       },
@@ -7404,6 +8252,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BAY",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/baylor-bears/BAY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#154734",
         "alternate": "#ffb81c"
       },
@@ -7413,6 +8262,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BYU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/byu-cougars/BYU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0047ba",
         "alternate": "#002e5d"
       },
@@ -7422,6 +8272,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CIN",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/cincinnati-bearcats/CIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#e00122"
       },
@@ -7431,6 +8282,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COLO",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/colorado-buffaloes/COLO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cfb87c",
         "alternate": "#000000"
       },
@@ -7440,6 +8292,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HOU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/houston-cougars/HOU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c8102e",
         "alternate": "#ffffff"
       },
@@ -7449,6 +8302,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ISU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/iowa-state-cyclones/ISU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ae192d",
         "alternate": "#ffc72a"
       },
@@ -7458,6 +8312,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/kansas-jayhawks/KU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0051ba",
         "alternate": "#e8000d"
       },
@@ -7467,6 +8322,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KSU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/kansas-state-wildcats/KSU-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#330a57",
         "alternate": "#e2e3e4"
       },
@@ -7476,6 +8332,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OKST",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/oklahoma-state-cowboys/OKST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fe5c00",
         "alternate": "#000000"
       },
@@ -7485,6 +8342,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TCU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/tcu-horned-frogs/TCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4d1979",
         "alternate": "#ffffff"
       },
@@ -7494,6 +8352,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TTU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/texas-tech-red-raiders/TTU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#da291c",
         "alternate": "#000000"
       },
@@ -7503,6 +8362,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCF",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/ucf-knights/UCF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#b4a169"
       },
@@ -7512,6 +8372,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTAH",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/utah-utes/UTAH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#be0000",
         "alternate": "#ffffff"
       },
@@ -7521,6 +8382,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WVU",
         "logo": "/sports-logos/cbb-logos/mens/big-12-conference/west-virginia-mountaineers/WVU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#eaaa00",
         "alternate": "#002855"
       },
@@ -7530,6 +8392,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BTLR",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/butler-bulldogs/BTLR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0d1361",
         "alternate": "#00a3e0"
       },
@@ -7539,6 +8402,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CREI",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/creighton-bluejays/CREI-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005ca9",
         "alternate": "#6cadde"
       },
@@ -7548,6 +8412,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DEP",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/depaul-blue-demons/DEP-light.png",
         "plate": true,
+        "opaque": false,
         "primary": "#2d649c",
         "alternate": "#ce1125"
       },
@@ -7557,6 +8422,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GTWN",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/georgetown-hoyas/GTWN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#110e42",
         "alternate": "#001c58"
       },
@@ -7566,6 +8432,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MARQ",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/marquette-golden-eagles/MARQ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003366",
         "alternate": "#ffcc00"
       },
@@ -7575,6 +8442,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PROV",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/providence-friars/PROV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#a3a19e"
       },
@@ -7584,6 +8452,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HALL",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/seton-hall-pirates/HALL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0857b1",
         "alternate": "#8a8d8f"
       },
@@ -7593,6 +8462,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SJU",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/st-johns-red-storm/SJU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#d10000",
         "alternate": "#101010"
       },
@@ -7602,6 +8472,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CONN",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/uconn-huskies/CONN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0c2340",
         "alternate": "#a2aaad"
       },
@@ -7611,6 +8482,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VILL",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/villanova-wildcats/VILL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205b",
         "alternate": "#13b5ea"
       },
@@ -7620,6 +8492,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "XAV",
         "logo": "/sports-logos/cbb-logos/mens/big-east-conference/xavier-musketeers/XAV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#21304e",
         "alternate": "#a5a7a8"
       },
@@ -7629,6 +8502,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EWU",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/eastern-washington-eagles/EWU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a10022",
         "alternate": "#abb4bc"
       },
@@ -7638,6 +8512,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IDST",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/idaho-state-bengals/IDST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ef8c00",
         "alternate": "#e9a126"
       },
@@ -7647,6 +8522,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IDHO",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/idaho-vandals/IDHO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#8c6e4a"
       },
@@ -7656,6 +8532,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MONT",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/montana-grizzlies/MONT-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#751d4a",
         "alternate": "#666666"
       },
@@ -7665,6 +8542,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MTST",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/montana-state-bobcats/MTST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205c",
         "alternate": "#bc955c"
       },
@@ -7674,6 +8552,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NAU",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/northern-arizona-lumberjacks/NAU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003976",
         "alternate": "#1b3069"
       },
@@ -7683,6 +8562,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNCO",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/northern-colorado-bears/UNCO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#13558d",
         "alternate": "#ffc533"
       },
@@ -7692,6 +8572,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PRST",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/portland-state-vikings/PRST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00311e",
         "alternate": "#ebebeb"
       },
@@ -7701,6 +8582,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SUU",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/southern-utah-thunderbirds/SUU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c72026",
         "alternate": "#000000"
       },
@@ -7710,6 +8592,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WEB",
         "logo": "/sports-logos/cbb-logos/mens/big-sky-conference/weber-state-wildcats/WEB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#18005a",
         "alternate": "#ebebeb"
       },
@@ -7719,6 +8602,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CHSO",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/charleston-southern-buccaneers/CHSO-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#2e3192",
         "alternate": "#ded090"
       },
@@ -7728,6 +8612,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GWEB",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/gardner-webb-runnin-bulldogs/GWEB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c12535",
         "alternate": "#909090"
       },
@@ -7737,6 +8622,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HPU",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/high-point-panthers/HPU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#330072",
         "alternate": "#ffffff"
       },
@@ -7746,6 +8632,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LONG",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/longwood-lancers/LONG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003273",
         "alternate": "#9ea2a3"
       },
@@ -7755,6 +8642,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PRES",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/presbyterian-blue-hose/PRES-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#194896",
         "alternate": "#990134"
       },
@@ -7764,6 +8652,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RAD",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/radford-highlanders/RAD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#bc1515",
         "alternate": "#c2c3c0"
       },
@@ -7773,6 +8662,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UPST",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/south-carolina-upstate-spartans/UPST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#008545",
         "alternate": "#000000"
       },
@@ -7782,6 +8672,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNCA",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/unc-asheville-bulldogs/UNCA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003da5",
         "alternate": "#ffffff"
       },
@@ -7791,6 +8682,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WIN",
         "logo": "/sports-logos/cbb-logos/mens/big-south-conference/winthrop-eagles/WIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9e0b0e",
         "alternate": "#fdb41e"
       },
@@ -7800,6 +8692,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ILL",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/illinois-fighting-illini/ILL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff5f05",
         "alternate": "#13294b"
       },
@@ -7809,6 +8702,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IU",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/indiana-hoosiers/IU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#970310",
         "alternate": "#ffffff"
       },
@@ -7818,6 +8712,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IOWA",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/iowa-hawkeyes/IOWA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#231f20",
         "alternate": "#fcd116"
       },
@@ -7827,6 +8722,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MD",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/maryland-terrapins/MD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce1126",
         "alternate": "#ffffff"
       },
@@ -7836,6 +8732,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MSU",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/michigan-state-spartans/MSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#173f35",
         "alternate": "#ffffff"
       },
@@ -7845,6 +8742,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MICH",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/michigan-wolverines/MICH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00274c",
         "alternate": "#ffcb05"
       },
@@ -7854,6 +8752,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MINN",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/minnesota-golden-gophers/MINN-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#5e0a2f",
         "alternate": "#fab41c"
       },
@@ -7863,6 +8762,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NEB",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/nebraska-cornhuskers/NEB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e31937",
         "alternate": "#ffffff"
       },
@@ -7872,6 +8772,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NU",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/northwestern-wildcats/NU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f92",
         "alternate": "#ffffff"
       },
@@ -7881,6 +8782,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OSU",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/ohio-state-buckeyes/OSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#a8adb4"
       },
@@ -7890,6 +8792,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ORE",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/oregon-ducks/ORE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00934b",
         "alternate": "#fff41b"
       },
@@ -7899,6 +8802,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PSU",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/penn-state-nittany-lions/PSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#061440",
         "alternate": "#ffffff"
       },
@@ -7908,6 +8812,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PUR",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/purdue-boilermakers/PUR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ceb888",
         "alternate": "#000000"
       },
@@ -7917,6 +8822,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RUTG",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/rutgers-scarlet-knights/RUTG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce0e2d",
         "alternate": "#ffffff"
       },
@@ -7926,6 +8832,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCLA",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/ucla-bruins/UCLA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#2774ae",
         "alternate": "#f2a900"
       },
@@ -7935,6 +8842,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USC",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/usc-trojans/USC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9d2235",
         "alternate": "#ffc72c"
       },
@@ -7944,6 +8852,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WASH",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/washington-huskies/WASH-light.png",
         "plate": true,
+        "opaque": false,
         "primary": "#33006f",
         "alternate": "#e8d3a2"
       },
@@ -7953,6 +8862,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WIS",
         "logo": "/sports-logos/cbb-logos/mens/big-ten-conference/wisconsin-badgers/WIS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a00000",
         "alternate": "#ffffff"
       },
@@ -7962,6 +8872,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CP",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-poly-mustangs/CP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#1e4d2b",
         "alternate": "#eed897"
       },
@@ -7971,6 +8882,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CSUB",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-bakersfield-roadrunners/CSUB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003bab"
       },
       {
@@ -7979,6 +8891,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CSUF",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-fullerton-titans/CSUF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003767",
         "alternate": "#ff8300"
       },
@@ -7988,6 +8901,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CSUN",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/cal-state-northridge-matadors/CSUN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b50000"
       },
       {
@@ -7996,6 +8910,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CBU",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/california-baptist-lancers/CBU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000080"
       },
       {
@@ -8004,6 +8919,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LBSU",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/long-beach-state-beach/LBSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#f1f2f3"
       },
@@ -8013,6 +8929,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SAC",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/sacramento-state-hornets/SAC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00573c",
         "alternate": "#cdb97d"
       },
@@ -8022,6 +8939,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCI",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-irvine-anteaters/UCI-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002b5c",
         "alternate": "#fec52e"
       },
@@ -8031,6 +8949,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCR",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-riverside-highlanders/UCR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#14234f"
       },
       {
@@ -8039,6 +8958,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCSD",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-san-diego-tritons/UCSD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ffcd00"
       },
@@ -8048,6 +8968,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCSB",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/uc-santa-barbara-gauchos/UCSB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#1e1840",
         "alternate": "#febc11"
       },
@@ -8057,6 +8978,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTU",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/utah-tech-trailblazers/UTU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -8065,6 +8987,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UVU",
         "logo": "/sports-logos/cbb-logos/mens/big-west-conference/utah-valley-wolverines/UVU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004812",
         "alternate": "#e1c736"
       },
@@ -8074,6 +8997,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CAM",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/campbell-fighting-camels/CAM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -8082,6 +9006,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COFC",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/charleston-cougars/COFC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7a2531",
         "alternate": "#9e8959"
       },
@@ -8091,6 +9016,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DREX",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/drexel-dragons/DREX-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#020260",
         "alternate": "#ffd65a"
       },
@@ -8100,6 +9026,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ELON",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/elon-phoenix/ELON-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#020303",
         "alternate": "#b59a57"
       },
@@ -8109,6 +9036,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HAMP",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/hampton-pirates/HAMP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0067ac"
       },
       {
@@ -8117,6 +9045,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HOF",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/hofstra-pride/HOF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003594",
         "alternate": "#ffc72c"
       },
@@ -8126,6 +9055,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MONM",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/monmouth-hawks/MONM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#051844"
       },
       {
@@ -8134,6 +9064,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NCAT",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/north-carolina-at-aggies/NCAT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0505aa",
         "alternate": "#004684"
       },
@@ -8143,6 +9074,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NE",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/northeastern-huskies/NE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0001",
         "alternate": "#c2c3c0"
       },
@@ -8152,6 +9084,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STBK",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/stony-brook-seawolves/STBK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#990000"
       },
       {
@@ -8160,6 +9093,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TOW",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/towson-tigers/TOW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc229"
       },
       {
@@ -8168,6 +9102,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNCW",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/unc-wilmington-seahawks/UNCW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00665e",
         "alternate": "#ffda00"
       },
@@ -8177,6 +9112,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "W&M",
         "logo": "/sports-logos/cbb-logos/mens/coastal-athletic-association/william-mary-tribe/W%26M-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#115740",
         "alternate": "#f0b323"
       },
@@ -8186,6 +9122,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DEL",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/delaware-blue-hens/DEL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539f",
         "alternate": "#ffd200"
       },
@@ -8195,6 +9132,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FIU",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/florida-international-panthers/FIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#091f3f",
         "alternate": "#c3993f"
       },
@@ -8204,6 +9142,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JXST",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/jacksonville-state-gamecocks/JXST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#cc0000",
         "alternate": "#000000"
       },
@@ -8213,6 +9152,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KENN",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/kennesaw-state-owls/KENN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fdbb30",
         "alternate": "#0b1315"
       },
@@ -8222,6 +9162,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LIB",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/liberty-flames/LIB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0a254e",
         "alternate": "#b72025"
       },
@@ -8231,6 +9172,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LT",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/louisiana-tech-bulldogs/LT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003087",
         "alternate": "#cb333b"
       },
@@ -8240,6 +9182,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MTSU",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/middle-tennessee-blue-raiders/MTSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#036eb7",
         "alternate": "#ffffff"
       },
@@ -8249,6 +9192,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MOST",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/missouri-state-bears/MOST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5e0009",
         "alternate": "#ffffff"
       },
@@ -8258,6 +9202,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NMSU",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/new-mexico-state-aggies/NMSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7e141b",
         "alternate": "#231f20"
       },
@@ -8267,6 +9212,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SHSU",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/sam-houston-bearkats/SHSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f56423",
         "alternate": "#ffffff"
       },
@@ -8276,6 +9222,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WKU",
         "logo": "/sports-logos/cbb-logos/mens/conference-usa/western-kentucky-hilltoppers/WKU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e13a3e",
         "alternate": "#ffffff"
       },
@@ -8285,6 +9232,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CLE",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/cleveland-state-vikings/CLE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006633",
         "alternate": "#231f20"
       },
@@ -8294,6 +9242,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DETM",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/detroit-mercy-titans/DETM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#165b9e",
         "alternate": "#d31733"
       },
@@ -8303,6 +9252,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GB",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/green-bay-phoenix/GB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006633",
         "alternate": "#ffffff"
       },
@@ -8312,6 +9262,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IUIN",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/iu-indianapolis-jaguars/IUIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a81f30",
         "alternate": "#d59f0f"
       },
@@ -8321,6 +9272,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MILW",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/milwaukee-panthers/MILW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ffc20e"
       },
@@ -8330,6 +9282,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NIU",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/northern-illinois-huskies/NIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c8102e",
         "alternate": "#000000"
       },
@@ -8339,6 +9292,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NKU",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/northern-kentucky-norse/NKU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc82e",
         "alternate": "#000000"
       },
@@ -8348,6 +9302,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OAK",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/oakland-golden-grizzlies/OAK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#04091c",
         "alternate": "#bc955c"
       },
@@ -8357,6 +9312,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PFW",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/purdue-fort-wayne-mastodons/PFW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cfb991",
         "alternate": "#000000"
       },
@@ -8366,6 +9322,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RMU",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/robert-morris-colonials/RMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00214d",
         "alternate": "#a21d2b"
       },
@@ -8375,6 +9332,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WRST",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/wright-state-raiders/WRST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cba052",
         "alternate": "#cba052"
       },
@@ -8384,6 +9342,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "YSU",
         "logo": "/sports-logos/cbb-logos/mens/horizon-league/youngstown-state-penguins/YSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e51935",
         "alternate": "#690717"
       },
@@ -8393,6 +9352,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BRWN",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/brown-bears/BRWN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#411e09",
         "alternate": "#949300"
       },
@@ -8402,6 +9362,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COLU",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/columbia-lions/COLU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7ba4db",
         "alternate": "#183863"
       },
@@ -8411,6 +9372,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COR",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/cornell-big-red/COR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b31b1b",
         "alternate": "#ffffff"
       },
@@ -8420,6 +9382,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DART",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/dartmouth-big-green/DART-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005730",
         "alternate": "#000000"
       },
@@ -8429,6 +9392,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HARV",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/harvard-crimson/HARV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#990000",
         "alternate": "#dbdbdb"
       },
@@ -8438,6 +9402,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PENN",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/pennsylvania-quakers/PENN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#082a74",
         "alternate": "#a6163d"
       },
@@ -8447,6 +9412,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PRIN",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/princeton-tigers/PRIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ff6000"
       },
@@ -8456,6 +9422,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "YALE",
         "logo": "/sports-logos/cbb-logos/mens/ivy-league/yale-bulldogs/YALE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004a81",
         "alternate": "#286dc0"
       },
@@ -8465,6 +9432,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CAN",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/canisius-golden-griffins/CAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004a81",
         "alternate": "#dda50f"
       },
@@ -8474,6 +9442,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FAIR",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/fairfield-stags/FAIR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ebebeb"
       },
@@ -8483,6 +9452,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "IONA",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/iona-gaels/IONA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#6f2c3e",
         "alternate": "#f0ab00"
       },
@@ -8492,6 +9462,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MAN",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/manhattan-jaspers/MAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4f8537",
         "alternate": "#b5b7ba"
       },
@@ -8501,6 +9472,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MRST",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/marist-red-foxes/MRST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e53730",
         "alternate": "#f0f0f0"
       },
@@ -8510,6 +9482,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MRMK",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/merrimack-warriors/MRMK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#2f4f93",
         "alternate": "#e8c535"
       },
@@ -8519,6 +9492,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MSM",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/mount-st-marys-mountaineers/MSM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005596",
         "alternate": "#ebebeb"
       },
@@ -8528,6 +9502,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NIA",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/niagara-purple-eagles/NIA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#69207e",
         "alternate": "#f0f0f0"
       },
@@ -8537,6 +9512,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "QUIN",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/quinnipiac-bobcats/QUIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041b43"
       },
       {
@@ -8545,6 +9521,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RID",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/rider-broncs/RID-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a80532",
         "alternate": "#ebebeb"
       },
@@ -8554,6 +9531,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SHU",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/sacred-heart-pioneers/SHU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a40012",
         "alternate": "#c29472"
       },
@@ -8563,6 +9541,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SPU",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/saint-peters-peacocks/SPU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004cc2"
       },
       {
@@ -8571,6 +9550,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SIE",
         "logo": "/sports-logos/cbb-logos/mens/metro-conference/siena-saints/SIE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#037961",
         "alternate": "#eea60f"
       },
@@ -8580,6 +9560,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AKR",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/akron-zips/AKR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#c5b783"
       },
@@ -8589,6 +9570,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BALL",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/ball-state-cardinals/BALL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#ffffff"
       },
@@ -8598,6 +9580,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BGSU",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/bowling-green-falcons/BGSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#fd5000",
         "alternate": "#4f2c1d"
       },
@@ -8607,6 +9590,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BUF",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/buffalo-bulls/BUF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005bbb",
         "alternate": "#ffffff"
       },
@@ -8616,6 +9600,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CMU",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/central-michigan-chippewas/CMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4c0027",
         "alternate": "#fbab18"
       },
@@ -8625,6 +9610,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EMU",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/eastern-michigan-eagles/EMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006938",
         "alternate": "#ffffff"
       },
@@ -8634,6 +9620,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KENT",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/kent-state-golden-flashes/KENT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002664",
         "alternate": "#eaab00"
       },
@@ -8643,6 +9630,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MASS",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/massachusetts-minutemen/MASS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#881c1c",
         "alternate": "#ffffff"
       },
@@ -8652,6 +9640,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "M-OH",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/miami-oh-redhawks/M-OH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c41230",
         "alternate": "#ffffff"
       },
@@ -8661,6 +9650,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OHIO",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/ohio-bobcats/OHIO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#154734",
         "alternate": "#ffffff"
       },
@@ -8670,6 +9660,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TOL",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/toledo-rockets/TOL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0b2240",
         "alternate": "#ffcd00"
       },
@@ -8679,6 +9670,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WMU",
         "logo": "/sports-logos/cbb-logos/mens/mid-american-conference/western-michigan-broncos/WMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#532e1f",
         "alternate": "#f1c500"
       },
@@ -8688,6 +9680,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COPP",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/coppin-state-eagles/COPP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#2e3192",
         "alternate": "#ffd204"
       },
@@ -8697,6 +9690,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DSU",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/delaware-state-hornets/DSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#009cdb",
         "alternate": "#d51c28"
       },
@@ -8706,6 +9700,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HOW",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/howard-bison/HOW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003a63",
         "alternate": "#e51937"
       },
@@ -8715,6 +9710,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UMES",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/maryland-eastern-shore-hawks/UMES-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5c2301",
         "alternate": "#b5b7ba"
       },
@@ -8724,6 +9720,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MORG",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/morgan-state-bears/MORG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#014786",
         "alternate": "#f47937"
       },
@@ -8733,6 +9730,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NORF",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/norfolk-state-spartans/NORF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0c8968",
         "alternate": "#fdb813"
       },
@@ -8742,6 +9740,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NCCU",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/north-carolina-central-eagles/NCCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#880023",
         "alternate": "#c2c3c0"
       },
@@ -8751,6 +9750,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SCST",
         "logo": "/sports-logos/cbb-logos/mens/mid-eastern-athletic-conference/south-carolina-state-bulldogs/SCST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7d1315",
         "alternate": "#104897"
       },
@@ -8760,6 +9760,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BEL",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/belmont-bruins/BEL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#182142",
         "alternate": "#c9262d"
       },
@@ -8769,6 +9770,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BRAD",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/bradley-braves/BRAD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b70002",
         "alternate": "#c0c0c0"
       },
@@ -8778,6 +9780,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DRKE",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/drake-bulldogs/DRKE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005596",
         "alternate": "#bec0c2"
       },
@@ -8787,6 +9790,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EVAN",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/evansville-purple-aces/EVAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#663399",
         "alternate": "#ef6f00"
       },
@@ -8796,6 +9800,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ILST",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/illinois-state-redbirds/ILST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce1126",
         "alternate": "#ffe716"
       },
@@ -8805,6 +9810,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "INST",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/indiana-state-sycamores/INST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00669a",
         "alternate": "#f0f0f0"
       },
@@ -8814,6 +9820,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MUR",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/murray-state-racers/MUR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002148",
         "alternate": "#000e00"
       },
@@ -8823,6 +9830,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNI",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/northern-iowa-panthers/UNI-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#473282",
         "alternate": "#ffffff"
       },
@@ -8832,6 +9840,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SIU",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/southern-illinois-salukis/SIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#85283d",
         "alternate": "#c2c3c0"
       },
@@ -8841,6 +9850,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UIC",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/uic-flames/UIC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#001e62",
         "alternate": "#d50032"
       },
@@ -8850,6 +9860,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VAL",
         "logo": "/sports-logos/cbb-logos/mens/missouri-valley-conference/valparaiso-beacons/VAL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#794500"
       },
       {
@@ -8858,6 +9869,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AF",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/air-force-falcons/AF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003594",
         "alternate": "#ffffff"
       },
@@ -8867,6 +9879,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GCU",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/grand-canyon-lopes/GCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#522398",
         "alternate": "#ffffff"
       },
@@ -8876,6 +9889,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HAW",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/hawaii-rainbow-warriors/HAW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005737",
         "alternate": "#000000"
       },
@@ -8885,6 +9899,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NEV",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/nevada-wolf-pack/NEV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#8a8d8f"
       },
@@ -8894,6 +9909,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNM",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/new-mexico-lobos/UNM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#a7a8aa"
       },
@@ -8903,6 +9919,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SJSU",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/san-jos%C3%A3-state-spartans/SJSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0038a8",
         "alternate": "#ffb81a"
       },
@@ -8912,6 +9929,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UCD",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/uc-davis-aggies/UCD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002855",
         "alternate": "#c3c4c6"
       },
@@ -8921,6 +9939,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNLV",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/unlv-rebels/UNLV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cf0a2c",
         "alternate": "#cac8c8"
       },
@@ -8930,6 +9949,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTEP",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/utep-miners/UTEP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff8200",
         "alternate": "#041e42"
       },
@@ -8939,6 +9959,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WYO",
         "logo": "/sports-logos/cbb-logos/mens/mountain-west-conference/wyoming-cowboys/WYO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f24",
         "alternate": "#ffc425"
       },
@@ -8948,6 +9969,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CCSU",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/central-connecticut-blue-devils/CCSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#1b49a2",
         "alternate": "#d1d5d8"
       },
@@ -8957,6 +9979,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CHST",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/chicago-state-cougars/CHST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#006700"
       },
       {
@@ -8965,6 +9988,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FDU",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/fairleigh-dickinson-knights/FDU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#72293c",
         "alternate": "#28334a"
       },
@@ -8973,7 +9997,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Le Moyne Dolphins",
         "abbr": "LEM",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/le-moyne-dolphins/LEM-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "long-island-university-sharks",
@@ -8981,6 +10006,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LIU",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/long-island-university-sharks/LIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#50c9f7",
         "alternate": "#ffbf00"
       },
@@ -8990,6 +10016,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MERC",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/mercyhurst-lakers/MERC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -8998,6 +10025,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NHVN",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/new-haven-chargers/NHVN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#ffc425"
       },
@@ -9007,6 +10035,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STO",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/stonehill-skyhawks/STO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -9015,6 +10044,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WAG",
         "logo": "/sports-logos/cbb-logos/mens/northeast-conference/wagner-seahawks/WAG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00483a",
         "alternate": "#ffffff"
       },
@@ -9024,6 +10054,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EIU",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/eastern-illinois-panthers/EIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#bebab9"
       },
@@ -9033,6 +10064,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LIN",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/lindenwood-lions/LIN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -9041,6 +10073,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MORE",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/morehead-state-eagles/MORE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#094fa3",
         "alternate": "#fed91a"
       },
@@ -9050,6 +10083,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SIUE",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/siu-edwardsville-cougars/SIUE-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#eb1c23",
         "alternate": "#080808"
       },
@@ -9059,6 +10093,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SEMO",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/southeast-missouri-state-redhawks/SEMO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c8102e",
         "alternate": "#000000"
       },
@@ -9067,7 +10102,8 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "name": "Southern Indiana Screaming Eagles",
         "abbr": "USI",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/southern-indiana-screaming-eagles/USI-dark.png",
-        "plate": false
+        "plate": false,
+        "opaque": false
       },
       {
         "slug": "tennessee-state-tigers",
@@ -9075,6 +10111,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TNST",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/tennessee-state-tigers/TNST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#171796",
         "alternate": "#f0f0f0"
       },
@@ -9084,6 +10121,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTM",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/ut-martin-skyhawks/UTM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff6700",
         "alternate": "#102a5c"
       },
@@ -9093,6 +10131,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WIU",
         "logo": "/sports-logos/cbb-logos/mens/ohio-valley-conference/western-illinois-leathernecks/WIU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4e1e8a",
         "alternate": "#ffc90a"
       },
@@ -9102,6 +10141,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BOIS",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/boise-state-broncos/BOIS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a0",
         "alternate": "#d64309"
       },
@@ -9111,6 +10151,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CSU",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/colorado-state-rams/CSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004c23",
         "alternate": "#c8c372"
       },
@@ -9120,6 +10161,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FRES",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/fresno-state-bulldogs/FRES-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#b1102b",
         "alternate": "#13284c"
       },
@@ -9129,6 +10171,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GONZ",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/gonzaga-bulldogs/GONZ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#c8102e"
       },
@@ -9138,6 +10181,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ORST",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/oregon-state-beavers/ORST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#dc4405",
         "alternate": "#000000"
       },
@@ -9147,6 +10191,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SDSU",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/san-diego-state-aztecs/SDSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a6192e",
         "alternate": "#000000"
       },
@@ -9156,6 +10201,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TXST",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/texas-state-bobcats/TXST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#501214",
         "alternate": "#6a5638"
       },
@@ -9165,6 +10211,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USU",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/utah-state-aggies/USU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0f2439",
         "alternate": "#ffffff"
       },
@@ -9174,6 +10221,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WSU",
         "logo": "/sports-logos/cbb-logos/mens/pac-12-conference/washington-state-cougars/WSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a60f2d",
         "alternate": "#4d4d4d"
       },
@@ -9183,6 +10231,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AMER",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/american-university-eagles/AMER-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c41130",
         "alternate": "#c8102e"
       },
@@ -9192,6 +10241,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARMY",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/army-black-knights/ARMY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#d3bc8d"
       },
@@ -9201,6 +10251,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BU",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/boston-university-terriers/BU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cc0000",
         "alternate": "#ffffff"
       },
@@ -9210,6 +10261,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BUCK",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/bucknell-bison/BUCK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000060",
         "alternate": "#00316e"
       },
@@ -9219,6 +10271,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "COLG",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/colgate-raiders/COLG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#821019",
         "alternate": "#ffffff"
       },
@@ -9228,6 +10281,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HC",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/holy-cross-crusaders/HC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#582c83",
         "alternate": "#ffffff"
       },
@@ -9237,6 +10291,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LAF",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/lafayette-leopards/LAF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#790000",
         "alternate": "#a59474"
       },
@@ -9246,6 +10301,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LEH",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/lehigh-mountain-hawks/LEH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#6c2b2a",
         "alternate": "#b69e70"
       },
@@ -9255,6 +10311,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "L-MD",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/loyola-maryland-greyhounds/L-MD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#76a7a0",
         "alternate": "#c9cbca"
       },
@@ -9264,6 +10321,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NAVY",
         "logo": "/sports-logos/cbb-logos/mens/patriot-league/navy-midshipmen/NAVY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00225b",
         "alternate": "#b5a67c"
       },
@@ -9273,6 +10331,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ALA",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/alabama-crimson-tide/ALA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#9e1b32",
         "alternate": "#ffffff"
       },
@@ -9282,6 +10341,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARK",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/arkansas-razorbacks/ARK-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#a32136",
         "alternate": "#ffffff"
       },
@@ -9291,6 +10351,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AUB",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/auburn-tigers/AUB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002b5c",
         "alternate": "#f26522"
       },
@@ -9300,6 +10361,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FLA",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/florida-gators/FLA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0021a5",
         "alternate": "#fa4616"
       },
@@ -9309,6 +10371,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UGA",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/georgia-bulldogs/UGA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ba0c2f",
         "alternate": "#2c2a29"
       },
@@ -9318,6 +10381,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UK",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/kentucky-wildcats/UK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a0",
         "alternate": "#ffffff"
       },
@@ -9327,6 +10391,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LSU",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/lsu-tigers/LSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#461d76",
         "alternate": "#fdd023"
       },
@@ -9336,6 +10401,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MSST",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/mississippi-state-bulldogs/MSST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5d1725",
         "alternate": "#c1c6c8"
       },
@@ -9345,6 +10411,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MIZ",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/missouri-tigers/MIZ-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f1b82d",
         "alternate": "#000000"
       },
@@ -9354,6 +10421,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OU",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/oklahoma-sooners/OU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#990000",
         "alternate": "#ffffff"
       },
@@ -9363,6 +10431,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MISS",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/ole-miss-rebels/MISS-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#13294b",
         "alternate": "#cf142b"
       },
@@ -9372,6 +10441,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SC",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/south-carolina-gamecocks/SC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#73000a",
         "alternate": "#000000"
       },
@@ -9381,6 +10451,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TENN",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/tennessee-volunteers/TENN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff8200",
         "alternate": "#ffffff"
       },
@@ -9390,6 +10461,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TA&M",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/texas-am-aggies/TA%26M-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#500000",
         "alternate": "#ffffff"
       },
@@ -9399,6 +10471,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TEX",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/texas-longhorns/TEX-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#af5c37",
         "alternate": "#ffffff"
       },
@@ -9408,6 +10481,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VAN",
         "logo": "/sports-logos/cbb-logos/mens/southeastern-conference/vanderbilt-commodores/VAN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#cfae70"
       },
@@ -9417,6 +10491,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTC",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/chattanooga-mocs/UTC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00386b",
         "alternate": "#dca71d"
       },
@@ -9426,6 +10501,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ETSU",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/east-tennessee-state-buccaneers/ETSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002d61",
         "alternate": "#ffc423"
       },
@@ -9435,6 +10511,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FUR",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/furman-paladins/FUR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#582c83",
         "alternate": "#ffffff"
       },
@@ -9444,6 +10521,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MER",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/mercer-bears/MER-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ff7f29",
         "alternate": "#080808"
       },
@@ -9453,6 +10531,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SAM",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/samford-bulldogs/SAM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005485",
         "alternate": "#bc0023"
       },
@@ -9462,6 +10541,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TNTC",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/tennessee-tech-golden-eagles/TNTC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#5a4099",
         "alternate": "#ffde00"
       },
@@ -9471,6 +10551,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CIT",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/the-citadel-bulldogs/CIT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7badd3",
         "alternate": "#002856"
       },
@@ -9480,6 +10561,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNCG",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/unc-greensboro-spartans/UNCG-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003559",
         "alternate": "#ffd90a"
       },
@@ -9489,6 +10571,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "VMI",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/vmi-keydets/VMI-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ae122a",
         "alternate": "#ffd619"
       },
@@ -9498,6 +10581,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WCU",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/western-carolina-catamounts/WCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f91",
         "alternate": "#bf9e70"
       },
@@ -9507,6 +10591,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WOF",
         "logo": "/sports-logos/cbb-logos/mens/southern-conference/wofford-terriers/WOF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#533b22",
         "alternate": "#f0f0f0"
       },
@@ -9516,6 +10601,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ETAM",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/east-texas-am-lions/ETAM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -9524,6 +10610,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "HCU",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/houston-christian-huskies/HCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00539c"
       },
       {
@@ -9532,6 +10619,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UIW",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/incarnate-word-cardinals/UIW-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#080808"
       },
@@ -9541,6 +10629,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LAM",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/lamar-cardinals/LAM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ebebeb"
       },
@@ -9550,6 +10639,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MCN",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/mcneese-cowboys/MCN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00529c",
         "alternate": "#ffd204"
       },
@@ -9559,6 +10649,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NOLA",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/lsu-new-orleans-privateers/NOLA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005da6",
         "alternate": "#a2a9ae"
       },
@@ -9568,6 +10659,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NICH",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/nicholls-colonels/NICH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#c41230",
         "alternate": "#f0f0f0"
       },
@@ -9577,6 +10669,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NWST",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/northwestern-state-demons/NWST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#492f91",
         "alternate": "#ed6118"
       },
@@ -9586,6 +10679,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SELA",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/se-louisiana-lions/SELA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#215732",
         "alternate": "#ffc72c"
       },
@@ -9595,6 +10689,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SFA",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/stephen-f-austin-lumberjacks/SFA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#393996",
         "alternate": "#bec0c2"
       },
@@ -9604,6 +10699,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AMCC",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/texas-am-corpus-christi-islanders/AMCC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0067c5",
         "alternate": "#007f3e"
       },
@@ -9613,6 +10709,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "RGV",
         "logo": "/sports-logos/cbb-logos/mens/southland-conference/ut-rio-grande-valley-vaqueros/RGV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#dc6000",
         "alternate": "#e1732d"
       },
@@ -9622,6 +10719,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "AAMU",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alabama-am-bulldogs/AAMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#790000",
         "alternate": "#ffffff"
       },
@@ -9631,6 +10729,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ALST",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alabama-state-hornets/ALST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e9a900",
         "alternate": "#0a0a0a"
       },
@@ -9640,6 +10739,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ALCN",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/alcorn-state-braves/ALCN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#4b0058",
         "alternate": "#46166a"
       },
@@ -9649,6 +10749,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UAPB",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/arkansas-pine-bluff-golden-lions/UAPB-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e0aa0f",
         "alternate": "#eaaa00"
       },
@@ -9658,6 +10759,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "BCU",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/bethune-cookman-wildcats/BCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#7b1831",
         "alternate": "#e9aa12"
       },
@@ -9667,6 +10769,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "FAMU",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/florida-am-rattlers/FAMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f89728",
         "alternate": "#00843d"
       },
@@ -9676,6 +10779,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GRAM",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/grambling-tigers/GRAM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ee8601",
         "alternate": "#ffd10a"
       },
@@ -9685,6 +10789,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JKST",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/jackson-state-tigers/JKST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#123297",
         "alternate": "#b5b7ba"
       },
@@ -9694,6 +10799,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MVSU",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/mississippi-valley-state-delta-devils/MVSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005328",
         "alternate": "#cf2d34"
       },
@@ -9703,6 +10809,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PV",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/prairie-view-am-panthers/PV-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#582c83",
         "alternate": "#eaaa00"
       },
@@ -9712,6 +10819,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SOU",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/southern-jaguars/SOU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004b97",
         "alternate": "#ffc82d"
       },
@@ -9721,6 +10829,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TXSO",
         "logo": "/sports-logos/cbb-logos/mens/southwestern-athletic-conference/texas-southern-tigers/TXSO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#860038",
         "alternate": "#ffffff"
       },
@@ -9730,6 +10839,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "KC",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/kansas-city-roos/KC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004b87",
         "alternate": "#ffc72c"
       },
@@ -9739,6 +10849,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UND",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/north-dakota-fighting-hawks/UND-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00a26b",
         "alternate": "#c2c3c0"
       },
@@ -9748,6 +10859,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "NDSU",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/north-dakota-state-bison/NDSU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#01402a",
         "alternate": "#ffffff"
       },
@@ -9757,6 +10869,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "OMA",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/omaha-mavericks/OMA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#e3193e",
         "alternate": "#474648"
       },
@@ -9766,6 +10879,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ORU",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/oral-roberts-golden-eagles/ORU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#002462",
         "alternate": "#dac792"
       },
@@ -9775,6 +10889,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SDAK",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/south-dakota-coyotes/SDAK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#cd1241",
         "alternate": "#f0f0f0"
       },
@@ -9784,6 +10899,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SDST",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/south-dakota-state-jackrabbits/SDST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a0",
         "alternate": "#ffd100"
       },
@@ -9793,6 +10909,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "STMN",
         "logo": "/sports-logos/cbb-logos/mens/summit-league/st-thomas-tommies/STMN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -9801,6 +10918,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "APP",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/app-state-mountaineers/APP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000",
         "alternate": "#ffcd00"
       },
@@ -9810,6 +10928,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ARST",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/arkansas-state-red-wolves/ARST-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#cc092f",
         "alternate": "#000000"
       },
@@ -9819,6 +10938,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CCU",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/coastal-carolina-chanticleers/CCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#006f71",
         "alternate": "#a27752"
       },
@@ -9828,6 +10948,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GASO",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/georgia-southern-eagles/GASO-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#041e42",
         "alternate": "#a3aaae"
       },
@@ -9837,6 +10958,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "GAST",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/georgia-state-panthers/GAST-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0039a6",
         "alternate": "#ffffff"
       },
@@ -9846,6 +10968,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "JMU",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/james-madison-dukes/JMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#450084",
         "alternate": "#cbb677"
       },
@@ -9855,6 +10978,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UL",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/louisiana-ragin-cajuns/UL-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ce181e",
         "alternate": "#000000"
       },
@@ -9864,6 +10988,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "MRSH",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/marshall-thundering-herd/MRSH-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00b140",
         "alternate": "#000000"
       },
@@ -9873,6 +10998,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ODU",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/old-dominion-monarchs/ODU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003768",
         "alternate": "#a1d2f1"
       },
@@ -9882,6 +11008,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USA",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/south-alabama-jaguars/USA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#00205b",
         "alternate": "#bf0d3e"
       },
@@ -9891,6 +11018,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USM",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/southern-miss-golden-eagles/USM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ffc72c",
         "alternate": "#231f20"
       },
@@ -9900,6 +11028,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TROY",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/troy-trojans/TROY-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#862633",
         "alternate": "#b1b1b1"
       },
@@ -9909,6 +11038,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ULM",
         "logo": "/sports-logos/cbb-logos/mens/sun-belt-conference/ul-monroe-warhawks/ULM-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#840029",
         "alternate": "#fdb913"
       },
@@ -9918,6 +11048,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "ACU",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/abilene-christian-wildcats/ACU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#592d82",
         "alternate": "#b1b3b3"
       },
@@ -9927,6 +11058,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "APSU",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/austin-peay-governors/APSU-dark.png",
         "plate": true,
+        "opaque": false,
         "primary": "#8e0b0b"
       },
       {
@@ -9935,6 +11067,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "CARK",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/central-arkansas-bears/CARK-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#a7a9ac",
         "alternate": "#8e959a"
       },
@@ -9944,6 +11077,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "EKU",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/eastern-kentucky-colonels/EKU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#660819",
         "alternate": "#f0f0f0"
       },
@@ -9953,6 +11087,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LR",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/little-rock-trojans/LR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#ad0000",
         "alternate": "#898d8f"
       },
@@ -9962,6 +11097,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UNA",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/north-alabama-lions/UNA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#663399"
       },
       {
@@ -9970,6 +11106,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "TAR",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/tarleton-state-texans/TAR-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#000000"
       },
       {
@@ -9978,6 +11115,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "UTA",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/ut-arlington-mavericks/UTA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#004b7c",
         "alternate": "#f58024"
       },
@@ -9987,6 +11125,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "WGA",
         "logo": "/sports-logos/cbb-logos/mens/united-athletic-conference/west-georgia-wolves/WGA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#0033a1",
         "alternate": "#db1a21"
       },
@@ -9996,6 +11135,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "DEN",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/denver-pioneers/DEN-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#98002e",
         "alternate": "#a8996e"
       },
@@ -10005,6 +11145,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "LMU",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/loyola-marymount-lions/LMU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#880029",
         "alternate": "#00345b"
       },
@@ -10014,6 +11155,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PAC",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/pacific-tigers/PAC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#f47820",
         "alternate": "#c2c3c0"
       },
@@ -10023,6 +11165,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PEPP",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/pepperdine-waves/PEPP-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#003a72",
         "alternate": "#dc762f"
       },
@@ -10032,6 +11175,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "PORT",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/portland-pilots/PORT-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#330072",
         "alternate": "#a8b3ba"
       },
@@ -10041,6 +11185,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SMC",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/saint-marys-gaels/SMC-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#d80024",
         "alternate": "#003057"
       },
@@ -10050,6 +11195,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "USD",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/san-diego-toreros/USD-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#2f99d4",
         "alternate": "#2f99d4"
       },
@@ -10059,6 +11205,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SF",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/san-francisco-dons/SF-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#005a36",
         "alternate": "#ffffff"
       },
@@ -10068,6 +11215,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SCU",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/santa-clara-broncos/SCU-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#690b0b",
         "alternate": "#101010"
       },
@@ -10077,6 +11225,7 @@ export const SPORTS_LOGO_LEAGUES: LogoLeague[] = [
         "abbr": "SEA",
         "logo": "/sports-logos/cbb-logos/mens/west-coast-conference/seattle-u-redhawks/SEA-dark.png",
         "plate": false,
+        "opaque": false,
         "primary": "#bf2e1a",
         "alternate": "#c2c3c0"
       }

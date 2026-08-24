@@ -176,6 +176,7 @@ export default async function StudioBoard({
         name: team.name,
         logo: team.logo,
         plate: team.plate,
+        opaque: team.opaque,
         primary: team.primary,
       });
       leagueIds.add(ref.leagueId);
@@ -238,6 +239,7 @@ export default async function StudioBoard({
       href: conference || team ? boardHref({ league: league.id }) : undefined,
       logo: league.logo,
       plate: league.plate,
+      opaque: league.opaque,
     });
   }
   if (league && conference) {
@@ -246,10 +248,11 @@ export default async function StudioBoard({
       href: team ? boardHref({ league: league.id, conf: conference.slug }) : undefined,
       logo: conference.logo,
       plate: conference.plate,
+      opaque: conference.opaque,
     });
   }
   if (league && team) {
-    crumbs.push({ label: team.name, logo: team.logo, plate: team.plate });
+    crumbs.push({ label: team.name, logo: team.logo, plate: team.plate, opaque: team.opaque });
   }
 
   const teamTiles = (teams: typeof SPORTS_LOGO_LEAGUES[number]["teams"]): BrowseTile[] =>
@@ -259,6 +262,7 @@ export default async function StudioBoard({
       label: t.name,
       logo: t.logo,
       plate: t.plate,
+      opaque: t.opaque,
       monogram: t.abbr,
       count: perTeam.get(`${league!.id}/${t.slug}`) ?? 0,
       active: team?.slug === t.slug,
@@ -275,6 +279,7 @@ export default async function StudioBoard({
       sublabel: l.name,
       logo: l.logo,
       plate: l.plate,
+      opaque: l.opaque,
       monogram: l.shortName,
       count: perLeague.get(l.id) ?? 0,
     }));
@@ -287,6 +292,7 @@ export default async function StudioBoard({
       sublabel: `${c.teams.length} teams`,
       logo: c.logo,
       plate: c.plate,
+      opaque: c.opaque,
       monogram: c.shortName,
       count: perConference.get(`${league.id}/${c.slug}`) ?? 0,
     }));

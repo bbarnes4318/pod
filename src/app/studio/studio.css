@@ -823,6 +823,16 @@
   padding: 3px;
   box-shadow: inset 0 0 0 1px var(--border);
 }
+/* Art that ships its own background — the college league marks are white-backed
+   rectangles. It needs clipping to the tile, not backing: a plate behind a white
+   image just draws a faint off-white frame around it. The white here matches the
+   art itself, so a mark that does not fill the square letterboxes invisibly
+   rather than against the off-white plate. */
+.boardLogo--opaque {
+  background: var(--logo-plate-opaque);
+  padding: 0;
+  box-shadow: none;
+}
 
 /* ---- Browse: League -> Conference -> Team ------------------------------- */
 .boardBrowse { margin-bottom: var(--sp-2); }

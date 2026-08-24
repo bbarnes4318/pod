@@ -10,6 +10,11 @@ import React from "react";
  *     and flags those (`plate`); on a #0E1116 surface they are invisible, so
  *     they get a light plate behind them instead of shipping a blank square.
  *
+ *   · SOME ART CARRIES ITS OWN BACKGROUND (`opaque`) — the college football and
+ *     basketball league marks are white-backed rectangles. Backing THOSE draws
+ *     a faint off-white frame around a white image, so they are clipped to the
+ *     tile instead. Two different problems; two different treatments.
+ *
  *   · SOME ENTRIES HAVE NO ART AT ALL. `cfb-logos/fbs-independents` is an
  *     empty folder, and neither college league ships a league mark. Rather
  *     than a hole in the grid, those fall back to a monogram. It replaces the
@@ -24,6 +29,7 @@ export default function BoardLogo({
   src,
   alt,
   plate,
+  opaque,
   monogram,
   size = "md",
 }: {
@@ -31,12 +37,15 @@ export default function BoardLogo({
   /** Empty string when a visible label already names the thing. */
   alt: string;
   plate?: boolean;
+  /** The art carries its own background: clip it, never back it. */
+  opaque?: boolean;
   /** Shown when there is no art — usually the team abbreviation. */
   monogram?: string;
   size?: "sm" | "md" | "lg" | "xl";
 }) {
   const classes = ["boardLogo", `boardLogo--${size}`];
   if (plate) classes.push("boardLogo--plate");
+  if (opaque) classes.push("boardLogo--opaque");
 
   return (
     <span className={classes.join(" ")}>

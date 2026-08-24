@@ -97,6 +97,28 @@ check("all five browsable leagues are present", SPORTS_LOGO_LEAGUES.length === 5
   check("team slugs are unique per league and conferences are whole", problems.length === 0, problems.slice(0, 5).join("; "));
 }
 
+// Every league now ships its own mark — the two college leagues were monogram
+// fallbacks until cfb-logo.jpg and cbb-logo.png were added by hand, which is
+// also why the manifest must accept art that follows no naming convention.
+check(
+  "every league has a real mark, not a monogram fallback",
+  SPORTS_LOGO_LEAGUES.every((l) => !!l.logo),
+  SPORTS_LOGO_LEAGUES.filter((l) => !l.logo).map((l) => l.shortName).join(", ")
+);
+
+// plate and opaque answer different questions and must never both be set: one
+// puts a surface BEHIND a transparent mark, the other says the mark brought its
+// own. Setting both would frame a white image in off-white.
+{
+  const both: string[] = [];
+  for (const league of SPORTS_LOGO_LEAGUES) {
+    if (league.plate && league.opaque) both.push(league.shortName);
+    for (const c of league.conferences) if (c.plate && c.opaque) both.push(`${league.id}/${c.slug}`);
+    for (const t of league.teams) if (t.plate && t.opaque) both.push(`${league.id}/${t.slug}`);
+  }
+  check("no mark is both plated and opaque", both.length === 0, both.slice(0, 5).join(", "));
+}
+
 check(
   "pro leagues are flat, college leagues are tiered",
   SPORTS_LOGO_LEAGUES.every((l) =>

@@ -65,6 +65,9 @@
      pure black); on --bg they would be an empty square. Off-white rather than
      #fff so a white-on-transparent mark next to it does not look grey. */
   --logo-plate: #F2F4F7;
+  /* Behind art that ships its own (white) background, so any letterboxing
+     around a non-square mark matches the mark instead of the plate. */
+  --logo-plate-opaque: #FFFFFF;
 
   /* ------------------------------------------------------------
      Legacy aliases — load-bearing: every existing page consumes

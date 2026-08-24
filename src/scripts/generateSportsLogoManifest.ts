@@ -47,6 +47,13 @@ interface LeagueSpec {
   sport: string;
   /** Folder under public/sports-logos that holds this league's teams. */
   dir: string;
+  /**
+   * Where the LEAGUE's own mark lives, when that is not `dir`. College
+   * basketball keeps its conferences under cbb-logos/mens but its league mark
+   * one level up, at cbb-logos/ — so without this the league tile would keep
+   * falling back to a monogram while the file sat right there.
+   */
+  markDir?: string;
   /** Colleges nest teams under conference folders; pro leagues do not. */
   tiered: boolean;
 }
@@ -56,7 +63,7 @@ const LEAGUES: LeagueSpec[] = [
   { id: "NBA", name: "National Basketball Association", shortName: "NBA", sport: "Basketball", dir: "nba", tiered: false },
   { id: "MLB", name: "Major League Baseball", shortName: "MLB", sport: "Baseball", dir: "mlb", tiered: false },
   { id: "NCAAF", name: "College Football", shortName: "CFB", sport: "Football", dir: "cfb-logos", tiered: true },
-  { id: "NCAAB", name: "College Basketball", shortName: "CBB", sport: "Basketball", dir: path.join("cbb-logos", "mens"), tiered: true },
+  { id: "NCAAB", name: "College Basketball", shortName: "CBB", sport: "Basketball", dir: path.join("cbb-logos", "mens"), markDir: "cbb-logos", tiered: true },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -196,6 +203,14 @@ const VARIANT_ORDER = [
   "-cap-light.svg",
 ];
 
+/**
+ * Anything sharp can rasterise. The variant list above is a PREFERENCE order,
+ * not an allow-list: a mark dropped in by hand ("cfb-logo.jpg") follows no
+ * convention, and refusing it would mean showing a monogram next to a file that
+ * is sitting right there.
+ */
+const IMAGE_FILE = /\.(png|svg|jpe?g|webp|avif)$/i;
+
 interface Measured {
   file: string;
   /** Mean luminance of the opaque pixels, 0-255. */
@@ -250,7 +265,10 @@ function webPath(abs: string): string {
 
 interface PickedLogo {
   logo: string;
+  /** Transparent mark, too dark to read on the studio surface: back it. */
   plate: boolean;
+  /** The mark carries its own background — clip it, do not back it. */
+  opaque: boolean;
 }
 
 /**
@@ -265,6 +283,11 @@ async function pickLogo(dir: string, files: string[]): Promise<PickedLogo | null
     const hit = files.find((f) => f.endsWith(suffix));
     if (hit) candidates.push(path.join(dir, hit));
   }
+  // Nothing matched the convention — fall back to every image in the folder and
+  // let the measurement below decide, exactly as it does for the named cuts.
+  if (candidates.length === 0) {
+    for (const f of files.filter((f) => IMAGE_FILE.test(f))) candidates.push(path.join(dir, f));
+  }
   if (candidates.length === 0) return null;
 
   const measured: Measured[] = [];
@@ -277,11 +300,21 @@ async function pickLogo(dir: string, files: string[]): Promise<PickedLogo | null
   }
   if (measured.length === 0) return null;
 
-  const preferred = measured.find((m) => m.lum >= PLATE_BELOW);
-  if (preferred) return { logo: webPath(preferred.file), plate: preferred.opaqueRect };
-
-  const brightest = measured.reduce((a, b) => (b.lum > a.lum ? b : a));
-  return { logo: webPath(brightest.file), plate: true };
+  // Two different problems, deliberately not conflated:
+  //
+  //   plate  — a TRANSPARENT mark that is too dark to see on the studio
+  //            background. It needs a light surface put behind it.
+  //   opaque — a mark that already carries its own background (the hand-added
+  //            cfb-logo.jpg and cbb-logo.png are white-backed rectangles).
+  //            Backing THAT produces a faint mismatched border around a white
+  //            image; what it needs is to be clipped to the tile, nothing more.
+  const chosen = measured.find((m) => m.lum >= PLATE_BELOW)
+    ?? measured.reduce((a, b) => (b.lum > a.lum ? b : a));
+  return {
+    logo: webPath(chosen.file),
+    plate: !chosen.opaqueRect && chosen.lum < PLATE_BELOW,
+    opaque: chosen.opaqueRect,
+  };
 }
 
 /** primary/alternate hex from a team folder's colors.txt, when one exists. */
@@ -308,6 +341,7 @@ interface OutTeam {
   abbr: string;
   logo: string;
   plate: boolean;
+  opaque: boolean;
   primary?: string;
   alternate?: string;
 }
@@ -317,6 +351,7 @@ interface OutConference {
   shortName: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
   teams: OutTeam[];
 }
 interface OutLeague {
@@ -327,6 +362,7 @@ interface OutLeague {
   slug: string;
   logo?: string;
   plate?: boolean;
+  opaque?: boolean;
   conferences: OutConference[];
   teams: OutTeam[];
 }
@@ -348,7 +384,9 @@ async function main() {
     const root = path.join(PUBLIC_DIR, spec.dir);
     if (!isDir(root)) throw new Error(`Missing logo folder for ${spec.id}: ${root}`);
 
-    const leagueMark = await pickLogo(root, filesIn(root));
+    const markRoot = spec.markDir ? path.join(PUBLIC_DIR, spec.markDir) : root;
+    if (!isDir(markRoot)) throw new Error(`Missing league-mark folder for ${spec.id}: ${markRoot}`);
+    const leagueMark = await pickLogo(markRoot, filesIn(markRoot));
     const league: OutLeague = {
       id: spec.id,
       name: spec.name,
@@ -357,6 +395,7 @@ async function main() {
       slug: spec.dir.split(path.sep)[0],
       logo: leagueMark?.logo,
       plate: leagueMark?.plate,
+      opaque: leagueMark?.opaque,
       conferences: [],
       teams: [],
     };
@@ -379,6 +418,7 @@ async function main() {
           shortName: named.shortName,
           logo: confMark?.logo,
           plate: confMark?.plate,
+          opaque: confMark?.opaque,
           teams,
         });
       }
