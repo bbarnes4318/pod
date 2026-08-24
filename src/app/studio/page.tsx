@@ -318,6 +318,19 @@ export default async function StudioBoard({
     gridLabel = `${conference?.name ?? league.name} teams`;
   }
 
+  // The Board's levels live in the QUERY STRING, so the shell's "drop a path
+  // segment" default would send Back to /studio from every one of them —
+  // skipping the conference you came through. One level up, precisely.
+  const back = team
+    ? conference
+      ? { label: conference.shortName, href: boardHref({ league: league!.id, conf: conference.slug }) }
+      : { label: league!.shortName, href: boardHref({ league: league!.id }) }
+    : conference
+      ? { label: leagueHeading!, href: boardHref({ league: league!.id }) }
+      : league
+        ? { label: "All leagues", href: "/studio" }
+        : undefined;
+
   const feed = feedHealth(poolCount, newest?.createdAt ?? null);
 
   // The hottest takes are the hottest takes IN WHAT YOU ARE LOOKING AT. Pinning
@@ -352,6 +365,7 @@ export default async function StudioBoard({
       <StudioPageHeader
         title="The Board"
         subtitle="Tonight's hottest takes — and every team's, one crest away."
+        back={back}
         status={
           <span className={`statusPill statusPill--${feed.tone}`} title={feed.detail} role="status">
             {feed.label}

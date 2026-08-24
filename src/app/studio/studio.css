@@ -164,6 +164,39 @@
   min-width: 0;
 }
 
+/* ---------- Back ----------
+   Always the leftmost thing in the page-identity block, so it occupies the same
+   pixels on every route. It carries its DESTINATION rather than a bare arrow:
+   "Back" alone makes you click to find out where you land. Quiet by default —
+   it is an escape hatch, not the page's primary action — and it lifts to full
+   contrast on hover and focus. .studioTopbarHead aligns on the baseline, which
+   a bordered pill does not sit on, hence align-self. */
+.studioBack {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+  padding: 0.3rem 0.65rem 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+.studioBack:hover { color: var(--text); border-color: var(--border-hover); background: var(--surface-2); }
+/* The ring itself comes from the global :focus-visible rule, which also sets
+   border-radius: 4px — that would square a pill off the moment a keyboard user
+   reached it. Keep the shape; keep the ring. */
+.studioBack:focus-visible { border-radius: 999px; }
+.studioBack svg { width: 15px; height: 15px; flex-shrink: 0; }
+/* Long parents ("Southeastern Conference") must not push the page title out. */
+.studioBackLabel { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; }
+
 .studioCrumbs { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-shrink: 0; }
 .studioCrumb {
   font-size: 0.85rem;
@@ -1815,8 +1848,11 @@
   .studioMain { padding: var(--sp-3) var(--sp-4) var(--sp-6); }
   .studioTopbarTitle { font-size: 1.05rem; }
   /* At 390px the crumb trail and the account name both compete with the title
-     for the same row. The title wins; the crumb is still reachable via Back. */
+     for the same row. The title wins; going up is still one tap away, because
+     Back keeps its place here and only sheds its label. */
   .studioCrumbs { display: none; }
+  .studioBackLabel { display: none; }
+  .studioBack { padding: 0.3rem 0.4rem; }
   .studioGenerateLabel { display: none; }
   .studioGenerateBtn { padding: 0.55rem 0.7rem; }
 }

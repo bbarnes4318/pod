@@ -35,7 +35,7 @@
 
 import React, { useEffect, useId, useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { useStudioHeader, type StudioHeaderCrumb } from "./StudioShell";
+import { useStudioHeader, type StudioBack, type StudioHeaderCrumb } from "./StudioShell";
 
 // useLayoutEffect warns when it runs during SSR, where there is no layout to
 // read. On the client it matters: it resolves the portal host BEFORE the
@@ -50,6 +50,12 @@ export interface StudioPageHeaderProps {
   subtitle?: string;
   /** Ancestors only — the current page is never a crumb. */
   breadcrumb?: StudioHeaderCrumb[];
+  /**
+   * Override where Back goes. Only needed when the parent is not the path's
+   * parent — the Board's drill-down keeps its level in the query string, so
+   * "up one" is not "drop a segment".
+   */
+  back?: StudioBack;
   /** Page-level controls, rendered in the topbar before Generate. */
   actions?: React.ReactNode;
   /** Right-aligned subbar slot: save state, counts, freshness. */
@@ -98,12 +104,14 @@ function ChromeSlot({
   return createPortal(children, host);
 }
 
-export default function StudioPageHeader({ title, subtitle, breadcrumb, actions, status }: StudioPageHeaderProps) {
+export default function StudioPageHeader({ title, subtitle, breadcrumb, back, actions, status }: StudioPageHeaderProps) {
   const { setHeader } = useStudioHeader();
   // Identifies THIS header instance so a page unmounting after its successor
   // has mounted cannot blank the incoming title.
   const id = useId();
   const crumbKey = JSON.stringify(breadcrumb ?? null);
+  // Same reason as crumbKey: compared by value so publishing settles in one pass.
+  const backKey = JSON.stringify(back ?? null);
 
   // How many chrome slots this page actually fills, and how many have landed.
   // `data-header-ready` goes on the (server-rendered, always present) h1 once
@@ -121,13 +129,13 @@ export default function StudioPageHeader({ title, subtitle, breadcrumb, actions,
   const ready = mounted && published >= expected;
 
   useEffect(() => {
-    setHeader({ id, title, subtitle, breadcrumb: breadcrumb ?? undefined });
+    setHeader({ id, title, subtitle, breadcrumb: breadcrumb ?? undefined, back: back ?? undefined });
     return () => setHeader({ id, clear: true });
     // `breadcrumb` is compared through crumbKey; including the array itself
     // would republish on every parent render for the same reason `actions`
     // cannot live here at all.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, title, subtitle, crumbKey, setHeader]);
+  }, [id, title, subtitle, crumbKey, backKey, setHeader]);
 
   return (
     <>

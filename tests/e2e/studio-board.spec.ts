@@ -176,6 +176,44 @@ test.describe("The Board", () => {
     await expect(page).not.toHaveURL(/team=/);
   });
 
+  test("Back walks the drill-down up one level at a time", async ({ page }) => {
+    // The Board keeps its level in the QUERY STRING, so the shell's default of
+    // dropping a path segment would jump straight home from every level and
+    // skip the conference you came through.
+    const back = page.locator(".studioBack");
+
+    // Top of the tree: nowhere to go, so no dead control.
+    await page.goto("/studio");
+    await expect(back).toHaveCount(0);
+
+    await page.goto("/studio?league=NCAAF&conf=southeastern-conference&team=alabama-crimson-tide");
+    await expect(back).toContainText("SEC");
+    await back.click();
+    await expect(page).toHaveURL(/conf=southeastern-conference/);
+    await expect(page).not.toHaveURL(/team=/);
+
+    // …then the league, spelled out rather than abbreviated…
+    await expect(back).toContainText("College Football");
+    await back.click();
+    await expect(page).toHaveURL(/league=NCAAF/);
+    await expect(page).not.toHaveURL(/conf=/);
+
+    // …then home, where it disappears again.
+    await expect(back).toContainText("All leagues");
+    await back.click();
+    await expect(page).toHaveURL(/\/studio$/);
+    await expect(back).toHaveCount(0);
+  });
+
+  test("a pro league skips the conference tier on the way back", async ({ page }) => {
+    await page.goto("/studio?league=NFL&team=kansas-city-chiefs");
+    const back = page.locator(".studioBack");
+    await expect(back).toContainText("NFL");
+    await back.click();
+    await expect(page).toHaveURL(/league=NFL/);
+    await expect(page).not.toHaveURL(/team=/);
+  });
+
   test("a team with nothing waiting says so instead of showing someone else's takes", async ({ page }) => {
     await page.goto("/studio?league=NFL&team=chicago-bears");
     await expect(page.getByRole("heading", { name: "Hottest Chicago Bears takes" })).toBeVisible();

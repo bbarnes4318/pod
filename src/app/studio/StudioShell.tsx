@@ -13,6 +13,8 @@ import { logoutAction } from "@/lib/authActions";
  * <StudioPageHeader>; the shell renders whatever is current.
  * ------------------------------------------------------------------ */
 export type StudioHeaderCrumb = { label: string; href: string };
+/** Where "Back" goes, and what it says it is going to. */
+export type StudioBack = { label: string; href: string };
 
 /** Only PRIMITIVES travel through context. Elements (actions/status) portal
  *  into the slots below — see the note in StudioPageHeader for why mixing them
@@ -21,6 +23,7 @@ export interface StudioHeaderState {
   title?: string;
   subtitle?: string;
   breadcrumb?: StudioHeaderCrumb[];
+  back?: StudioBack;
 }
 
 type HeaderPublish = StudioHeaderState & { id: string; clear?: boolean };
@@ -65,6 +68,25 @@ function fallbackTitle(pathname: string): string {
     }
   }
   return best;
+}
+
+/**
+ * Where Back goes when a page has not said.
+ *
+ * Hierarchical, not `history.back()`. History is whatever the visitor did last
+ * — it can lead out of the app entirely, or bounce between two pages forever —
+ * so a control labelled with a destination cannot honestly be driven by it.
+ * Dropping the last path segment is predictable, right-clickable, and always
+ * lands somewhere that exists.
+ *
+ * Returns null only for /studio itself, which is the top: a Back button there
+ * would have nowhere to go, and a dead control is worse than no control.
+ */
+function derivedBack(pathname: string): StudioBack | null {
+  const clean = pathname.replace(/\/+$/, "");
+  if (clean === "/studio" || !clean.startsWith("/studio")) return null;
+  const parent = clean.slice(0, clean.lastIndexOf("/")) || "/studio";
+  return { href: parent, label: fallbackTitle(parent) };
 }
 
 /* ------------------------------------------------------------------ *
@@ -176,6 +198,10 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   const headerApi = useMemo(() => ({ setHeader }), [setHeader]);
 
   const pageTitle = header.title ?? fallbackTitle(pathname);
+  // A page's own declaration wins; then the nearest breadcrumb, which is
+  // already the parent by construction; then the path.
+  const lastCrumb = header.breadcrumb?.length ? header.breadcrumb[header.breadcrumb.length - 1] : null;
+  const back = header.back ?? lastCrumb ?? derivedBack(pathname);
 
   useEffect(() => {
     try {
@@ -257,6 +283,23 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
           {/* The page's identity, in the bar that used to hold none of it. */}
           <div className="studioTopbarHead">
+            {/* Back sits in the SAME PLACE on every page — the thing that makes
+                it feel like a control rather than a link that happens to point
+                upward. It names its destination, so nobody has to click it to
+                find out where it goes.
+
+                Resolution order, most specific first: a page that declares its
+                own parent (the Board's drill-down, whose parent lives in the
+                query string, not the path) beats the last breadcrumb, which
+                beats dropping a path segment. */}
+            {back && (
+              <Link href={back.href} className="studioBack" aria-label={`Back to ${back.label}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 5l-7 7 7 7" />
+                </svg>
+                <span className="studioBackLabel">{back.label}</span>
+              </Link>
+            )}
             {header.breadcrumb?.length ? (
               <nav className="studioCrumbs" aria-label="Breadcrumb">
                 {header.breadcrumb.map((crumb) => (
