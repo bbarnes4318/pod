@@ -62,8 +62,27 @@ export class MoonshotLLMProvider extends OpenAICompatibleLLMProvider {
    * mirrors shapeZaiRequest, which exists for exactly this reason.
    */
   protected shapeModelFields(ctx: ShapeContext): ShapeResult {
+    // THE HEADROOM WAS A QUARTER OF WHAT THIS MODEL ACTUALLY REASONS.
+    //
+    // 2048 was a guess made before any successful call was measured, and it was
+    // wrong by ~4x. The production worker log for 2026-08-24 shows kimi-k3's
+    // reasoning token counts on the runs that DID answer:
+    //
+    //   reasoning=7062   reasoning=8269   reasoning=8218   reasoning=5828
+    //
+    // So the model routinely thinks for 6-8k tokens and was being handed 2k of
+    // room to do it in. The result is in the same log, on script_host_b_writer:
+    //
+    //   [moonshot] call failed — output_limit: Empty answer content
+    //   (finish_reason: length). The model spent its entire output allowance on
+    //   reasoning and never produced an answer.
+    //
+    // Which is precisely the failure the comment above says this function
+    // exists to prevent — the number just never caught up to the measurement.
+    // 8192 covers every observed run with margin; it is a CEILING, not a
+    // reservation, so a call that reasons less does not pay for the difference.
     const configured = Number(readRoutingEnv("MOONSHOT_REASONING_HEADROOM_TOKENS"));
-    const headroom = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 2048;
+    const headroom = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 8192;
     return {
       // TEMPERATURE IS PINNED TO 1, and this is the fix for a real dead end.
       //

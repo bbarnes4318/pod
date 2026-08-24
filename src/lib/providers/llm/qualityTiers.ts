@@ -65,7 +65,11 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
     speedWarning:
       "Takes about 8-12 minutes per episode — roughly ten times longer than the paid tiers. " +
       "This is normal for this tier, not a stall.",
-    writers: "GLM-5.2 and DeepSeek (free tiers)",
+    // GLM-5.2 was retired by NVIDIA on 2026-08-21 (410 Gone). The free tier's
+    // Zhipu half is now GLM-4.7-flash on Z.ai direct — same lab, still free,
+    // still a different family from DeepSeek, which is the property this pair
+    // exists to have. Kept accurate because this string is shown in the picker.
+    writers: "DeepSeek and GLM-4.7-flash (free tiers)",
     qualityNote:
       "Dialogue is more clichéd than the paid tiers, and one host noticeably more than the other.",
     billable: false,
@@ -78,7 +82,9 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
     approxCostUsd: 0.53,
     approxMinutes: [2, 4],
     speedWarning: null,
-    writers: "Kimi K2.6 and GLM-5.2",
+    // Same retirement as the free tier: the GLM half is now GLM-4.7-flash on
+    // Z.ai direct rather than GLM-5.2 via NVIDIA.
+    writers: "Kimi K2.6 and GLM-4.7-flash",
     qualityNote:
       "Slightly less polished than Premium, and hard to tell apart on most episodes.",
     billable: true,

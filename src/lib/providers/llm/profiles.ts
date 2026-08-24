@@ -140,7 +140,7 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
 
     // Judgement under comparison — reasoning mode.
     case "topic_ranking":
-      return [NV.glm(), NV.nemotron(), ZAI_FLASH()];
+      return [NV.nemotron(), NIM_DEEPSEEK(), ZAI_FLASH()];
 
     // Long-context consolidation and traceable extraction — reasoning mode.
     case "research_brief":
@@ -151,7 +151,7 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     case "script_outline":
     case "script_story_editor":
     case "script_debate_architect":
-      return [NV.glm(), NV.nemotron(), ZAI_FLASH()];
+      return [NV.nemotron(), NIM_DEEPSEEK(), ZAI_FLASH()];
 
     // THE TWO HOST WRITERS ARE DELIBERATELY ORDERED DIFFERENTLY.
     //
@@ -215,7 +215,7 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // A writing model must never be the sole judge of its own output, so the
     // judge chain deliberately shares no model with script_movement.
     case "quality_judge":
-      return [NV.nemotron(), NV.glm()];
+      return [NV.nemotron(), NIM_DEEPSEEK()];
 
     // The cold-open judge grades three openings the WRITERS produced, so it
     // shares no model with the dialogue family either. Its order is inverted
@@ -223,7 +223,7 @@ function frontierChain(role: LLMRole): ProfileRoleChain {
     // two different judgements, and having them land on the same model by
     // default would make one of the two verdicts redundant for free.
     case "cold_open_judge":
-      return [NV.glm(), NV.nemotron()];
+      return [NIM_DEEPSEEK(), NV.nemotron()];
   }
 }
 
@@ -251,7 +251,28 @@ const NV_NEMOTRON_SUPER = (): ProviderModelRef => ({
   model: "nvidia/nemotron-3-super-120b-a12b",
 });
 
-const NIM_GLM52 = (): ProviderModelRef => ({ provider: "nvidia", model: "z-ai/glm-5.2" });
+/**
+ * GLM-5.2 via NVIDIA NIM — RETIRED BY THE PROVIDER 2026-08-21, kept only as the
+ * record of what these chains used to reach for.
+ *
+ *   HTTP 410 Gone — "The model 'z-ai/glm-5.2' has reached its end of life on
+ *   2026-08-21T09:00:00Z and is no longer available."
+ *
+ * It is referenced by no chain any more. Every rung it held has been reassigned
+ * (see the block comment above verifiedDevelopmentChain). Do NOT wire it back:
+ * capabilities.ts marks it `retired`, so it would be filtered out of any chain
+ * that declared it, and the chain-health suite fails a production role that
+ * declares a model it cannot run.
+ *
+ * If a successor lands on NIM, that is a ONE-VARIABLE change and not this
+ * constant: `NVIDIA_MODEL_GLM=z-ai/glm-5.3` overrides MODEL_IDS.nvidia.glm, and
+ * an id absent from the registry resolves to the conservative generic-NIM
+ * record, which is routable. Probe it with `npm run probe:llm-contract` before
+ * putting it in verified_development — that profile is the observed-working
+ * map, not the intended one.
+ */
+const NIM_GLM52_RETIRED = (): ProviderModelRef => ({ provider: "nvidia", model: "z-ai/glm-5.2" });
+void NIM_GLM52_RETIRED;
 
 /** DeepSeek V4 Flash via NIM. A different lab from GLM — that is the whole point. */
 const NIM_DEEPSEEK = (): ProviderModelRef => ({
@@ -370,9 +391,9 @@ function balancedChain(role: LLMRole): ProfileRoleChain {
     // and NVIDIA are down the role fails loudly. That is the right outcome — a
     // silent downgrade to a judge's model is worse than a visible failure.
     case "script_host_a_writer":
-      return [OR_KIMI(), NIM_GLM52()];
+      return [OR_KIMI(), ZAI_FLASH()];
     case "script_host_b_writer":
-      return [NIM_GLM52(), OR_KIMI()];
+      return [ZAI_FLASH(), OR_KIMI()];
 
     // DIALOGUE REPAIR is kept clear of the judging chain for the same reason as
     // in the free tier: these roles rewrite lines, and a judge that shares their
@@ -400,10 +421,23 @@ function balancedChain(role: LLMRole): ProfileRoleChain {
 function freeIndependentChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
     // ---- audible dialogue: the only roles where prose quality is the product
+    //
+    // GLM-5.2 via NIM led host A until NVIDIA retired it on 2026-08-21 (410
+    // Gone). Its replacement is Z.ai's GLM-4.7-flash — same lab, still free —
+    // but it takes the SECOND rung here rather than the first, and the order
+    // matters for a reason outside this profile: glm-4.7-flash is also the
+    // premium tier's host-A primary. Leading with it here would make the free
+    // and premium tiers open with the identical model on the identical
+    // character, which is a user who paid more getting the same product.
+    // test:quality-tiers enforces exactly that and caught this.
+    //
+    // So DeepSeek leads host A and Z.ai leads host B. The two families and the
+    // inversion — the property that stops one model writing both characters —
+    // are preserved; only which of the two goes first changed.
     case "script_host_a_writer":
-      return [NIM_GLM52(), NIM_DEEPSEEK()];
+      return [NIM_DEEPSEEK(), ZAI_FLASH()];
     case "script_host_b_writer":
-      return [NIM_DEEPSEEK(), NIM_GLM52()];
+      return [ZAI_FLASH(), NIM_DEEPSEEK()];
 
     // ---- structure and judgement: schema fidelity and latency, not prose.
     // Cerebras leads everywhere it can; Groq is the same model on a different
@@ -540,7 +574,7 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // ---- roles below rest on contract reachability only; no quality experiment
     // Cheap, high-volume, structured. Reasoning explicitly off (roles.ts).
     case "topic_generation":
-      return [ZAI_FLASH(), NV.glm()];
+      return [ZAI_FLASH(), NV.nemotron()];
     case "topic_classification":
     case "show_notes":
       // Nemotron replaces deepseek-v4-pro as the secondary. Without it these two
@@ -555,7 +589,7 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
 
     // Judgement under comparison.
     case "topic_ranking":
-      return [NV.glm(), NV.nemotron()];
+      return [NV.nemotron(), NIM_DEEPSEEK()];
 
     // Long-context consolidation and traceable extraction.
     case "research_brief":
@@ -564,10 +598,13 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       // minutes before returning an empty response or timing out. Nemotron was
       // the fallback that actually completed the same briefs, so it must be the
       // primary instead of paying the known-failing attempt on every topic.
-      // The middle rung is now GLM-5.2 rather than deepseek-v4-pro: same
-      // reasoning-capable tier, and it is a THIRD family, so the chain does not
-      // collapse to one lab if Nemotron has a bad day.
-      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
+      // The middle rung WAS GLM-5.2, chosen as a third family so the chain did
+      // not collapse to one lab. NVIDIA retired it on 2026-08-21 (410 Gone), so
+      // the rung is Z.ai's GLM-4.7-flash: still Zhipu, still a different lab
+      // from Nemotron, and reachable on a credential this deployment already
+      // uses. The three-family property survives the retirement; the specific
+      // model did not.
+      return [NV.nemotron(), ZAI_FLASH()];
 
     // Literal transcript audit. deepseek-v4-pro held the PRIMARY here and is
     // now non-routable, so every continuity report was starting one guaranteed
@@ -578,12 +615,12 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
 
     // Never shares a model with script_movement.
     case "quality_judge":
-      return [NV.nemotron(), NV.glm()];
+      return [NV.nemotron(), NIM_DEEPSEEK()];
 
     // Neither judge shares a model with the dialogue family, and the two judges
     // do not share a primary with each other — see the frontier profile.
     case "cold_open_judge":
-      return [NV.glm(), NV.nemotron()];
+      return [NIM_DEEPSEEK(), NV.nemotron()];
 
     // ---- roles below are MEASURED (see the findings block above)
 
@@ -607,7 +644,7 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     case "script_outline":
     case "script_story_editor":
     case "script_debate_architect":
-      return [NV.nemotron(), NV.glm(), ZAI_FLASH()];
+      return [NV.nemotron(), ZAI_FLASH()];
 
     // Dialogue: Z.ai judge 79 at 143 s beat Mistral's 76 at 536 s, so Z.ai leads
     // and that measurement still stands. What changed is the FALLBACK: Mistral
@@ -630,10 +667,11 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // primary: smoke-verified live on 2026-08-12, a genuinely different family,
     // and it collides with neither judge.
     //
-    // GLM-5.2 was considered and rejected: it is the cold_open_judge primary and
-    // the quality_judge secondary, so putting it on a writer chain would let a
-    // judge grade output it had a hand in. Nemotron was rejected for the same
-    // reason — it is the quality_judge primary.
+    // The judge-collision rule that shaped this is unchanged, only the models
+    // moved: DeepSeek V4 Flash now holds the cold_open_judge primary and the
+    // quality_judge secondary (GLM-5.2 held both until NVIDIA retired it on
+    // 2026-08-21), so DeepSeek may not appear on a writer chain. Nemotron is
+    // still excluded for the same reason — it is the quality_judge primary.
     //
     // WHAT IS AND IS NOT MEASURED. Z.ai leading host A is measured (judge 79 /
     // 143 s). Kimi leading host B is NOT — it is reachable, different-family and
@@ -655,14 +693,22 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // Grading against evidence, independent of the writer. Nemotron: 5/5
     // in-scope, 0 false positives, 13 s. DeepSeek measured 0 false positives at
     // 468 s and was the secondary on that strength; it is now non-routable, so
-    // GLM-5.2 takes the rung. Z.ai stays deliberately excluded from BOTH
-    // verification chains — its structured response omitted required top-level
-    // fields even after a repair pass, and a reviewer that cannot return its
-    // verdict cannot gate a publish. That exclusion is why the replacement had
-    // to be GLM-5.2 rather than the Z.ai flash model used elsewhere.
+    // DeepSeek V4 Flash takes the rung. Z.ai stays deliberately excluded from
+    // BOTH verification chains — its structured response omitted required
+    // top-level fields even after a repair pass, and a reviewer that cannot
+    // return its verdict cannot gate a publish. That exclusion is why the rung
+    // could not simply become the Z.ai flash model used elsewhere when NVIDIA
+    // retired GLM-5.2 on 2026-08-21; it had to be a third option.
+    //
+    // The production log of 2026-08-24 re-confirms the exclusion from both
+    // sides: `[zai] structured output rejected (schema_violation)` on a writer
+    // call, and Nemotron itself returning "Required array 'unsupportedClaims'
+    // is missing" on this very role. Structured output is the weak point here,
+    // so the chain needs two models that can hold a schema, not two that are
+    // merely reachable.
     case "script_verification":
     case "fact_check":
-      return [NV.nemotron(), NV.glm()];
+      return [NV.nemotron(), NIM_DEEPSEEK()];
   }
 }
 
