@@ -28,8 +28,10 @@ export const dynamic = "force-dynamic";
  * are different questions and the board used to answer only the first:
  *
  *   · The hottest takes stay in the open at the top, one click from the
- *     real generation flow. They are never filtered away by a browse
- *     selection, so the front door does not move under you.
+ *     real generation flow — and they are the hottest takes IN WHATEVER IS
+ *     SELECTED. Click into the NFL and that row becomes the NFL's hottest,
+ *     with a heading that says so; it used to stay pinned to the whole
+ *     board, which read as a filter that had not worked.
  *
  *   · Everything else is reachable by walking League → (Conference) →
  *     Team, with the crest for each. That walk is plain links over query
@@ -198,6 +200,13 @@ export default async function StudioBoard({
     };
   });
 
+  // Order by the number the cards actually SHOW. The pool is queried by
+  // debateScore — a good way to choose which takes to load — but every card
+  // displays the talkability heat, so leaving the rows in debateScore order let
+  // a heat-45 take sit above a heat-82 one under a heading that says "hottest".
+  // /studio/takes has always sorted this way; the board now agrees with it.
+  takes.sort((a, b) => b.heat - a.heat);
+
   /* ---------------- Counts behind every tile ---------------------------- */
 
   const perLeague = new Map<string, number>();
@@ -221,6 +230,13 @@ export default async function StudioBoard({
     : null;
 
   const scopeLabel = team?.name ?? conference?.name ?? league?.name ?? null;
+
+  // Heading-sized name for the current scope. Pro leagues read better
+  // abbreviated ("NFL"), college ones do not — "Hottest CBB takes" is jargon
+  // where "Hottest College Basketball takes" is not. Tiered/flat is the real
+  // distinction between them and is already in the data, so use it.
+  const leagueHeading = league ? (league.conferences.length > 0 ? league.name : league.shortName) : null;
+  const scopeHeading = team?.name ?? conference?.shortName ?? leagueHeading ?? null;
 
   const scoped: EnrichedTake[] = team
     ? takes.filter((t) => t.crests.some((c) => c.leagueId === league!.id && c.slug === team.slug))
@@ -304,11 +320,15 @@ export default async function StudioBoard({
 
   const feed = feedHealth(poolCount, newest?.createdAt ?? null);
 
-  // The hottest takes stay in the open no matter what the browser is showing —
-  // they are the front door, and a front door that moves is not one.
-  const featured = takes.slice(0, FEATURED);
+  // The hottest takes are the hottest takes IN WHAT YOU ARE LOOKING AT. Pinning
+  // them to the whole board meant clicking into the NFL left three unrelated
+  // takes sitting at the top of an NFL page, which reads as a filter that did
+  // not work. `scoped` is already ordered by debate heat (the pool query is),
+  // so the top of it is the answer at every level.
+  const featured = scoped.slice(0, FEATURED);
   const featuredIds = new Set(featured.map((t) => t.id));
-  const listed = league ? scoped : scoped.filter((t) => !featuredIds.has(t.id));
+  // Never list a take twice on one page.
+  const listed = scoped.filter((t) => !featuredIds.has(t.id));
 
   // An unfinished rundown is real work the studio is already holding, and the
   // board was the one screen that never mentioned it — you had to remember you
@@ -364,17 +384,32 @@ export default async function StudioBoard({
         </div>
       ) : (
         <>
-          {/* ---------------- Hottest, always in the open -------------------- */}
+          {/* ---------------- Hottest, for whatever is selected -------------- */}
           <div className="sectionHead">
-            <h2 className="sectionTitle">Hottest right now</h2>
+            <h2 className="sectionTitle">
+              {scopeHeading ? `Hottest ${scopeHeading} takes` : "Hottest right now"}
+            </h2>
             <Link href="/studio/takes" className="sectionAction">All takes →</Link>
           </div>
 
-          <div className="boardGrid boardGrid--featured">
-            {featured.map((t, i) => (
-              <BoardTakeCard key={t.id} take={t} featured rank={i + 1} />
-            ))}
-          </div>
+          {scoped.length === 0 ? (
+            <div className="emptyNote">
+              Nothing on {scopeLabel} in the current pool.{" "}
+              {conference && league ? (
+                <Link href={boardHref({ league: league.id, conf: conference.slug })} className="u-accent">
+                  See the whole {conference.shortName} →
+                </Link>
+              ) : league ? (
+                <Link href="/studio" className="u-accent">Back to every league →</Link>
+              ) : null}
+            </div>
+          ) : (
+            <div className="boardGrid boardGrid--featured">
+              {featured.map((t, i) => (
+                <BoardTakeCard key={t.id} take={t} featured rank={i + 1} />
+              ))}
+            </div>
+          )}
 
           {/* ---------------- Browse by league / conference / team ----------- */}
           <div className="sectionHead">
@@ -386,41 +421,29 @@ export default async function StudioBoard({
 
           <BoardBrowser crumbs={crumbs} tiles={tiles} label={gridLabel} />
 
-          {/* ---------------- Takes for the current scope -------------------- */}
-          <div className="sectionHead">
-            <h2 className="sectionTitle">
-              {scopeLabel ? `${scopeLabel} takes` : "The rest of the board"}
-            </h2>
-            {scopeLabel && (
-              <span className="sectionCount">
-                {scoped.length} of {takes.length}
-              </span>
-            )}
-          </div>
+          {/* ---------------- Everything else in scope ----------------------- */}
+          {/* Rendered only when there IS a remainder: with the hottest row now
+              scoped too, a team holding three or fewer takes has them all up
+              top, and an empty box under the browser would be saying nothing. */}
+          {listed.length > 0 && (
+            <>
+              <div className="sectionHead">
+                <h2 className="sectionTitle">
+                  {scopeHeading ? `More ${scopeHeading} takes` : "The rest of the board"}
+                </h2>
+                {scopeLabel && (
+                  <span className="sectionCount">
+                    {scoped.length} of {takes.length}
+                  </span>
+                )}
+              </div>
 
-          {listed.length === 0 ? (
-            <div className="emptyNote">
-              {scopeLabel ? (
-                <>
-                  Nothing on {scopeLabel} in the current pool.{" "}
-                  {conference && league ? (
-                    <Link href={boardHref({ league: league.id, conf: conference.slug })} className="u-accent">
-                      See the whole {conference.shortName} →
-                    </Link>
-                  ) : league ? (
-                    <Link href="/studio" className="u-accent">Back to every league →</Link>
-                  ) : null}
-                </>
-              ) : (
-                <>Every take on the board is up top right now.</>
-              )}
-            </div>
-          ) : (
-            <div className="boardGrid">
-              {listed.map((t) => (
-                <BoardTakeCard key={t.id} take={t} />
-              ))}
-            </div>
+              <div className="boardGrid">
+                {listed.map((t) => (
+                  <BoardTakeCard key={t.id} take={t} />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

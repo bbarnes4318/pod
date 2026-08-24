@@ -93,20 +93,32 @@ test.afterAll(async () => {
 const tile = (page: Page, key: string) => page.locator(`[data-testid="board-tile"][data-tile="${key}"]`);
 
 test.describe("The Board", () => {
-  test("leads with the hottest takes and keeps them there while browsing", async ({ page }) => {
+  test("the hottest row follows the league you click into", async ({ page }) => {
     await page.goto("/studio");
     await expect(page.locator("h1")).toHaveText("The Board");
     await expect(page.getByRole("heading", { name: "Hottest right now" })).toBeVisible();
 
     const featured = page.locator('[data-testid="board-featured-take"]');
     await expect(featured).toHaveCount(3);
-    const topTake = await featured.first().getAttribute("data-take");
 
-    // Narrowing to a league must not move the front door.
     await tile(page, "NFL").click();
     await expect(page).toHaveURL(/league=NFL/);
-    await expect(page.locator('[data-testid="board-featured-take"]')).toHaveCount(3);
-    expect(await page.locator('[data-testid="board-featured-take"]').first().getAttribute("data-take")).toBe(topTake);
+    // The heading names the scope, so a filtered top row is legible rather than
+    // looking like the filter silently failed.
+    await expect(page.getByRole("heading", { name: "Hottest NFL takes" })).toBeVisible();
+
+    // Exactly one NFL take exists in the pool, so a top row of three becoming a
+    // top row of precisely that one take is the scope being applied — and it
+    // holds whatever order the heat scores happen to fall in.
+    const scopedFeatured = page.locator('[data-testid="board-featured-take"]');
+    await expect(scopedFeatured).toHaveCount(1);
+    await expect(scopedFeatured.first()).toHaveAttribute("data-take", ID.nflTake);
+  });
+
+  test("a college league heading spells itself out rather than abbreviating", async ({ page }) => {
+    // "Hottest CBB takes" is jargon where the pro abbreviations are not.
+    await page.goto("/studio?league=NCAAF");
+    await expect(page.getByRole("heading", { name: "Hottest College Football takes" })).toBeVisible();
   });
 
   test("walks league to team and filters the board to that team", async ({ page }) => {
@@ -127,11 +139,14 @@ test.describe("The Board", () => {
 
     await tile(page, "kansas-city-chiefs").click();
     await expect(page).toHaveURL(/team=kansas-city-chiefs/);
-    await expect(page.getByRole("heading", { name: "Kansas City Chiefs takes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Hottest Kansas City Chiefs takes" })).toBeVisible();
 
-    const listed = page.locator('[data-testid="board-take"]');
-    await expect(listed).toHaveCount(1);
-    await expect(listed.first()).toContainText(NFL_TAKE_TITLE);
+    // One take in scope, so it IS the hottest — it belongs in the top row, and
+    // must not be repeated in a remainder section below it.
+    const shown = page.locator('[data-testid="board-featured-take"]');
+    await expect(shown).toHaveCount(1);
+    await expect(shown.first()).toContainText(NFL_TAKE_TITLE);
+    await expect(page.locator('[data-testid="board-take"]')).toHaveCount(0);
     // The chosen team is marked for anyone the highlight colour does not reach.
     await expect(tile(page, "kansas-city-chiefs")).toHaveAttribute("aria-current", "true");
   });
@@ -144,15 +159,16 @@ test.describe("The Board", () => {
     await tile(page, "southeastern-conference").click();
 
     await expect(page).toHaveURL(/conf=southeastern-conference/);
+    await expect(page.getByRole("heading", { name: "Hottest SEC takes" })).toBeVisible();
     await expect(tile(page, "alabama-crimson-tide")).toContainText("1 take");
     await tile(page, "alabama-crimson-tide").click();
 
-    await expect(page.getByRole("heading", { name: "Alabama Crimson Tide takes" })).toBeVisible();
-    const listed = page.locator('[data-testid="board-take"]');
-    await expect(listed).toHaveCount(1);
-    await expect(listed.first()).toContainText(CFB_TAKE_TITLE);
+    await expect(page.getByRole("heading", { name: "Hottest Alabama Crimson Tide takes" })).toBeVisible();
+    const shown = page.locator('[data-testid="board-featured-take"]');
+    await expect(shown).toHaveCount(1);
+    await expect(shown.first()).toContainText(CFB_TAKE_TITLE);
     // The NFL take must not leak across leagues.
-    await expect(listed.first()).not.toContainText(NFL_TAKE_TITLE);
+    await expect(shown.first()).not.toContainText(NFL_TAKE_TITLE);
 
     // The trail walks back up.
     await page.getByRole("link", { name: "SEC" }).first().click();
@@ -162,7 +178,10 @@ test.describe("The Board", () => {
 
   test("a team with nothing waiting says so instead of showing someone else's takes", async ({ page }) => {
     await page.goto("/studio?league=NFL&team=chicago-bears");
-    await expect(page.getByRole("heading", { name: "Chicago Bears takes" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Hottest Chicago Bears takes" })).toBeVisible();
+    // Nothing in scope means nothing anywhere on the page — not the board's
+    // hottest three quietly standing in for the team's.
+    await expect(page.locator('[data-testid="board-featured-take"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="board-take"]')).toHaveCount(0);
     await expect(page.getByText("Nothing on Chicago Bears in the current pool.")).toBeVisible();
   });
