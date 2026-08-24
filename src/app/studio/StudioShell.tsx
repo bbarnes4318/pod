@@ -292,13 +292,27 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
                 own parent (the Board's drill-down, whose parent lives in the
                 query string, not the path) beats the last breadcrumb, which
                 beats dropping a path segment. */}
+            {/* A PLAIN <a>, not <Link>, and deliberately so.
+
+                The Board keeps its level in the query string, so going up a
+                level navigates between two URLs that share a pathname
+                (/studio?league=NFL -> /studio). Next's client Router Cache can
+                serve that from an entry it already holds — the /studio the
+                visitor arrived on — so the server component never re-runs and
+                the page does not change. It is disabled in `next dev`, which is
+                why this looked fine in the e2e harness and was dead in
+                production.
+
+                Back is an escape hatch used once, not a hot path, so a full
+                document navigation is the right trade: it costs one round trip
+                and cannot be defeated by any cache. */}
             {back && (
-              <Link href={back.href} className="studioBack" aria-label={`Back to ${back.label}`}>
+              <a href={back.href} className="studioBack" aria-label={`Back to ${back.label}`}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M15 5l-7 7 7 7" />
                 </svg>
                 <span className="studioBackLabel">{back.label}</span>
-              </Link>
+              </a>
             )}
             {header.breadcrumb?.length ? (
               <nav className="studioCrumbs" aria-label="Breadcrumb">

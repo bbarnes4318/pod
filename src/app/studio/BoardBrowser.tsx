@@ -67,10 +67,15 @@ export default function BoardBrowser({
           <React.Fragment key={`${c.label}-${i}`}>
             {i > 0 && <span className="boardTrailSep" aria-hidden="true">›</span>}
             {c.href ? (
-              <Link href={c.href} className="boardTrailLink">
+              // Plain <a> for the same reason as the shell's Back control: every
+              // crumb points at a URL that differs from this one only by its
+              // query string, which a soft navigation can serve from cache
+              // without re-rendering the page. Tiles below go DOWN into a level
+              // that was never cached, so those stay soft and instant.
+              <a href={c.href} className="boardTrailLink">
                 {c.logo && <BoardLogo src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size="sm" />}
                 {c.label}
-              </Link>
+              </a>
             ) : (
               <span className="boardTrailHere" aria-current="page">
                 {c.logo && <BoardLogo src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size="sm" />}

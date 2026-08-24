@@ -410,11 +410,11 @@ export default async function StudioBoard({
             <div className="emptyNote">
               Nothing on {scopeLabel} in the current pool.{" "}
               {conference && league ? (
-                <Link href={boardHref({ league: league.id, conf: conference.slug })} className="u-accent">
+                <a href={boardHref({ league: league.id, conf: conference.slug })} className="u-accent">
                   See the whole {conference.shortName} →
-                </Link>
+                </a>
               ) : league ? (
-                <Link href="/studio" className="u-accent">Back to every league →</Link>
+                <a href="/studio" className="u-accent">Back to every league →</a>
               ) : null}
             </div>
           ) : (
@@ -429,7 +429,7 @@ export default async function StudioBoard({
           <div className="sectionHead">
             <h2 className="sectionTitle">Browse by team</h2>
             {(league || conference || team) && (
-              <Link href="/studio" className="sectionAction">Clear filter ✕</Link>
+              <a href="/studio" className="sectionAction">Clear filter ✕</a>
             )}
           </div>
 
