@@ -767,6 +767,17 @@
    viewport from scrolling horizontally. */
 .boardTableWrap {
   overflow-x: auto;
+  /* POSITIONED SO overflow-x ACTUALLY CLIPS THE HEADER'S .srOnly LABEL.
+     overflow only clips descendants whose containing block is this element or
+     inside it. The Action column's `<span class="srOnly">Action</span>` is
+     position:absolute, so without a positioned ancestor here its containing
+     block was the page — it escaped the scroller, parked itself at x≈841 next
+     to the 640px-min table, and dragged the DOCUMENT's scrollWidth out to 841
+     in a 375px viewport. The table itself was never the problem: it scrolls
+     inside this wrapper correctly, measured at 343px wide over 940px of
+     content. Measured again after this line: document scrollWidth 375, and the
+     table still scrolls internally. */
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
