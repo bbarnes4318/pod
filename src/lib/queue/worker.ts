@@ -52,6 +52,9 @@ import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
 import { resolveEpisodeHosts } from "../services/hostCasting";
 import { Prisma, type AiHost } from "@prisma/client";
 import { podcastQueue, productionQueue, BACKGROUND_QUEUE_NAME, PRODUCTION_QUEUE_NAME } from "./podcastQueue";
+import { JobBudgetExceededError, scriptJobBudgetMs, withJobBudget } from "../jobBudget";
+import { acquireEpisodeScriptLock, duplicateRunMessage, isBlocked } from "./episodeJobLock";
+import { startJobLogHeartbeat } from "./jobHeartbeat";
 
 /** Persona block for LLM prompts, built from a host's own profile record —
  *  so topic/brief seeding reflects whoever the show's active hosts are, not
@@ -282,14 +285,47 @@ async function processPodcastJob(job: Job) {
 // Background automation and Studio production deliberately use independent
 // BullMQ queues. A provider timeout in research can occupy the background lane
 // without blocking an editor's script, fact-check, voice, mix, or publish job.
+/**
+ * BullMQ's stall detector, sized for LLM work instead of web work.
+ *
+ * A worker renews its lock on a roughly `lockDuration / 2` timer. Miss a
+ * renewal and BullMQ declares the job STALLED, moves it back to wait, and lets
+ * it be picked up again — while the original handler keeps running, because
+ * nothing can kill a promise. That is not a bug; it is how a queue recovers
+ * from a worker that died. But it means the ONLY thing standing between one
+ * click and two concurrent script runs is a lock renewal landing on time.
+ *
+ * The default `lockDuration` is 30 seconds. These jobs hold the event loop
+ * through prompt assembly, JSON of a whole episode, and ffmpeg supervision, and
+ * they run against a Redis that occasionally blips. Thirty seconds of slack for
+ * a job measured in tens of minutes was a duplicate waiting to happen — one
+ * hiccup and the same episode is being written twice, at double the provider
+ * spend, with two rows climbing in the admin table and no explanation for
+ * either.
+ *
+ * Five minutes of lock with a one-minute stall sweep keeps genuine crash
+ * recovery (a dead container's jobs come back, just five minutes later instead
+ * of thirty seconds later) and takes the hiccup off the table. The episode lock
+ * in episodeJobLock.ts is the belt to this pair of braces: it makes a stalled
+ * re-delivery harmless rather than merely unlikely.
+ */
+const JOB_LOCK_DURATION_MS = 5 * 60_000;
+const JOB_STALLED_INTERVAL_MS = 60_000;
+
 const worker = new Worker(BACKGROUND_QUEUE_NAME, processPodcastJob, {
   connection: getRedisClient() as any,
   concurrency: WORKER_CONCURRENCY,
+  lockDuration: JOB_LOCK_DURATION_MS,
+  stalledInterval: JOB_STALLED_INTERVAL_MS,
+  maxStalledCount: 1,
 });
 
 const productionWorker = new Worker(PRODUCTION_QUEUE_NAME, processPodcastJob, {
   connection: getRedisClient() as any,
   concurrency: PRODUCTION_WORKER_CONCURRENCY,
+  lockDuration: JOB_LOCK_DURATION_MS,
+  stalledInterval: JOB_STALLED_INTERVAL_MS,
+  maxStalledCount: 1,
 });
 
 function attachWorkerListeners(queueWorker: Worker, lane: "background" | "production") {
@@ -303,6 +339,16 @@ function attachWorkerListeners(queueWorker: Worker, lane: "background" | "produc
 
   queueWorker.on("failed", (job, err) => {
     console.error(`[Worker:${lane}] Job ${job?.id} [${job?.name}] failed with error:`, err.message);
+  });
+
+  // A stall is the one event that can produce two live runs of the same job, so
+  // it is logged loudly rather than left to be inferred from duplicate work.
+  queueWorker.on("stalled", (jobId) => {
+    console.error(
+      `[Worker:${lane}] Job ${jobId} was declared STALLED and will be re-delivered. The original run may ` +
+        `still be executing — a duplicate is possible. If this job is a script generation the episode lock ` +
+        `will decline the duplicate; otherwise check for doubled work before trusting the result.`
+    );
   });
 
   queueWorker.on("error", (err) => {
@@ -3099,8 +3145,48 @@ async function chainProductionStage(scriptId: string): Promise<ChainResult> {
 async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
 
+  // SINGLE-FLIGHT, BEFORE ANYTHING ELSE.
+  //
+  // Taken before the `running` row is written, because a duplicate that logs
+  // itself as running is the very thing the operator was staring at: two rows,
+  // two climbing counters, one episode. A declined run leaves a `skipped` row
+  // that names the holder instead. See episodeJobLock.ts for the three
+  // different ways a second run reaches this line.
+  const lock = await acquireEpisodeScriptLock(job.data.episodeId, {
+    holderLabel: `job:${job.id ?? "unknown"}`,
+  });
+  if (isBlocked(lock)) {
+    const message = duplicateRunMessage(job.data.episodeId, lock.heldBy);
+    console.warn(`[Worker] ${message}`);
+    // A plain create, NOT beginJobLog: the commonest duplicate is a stalled
+    // re-delivery, which carries the SAME queue job key as the run still
+    // executing. Keying this row would make it upsert over that run's row and
+    // overwrite a live job's status with "skipped" — erasing exactly the row
+    // the operator needs. A keyless row sits alongside it and says what was
+    // declined.
+    await db.jobLog.create({
+      data: {
+        jobType: "generate:script",
+        status: "skipped",
+        input: job.data as unknown as Prisma.InputJsonValue,
+        output: {
+          skipped: true,
+          reason: message,
+          heldBy: lock.heldBy,
+        } satisfies Prisma.InputJsonValue as Prisma.InputJsonValue,
+      },
+    });
+    // Returned, never thrown: a throw would hand this duplicate to BullMQ's
+    // retry policy, which would dutifully run the duplicate twice more.
+    return { success: true, skipped: true, reason: message };
+  }
+
   // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
   const jobLog = await beginJobLog(job, "generate:script", job.data);
+
+  // The row now says "alive at" as well as "started at", so a counter climbing
+  // past an hour can be read as either work or wreckage. See jobHeartbeat.ts.
+  const heartbeat = startJobLogHeartbeat({ db, jobLogId: jobLog.id });
 
   // Measurement only: per-stage LLM cost for THIS job.
   //
@@ -3132,7 +3218,20 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       })
       .catch(() => null);
     const chosenTier = tierRow?.qualityTier ?? tierRow?.podcast?.qualityTier;
-    const runScript = () => withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
+    // THE JOB GETS A WALL CLOCK.
+    //
+    // Every timeout below this line governs one HTTP request; nothing governed
+    // the JOB, so attempts x rungs x rate-window passes x twenty-one roles
+    // multiplied into a run that had no ceiling at all. The budget is
+    // cooperative (jobBudget.ts explains why racing a timer would be worse):
+    // the routing chain and the transports consult it and decline to START
+    // work they cannot finish, so an over-budget job stops spending rather than
+    // being abandoned while it spends.
+    const budgetMs = scriptJobBudgetMs();
+    const runScript = () =>
+      withJobBudget({ label: `generate:script for episode ${job.data.episodeId}`, budgetMs }, () =>
+        withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data))
+      );
     const res = chosenTier
       ? await withRoutingProfile(profileForTier(toQualityTier(chosenTier)), runScript)
       : await runScript();
@@ -3148,17 +3247,33 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
     console.log(`[Worker] Script Generation completed. Version: ${res.version}`);
     return res;
   } catch (err: any) {
-    console.error(`[Worker] Script Generation failed:`, err.message);
+    const overBudget = err instanceof JobBudgetExceededError;
+    console.error(`[Worker] Script Generation ${overBudget ? "hit its wall-clock budget" : "failed"}:`, err.message);
     await db.jobLog.update({
       where: { id: jobLog.id },
       data: {
         status: "failed",
         error: err.message || "Unknown script generation error",
-        // Failed runs still spent tokens — record where they went.
-        output: { llmCost: llmCostSince(llmMark, { jobId: jobLog.id }) } as any,
+        // Failed runs still spent tokens — record where they went. A budget
+        // stop is flagged separately: "we stopped it" and "it broke" send an
+        // operator to two different places, and only one of them has a knob.
+        output: {
+          llmCost: llmCostSince(llmMark, { jobId: jobLog.id }),
+          ...(overBudget
+            ? {
+                budgetExceeded: true,
+                budgetMs: err.budgetMs,
+                elapsedMs: err.elapsedMs,
+                stoppedAt: err.at,
+              }
+            : {}),
+        } as any,
       },
     });
     throw err;
+  } finally {
+    heartbeat.stop();
+    await lock.release();
   }
 }
 

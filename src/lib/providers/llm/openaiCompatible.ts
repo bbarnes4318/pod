@@ -45,6 +45,7 @@ import {
 } from "./errors";
 import { StructuredOutputError, buildRepairPrompt, parseStructuredResponse } from "./structured";
 import { clearRateWindow, noteRateWindow, rateWindowRemainingMs } from "./rateWindow";
+import { JobBudgetExceededError, budgetedWaitMs, clampTimeoutToBudget } from "../../jobBudget";
 
 /**
  * The longest rate window this transport will absorb before handing the failure
@@ -446,7 +447,15 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
       // collected seconds ago applies to this request too. Sending it anyway is
       // not an attempt — it is a refusal we have already been told about, and it
       // costs a rung of a chain that is two rungs deep on the free tier.
-      const cooling = rateWindowRemainingMs(this.name);
+      // Under a job budget the hold must also FIT in the job. Waiting out a
+      // window we will not survive long enough to use is how a slow account
+      // turns into an hour-long job; budgetedWaitMs stops the job here instead,
+      // saying which wait it declined and how much clock was left.
+      const remembered = rateWindowRemainingMs(this.name);
+      const cooling =
+        remembered > 0
+          ? budgetedWaitMs(remembered, `${this.name} rate-window hold before calling ${this.model}`)
+          : 0;
       if (cooling > 0) {
         console.warn(
           `[${this.name}] holding ${Math.round(cooling / 1000)}s before calling ${this.model} — this account ` +
@@ -458,7 +467,12 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
 
       state.attempts++;
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+      // NEVER LONGER THAN THE JOB HAS LEFT. A 240s timeout is right for a
+      // request with 240s of budget behind it and absurd for one with 12s.
+      // This clamp is what makes the budget a hard ceiling rather than a
+      // request: the last call a job starts cannot outlive its deadline.
+      const attemptTimeoutMs = clampTimeoutToBudget(this.config.timeoutMs);
+      const timer = setTimeout(() => controller.abort(), attemptTimeoutMs);
       // Wall time for THIS attempt. A failure that arrives faster than inference
       // could possibly have run is evidence in its own right — see
       // IMPLAUSIBLY_FAST_FAILURE_MS in errors.ts.
@@ -561,9 +575,13 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
             `${Math.round(delay / 1000)}s (attempt ${attempt + 1}/${this.config.maxRetries}).`
         );
         state.retries++;
-        await sleep(delay);
+        await sleep(budgetedWaitMs(delay, `${this.name} retry backoff for ${this.model}`));
       } catch (err: any) {
         if (err instanceof LlmProviderError) throw err;
+        // A budget stop is a DECISION, not a transport failure. Wrapping it as
+        // one would relabel "the job ran out of clock" as "the network broke",
+        // hand it to the retry policy, and retry the very thing we just refused.
+        if (err instanceof JobBudgetExceededError) throw err;
         const category = categorizeNetworkFailure(err, Date.now() - attemptStartedAt);
         const wrapped = new LlmProviderError({
           provider: this.name,
@@ -571,14 +589,19 @@ export abstract class OpenAICompatibleLLMProvider implements LLMProvider {
           category,
           message:
             category === "timeout" && err?.name === "AbortError"
-              ? `[${this.label()}] Request timed out after ${this.config.timeoutMs}ms.`
+              ? `[${this.label()}] Request timed out after ${attemptTimeoutMs}ms` +
+                (attemptTimeoutMs < this.config.timeoutMs
+                  ? ` (clamped from ${this.config.timeoutMs}ms — that is all the job's remaining budget allowed).`
+                  : ".")
               : `[${this.label()}] ${describeFailure(err)}`,
           cause: err,
         });
         if (!wrapped.retryable || attempt === this.config.maxRetries) throw wrapped;
         lastErr = wrapped;
         state.retries++;
-        await sleep(this.backoffMs(attempt, null));
+        await sleep(
+          budgetedWaitMs(this.backoffMs(attempt, null), `${this.name} retry backoff for ${this.model}`)
+        );
       } finally {
         clearTimeout(timer);
       }

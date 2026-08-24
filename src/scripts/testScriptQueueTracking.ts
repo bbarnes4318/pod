@@ -95,7 +95,20 @@ check("the worker's active JobLog preserves queueJobId and targetVersion", () =>
   assert(start !== -1, "script worker handler missing");
   const end = worker.indexOf("\nasync function ", start + 1);
   const body = worker.slice(start, end === -1 ? worker.length : end);
-  assert(/input:\s*job\.data as any/.test(body), "worker running log must preserve the tracked job payload");
+  // WHAT IS BEING ASSERTED IS THE PAYLOAD, NOT THE SPELLING. This used to grep
+  // for `input: job.data as any`, the literal the handler happened to use when
+  // it opened its own row. `beginJobLog` (jobLogRecord.ts) now opens the row so
+  // that a retry reuses it instead of writing a third one, and it takes the
+  // payload as its third argument. The property that matters is unchanged and
+  // is what the check still enforces: the WHOLE job payload reaches the running
+  // row, so queueJobId and targetVersion ride along and the operations table
+  // can show which click a running job belongs to. Passing a hand-picked subset
+  // here is the regression this guards against.
+  assert(
+    /beginJobLog\(\s*job\s*,\s*"generate:script"\s*,\s*job\.data\s*\)/.test(body) ||
+      /input:\s*job\.data as any/.test(body),
+    "worker running log must preserve the tracked job payload"
+  );
 });
 
 check("the operations page shows submitted jobs and refreshes without a manual reload", () => {
