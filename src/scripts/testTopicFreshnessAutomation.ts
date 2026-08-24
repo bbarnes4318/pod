@@ -60,7 +60,30 @@ for (const path of [
 const profiles = source("src/lib/providers/llm/profiles.ts");
 const verifiedStart = profiles.indexOf("function verifiedDevelopmentChain");
 const researchStart = profiles.indexOf('case "research_brief":', verifiedStart);
-const researchBlock = profiles.slice(researchStart, researchStart + 700);
+
+// SCAN THE CHAIN EXPRESSION, NOT A FIXED-LENGTH WINDOW OF PROSE.
+//
+// This used to slice `researchStart + 700` characters and search that. Two
+// separate ways for a correct chain to fail it:
+//
+//   * a comment above the `return` grows past the budget and pushes the chain
+//     out of the window, so the test reports a model "no longer in the chain"
+//     that is sitting right there on the next line. That is exactly what
+//     happened when the GLM-5.2 retirement was explained here.
+//   * a model NAMED IN A COMMENT inside the window counts as if it were routed,
+//     so prose could satisfy — or break — an assertion about routing.
+//
+// The chain is the `return [...]` immediately after the case label, so slice
+// precisely that. It cannot be outgrown by commentary and cannot be satisfied
+// by it either.
+const researchReturnAt = profiles.indexOf("return [", researchStart);
+const researchReturnEnd = profiles.indexOf("];", researchReturnAt);
+assert.ok(
+  researchReturnAt > researchStart && researchReturnEnd > researchReturnAt,
+  "could not find the research_brief chain expression in verifiedDevelopmentChain — " +
+    "the case label or its return statement has been restructured"
+);
+const researchBlock = profiles.slice(researchReturnAt, researchReturnEnd);
 
 // The known-working research model must lead, and the model that timed out in
 // production must never precede it.

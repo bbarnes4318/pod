@@ -433,8 +433,28 @@ const REGISTRY: ModelCapabilities[] = [
     availability: "available",
     qualityTested: false,
     supportsThinking: true,
-    supportsReasoningBudget: true,
-    reasoningBudgetRange: [256, 16384],
+    // WAS true FROM A PROBE THAT IS NO LONGER TRUE. The hosted runner changed
+    // under us; every structured Nemotron call in production now logs:
+    //
+    //   400 "ValueError: thinking_token_budget is not yet supported by the V2
+    //   model runner. Run vLLM with VLLM_USE_V2_MODEL_RUNNER=0 to use
+    //   thinking_token_budget."
+    //
+    // The adapter already recovers — it drops the field and re-sends once —
+    // and that recovery is precisely what hid this. Nemotron is the PRIMARY for
+    // research_brief, script_outline, script_story_editor,
+    // script_debate_architect, script_verification, fact_check and
+    // quality_judge, so a silent extra round trip on every one of those calls
+    // was being paid on every stage of every episode, against a provider that
+    // was simultaneously 503-ing and hitting 240s timeouts. The log line said
+    // "The capability registry in capabilities.ts should be corrected" on every
+    // occurrence. This is that correction.
+    //
+    // reasoningBudgetRange is dropped with it: a range for a field that is not
+    // sent is a claim about a contract we no longer have. supportsThinking
+    // stays true — chat_template_kwargs.enable_thinking is still accepted and
+    // is what actually turns reasoning on; only the quantitative budget went.
+    supportsReasoningBudget: false,
     documentedContextWindow: 1_000_000,
     supportsReasoningEffort: true,
     // BOTH JSON FLAGS FORCED FALSE — 2026-08-12, PRODUCTION OUTAGE.
@@ -503,7 +523,25 @@ const REGISTRY: ModelCapabilities[] = [
     // shaping function now sends it — see nvidiaRequestProfiles.ts.
     ...nvidiaBase(MODEL_IDS.nvidia.glm, "glm-5-2"),
     liveContractVerified: true,
-    availability: "available",
+    // RETIRED BY THE PROVIDER, 2026-08-21. Not a capability fault and not a
+    // probe this repository can ever pass again — NVIDIA end-of-lifed the id:
+    //
+    //   HTTP 410 {"title":"Gone","detail":"The model 'z-ai/glm-5.2' has reached
+    //   its end of life on 2026-08-21T09:00:00Z and is no longer available."}
+    //
+    // Observed continuously in the production worker log on 2026-08-24. This
+    // record said `available` for those three days, and the cost of that is
+    // larger than one dead rung: glm-5.2 was the SECOND candidate for nine
+    // roles (topic_generation, research_brief, script_outline,
+    // script_story_editor, script_debate_architect, script_verification,
+    // quality_judge, fact_check) and the PRIMARY for cold_open_judge. So every
+    // time a primary failed — and NVIDIA's Nemotron was 503-ing and timing out
+    // all day — the router spent its next hop on a certain 410 before reaching
+    // a rung that could answer. `retired` makes isRoutableByDefault false, so
+    // the chains drop it and each of those roles fails over one hop sooner.
+    //
+    // Permanent: do not restore this to `available` without a NEW model id.
+    availability: "retired",
     qualityTested: false,
     supportsThinking: true,
     supportsReasoningEffort: true,
