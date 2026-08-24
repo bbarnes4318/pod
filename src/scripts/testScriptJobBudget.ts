@@ -98,6 +98,37 @@ async function main() {
     });
   });
 
+  await check("the error carries WHERE THE TIME WENT, not just that time ran out", () => {
+    // The operator who needs this is looking at /admin/job-logs, not at the
+    // worker's stdout — which lives in a container behind a hosting dashboard.
+    // An error that says only "too slow" sends them somewhere they may not be
+    // able to reach, so the chain's own history travels with it into JobLog.error.
+    const err = new JobBudgetExceededError({
+      label: "generate:script for episode e1",
+      elapsedMs: 26 * MINUTE,
+      budgetMs: 25 * MINUTE,
+      at: "role 'script_movement' fallback chain",
+      history: [
+        "groq/gpt-oss-120b [profile_primary] failed (rate_limited): HTTP 429 token_quota_exceeded",
+        "— waited 60s for the rate windows to refill, then re-ran the chain —",
+      ],
+    });
+    assert.match(err.message, /WHERE THE TIME WENT/, "the history must be labelled, not dumped");
+    assert.match(err.message, /token_quota_exceeded/, "the provider's own words must survive");
+    assert.match(err.message, /waited 60s/, "and every wait it took must be visible");
+    assert.equal(err.history.length, 2, "the history is also structured, not only prose");
+  });
+
+  await check("an error with no history says nothing about history", () => {
+    const err = new JobBudgetExceededError({
+      label: "job",
+      elapsedMs: 1,
+      budgetMs: 1,
+      at: "somewhere",
+    });
+    assert.doesNotMatch(err.message, /WHERE THE TIME WENT/, "an empty section is worse than none");
+  });
+
   console.log("\n  -- waits that cannot fit are not taken --");
 
   await check("a wait that fits is returned unchanged", () => {

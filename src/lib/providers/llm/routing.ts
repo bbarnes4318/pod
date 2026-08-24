@@ -665,7 +665,13 @@ export class RoutedLLMProvider implements LLMProvider {
           `${failures.length} candidate(s):\n  - ${failures.join("\n  - ")}`
       );
       assertJobBudget(
-        `role '${this.plan.role}' fallback chain under profile '${this.plan.profile}'`
+        `role '${this.plan.role}' fallback chain under profile '${this.plan.profile}'`,
+        Date.now(),
+        // The chain's own account-by-account history — every candidate tried,
+        // its failure category, and every rate window waited out. This is the
+        // answer to "why was it slow", and it now rides to JobLog.error rather
+        // than living only in a container's stdout.
+        failures
       );
     }
 

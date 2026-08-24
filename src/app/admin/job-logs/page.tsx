@@ -362,7 +362,23 @@ export default async function JobLogsPage(props: {
                           </div>
                         ) : null}
                         {maskedError ? (
-                          <div className="alertCard alertDanger" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
+                          // pre-wrap, because the useful errors are multi-line.
+                          // A budget stop carries the routing chain's own
+                          // account-by-account history ("waited 60s for X",
+                          // "candidate Y rate_limited"), which is the answer to
+                          // "why was this slow" — and HTML would otherwise
+                          // collapse it into one unreadable paragraph, sending
+                          // the reader to container logs they may not be able
+                          // to reach.
+                          <div
+                            className="alertCard alertDanger"
+                            style={{
+                              marginBottom: "0.5rem",
+                              padding: "0.5rem",
+                              whiteSpace: "pre-wrap",
+                              overflowX: "auto",
+                            }}
+                          >
                             {maskedError}
                           </div>
                         ) : null}

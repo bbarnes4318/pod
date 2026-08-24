@@ -64,20 +64,38 @@ export class JobBudgetExceededError extends Error {
   readonly budgetMs: number;
   /** Where in the pipeline the budget was found to be spent. */
   readonly at: string;
+  /** What the run actually spent its time on, when the caller can say. */
+  readonly history: string[];
 
-  constructor(args: { label: string; elapsedMs: number; budgetMs: number; at: string }) {
+  constructor(args: {
+    label: string;
+    elapsedMs: number;
+    budgetMs: number;
+    at: string;
+    history?: string[];
+  }) {
+    const history = args.history ?? [];
     super(
       `[JobBudget] ${args.label} exceeded its ${Math.round(args.budgetMs / 1000)}s wall-clock budget ` +
         `(${Math.round(args.elapsedMs / 1000)}s elapsed) and was stopped at: ${args.at}. ` +
         `Nothing further was requested from any provider. This is a BUDGET stop, not a provider failure: ` +
-        `the run was too slow, not wrong. Raise SCRIPT_JOB_BUDGET_MS if this job legitimately needs longer, ` +
-        `or look at the [LLMRouting] lines above for the account that was holding it up.`
+        `the run was too slow, not wrong. Raise SCRIPT_JOB_BUDGET_MS if this job legitimately needs longer.` +
+        // THE EVIDENCE TRAVELS WITH THE ERROR, because the operator who needs it
+        // usually cannot get at the worker's stdout. The console has always
+        // carried this history; the console lives inside a container behind a
+        // hosting dashboard, and "go read the worker logs" is not an answer
+        // available to someone looking at /admin/job-logs on their phone at 4am.
+        // The error string is written to JobLog.error, which that page renders.
+        (history.length
+          ? `\nWHERE THE TIME WENT (most recent chain, in order):\n  - ${history.join("\n  - ")}`
+          : "")
     );
     this.name = "JobBudgetExceededError";
     this.label = args.label;
     this.elapsedMs = args.elapsedMs;
     this.budgetMs = args.budgetMs;
     this.at = args.at;
+    this.history = history;
   }
 }
 
@@ -115,7 +133,11 @@ export function jobBudgetExpired(now: number = Date.now()): boolean {
  * `at` names the step that was ABOUT to start, so the failure says what did not
  * happen rather than what did. Call it before work, never after.
  */
-export function assertJobBudget(at: string, now: number = Date.now()): void {
+export function assertJobBudget(
+  at: string,
+  now: number = Date.now(),
+  history?: string[]
+): void {
   const budget = budgetStorage.getStore();
   if (!budget) return;
   if (now < budget.deadlineAt) return;
@@ -124,6 +146,7 @@ export function assertJobBudget(at: string, now: number = Date.now()): void {
     elapsedMs: now - budget.startedAt,
     budgetMs: budget.deadlineAt - budget.startedAt,
     at,
+    history,
   });
 }
 
