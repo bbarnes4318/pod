@@ -20,7 +20,7 @@ delete process.env.TOPICS_GENERATE_CRON;
 assert.equal(activeTopicCutoff(now).toISOString(), "2026-07-30T12:00:00.000Z");
 assert.equal(topicDedupeCutoff(now).toISOString(), "2026-07-25T12:00:00.000Z");
 assert.equal(topicEvidenceWindow(now).newsAfter.toISOString(), "2026-07-30T12:00:00.000Z");
-assert.equal(topicsGenerateCron(), "30 */3 * * *");
+assert.equal(topicsGenerateCron(), "30 5,17 * * *");
 
 const worker = source("src/lib/queue/worker.ts");
 const insertStart = worker.indexOf("// Save valid TopicCandidate");
@@ -32,7 +32,14 @@ assert.doesNotMatch(insertBlock, /status: "pending"/);
 assert.match(worker, /is missing or outside the freshness window/);
 assert.match(worker, /stats\/odds alone cannot anchor a fresh story/);
 assert.match(worker, /reconcileTopicPoolOnBoot/);
-assert.match(worker, /dispatchFreshTopicRuns\("boot"\)/);
+assert.match(worker, /dispatchFreshTopicRunsOnBoot\(\)/);
+// The boot sweep must stay CONDITIONAL. Unconditional, it turned every deploy
+// into a full per-league sweep on top of the two the cron allows.
+assert.match(worker, /topicSweepAlreadyRan\(windowStart\)/);
+assert.match(worker, /Boot topic sweep skipped/);
+// Per-league job ids bucket by sweep window, never by clock hour.
+assert.match(worker, /topics-gen-\$\{leagueId\.toLowerCase\(\)\}-\$\{sweepKey\}/);
+assert.doesNotMatch(worker, /topics-gen-\$\{leagueId\.toLowerCase\(\)\}-\$\{hourKey\}/);
 assert.match(worker, /for \(const \[index, leagueId\] of leagues\.entries\(\)\)/);
 assert.match(worker, /const delay = index \* 60_000/);
 assert.match(worker, /priority: 1/);

@@ -123,14 +123,86 @@ export function topicsGenerateCron(): string {
   return validateCron(process.env.TOPICS_GENERATE_CRON, "30 5,17 * * *");
 }
 
+/** The UTC hours the topic cron fires on, ascending. */
+export function topicSweepHours(cron: string = topicsGenerateCron()): number[] {
+  const hours = (cron.trim().split(/\s+/)[1] ?? "*").trim();
+  if (hours === "*") return Array.from({ length: 24 }, (_, i) => i);
+  const step = hours.match(/^\*\/(\d+)$/);
+  if (step) {
+    const n = Number(step[1]);
+    if (!Number.isInteger(n) || n < 1 || n > 23) return [0];
+    const out: number[] = [];
+    for (let h = 0; h < 24; h += n) out.push(h);
+    return out;
+  }
+  const parsed = hours
+    .split(",")
+    .map((h) => Number(h.trim()))
+    .filter((h) => Number.isInteger(h) && h >= 0 && h <= 23);
+  return parsed.length ? [...new Set(parsed)].sort((a, b) => a - b) : [0];
+}
+
+/** The UTC minute the topic cron fires on (single value; anything else → :00). */
+export function topicSweepMinute(cron: string = topicsGenerateCron()): number {
+  const n = Number((cron.trim().split(/\s+/)[0] ?? "0").trim());
+  return Number.isInteger(n) && n >= 0 && n <= 59 ? n : 0;
+}
+
 /** Scheduled runs per day implied by the active cron — shown in the UI next to
  *  the on-demand control so "more often" is a comparison, not a guess. */
 export function scheduledTopicRunsPerDay(cron: string = topicsGenerateCron()): number {
-  const hours = cron.trim().split(/\s+/)[1] ?? "*";
-  if (hours === "*") return 24;
-  const step = hours.match(/^\*\/(\d+)$/);
-  if (step) return Math.floor(24 / Number(step[1]));
-  return hours.split(",").filter(Boolean).length;
+  return topicSweepHours(cron).length;
+}
+
+/**
+ * Start of the sweep WINDOW `now` falls in — the most recent scheduled topic
+ * cron time at or before `now`.
+ *
+ * The per-league topic jobs used to be bucketed by clock hour
+ * (`topics-gen-nfl-2026-08-24T01`). That is the wrong unit twice over. It is
+ * too fine for the cron (05:30 and 17:30 are two sweeps a day, but the bucket
+ * changes 24 times), and it is too coarse for nothing at all — every deploy
+ * that landed in a fresh hour minted a fresh bucket and swept again. Six
+ * pushes to main on 2026-08-23/24 therefore produced six extra sweeps on top
+ * of the two scheduled ones.
+ *
+ * Bucketing by window instead means "the 05:30 sweep" is one identity no
+ * matter how many times the worker restarts inside it, while 05:30 and 17:30
+ * stay distinct. Before the day's first slot, the window is the LAST slot of
+ * the previous day — 02:10 belongs to yesterday's 17:30 sweep.
+ */
+export function topicSweepWindowStart(
+  now: Date = new Date(),
+  cron: string = topicsGenerateCron()
+): Date {
+  const hours = topicSweepHours(cron);
+  const minute = topicSweepMinute(cron);
+  const reached = (h: number) =>
+    now.getUTCHours() > h || (now.getUTCHours() === h && now.getUTCMinutes() >= minute);
+
+  let slot = -1;
+  for (const h of hours) if (reached(h)) slot = h;
+
+  const start = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0)
+  );
+  if (slot === -1) {
+    // No slot has been reached today yet; we are still inside yesterday's last.
+    start.setUTCDate(start.getUTCDate() - 1);
+    slot = hours[hours.length - 1];
+  }
+  start.setUTCHours(slot, minute, 0, 0);
+  return start;
+}
+
+/** Stable id for the sweep window `now` falls in (`YYYY-MM-DDTHH`), used as the
+ *  deterministic jobId bucket for the per-league topic jobs. */
+export function topicSweepKey(
+  now: Date = new Date(),
+  cron: string = topicsGenerateCron()
+): string {
+  const start = topicSweepWindowStart(now, cron);
+  return `${start.toISOString().slice(0, 10)}T${String(start.getUTCHours()).padStart(2, "0")}`;
 }
 
 /** Minimum debate score for scheduler-generated topics (0 = keep all). */

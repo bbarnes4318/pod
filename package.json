@@ -105,6 +105,7 @@
     "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts",
     "test:topic-lifecycle": "tsx --conditions=react-server src/scripts/testTopicLifecycle.ts",
     "test:topic-freshness": "tsx --conditions=react-server src/scripts/testTopicFreshnessAutomation.ts",
+    "test:topic-sweep-window": "tsx --conditions=react-server src/scripts/testTopicSweepWindow.ts",
     "test:topic-migration": "tsx src/scripts/testTopicMigration.ts",
     "typecheck": "tsc --noEmit",
     "test:queue-contract": "tsx --conditions=react-server src/scripts/testEpisodeQueueContract.ts",

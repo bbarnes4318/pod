@@ -91,7 +91,10 @@ import {
   topicsGenerateMinScore,
   ingestDateKey,
   ingestHourKey,
+  topicSweepKey,
+  topicSweepWindowStart,
 } from "../services/sportsIngestSchedule";
+import { beginJobLog } from "./jobLogRecord";
 import {
   activeTopicCutoff,
   topicDedupeCutoff,
@@ -186,7 +189,7 @@ podcastQueue
 // boot so a deploy immediately cleans the Studio board instead of waiting for
 // the next cron tick.
 reconcileTopicPoolOnBoot()
-  .then(() => dispatchFreshTopicRuns("boot"))
+  .then(() => dispatchFreshTopicRunsOnBoot())
   .catch((err) =>
     console.error(`[Worker] Topic-pool startup reconciliation failed: ${err.message}`)
   );
@@ -524,13 +527,8 @@ async function handlePodcastGeneration(job: Job<JobData>) {
 async function handleRecurringPodcastScheduler(job: Job) {
   console.log(`[Worker] Recurring-podcast scheduler tick started (job ${job.id})`);
 
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "scheduler:recurring-podcasts",
-      status: "running",
-      input: { scheduledAt: new Date().toISOString() },
-      output: {},
-    },
+  const jobLog = await beginJobLog(job, "scheduler:recurring-podcasts", {
+    scheduledAt: new Date().toISOString(),
   });
 
   try {
@@ -591,9 +589,7 @@ async function handleSportsIngestScheduler(job: Job) {
   // why the odds job had no upcoming games to attach to. See seasonForLeague().
   const seasons = Object.fromEntries(leagues.map((league) => [league, seasonForLeague(league)]));
   const dateKey = ingestDateKey();
-  const jobLog = await db.jobLog.create({
-    data: { jobType: "scheduler:sports-ingest", status: "running", input: { leagues, seasons, dateKey } as any, output: {} },
-  });
+  const jobLog = await beginJobLog(job, "scheduler:sports-ingest", { leagues, seasons, dateKey });
   const dispatched: any[] = [];
   try {
     for (const league of leagues) {
@@ -624,9 +620,7 @@ async function handleSportsIngestScheduler(job: Job) {
 // no keyword filter (store all headlines); the dedupe id is bucketed per hour.
 async function handleSportsNewsScheduler(job: Job) {
   const hourKey = ingestHourKey();
-  const jobLog = await db.jobLog.create({
-    data: { jobType: "scheduler:sports-news", status: "running", input: { hourKey } as any, output: {} },
-  });
+  const jobLog = await beginJobLog(job, "scheduler:sports-news", { hourKey });
   try {
     const news = await queueIngestionJob(
       { providerType: "rss-news", leagueId: "", sport: "", dateOrRange: "" },
@@ -646,18 +640,22 @@ async function handleSportsNewsScheduler(job: Job) {
 // Scheduled topic generation fans out by league. The former single global
 // prompt routinely produced only one or two accepted topics because every
 // sport competed for the same 10-20 output slots. Per-league batches replenish
-// the board broadly while deterministic IDs keep each hour idempotent.
+// the board broadly while deterministic ids — bucketed by SWEEP WINDOW, so
+// 05:30 and 17:30 are two identities and neither changes when the worker
+// restarts — keep each scheduled sweep idempotent.
 async function handleTopicsGenerateScheduler(job: Job) {
-  const hourKey = ingestHourKey();
+  const sweepKey = topicSweepKey();
   const minScore = topicsGenerateMinScore();
-  const jobLog = await db.jobLog.create({
-    data: { jobType: "scheduler:topics-generate", status: "running", input: { hourKey, minScore } as any, output: {} },
+  const jobLog = await beginJobLog(job, "scheduler:topics-generate", {
+    source: "scheduler",
+    sweepKey,
+    minScore,
   });
   try {
-    const dispatched = await dispatchFreshTopicRuns("scheduler", hourKey, minScore);
+    const dispatched = await dispatchFreshTopicRuns("scheduler", sweepKey, minScore);
     await db.jobLog.update({
       where: { id: jobLog.id },
-      data: { status: "completed", output: { message: "Dispatched fresh per-league topic generation.", dispatched, hourKey, minScore } as any },
+      data: { status: "completed", output: { message: "Dispatched fresh per-league topic generation.", dispatched, sweepKey, minScore } as any },
     });
     return { success: true, dispatched };
   } catch (err: any) {
@@ -666,9 +664,87 @@ async function handleTopicsGenerateScheduler(job: Job) {
   }
 }
 
+/**
+ * Has the sweep window we are currently in already been swept?
+ *
+ * Counts BOTH the per-league jobs (written when one runs) and the sweep's own
+ * scheduler row (written before dispatch). The second is what makes this
+ * reliable seconds after a tick: the league jobs are enqueued with a
+ * per-league delay and have not written anything yet, but the scheduler row
+ * has.
+ */
+async function topicSweepAlreadyRan(windowStart: Date): Promise<boolean> {
+  const seen = await db.jobLog.count({
+    where: {
+      createdAt: { gte: windowStart },
+      OR: [
+        // A league job exists at all, so the fan-out demonstrably happened —
+        // whether it then succeeded is a separate problem, and re-dispatching
+        // the same prompts into the same rate limit would not fix it.
+        { jobType: "generate:topics" },
+        // A sweep that failed BEFORE dispatching left the window genuinely
+        // unswept, which is exactly the case boot recovery is for.
+        { jobType: "scheduler:topics-generate", status: { not: "failed" } },
+      ],
+    },
+  });
+  return seen > 0;
+}
+
+/**
+ * Boot-time topic sweep, but only for a window nothing has swept yet.
+ *
+ * The boot sweep exists to recover a window the worker was down for — that is
+ * worth keeping. What it must not do is run on every restart. Push-to-main
+ * auto-deploys, so a day of ordinary shipping restarted the worker six times
+ * between 2026-08-21 and 2026-08-24 and each restart fanned out a full
+ * per-league sweep, on top of the two the cron is limited to. That is the bulk
+ * of the 38 `generate:topics` rows an operator saw when the schedule promised
+ * a handful, and every one of those sweeps chained a research brief per topic
+ * into the same free-tier provider budget the foreground pipeline needs.
+ */
+async function dispatchFreshTopicRunsOnBoot() {
+  const windowStart = topicSweepWindowStart();
+  const sweepKey = topicSweepKey();
+  const minScore = topicsGenerateMinScore();
+
+  if (await topicSweepAlreadyRan(windowStart)) {
+    console.log(
+      `[Worker] Boot topic sweep skipped: window ${sweepKey} (since ${windowStart.toISOString()}) already swept.`
+    );
+    return [];
+  }
+
+  const jobLog = await db.jobLog.create({
+    data: {
+      jobType: "scheduler:topics-generate",
+      status: "running",
+      input: { source: "boot", sweepKey, minScore } as any,
+      output: {},
+    },
+  });
+  try {
+    const dispatched = await dispatchFreshTopicRuns("boot", sweepKey, minScore);
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: {
+        status: "completed",
+        output: { message: "Boot recovered an unswept window.", dispatched, sweepKey, minScore } as any,
+      },
+    });
+    return dispatched;
+  } catch (err: any) {
+    await db.jobLog.update({
+      where: { id: jobLog.id },
+      data: { status: "failed", error: err.message || "Boot topic sweep failed" },
+    });
+    throw err;
+  }
+}
+
 async function dispatchFreshTopicRuns(
   source: "boot" | "scheduler",
-  hourKey: string = ingestHourKey(),
+  sweepKey: string = topicSweepKey(),
   minScore: number = topicsGenerateMinScore()
 ) {
   const dispatched: Array<{ leagueId: string; jobId: string }> = [];
@@ -680,12 +756,14 @@ async function dispatchFreshTopicRuns(
     const delay = index * 60_000;
     const queued = await queueTopicGenerationJob(
       { leagueId, sport: "", minScore },
-      { jobId: `topics-gen-${leagueId.toLowerCase()}-${hourKey}`, delay }
+      // Bucketed by SWEEP WINDOW, not clock hour: one identity per scheduled
+      // sweep, so restarts inside a window cannot mint a fresh set of ids.
+      { jobId: `topics-gen-${leagueId.toLowerCase()}-${sweepKey}`, delay }
     );
     dispatched.push({ leagueId, jobId: String(queued.id) });
   }
   console.log(
-    `[Worker] Topic generation dispatched by ${source}: ${dispatched.length} league(s) for ${hourKey}.`
+    `[Worker] Topic generation dispatched by ${source}: ${dispatched.length} league(s) for ${sweepKey}.`
   );
   return dispatched;
 }
@@ -740,15 +818,8 @@ async function handleSportsIngestion(job: Job<IngestJobData>) {
   const { providerType, leagueId, sport, dateOrRange } = job.data;
   console.log(`[Worker] Starting sports ingestion: provider=${providerType}, league=${leagueId}, sport=${sport || "N/A"}, dateOrRange=${dateOrRange || "N/A"}`);
 
-  // Create database JobLog record to monitor job status
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: `ingest:${providerType.toLowerCase()}`,
-      status: "running",
-      input: job.data as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, `ingest:${providerType.toLowerCase()}`, job.data);
 
   try {
     // Resolve the provider by INSTANCE. An unknown providerType throws here and
@@ -1338,15 +1409,8 @@ async function handleTopicGeneration(job: Job<TopicGenJobData>) {
       .replace(/[^\w\s]/g, ""); // Remove punctuation
   };
 
-  // Create JobLog record to monitor topic generation
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "generate:topics",
-      status: "running",
-      input: job.data as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "generate:topics", job.data);
 
   try {
     const now = new Date();
@@ -2105,15 +2169,8 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
   const { topicId, forceRegenerate = false } = job.data;
   console.log(`[Worker] Starting Research Brief generation job: topicId=${topicId}, forceRegenerate=${forceRegenerate}`);
 
-  // Create JobLog record to monitor Research Brief generation
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "generate:research-brief",
-      status: "running",
-      input: job.data as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "generate:research-brief", job.data);
 
   try {
     // 1. Fetch and Guard TopicCandidate
@@ -2935,15 +2992,8 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
 async function handleEpisodeBuilding(job: Job<EpisodeBuildJobData>) {
   console.log(`[Worker] Starting Episode Build job: ID=${job.id}`);
 
-  // Create JobLog record to monitor Episode building
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "build:episode",
-      status: "running",
-      input: job.data as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "build:episode", job.data);
 
   try {
     const res = await buildEpisodeFromTopics(job.data);
@@ -3108,6 +3158,12 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   if (isBlocked(lock)) {
     const message = duplicateRunMessage(job.data.episodeId, lock.heldBy);
     console.warn(`[Worker] ${message}`);
+    // A plain create, NOT beginJobLog: the commonest duplicate is a stalled
+    // re-delivery, which carries the SAME queue job key as the run still
+    // executing. Keying this row would make it upsert over that run's row and
+    // overwrite a live job's status with "skipped" — erasing exactly the row
+    // the operator needs. A keyless row sits alongside it and says what was
+    // declined.
     await db.jobLog.create({
       data: {
         jobType: "generate:script",
@@ -3125,15 +3181,8 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
     return { success: true, skipped: true, reason: message };
   }
 
-  // Create JobLog record to monitor Script generation
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "generate:script",
-      status: "running",
-      input: job.data as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "generate:script", job.data);
 
   // The row now says "alive at" as well as "started at", so a counter climbing
   // past an hour can be read as either work or wreckage. See jobHeartbeat.ts.
@@ -3232,15 +3281,8 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
   const { scriptId, forceRecheck } = job.data;
   console.log(`[Worker] Starting fact-check:script job for Script ${scriptId}`);
 
-  // Create JobLog record to monitor Fact checking
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "fact-check:script",
-      status: "running",
-      input: { scriptId, forceRecheck } as any,
-      output: {},
-    },
-  });
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "fact-check:script", { scriptId, forceRecheck });
 
   // Measurement only: per-stage LLM cost for THIS job.
   //
@@ -3321,14 +3363,13 @@ async function handleTtsSegmentGeneration(job: Job<TtsSegmentJobData>) {
   const { scriptId, forceRegenerate, segmentRange, hostId, providerOverride } = job.data;
   console.log(`[Worker] Starting tts:generate-segments job for Script ${scriptId}`);
 
-  // Create JobLog record to monitor TTS generation
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "tts:generate-segments",
-      status: "running",
-      input: { scriptId, forceRegenerate, segmentRange, hostId, providerOverride } as any,
-      output: {},
-    },
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "tts:generate-segments", {
+    scriptId,
+    forceRegenerate,
+    segmentRange,
+    hostId,
+    providerOverride,
   });
 
   try {
@@ -3410,9 +3451,7 @@ async function handleFinalAudioStitching(job: Job<FinalAudioStitchJobData>) {
 async function handleSocialClipGeneration(job: Job<SocialClipJobData>) {
   const { clipId } = job.data;
   console.log(`[Worker] Starting social-clip:generate for clip ${clipId}`);
-  const jobLog = await db.jobLog.create({
-    data: { jobType: "social-clip:generate", status: "running", input: { clipId } as any, output: {} },
-  });
+  const jobLog = await beginJobLog(job, "social-clip:generate", { clipId });
   try {
     const res = await renderSocialClip(clipId);
     await db.jobLog.update({
@@ -3443,9 +3482,7 @@ async function handleSocialClipGeneration(job: Job<SocialClipJobData>) {
 async function handleLineAudioRegen(job: Job<LineAudioRegenJobData>) {
   const { scriptId, lineIndex } = job.data;
   console.log(`[Worker] Starting audio:regenerate-line for Script ${scriptId}, line #${lineIndex}`);
-  const jobLog = await db.jobLog.create({
-    data: { jobType: "audio:regenerate-line", status: "running", input: { scriptId, lineIndex } as any, output: {} },
-  });
+  const jobLog = await beginJobLog(job, "audio:regenerate-line", { scriptId, lineIndex });
   try {
     // Render-mode-aware: legacy episodes re-voice ONE line and re-splice;
     // scene episodes truthfully regenerate the smallest CONTAINING SCENE
@@ -3478,14 +3515,14 @@ async function handleContentAssetGeneration(job: Job<ContentAssetJobData>) {
   const { scriptId, forceRegenerate, includeChapters, includeMarkdown, includeJson, providerOverride } = job.data;
   console.log(`[Worker] Starting content:generate-assets job for Script ${scriptId}`);
 
-  // Create JobLog in running state
-  const jobLog = await db.jobLog.create({
-    data: {
-      jobType: "content:generate-assets",
-      status: "running",
-      input: { scriptId, forceRegenerate, includeChapters, includeMarkdown, includeJson, providerOverride } as any,
-      output: {},
-    },
+  // Track this job's status. Keyed on the enqueue, so a retry reuses the row.
+  const jobLog = await beginJobLog(job, "content:generate-assets", {
+    scriptId,
+    forceRegenerate,
+    includeChapters,
+    includeMarkdown,
+    includeJson,
+    providerOverride,
   });
 
   // Measurement only: per-stage LLM cost for THIS job.

@@ -55,9 +55,13 @@ function main() {
   });
 
   check("the lock is taken BEFORE the running row is written", () => {
+    // `beginJobLog` is where the running row is opened (jobLogRecord.ts). The
+    // ORDER is the assertion, not the helper's name: a duplicate that opens a
+    // row before being declined is the second climbing timer this fixes.
     const lockAt = handler.indexOf("acquireEpisodeScriptLock");
-    const rowAt = handler.indexOf('status: "running"');
-    assert.ok(lockAt > 0 && rowAt > 0);
+    const rowAt = handler.indexOf("beginJobLog(");
+    assert.ok(lockAt > 0, "the lock call must exist");
+    assert.ok(rowAt > 0, "the running row must still be opened by beginJobLog");
     assert.ok(
       lockAt < rowAt,
       "a declined duplicate must never create a second row with a climbing timer — that is the symptom being fixed"
@@ -65,7 +69,7 @@ function main() {
   });
 
   check("a declined duplicate returns instead of throwing", () => {
-    const blocked = handler.slice(handler.indexOf("isBlocked(lock)"), handler.indexOf("Create JobLog record"));
+    const blocked = handler.slice(handler.indexOf("isBlocked(lock)"), handler.indexOf("beginJobLog("));
     assert.match(blocked, /return \{[^}]*skipped: true/, "a throw would hand the duplicate to BullMQ's retry policy");
     assert.doesNotMatch(blocked, /^\s*throw /m, "and would run it twice more");
   });

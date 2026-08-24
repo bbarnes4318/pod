@@ -51,8 +51,17 @@ export default function BoardBrowser({
   /** Names the grid for screen readers: "Leagues", "SEC teams". */
   label: string;
 }) {
+  // A trail whose only entry is the level you are already on navigates nowhere.
+  // At the top of the board that was a lone "All leagues" rendered as a <span>,
+  // sitting where the first crumb of a breadcrumb goes and doing nothing when
+  // clicked — a dead control, and the only "All leagues" on the page. The
+  // heading above already says what you are looking at, so a one-item trail
+  // says nothing twice.
+  const showTrail = crumbs.some((c) => c.href);
+
   return (
     <div className="boardBrowse">
+      {showTrail && (
       <nav className="boardTrail" aria-label="Browse takes by team">
         {crumbs.map((c, i) => (
           <React.Fragment key={`${c.label}-${i}`}>
@@ -71,6 +80,7 @@ export default function BoardBrowser({
           </React.Fragment>
         ))}
       </nav>
+      )}
 
       <ul className="boardTileGrid" aria-label={label}>
         {tiles.map((t) => (
