@@ -133,6 +133,33 @@ export default async function JobLogsPage(props: {
     take: 250,
   });
 
+  /**
+   * Which queue jobs a worker has demonstrably PICKED UP.
+   *
+   * `submitted` and `running` are two deliberate rows for one job
+   * (podcastQueue.ts): the first is an immutable enqueue receipt, the second is
+   * written by the worker when it starts. The receipt never changes status, so
+   * it sits at `submitted` for the entire life of the job — including long
+   * after the worker took it.
+   *
+   * The console read that literally and told an operator, on a job that had
+   * been RUNNING for fifty-two minutes, that it "has not been picked up by the
+   * worker yet". That is the single most misleading thing this page can say
+   * while someone is debugging a stuck episode: it points at the queue and the
+   * worker's health when the worker is in fact holding the job and the problem
+   * is downstream of it. The two rows are right there in the same table,
+   * contradicting each other.
+   *
+   * So a receipt only claims "not picked up" when NO row for the same
+   * queueJobId has advanced past submitted.
+   */
+  const pickedUpQueueJobIds = new Set(
+    logs
+      .filter((log) => log.status !== "submitted")
+      .map((log) => extractQueueIdentity(log.input).queueJobId)
+      .filter((id): id is string => !!id)
+  );
+
   const filteredLogs = logs.filter((log) => {
     if (!search.trim()) return true;
     const lowerSearch = search.toLowerCase();
@@ -318,9 +345,16 @@ export default async function JobLogsPage(props: {
                       </td>
                       <td style={{ maxWidth: "340px" }}>
                         {log.status === "submitted" ? (
-                          <div className="alertCard" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
-                            This exact episode is in the queue and has not been picked up by the worker yet.
-                          </div>
+                          queueJobId && pickedUpQueueJobIds.has(queueJobId) ? (
+                            <div className="alertCard" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
+                              Enqueue receipt. The worker has picked this job up — see the run row with the
+                              same queue id for its live status.
+                            </div>
+                          ) : (
+                            <div className="alertCard" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
+                              This exact episode is in the queue and has not been picked up by the worker yet.
+                            </div>
+                          )
                         ) : null}
                         {maskedError ? (
                           <div className="alertCard alertDanger" style={{ marginBottom: "0.5rem", padding: "0.5rem" }}>
