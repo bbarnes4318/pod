@@ -57,6 +57,12 @@ on:
 
 permissions:
   contents: read
+  # A FAILING CANARY HAS TO REACH A PERSON. Writing the diagnosis into a step
+  # summary nobody opens is how this workflow failed twenty-four consecutive
+  # scheduled runs — every run it had ever had — while the repository carried on
+  # as though provider health were proven. `issues: write` is what lets the last
+  # two steps open, refresh and close a single alert issue.
+  issues: write
 
 jobs:
   canary:
@@ -216,4 +222,112 @@ jobs:
           name: private-live-provider-canary-${{ github.run_number }}
           path: artifacts/live-provider-canary
           retention-days: 14
+
+      # ---------------------------------------------------------------------
+      # TELL SOMEBODY.
+      #
+      # This canary failed on every scheduled run it had ever had — twenty-four
+      # of them — and nothing anywhere said so. It wrote an exact diagnosis
+      # ("Anthropic account requires credit… no model change, retry or fallback
+      # clears an empty account") into a step summary, and a step summary is
+      # only ever read by someone who already suspects a problem and goes
+      # looking. A monitor whose output has to be sought out does not monitor
+      # anything; it just accumulates evidence for later.
+      #
+      # ONE issue, refreshed in place rather than a comment per run: a daily
+      # comment on a permanently red check is noise that gets muted, which
+      # reproduces the original failure by a slower route. The body always
+      # carries the CURRENT alertClass and action, so re-reading the issue is
+      # never re-reading stale advice. It closes itself on the first green run,
+      # so an open issue always means "still failing right now".
+      #
+      # NOTE ON SCOPE, because it caused a wrong diagnosis once: the credential
+      # tested here is the ANTHROPIC_API_KEY *GitHub Actions secret*, which is a
+      # different store from the deployment's env. A billing failure in this
+      # workflow is evidence about this secret's account — it is not by itself
+      # evidence about production, and the issue body says so.
+      - name: Raise or refresh the canary alert issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('node:fs');
+            const TITLE = 'Live provider canary is failing';
+            let r = {};
+            try {
+              r = JSON.parse(fs.readFileSync('artifacts/live-provider-canary/report.json', 'utf8'));
+            } catch {
+              r = {};
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              '_Opened and refreshed automatically by the Live Provider Canary. It closes itself on the first green run, so while this issue is open the canary is still failing._',
+              '',
+              `- **status:** \`${r.status ?? 'unknown'}\``,
+              `- **alertClass:** \`${r.alertClass ?? 'unknown'}\``,
+              `- **reason:** ${r.alertReason ?? 'No report.json was produced — the canary process died before its finally block.'}`,
+              `- **action required:** ${r.alertAction ?? 'Open the run log; the canary did not get far enough to name an action.'}`,
+              `- **last failing run:** ${runUrl}`,
+              `- **last updated:** ${new Date().toISOString()}`,
+              '',
+              'Scope: the credentials exercised here are this repository\'s **GitHub Actions secrets**, which are a separate store from the deployment environment. A credential or billing failure above is evidence about the secret in this repository — confirm against the deployment before concluding production is affected.',
+            ].join('\n');
+
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = open.data.find((i) => !i.pull_request && i.title === TITLE);
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+              core.notice(`Refreshed canary alert issue #${existing.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: TITLE,
+                body,
+              });
+              core.notice(`Opened canary alert issue #${created.data.number}`);
+            }
+
+      # Green closes the alert. Without this the issue would outlive the
+      # problem, and an alert that stays open after it is fixed teaches you to
+      # ignore it — the same lesson a permanently red check teaches.
+      - name: Close the canary alert issue
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const TITLE = 'Live provider canary is failing';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const open = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = open.data.find((i) => !i.pull_request && i.title === TITLE);
+            if (!existing) return;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body: `The canary passed: ${runUrl}. Closing automatically.`,
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              state: 'closed',
+              state_reason: 'completed',
+            });
           if-no-files-found: error
