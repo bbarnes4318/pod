@@ -99,11 +99,42 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
     profile: "premium",
     label: "Premium",
     summary: "The best dialogue this app can produce. Fast.",
-    approxCostUsd: 1.75,
+    // PRICED, NOT PICKED. $1.75 was carried over from the era when this tier
+    // resolved to verified_development, and it survived the profile being
+    // written because nobody re-derived it. Here is the derivation, from the
+    // scoped generate:script ledger for episode ade82ba1 at Anthropic list
+    // rates (Opus 5 $5/$25, Sonnet 5 $3/$15, Haiku 4.5 $1/$5 per MTok):
+    //
+    //   $1.26  Opus writers + Haiku everything else
+    //          (docs/verification/tiering-option-a.md, the costed option (a))
+    //  +$0.36  script_rewrite Haiku -> Opus   (selfverify-rewrite: $0.09 -> $0.45;
+    //          it re-sends the transcript, so it is the single most expensive
+    //          non-writer call in the job)
+    //  +$0.10  script_dialogue_director Haiku -> Opus
+    //  +$0.23  script_debate_architect Haiku -> Sonnet (the document's own named
+    //          escalation for the role it flags as the untested structural risk)
+    //  -$0.01  cold_open_judge Haiku -> Groq OSS small
+    //   -----
+    //   $1.94
+    //
+    // Rounded UP to the cent it actually reaches rather than down to the
+    // familiar number. Roles outside generate:script — research_brief,
+    // evidence_extraction, show_notes, episode_metadata — are not in this
+    // ledger scope and are not billed to Anthropic by this profile.
+    approxCostUsd: 1.94,
+    // DERIVED FROM PER-CALL LATENCY, NOT YET MEASURED END-TO-END ON THIS MAP.
+    // The 22 calls in the ledger scope now all run on Anthropic at ~1 s each
+    // against the 60-200 s Nemotron calls they replace, which is what makes 2-4
+    // minutes reachable at all — the previous premium chain left every one of
+    // those calls on the free chain and took twenty minutes while claiming this
+    // number. Re-measure on the first Premium run after this deploys and
+    // correct it here if it is wrong; do not let it stand on inference twice.
     approxMinutes: [2, 4],
     speedWarning: null,
     writers: "Claude Opus 5 (both hosts)",
-    qualityNote: "Highest-scoring writer available, with the least formulaic prose.",
+    qualityNote:
+      "Highest-scoring writer available, with the least formulaic prose. " +
+      "The whole script — structure, editing and fact-checking, not just the dialogue — runs on Claude.",
     billable: true,
   },
 };
