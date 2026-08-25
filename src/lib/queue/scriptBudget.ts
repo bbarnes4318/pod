@@ -50,6 +50,36 @@ export const BUDGET_MULTIPLE = 3;
 export const MIN_BUDGET_MS = 60_000;
 
 /**
+ * The floor no tier's budget may fall below on this deployment, whatever its
+ * advertised duration says.
+ *
+ * MEASURED, from the production worker log of 2026-08-25 — a Premium run that
+ * the 12-minute tier-derived budget killed. Its script stage, timed from the
+ * [LLMCost] lines:
+ *
+ *   story-spine 10s · outline 124s · private-agendas 38s ·
+ *   cold-open accusation 11s · contradiction 167s · consequence 199s ·
+ *   cold-open judge 70s   =  ~10.3 minutes
+ *
+ * That is the COLD OPEN alone. Not one script movement had started, so the
+ * tier-derived 12 minutes was below this pipeline's floor, not merely tight —
+ * the ceiling was killing runs that had never had a chance to finish, and the
+ * failure it produced ("a stuck AI provider") was wrong about its own cause.
+ *
+ * The tier numbers are not at fault for being small; they describe per-call
+ * provider latency measured against a healthy chain. This deployment's actual
+ * chain is Nemotron at 60-200s per call plus Kimi at ~200s, with the free-tier
+ * accounts rate-limiting under a concurrent background sweep. Until that is
+ * addressed the honest ceiling is measured, not advertised.
+ *
+ * Still a stuck-detector and not a target: 30 minutes is roughly 3x the
+ * observed cold open, so a wedged provider is caught and a slow-but-working
+ * episode is not. Revisit it DOWNWARD once the chain is faster — a floor that
+ * outlives its evidence is just a longer spinner.
+ */
+export const MEASURED_FLOOR_MS = 30 * 60_000;
+
+/**
  * Wall-clock budget for one script run on `tier`.
  *
  * Roughly 12 minutes on the paid tiers (their promised 2-4 min) and 36 on free
@@ -69,7 +99,12 @@ export function scriptGenerationBudgetMs(
   const raw = Number.parseInt(env.SCRIPT_GENERATION_BUDGET_MS ?? "", 10);
   if (Number.isFinite(raw) && raw >= MIN_BUDGET_MS) return raw;
   const [, upperMinutes] = tierInfo(tier).approxMinutes;
-  return upperMinutes * BUDGET_MULTIPLE * 60_000;
+  // The explicit override above still wins outright — an operator who has
+  // measured their own chain outranks both of these numbers. Absent one, take
+  // whichever of the tier's promise and this deployment's measured floor is
+  // LARGER, because the tier's promise turned out to be below the floor on the
+  // paid tiers and was killing runs mid-cold-open. See MEASURED_FLOOR_MS.
+  return Math.max(upperMinutes * BUDGET_MULTIPLE * 60_000, MEASURED_FLOOR_MS);
 }
 
 /** Durations for a human reading a job log, not for a dashboard. */
