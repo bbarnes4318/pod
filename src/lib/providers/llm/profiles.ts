@@ -523,9 +523,45 @@ function premiumChain(role: LLMRole): ProfileRoleChain {
     case "script_dialogue_director":
       return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET()];
 
-    // ---- the cold-open tournament and the turn plan. See the departure note.
+    // ---- the cold-open tournament and the turn plan.
+    //
+    // SONNET LED THIS FOR ONE DEPLOY AND KILLED EVERY PREMIUM EPISODE:
+    //
+    //   [LLMRouting] Role 'script_debate_architect' STOPPED at 1 candidate(s)
+    //   under profile 'premium'. programming_error on anthropic/claude-sonnet-5
+    //
+    // `programming_error` is TERMINAL in the taxonomy — the router does not
+    // advance past it, on the reasoning that a malformed request will be
+    // malformed for the next model too. So the Haiku rung behind Sonnet was
+    // never tried and role 2 of 7 ended the run, at 55 minutes.
+    //
+    // WHAT THE RUN PROVES. script_story_editor is role 1 and is the same shape
+    // as this role — structured: true, reasoning: "on" (roles.ts) — and it
+    // SUCCEEDED on Haiku in that same episode, which is how the pipeline
+    // reached role 2 at all. Haiku serving a structured reasoning call on this
+    // deployment is therefore observed, not assumed. Sonnet was the one
+    // ingredient in this profile that nothing had exercised.
+    //
+    // So Haiku takes the role, which is exactly what tiering-option-a.md
+    // costed. Escalating to Sonnet was my own departure from that document, to
+    // avoid the structural risk it flags on Haiku here; it traded a quality
+    // risk for a total outage. The quality risk is still open and still
+    // documented there — reopen it with EVIDENCE (a structure comparison),
+    // not with another swap.
+    //
+    // Nemotron rather than Sonnet takes the failover: it is the model this role
+    // ran on before, so the degraded path is slow-but-known, and it is a
+    // different provider, which a same-family rung cannot be.
+    //
+    // THE SONNET 400 ITSELF IS UNDIAGNOSED. Its body was truncated in the job
+    // log the failure surfaced in, and nothing here should be read as a claim
+    // about the cause. It matters beyond this role: Sonnet is still the second
+    // rung for all five dialogue roles, so if the fault is the model's contract
+    // rather than this call, that failover is dead too and Opus is alone. Read
+    // the full `[Anthropic]`/400 line off the worker before changing anything
+    // else on the strength of a guess.
     case "script_debate_architect":
-      return [ANTHROPIC_SONNET(), ANTHROPIC_HAIKU()];
+      return [ANTHROPIC_HAIKU(), NV.nemotron()];
 
     // ---- structure and audit. Haiku leads; the model this role used to run on
     // stays as the rung behind it, so a billing failure degrades to the old
