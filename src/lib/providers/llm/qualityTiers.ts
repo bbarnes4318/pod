@@ -111,17 +111,21 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
     //          it re-sends the transcript, so it is the single most expensive
     //          non-writer call in the job)
     //  +$0.10  script_dialogue_director Haiku -> Opus
-    //  +$0.23  script_debate_architect Haiku -> Sonnet (the document's own named
-    //          escalation for the role it flags as the untested structural risk)
     //  -$0.01  cold_open_judge Haiku -> Groq OSS small
     //   -----
-    //   $1.94
+    //   $1.71
+    //
+    // This briefly read $1.94, for a +$0.23 escalation of
+    // script_debate_architect from Haiku to Sonnet. That escalation is reverted
+    // — Sonnet returned a terminal programming_error on the role and ended
+    // every Premium episode at role 2 of 7 (see premiumChain) — so the line is
+    // gone from the arithmetic rather than left in as a number nobody spends.
     //
     // Rounded UP to the cent it actually reaches rather than down to the
     // familiar number. Roles outside generate:script — research_brief,
     // evidence_extraction, show_notes, episode_metadata — are not in this
     // ledger scope and are not billed to Anthropic by this profile.
-    approxCostUsd: 1.94,
+    approxCostUsd: 1.71,
     // DERIVED FROM PER-CALL LATENCY, NOT YET MEASURED END-TO-END ON THIS MAP.
     // The 22 calls in the ledger scope now all run on Anthropic at ~1 s each
     // against the 60-200 s Nemotron calls they replace, which is what makes 2-4
