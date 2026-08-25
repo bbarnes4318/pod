@@ -18,6 +18,7 @@ import {
 } from "@/lib/data/sportsLogoIndex";
 import BoardBrowser, { type BrowseCrumb, type BrowseTile } from "./BoardBrowser";
 import BoardTakeCard, { type BoardTakeView, type TakeCrest } from "./BoardTakeCard";
+import BoardControls from "./BoardControls";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,18 @@ export const dynamic = "force-dynamic";
  * about, episodes and the feed-health read are all derived from rows the
  * pipeline already wrote. See takeTeamsService for how a take is
  * attributed to a team, and what happens when it cannot be.
+ *
+ * SEARCH / SORT / DENSE VIEW (BoardControls) apply only to the remainder
+ * below the hottest row, not to the hottest three or the browse tiles.
+ * That is deliberate, not a gap: the hottest row is a fixed 3-item teaser
+ * that "stays in the open" regardless of any filter (see FEATURED above),
+ * and the browse tiles are their own navigation, not a filterable list.
+ * The remainder is where the actual card-fatigue problem lives — it can
+ * run to 50+ items — so that is what gets a search box, a sort, and a
+ * table view. All three are pure client-side state over data the server
+ * already scoped and sorted; the default (no search, heat sort, grid
+ * view) renders identically to the un-enhanced list, on purpose, so the
+ * server-scoped pool and its heading text stay exactly what they say.
  * ------------------------------------------------------------------ */
 
 // Production surfaces show only topics the pipeline can actually use. Pending
@@ -195,6 +208,10 @@ export default async function StudioBoard({
       tier: heatTier(talk.total),
       whyNow: t.researchBrief?.whyMattersNow?.trim() || t.summary?.trim() || null,
       crests,
+      // ISO, not a Date: this crosses into a Client Component (BoardControls)
+      // for the "Newest" sort, and a Date object does not survive that
+      // boundary serialization.
+      createdAt: t.createdAt.toISOString(),
       leagueIds,
       conferenceKeys,
     };
@@ -426,38 +443,28 @@ export default async function StudioBoard({
           )}
 
           {/* ---------------- Browse by league / conference / team ----------- */}
-          <div className="sectionHead">
-            <h2 className="sectionTitle">Browse by team</h2>
-            {(league || conference || team) && (
-              <a href="/studio" className="sectionAction">Clear filter ✕</a>
-            )}
-          </div>
-
+          {/* Folded into a compact, low-height chip strip rather than a section
+              of its own — same crumbs/tiles/hrefs as before (still one click,
+              still shareable), just no longer big enough to read as a wall
+              between the hottest row and the feed. The "All leagues" crumb
+              already clears every level in one link, so a separate "Clear
+              filter" control would only repeat it. */}
+          <p className="boardBrowseLabel">{gridLabel}</p>
           <BoardBrowser crumbs={crumbs} tiles={tiles} label={gridLabel} />
 
           {/* ---------------- Everything else in scope ----------------------- */}
           {/* Rendered only when there IS a remainder: with the hottest row now
               scoped too, a team holding three or fewer takes has them all up
-              top, and an empty box under the browser would be saying nothing. */}
+              top, and an empty control bar under the browser would be
+              searching nothing. */}
           {listed.length > 0 && (
-            <>
-              <div className="sectionHead">
-                <h2 className="sectionTitle">
-                  {scopeHeading ? `More ${scopeHeading} takes` : "The rest of the board"}
-                </h2>
-                {scopeLabel && (
-                  <span className="sectionCount">
-                    {scoped.length} of {takes.length}
-                  </span>
-                )}
-              </div>
-
-              <div className="boardGrid">
-                {listed.map((t) => (
-                  <BoardTakeCard key={t.id} take={t} />
-                ))}
-              </div>
-            </>
+            <BoardControls
+              takes={listed}
+              scopeHeading={scopeHeading}
+              scopeLabel={scopeLabel}
+              scopedCount={scoped.length}
+              totalCount={takes.length}
+            />
           )}
         </>
       )}

@@ -24,6 +24,9 @@ export interface BoardTakeView {
   tier: { key: string; label: string };
   whyNow: string | null;
   crests: TakeCrest[];
+  /** ISO timestamp — carried through for the "Newest" sort and the dense
+   *  table's age column. Not shown on the card itself. */
+  createdAt: string;
 }
 
 function FlameIcon() {
@@ -49,7 +52,7 @@ export function HeatBadge({ heat, tier }: { heat: number; tier: { key: string; l
   );
 }
 
-/** The crests, side by side. Decorative: .boardTeamLine below spells out every
+/** The crests, side by side. Decorative: .boardTeamChips below names every
  *  team on the take, so alt text here would only repeat it. */
 function Crests({ crests, size }: { crests: TakeCrest[]; size: "sm" | "md" }) {
   if (crests.length === 0) return null;
@@ -67,19 +70,37 @@ function Crests({ crests, size }: { crests: TakeCrest[]; size: "sm" | "md" }) {
   );
 }
 
+/** Teams as small pills instead of a wrapped/truncated line of plain text —
+ *  scannable at a glance, and the overflow chip matches the crest cap above
+ *  so the two rows never disagree about how many teams there are. */
+function TeamChips({ crests }: { crests: TakeCrest[] }) {
+  if (crests.length === 0) return null;
+  const shown = crests.slice(0, 2);
+  const extra = crests.length - shown.length;
+  return (
+    <span className="boardTeamChips">
+      {shown.map((c) => (
+        <span key={`${c.leagueId}/${c.slug}`} className="boardTeamChip">{c.name}</span>
+      ))}
+      {extra > 0 && <span className="boardTeamChip boardTeamChip--more">+{extra} more</span>}
+    </span>
+  );
+}
+
 export default function BoardTakeCard({
   take,
   featured = false,
   rank,
 }: {
   take: BoardTakeView;
-  /** The hero treatment used by the "hottest right now" row. */
+  /** The hero treatment used by the "hottest right now" row. Solid, high-
+   *  contrast Generate CTA is reserved for this state — every other card
+   *  gets the quiet outline action below. */
   featured?: boolean;
   /** 1-based position, shown on featured cards only. */
   rank?: number;
 }) {
   const accent = take.crests[0]?.primary;
-  const teamLine = take.crests.map((c) => c.name).join(" · ");
 
   return (
     <article
@@ -99,7 +120,7 @@ export default function BoardTakeCard({
 
       <h3 className="epTitle boardCardTitle">{take.title}</h3>
 
-      {teamLine && <p className="boardTeamLine">{teamLine}</p>}
+      <TeamChips crests={take.crests} />
 
       {take.whyNow && (
         <p className="boardWhy">
@@ -109,7 +130,23 @@ export default function BoardTakeCard({
       )}
 
       <div className="boardCardFoot">
-        <Link href={`/studio/create?topic=${take.id}`} className="btnPrimary boardGenBtn">
+        {/* ONE solid CTA on the page, not three.
+            Every featured card took .btnPrimary, so the hottest row fired three
+            identical solid-orange buttons side by side — plus "Generate" in the
+            topbar, which is four primary actions competing on one screen. The
+            row is RANKED, and a ranking that only shows in a small 1/2/3
+            numeral is not a ranking anyone reads. #1 keeps the solid fill and
+            carries the eye; #2 and #3 drop to the same quiet outline as the
+            rest of the board, so the order is visible in the weight instead of
+            only in the digit. */}
+        <Link
+          href={`/studio/create?topic=${take.id}`}
+          className={
+            featured && rank === 1
+              ? "btnPrimary boardGenBtn"
+              : "btnGhost boardGenBtn boardGenBtn--quiet"
+          }
+        >
           Generate Episode
         </Link>
       </div>

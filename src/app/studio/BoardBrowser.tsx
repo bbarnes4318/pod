@@ -98,7 +98,7 @@ export default function BoardBrowser({
               data-tile={t.key}
               style={{ "--tile-accent": t.accent || "var(--border-hover)" } as React.CSSProperties}
             >
-              <BoardLogo src={t.logo} plate={t.plate} opaque={t.opaque} monogram={t.monogram} alt="" size="lg" />
+              <BoardLogo src={t.logo} plate={t.plate} opaque={t.opaque} monogram={t.monogram} alt="" size="sm" />
               <span className="boardTileLabel">{t.label}</span>
               {t.sublabel && <span className="boardTileSub">{t.sublabel}</span>}
               <span className={`boardTileCount${t.count === 0 ? " is-zero" : ""}`}>

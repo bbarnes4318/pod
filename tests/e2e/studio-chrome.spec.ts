@@ -183,4 +183,51 @@ test.describe("Studio chrome budget", () => {
       `Document scrolls horizontally: ${overflow.doc}px of content in a ${overflow.win}px viewport.`
     ).toBeLessThanOrEqual(overflow.win + 1);
   });
+
+  // THE BOARD'S TABLE VIEW IS BEHIND A TOGGLE, AND A DEFAULT-VIEW CHECK CANNOT SEE IT.
+  //
+  // The assertion above loads a page and measures whatever renders first. The
+  // Board's dense table only exists after clicking "Table", so the widest thing
+  // the Studio can draw was never measured by it. It shipped overflowing: the
+  // table is deliberately min-width:640px inside an overflow-x:auto wrapper, but
+  // the Action column's position:absolute `.srOnly` label had no positioned
+  // ancestor, so its containing block was the page. It escaped the scroller and
+  // pulled the document to 841px in a 375px viewport — a real horizontal scroll
+  // on a real phone, from a one-pixel invisible span.
+  //
+  // Asserted on the DOCUMENT, not on the wrapper: the wrapper is SUPPOSED to
+  // scroll, and checking it would fail the design instead of the bug.
+  test("the Board's table view does not scroll the page", async ({ page }) => {
+    await gotoStudio(page, "/studio");
+    await page.getByRole("button", { name: "Table" }).click();
+    await page.getByTestId("board-take-row").first().waitFor();
+
+    const measured = await page.evaluate(() => {
+      const wrap = document.querySelector<HTMLElement>(".boardTableWrap");
+      return {
+        doc: document.documentElement.scrollWidth,
+        win: window.innerWidth,
+        wrapScrolls: wrap ? wrap.scrollWidth > wrap.clientWidth : false,
+      };
+    });
+
+    expect(
+      measured.doc,
+      `Table view scrolls the page horizontally: ${measured.doc}px of content in a ${measured.win}px viewport. ` +
+        `The table is meant to scroll inside .boardTableWrap, not to widen the document.`
+    ).toBeLessThanOrEqual(measured.win + 1);
+
+    // And below the table's own min-width, the WRAPPER must be the thing that
+    // scrolls — a "fix" that made the table narrow enough to fit would satisfy
+    // the assertion above while destroying the dense layout this view exists
+    // for. Only asserted when the viewport is actually narrower than the table
+    // (this spec runs at 1440, 768 and 390): at desktop width it fits, and
+    // demanding a scrollbar there would be asserting the opposite bug.
+    if (measured.win < 640) {
+      expect(
+        measured.wrapScrolls,
+        `at ${measured.win}px the dense table should still scroll inside .boardTableWrap`
+      ).toBe(true);
+    }
+  });
 });
