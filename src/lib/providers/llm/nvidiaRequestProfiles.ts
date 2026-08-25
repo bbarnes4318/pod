@@ -179,6 +179,36 @@ function shapeNemotron3Ultra(ctx: ShapeContext): ShapeResult {
       },
     };
   }
+  // THE CAPABILITY REGISTRY DECIDES WHETHER THE BUDGET IS SENT — this function
+  // used to send it unconditionally, which is why marking
+  // supportsReasoningBudget:false on this model changed nothing and production
+  // kept logging, on every single Nemotron call:
+  //
+  //   400 "ValueError: thinking_token_budget is not yet supported by the V2
+  //   model runner."
+  //
+  // The adapter recovers by dropping the field and re-sending once, so the
+  // only visible symptom was latency — and Nemotron is the primary for seven
+  // roles at 60-200s per call, so a guaranteed extra round trip on each was
+  // costing minutes per episode against the script stage's budget.
+  //
+  // enable_thinking is what actually turns reasoning on and is still accepted;
+  // only the quantitative budget is gated. shapeGlm52 below already documents
+  // exactly this shape ("reasoning_budget is NOT sent: the probe rejected it
+  // with a 400 here"), so this is the same rule applied consistently rather
+  // than a new one.
+  if (!ctx.caps.supportsReasoningBudget) {
+    return {
+      fields: { chat_template_kwargs: { enable_thinking: true } },
+      diagnostics: {
+        reasoningRequested: true,
+        note:
+          "nemotron-3-ultra: chat_template_kwargs.enable_thinking=true, reasoning_budget OMITTED " +
+          "(capabilities.supportsReasoningBudget=false — the hosted V2 runner 400s on it).",
+      },
+    };
+  }
+
   const { budget, note } = nemotronBudget(ctx);
   return {
     // enable_thinking (NOT `thinking` — that is DeepSeek's alias and nothing

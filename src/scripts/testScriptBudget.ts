@@ -45,7 +45,15 @@ check("every tier gets a budget that clears its own promised window", () => {
       `${tier}: a budget of ${fmtMinutes(budget)} would cut off runs inside the ${upper} min this tier openly ` +
         `promises the user — the ceiling must never fire on the wait the product asked them to accept`
     );
-    assert(budget === upper * BUDGET_MULTIPLE * 60_000, `${tier}: budget must be ${BUDGET_MULTIPLE}x the promised upper bound`);
+    // AT LEAST the multiple, not exactly it. MEASURED_FLOOR_MS may raise a
+    // tier's budget above its advertised window (it does, for both paid
+    // tiers) — a floor derived from what this deployment actually measures is
+    // allowed to be more generous than the tier's promise, and must never be
+    // less.
+    assert(
+      budget >= upper * BUDGET_MULTIPLE * 60_000,
+      `${tier}: budget must be at least ${BUDGET_MULTIPLE}x the promised upper bound`
+    );
   }
 });
 
@@ -58,10 +66,27 @@ check("the free tier's slower window buys it a proportionally larger budget", ()
   assert(free > premium, "free must get more room than premium — its promised window is three times longer");
 });
 
-check("the paid budget is generous but still bounded", () => {
+check("the paid budget clears the measured cold open, and is still bounded", () => {
   const premium = scriptGenerationBudgetMs("premium", {} as NodeJS.ProcessEnv);
-  assert(premium >= 10 * 60_000, "a paid ceiling under 10 minutes risks killing work that was about to land");
-  assert(premium <= 20 * 60_000, "a paid ceiling over 20 minutes stops being a bound a waiting person benefits from");
+
+  // THIS LOWER BOUND IS EVIDENCE, NOT TASTE, and it replaces a guess of mine
+  // that production disproved. The original assertion here was `<= 20 min`,
+  // written on the reasoning that a longer ceiling "stops being a bound a
+  // waiting person benefits from". Then the worker log of 2026-08-25 timed a
+  // Premium run's COLD OPEN alone at ~10.3 minutes, with no script movement
+  // started — so a 12-minute ceiling (and a 20-minute one) cuts off runs that
+  // were still working, and reports "a stuck AI provider" for a pipeline that
+  // was not stuck. A bound that fires on healthy work is worse than no bound:
+  // it destroys paid work AND misattributes the cause.
+  assert(
+    premium >= 25 * 60_000,
+    `a paid ceiling of ${fmtMinutes(premium)} is under the ~10 min this deployment's cold open alone measured, ` +
+      `with 3x headroom — it would kill runs mid-write and blame the provider`
+  );
+
+  // Still a stuck-detector: unbounded means "forever", which is the failure the
+  // budget exists to convert into a real error.
+  assert(premium <= 45 * 60_000, "a paid ceiling over 45 minutes is not bounding anything");
 });
 
 check("an operator override is honoured", () => {
