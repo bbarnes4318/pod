@@ -1,6 +1,39 @@
 import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOptions } from "./interface";
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
 import { categoryOf } from "./errors";
+import { numberFromEnv } from "./openaiCompatible";
+
+/**
+ * Wall-clock ceiling on ONE Anthropic HTTP attempt.
+ *
+ * THIS ADAPTER HAD NO TIMEOUT AT ALL. Every other provider in this repo runs
+ * through openaiCompatible.ts, which has carried an AbortController and a
+ * 240s default since it was written (ZAI_/NVIDIA_/MOONSHOT_REQUEST_TIMEOUT_MS).
+ * Anthropic is the hand-written one, its fetch passed no `signal`, and nothing
+ * bounded a request that stopped producing bytes.
+ *
+ * MEASURED COST OF THAT, production 2026-08-25, episode e579f96e. The
+ * script:turn-plan call recorded 912,305 ms of wall time across three attempts
+ * — about 304s each — and returned ZERO tokens in and zero out before dying
+ * with `fetch failed`. Fifteen minutes bought nothing, on a tier that advertises
+ * two to four.
+ *
+ * The value matches the other providers deliberately rather than being tuned
+ * here: it is a stuck-detector, not a latency target, and the successful
+ * Anthropic calls in that same episode ran 5-70s, so 240s is far outside normal
+ * without being tight enough to cut off slow-but-working work.
+ *
+ * An abort surfaces as an AbortError, which categorizeNetworkFailure maps to
+ * `timeout` — NOT terminal — so the router advances to the next rung instead of
+ * stopping. That pairing is the point: bounding the attempt is only useful if
+ * the failure it produces is one the chain can act on.
+ */
+export const ANTHROPIC_TIMEOUT_ENV = "ANTHROPIC_REQUEST_TIMEOUT_MS";
+export const ANTHROPIC_DEFAULT_TIMEOUT_MS = 240_000;
+
+export function anthropicRequestTimeoutMs(): number {
+  return numberFromEnv(ANTHROPIC_TIMEOUT_ENV, ANTHROPIC_DEFAULT_TIMEOUT_MS);
+}
 
 /**
  * THE ONE PLACE an Anthropic model id is declared valid.
@@ -262,6 +295,10 @@ export class AnthropicLLMProvider implements LLMProvider {
       state.attempts++;
       if (attempt > 0) state.retries++;
       const startedAt = Date.now();
+      // Per ATTEMPT, not per call: a retry gets its own full budget, exactly as
+      // openaiCompatible.ts does it. See ANTHROPIC_DEFAULT_TIMEOUT_MS.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), anthropicRequestTimeoutMs());
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
@@ -271,6 +308,7 @@ export class AnthropicLLMProvider implements LLMProvider {
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify(body),
+          signal: controller.signal,
         });
 
         if (response.ok) {
@@ -333,6 +371,8 @@ export class AnthropicLLMProvider implements LLMProvider {
         lastErr = err;
         if (attempt === maxRetries) throw err;
         await new Promise((r) => setTimeout(r, 2000 * Math.pow(4, attempt)));
+      } finally {
+        clearTimeout(timer);
       }
     }
     throw lastErr || new Error("[Anthropic] Request failed.");
