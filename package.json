@@ -191,6 +191,7 @@
     "test:rewrite-budget": "tsx --conditions=react-server src/scripts/testRewriteBudget.ts",
     "test:routing-chain-health": "tsx --conditions=react-server src/scripts/testRoutingChainHealth.ts",
     "test:anthropic-model-ids": "tsx --conditions=react-server src/scripts/testAnthropicModelIds.ts",
+    "test:anthropic-request-timeout": "tsx --conditions=react-server src/scripts/testAnthropicRequestTimeout.ts",
     "test:llm-cost-pricing": "tsx --conditions=react-server src/scripts/testLlmCostPricing.ts",
     "test:llm-cost-job-scoping": "tsx --conditions=react-server src/scripts/testLlmCostJobScoping.ts",
     "test:prompt-cache-stability": "tsx --conditions=react-server src/scripts/testPromptCacheStability.ts",
