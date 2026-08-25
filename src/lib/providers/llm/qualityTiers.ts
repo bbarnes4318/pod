@@ -91,7 +91,12 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
   },
   premium: {
     id: "premium",
-    profile: "verified_development",
+    // POINTS AT ITS OWN PROFILE NOW. This said `verified_development`, whose
+    // host writers are Z.ai and Kimi — so the tier charged for Opus 5 and
+    // routed the dialogue to free models, with Anthropic reachable only as a
+    // paid FALLBACK after a free model failed. `writers` below was describing
+    // a chain that did not exist. See premiumChain in profiles.ts.
+    profile: "premium",
     label: "Premium",
     summary: "The best dialogue this app can produce. Fast.",
     approxCostUsd: 1.75,

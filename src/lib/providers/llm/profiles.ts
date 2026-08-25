@@ -27,6 +27,7 @@ export type RoutingProfile =
   | "frontier_development"
   | "free_independent"
   | "balanced"
+  | "premium"
   | "custom";
 
 export const ROUTING_PROFILES: RoutingProfile[] = [
@@ -35,6 +36,7 @@ export const ROUTING_PROFILES: RoutingProfile[] = [
   "frontier_development",
   "free_independent",
   "balanced",
+  "premium",
   "custom",
 ];
 
@@ -328,6 +330,14 @@ const OR_KIMI = (): ProviderModelRef => ({
 
 const ANTHROPIC_HAIKU = (): ProviderModelRef => ({ provider: "anthropic", model: "claude-haiku-4-5" });
 
+/** The models the PREMIUM tier's copy actually promises. Env-overridable like
+ *  every other id here, so a re-pin is one variable rather than a code change. */
+const ANTHROPIC_OPUS = (): ProviderModelRef => ({
+  provider: "anthropic",
+  model: readRoutingEnv("ANTHROPIC_PREMIUM_MODEL") || "claude-opus-5",
+});
+const ANTHROPIC_SONNET = (): ProviderModelRef => ({ provider: "anthropic", model: "claude-sonnet-5" });
+
 /**
  * BALANCED — Kimi writes, Haiku supports. The tier between free and premium.
  *
@@ -415,6 +425,58 @@ function balancedChain(role: LLMRole): ProfileRoleChain {
     // a billing failure degrades to slow rather than to nothing.
     default:
       return [ANTHROPIC_HAIKU(), CEREBRAS_OSS(), GROQ_OSS()];
+  }
+}
+
+/**
+ * PREMIUM — the tier whose copy says "Claude Opus 5 (both hosts)" at ~$1.75 an
+ * episode. Until this profile existed it said that and delivered something
+ * else.
+ *
+ * THE BUG THIS FIXES. `premium` pointed at `verified_development`, whose host
+ * writers are ZAI_FLASH and MOONSHOT_KIMI. Resolved, the tier read:
+ *
+ *   claims : Claude Opus 5 (both hosts) | $1.75
+ *   host A : zai/glm-4.7-flash  ->  xai/grok-4.3
+ *   host B : moonshot/kimi-k3   ->  zai/glm-4.7-flash
+ *
+ * Opus was in no chain at all. Anthropic appeared only as a legacyBackup rung,
+ * which is why the sole Anthropic lines in a production episode log are
+ * `PAID FALLBACK ... claude-haiku-4-5` — never Opus, and only ever because a
+ * free model had already failed. A user choosing the paid tier was paying
+ * attention to a promise the router could not keep.
+ *
+ * BOTH HOSTS ON ONE MODEL IS DELIBERATE HERE, and it is why this profile is
+ * absent from MULTI_MODEL_PROFILES in test:routing-chain-health. Everywhere
+ * else, two families writing the two characters is what stops the hosts
+ * sounding identical — a structural fix for models that are individually
+ * mediocre at voice. The premium tier makes the opposite trade on purpose: one
+ * model good enough to hold two distinct voices from persona prompts alone,
+ * which is exactly what the tier's copy sells. Do not "fix" this by splitting
+ * the hosts across families without changing the copy first.
+ *
+ * Sonnet 5 is the second rung rather than a free model: a paid tier must not
+ * silently degrade into the free one on a single failure, which is the failure
+ * mode the whole tier exists to let a user buy their way out of. Everything
+ * that is not audible prose — topics, research, judging, verification — stays
+ * on the verified_development chains, because the tier sells WRITING quality
+ * and there is no reason to bill Opus rates for classifying a topic.
+ */
+function premiumChain(role: LLMRole): ProfileRoleChain {
+  switch (role) {
+    // The audible dialogue: the only roles the tier's promise is about.
+    case "script_host_a_writer":
+    case "script_host_b_writer":
+    case "script_movement":
+    case "script_rewrite":
+    case "script_dialogue_director":
+      return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET()];
+
+    // Structure, research and judgement are unchanged. The judges stay on the
+    // NVIDIA/DeepSeek chains, so no judge shares a model with the writers it
+    // grades — the independence rule holds without extra work here.
+    default:
+      return verifiedDevelopmentChain(role);
   }
 }
 
@@ -727,6 +789,8 @@ export function declaredProfileChainFor(profile: RoutingProfile, role: LLMRole):
       return freeIndependentChain(role);
     case "balanced":
       return balancedChain(role);
+    case "premium":
+      return premiumChain(role);
     case "legacy":
     case "custom":
       // No profile-supplied candidates: legacy resolves to today's grouped

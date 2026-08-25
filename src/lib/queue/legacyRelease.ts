@@ -76,19 +76,49 @@ export const prismaLegacyReleaseStore: LegacyReleaseStore = {
     const { db } = await import("../db");
     // Idempotent by construction: two workers reaching this at the same moment
     // both end up pointing at the same row rather than minting two releases.
-    return db.scriptLegacyRelease.upsert({
-      where: { scriptId: input.scriptId },
-      update: {},
-      create: {
-        scriptId: input.scriptId,
-        scriptCreatedAt: input.scriptCreatedAt,
-        cutoverAt: input.cutoverAt,
-        reason: input.reason,
-        actorKind: input.actorKind,
-        actorId: input.actorId,
-        permittedStages: [...input.permittedStages],
-      },
-    });
+    //
+    // UPSERT ALONE DID NOT DELIVER THAT, AND THE COMMENT ABOVE WAS THE ONLY
+    // THING MAKING IT LOOK LIKE IT DID. Prisma's upsert is not a single atomic
+    // INSERT ... ON CONFLICT here: concurrent callers can each find no row,
+    // each attempt the insert, and all but one come back with
+    //
+    //   P2002 Unique constraint failed on the fields: (`scriptId`)
+    //
+    // Observed in CI on 2026-08-25, from the integration case that exists to
+    // prove exactly this ("CONCURRENT boundaries race to one row, not many" —
+    // six simultaneous callers). The race window is small, so it passes most
+    // runs; that is what makes it dangerous rather than harmless, because the
+    // production path is several workers hitting one script's release boundary
+    // at once, and the loser of the race threw instead of proceeding.
+    //
+    // The unique index is the real guarantee. Losing the insert race is not an
+    // error, it is the index doing its job and telling us someone else won —
+    // so read their row and return it. Same shape as the P2002 recovery in
+    // podcastConfiguration.ts.
+    try {
+      return await db.scriptLegacyRelease.upsert({
+        where: { scriptId: input.scriptId },
+        update: {},
+        create: {
+          scriptId: input.scriptId,
+          scriptCreatedAt: input.scriptCreatedAt,
+          cutoverAt: input.cutoverAt,
+          reason: input.reason,
+          actorKind: input.actorKind,
+          actorId: input.actorId,
+          permittedStages: [...input.permittedStages],
+        },
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code !== "P2002") throw err;
+      const winner = await db.scriptLegacyRelease.findUnique({
+        where: { scriptId: input.scriptId },
+      });
+      // If the row is genuinely absent the constraint fired for some other
+      // reason and swallowing it would hide a real fault, so re-throw.
+      if (!winner) throw err;
+      return winner;
+    }
   },
   async revoke(scriptId, revokedBy, reason) {
     const { db } = await import("../db");

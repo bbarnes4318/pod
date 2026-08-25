@@ -9,7 +9,9 @@ import {
   roleRouteReport,
 } from "@/lib/providers/llm/routing";
 import { modelCapabilities, verificationState } from "@/lib/providers/llm/capabilities";
-import { activeRoutingProfile, routingProfileIsUnrecognized } from "@/lib/providers/llm/profiles";
+import { activeRoutingProfile, routingProfileIsUnrecognized,
+  ROUTING_PROFILES,
+} from "@/lib/providers/llm/profiles";
 import { activeDeploymentStage, stageAdvisory } from "@/lib/providers/llm/deploymentStage";
 import { currentEnvNameProblems } from "./envNameGuard";
 
@@ -459,7 +461,12 @@ export function getLlmRoutingChecks(): EnvCheck[] {
       value: bad.raw,
       message:
         `'${bad.raw}' is not a routing profile, so routing fell back to 'legacy'. ` +
-        `Valid values: legacy, frontier_development, free_independent, custom.`,
+        // LISTED FROM THE SOURCE, NOT RETYPED. This sentence was hardcoded and
+        // had already drifted: it omitted `verified_development` — the profile
+        // production actually runs — so an operator checking their value
+        // against this message would have concluded the live setting was
+        // invalid. Deriving it means a new profile can never be missing here.
+        `Valid values: ${ROUTING_PROFILES.join(", ")}.`,
     });
   } else {
     checks.push({
