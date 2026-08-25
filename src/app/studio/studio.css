@@ -18,11 +18,35 @@
 .studioShell[data-collapsed="true"] {
   grid-template-columns: var(--studio-rail-collapsed) minmax(0, 1fr);
 }
+/* The rail is position:fixed (see .studioSidebar), so collapsing the track no
+   longer resizes it — the width has to be driven explicitly alongside. */
+.studioShell[data-collapsed="true"] .studioSidebar { width: var(--studio-rail-collapsed); }
 
 /* ---------- Left rail ---------- */
+/* THE RAIL WAS position:sticky AND IT NEVER STUCK.
+   Measured at scroll 420 its top was -292px, not 0: the nav scrolled off the
+   top and the rail's background ran out mid-viewport, leaving a dead strip
+   under "Collapse".
+
+   Sticky could not work here, and align-self was not the reason. The rail's
+   containing block is its grid area, and the grid row measured 900px — exactly
+   one viewport — while .studioBody inside it measured 1192px and simply
+   overflowed. A sticky box cannot travel beyond a containing block the same
+   height as itself, so the declaration was inert; the row would not grow to
+   its content no matter what was tried on the item (height:auto and
+   min-height:0 on the shell both left it at 900).
+
+   Fixed does work — verified at scroll 420, top 0 — and it is what this file
+   ALREADY does for the same element under 900px, where the rail is a drawer.
+   So this makes one positioning model for the rail instead of two. The grid
+   track still reserves --studio-rail, so the content column keeps its offset;
+   the width has to be stated here because a fixed element no longer takes its
+   size from the track. The mobile block below overrides both, unchanged. */
 .studioSidebar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  width: var(--studio-rail);
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -118,6 +142,13 @@
 
 /* ---------- Body column ---------- */
 .studioBody {
+  /* PINNED TO THE SECOND TRACK, because the rail is position:fixed and so is
+     no longer an in-flow grid item. Without this the body auto-places into the
+     FIRST track — the narrow rail column — and the whole app renders as a
+     ~325px strip with the rest of the screen empty. The track itself still
+     exists and still reserves --studio-rail, which is what keeps the content
+     clear of the fixed rail. */
+  grid-column: 2;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -134,8 +165,12 @@
      title must ellipsize rather than push the fold down. */
   height: var(--studio-topbar-h);
   padding: 0 var(--sp-6);
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  backdrop-filter: blur(12px);
+  /* OPAQUE. This was `surface 85%` with a blur behind it, and a 15%-transparent
+     bar does not hide a solid orange button scrolling under it — the hottest
+     row's CTAs and the "Browse by team" heading both read straight through the
+     chrome. A blur softens a photo; it does not stop high-contrast UI ghosting.
+     The bar sits above the content and now looks like it. */
+  background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
@@ -222,8 +257,8 @@
   gap: var(--sp-4);
   height: var(--studio-subbar-h);
   padding: 0 var(--sp-6);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px);
+  /* Opaque for the same reason as .studioTopbar directly above. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   font-size: 0.8125rem;
   color: var(--text-muted);
@@ -577,7 +612,10 @@
   margin-bottom: 1.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  /* Opaque, like the two chrome bars it pins beneath. This is the THIRD
+     sticky layer on the page; at 88% the takes scrolled visibly through it and
+     the stack of three translucent bars turned the top of the board to mush. */
+  background: var(--surface);
   backdrop-filter: blur(10px);
   overflow-x: auto;
   scrollbar-width: none;
@@ -695,8 +733,10 @@
   gap: 0.55rem;
   padding: 0.6rem 0.75rem;
   margin: var(--sp-4) 0 var(--sp-3);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(10px);
+  /* Opaque, like the two chrome bars it pins beneath. This is the THIRD sticky
+     layer on the page; at 88% the takes scrolled visibly through it, and three
+     stacked translucent bars turned the top of the board to mush. */
+  background: var(--surface);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: var(--radius-lg);
 }
@@ -2026,6 +2066,8 @@
 @media (max-width: 900px) {
   .studioShell,
   .studioShell[data-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+  /* One track here, so the body returns to it (see .studioBody on desktop). */
+  .studioBody { grid-column: 1; }
 
   .studioSidebar {
     position: fixed;

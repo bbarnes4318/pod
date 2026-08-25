@@ -130,9 +130,22 @@ export default function BoardTakeCard({
       )}
 
       <div className="boardCardFoot">
+        {/* ONE solid CTA on the page, not three.
+            Every featured card took .btnPrimary, so the hottest row fired three
+            identical solid-orange buttons side by side — plus "Generate" in the
+            topbar, which is four primary actions competing on one screen. The
+            row is RANKED, and a ranking that only shows in a small 1/2/3
+            numeral is not a ranking anyone reads. #1 keeps the solid fill and
+            carries the eye; #2 and #3 drop to the same quiet outline as the
+            rest of the board, so the order is visible in the weight instead of
+            only in the digit. */}
         <Link
           href={`/studio/create?topic=${take.id}`}
-          className={featured ? "btnPrimary boardGenBtn" : "btnGhost boardGenBtn boardGenBtn--quiet"}
+          className={
+            featured && rank === 1
+              ? "btnPrimary boardGenBtn"
+              : "btnGhost boardGenBtn boardGenBtn--quiet"
+          }
         >
           Generate Episode
         </Link>
