@@ -457,14 +457,65 @@ function balancedChain(role: LLMRole): ProfileRoleChain {
  *
  * Sonnet 5 is the second rung rather than a free model: a paid tier must not
  * silently degrade into the free one on a single failure, which is the failure
- * mode the whole tier exists to let a user buy their way out of. Everything
- * that is not audible prose — topics, research, judging, verification — stays
- * on the verified_development chains, because the tier sells WRITING quality
- * and there is no reason to bill Opus rates for classifying a topic.
+ * mode the whole tier exists to let a user buy their way out of.
+ *
+ * THE SECOND BUG, AND WHY THIS PROFILE NOW COVERS THE WHOLE SCRIPT JOB. The
+ * first version of premiumChain overrode five roles — the audible dialogue —
+ * and sent everything else to verifiedDevelopmentChain on the reasoning that
+ * "the tier sells WRITING quality and there is no reason to bill Opus rates for
+ * classifying a topic". The economics were right and the LATENCY was not
+ * considered at all, so a Premium episode advertising 2-4 minutes ran for
+ * twenty. Every remaining role in generate:script resolved to Nemotron at
+ * 60-200 s per call or to the Z.ai account that answers 429 (1302/1305) under
+ * this workload.
+ *
+ * The measured cold open recorded in scriptBudget.ts is that bill itemised:
+ *
+ *   story-spine 10s · outline 124s · private-agendas 38s · accusation 11s ·
+ *   contradiction 167s · consequence 199s · cold-open judge 70s = ~10.3 min
+ *
+ * Not one of those roles was in this switch, and not one line of dialogue had
+ * been written when those ten minutes were gone. Opus answers in ~1 s. Buying
+ * the fast writer and leaving the rest of the job on the slow free chain bought
+ * nothing a user could perceive.
+ *
+ * So the whole generate:script role set is Anthropic here. The split between
+ * Opus and Haiku is NOT a fresh guess — it is the configuration costed against
+ * real token counts in docs/verification/tiering-option-a.md (episode ade82ba1,
+ * 22 calls, scoped ledger): Opus for the audible prose, Haiku 4.5 for the
+ * structural and audit roles, $1.26/episode against a $2.34 all-Opus baseline.
+ * The deltas from that document to this map are itemised in qualityTiers.ts,
+ * where the price a user is shown has to add up.
+ *
+ * TWO DEPARTURES FROM THAT DOCUMENT, both deliberate:
+ *
+ *   script_debate_architect is on SONNET, not Haiku. The document flags it as
+ *   "the untested risk" — it owns the outline, the private agendas and the turn
+ *   plan, which is structural reasoning rather than transcription, and names
+ *   escalating exactly this role to Sonnet 5 (+$0.23) as the first move if
+ *   structure degrades. Premium is the tier that should not be gambling episode
+ *   structure on the smallest model to save twenty cents.
+ *
+ *   The two judges do NOT both land on Haiku. The document is right that the
+ *   constraint it checked still holds (no judge shares a model with the writers
+ *   it grades), but the other judge rule matters too: two judges leading with
+ *   one model makes one of the two verdicts redundant for free. Neither judge
+ *   may contain Opus or Sonnet, and Haiku is the only Anthropic model left, so
+ *   the second primary is Groq's small OSS route — sub-second, schema-proven in
+ *   the free profile's judge slot, and a different family from everything it
+ *   grades.
+ *
+ * WHAT STAYS ON verifiedDevelopmentChain: topic generation, classification and
+ * ranking, research_brief, evidence_extraction, show_notes and
+ * episode_metadata. Those run in OTHER jobs — the background topic sweep and
+ * research:generate-brief — so they are not what a user watches a Premium
+ * episode spend its minutes on, and the ledger scope that priced this map does
+ * not cover them. research_brief on Nemotron is still slow and is called out as
+ * a remaining latency source rather than silently folded into this change.
  */
 function premiumChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
-    // The audible dialogue: the only roles the tier's promise is about.
+    // ---- the audible dialogue: the roles the tier's promise is about.
     case "script_host_a_writer":
     case "script_host_b_writer":
     case "script_movement":
@@ -472,9 +523,34 @@ function premiumChain(role: LLMRole): ProfileRoleChain {
     case "script_dialogue_director":
       return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET()];
 
-    // Structure, research and judgement are unchanged. The judges stay on the
-    // NVIDIA/DeepSeek chains, so no judge shares a model with the writers it
-    // grades — the independence rule holds without extra work here.
+    // ---- the cold-open tournament and the turn plan. See the departure note.
+    case "script_debate_architect":
+      return [ANTHROPIC_SONNET(), ANTHROPIC_HAIKU()];
+
+    // ---- structure and audit. Haiku leads; the model this role used to run on
+    // stays as the rung behind it, so a billing failure degrades to the old
+    // slow path rather than to nothing.
+    case "script_outline":
+    case "script_story_editor":
+      return [ANTHROPIC_HAIKU(), NV.nemotron()];
+    case "script_verification":
+    case "fact_check":
+      // Z.ai stays out of both verification chains for the same schema reason
+      // it is excluded everywhere else, so the fallback is Nemotron.
+      return [ANTHROPIC_HAIKU(), NV.nemotron()];
+    case "script_continuity_editor":
+    case "continuity_report":
+      return [ANTHROPIC_HAIKU(), ZAI_FLASH()];
+
+    // ---- judgement. Distinct primaries, and neither chain contains a model
+    // that writes anything it grades.
+    case "quality_judge":
+      return [ANTHROPIC_HAIKU(), GROQ_OSS_SMALL()];
+    case "cold_open_judge":
+      return [GROQ_OSS_SMALL(), ANTHROPIC_HAIKU()];
+
+    // Topics, research and publishing metadata — a different job, and priced
+    // outside this map's ledger scope.
     default:
       return verifiedDevelopmentChain(role);
   }

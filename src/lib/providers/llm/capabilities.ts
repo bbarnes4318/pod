@@ -853,6 +853,46 @@ const REGISTRY: ModelCapabilities[] = [
       limits: "No cap enforced here.",
     },
   },
+  {
+    provider: "anthropic",
+    model: "claude-haiku-4-5",
+    catalogVerified: true,
+    liveContractVerified: true,
+    availability: "available",
+    qualityTested: false,
+    supportsNativeJsonObject: false,
+    supportsNativeJsonSchema: false,
+    supportsPromptEnforcedJson: true,
+    supportsThinking: true,
+    supportsReasoningEffort: true,
+    supportsReasoningBudget: false,
+    supportsSeed: false,
+    supportsSystemPrompt: true,
+    supportsStreaming: true,
+    requestParameterProfile: "anthropic-messages",
+    rejectsSampling: true,
+    unpriced: false,
+    provenance: {
+      // REGISTERED BECAUSE IT IS NOW LOAD-BEARING. Haiku has been routable in
+      // this repo for a while (the balanced profile's default rung, and every
+      // `PAID FALLBACK ... claude-haiku-4-5` line in a production log), but it
+      // had no registry entry, so modelCapabilities() answered from the
+      // unregistered-model default. That default is fine until a profile
+      // depends on the answer, and premiumChain now does.
+      catalog:
+        "Ran 14 of the 22 calls in the scoped generate:script ledger for episode ade82ba1 " +
+        "(docs/verification/tiering-option-a.md), and serves the balanced profile's default rung.",
+      requestFields:
+        "Same anthropic-messages contract as opus-5 and sonnet-5; rejects sampling params. " +
+        "NOT independently probed — the evidence is pipeline traffic, not a contract probe run against " +
+        "this model specifically.",
+      limits:
+        "PROMPT-CACHE MINIMUM IS 4,096 TOKENS, against 1,024 on sonnet-5 and 512 on opus-5. Four of the " +
+        "script stages write 3.2-3.5K-token cache blocks, which is BELOW that minimum, so those blocks " +
+        "silently do not cache and bill as plain input. The costs in tiering-option-a.md already assume " +
+        "no caching on them; a future estimate that assumes caching will be wrong by that margin.",
+    },
+  },
 
   // ---------------- OpenAI (existing, unchanged behavior) ----------------
   {
