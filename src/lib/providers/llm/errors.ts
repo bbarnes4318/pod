@@ -626,6 +626,37 @@ export function categoryOf(err: unknown): LlmErrorCategory {
     return categorizeHttpFailure(Number(http[1]), http[2] || "", LEGACY_ADAPTER_FIELDS);
   }
 
-  if (err instanceof TypeError) return "programming_error";
-  return "unknown";
+  // TRANSPORT FAILURES, AND WHY THIS DELEGATES RATHER THAN REPEATING ITSELF.
+  //
+  // This used to end with `if (err instanceof TypeError) return
+  // "programming_error"; return "unknown";` and nothing in between. Node throws
+  // a failed fetch as a TypeError — `TypeError: fetch failed`, with the real
+  // cause hidden on `.cause` — so every transport failure out of the legacy
+  // Anthropic and OpenAI adapters landed on that line and was labelled
+  // programming_error, which is TERMINAL. The router stops on terminal: no
+  // failover, no retry, and an operator told to go debug code.
+  //
+  // Observed in production 2026-08-25, episode e579f96e. The turn-plan call ran
+  // 912 SECONDS across three attempts and returned zero tokens in and zero out,
+  // then died with `fetch failed`. The job log rendered it as
+  //
+  //   Role 'script_debate_architect' STOPPED at 1 candidate(s) ...
+  //   programming_error on anthropic/claude-sonnet-5 ... is not a provider
+  //   problem — no other model fixes it.
+  //
+  // Every clause of which was wrong. It WAS a provider problem, another model
+  // WOULD have fixed it — the same run had already completed two calls on that
+  // exact model and more on Opus and Haiku — and the declared Haiku rung behind
+  // it was never tried. A network blip ended a paid episode at role 2 of 7.
+  //
+  // categorizeNetworkFailure already gets this right and has since it was
+  // written: it tests the MESSAGE for the transport signatures first and only
+  // falls back to the TypeError check for a genuine one. Both functions
+  // classify thrown values and only one of them knew about transport, so the
+  // fix is to have this one defer to it rather than grow a second copy of the
+  // same regex that can drift from it.
+  //
+  // Behaviour is unchanged everywhere else: with no elapsedMs, that function's
+  // own tail returns "unknown", which is exactly what this line returned.
+  return categorizeNetworkFailure(err);
 }

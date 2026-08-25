@@ -498,6 +498,62 @@ check("a scene render that runs out of credit is billing, not configuration", ()
   assert.equal(classifyProviderError(new SceneGenerationError("provider_unavailable", "503")), "provider_failure");
 });
 
+// =============================================================================
+console.log("\n  -- a transport failure is not a code defect --");
+
+check("categoryOf reads `fetch failed` as network_error, not programming_error", () => {
+  // Node throws a failed fetch as a TypeError, and categoryOf used to end with a
+  // bare `instanceof TypeError -> programming_error`. programming_error is
+  // TERMINAL, so a network blip stopped the chain dead instead of failing over.
+  //
+  // Production 2026-08-25, episode e579f96e: the turn-plan call ran 912s across
+  // three attempts, returned 0 tokens in and 0 out, and died with `fetch
+  // failed`. The router reported "not a provider problem — no other model fixes
+  // it" about a model that had already answered twice in that same run, and
+  // never tried the rung declared behind it.
+  const fetchFailed = new TypeError("fetch failed");
+  assert.equal(
+    categoryOf(fetchFailed),
+    "network_error",
+    "a failed fetch is a transport failure and the next candidate must get a turn"
+  );
+
+  // The other transport signatures reach categoryOf by the same route.
+  //
+  // KNOWN GAP, recorded rather than papered over: undici also throws
+  // `TypeError: terminated` when it drops a response mid-body, and that string
+  // matches none of the transport signatures, so it still classifies as
+  // programming_error. It is left alone because nothing in this deployment's
+  // logs has produced it — the observed failure is `fetch failed`. Add it when
+  // a log shows it, not before.
+  assert.equal(categoryOf(new Error("read ECONNRESET")), "network_error");
+  assert.equal(categoryOf(new Error("socket hang up")), "network_error");
+
+  const aborted = new Error("The operation was aborted");
+  aborted.name = "AbortError";
+  assert.equal(categoryOf(aborted), "timeout");
+});
+
+check("a REAL TypeError is still a programming_error", () => {
+  // The guard the old line existed for has to survive the fix, or this trades
+  // one silent misclassification for another.
+  assert.equal(
+    categoryOf(new TypeError("Cannot read properties of undefined (reading 'text')")),
+    "programming_error",
+    "an actual code defect must still stop the chain rather than march down it"
+  );
+});
+
+check("HTTP and adapter classifications are untouched by the transport delegation", () => {
+  // categoryOf tries the message rules and the `status <code>` shape BEFORE it
+  // reaches transport, so delegating the tail must not move any of them.
+  assert.equal(categoryOf(adapterError(400, BODY_MALFORMED_REQUEST)), "programming_error");
+  assert.equal(categoryOf(adapterError(401, BODY_AUTH_REJECTED)), "authentication_failed");
+  assert.equal(categoryOf(new Error("[Anthropic] Failed to parse output as valid JSON: x")),
+    "structured_output_invalid_after_repair");
+  assert.equal(categoryOf(new Error("something nobody has classified")), "unknown");
+});
+
 check("guidance never leaks a credential", () => {
   const secret = "sk-ant-not-a-real-key-000000000000";
   const err = new LlmProviderError({
