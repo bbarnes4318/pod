@@ -234,6 +234,59 @@ function main() {
     });
   }
 
+  check("premium survives its paid account going dry", () => {
+    // ROUTING SKIPS SAME-ACCOUNT RUNGS ON insufficient_credit, ON PURPOSE: they
+    // bill the same credential, so trying them is guaranteed waste. The
+    // consequence is that a chain of Opus -> Sonnet (-> Haiku, appended as the
+    // legacy backup) is not three chances, it is ONE, and when the account is
+    // empty the role has nothing left.
+    //
+    // Production 2026-08-25:
+    //
+    //   Role 'script_host_a_writer' STOPPED at 3 candidate(s) under profile
+    //   'premium'. insufficient_credit on anthropic/claude-opus-5 ...
+    //   - claude-sonnet-5  [profile_secondary] SKIPPED — shared credential
+    //   - claude-haiku-4-5 [legacy_backup]     SKIPPED — shared credential
+    //
+    // A paid tier is allowed to be expensive. It is not allowed to have a
+    // single point of failure that turns a billing state into a dead episode,
+    // and this profile introduced exactly that when it moved the whole script
+    // job onto one account. Every role must keep a rung on some OTHER provider.
+    const stranded: string[] = [];
+    for (const role of ALL_ROLES) {
+      const chain = profileChainFor("premium", role);
+      if (chain.length === 0) {
+        stranded.push(`${role}: no usable candidate at all`);
+        continue;
+      }
+      if (chain.every((ref) => ref.provider === "anthropic")) {
+        stranded.push(`${role}: ${chain.map(key).join(", ")} — all one account`);
+      }
+    }
+    assert(
+      stranded.length === 0,
+      `these premium roles die outright when the anthropic account has no funds:\n      ` +
+        `${stranded.join("\n      ")}\n` +
+        `      Give each a rung on a different provider. A degraded episode beats a dead one.`
+    );
+  });
+
+  check("premium's host writers stay on different models through the degrade", () => {
+    // Both hosts lead with Opus deliberately — one model holding two voices is
+    // what the tier sells, which is why premium is absent from
+    // MULTI_MODEL_PROFILES. That assumption dies with the account: the moment
+    // the fallback fires, the free-tier reasoning applies again and two
+    // families writing the two characters is the only thing keeping the hosts
+    // apart. Landing both on one model there degrades the tier twice.
+    const a = profileChainFor("premium", "script_host_a_writer").filter((r) => r.provider !== "anthropic");
+    const b = profileChainFor("premium", "script_host_b_writer").filter((r) => r.provider !== "anthropic");
+    assert(a.length > 0 && b.length > 0, "a host writer has no non-anthropic rung to degrade onto");
+    assert(
+      key(a[0]) !== key(b[0]),
+      `both hosts degrade onto ${key(a[0])}, so a dry account silently collapses the two voices into one`
+    );
+  });
+
   check("free_independent spreads across providers rather than betting on one", () => {
     // The inverse of the assertion this replaces. That one guarded an EXEMPTION
     // — free_independent was allowed to be one model, and the check existed to

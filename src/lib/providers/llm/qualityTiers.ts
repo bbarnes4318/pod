@@ -136,9 +136,22 @@ export const QUALITY_TIER_INFO: Record<QualityTier, QualityTierInfo> = {
     approxMinutes: [2, 4],
     speedWarning: null,
     writers: "Claude Opus 5 (both hosts)",
+    // SAYS WHAT HAPPENS WHEN THE ACCOUNT IS DRY, because the alternative is a
+    // user paying for this tier and receiving free-model dialogue with nothing
+    // on screen saying so — the exact failure the premium profile was created
+    // to fix, arriving by a different route.
+    //
+    // Every dialogue chain now ends on a non-Anthropic rung so an empty account
+    // degrades the episode instead of killing it (see premiumChain). That is
+    // the right trade and it is not free: the episode is no longer the thing
+    // the label promises, so the label has to admit the possibility. The cost
+    // ledger records the model per stage, so a degraded run is checkable rather
+    // than merely disclosed.
     qualityNote:
       "Highest-scoring writer available, with the least formulaic prose. " +
-      "The whole script — structure, editing and fact-checking, not just the dialogue — runs on Claude.",
+      "The whole script — structure, editing and fact-checking, not just the dialogue — runs on Claude. " +
+      "If the Claude account runs out of credit the episode still finishes, on the free-tier writers, " +
+      "and costs less than the estimate above.",
     billable: true,
   },
 };

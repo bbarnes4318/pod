@@ -516,12 +516,57 @@ function balancedChain(role: LLMRole): ProfileRoleChain {
 function premiumChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
     // ---- the audible dialogue: the roles the tier's promise is about.
+    //
+    // THE LAST RUNG IS NOT ANTHROPIC, AND THAT IS THE POINT.
+    //
+    // Opus -> Sonnet, with Haiku appended as the legacy backup, is three rungs
+    // on ONE account. routing.ts correctly refuses to burn the other two once
+    // one of them answers `insufficient_credit` — they bill the same
+    // credential, so trying them is guaranteed waste. Which meant that when the
+    // account ran dry the chain had nothing left and the episode DIED:
+    //
+    //   Role 'script_host_a_writer' STOPPED at 3 candidate(s) under profile
+    //   'premium'. insufficient_credit on anthropic/claude-opus-5 ...
+    //   - claude-sonnet-5  [profile_secondary] SKIPPED — shared credential
+    //   - claude-haiku-4-5 [legacy_backup]     SKIPPED — shared credential
+    //
+    // Observed in production 2026-08-25, and it is a regression this profile
+    // introduced. Before the tier moved its whole script job onto Anthropic,
+    // the non-dialogue roles ran on free providers, so an empty account
+    // produced a worse episode rather than no episode. Concentrating the
+    // pipeline on one paid credential bought speed and quality and quietly made
+    // that credential a single point of failure for the entire tier.
+    //
+    // A degraded episode beats a dead one, so every dialogue chain now ends on
+    // a different provider. These rungs are reachable ONLY after every paid
+    // Anthropic candidate is gone, which is an operator condition (a dry
+    // account), not a routine failover.
+    //
+    // THE INVERSION IS PRESERVED ACROSS THE DEGRADE. Both hosts lead with Opus
+    // on purpose — one model good enough to hold two voices from persona
+    // prompts, which is what the tier sells. But the moment the fallback fires,
+    // that assumption is gone and the free-tier reasoning applies again: two
+    // families writing the two characters is what stops the hosts sounding
+    // identical. So host A falls to Kimi-then-Z.ai and host B to
+    // Z.ai-then-Kimi, exactly as the free and balanced profiles invert them.
+    // Landing both on one model here would degrade the tier twice over.
+    //
+    // A DEGRADED RUN IS NOT SILENT: the scoped cost ledger records the model
+    // per stage, so an episode written on the fallback rungs says so in its own
+    // [LLMCost] lines, and the routing log carries the insufficient_credit
+    // reason that sent it there. See qualityTiers.ts, which states this in the
+    // copy rather than leaving a user to infer it from a bill that never came.
     case "script_host_a_writer":
+      return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET(), MOONSHOT_KIMI(), ZAI_FLASH()];
     case "script_host_b_writer":
+      return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET(), ZAI_FLASH(), MOONSHOT_KIMI()];
+
+    // Not a character voice, so no inversion to protect — these take the
+    // measured verified_development dialogue order behind the Anthropic rungs.
     case "script_movement":
     case "script_rewrite":
     case "script_dialogue_director":
-      return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET()];
+      return [ANTHROPIC_OPUS(), ANTHROPIC_SONNET(), ZAI_FLASH(), XAI_GROK()];
 
     // ---- the cold-open tournament and the turn plan.
     //
