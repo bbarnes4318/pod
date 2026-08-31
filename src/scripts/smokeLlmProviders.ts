@@ -29,7 +29,11 @@ const CASES: Array<{ provider: string; model: string }> = [
   { provider: "anthropic", model: "claude-opus-5" },
   { provider: "xai", model: "grok-4.3" },
   { provider: "moonshot", model: "kimi-k3" },
-  { provider: "google", model: "gemini-3.1-pro-preview" },
+  // Flash-lite, NOT Pro. Every Gemini Pro route answers 429 with `limit: 0` on a
+  // free-tier key — a hard zero, not exhausted quota, so it never clears and the
+  // google row read FAIL permanently regardless of provider health. Confirmed in
+  // the catalog and through a real GoogleLLMProvider completion on 2026-08-31.
+  { provider: "google", model: "gemini-3.1-flash-lite-preview" },
   { provider: "nvidia", model: "nvidia/nemotron-3-ultra-550b-a55b" },
   { provider: "zai", model: "glm-5.2" },
 ];
