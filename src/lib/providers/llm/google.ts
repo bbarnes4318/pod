@@ -16,10 +16,20 @@
 // instead of forking a second code path. The compatibility layer maps
 // `reasoning_effort` onto Gemini's `thinking_level` on Google's side.
 //
-// MODEL ID IS UNVERIFIED. Google's naming has drifted across the 3.x line and
-// the default below has NOT been confirmed against a live account. Confirm with
-// `npm run probe:llm-contract` and correct via GOOGLE_MODEL if it is wrong —
-// that is a variable change, not a code change.
+// THE DEFAULT MODEL IS THE ONE THAT ACTUALLY ANSWERS.
+//
+// This used to fall back to `MODEL_IDS.google.geminiPro`, and on the free tier
+// that id cannot complete a single call: every Gemini Pro route returns 429
+// RESOURCE_EXHAUSTED with `limit: 0`. That is a hard zero, not exhausted
+// quota — it never clears with time, and the retry loop below cannot help.
+//
+// So an install that had not set GOOGLE_MODEL got a provider that was present,
+// keyed, catalog-correct and completely dead, failing identically whether the
+// account was funded or the key was wrong. The default is now flash-lite,
+// which was confirmed through a real completion on 2026-08-31. GOOGLE_MODEL
+// still overrides it, so a funded account reaches Pro with a variable change
+// rather than a code change — which is the direction that asymmetry should
+// run: the free path works out of the box, the paid path is opt-in.
 
 import {
   OpenAICompatibleConfig,
@@ -35,7 +45,7 @@ export const GOOGLE_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.co
 
 export class GoogleLLMProvider extends OpenAICompatibleLLMProvider {
   constructor(modelOverride?: string) {
-    const model = modelOverride || readRoutingEnv("GOOGLE_MODEL") || MODEL_IDS.google.geminiPro;
+    const model = modelOverride || readRoutingEnv("GOOGLE_MODEL") || MODEL_IDS.google.geminiFlashLite;
     const config: OpenAICompatibleConfig = {
       provider: "google",
       model,

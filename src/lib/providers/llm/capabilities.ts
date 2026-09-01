@@ -241,9 +241,18 @@ export const MODEL_IDS = {
   // CONFIRMED against the live catalog on 2026-08-05. There is no bare
   // `gemini-3.1-pro` — the Pro line is preview-suffixed, which is exactly the
   // kind of guess that would have failed on the first paid call.
+  //
+  // BEING IN THE CATALOG IS NOT BEING REACHABLE. On the free tier every Gemini
+  // PRO route answers 429 RESOURCE_EXHAUSTED with `limit: 0` — a hard zero
+  // rather than exhausted quota, so it never clears with time and no retry
+  // helps. `geminiPro` is kept because a funded account can use it, but it is
+  // no longer what an unconfigured install falls back to; see google.ts.
   google: {
     geminiPro: "gemini-3.1-pro-preview",
     geminiFlash: "gemini-3.6-flash",
+    // The one id confirmed end-to-end through a real GoogleLLMProvider
+    // completion — not merely a /models listing — on 2026-08-31.
+    geminiFlashLite: "gemini-3.1-flash-lite-preview",
   },
 } as const;
 
