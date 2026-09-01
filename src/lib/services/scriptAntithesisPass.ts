@@ -15,6 +15,7 @@ import type { AntithesisRewriteItem, AntithesisRewriteOutcome } from "./scriptOu
 import type { BatchLineRewriter, RewriteContext } from "./scriptSelfVerify";
 import { stripAudioTags } from "../audio/speechText";
 import { scoreConversationContinuity, type ConversationGateMetrics } from "./scriptConversationDirector";
+import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 
 export interface ScriptLineLike {
   lineIndex: number;
@@ -188,6 +189,11 @@ async function repairConversation(
   options: AntithesisPassOptions
 ): Promise<ConversationRepairReport> {
   const before = scoreConversationContinuity(segments as any);
+  // Conversation repair rewrites lines to make a switch responsive, and until
+  // now it was the ONLY rewrite path with no length bound at all. A responsive
+  // opening ("Hold on — you just said...") is naturally longer than the line it
+  // replaces, so this pass could push a cold open out of band on its own.
+  const budget = new SegmentBudgetLedger(segments as never);
   const enabled = options.conversationRepair !== false;
   const maxRounds = Math.max(1, Math.min(3, options.conversationRounds ?? 2));
   const everFlagged = new Set<number>();
@@ -212,6 +218,7 @@ async function repairConversation(
             `Previous host: "${spoken(item.previous)}" Current line: "${spoken(item.current)}". ` +
             `Rewrite ONLY the current line so it directly answers, challenges, extends, mocks, concedes, or interrupts the previous thought before advancing its own point. ` +
             `Keep the same speaker, lineIndex, factual meaning and evidence. Add no new fact, number, name, event, quote, or source. Sound spoken and emotionally specific, not polished prose.`,
+          maxWords: budget.maxWordsFor(item.current.lineIndex) ?? undefined,
           attempt: round,
         });
       }
@@ -225,6 +232,13 @@ async function repairConversation(
       for (const item of disconnected) {
         const rewrite = rewrites.get(item.current.lineIndex);
         if (!rewrite || typeof rewrite.text !== "string" || !rewrite.text.trim()) continue;
+        if (!budget.accept(item.current.lineIndex, rewrite.text)) {
+          console.warn(
+            `[Antithesis] conversation repair of line ${item.current.lineIndex} REJECTED: it would put ` +
+              `its segment over its spoken-word ceiling. Keeping the original line.`
+          );
+          continue;
+        }
         const beforeText = item.current.text;
         applyRewrite(item.current, rewrite, beforeText);
         if (item.current.text !== beforeText) linesRewritten++;
@@ -287,6 +301,10 @@ export async function antithesisPassAndCorrect(
   };
 
   const everFlagged = new Set<number>();
+  // Segment spoken-word accounting for this pass. Deterministic cuts only ever
+  // shrink a line, but they are committed through the same ledger so the
+  // running total the MODEL rewrites are measured against stays true.
+  const budget = new SegmentBudgetLedger(segments as never);
 
   /**
    * Apply a candidate line, but never accept one that made the line WORSE.
@@ -296,9 +314,20 @@ export async function antithesisPassAndCorrect(
    */
   const applyGuarded = (line: ScriptLineLike, candidate: string, before: string): boolean => {
     const hitsBefore = findAntithesis(before).length;
+    if (!budget.accept(line.lineIndex, candidate)) {
+      console.warn(
+        `[Antithesis] line ${line.lineIndex} rewrite REJECTED: it would put its segment over its ` +
+          `spoken-word ceiling. Keeping the original line.`
+      );
+      return false;
+    }
     applyRewrite(line, { text: candidate }, before);
     if (findAntithesis(line.text).length > hitsBefore) {
       line.text = before;
+      // The ledger was debited when the candidate was accepted; reverting the
+      // line has to credit it back, or a rejected rewrite would go on eating
+      // segment headroom that nothing is actually using.
+      budget.accept(line.lineIndex, before);
       return false;
     }
     return line.text !== before;
@@ -335,6 +364,7 @@ export async function antithesisPassAndCorrect(
           text: before,
           span: primary?.span ?? before,
           kind: primary?.kind ?? "not_X_but_Y",
+          maxWords: budget.maxWordsFor(line.lineIndex) ?? undefined,
         },
         kinds,
       });

@@ -12,7 +12,11 @@
 // NETWORK-FREE. Run: npm run test:conversation-rhythm
 
 import { scoreConversationContinuity } from "../lib/services/scriptConversationDirector";
-import { makeTurnPlanValidator } from "../lib/services/scriptCreativePipeline";
+import {
+  makeTurnPlanValidator,
+  repairTurnPlanRhythm,
+  turnPlanAlternation,
+} from "../lib/services/scriptCreativePipeline";
 
 let passed = 0, failed = 0;
 function check(name: string, fn: () => void) {
@@ -154,6 +158,124 @@ function main() {
     const tooShort = makeTurnPlanValidator(1200, { rhythmAttempts: 0 });
     const err = tooShort(plan([1, 2, 1, 2]));
     assert(err !== null && /at least/i.test(err), `a short plan must never be accepted, got: ${err}`);
+  });
+
+  console.log("\nA plan the model could not land is landed mechanically\n");
+
+  // WHY. Softening the rhythm rules kept the episode alive at this role and
+  // killed it two roles later instead: the dialogue director cannot change
+  // speaker ownership or line count, so nothing downstream could undo the
+  // ping-pong, and mechanicalAlternation is a HOLD rather than a repair. Script
+  // 9a8b00a3 reached the gate at 93.8% strict alternation.
+
+  const pingPong = (count: number, wordsAt: (i: number) => number) => {
+    const turns = [];
+    for (let i = 0; i < count; i++) {
+      turns.push({
+        turnIndex: i,
+        beatIndex: 1 + (i % 5),
+        speakerName: i % 2 === 0 ? "Bernadette Zabala" : "Cal Mercer",
+        intent: "press the previous claim",
+        factRefs: i % 4 === 0 ? [{ type: "newsItem", id: `n${i}` }] : [],
+        targetWords: wordsAt(i),
+      });
+    }
+    return turns;
+  };
+  // A realistic mix: the plan prompt asks for short reactions at 4-15 words and
+  // arguments at 35-90, so a plan of uniform 20s is not the thing being fixed.
+  const REAL_WORDS = [45, 12, 70, 8, 35, 20, 55, 9, 40, 25];
+  const flat = pingPong(60, (i) => REAL_WORDS[i % REAL_WORDS.length]);
+
+  const runLengthsOf = (turns: Array<{ speakerName: string }>) => {
+    const runs: number[] = [];
+    for (let i = 0; i < turns.length; i++) {
+      if (i > 0 && turns[i].speakerName === turns[i - 1].speakerName) runs[runs.length - 1] += 1;
+      else runs.push(1);
+    }
+    return runs;
+  };
+
+  check("pure ping-pong is brought inside the alternation ceiling", () => {
+    const before = turnPlanAlternation(flat);
+    assert(before > 0.99, `fixture should be pure alternation, got ${(before * 100).toFixed(1)}%`);
+    const { turns, repair } = repairTurnPlanRhythm(flat);
+    assert(repair.applied, "the repair must actually run");
+    assert(repair.reachedCeiling, `expected to land in band, got ${(repair.alternationAfter * 100).toFixed(1)}%`);
+    assert(turnPlanAlternation(turns) <= 0.55,
+      `measured ${(turnPlanAlternation(turns) * 100).toFixed(1)}% after repair`);
+    // And comfortably under the 65% the production invariant holds on, which is
+    // the whole point of the plan ceiling being tighter than the gate's.
+    assert(turnPlanAlternation(turns) <= 0.65, "must clear the production invariant with headroom");
+  });
+
+  check("the repaired plan satisfies the validator that rejected the original", () => {
+    // The strongest statement available: repair output is not a special case
+    // the rules are relaxed for, it is a plan the unrelaxed validator accepts.
+    const { turns } = repairTurnPlanRhythm(flat);
+    const strict = makeTurnPlanValidator(1200);
+    const err = strict({ turns });
+    assert(err === null, `the repaired plan must pass the strict validator, got: ${err}`);
+  });
+
+  check("repair splits turns and never reassigns them", () => {
+    const { turns } = repairTurnPlanRhythm(flat);
+    // The sequence of speakers, collapsed to runs, must be unchanged: a split
+    // lengthens a run, it never moves a turn to the other host.
+    const collapse = (t: Array<{ speakerName: string }>) =>
+      t.filter((turn, i) => i === 0 || turn.speakerName !== t[i - 1].speakerName).map((turn) => turn.speakerName);
+    assert(JSON.stringify(collapse(turns)) === JSON.stringify(collapse(flat)),
+      "splitting must not change who speaks in what order");
+    const before = flat.reduce((n, t) => n + t.targetWords, 0);
+    const after = turns.reduce((n, t) => n + t.targetWords, 0);
+    assert(before === after, `word budget must be divided, not created: ${before} -> ${after}`);
+    assert(turns.every((t, i) => t.turnIndex === i), "turnIndex must be renumbered contiguously");
+  });
+
+  check("evidence stays on exactly one turn", () => {
+    // The plan rules assign each fact to at most ONE turn; copying refs into the
+    // continuation would quietly break that and put the same number in two mouths.
+    const { turns } = repairTurnPlanRhythm(flat);
+    const seen = new Set<string>();
+    for (const turn of turns) {
+      for (const ref of turn.factRefs) {
+        const key = `${ref.type}:${ref.id}`;
+        assert(!seen.has(key), `evidence ${key} was duplicated across turns by the repair`);
+        seen.add(key);
+      }
+    }
+    const originalRefs = flat.reduce((n, t) => n + t.factRefs.length, 0);
+    assert(seen.size === originalRefs, `expected ${originalRefs} refs to survive, got ${seen.size}`);
+  });
+
+  check("repair respects every rule the validator enforces", () => {
+    const { turns } = repairTurnPlanRhythm(flat);
+    const runs = runLengthsOf(turns);
+    assert(Math.max(...runs) <= 3, `no host may hold four turns, got a run of ${Math.max(...runs)}`);
+    const threes = runs.filter((r) => r === 3).length;
+    assert(threes <= Math.ceil(runs.length * 0.2), `${threes} of ${runs.length} runs are threes; the cap is one in five`);
+    const histogram = new Map<number, number>();
+    for (const r of runs) histogram.set(r, (histogram.get(r) ?? 0) + 1);
+    const modal = Math.max(...Array.from(histogram.values()));
+    assert(modal / runs.length <= 0.7, `${modal} of ${runs.length} runs share a length — that is a metronome`);
+  });
+
+  check("a plan already in band is returned untouched", () => {
+    const varied = repairTurnPlanRhythm(flat).turns;
+    const second = repairTurnPlanRhythm(varied);
+    assert(!second.repair.applied, "repairing an in-band plan must be a no-op");
+    assert(second.turns === varied, "an in-band plan must be returned by reference, not rebuilt");
+  });
+
+  check("a plan of pure short reactions is left alone rather than shredded", () => {
+    // Two halves of an eight-word reaction are two fragments, not a host
+    // building a point. Refusing to split is the honest outcome, and it is
+    // reported rather than hidden.
+    const tiny = pingPong(40, () => 8);
+    const { turns, repair } = repairTurnPlanRhythm(tiny);
+    assert(!repair.applied && !repair.reachedCeiling, "an unsplittable plan must report that it stayed out of band");
+    assert(turns === tiny, "the original plan must be returned unchanged");
+    assert(/no turn was long enough/i.test(repair.detail), `the reason must say why: ${repair.detail}`);
   });
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
