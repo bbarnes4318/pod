@@ -777,6 +777,203 @@ export function makeTurnPlanValidator(totalWordTarget: number, opts: TurnPlanVal
 }
 
 /**
+ * Continuation intents for a turn that was mechanically split in two.
+ *
+ * An intent is a conversational ACTION, so a split turn's second half needs one
+ * of its own rather than a copy of the first — handing the writer the same
+ * instruction twice is how a split becomes a restatement, and restatement is
+ * the `repetition` axis. Each of these forbids repeating the point and demands
+ * the turn advance it. Rotated so a repaired plan does not hand the same
+ * sentence to every added turn.
+ */
+const CONTINUATION_INTENTS = [
+  "Stay on the floor and press what you just said one step further; do not restate it.",
+  "Hold the floor: name the concrete consequence of the claim you just made.",
+  "Keep going and turn that point into a demand the other host has to answer.",
+];
+
+export interface TurnPlanRhythmRepair {
+  applied: boolean;
+  splits: number;
+  alternationBefore: number;
+  alternationAfter: number;
+  ceiling: number;
+  /** False when the plan could not be brought inside the ceiling mechanically. */
+  reachedCeiling: boolean;
+  detail: string;
+}
+
+/** Share of adjacent turn pairs that change speaker — the same statistic the
+ *  production invariant measures on finished lines. */
+export function turnPlanAlternation(turns: Array<{ speakerName?: unknown }>): number {
+  if (turns.length < 2) return 0;
+  const name = (t: { speakerName?: unknown }) => String(t?.speakerName ?? "").trim().toLowerCase();
+  let switches = 0;
+  for (let i = 1; i < turns.length; i++) if (name(turns[i]) !== name(turns[i - 1])) switches++;
+  return switches / (turns.length - 1);
+}
+
+function speakerRuns(turns: Array<{ speakerName?: unknown }>): number[][] {
+  const name = (t: { speakerName?: unknown }) => String(t?.speakerName ?? "").trim().toLowerCase();
+  const runs: number[][] = [];
+  for (let i = 0; i < turns.length; i++) {
+    if (i > 0 && name(turns[i]) === name(turns[i - 1])) runs[runs.length - 1].push(i);
+    else runs.push([i]);
+  }
+  return runs;
+}
+
+/**
+ * Bring a ping-pong turn plan inside the alternation ceiling by SPLITTING
+ * turns, deterministically.
+ *
+ * WHY THIS EXISTS. The validator above softens the rhythm rules once the model
+ * has had its attempt and its repair, reasoning that pacing is "visible to the
+ * dialogue director and to the mechanicalAlternation invariant further down".
+ * Both halves of that turned out to be false:
+ *
+ *   - The dialogue director cannot fix it. Its own prompt says "Preserve
+ *     lineIndex and speaker ownership... Do not add or remove lines", so it can
+ *     change what a turn SAYS and never who takes it or how many there are.
+ *   - The invariant is a HOLD, not a repair. It stops the episode; it does not
+ *     improve it.
+ *
+ * So accepting an over-ceiling plan did not degrade gracefully — it guaranteed
+ * an editorial hold after all seven writing roles had been paid for. Script
+ * 9a8b00a3 reached the gate at 93.8% strict alternation against a 65% ceiling,
+ * which is what an accepted plan looks like from downstream.
+ *
+ * The repair is a SPLIT, never a reassignment. Moving a turn to the other host
+ * would hand one character another character's intent; splitting one turn into
+ * two consecutive turns by the SAME host is the exact shape the rules ask for —
+ * land a claim, then press it — and the host writer writes genuinely new words
+ * for the second turn. Splits change the turn count and never the speaker
+ * order, so alternation = (runs - 1) / (turns - 1) falls monotonically.
+ *
+ * Every constraint the validator enforces is respected: no run past three, at
+ * most one run in five at three, and no single run length over 70% of the plan.
+ * A promotion that would break one of those is skipped — unless the plan is
+ * already outside it and the move does not make it worse.
+ */
+export function repairTurnPlanRhythm(
+  turns: TurnPlanEntry[],
+  opts: { ceiling?: number; minSplitWords?: number } = {}
+): { turns: TurnPlanEntry[]; repair: TurnPlanRhythmRepair } {
+  const ceiling = opts.ceiling ?? PLAN_ALTERNATION_CEILING;
+  // Below this a turn has nothing to split: two halves of an eight-word
+  // reaction are two fragments, not a host building a point.
+  const minSplitWords = opts.minSplitWords ?? 12;
+  const alternationBefore = turnPlanAlternation(turns);
+
+  const unchanged = (detail: string): { turns: TurnPlanEntry[]; repair: TurnPlanRhythmRepair } => ({
+    turns,
+    repair: {
+      applied: false,
+      splits: 0,
+      alternationBefore,
+      alternationAfter: alternationBefore,
+      ceiling,
+      reachedCeiling: alternationBefore <= ceiling,
+      detail,
+    },
+  });
+
+  if (turns.length < 4) return unchanged("Plan too short to have a rhythm problem.");
+  if (alternationBefore <= ceiling) return unchanged("Plan is already inside the alternation ceiling.");
+
+  let working: TurnPlanEntry[] = turns.map((t) => ({ ...t, factRefs: [...(t.factRefs || [])] }));
+  let splits = 0;
+  const guard = turns.length * 3;
+
+  for (let step = 0; step < guard; step++) {
+    if (turnPlanAlternation(working) <= ceiling) break;
+
+    const runs = speakerRuns(working);
+    const total = runs.length;
+    // The validator applies these two statistics only above the sizes where
+    // they mean anything; matching it keeps a short plan from being pinned.
+    const threesCap = total >= 6 ? Math.ceil(total * 0.2) : total;
+    const modalCap = total >= 8 ? Math.floor(total * 0.7) : total;
+
+    const histogram = new Map<number, number>();
+    for (const run of runs) histogram.set(run.length, (histogram.get(run.length) ?? 0) + 1);
+    const currentThrees = histogram.get(3) ?? 0;
+    const currentModal = Math.max(0, ...Array.from(histogram.values()));
+
+    let best: { index: number; words: number } | null = null;
+    for (const run of runs) {
+      if (run.length >= 3) continue;
+
+      // Split the meatiest turn in the run: a long argument divides into a
+      // claim and the press that follows it; a short reaction does not.
+      let index = -1;
+      let words = -1;
+      for (const i of run) {
+        if (working[i].targetWords > words) {
+          words = working[i].targetWords;
+          index = i;
+        }
+      }
+      if (index < 0 || words < minSplitWords) continue;
+
+      const next = new Map(histogram);
+      next.set(run.length, (next.get(run.length) ?? 0) - 1);
+      next.set(run.length + 1, (next.get(run.length + 1) ?? 0) + 1);
+      const nextThrees = next.get(3) ?? 0;
+      const nextModal = Math.max(0, ...Array.from(next.values()));
+      // Over a cap only disqualifies a move that makes it WORSE. A plan of pure
+      // single turns starts with 100% of its runs at one length, so a strict
+      // reading would reject the first repair and every one after it.
+      if (nextThrees > threesCap && nextThrees > currentThrees) continue;
+      if (nextModal > modalCap && nextModal >= currentModal) continue;
+
+      if (!best || words > best.words) best = { index, words };
+    }
+
+    if (!best) break;
+
+    const original = working[best.index];
+    const firstWords = Math.max(4, Math.ceil(original.targetWords * 0.55));
+    const secondWords = Math.max(4, original.targetWords - firstWords);
+    working = [
+      ...working.slice(0, best.index),
+      { ...original, targetWords: firstWords },
+      {
+        ...original,
+        intent: CONTINUATION_INTENTS[splits % CONTINUATION_INTENTS.length],
+        // Evidence stays with the turn it was allocated to. Copying the refs
+        // would put one fact on two turns, which the plan rules forbid.
+        factRefs: [],
+        targetWords: secondWords,
+      },
+      ...working.slice(best.index + 1),
+    ].map((t, i) => ({ ...t, turnIndex: i }));
+    splits++;
+  }
+
+  const alternationAfter = turnPlanAlternation(working);
+  const reachedCeiling = alternationAfter <= ceiling;
+  return {
+    turns: splits > 0 ? working : turns,
+    repair: {
+      applied: splits > 0,
+      splits,
+      alternationBefore,
+      alternationAfter,
+      ceiling,
+      reachedCeiling,
+      detail:
+        splits === 0
+          ? `Plan is at ${(alternationBefore * 100).toFixed(1)}% strict alternation and no turn was long ` +
+            `enough to split (minimum ${minSplitWords} target words). The plan stands as written.`
+          : `Split ${splits} turn(s) to take strict alternation from ${(alternationBefore * 100).toFixed(1)}% ` +
+            `to ${(alternationAfter * 100).toFixed(1)}% against a ${(ceiling * 100).toFixed(0)}% ceiling` +
+            `${reachedCeiling ? "." : " - still over; the plan ran out of splittable turns."}`,
+    },
+  };
+}
+
+/**
  * ROLE 2 — DEBATE ARCHITECT, turn allocation half.
  *
  * The output is the contract between the two host writers: who speaks when,
@@ -793,6 +990,10 @@ export async function planDebateTurns(input: {
   topicsEvidence: string;
   systemPrompt: string;
   totalWordTarget: number;
+  /** Called when the plan had to be mechanically de-ping-ponged, so the
+   *  caller can record it as a role violation instead of losing it to a
+   *  console line nobody reads. */
+  onRhythmRepair?: (repair: TurnPlanRhythmRepair) => void;
 }): Promise<TurnPlanEntry[]> {
   const result = await withLlmStage("script:turn-plan", () =>
     input.llm.generateStructuredOutput<{ turns: TurnPlanEntry[] }>({
@@ -863,7 +1064,19 @@ Return valid JSON only:
       targetWords: Math.max(3, Math.min(140, Number(raw.targetWords) || 40)),
     });
   }
-  return turns;
+
+  // The validator softens the rhythm statistics after two attempts so that a
+  // model which cannot hit the band does not cost the whole episode. That
+  // softening used to end HERE, with a console.warn and a plan nothing
+  // downstream could act on — and an over-ceiling plan is not a flatter
+  // episode, it is a held one. A plan the model could not land is now landed
+  // mechanically instead.
+  const { turns: shaped, repair } = repairTurnPlanRhythm(turns);
+  if (repair.applied || !repair.reachedCeiling) {
+    console.warn(`[TurnPlan] rhythm repair: ${repair.detail}`);
+    input.onRhythmRepair?.(repair);
+  }
+  return shaped;
 }
 
 export interface HostWrittenLine {

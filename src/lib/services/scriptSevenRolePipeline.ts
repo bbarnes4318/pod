@@ -63,6 +63,7 @@ import {
   type EpisodeSpine,
   type PrivateHostAgenda,
   type TurnPlanEntry,
+  type TurnPlanRhythmRepair,
 } from "./scriptCreativePipeline";
 import { WordFlow, wordsIn, wordsInText } from "./scriptWordFlow";
 import {
@@ -355,6 +356,7 @@ export async function runSevenRolePipeline(
         learningPolicy: args.learningPolicy,
       });
 
+      let rhythmRepair: TurnPlanRhythmRepair | null = null;
       const turns = await planDebateTurns({
         llm,
         episodeTitle: args.episodeTitle,
@@ -364,9 +366,31 @@ export async function runSevenRolePipeline(
         topicsEvidence: args.topicsPrompts,
         systemPrompt: creativeSystemPrompt,
         totalWordTarget: Math.max(200, totalWordTarget - countWords(coldOpen.segment.lines)),
+        onRhythmRepair: (repair) => {
+          rhythmRepair = repair;
+        },
       });
 
       const violations: RoleViolation[] = [];
+      // A plan whose pacing had to be repaired mechanically is recorded, not
+      // logged. The old behaviour warned to a console and shipped a plan that
+      // guaranteed a mechanicalAlternation hold; a reviewer reading the gate
+      // afterwards had no way to see that the architect had missed the band.
+      if (rhythmRepair) {
+        const repaired: TurnPlanRhythmRepair = rhythmRepair;
+        violations.push({
+          role: "debate_architect",
+          kind: "mechanical_pacing_repair",
+          detail: repaired.detail,
+          observed: {
+            alternationBefore: Number(repaired.alternationBefore.toFixed(4)),
+            alternationAfter: Number(repaired.alternationAfter.toFixed(4)),
+            ceiling: repaired.ceiling,
+            turnsSplit: repaired.splits,
+            reachedCeiling: String(repaired.reachedCeiling),
+          },
+        });
+      }
       if (turns.length === 0) throw new Error("Turn plan is empty — no host has anything to say.");
       for (const host of args.speakerNames) {
         if (!turns.some((t) => t.speakerName === host)) {

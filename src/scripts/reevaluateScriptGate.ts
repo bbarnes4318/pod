@@ -111,12 +111,28 @@ async function main() {
     // Provenance is recorded as OBSERVED-UNKNOWN, not invented. A legacy script
     // genuinely has no record of how it was written, and claiming otherwise here
     // would repeat the exact defect this branch exists to remove.
-    const provenance: ScriptPipelineProvenance = {
-      path: "legacy_reevaluated",
-      fallbackReason: "Script predates pipeline provenance; how it was written is not recorded.",
-      stages: [],
-      judgeRan: Boolean(quality.judge),
-    };
+    //
+    // An observed provenance is NEVER overwritten, though. The gate treats any
+    // path other than `outline_driven` as an unconditional hold, so stamping
+    // "legacy_reevaluated" over a script that genuinely WAS outline-driven
+    // held it permanently on a reason no content fix could ever clear — this
+    // command re-scored the writing and silently destroyed the record of how
+    // the writing was produced. Re-evaluation re-measures quality; it learns
+    // nothing new about the pipeline and must therefore assert nothing new
+    // about it.
+    const recorded = (blob.pipelineProvenance || null) as ScriptPipelineProvenance | null;
+    const provenance: ScriptPipelineProvenance =
+      recorded && typeof recorded.path === "string" && recorded.path.trim()
+        ? { ...recorded, judgeRan: Boolean(quality.judge) }
+        : {
+            path: "legacy_reevaluated",
+            fallbackReason: "Script predates pipeline provenance; how it was written is not recorded.",
+            stages: [],
+            judgeRan: Boolean(quality.judge),
+          };
+    if (recorded?.path) {
+      console.log(`    provenance preserved: ${recorded.path}`);
+    }
     const gate = evaluateScriptEditorialGate(quality, process.env, { invariants, provenance });
 
     console.log(

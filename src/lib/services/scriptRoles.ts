@@ -211,6 +211,11 @@ export type RoleViolationKind =
    *  check in scriptSevenRolePipeline — a character repeating himself verbatim
    *  is the loudest sign a script was assembled rather than performed. */
   | "repeated_line"
+  /** A pacing statistic the model could not hit was brought into band
+   *  mechanically rather than authored. The plan is usable, but the rhythm
+   *  at that point came from a deterministic repair and a reviewer should
+   *  know that before reading the transcript as written work. */
+  | "mechanical_pacing_repair"
   | "schema";
 
 export interface RoleViolation {

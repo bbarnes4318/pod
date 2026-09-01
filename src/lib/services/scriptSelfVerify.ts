@@ -15,6 +15,7 @@
 
 import { verifyLineAgainstEvidence, FigureVerdict } from "./factNumbers";
 import { isFragmentLine, SemanticReviewLine } from "./semanticReview";
+import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 
 export interface RewriteContext {
   line: any;
@@ -23,6 +24,15 @@ export interface RewriteContext {
   unsupportedAttributions: string[];
   /** Set when the SEMANTIC reviewer flagged the line — its rationale. */
   semanticReason?: string;
+  /**
+   * Hard spoken-word ceiling for THIS line, when its segment carries one.
+   *
+   * The per-line rewrite budget is a growth allowance; this is the share of a
+   * SEGMENT budget the line may occupy. A rewriter must honour the tighter of
+   * the two, because a cold open at its ceiling has no growth left to allow.
+   * Absent means the line is bounded only by the per-line budget.
+   */
+  maxWords?: number;
   attempt: number;
 }
 
@@ -143,6 +153,11 @@ export async function selfVerifyAndCorrect(
   opts: SelfVerifyOptions
 ): Promise<SelfVerifyReport> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? 2);
+  // Segment spoken-word accounting, shared by BOTH passes below. Each pass
+  // bounded its own per-line growth and neither could see that they were
+  // spending the same segment budget — which is how a cold open reaches the
+  // gate over its ceiling with every individual rewrite inside its allowance.
+  const budget = new SegmentBudgetLedger(segments);
   const report: SelfVerifyReport = {
     factualLinesChecked: 0,
     linesWithViolations: 0,
@@ -197,6 +212,7 @@ export async function selfVerifyAndCorrect(
       evidenceText: citedTextFor(t.line, opts.evidenceByRefId) || opts.fullEvidenceText,
       unsupportedFigures: t.verdict.unsupportedFigures,
       unsupportedAttributions: t.verdict.unsupportedAttributions,
+      maxWords: budget.maxWordsFor(t.line.lineIndex) ?? undefined,
       attempt,
     }));
     let results: Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>;
@@ -211,6 +227,17 @@ export async function selfVerifyAndCorrect(
       t.attempts = attempt;
       const result = results.get(t.line.lineIndex);
       if (result && typeof result.text === "string" && result.text.trim()) {
+        if (!budget.accept(t.line.lineIndex, result.text)) {
+          // The rewrite fits its own line and would still break the segment.
+          // The original stands and the line stays flagged — the same trade
+          // the per-line budget already makes, one level up.
+          console.warn(
+            `[SelfVerify] line ${t.line.lineIndex} rewrite REJECTED: it would put its segment over its ` +
+              `spoken-word ceiling. Keeping the original line.`
+          );
+          next.push(t);
+          continue;
+        }
         applyRewrite(t.line, result, t.before);
         t.verdict = verifyLineAgainstEvidence(t.line.text, citedTextFor(t.line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
         if (!t.verdict.verifiable || (t.verdict.unsupportedFigures.length === 0 && t.verdict.unsupportedAttributions.length === 0)) {
@@ -256,6 +283,7 @@ export async function selfVerifyAndCorrect(
             unsupportedFigures: [],
             unsupportedAttributions: [],
             semanticReason: f.reason,
+            maxWords: budget.maxWordsFor(line.lineIndex) ?? undefined,
             attempt: report.semantic.rounds,
           }))
         );
@@ -265,6 +293,13 @@ export async function selfVerifyAndCorrect(
       for (const { f, line, before } of roundItems) {
         const result = results.get(line.lineIndex);
         if (!result || typeof result.text !== "string" || !result.text.trim()) continue;
+        if (!budget.accept(line.lineIndex, result.text)) {
+          console.warn(
+            `[SelfVerify] semantic rewrite of line ${line.lineIndex} REJECTED: it would put its segment ` +
+              `over its spoken-word ceiling. Keeping the original line.`
+          );
+          continue;
+        }
         applyRewrite(line, result, before);
         report.semantic.corrections.push({ lineIndex: f.lineIndex, round: report.semantic.rounds, reason: f.reason, before, after: line.text });
       }
@@ -276,6 +311,16 @@ export async function selfVerifyAndCorrect(
     report.semantic.linesUnresolved = stillFlagged.size;
     report.semantic.linesFlagged = everFlagged.size;
     report.semantic.linesCorrected = everFlagged.size - stillFlagged.size;
+  }
+
+  const refused = budget.getRejections();
+  if (refused.length) {
+    console.warn(
+      `[SelfVerify] ${refused.length} rewrite(s) were refused to protect a segment word ceiling: ` +
+        refused
+          .map((r) => `line ${r.lineIndex} (${r.segmentType}: wanted ${r.attemptedWords}w, allowed ${r.allowedWords}w)`)
+          .join("; ")
+    );
   }
 
   return report;

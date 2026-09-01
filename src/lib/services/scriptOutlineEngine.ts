@@ -77,6 +77,24 @@ export function rewriteWordBudget(originalText: string): number {
   return countSpokenWords(originalText) + 3;
 }
 
+/**
+ * The budget a rewrite must actually fit in: the tighter of the per-line growth
+ * allowance and the share of a SEGMENT ceiling this line is allowed to occupy.
+ *
+ * The flat +3 above is a per-line rule and cannot compound proportionally, but
+ * it still SUMS: six cold-open lines each taking their +3 is +18 on a segment
+ * whose ceiling had no headroom left, which is how script 9a8b00a3 reached the
+ * production gate at 126 words against a 120 ceiling with every individual
+ * rewrite inside its allowance. `maxWords` is supplied by the caller's
+ * SegmentBudgetLedger and is absent for segments with no hard ceiling.
+ */
+export function effectiveRewriteBudget(originalText: string, maxWords?: number): number {
+  const perLine = rewriteWordBudget(originalText);
+  return typeof maxWords === "number" && Number.isFinite(maxWords)
+    ? Math.min(perLine, Math.max(0, Math.floor(maxWords)))
+    : perLine;
+}
+
 export function validateScriptShape(value: unknown): string | null {
   const segments = (value as { segments?: unknown })?.segments;
   if (!Array.isArray(segments)) return "Response is missing the required 'segments' array.";
@@ -451,9 +469,14 @@ export async function rewriteLinesForGrounding(
       const semantic = context.semanticReason
         ? `\n  SEMANTIC REVIEWER FLAG: ${context.semanticReason}`
         : "";
-      const budget = rewriteWordBudget(context.line.text);
+      const budget = effectiveRewriteBudget(context.line.text, context.maxWords);
+      const current = countSpokenWords(context.line.text);
+      const tightened =
+        budget < rewriteWordBudget(context.line.text)
+          ? " — this line is in a segment at its spoken-word ceiling, so it may only get SHORTER"
+          : "";
       return `LINE ${context.line.lineIndex} — SPEAKER: ${context.line.speakerName}
-  WORD BUDGET: ${budget} words maximum (the current line is ${countSpokenWords(context.line.text)})
+  WORD BUDGET: ${budget} words maximum (the current line is ${current})${tightened}
   CURRENT TEXT: ${JSON.stringify(context.line.text)}
   VIOLATIONS:
 ${figures || "  (no figure violations)"}
@@ -485,6 +508,12 @@ Return valid JSON only. Both shapes:
       const rewrites = Array.isArray(result?.rewrites) ? result.rewrites : [];
       const requested = new Set(chunk.map((context) => context.line.lineIndex));
       const originalByIndex = new Map(chunk.map((context) => [context.line.lineIndex, context.line.text]));
+      const budgetByIndex = new Map(
+        chunk.map((context) => [
+          context.line.lineIndex,
+          effectiveRewriteBudget(context.line.text, context.maxWords),
+        ])
+      );
       for (const rewrite of rewrites) {
         if (!requested.has(rewrite?.lineIndex)) continue;
         if (typeof rewrite?.text !== "string" || !rewrite.text.trim()) continue;
@@ -499,10 +528,11 @@ Return valid JSON only. Both shapes:
         // 149. Over budget, the original line stands: it is already grounded or
         // already flagged, and keeping it costs nothing this pass had earned.
         const original = originalByIndex.get(rewrite.lineIndex);
-        if (original !== undefined && countSpokenWords(rewrite.text) > rewriteWordBudget(original)) {
+        const ceiling = budgetByIndex.get(rewrite.lineIndex);
+        if (original !== undefined && ceiling !== undefined && countSpokenWords(rewrite.text) > ceiling) {
           console.warn(
             `[SelfVerify] line ${rewrite.lineIndex} rewrite REJECTED as over budget: ` +
-              `${countSpokenWords(rewrite.text)} words against a ${rewriteWordBudget(original)} ceiling ` +
+              `${countSpokenWords(rewrite.text)} words against a ${ceiling} ceiling ` +
               `(original ${countSpokenWords(original)}). Keeping the original line.`
           );
           continue;
@@ -805,6 +835,13 @@ export interface AntithesisRewriteItem {
   text: string;
   span: string;
   kind: string;
+  /**
+   * Hard spoken-word ceiling for this line from its SEGMENT budget, when it has
+   * one. The proportional allowance below is the more dangerous of the two
+   * budgets — 20% of a line compounds across a segment in a way the grounding
+   * pass’s flat +3 cannot — so a segment ceiling always wins.
+   */
+  maxWords?: number;
 }
 
 export interface AntithesisRewriteOutcome {
@@ -851,7 +888,7 @@ export async function rewriteLinesForAntithesis(
       .map(
         (item) => `LINE ${item.lineIndex} — SPEAKER: ${item.speakerName}
   THE FRAME TO DELETE: ${JSON.stringify(item.span)}
-  WORD CEILING: ${antithesisWordBudget(item.text)} (current line is ${countSpokenWords(item.text)})
+  WORD CEILING: ${antithesisWordBudget(item.text, item.maxWords)} (current line is ${countSpokenWords(item.text)})
   CURRENT TEXT: ${JSON.stringify(item.text)}`
       )
       .join("\n\n");
@@ -878,15 +915,17 @@ Return valid JSON only:
       );
       const returned = Array.isArray(result?.rewrites) ? result.rewrites : [];
       const requested = new Map(chunk.map((item) => [item.lineIndex, item.text]));
+      const requestedMaxWords = new Map(chunk.map((item) => [item.lineIndex, item.maxWords]));
       for (const rewrite of returned) {
         const lineIndex = rewrite?.lineIndex;
         if (typeof lineIndex !== "number" || !requested.has(lineIndex)) continue;
         if (typeof rewrite?.text !== "string" || !rewrite.text.trim()) continue;
         const original = requested.get(lineIndex) as string;
-        if (countSpokenWords(rewrite.text) > antithesisWordBudget(original)) {
+        const ceiling = antithesisWordBudget(original, requestedMaxWords.get(lineIndex));
+        if (countSpokenWords(rewrite.text) > ceiling) {
           console.warn(
             `[Antithesis] line ${lineIndex} rewrite rejected as over budget: ` +
-              `${countSpokenWords(rewrite.text)} words against a ${antithesisWordBudget(original)} ceiling.`
+              `${countSpokenWords(rewrite.text)} words against a ${ceiling} ceiling.`
           );
           continue;
         }
@@ -905,7 +944,16 @@ Return valid JSON only:
 /**
  * Antithesis repairs are allowed to hold their length. Deleting half a contrast
  * and replacing it with a concrete detail is a lateral move, not a shrink.
+ *
+ * `maxWords` is the line's share of a SEGMENT ceiling, and it always wins when
+ * it is tighter. This allowance is PROPORTIONAL, which makes it the more
+ * dangerous of the two rewrite budgets: 20% of every line in a segment is a
+ * compounding overrun, and the segment total is what the production gate
+ * measures.
  */
-export function antithesisWordBudget(originalText: string): number {
-  return Math.ceil(countSpokenWords(originalText) * 1.2) + 4;
+export function antithesisWordBudget(originalText: string, maxWords?: number): number {
+  const proportional = Math.ceil(countSpokenWords(originalText) * 1.2) + 4;
+  return typeof maxWords === "number" && Number.isFinite(maxWords)
+    ? Math.min(proportional, Math.max(0, Math.floor(maxWords)))
+    : proportional;
 }
