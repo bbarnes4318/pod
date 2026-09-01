@@ -91,14 +91,23 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   }
 }
 
-function row(role: string, label: string): RoleRouteRow {
+function identityOf(label: string): string {
+  const [provider, model] = label.split("/");
+  return `${provider}|https://example/${provider}|${model ?? "(provider-default)"}`;
+}
+
+/** `chain` defaults to the primary alone, which is what every pre-existing
+ *  caller of this helper assumed. Pass it to express a role whose FALLBACKS
+ *  differ from another role that shares the same first candidate. */
+function row(role: string, label: string, chain?: string[]): RoleRouteRow {
   const [provider, model] = label.split("/");
   return {
     role: role as never,
     label,
     provider,
     model: model ?? null,
-    identity: `${provider}|https://example/${provider}|${model ?? "(provider-default)"}`,
+    identity: identityOf(label),
+    chainIdentity: (chain ?? [label]).map(identityOf).join(" > "),
     source: "role_override",
     envProvider: `${role.toUpperCase()}_LLM_PROVIDER`,
     envModel: `${role.toUpperCase()}_LLM_MODEL`,
@@ -465,6 +474,71 @@ async function main() {
         assert.ok(new Set(plan.map((p) => p.label)).size >= 2, "and to at least two different routes");
       }
     );
+  });
+
+  // =========================================================================
+  console.log("\n  -- a shared primary is not a shared writer --");
+
+  // Episode 9ea7ab48, 2026-09-01. The Anthropic account was dry, so both host
+  // writers degraded — host A onto moonshot/kimi-k3, host B onto z.ai — but the
+  // tournament had already discarded host B for looking like a duplicate of
+  // host A on the healthy path. Three angles went to two routes and kimi-k3, at
+  // 593s and 832s, wrote two of them while the 137s route wrote one. The job
+  // died on its wall-clock budget with the faster reserved rung never called.
+  const PREMIUM_HOST_A = ["anthropic/claude-opus-5", "moonshot/kimi-k3"];
+  const PREMIUM_HOST_B = ["anthropic/claude-opus-5", "zai/glm-4.7-flash"];
+
+  await check("two roles sharing a primary but diverging behind it are TWO routes", () => {
+    const plan = planColdOpenWriterRoutes([
+      row("script_host_a_writer", "anthropic/claude-opus-5", PREMIUM_HOST_A),
+      row("script_host_b_writer", "anthropic/claude-opus-5", PREMIUM_HOST_B),
+      row("script_story_editor", "anthropic/claude-haiku-4-5"),
+    ]);
+    assert.equal(plan.length, 3, "all three angles must still be assigned");
+    const roles = plan.map((p) => p.llmRole);
+    assert.equal(new Set(roles).size, 3, `each angle should get its own writer, got ${roles.join(", ")}`);
+    assert.ok(roles.includes("script_host_b_writer"),
+      "host B is the rung the premium profile reserves for a degraded run — it must be in the field");
+  });
+
+  await check("no single writer takes two angles while another sits idle", () => {
+    // The precise shape of the regression: the slowest route wrote two of the
+    // three variants and the third route wrote one.
+    const plan = planColdOpenWriterRoutes([
+      row("script_host_a_writer", "anthropic/claude-opus-5", PREMIUM_HOST_A),
+      row("script_host_b_writer", "anthropic/claude-opus-5", PREMIUM_HOST_B),
+      row("script_story_editor", "anthropic/claude-haiku-4-5"),
+    ]);
+    const counts = new Map<string, number>();
+    for (const p of plan) counts.set(p.llmRole, (counts.get(p.llmRole) ?? 0) + 1);
+    for (const [role, n] of counts) {
+      assert.equal(n, 1, `${role} was handed ${n} angles while a distinct route was available`);
+    }
+  });
+
+  await check("roles identical ALL the way down are still one route", () => {
+    // The de-duplication is not abandoned, only measured properly. Two roles
+    // that genuinely resolve to the same chain are the same writer, and running
+    // two angles on them is one model sampled twice, not a contest.
+    const sameChain = ["anthropic/claude-opus-5", "moonshot/kimi-k3"];
+    const plan = planColdOpenWriterRoutes([
+      row("script_host_a_writer", "anthropic/claude-opus-5", sameChain),
+      row("script_host_b_writer", "anthropic/claude-opus-5", sameChain),
+      row("script_story_editor", "anthropic/claude-haiku-4-5"),
+    ]);
+    assert.equal(plan.length, 3, "all three angles are still assigned");
+    assert.equal(new Set(plan.map((p) => p.llmRole)).size, 2,
+      "two genuinely identical chains collapse to one route, so the third angle repeats");
+  });
+
+  await check("a single distinct chain still falls to the single-writer path", () => {
+    const only = ["anthropic/claude-opus-5"];
+    const plan = planColdOpenWriterRoutes([
+      row("script_host_a_writer", "anthropic/claude-opus-5", only),
+      row("script_host_b_writer", "anthropic/claude-opus-5", only),
+      row("script_story_editor", "anthropic/claude-opus-5", only),
+    ]);
+    assert.deepEqual(plan, [], "one distinct route means the single-writer path, not a fake contest");
   });
 
   await check("an uncredentialed route is excluded from the pool rather than assigned", () => {
