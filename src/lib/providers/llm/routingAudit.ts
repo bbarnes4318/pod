@@ -75,6 +75,16 @@ export interface RoleRouteRow {
   model: string | null;
   /** provider + normalized base URL + model. Equality here means "same call". */
   identity: string;
+  /**
+   * Every candidate's identity in order, joined.
+   *
+   * `identity` answers "who writes this on the healthy path", which is the
+   * right question for an audit and the wrong one for deciding whether two
+   * roles are genuinely the same writer. Two roles can share a primary and
+   * diverge completely the moment it stops answering — which is exactly what
+   * the premium profile provisions on purpose for the two host writers.
+   */
+  chainIdentity: string;
   /** Which resolution rung produced this route. */
   source: CandidateSource | "unresolved";
   /** The two variables an operator would set to route this role explicitly. */
@@ -105,6 +115,7 @@ export function roleRoutingTable(roles: readonly LLMRole[] = ALL_ROLES): RoleRou
         provider: "(none)",
         model: null,
         identity: `unresolved|${role}`,
+        chainIdentity: `unresolved|${role}`,
         source: "unresolved" as const,
         envProvider: providerKey,
         envModel: modelKey,
@@ -118,6 +129,7 @@ export function roleRoutingTable(roles: readonly LLMRole[] = ALL_ROLES): RoleRou
       provider: first.provider,
       model: first.model ?? null,
       identity: endpointIdentity(first),
+      chainIdentity: plan.candidates.map((c) => endpointIdentity(c)).join(" > "),
       source: first.source,
       envProvider: providerKey,
       envModel: modelKey,
@@ -508,6 +520,35 @@ export interface ColdOpenWriterRoute {
  * Round-robin rather than one-angle-per-role: with two routes the third angle
  * goes back to the first, which is better than dropping an angle, and it keeps
  * the assignment deterministic so a tournament can be reproduced from its record.
+ *
+ * DISTINCTNESS IS MEASURED ON THE WHOLE CHAIN, NOT THE PRIMARY.
+ *
+ * This used to de-duplicate on `identity`, the FIRST candidate. Under the
+ * premium profile both host writers lead with the same Anthropic model, so
+ * host B looked like a duplicate of host A and was dropped before the field
+ * was even assembled — three angles across two routes, and the round-robin
+ * handed the third back to host A.
+ *
+ * Dropping it bought NOTHING even on the healthy path: with host B gone, host
+ * A already wrote two of the three angles, so the same primary wrote two
+ * variants either way. What it cost showed up the moment that shared primary
+ * stopped answering. The two host chains are deliberately INVERTED behind it
+ * (A falls to Kimi-then-Z.ai, B to Z.ai-then-Kimi — see premiumChain in
+ * profiles.ts, where the inversion is what stops both hosts collapsing onto
+ * one voice), so on a degraded run they are not duplicates at all. They are
+ * the two different writers the profile went out of its way to provision.
+ *
+ * Measured on episode 9ea7ab48 (2026-09-01), Anthropic account dry: the
+ * tournament ran accusation and contradiction on moonshot/kimi-k3 at 593s and
+ * 832s, while the one angle that reached a different route finished on nvidia
+ * nemotron in 137s. The slowest writer took two of the three angles and the
+ * faster free rung the profile had reserved for host B was never called. The
+ * job died on its wall-clock budget.
+ *
+ * Comparing chains keeps every existing property — the healthy-path
+ * assignment is unchanged when two roles really do resolve identically all
+ * the way down, and one-provider deployments still fall to the single-writer
+ * path — while letting a degraded run use the field it actually has.
  */
 export function planColdOpenWriterRoutes(rows?: RoleRouteRow[]): ColdOpenWriterRoute[] {
   const table = rows ?? roleRoutingTable(COLD_OPEN_WRITER_ROLES);
@@ -516,8 +557,8 @@ export function planColdOpenWriterRoutes(rows?: RoleRouteRow[]): ColdOpenWriterR
   for (const role of COLD_OPEN_WRITER_ROLES) {
     const row = table.find((r) => r.role === role);
     if (!row || row.source === "unresolved" || !row.credentialPresent) continue;
-    if (seen.has(row.identity)) continue;
-    seen.add(row.identity);
+    if (seen.has(row.chainIdentity)) continue;
+    seen.add(row.chainIdentity);
     distinct.push(row);
   }
   if (distinct.length < 2) return [];
