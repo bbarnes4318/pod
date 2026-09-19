@@ -802,11 +802,32 @@ function freeIndependentChain(role: LLMRole): ProfileRoleChain {
  */
 function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
   switch (role) {
-    // ---- roles below rest on contract reachability only; no quality experiment
-    // Cheap, high-volume, structured. Reasoning explicitly off (roles.ts).
+    // ---- THE FOUNDATION RUNS ON THE MODEL THE EPISODE DESERVES.
+    //
+    // Every premium episode spends ~$1.30 of Opus writing dialogue from a
+    // research brief that, until 2026-09-19, was written by whichever free
+    // model answered. Measured over 2026-09-02..12: Z.ai rate-limited on 311
+    // of 501 classify calls and 61 of 121 generate calls, so nearly everything
+    // landed on Nemotron, and 82 of 311 briefs failed - 34 of them on the
+    // brief's own evidence contract (refs missing, refs outside the packet,
+    // empty arguments), which is instruction-following, not knowledge.
+    //
+    // A brief is a long-context, structured extraction under a strict citation
+    // contract. Sonnet is the right shape for that work and a different model
+    // from the Opus that writes the dialogue; Opus here would be 2.5x the
+    // price for a from-packet task. Total cost of moving these roles is on the
+    // order of $5/day at observed volume (~33 briefs, ~12 topic runs, ~50
+    // classifications). Nemotron stays behind every rung as the free fallback
+    // that has demonstrably completed this work.
+    //
+    // WHAT THIS DOES NOT DO: put facts in the packet that ingest never
+    // fetched. Routed web research is transient by design (evidenceRefs.ts);
+    // a stronger writer cites the packet better, it cannot cite past it.
     case "topic_generation":
-      return [ZAI_FLASH(), NV.nemotron()];
+      return [ANTHROPIC_SONNET(), NV.nemotron(), ZAI_FLASH()];
+    // Twelve-token outputs, fifty a day: Haiku, not Sonnet.
     case "topic_classification":
+      return [ANTHROPIC_HAIKU(), NV.nemotron(), ZAI_FLASH()];
     case "show_notes":
       // Nemotron replaces deepseek-v4-pro as the secondary. Without it these two
       // filter down to Z.ai alone, and Z.ai is the model that was rate-limited
@@ -820,7 +841,7 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
 
     // Judgement under comparison.
     case "topic_ranking":
-      return [NV.nemotron(), NIM_DEEPSEEK()];
+      return [ANTHROPIC_SONNET(), NV.nemotron(), NIM_DEEPSEEK()];
 
     // Long-context consolidation and traceable extraction.
     case "research_brief":
@@ -835,7 +856,11 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
       // from Nemotron, and reachable on a credential this deployment already
       // uses. The three-family property survives the retirement; the specific
       // model did not.
-      return [NV.nemotron(), ZAI_FLASH()];
+      //
+      // Sonnet leads as of 2026-09-19 (see topic_generation above for the
+      // measurements); Nemotron remains the free rung that has completed
+      // these briefs when nothing else would.
+      return [ANTHROPIC_SONNET(), NV.nemotron(), ZAI_FLASH()];
 
     // Literal transcript audit. deepseek-v4-pro held the PRIMARY here and is
     // now non-routable, so every continuity report was starting one guaranteed
