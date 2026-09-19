@@ -58,6 +58,24 @@ async function main() {
   const { PrismaClient } = await import("@prisma/client");
   const client = (n: string) => new PrismaClient({ datasources: { db: { url: urlFor(n) } } });
 
+  /**
+   * The rows 20260901000000_show_formats BACKFILLS — present in any real
+   * database, exactly as the leagues are. Executed from the migration file
+   * itself rather than copied here, so this fixture cannot drift from the
+   * backfill it is standing in for. Everything after the BACKFILL marker is
+   * the data section: two idempotent INSERTs and the Podcast UPDATE.
+   */
+  async function seedShowFormatBackfill(dbName: string) {
+    const sql = fs.readFileSync(path.join(__dirname, "..", "..", "prisma", "migrations", "20260901000000_show_formats", "migration.sql"), "utf8");
+    const marker = sql.indexOf("-- BACKFILL");
+    assert(marker !== -1, "show_formats migration has lost its BACKFILL marker");
+    const statements = sql.slice(marker).split(/;\s*\n/).map((x) => x.trim()).filter((x) => x && !/^(--.*\n?)+$/.test(x));
+    const db = client(dbName);
+    try {
+      for (const stmt of statements) await db.$executeRawUnsafe(stmt);
+    } finally { await db.$disconnect(); }
+  }
+
   /** The rows the seeding migrations INSERT — present in any real database. */
   async function seedLeagues(dbName: string) {
     const db = client(dbName);
@@ -172,6 +190,7 @@ async function main() {
     // dirty case below relies on. Seed them so this fixture represents an
     // actual production-shaped database rather than an empty shell.
     await seedLeagues("pushed_clean");
+    await seedShowFormatBackfill("pushed_clean");
     const c = audit("pushed_clean");
     check("Scenario C: a db-push database matching the current schema with clean data is adoptable", () => {
       assert(/ADOPTION POSSIBLE/.test(c.out), `verdict was:\n${c.out.slice(-900)}`);
