@@ -2,6 +2,7 @@ import type { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
 import { COLD_OPEN_MIN_WORDS, COLD_OPEN_MAX_WORDS } from "./productionInvariants";
+import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 
 export interface PrivateHostAgenda {
   speakerName: string;
@@ -558,6 +559,14 @@ export function turnPlanMaxTokens(totalWordTarget: number): number {
  */
 export const MAX_INTENT_WORDS = 25;
 
+/** An intent that is a concession, correction, or change of mind. Matched
+ *  against the plan, where an intent is a conversational ACTION, so the verb
+ *  is what to look for. The gate's own regex (productionInvariants) matches
+ *  the spoken PHRASES that result; this matches the instruction that
+ *  produces them. */
+export const CONCESSION_INTENT_RE =
+  /\b(concede|concession|conceding|admit|admits|admitting|correct(s|ed|ing)? (him|her|them|the|his|her|their)|change[sd]? (his|her|their) mind|back(s|ed)? down|give[sn]? (him|her|them) (that|the)|take[sn]? (it|that) back|was wrong|were wrong)\b/i;
+
 export interface TurnPlanValidatorOptions {
   /**
    * How many attempts the RHYTHM STATISTICS get to be fatal before they become
@@ -762,6 +771,20 @@ export function makeTurnPlanValidator(totalWordTarget: number, opts: TurnPlanVal
         `[TurnPlan] ACCEPTING a plan that misses the rhythm band after ${attempt} attempts — ${rhythm} ` +
           `The plan is structurally sound (turn count, intents and speakers all valid), so it is used rather ` +
           `than failing the episode over pacing. Expect a flatter conversation from this one.`
+      );
+    }
+
+    // A concession is a CONTENT rule, fatal on every attempt like the others: the
+    // production gate holds any script with no authored change of mind, and the
+    // writers only write the turns they are given. Nothing downstream can add
+    // one. This is the mismatch that held episode after episode on
+    // argumentProgression while every prompt in the pipeline told each host
+    // what NOT to concede and none asked for the concession the gate requires.
+    if (!turns.some((t) => CONCESSION_INTENT_RE.test(String((t as Record<string, unknown>).intent || "")))) {
+      return (
+        `No turn concedes, corrects, or changes a mind. At least one intent must be a genuine shift — ` +
+        `"concede the attendance point, then press on who signed off" is the shape. Two positions held ` +
+        `flat for the whole runtime is refused at the production gate.`
       );
     }
 
@@ -1013,6 +1036,7 @@ RULES:
 - Speakers are exactly: ${input.speakerNames.join(", ")}. Beat 0 (the cold open) is already written — start at beat 1.
 - RHYTHM MUST VARY, and this is measured three ways. (a) No more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker — trading single lines back and forth for a whole episode is ping-pong, not an argument. (b) No single run length may cover more than 70% of the plan: a script where almost every run is one turn is a metronome, and so is a script where almost every run is two. Both are rejected. (c) At most one run in five may be three turns long, and no host may hold four. Mix them: a single sharp reaction, a pair that lands a claim then presses it, occasionally a third turn when the pressure genuinely warrants it. When you do write three, the third turn must still be aimed at the other host — never a question the absent host is expected to answer. A one-word reaction is a legitimate turn.
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
+- AT LEAST ONE TURN MUST BE A CONCESSION, CORRECTION, OR CHANGE OF MIND, and its intent must say so ("concede the attendance point", "admit the timeline was wrong", "change his mind on the trade"). This is validated. An episode where two positions are held flat for the full runtime is refused at the production gate, after every writer has been paid; a plan with no concession turn is refused here instead.
 - Assign each evidence fact to at most ONE turn, on the beat that already owns it.
 - "intent" is the conversational ACTION: what this turn does to the previous one and what it changes. Never dialogue, never a quotable line. ONE SENTENCE, ${MAX_INTENT_WORDS} WORDS MAXIMUM — this is validated and a longer intent fails the whole plan. An intent is a direction for the writer, not a description of the turn: "concede the attendance point, then press on who signed off" is the shape. Do not explain why the turn matters, do not restate the beat, do not summarise the spine.
 - PLAN AT LEAST ${minimumTurnsFor(input.totalWordTarget)} TURNS. This is arithmetic, not a style note: ${input.totalWordTarget} spoken words at a natural mix of short reactions and full arguments averages about ${ASSUMED_WORDS_PER_TURN} words a turn. Fewer turns than that cannot fill the episode however long you make each one, and stretching turns to compensate produces two monologues instead of an argument. Count the turns before you return them.
@@ -1536,10 +1560,12 @@ export async function rewriteMovementByCharacter(input: {
       })
     );
     const byIndex = new Map(result.lines.map((line) => [line.lineIndex, line]));
+    const budget = new SegmentBudgetLedger(current);
     current = current.map((segment) => ({ ...segment, lines: (segment.lines || []).map((line) => {
       if (String(line.speakerName).toLowerCase() !== agenda.speakerName.toLowerCase()) return line;
       const rewrite = byIndex.get(line.lineIndex);
-      return rewrite ? { ...line, text: rewrite.text, tone: rewrite.tone || line.tone, energy: rewrite.energy || line.energy } : line;
+      if (!rewrite || !budget.accept(line.lineIndex, rewrite.text)) return line;
+      return { ...line, text: rewrite.text, tone: rewrite.tone || line.tone, energy: rewrite.energy || line.energy };
     }) }));
   }
   return current;

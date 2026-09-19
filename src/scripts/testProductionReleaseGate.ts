@@ -193,6 +193,37 @@ async function main() {
     assert.ok(failedInv.failedCriticalAxes.includes("mechanicalAlternation"), "mechanicalAlternation must fail");
   });
 
+  await check("a line the writer marked as conceding satisfies argumentProgression", () => {
+    // The gate held episode after episode on this axis while no prompt ever
+    // asked for a concession. The plan now allocates one, the writer marks it
+    // with the tone it already has, and the gate reads the structured signal
+    // rather than hoping the prose hits a fixed phrase list.
+    const line = (speakerName: string, text: string, tone?: string) => ({ speakerName, text, tone });
+    const flat = [
+      line(CAL, "The front office signed the extension before the medical came back, and the medical was bad."),
+      line(ZAB, "The medical was one opinion from one doctor, and the second opinion cleared him inside a week."),
+      line(CAL, "A week is exactly how long it takes to find a doctor who says what you paid to hear."),
+      line(ZAB, "Then name the doctor. You keep saying paid, so name who wrote the check."),
+      line(CAL, "The trainer who left in March. He said as much on his way out the door."),
+      line(ZAB, "He said the roster was thin. That is not the same sentence and you know it."),
+      line(CAL, "It is the same problem wearing a different jacket. Thin roster, rushed medical, same desk."),
+      line(ZAB, "The desk that also drafted the two starters carrying this team right now."),
+      line(CAL, "Two starters and a forty million dollar player who has not played since June."),
+      line(ZAB, "June is three months. Every contract in that building has a bad three months in it."),
+      line(CAL, "Not at that number. At that number three months is a season."),
+      line(ZAB, "Then we are arguing about the number, not the medical, and that is a different show."),
+      line(CAL, "It is this show. The number is why the medical mattered."),
+    ];
+    const segs = (lines: typeof flat) => [{ type: "topic", lines: lines.map((l, lineIndex) => ({ ...l, lineIndex })) }];
+    const flatInv = evaluateProductionInvariants(segs(flat), { activeHostNames: [CAL, ZAB] });
+    assert.ok(flatInv.failedCriticalAxes.includes("argumentProgression"),
+      "two positions held flat with no concession must still fail");
+    const conceded = flat.map((l, i) => (i === 11 ? { ...l, tone: "conceding" } : l));
+    const concededInv = evaluateProductionInvariants(segs(conceded), { activeHostNames: [CAL, ZAB] });
+    assert.ok(!concededInv.failedCriticalAxes.includes("argumentProgression"),
+      "the same words marked tone=conceding must satisfy the axis");
+  });
+
   await check("host arguing the opponent's position is detected", () => {
     const flat = failed.flatMap((s) => s.lines.map((l) => ({ speaker: l.speakerName, text: l.text })));
     const swaps = detectPositionSwaps(flat);

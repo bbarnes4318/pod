@@ -32,21 +32,28 @@
 // every rewrite in an over-budget segment would disable grounding exactly where
 // the writing is most likely to need it.
 
-import { COLD_OPEN_MAX_WORDS, spokenWords } from "./productionInvariants";
+import { COLD_OPEN_MAX_WORDS, COLD_OPEN_MIN_WORDS, spokenWords } from "./productionInvariants";
 
 /**
  * Segment types whose spoken-word total is a downstream HOLD, keyed to the same
- * constant the gate measures against. A type absent from this table has no hard
- * ceiling and its lines are bounded only by the per-line rewrite budget.
+ * constants the gate measures against. A type absent from this table has no
+ * hard bounds and its lines are bounded only by the per-line rewrite budget.
+ *
+ * BOTH ENDS. The first version of this ledger guarded only the ceiling,
+ * because the drift that motivated it went up (126 on a 120 max). The next
+ * episode drifted DOWN: a cold open that left the tournament at 80+ reached
+ * the gate at 71, shortened by a rewrite pass that had every right to shorten
+ * a line and no idea the segment had a floor. The gate holds on either side
+ * of the band, so the ledger has to refuse either direction.
  */
-export const SEGMENT_WORD_CEILINGS: Readonly<Record<string, number>> = {
-  cold_open: COLD_OPEN_MAX_WORDS,
+export const SEGMENT_WORD_BOUNDS: Readonly<Record<string, { min: number; max: number }>> = {
+  cold_open: { min: COLD_OPEN_MIN_WORDS, max: COLD_OPEN_MAX_WORDS },
 };
 
-export function segmentWordCeiling(segmentType: unknown): number | null {
+export function segmentWordBounds(segmentType: unknown): { min: number; max: number } | null {
   const key = typeof segmentType === "string" ? segmentType.trim() : "";
-  return Object.prototype.hasOwnProperty.call(SEGMENT_WORD_CEILINGS, key)
-    ? SEGMENT_WORD_CEILINGS[key]
+  return Object.prototype.hasOwnProperty.call(SEGMENT_WORD_BOUNDS, key)
+    ? SEGMENT_WORD_BOUNDS[key]
     : null;
 }
 
@@ -74,14 +81,14 @@ export interface SegmentBudgetRejection {
  * rewrite path already carries.
  */
 export class SegmentBudgetLedger {
-  private readonly ceilings = new Map<number, { ceiling: number; total: number; type: string }>();
+  private readonly ceilings = new Map<number, { ceiling: number; floor: number; total: number; type: string }>();
   private readonly lineToSegment = new Map<number, number>();
   private readonly lineWords = new Map<number, number>();
   private readonly rejections: SegmentBudgetRejection[] = [];
 
   constructor(segments: SegmentLike[] | null | undefined) {
     (Array.isArray(segments) ? segments : []).forEach((segment, segmentIndex) => {
-      const ceiling = segmentWordCeiling(segment?.type);
+      const bounds = segmentWordBounds(segment?.type);
       let total = 0;
       for (const line of segment?.lines || []) {
         const words = spokenWords(typeof line?.text === "string" ? line.text : "").length;
@@ -91,9 +98,10 @@ export class SegmentBudgetLedger {
           this.lineWords.set(line.lineIndex, words);
         }
       }
-      if (ceiling !== null) {
+      if (bounds !== null) {
         this.ceilings.set(segmentIndex, {
-          ceiling,
+          ceiling: bounds.max,
+          floor: bounds.min,
           total,
           type: typeof segment?.type === "string" ? segment.type : "",
         });
@@ -143,10 +151,12 @@ export class SegmentBudgetLedger {
     }
     const own = this.lineWords.get(lineIndex) ?? 0;
     const projected = budget.total - own + next;
-    // Over the ceiling is only fatal when it is also a REGRESSION. A segment
-    // that arrived over budget still gets its grounding, as long as each
-    // rewrite leaves it no worse than it found it.
-    if (projected > budget.ceiling && projected > budget.total) {
+    // Outside the band is only fatal when it is also a REGRESSION. A segment
+    // that arrived out of band still gets its grounding, as long as each
+    // rewrite leaves it no worse than it found it — in either direction.
+    const over = projected > budget.ceiling && projected > budget.total;
+    const under = projected < budget.floor && projected < budget.total;
+    if (over || under) {
       this.rejections.push({
         lineIndex,
         segmentType: budget.type,
