@@ -6,6 +6,8 @@ import { fetchArticleExcerpts } from "../research/articleText";
 import {
   selectUsableSources, serializeSourceForPacket, promoteCitedSources,
   sourceRulesBlock, PROMPT_EVIDENCE_TYPES, type PacketTopicSource,
+  RUMOR_KEYWORDS,
+  UNSOURCED_KEYWORDS,
 } from "../services/researchBriefService";
 import { dedupeRefs, sortRefs, type EvidenceReference } from "../services/evidenceRefs";
 import { e2eResearchResult } from "../research/e2eResearchStub";
@@ -2593,7 +2595,6 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       }
     }
 
-    const rumorKeywords = /\b(reported|rumored|sources say|likely|expected|could be|might be|insider|unnamed source)\b/i;
 
     // An EMPTY packet used to set hasEvidence=false, which SKIPPED every ref
     // check below and accepted each claim with `evidenceRefs: []`. That is how
@@ -2642,7 +2643,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
             continue;
           }
 
-          if (rumorKeywords.test(item.text)) {
+          if (RUMOR_KEYWORDS.test(item.text)) {
             rejectedClaimCount++;
             finalUnsafeClaims.push({
               claim: item.text,
@@ -2659,7 +2660,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           });
         } else {
           // If no evidence is stored in database, allow facts normally without ref checks
-          if (rumorKeywords.test(item.text)) {
+          if (RUMOR_KEYWORDS.test(item.text)) {
             rejectedClaimCount++;
             finalUnsafeClaims.push({
               claim: item.text,
@@ -2713,7 +2714,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           continue;
         }
 
-        if (rumorKeywords.test(ca.claim)) {
+        if (UNSOURCED_KEYWORDS.test(ca.claim)) {
           rejectedClaimCount++;
           finalUnsafeClaims.push({
             claim: ca.claim,
@@ -2729,7 +2730,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
           evidenceRefs: cleanRefs,
         });
       } else {
-        if (rumorKeywords.test(ca.claim)) {
+        if (UNSOURCED_KEYWORDS.test(ca.claim)) {
           rejectedClaimCount++;
           finalUnsafeClaims.push({
             claim: ca.claim,
@@ -2758,7 +2759,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       throw new Error("Brief generation failed: argumentForHostA or argumentForHostB is missing or empty.");
     }
 
-    if (rumorKeywords.test(argA) || rumorKeywords.test(argB)) {
+    if (UNSOURCED_KEYWORDS.test(argA) || UNSOURCED_KEYWORDS.test(argB)) {
       invalidArgumentEvidenceCount++;
       throw new Error("Brief generation failed: Host arguments contain unverified rumor or expected keywords.");
     }
