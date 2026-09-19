@@ -56,10 +56,13 @@ export interface EvidenceReference {
  *
  * The honest options were (a) persist routed results in a real model and cite
  * real row ids, or (b) treat routed research as transient enrichment and keep
- * it out of persistence. We take (b): it needs no new storage system, and (a)
- * would mean standing up a durable model for data we currently have no
- * retention policy for. Consequence, stated plainly: routed research can
- * INFORM a brief but can never be the thing that makes a topic eligible.
+ * it out of persistence. (b) was taken first, on the grounds that (a) would
+ * mean standing up a durable model. It did not: TopicSource already IS that
+ * model. As of 2026-09-19 routed research is written onto the topic as
+ * TopicSource rows (researchBriefService.persistResearchAsSources) and cited
+ * by real id. The `research` type and its transience rule remain ONLY for
+ * briefs written before that change: a persisted `research-3` from then still
+ * resolves to nothing and must still never make a topic eligible.
  */
 export const RESEARCH_IS_TRANSIENT = true;
 
