@@ -23,6 +23,7 @@ import {
 import {
   selectUsableSources, serializeSourceForPacket, buildAllowedKeys, validateClaimRefs,
   validateBriefResult, promoteCitedSources, sourceRulesBlock, PROMPT_EVIDENCE_TYPES,
+  RUMOR_KEYWORDS, UNSOURCED_KEYWORDS,
 } from "../lib/services/researchBriefService";
 import { evaluateHardGates, evaluateEvidenceIntegrity } from "../lib/services/topicEligibility";
 import { createAdminEpisodeFor, getAdminTopicsFor, type AdminCtx } from "../lib/services/adminRundown";
@@ -612,6 +613,14 @@ async function main() {
     const usable = selectUsableSources(db._sources, TOPIC);
     const packet = usable.map(serializeSourceForPacket);
     assert(!/[<>]/.test(JSON.stringify(packet)), "the packet must carry no markup");
+  });
+
+  check("an argument may hedge; a fact may not; neither may cite a source it cannot name", () => {
+    const hedge = "Dallas is expected to lean on the run and will likely start the rookie.";
+    const unsourced = "Sources say the rookie is being shopped.";
+    assert(!UNSOURCED_KEYWORDS.test(hedge), "hedging is opinion, not rumor — it must not fail a brief");
+    assert(UNSOURCED_KEYWORDS.test(unsourced), "an unnamed source is still rumor");
+    assert(RUMOR_KEYWORDS.test(hedge), "a FACT that hedges is not a fact");
   });
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
