@@ -136,6 +136,20 @@ export class SegmentBudgetLedger {
   }
 
   /**
+   * The fewest spoken words this line may shrink to without taking its
+   * segment under its floor; `null` when the segment has no floor. Never more
+   * than the line's current length, for the same reason maxWordsFor never
+   * returns less: an already-short segment gets "do not shrink", not an
+   * impossible target.
+   */
+  minWordsFor(lineIndex: number): number | null {
+    const budget = this.budgetFor(lineIndex);
+    if (!budget) return null;
+    const own = this.lineWords.get(lineIndex) ?? 0;
+    return Math.max(0, Math.min(own, own - (budget.total - budget.floor)));
+  }
+
+  /**
    * Commit a rewrite against the ledger.
    *
    * Returns false when the rewrite would push its segment past the ceiling

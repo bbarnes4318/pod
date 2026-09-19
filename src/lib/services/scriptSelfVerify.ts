@@ -33,6 +33,13 @@ export interface RewriteContext {
    * Absent means the line is bounded only by the per-line budget.
    */
   maxWords?: number;
+  /**
+   * Hard spoken-word FLOOR for this line, when its segment carries one. A
+   * grounding rewrite that removes a specific tends to get shorter; in a
+   * segment at its floor it must replace the specific, not just delete it,
+   * or the ledger refuses the rewrite and the unsourced line stands.
+   */
+  minWords?: number;
   attempt: number;
 }
 
@@ -181,7 +188,26 @@ export async function selfVerifyAndCorrect(
     initialFigures: string[];
     initialAttrs: string[];
     verdict: ReturnType<typeof verifyLineAgainstEvidence>;
+    /** Set when the violation is "no source", which has no figures to list. */
+    reason?: string;
   }
+
+  // A FACTUAL LINE WITH NO SOURCE IS A VIOLATION. Not "unverifiable" — a
+  // violation, sent to the rewriter like any other.
+  //
+  // Premium episode 2026-09-19: the writer marked its Steelers-history lines
+  // factual ("0-7, seven straight postseasons", "14-5 since 2001") and
+  // attached no evidence, because the packet had none. This pass checked
+  // each line's FIGURES against the full 5.5k-character corpus — where "7",
+  // "22" and "2016" appear somewhere — found nothing wrong, and reported
+  // 0/0. The publish gate then failed every one of those lines for empty
+  // evidenceRefs, after the episode was written, voiced and mixed. Figures
+  // matching a corpus is not sourcing; a citation that resolves to text is.
+  const sourceTextFor = (line: { evidenceRefs?: unknown }) => citedTextFor(line, opts.evidenceByRefId).trim();
+  const UNSOURCED =
+    "This line is marked as a factual claim but cites no evidence from the supplied packet. Either attach the exact " +
+    "evidenceRefs (copied from the evidence) that support every specific in it, or remove the specifics, make the " +
+    "line qualitative, and set isFactualClaim:false.";
   const violating: Tracked[] = [];
   for (const seg of Array.isArray(segments) ? segments : []) {
     if (!seg || !Array.isArray(seg.lines)) continue;
@@ -189,8 +215,10 @@ export async function selfVerifyAndCorrect(
       if (!line || line.isFactualClaim !== true || typeof line.text !== "string") continue;
       report.factualLinesChecked++;
 
-      const v = verifyLineAgainstEvidence(line.text, citedTextFor(line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
-      if (!v.verifiable || (v.unsupportedFigures.length === 0 && v.unsupportedAttributions.length === 0)) continue;
+      const cited = sourceTextFor(line);
+      const v = verifyLineAgainstEvidence(line.text, cited, opts.fullEvidenceText, opts.hostNames);
+      const figuresWrong = v.verifiable && (v.unsupportedFigures.length > 0 || v.unsupportedAttributions.length > 0);
+      if (cited && !figuresWrong) continue;
 
       report.linesWithViolations++;
       violating.push({
@@ -201,6 +229,7 @@ export async function selfVerifyAndCorrect(
         initialFigures: v.unsupportedFigures.map((f) => `${f.surface}(${f.value})`),
         initialAttrs: [...v.unsupportedAttributions],
         verdict: v,
+        reason: cited ? undefined : UNSOURCED,
       });
     }
   }
@@ -212,7 +241,9 @@ export async function selfVerifyAndCorrect(
       evidenceText: citedTextFor(t.line, opts.evidenceByRefId) || opts.fullEvidenceText,
       unsupportedFigures: t.verdict.unsupportedFigures,
       unsupportedAttributions: t.verdict.unsupportedAttributions,
+      semanticReason: t.reason,
       maxWords: budget.maxWordsFor(t.line.lineIndex) ?? undefined,
+      minWords: budget.minWordsFor(t.line.lineIndex) ?? undefined,
       attempt,
     }));
     let results: Map<number, { text: string; evidenceRefs?: any[]; isFactualClaim?: boolean }>;
@@ -239,11 +270,16 @@ export async function selfVerifyAndCorrect(
           continue;
         }
         applyRewrite(t.line, result, t.before);
-        t.verdict = verifyLineAgainstEvidence(t.line.text, citedTextFor(t.line, opts.evidenceByRefId), opts.fullEvidenceText, opts.hostNames);
-        if (!t.verdict.verifiable || (t.verdict.unsupportedFigures.length === 0 && t.verdict.unsupportedAttributions.length === 0)) {
+        const nowCited = sourceTextFor(t.line);
+        t.verdict = verifyLineAgainstEvidence(t.line.text, nowCited, opts.fullEvidenceText, opts.hostNames);
+        const nowWrong = t.verdict.verifiable && (t.verdict.unsupportedFigures.length > 0 || t.verdict.unsupportedAttributions.length > 0);
+        // Fixed when it is no longer a factual claim, or is now sourced and the
+        // source backs its figures. Still unsourced => still a violation.
+        if (t.line.isFactualClaim !== true || (nowCited && !nowWrong)) {
           t.resolved = true;
           continue;
         }
+        t.reason = nowCited ? undefined : UNSOURCED;
       }
       next.push(t); // unrewritten or still violating — retry next round
     }
@@ -284,6 +320,7 @@ export async function selfVerifyAndCorrect(
             unsupportedAttributions: [],
             semanticReason: f.reason,
             maxWords: budget.maxWordsFor(line.lineIndex) ?? undefined,
+            minWords: budget.minWordsFor(line.lineIndex) ?? undefined,
             attempt: report.semantic.rounds,
           }))
         );

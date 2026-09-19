@@ -475,8 +475,15 @@ export async function rewriteLinesForGrounding(
         budget < rewriteWordBudget(context.line.text)
           ? " — this line is in a segment at its spoken-word ceiling, so it may only get SHORTER"
           : "";
+      // A segment at its FLOOR is the mirror case: removing a specific must
+      // replace it with something spoken, not leave a hole, or the rewrite
+      // is refused and the unsourced line stays.
+      const floor =
+        typeof context.minWords === "number" && context.minWords > 0
+          ? ` — and NO SHORTER than ${Math.min(context.minWords, current)} words: this line is in a segment at its spoken-word floor, so replace an unsupported specific with a qualitative phrase of similar length rather than deleting it`
+          : "";
       return `LINE ${context.line.lineIndex} — SPEAKER: ${context.line.speakerName}
-  WORD BUDGET: ${budget} words maximum (the current line is ${current})${tightened}
+  WORD BUDGET: ${budget} words maximum (the current line is ${current})${tightened}${floor}
   CURRENT TEXT: ${JSON.stringify(context.line.text)}
   VIOLATIONS:
 ${figures || "  (no figure violations)"}
