@@ -87,7 +87,10 @@ function main() {
         turns.push({
           turnIndex: turns.length, beatIndex: 1,
           speakerName: speaker === 0 ? "Bernadette Zabala" : "Cal Mercer",
-          intent: "press the previous claim", factRefs: [], targetWords: 20,
+          // One concession per plan: the validator now refuses a plan with none,
+          // because the production gate refuses the script it would produce.
+          intent: turns.length === 0 ? "concede the attendance point, then press on who signed off" : "press the previous claim",
+          factRefs: [], targetWords: 20,
         });
       }
       speaker = 1 - speaker;
@@ -145,6 +148,22 @@ function main() {
     );
   });
 
+  check("a plan with no concession is refused on every attempt", () => {
+    // The gate holds any script with no authored change of mind, and the
+    // writers only write the turns they are given — so a plan with no
+    // concession turn is an episode that will be refused after every writer
+    // has been paid. Content rule: fatal, never softened.
+    const budgeted = makeTurnPlanValidator(1200, { rhythmAttempts: 0 });
+    const flat = plan([2, 1, 2, 3, 2, 2, 1, 2, 3, 2, 1, 2, 2, 3, 2, 1, 2, 2, 3, 2, 1, 2, 3, 2, 2, 1, 2, 3, 2, 1]);
+    for (const t of flat.turns) t.intent = "press the previous claim";
+    for (let i = 0; i < 3; i++) {
+      const err = budgeted(flat);
+      assert(err !== null && /concede/i.test(err), `attempt ${i + 1} must refuse a plan with no concession, got: ${err}`);
+    }
+    flat.turns[5].intent = "admit the timeline was wrong, then move to the signing";
+    assert(budgeted(flat) === null, `one concession intent must satisfy it, got: ${budgeted(flat)}`);
+  });
+
   check("the budget relaxes PACING only — content rules stay fatal for ever", () => {
     const budgeted = makeTurnPlanValidator(1200, { rhythmAttempts: 2 });
     const fourInARow = plan([4, 1, 2, 1, 3, 1, 2, 1, 2, 1, 3, 1, 2, 2, 1, 3, 1, 2, 1, 2, 1, 3, 1, 2, 1, 2]);
@@ -175,7 +194,7 @@ function main() {
         turnIndex: i,
         beatIndex: 1 + (i % 5),
         speakerName: i % 2 === 0 ? "Bernadette Zabala" : "Cal Mercer",
-        intent: "press the previous claim",
+        intent: i === 0 ? "concede the attendance point, then press on who signed off" : "press the previous claim",
         factRefs: i % 4 === 0 ? [{ type: "newsItem", id: `n${i}` }] : [],
         targetWords: wordsAt(i),
       });

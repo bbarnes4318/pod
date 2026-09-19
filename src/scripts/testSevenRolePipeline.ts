@@ -363,7 +363,10 @@ const defaultResponder: Responder = (kind, options) => {
           turnIndex: index,
           beatIndex: turn.beatIndex,
           speakerName: turn.speakerName,
-          intent: `Turn ${index}: press the point the previous turn left open.`,
+          intent:
+            index === 1
+              ? `Turn ${index}: concede the previous point, then press what it leaves open.`
+              : `Turn ${index}: press the point the previous turn left open.`,
           factRefs: [],
           targetWords: 20,
         })),
@@ -645,7 +648,9 @@ async function main(): Promise<void> {
           intent:
             index === 0
               ? `Press the point. Remember: ${SENTINEL_B} protected belief`
-              : `Turn ${index}: press the point the previous turn left open.`,
+              : index === 1
+                ? `Turn ${index}: concede the previous point, then press what it leaves open.`
+                : `Turn ${index}: press the point the previous turn left open.`,
           factRefs: [],
           targetWords: 20,
         })),

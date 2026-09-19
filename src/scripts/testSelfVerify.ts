@@ -148,6 +148,40 @@ async function main() {
     assert(r.semantic.linesUnresolved === 1, `expected 1 unresolved, got ${r.semantic.linesUnresolved}`);
   });
 
+  await check("a factual line with NO source is a violation, even when its figures appear in the corpus", async () => {
+    // Premium episode 2026-09-19: "0-7, seven straight postseasons" was marked
+    // factual with no evidenceRefs. Its figures matched digits somewhere in the
+    // corpus, so this pass reported 0/0 and the publish gate failed the line
+    // for empty refs after the episode was voiced. Sourcing is a citation
+    // that resolves, not a number that happens to occur.
+    const segs = [{ lines: [
+      { lineIndex: 0, speakerName: "Zabala", isFactualClaim: true, text: "They are 48-38 and second in the East.", evidenceRefs: [] }, // true, but unsourced
+      { lineIndex: 1, speakerName: "Mercer", isFactualClaim: true, text: "They're 48-38, that's real.", evidenceRefs: [{ type: "game", id: "f1" }] }, // sourced
+    ] }];
+    const seen: string[] = [];
+    const rewrite = batchOf((ctx) => {
+      seen.push(String(ctx.semanticReason || ""));
+      // The honest fix: go qualitative and drop the flag.
+      return Promise.resolve({ text: "They've been one of the better teams in the East.", isFactualClaim: false, evidenceRefs: [] });
+    });
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId, fullEvidenceText, hostNames, rewrite, maxAttempts: 2 });
+    assert(r.linesWithViolations === 1, `only the unsourced line is a violation, got ${r.linesWithViolations}`);
+    assert(r.linesCorrected === 1 && r.linesUnresolved === 0, `going qualitative must resolve it: ${JSON.stringify(r)}`);
+    assert(/cites no evidence/.test(seen[0] || ""), `the rewriter must be told WHY, got: ${seen[0]}`);
+    assert(segs[0].lines[0].isFactualClaim === false, "the line is no longer a factual claim");
+    assert(segs[0].lines[1].text === "They're 48-38, that's real.", "the sourced line is untouched");
+  });
+
+  await check("an unsourced line that stays factual and unsourced after rewrite is still unresolved", async () => {
+    const segs = [{ lines: [
+      { lineIndex: 0, speakerName: "Zabala", isFactualClaim: true, text: "They are 48-38.", evidenceRefs: [] },
+    ] }];
+    // A rewriter that reworded but neither sourced it nor dropped the flag.
+    const rewrite = batchOf(() => Promise.resolve({ text: "The record is 48 and 38.", isFactualClaim: true, evidenceRefs: [] }));
+    const r = await selfVerifyAndCorrect(segs, { evidenceByRefId, fullEvidenceText, hostNames, rewrite, maxAttempts: 2 });
+    assert(r.linesUnresolved === 1, `rewording without sourcing is not a fix: ${JSON.stringify(r)}`);
+  });
+
   await check("FIX 3: a rewrite preserves the trailing em-dash of an interruption predecessor", async () => {
     const segs = [{ lines: [{ lineIndex: 0, speakerName: "Zabala", isFactualClaim: true, text: "Five homers, and that's—", evidenceRefs: [{ type: "game", id: "f1" }] }] }];
     const evByRef = new Map<string, string>([["f1", "Detroit hit three home runs."]]);

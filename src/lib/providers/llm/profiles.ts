@@ -625,8 +625,20 @@ function premiumChain(role: LLMRole): ProfileRoleChain {
 
     // ---- judgement. Distinct primaries, and neither chain contains a model
     // that writes anything it grades.
+    //
+    // HAIKU CANNOT GRADE OPUS. Premium episode 2026-09-19: Opus wrote two hosts
+    // with different dialects, different rhythm and different weapons (one
+    // keeps paper and says "ain't", the other prosecutes and says "answer it
+    // straight"), conceded to each other five times on the page, and Haiku
+    // scored it hostDistinctness 3/10, singleModelSmell 2/10,
+    // spokenNaturalness 2/10 — 28/100, held. A judge that cannot hear two
+    // voices in that transcript is not strict, it is broken, and every
+    // premium episode was being graded by it. The judge has to be at least
+    // as capable as the writer it grades or the tier's promise is decided by
+    // its weakest model. Sonnet is a different model from the Opus writers
+    // and was already this chain's legacy backup; it moves to the front.
     case "quality_judge":
-      return [ANTHROPIC_HAIKU(), GROQ_OSS_SMALL()];
+      return [ANTHROPIC_SONNET(), ANTHROPIC_HAIKU(), GROQ_OSS_SMALL()];
     case "cold_open_judge":
       return [GROQ_OSS_SMALL(), ANTHROPIC_HAIKU()];
 

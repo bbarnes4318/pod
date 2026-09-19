@@ -159,6 +159,19 @@ function main() {
     assert(ledger.accept(1, words(30)) === false, "a rewrite that deepens the overrun must be refused");
   });
 
+  check("the band has a FLOOR, and a rewrite may not shrink a cold open through it", () => {
+    // The next episode after the ceiling fix drifted the other way: in band at
+    // the tournament, 71 words at the gate, shortened by the dialogue director.
+    const ledger = new SegmentBudgetLedger(coldOpenOf([20, 20, 20, 21]));
+    assert(ledger.accept(0, words(19)) === true, "81 -> 80 lands ON the floor and is allowed");
+    assert(ledger.accept(1, words(15)) === false, "80 -> 75 crosses the floor and must be refused");
+    assert(ledger.accept(1, words(20)) === true, "an equal-length rewrite is still fine");
+    // Already under: may not get worse, may still improve.
+    const short = new SegmentBudgetLedger(coldOpenOf([18, 18, 18, 17]));
+    assert(short.accept(0, words(14)) === false, "71 -> 67 deepens the shortfall and must be refused");
+    assert(short.accept(0, words(22)) === true, "71 -> 75 moves toward the band and is allowed");
+  });
+
   check("both rewrite budgets defer to the segment ceiling", () => {
     const line = "They cut their scouting operation in half and called it modernization in 1993.";
     assert(effectiveRewriteBudget(line) === rewriteWordBudget(line), "no ceiling means the per-line budget stands");

@@ -51,6 +51,7 @@ export interface ScriptLineLike {
   lineIndex?: number;
   speakerName?: string;
   text?: string;
+  tone?: string;
 }
 
 export interface ScriptSegmentLike {
@@ -107,14 +108,14 @@ function cosineish(a: Set<string>, b: Set<string>): number {
   return inter / Math.sqrt(a.size * b.size);
 }
 
-function flatten(segments: ScriptSegmentLike[]): Array<{ speaker: string; text: string; segType: string }> {
-  const out: Array<{ speaker: string; text: string; segType: string }> = [];
+function flatten(segments: ScriptSegmentLike[]): Array<{ speaker: string; text: string; segType: string; tone: string }> {
+  const out: Array<{ speaker: string; text: string; segType: string; tone: string }> = [];
   for (const seg of segments || []) {
     for (const line of seg?.lines || []) {
       const speaker = (line?.speakerName || "").trim();
       const text = (line?.text || "").trim();
       if (!speaker || !text) continue;
-      out.push({ speaker, text, segType: (seg?.type || "").trim() });
+      out.push({ speaker, text, segType: (seg?.type || "").trim(), tone: (line?.tone || "").trim().toLowerCase() });
     }
   }
   return out;
@@ -286,8 +287,19 @@ export function evaluateProductionInvariants(
   // Require at least one authored movement: a concession, a correction, or an
   // explicit change of mind. Without one, the episode is two positions held
   // flat for the full runtime, which is what shipped.
-  const movementRe = /\b(you'?re right|fair point|i'?ll give you|okay,? i|i was wrong|that changes|i hadn'?t|point taken|i'?ll concede|actually,? no|i take that back|alright,? then)\b/i;
-  const hasMovement = lines.some((l) => movementRe.test(l.text));
+  // A line the writer MARKED as conceding counts, not only one that happens to
+  // hit a fixed phrase list. "conceding" is already in the tone enum every
+  // writer emits, and the turn plan now has to allocate a concession turn, so
+  // the structured signal is the reliable one; the phrases stay as a backstop
+  // for a writer that conceded in prose and forgot to say so in the tone.
+  // The five concessions in the 2026-09-19 transcript that the original list
+  // missed: "Granted. No argument, I'll sign it." / "Fine — receipt, he's the
+  // receipt." / "I can't name one. Nobody can." / "no. You keep it." /
+  // "I'm not gonna argue that one." A phrase list will always miss some; that
+  // is why the tone is the primary signal now. But these are common enough
+  // shapes of giving ground that the backstop should know them.
+  const movementRe = /\b(you'?re right|fair point|i'?ll give you|okay,? i|i was wrong|that changes|i hadn'?t|point taken|i'?ll concede|actually,? no|i take that back|alright,? then|granted|no argument|i'?ll sign (it|that)|you keep it|not (gonna|going to) argue|i can'?t name one|fine,? (he'?s|she'?s|it'?s|that'?s|you'?re))\b/i;
+  const hasMovement = lines.some((l) => l.tone === "conceding" || movementRe.test(l.text));
   if (lines.length >= 12 && !hasMovement) {
     findings.push({
       axis: "argumentProgression",

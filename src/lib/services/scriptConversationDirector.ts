@@ -1,4 +1,5 @@
 import { stripAudioTags } from "../audio/speechText";
+import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 import { withLlmStage } from "../providers/llm/costLedger";
 
 interface StructuredLlm {
@@ -297,12 +298,16 @@ function validateRewritePayload(value: RewritePayload): string | null {
 
 function applyRewrites(segments: ScriptSegment[], payload: RewritePayload): { segments: ScriptSegment[]; rewrittenLines: number } {
   const byIndex = new Map(payload.lines.map((line) => [line.lineIndex, line]));
+  // The director rewrites EVERY line and had no length bound at all — which is
+  // how a cold open that left the tournament in band reached the gate at 71.
+  const budget = new SegmentBudgetLedger(segments);
   let rewrittenLines = 0;
   const next = segments.map((segment) => ({
     ...segment,
     lines: (segment.lines || []).map((line) => {
       const rewrite = byIndex.get(line.lineIndex);
       if (!rewrite) return line;
+      if (!budget.accept(line.lineIndex, rewrite.text)) return line;
       rewrittenLines++;
       return {
         ...line,
