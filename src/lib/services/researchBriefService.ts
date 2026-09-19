@@ -41,6 +41,23 @@ export const PROMPT_EVIDENCE_TYPES =
 export const PROMPT_DURABLE_EVIDENCE_TYPES =
   `"game" | "newsItem" | "injury" | "oddsSnapshot" | "teamStat" | "playerStat" | "topicSource"`;
 
+/** Language that marks a FACT or STAT as unverified. A fact that hedges is not a fact. */
+export const RUMOR_KEYWORDS = /\b(reported|rumored|sources say|likely|expected|could be|might be|insider|unnamed source)\b/i;
+
+/**
+ * Language that marks an ARGUMENT as resting on a source it cannot name.
+ *
+ * Deliberately narrower than RUMOR_KEYWORDS. An argument is opinion, and
+ * "likely" / "expected" are how an analyst voices one — they are hedging,
+ * not rumor, and the prompt never told the model to avoid them. Grounding
+ * is enforced separately by the evidence-ref check, so the only thing left
+ * for this to catch is an argument leaning on a source that does not exist.
+ *
+ * 2026-09-02..12: the wider regex on host arguments threw away 17 entire
+ * briefs — a fifth of all brief failures — for ordinary analytical hedging.
+ */
+export const UNSOURCED_KEYWORDS = /\b(reported|rumored|sources say|insider|unnamed source)\b/i;
+
 export interface PacketTopicSource {
   id: string;
   canonicalUrl: string;
