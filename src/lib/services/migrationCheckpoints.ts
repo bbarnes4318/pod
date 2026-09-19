@@ -221,6 +221,18 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     invariants: [],
     note: "Additive JobLog.queueJobKey (unique, nullable) + attempt. Makes a JobLog row the identity of one ENQUEUE rather than one attempt, so `attempts: 3` stops writing three rows per run. Existing rows keep queueJobKey NULL; Postgres permits many NULLs under a UNIQUE index, so no backfill is needed.",
   },
+  {
+    name: "20260901000000_show_formats",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "classic_debate_format_seeded",
+      "classic_debate_has_segments",
+      "every_show_has_a_format",
+      "format_segments_have_a_format",
+    ],
+    note: "ShowFormat + FormatSegment as first-class data. BACKFILLS the two-host generic 'classic-debate' format (plus its three segments) and points EVERY existing Podcast at it. A matching schema does NOT prove the backfill ran: the tables can exist while ShowFormat is empty and every Podcast.formatId is NULL, which is exactly the state that makes formats look optional. The seven authored formats are NOT seeded here — they come from `npm run seed:formats`, which is deliberate and is not run on deploy.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -604,6 +616,41 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
     }
   } else {
     add("episodes_have_configuration_source", false, "Episode does not exist", true);
+  }
+
+  // --- 20260901000000_show_formats ---------------------------------------
+  // The tables can exist while ShowFormat is empty and every Podcast.formatId
+  // is NULL. That state looks fine to a schema diff and is exactly the state
+  // in which formats silently do nothing.
+  if (await tableExists(db, "ShowFormat") && await tableExists(db, "FormatSegment")) {
+    const classic = await one(db, `SELECT COUNT(*)::int AS n FROM "ShowFormat" WHERE "slug" = 'classic-debate'`);
+    add("classic_debate_format_seeded", classic === 1,
+      classic === 1 ? "the backfilled classic-debate format exists" : `expected exactly 1 classic-debate format, found ${classic}`);
+
+    const classicSegments = await one(db, `SELECT COUNT(*)::int AS n FROM "FormatSegment" s JOIN "ShowFormat" f ON f."id" = s."formatId" WHERE f."slug" = 'classic-debate'`);
+    add("classic_debate_has_segments", classicSegments === 3,
+      classicSegments === 3 ? "classic-debate has its three segments" : `classic-debate has ${classicSegments} segment(s), expected 3`);
+
+    const orphanSegments = await one(db, `SELECT COUNT(*)::int AS n FROM "FormatSegment" s LEFT JOIN "ShowFormat" f ON f."id" = s."formatId" WHERE f."id" IS NULL`);
+    add("format_segments_have_a_format", orphanSegments === 0,
+      orphanSegments > 0 ? `${orphanSegments} segment(s) point at no format` : "every segment belongs to a format");
+  } else {
+    for (const name of ["classic_debate_format_seeded", "classic_debate_has_segments", "format_segments_have_a_format"]) {
+      add(name, false, "ShowFormat/FormatSegment do not exist — the migration never ran", true);
+    }
+  }
+
+  if (await tableExists(db, "Podcast")) {
+    const hasCol = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_name='Podcast' AND column_name='formatId'`);
+    if (hasCol === 0) {
+      add("every_show_has_a_format", false, "Podcast.formatId does not exist — the migration never ran", true);
+    } else {
+      const unformatted = await one(db, `SELECT COUNT(*)::int AS n FROM "Podcast" WHERE "formatId" IS NULL`);
+      add("every_show_has_a_format", unformatted === 0,
+        unformatted > 0 ? `${unformatted} show(s) have no format — the backfill did not reach them` : "every show points at a format");
+    }
+  } else {
+    add("every_show_has_a_format", false, "Podcast does not exist", true);
   }
 
   return out;

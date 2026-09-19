@@ -429,6 +429,128 @@ model ResearchBrief {
   sourceNotesUsed         String?
 }
 
+// ---------------------------------------------------------------------------
+// Show formats — the rundown a show actually runs to.
+//
+// This is NOT the seat/role registry in src/lib/formats/showFormatRegistry.ts.
+// That registry answers "how many chairs and who sits in them"; a ShowFormat
+// answers "what happens, in what order, for how long, and with what device".
+// The two are orthogonal: a format's floorSplit names seats (seatA/seatB), the
+// registry says who those seats are.
+//
+// Formats are DATA, not code, because producers change a rundown far more often
+// than they change the pipeline. They are versioned and snapshotted rather than
+// referenced, so editing a live format can never rewrite how a finished episode
+// was built. See docs/SHOW_FORMATS.md.
+
+/// How a format consumes the episode's topic list.
+///   SINGLE    — one topic carries the whole run.
+///   MULTI     — a fresh topic per topic-bearing segment.
+///   CARRYOVER — one topic threads forward, re-entered from a new angle.
+enum FormatTopicMode {
+  SINGLE
+  MULTI
+  CARRYOVER
+}
+
+/// DRAFT formats are authorable and seedable but MUST NOT be selectable for
+/// generation — a DRAFT format is one whose production requirements do not yet
+/// exist (open-line needs a caller voice pool that has never been built).
+enum FormatStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
+/// The structural bit a segment is built around. NONE = ordinary talk.
+enum FormatSegmentDevice {
+  NONE
+  VERDICT
+  PICK
+  SCORE
+  CALLER
+  RETRACTION
+  STEELMAN_TRANSFER
+}
+
+model ShowFormat {
+  id      String @id @default(uuid())
+  /// Stable, human-authored identity. This — not the uuid — is what an Episode
+  /// snapshot records, so a format can be rebuilt without orphaning history.
+  slug    String @unique
+  name    String
+  tagline String
+
+  topicMode    FormatTopicMode
+  /// Target total runtime. The sum of the segments' seconds is checked against
+  /// this at seed time; a format whose segments do not add up is a bug, not a
+  /// rounding preference.
+  totalSeconds Int
+
+  coldOpenStyle String
+  signOffStyle  String
+  /// Per-segment target intensity, 1-10, keyed by FormatSegment.key.
+  /// Shape: { "<segment key>": 1..10 }.
+  intensityCurve Json
+
+  status FormatStatus @default(DRAFT)
+  /// Bumped by hand whenever the rundown changes meaning. Frozen into
+  /// Episode.formatVersion at generation time.
+  version Int @default(1)
+
+  segments  FormatSegment[]
+  /// Shows currently running this format. Restricted on delete: retire a
+  /// format, never delete one out from under a show.
+  shows     Podcast[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([status])
+}
+
+model FormatSegment {
+  id       String     @id @default(uuid())
+  formatId String
+  format   ShowFormat @relation(fields: [formatId], references: [id], onDelete: Cascade)
+
+  /// Rundown position, 0-based. Unique per format so a rundown can never have
+  /// two segments claiming the same slot.
+  order       Int
+  /// Stable key used by intensityCurve and by anything that needs to find a
+  /// segment without depending on its position.
+  key         String
+  displayName String
+  seconds     Int
+
+  /// Share of the segment's floor time per seat: { "seatA": 0.6, "seatB": 0.4 }.
+  /// The two values must sum to 1 (checked at seed time).
+  floorSplit Json
+  /// How the talk moves in this segment:
+  /// { interruptionRate, backchannelRate, targetTurnWords, allowConsecutiveTurns }.
+  turnProfile Json
+  /// Verifiable claims per MINUTE this segment is expected to carry. A cold
+  /// open runs near 0; a ledger segment runs high.
+  evidenceDensity Float
+
+  device       FormatSegmentDevice @default(NONE)
+  /// Device-specific settings. Null when device is NONE.
+  deviceConfig Json?
+
+  /// What ends this segment, in producer language — the condition the script
+  /// engine reads to know the segment is done rather than merely out of time.
+  exitCondition String
+  /// Free-text direction for the writer. Never host persona text: formats
+  /// describe the show, personas describe the people.
+  producerNote  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([formatId, order])
+  @@unique([formatId, key])
+  @@index([formatId])
+}
+
 // A user-defined show: the saved recipe (verticals, teams, hosts, segment
 // count, cadence) that episodes are generated from — one-time or recurring.
 model Podcast {
@@ -473,6 +595,18 @@ model Podcast {
   // Bumped on every accepted configuration change (optimistic concurrency).
   configVersion Int     @default(1)
 
+  // --- Show format ------------------------------------------------------
+  // The rundown this show runs to. NULLABLE IN THE DATABASE ONLY: the
+  // migration backfills every existing row to the "classic-debate" format, and
+  // the creation path requires a format for new shows. It stays nullable so a
+  // format row can never be the thing that makes a show unreadable.
+  //
+  // Distinct from `editorialConfig.format`, which is the seat/role registry id
+  // (two_host_debate, solo_commentary, ...). That says who is in the chairs;
+  // this says what they do with the hour.
+  formatId      String?
+  format        ShowFormat? @relation(fields: [formatId], references: [id], onDelete: Restrict)
+
   editorialConfig  PodcastEditorialConfig?
   productionConfig PodcastProductionConfig?
   publishingConfig PodcastPublishingConfig?
@@ -486,6 +620,7 @@ model Podcast {
   @@index([cadence])
   @@index([ownerId])
   @@index([visibility])
+  @@index([formatId])
 }
 
 // One-to-one editorial settings: WHAT a show covers and HOW its script is shaped.
@@ -714,6 +849,23 @@ model Episode {
   // Which registered format built this episode. two_host_debate is the
   // backfilled value for every pre-format episode — that IS what built them.
   formatId                    String               @default("two_host_debate")
+  // --- Show format snapshot ----------------------------------------------
+  // The fully resolved ShowFormat + its ordered FormatSegments, frozen at
+  // generation time. THIS IS THE ONLY THING THE PIPELINE READS. An episode
+  // must never re-read a mutable ShowFormat row after the fact: formats are
+  // edited by producers between runs, and an episode that re-resolved its
+  // rundown would silently change what it claims it was.
+  //
+  // Nullable for every episode generated before formats existed; readers treat
+  // null as "no rundown was in force", not as "look it up now".
+  //
+  // NOTE the three format-ish columns on this row are three different things:
+  //   formatId      — seat/role registry id (showFormatRegistry.ts)
+  //   formatSlug    — ShowFormat.slug, the rundown
+  //   formatVersion — ShowFormat.version at generation time
+  formatSnapshot              Json?
+  formatSlug                  String?
+  formatVersion               Int?
   castMembers                 EpisodeCastMember[]
   // --- Immutable configuration snapshot (Prompt 5) -----------------------
   // Frozen at creation so a later edit to the Podcast can never rewrite how a
