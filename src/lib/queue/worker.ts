@@ -4,7 +4,7 @@ import { assertProductionEnv, describeRedisConnection, getOddsApiKeyStatus, getR
 import { runResearchRouting } from "../research/source-router";
 import { fetchArticleExcerpts } from "../research/articleText";
 import {
-  selectUsableSources, serializeSourceForPacket, promoteCitedSources,
+  selectUsableSources, serializeSourceForPacket, promoteCitedSources, persistResearchAsSources,
   sourceRulesBlock, PROMPT_EVIDENCE_TYPES, type PacketTopicSource,
   RUMOR_KEYWORDS,
   UNSOURCED_KEYWORDS,
@@ -2337,18 +2337,25 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
       resolvedGamesCount: resolvedGames.length,
     });
 
-    // Dynamically insert Exa research results into topicEvidenceMap as valid "research" refs.
-    // These are TRANSIENT: nothing stores them, so a persisted `research-3`
-    // resolves to nothing once this job ends. They may inform the brief, but
-    // validateBriefResult strips them from sourceIds, and the eligibility gate
-    // refuses to count them as durable evidence.
-    for (let idx = 0; idx < researchResults.length; idx++) {
-      topicEvidenceMap.set(`research-${idx + 1}`, "research");
+    // Routed research used to enter the packet as transient `research-N` ids
+    // that nothing stored, so the brief could read them and never cite them.
+    // It is now written onto the topic as TopicSource rows - the same text,
+    // the same table an operator import lands in - and picked up below with
+    // the other sources. See persistResearchAsSources for the reasoning.
+    try {
+      const persisted = await persistResearchAsSources(db as never, topicId, researchResults);
+      console.log(
+        `[Worker] Routed research -> topic sources: ${persisted.written} new, ${persisted.duplicate} already on the topic, ${persisted.unusable} unusable.`
+      );
+    } catch (err: unknown) {
+      // A write failure must not cost the brief; the research simply is not
+      // citable this run, which is exactly what it was before.
+      console.warn(`[Worker] Persisting routed research failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Operator-imported sources for THIS topic. selectUsableSources drops
-    // failed/incomplete imports and anything belonging to another topic — a
-    // fetched URL is not automatically usable material.
+    // Every source on THIS topic - operator-imported and routed alike.
+    // selectUsableSources drops failed/incomplete rows and anything belonging
+    // to another topic: a fetched URL is not automatically usable material.
     const sourceRows = await db.topicSource.findMany({ where: { topicId } });
     const usableSources = selectUsableSources(sourceRows as unknown as PacketTopicSource[], topicId);
     for (const s of usableSources) topicEvidenceMap.set(s.id, "topicSource");
@@ -2375,13 +2382,8 @@ async function handleResearchBriefGeneration(job: Job<ResearchBriefJobData>) {
         classification,
       },
       evidence: {
-        research: researchResults.map((r, idx) => ({
-          id: `research-${idx + 1}`,
-          title: r.title,
-          url: r.url,
-          highlights: r.highlights,
-          snippet: r.snippet,
-        })),
+        // Routed research is in `topicSources` now, with real ids. Nothing is
+        // listed twice: a result that was unusable as a source was not evidence.
         games: resolvedGames.map((g) => ({
           id: g.id,
           homeTeam: g.homeTeam.name,
@@ -2519,7 +2521,7 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
       usableSources.length;
     if (durableEvidenceCount === 0) {
       throw new Error(
-        `Brief generation failed: topic has no durable evidence. ${researchResults.length} routed research result(s) were found, but routed research is transient and can never source a brief. ` +
+        `Brief generation failed: topic has no durable evidence. ${researchResults.length} routed research result(s) were found and none was usable as a source (unsafe URL or too little text). ` +
           `Import a source article for this topic, or re-run ingest so it has news/game/injury/odds records to cite.`
       );
     }

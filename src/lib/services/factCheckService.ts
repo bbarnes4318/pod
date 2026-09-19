@@ -431,6 +431,12 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
           try {
             if (ref.type === "research") {
               dbExists = true;
+            } else if (ref.type === "topicSource") {
+              // Was missing: a topicSource ref passed every earlier check and
+              // then died here as "does not resolve", for imports and routed
+              // research alike.
+              const res = await db.topicSource.findUnique({ where: { id: ref.id } });
+              if (res) dbExists = true;
             } else if (ref.type === "game") {
               const res = await db.game.findUnique({ where: { id: ref.id } });
               if (res) dbExists = true;

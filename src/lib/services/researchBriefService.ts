@@ -24,11 +24,14 @@
 // against what was actually supplied, and evidence is PROMOTED only from
 // sources a validated claim actually cited.
 
+import { createHash } from "crypto";
 import {
   parseEvidenceRef, dedupeRefs, sortRefs, refKey, resolveEvidenceRefs,
   parseEvidenceRefList, RESEARCH_IS_TRANSIENT,
   type EvidenceReference, type EvidenceDb,
 } from "./evidenceRefs";
+import { canonicalizeUrl, validateUrl } from "../net/urlSafety";
+import type { ResearchSourceResult } from "../research/provider";
 
 /** The evidence-type union shown to the model. One constant — it used to be
  *  repeated verbatim seven times in the prompt, which is how `topicSource`
@@ -91,6 +94,119 @@ export interface ValidatedClaim {
 export interface UnsafeClaim {
   claim: string;
   reason: string;
+}
+
+// ---------------------------------------------------------------------------
+// Routed research becomes a durable source.
+//
+// evidenceRefs.ts lays out the two honest options for web research: (a)
+// persist it in a real model and cite real row ids, or (b) keep it transient.
+// (b) was taken because (a) "would mean standing up a durable model". It did
+// not: TopicSource already IS that model - an operator-imported article with a
+// canonical URL, a sanitized excerpt, a content hash and a per-topic unique
+// key - and everything downstream already treats it as citable: the packet
+// shows it, the brief cites it, promotion re-validates it, the fact-check
+// resolves it, the transcript renders it as a linked chip.
+//
+// So a routed research result is written as a TopicSource row, with the same
+// text the model was already being shown (highlights + snippet), and from
+// that point it is evidence like any other. Consequence, stated plainly: the
+// premium episode of 2026-09-19 had its Steelers history in routed research
+// and could not cite one line of it. Now it can.
+
+/** Audit label on rows written from routed research, never a person. */
+export const RESEARCH_SOURCE_IDENTITY = "research:routed";
+
+/** Cap matches the full-article excerpt the news enrichment already uses. */
+const RESEARCH_EXCERPT_MAX_CHARS = 2200;
+
+export interface ResearchSourceRow {
+  originalUrl: string;
+  canonicalUrl: string;
+  title: string | null;
+  publisher: string | null;
+  author: null;
+  publishedAt: Date | null;
+  excerpt: string;
+  contentHash: string;
+  fetchStatus: "imported";
+  fetchErrorCategory: null;
+  retrievedAt: Date;
+  createdByAdminIdentity: typeof RESEARCH_SOURCE_IDENTITY;
+}
+
+/**
+ * One routed research result as a TopicSource row, or null when it cannot be
+ * one: an unsafe or malformed URL (the same validateUrl the importer runs -
+ * a research provider is an untrusted source of URLs too), or too little
+ * text to be evidence (the usability floor selectUsableSources enforces).
+ * Provider text is treated as untrusted: tags are stripped, whitespace
+ * collapsed, length capped.
+ */
+export function researchResultToSourceRow(r: ResearchSourceResult, now: Date = new Date()): ResearchSourceRow | null {
+  const check = validateUrl(String(r?.url || ""));
+  if (!check.ok || !check.url) return null;
+  // Script/style BODIES go too, not just their tags: code is never content.
+  const clean = (t: unknown) =>
+    String(t ?? "")
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const excerpt = [...(Array.isArray(r.highlights) ? r.highlights : []), r.snippet, r.summary]
+    .map(clean)
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, RESEARCH_EXCERPT_MAX_CHARS);
+  if (excerpt.length < 40) return null;
+  const canonicalUrl = canonicalizeUrl(check.url);
+  const published = r.publishedAt ? new Date(r.publishedAt) : null;
+  return {
+    originalUrl: canonicalUrl,
+    canonicalUrl,
+    title: r.title ? clean(r.title).slice(0, 300) || null : null,
+    publisher: r.sourceName ? clean(r.sourceName).slice(0, 120) : check.url.hostname,
+    author: null,
+    publishedAt: published && !Number.isNaN(published.getTime()) ? published : null,
+    excerpt,
+    contentHash: createHash("sha256").update(excerpt).digest("hex"),
+    fetchStatus: "imported",
+    fetchErrorCategory: null,
+    retrievedAt: now,
+    createdByAdminIdentity: RESEARCH_SOURCE_IDENTITY,
+  };
+}
+
+export interface PersistResearchDb {
+  topicSource: {
+    findMany: (args: unknown) => Promise<Array<{ canonicalUrl: string }>>;
+    create: (args: unknown) => Promise<unknown>;
+  };
+}
+
+/**
+ * Write routed research results onto the topic as TopicSource rows. A URL
+ * already on the topic - from an operator import or an earlier run - is
+ * left exactly as it is; the operator's version of an article outranks the
+ * provider's. Never throws on a bad result: it is counted and skipped.
+ */
+export async function persistResearchAsSources(
+  db: PersistResearchDb,
+  topicId: string,
+  results: ResearchSourceResult[]
+): Promise<{ written: number; duplicate: number; unusable: number }> {
+  const existing = await db.topicSource.findMany({ where: { topicId }, select: { canonicalUrl: true } });
+  const seen = new Set(existing.map((e) => e.canonicalUrl));
+  let written = 0, duplicate = 0, unusable = 0;
+  for (const r of results || []) {
+    const row = researchResultToSourceRow(r);
+    if (!row) { unusable++; continue; }
+    if (seen.has(row.canonicalUrl)) { duplicate++; continue; }
+    seen.add(row.canonicalUrl);
+    await db.topicSource.create({ data: { ...row, topicId } });
+    written++;
+  }
+  return { written, duplicate, unusable };
 }
 
 /**

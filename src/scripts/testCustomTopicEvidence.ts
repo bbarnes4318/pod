@@ -24,6 +24,7 @@ import {
   selectUsableSources, serializeSourceForPacket, buildAllowedKeys, validateClaimRefs,
   validateBriefResult, promoteCitedSources, sourceRulesBlock, PROMPT_EVIDENCE_TYPES,
   RUMOR_KEYWORDS, UNSOURCED_KEYWORDS,
+  researchResultToSourceRow, persistResearchAsSources, RESEARCH_SOURCE_IDENTITY,
 } from "../lib/services/researchBriefService";
 import { evaluateHardGates, evaluateEvidenceIntegrity } from "../lib/services/topicEligibility";
 import { createAdminEpisodeFor, getAdminTopicsFor, type AdminCtx } from "../lib/services/adminRundown";
@@ -621,6 +622,63 @@ async function main() {
     assert(!UNSOURCED_KEYWORDS.test(hedge), "hedging is opinion, not rumor — it must not fail a brief");
     assert(UNSOURCED_KEYWORDS.test(unsourced), "an unnamed source is still rumor");
     assert(RUMOR_KEYWORDS.test(hedge), "a FACT that hedges is not a fact");
+  });
+
+  console.log("\nRouted research becomes a durable source\n");
+
+  // The premium episode of 2026-09-19 had its Steelers history in routed
+  // research and could not cite one line of it, because research-N ids were
+  // transient by design. A routed result is now a TopicSource row - the same
+  // table an operator import lands in - and everything downstream already
+  // treats that as citable.
+
+  const exa = (over: Partial<Parameters<typeof researchResultToSourceRow>[0]> = {}) => ({
+    title: "Tomlin's playoff record under scrutiny",
+    url: "https://www.example.com/steelers/tomlin-playoffs?utm_source=x",
+    sourceName: "Example Sports",
+    publishedAt: "2026-09-10T12:00:00Z",
+    snippet: "Mike Tomlin is 0-7 in his last seven playoff games, tied for the longest such streak by any head coach.",
+    highlights: ["Pittsburgh has not won a postseason game since the 2016 season."],
+    ...over,
+  });
+
+  await check("a routed result becomes a usable TopicSource row with the text the model was already shown", () => {
+    const row = researchResultToSourceRow(exa());
+    assert(row !== null, "a well-formed result must become a row");
+    assert(row!.fetchStatus === "imported" && row!.createdByAdminIdentity === RESEARCH_SOURCE_IDENTITY, "shaped like an import, labelled as research");
+    assert(/0-7 in his last seven/.test(row!.excerpt) && /2016 season/.test(row!.excerpt), "highlights AND snippet are the excerpt");
+    assert(/^[0-9a-f]{64}$/.test(row!.contentHash), "content hash present");
+    assert(!/utm_source/.test(row!.canonicalUrl), "URL is canonicalized (tracking params gone)");
+    // And it clears the usability floor selectUsableSources enforces.
+    const usable = selectUsableSources([{ ...row!, id: "r1", topicId: TOPIC } as any], TOPIC);
+    assert(usable.length === 1, "the row must be usable evidence, not just stored");
+  });
+
+  await check("a result that cannot be evidence is refused, never stored half-formed", () => {
+    assert(researchResultToSourceRow(exa({ url: "http://127.0.0.1/admin" })) === null, "a private-network URL from a provider is refused like one from a user");
+    assert(researchResultToSourceRow(exa({ url: "not a url" })) === null, "a malformed URL is refused");
+    assert(researchResultToSourceRow(exa({ snippet: "Too short.", highlights: [] })) === null, "too little text to be evidence is refused");
+    const tagged = researchResultToSourceRow(exa({ snippet: "<script>alert(1)</script>Mike Tomlin is 0-7 in his last seven playoff games in Pittsburgh." }));
+    assert(tagged !== null && !/<script>|alert\(/.test(tagged.excerpt), "provider text is untrusted: tags are stripped");
+  });
+
+  await check("persisting writes new URLs, leaves existing ones alone, counts the rest", async () => {
+    const created: any[] = [];
+    const fake = {
+      topicSource: {
+        findMany: async () => [{ canonicalUrl: researchResultToSourceRow(exa())!.canonicalUrl }], // operator already imported this one
+        create: async (args: any) => { created.push(args.data); return args.data; },
+      },
+    };
+    const r = await persistResearchAsSources(fake, TOPIC, [
+      exa(),                                                          // duplicate of the operator's import
+      exa({ url: "https://www.example.com/steelers/new-coach" }),    // new
+      exa({ url: "https://www.example.com/steelers/new-coach" }),    // same URL twice in one result set
+      exa({ url: "not a url" }),                                      // unusable
+    ]);
+    assert(r.written === 1 && r.duplicate === 2 && r.unusable === 1, `expected 1 written / 2 duplicate / 1 unusable, got ${JSON.stringify(r)}`);
+    assert(created.length === 1 && created[0].topicId === TOPIC, "exactly one row, on this topic");
+    assert(created[0].createdByAdminIdentity === RESEARCH_SOURCE_IDENTITY, "attributed to research, not to a person");
   });
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
