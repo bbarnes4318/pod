@@ -7,6 +7,8 @@ import {
   resolveSeatAVoice,
   resolveSeatBVoice,
 } from "../src/lib/hosts/roster";
+import { SHOW_FORMAT_SEEDS } from "../src/lib/formats/showFormatSeeds";
+import { seedShowFormats } from "./showFormatSeedWriter";
 
 const prisma = new PrismaClient();
 
@@ -94,6 +96,30 @@ async function main() {
       create: league,
     });
     console.log(`Upserted League: ${upserted.name} (${upserted.id})`);
+  }
+
+  // Show formats. The catalog lives in src/lib/formats/showFormatSeeds.ts and
+  // the writer in ./showFormatSeedWriter.ts — the same data/writer split the
+  // roster above uses. Formats describe THE SHOW; nothing here writes to an
+  // AiHost row, and no persona text is read from one.
+  //
+  // The worker does NOT run `prisma db seed` on deploy, so this path alone
+  // never reaches production. `npm run seed:formats` is the deliberate command.
+  //
+  // This general bootstrap SKIPS an unauthored catalog rather than failing:
+  // `prisma db seed` stands a database up from nothing, and a database with no
+  // formats is a valid state (the migration's backfill already gave every
+  // pre-existing show a format). `npm run seed:formats` — the deliberate
+  // command — fails loudly on the same condition, because someone running it
+  // explicitly asked for formats and must not be told nothing is something.
+  if (SHOW_FORMAT_SEEDS.length === 0) {
+    console.warn(
+      "Show-format catalog is empty (SHOW_FORMAT_SEEDS in src/lib/formats/showFormatSeeds.ts) — skipping. See docs/SHOW_FORMATS.md."
+    );
+  } else {
+    console.log("Seeding show formats...");
+    const formats = await seedShowFormats(prisma);
+    console.log(`Seeded ${formats.formatsWritten} show format(s), ${formats.segmentsWritten} segment(s).`);
   }
 
   console.log("Seeding completed successfully.");
