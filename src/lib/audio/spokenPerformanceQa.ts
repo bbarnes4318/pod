@@ -255,6 +255,25 @@ function analyzePcmProsody(pcmBuffer: Buffer, sampleRate: number): Pick<
   };
 }
 
+/**
+ * Failures that mean the AUDIO IS BROKEN - clipping, a dead gap a listener
+ * hears as a dropout, a render that ran away or truncated. Everything else
+ * this module fails on (loudness range, pacing spread, monotone contour,
+ * the derived score floor) is a judgement about a bland performance.
+ *
+ * The distinction matters at selection time. Episode 2026-09-20: nine of
+ * eleven scenes rendered and two were refused because all three Fish takes
+ * measured 2.0-2.8 LU of loudness range against a 3.0 floor. Bland by a
+ * fraction of an LU, three times, and the whole episode was dead. A take
+ * that is bland ships with a flag a producer can read; a take that is
+ * broken does not ship.
+ */
+export const HARD_PERFORMANCE_FAILURE = /^(Candidate is clipping|Dead conversational gap|Runaway\/rushed render)/;
+
+export function isBrokenPerformance(report: Pick<SpokenPerformanceQaReport, "failures">): boolean {
+  return report.failures.some((f) => HARD_PERFORMANCE_FAILURE.test(f));
+}
+
 export function scoreSpokenPerformanceMetrics(
   metrics: SpokenPerformanceQaMetrics,
   options: Pick<AnalyzeOptions, "expectedTurnCount" | "sceneType" | "strict">
