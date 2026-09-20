@@ -333,15 +333,36 @@ export function resolveSemanticQaRequirement(env: NodeJS.ProcessEnv = process.en
   provider: string;
   providerSupported: boolean;
 } {
-  const enabled = env.TTS_TRANSCRIPT_QA_ENABLED === "true";
   // Required in production unless an operator recorded a deliberate waiver. The
   // waiver is its own named variable so it appears in an env audit instead of
   // hiding inside a general "strict" toggle.
   const required = env.NODE_ENV === "production" && env.TTS_TRANSCRIPT_QA_WAIVED !== "true";
   const provider = (env.TRANSCRIPT_QA_PROVIDER || "openai").trim().toLowerCase();
   const providerSupported = (SEMANTIC_QA_PROVIDERS as readonly string[]).includes(provider);
+  const hasOpenAiKey = Boolean((env.TRANSCRIPT_QA_OPENAI_API_KEY || env.OPENAI_API_KEY || "").trim());
+  const hasDeepgramKey = Boolean((env.TRANSCRIPT_QA_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || "").trim());
+  // WHEN THE CHECK IS REQUIRED AND THE TOOL EXISTS, THE CHECK RUNS.
+  //
+  // The flag defaults off. Production requires the check on-or-waived. The
+  // deployment had TTS_TRANSCRIPT_QA_ENABLED=false from before that rule
+  // existed, never touched since, and Deepgram and OpenAI keys sitting right
+  // next to it. Result: every final mix since the rule shipped was refused
+  // for a check nobody had switched on - zero stitches in ten days. "false"
+  // is not a valid production state (the gate rejects it), so in production
+  // it is read as "unset": if a supported provider is keyed, the check runs
+  // and says so. The explicit opt-out remains TTS_TRANSCRIPT_QA_WAIVED=true,
+  // which is a decision an audit can see.
+  const explicitlyEnabled = env.TTS_TRANSCRIPT_QA_ENABLED === "true";
+  const autoEnabled = !explicitlyEnabled && required && providerSupported && (hasOpenAiKey || hasDeepgramKey);
+  const enabled = explicitlyEnabled || autoEnabled;
 
   const missing: string[] = [];
+  if (autoEnabled) {
+    console.warn(
+      "[TranscriptQA] TTS_TRANSCRIPT_QA_ENABLED is not 'true' but production requires this check and a provider is keyed; running it. " +
+        "Set TTS_TRANSCRIPT_QA_WAIVED=true to waive it deliberately."
+    );
+  }
   if (!enabled) missing.push("TTS_TRANSCRIPT_QA_ENABLED");
   if (provider === "openai" && !(env.TRANSCRIPT_QA_OPENAI_API_KEY || env.OPENAI_API_KEY || "").trim()) {
     missing.push("TRANSCRIPT_QA_OPENAI_API_KEY (or OPENAI_API_KEY)");
@@ -445,9 +466,31 @@ export async function runAudioSemanticQa(input: { audio: Buffer; mimeType: strin
   if (!requirement.providerSupported) {
     throw new Error(`Unsupported TRANSCRIPT_QA_PROVIDER '${provider}'. Expected one of ${SEMANTIC_QA_PROVIDERS.join(", ")}.`);
   }
-  const transcribed =
-    provider === "deepgram"
-      ? await transcribeDeepgram(input.audio, input.mimeType)
-      : await transcribeOpenAi(input.audio, input.mimeType);
-  return evaluateDiarizedTranscript(input.expected, transcribed.segments, { provider, model: transcribed.model });
+  // Fail over between providers on an ACCOUNT-class failure only (auth,
+  // billing, quota). A key that authenticates can still belong to an account
+  // with no funds - the OpenAI card on this deployment has been declined
+  // before - and that must not cost the mix when the other transcriber is
+  // keyed. A malformed response is a bug, not an outage, and is not retried.
+  const env = process.env;
+  const keyed = (p: string) =>
+    p === "deepgram"
+      ? Boolean((env.TRANSCRIPT_QA_DEEPGRAM_API_KEY || env.DEEPGRAM_API_KEY || "").trim())
+      : Boolean((env.TRANSCRIPT_QA_OPENAI_API_KEY || env.OPENAI_API_KEY || "").trim());
+  const order = [provider, ...SEMANTIC_QA_PROVIDERS.filter((p) => p !== provider)].filter(keyed);
+  let lastError: unknown = null;
+  for (const [i, p] of order.entries()) {
+    try {
+      const transcribed = p === "deepgram"
+        ? await transcribeDeepgram(input.audio, input.mimeType)
+        : await transcribeOpenAi(input.audio, input.mimeType);
+      if (i > 0) console.warn(`[TranscriptQA] ${provider} failed on an account-class error; transcribed with ${p} instead.`);
+      return evaluateDiarizedTranscript(input.expected, transcribed.segments, { provider: p, model: transcribed.model });
+    } catch (err) {
+      lastError = err;
+      const accountClass = /Transcript QA API (401|402|403|429)\b/.test(err instanceof Error ? err.message : String(err));
+      if (!accountClass || i === order.length - 1) throw err;
+      console.warn(`[TranscriptQA] ${p} refused (${err instanceof Error ? err.message.slice(0, 120) : String(err)}); trying the next keyed provider.`);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Transcript QA: no keyed provider.");
 }

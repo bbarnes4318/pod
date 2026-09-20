@@ -190,8 +190,12 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     });
     for (const c of sceneQa.checks) console.log(`[SceneStitcher][SceneQA:${c.kind}] ${c.status.toUpperCase()} — ${c.name}: ${c.value}`);
     if (!sceneQa.passed) {
+      // A check that did NOT RUN can block in production (sceneAudioQa). It
+      // used to be omitted here, so the operator read "Scene QA failed before
+      // assembly: " and nothing after the colon - every final mix for ten days.
+      const blocking = sceneQa.checks.filter((c) => c.status === "fail" || c.status === "not_run");
       throw new Error(
-        `Scene QA failed before assembly: ${sceneQa.checks.filter((c) => c.status === "fail").map((c) => `${c.name} (${c.value})`).join("; ")}`
+        `Scene QA failed before assembly: ${blocking.map((c) => `${c.name} [${c.status}] (${c.value})`).join("; ") || "no failing check reported"}`
       );
     }
 

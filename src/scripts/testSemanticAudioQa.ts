@@ -141,6 +141,35 @@ check("an unsupported provider is reported, not silently accepted", () => {
   assert.equal(r.providerSupported, false);
   assert.ok(r.missing.some((m) => m.includes("TRANSCRIPT_QA_PROVIDER")));
 });
+check("production RUNS the check when a provider is keyed, even with the flag left false", () => {
+  // The deployment had TTS_TRANSCRIPT_QA_ENABLED=false from before the rule
+  // that made it fatal, and keys for both transcribers beside it. Every final
+  // mix was refused for ten days for a check nobody had switched on.
+  const r = resolveSemanticQaRequirement({
+    NODE_ENV: "production",
+    TTS_TRANSCRIPT_QA_ENABLED: "false",
+    TRANSCRIPT_QA_PROVIDER: "openai",
+    OPENAI_API_KEY: "k",
+    DEEPGRAM_API_KEY: "k",
+  } as unknown as NodeJS.ProcessEnv);
+  assert.equal(r.enabled, true, "a required check with a keyed provider runs");
+  assert.ok(!r.missing.includes("TTS_TRANSCRIPT_QA_ENABLED"), "the flag is no longer 'missing' when the check will run anyway");
+});
+check("production with NO keyed provider still names the flag as missing", () => {
+  const r = resolveSemanticQaRequirement({ NODE_ENV: "production", TTS_TRANSCRIPT_QA_ENABLED: "false" } as NodeJS.ProcessEnv);
+  assert.equal(r.enabled, false, "nothing to run it with - fail closed as before");
+  assert.ok(r.missing.includes("TTS_TRANSCRIPT_QA_ENABLED"));
+});
+check("a deliberate waiver is still honoured, and outside production the flag still gates", () => {
+  const waived = resolveSemanticQaRequirement({
+    NODE_ENV: "production", TTS_TRANSCRIPT_QA_WAIVED: "true", DEEPGRAM_API_KEY: "k",
+  } as unknown as NodeJS.ProcessEnv);
+  assert.equal(waived.required, false);
+  assert.equal(waived.enabled, false, "waived means the check does not auto-run");
+  const dev = resolveSemanticQaRequirement({ NODE_ENV: "test", DEEPGRAM_API_KEY: "k" } as unknown as NodeJS.ProcessEnv);
+  assert.equal(dev.enabled, false, "local/CI never auto-runs a paid ASR");
+});
+
 check("outside production a disabled gate is not required", () => {
   const r = resolveSemanticQaRequirement({ NODE_ENV: "test" } as NodeJS.ProcessEnv);
   assert.equal(r.required, false, "local/CI work must not be forced through a paid ASR");
