@@ -12,7 +12,8 @@
 //
 // NETWORK-FREE. Run: npm run test:render-mode-hardening
 
-import { buildFishScenePayload, compactFishDeliveryCue, sceneShadingCue } from "../lib/providers/tts/fishDialogue";
+import { buildFishScenePayload } from "../lib/providers/tts/fishDialogue";
+import { SCRIPT_TAG_TO_FISH } from "../lib/providers/tts/fishFormat";
 import type { DialogueSceneInput, DialogueSceneType, ScenePerformanceContext } from "../lib/providers/tts/sceneTypes";
 import { degradedRenderModesAllowed, readRenderModeSetting } from "../lib/services/renderModePolicy";
 import { buildPerformanceDirection } from "../lib/audio/performanceDirection";
@@ -88,68 +89,28 @@ function main() {
     assert(readRenderModeSetting(withFlag) === "legacy_line", "dev WITH the explicit opt-in may select legacy_line");
   });
 
-  console.log("\nPerformance direction actually reaches the engine\n");
+  console.log("\nDirection is not prose: only script tags reach the engine\n");
 
-  check("scene shading differs across scene types", () => {
-    const types: DialogueSceneType[] = ["cold_open", "argument_escalation", "closing", "conversation"];
-    const cues = types.map(sceneShadingCue);
-    assert(new Set(cues).size === cues.length, `scene shading must differ per scene type, got: ${JSON.stringify(cues)}`);
+  check("the Fish payload carries no bracket direction beyond script tags and [cutting in]", () => {
+    // A/B 2026-09-20: the same lines with the scene cue + per-host delivery
+    // paragraphs stripped were judged "way more human". Any bracket the script
+    // did not write is a regression.
+    const allowed = new Set(
+      [...Object.values(SCRIPT_TAG_TO_FISH), "[cutting in]"].filter(Boolean).map((c) => String(c).slice(1, -1))
+    );
+    for (const t of ["cold_open", "argument_escalation", "closing"] as DialogueSceneType[]) {
+      const text = buildFishScenePayload(sceneInput(t)).body.text;
+      const cues = [...text.matchAll(/\[([^\]]*)\]/g)].map((m) => m[1]);
+      const rogue = cues.filter((c) => !allowed.has(c));
+      assert(rogue.length === 0, `${t}: prose direction leaked into the request: ${JSON.stringify(rogue)}`);
+      assert(text.startsWith("<|speaker:0|>"), `${t}: text must open on a speaker tag, got: ${text.slice(0, 40)}`);
+    }
   });
 
-  check("the Fish payload carries DIFFERENT direction for cold_open vs argument_escalation vs closing", () => {
+  check("the same script renders the same request text regardless of scene type", () => {
     const texts = (["cold_open", "argument_escalation", "closing"] as DialogueSceneType[])
       .map((t) => buildFishScenePayload(sceneInput(t)).body.text);
-    assert(new Set(texts).size === 3,
-      "identical request text across scene types means the episode has no dynamic range by construction");
-    assert(texts[0].includes("cold open"), "cold_open text must carry its shading");
-    assert(texts[1].includes("disagreement is building"), "argument_escalation text must carry its shading");
-  });
-
-  check("the scene cue is emitted once, at the head of the scene", () => {
-    const payload = buildFishScenePayload(sceneInput("cold_open"));
-    const occurrences = payload.body.text.split(payload.sceneCue).length - 1;
-    assert(occurrences === 1, `scene cue appeared ${occurrences} times; expected exactly 1`);
-    assert(payload.body.text.indexOf(payload.sceneCue) < 30, "scene cue must lead the scene text");
-  });
-
-  check("a timbre-first delivery style still reaches Fish with manner direction", () => {
-    // Regression: the old cue took only the FIRST sentence, so a host whose
-    // style opens on accent reached the engine with no performance instruction
-    // at all — which is precisely how one host ends up flatter than the other.
-    const cue = compactFishDeliveryCue(castCtx())!;
-    assert(cue.includes("Northwest Indiana"), "the timbre clause should survive");
-    assert(cue.includes("Contractions always"), "the manner clause must ALSO survive, not be truncated away");
-    assert(cue.includes("never reading"), "the universal anti-narration clause must be present");
-  });
-
-  check("the anger signature reaches the engine from the profile, not from prose", () => {
-    const quiet = compactFishDeliveryCue(castCtx({ angerStyle: "slower_quieter" }))!;
-    const loud = compactFishDeliveryCue(castCtx({ angerStyle: "louder_slower" }))!;
-    assert(quiet.includes("never louder"), "slower_quieter signature must reach the cue");
-    assert(loud.includes("stretching words out"), "louder_slower signature must reach the cue");
-    assert(quiet !== loud, "two hosts with different anger signatures must not receive the same cue");
-  });
-
-  check("both rostered hosts receive real performance direction, not just accent", () => {
-    for (const host of SEED_HOSTS.filter((h) => h.isActive)) {
-      const { profile } = resolveHostPerformanceProfile(host.performanceProfile, host);
-      const direction = buildPerformanceDirection({
-        formatId: "two_host_debate",
-        roleId: "chair_a",
-        host: { name: host.name, speakingStyle: host.speakingStyle },
-        profile,
-        sceneType: "argument_escalation",
-      });
-      const cue = compactFishDeliveryCue({
-        speakerHostId: host.slug, formatRoleId: "chair_a", direction,
-        intensityLevel: profile.peakIntensity, angerStyle: profile.angerStyle,
-        maxCueDensity: profile.maxCueDensity, profileVersion: 1,
-      })!;
-      assert(!!cue, `${host.name} produced no delivery cue at all`);
-      // An accent-only cue is a voice description, not a performance direction.
-      const mannerWords = /contraction|fragment|blunt|dry|clipped|react|interrupt|stack|laugh|quiet|never/i;
-      assert(mannerWords.test(cue), `${host.name}'s cue carries no manner direction — only timbre: ${cue}`);
-    }
+    assert(new Set(texts).size === 1, "scene type must not inject direction into the spoken text");
   });
 
   console.log(`\n${passed} passed, ${failed} failed\n`);

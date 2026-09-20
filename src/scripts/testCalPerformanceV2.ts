@@ -12,7 +12,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CAL_PROFILE, RETIRED_HOST_SLUGS, RETIRED_V7_HOSTS, SEED_HOSTS } from "../lib/hosts/roster";
-import { compactFishDeliveryCue } from "../lib/providers/tts/fishDialogue";
 
 let passed = 0;
 let failed = 0;
@@ -82,23 +81,6 @@ check("Fish sampling is allowed enough variation to escape metronomic delivery",
   const fish = CAL_PROFILE.providerOverrides.fish;
   assert(fish.temperature >= 0.85, `Fish temperature is too conservative: ${fish.temperature}`);
   assert(fish.topP >= 0.85, `Fish topP is too conservative: ${fish.topP}`);
-});
-
-check("the first speaking-style sentence is a direct Fish performance cue", () => {
-  const cue = compactFishDeliveryCue({
-    speakerHostId: cal.slug,
-    formatRoleId: "chair_b",
-    direction: `Delivery style: ${cal.speakingStyle} This is a conversation.`,
-    intensityLevel: cal.intensityLevel,
-    angerStyle: CAL_PROFILE.angerStyle as "slower_quieter",
-    maxCueDensity: CAL_PROFILE.maxCueDensity,
-    profileVersion: CAL_PROFILE.version,
-    providerOverrides: CAL_PROFILE.providerOverrides.fish,
-  });
-  assert(!!cue, "Fish cue was not produced");
-  assert(/close-mic and brisk/i.test(cue), `Fish cue lost the intended delivery: ${cue}`);
-  assert(/never polished, analytical, narrated, or announced/i.test(cue), `Fish cue lost the anti-robot guard: ${cue}`);
-  assert(!/hotel bar|unhurried|intentional pause/i.test(cue), `retired restrained cue leaked through: ${cue}`);
 });
 
 check("script persona reacts first and cannot become smoother when cornered", () => {
