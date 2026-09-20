@@ -224,6 +224,32 @@ async function main() {
       "the same words marked tone=conceding must satisfy the axis");
   });
 
+  await check("an exact split with VARIED rhythm is a coincidence, not a balancing rule", () => {
+    // Episode 2026-09-19: the plan was 30/31 and the 2/1 cold open on top made
+    // it 33/33 at 56.9% alternation. A balancing rule leaves two fingerprints -
+    // equal counts AND a metronome. One without the other is arithmetic.
+    const A = CAL, B = ZAB;
+    const seq = [A, A, B, A, B, B, B, A, A, B, A, A, B, B, A, B, B, A, A, B]; // 10/10, runs vary
+    const lines = seq.map((speakerName, lineIndex) => ({
+      lineIndex, speakerName,
+      text: `Line ${lineIndex} from ${speakerName} makes a point that the other host has to answer directly.`,
+      tone: lineIndex === 7 ? "conceding" : "analytical",
+    }));
+    const inv = evaluateProductionInvariants([{ type: "topic", lines }], { activeHostNames: [CAL, ZAB] });
+    assert.deepEqual(Object.values(inv.measurements.perSpeakerLines).sort(), [10, 10], "fixture must be an exact split");
+    assert.ok(inv.measurements.strictAlternationRatio <= 0.65, `fixture must have varied rhythm, got ${inv.measurements.strictAlternationRatio}`);
+    assert.ok(!inv.failedCriticalAxes.includes("hostBalance"), "equal counts with varied rhythm must not hold");
+    const note = inv.findings.find((f) => f.axis === "hostBalance");
+    assert.ok(note && note.severity === "pass" && /coincidence/.test(note.message), "the coincidence is still recorded, as a pass");
+    // And the real signature - equal AND metronome - is still a hold.
+    const pingPong = seq.map((_, i) => (i % 2 === 0 ? A : B));
+    const mech = evaluateProductionInvariants(
+      [{ type: "topic", lines: pingPong.map((speakerName, lineIndex) => ({ lineIndex, speakerName, text: lines[lineIndex].text, tone: lines[lineIndex].tone })) }],
+      { activeHostNames: [CAL, ZAB] }
+    );
+    assert.ok(mech.failedCriticalAxes.includes("hostBalance"), "equal counts WITH a metronome is still the balancing-rule signature");
+  });
+
   await check("host arguing the opponent's position is detected", () => {
     const flat = failed.flatMap((s) => s.lines.map((l) => ({ speaker: l.speakerName, text: l.text })));
     const swaps = detectPositionSwaps(flat);

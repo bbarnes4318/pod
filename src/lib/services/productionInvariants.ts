@@ -211,24 +211,13 @@ export function evaluateProductionInvariants(
     });
   }
 
-  // --- hostBalance ---------------------------------------------------------
-  const counts = Object.values(perSpeaker);
-  if (counts.length === 2 && counts[0] === counts[1] && counts[0] >= 8) {
-    findings.push({
-      axis: "hostBalance",
-      severity: "hold",
-      message:
-        `Both hosts have exactly ${counts[0]} lines. An exact split is the signature of a balancing rule, ` +
-        `not of a conversation; line count must follow who has something to say.`,
-      observed: { ...perSpeaker },
-    });
-  }
-
   // --- mechanicalAlternation ----------------------------------------------
+  // Computed first: hostBalance below reads it.
   let switches = 0;
   for (let i = 1; i < lines.length; i++) if (lines[i].speaker !== lines[i - 1].speaker) switches += 1;
   const alternation = lines.length > 1 ? switches / (lines.length - 1) : 0;
-  if (alternation > maxAlternation) {
+  const mechanical = alternation > maxAlternation;
+  if (mechanical) {
     findings.push({
       axis: "mechanicalAlternation",
       severity: "hold",
@@ -236,6 +225,29 @@ export function evaluateProductionInvariants(
         `${(alternation * 100).toFixed(1)}% of turns are strict A/B alternation; the ceiling is ` +
         `${(maxAlternation * 100).toFixed(0)}%. Hosts must be able to build a point across consecutive lines.`,
       observed: { ratio: Number(alternation.toFixed(4)), ceiling: maxAlternation },
+    });
+  }
+
+  // --- hostBalance ---------------------------------------------------------
+  // An exact split is the signature of a balancing rule ONLY together with
+  // the rule's other signature: mechanical alternation. e7867729 was 33/33 at
+  // 93.8% - a metronome padded to even. Episode 2026-09-19 was 33/33 at
+  // 56.9%, from a plan of 30/31 (unequal, as the plan rules demand) plus a
+  // 2/1 cold open. Equal counts with varied rhythm is a coincidence of
+  // arithmetic, and a coincidence is recorded, not held - because "review"
+  // blocks TTS exactly as "hold" does, and a false hold costs a voiced
+  // episode.
+  const counts = Object.values(perSpeaker);
+  if (counts.length === 2 && counts[0] === counts[1] && counts[0] >= 8) {
+    findings.push({
+      axis: "hostBalance",
+      severity: mechanical ? "hold" : "pass",
+      message: mechanical
+        ? `Both hosts have exactly ${counts[0]} lines at ${(alternation * 100).toFixed(1)}% strict alternation. An exact split ` +
+          `with a metronome rhythm is the signature of a balancing rule, not of a conversation; line count must follow who has something to say.`
+        : `Both hosts have exactly ${counts[0]} lines, but the rhythm is varied (${(alternation * 100).toFixed(1)}% alternation) - ` +
+          `a coincidence of the count, not a balancing rule.`,
+      observed: { ...perSpeaker, alternation: Number(alternation.toFixed(4)) },
     });
   }
 

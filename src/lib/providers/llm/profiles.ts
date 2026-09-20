@@ -598,6 +598,17 @@ function premiumChain(role: LLMRole): ProfileRoleChain {
     // ran on before, so the degraded path is slow-but-known, and it is a
     // different provider, which a same-family rung cannot be.
     //
+    // REOPENED 2026-09-19, WITH THE EVIDENCE ASKED FOR ABOVE. The
+    // programming_error that killed Sonnet here was the transport
+    // misclassification fixed in #116 (`fetch failed` read as a code defect),
+    // not anything Sonnet did. And Haiku, given the rhythm rules twice,
+    // returned a plan at 100% strict alternation - pure ping-pong - which the
+    // mechanical repair then had to split 27 of 34 turns to bring into band.
+    // A plan whose pacing was manufactured after the fact is not the plan the
+    // tier is paying for. The turn plan is the one artefact every writer
+    // reads; Sonnet leads, Haiku stays as the rung that has worked, Nemotron
+    // remains the off-provider floor. About ten cents an episode.
+    //
     // THE SONNET 400 ITSELF IS UNDIAGNOSED. Its body was truncated in the job
     // log the failure surfaced in, and nothing here should be read as a claim
     // about the cause. It matters beyond this role: Sonnet is still the second
@@ -606,7 +617,7 @@ function premiumChain(role: LLMRole): ProfileRoleChain {
     // the full `[Anthropic]`/400 line off the worker before changing anything
     // else on the strength of a guess.
     case "script_debate_architect":
-      return [ANTHROPIC_HAIKU(), NV.nemotron()];
+      return [ANTHROPIC_SONNET(), ANTHROPIC_HAIKU(), NV.nemotron()];
 
     // ---- structure and audit. Haiku leads; the model this role used to run on
     // stays as the rung behind it, so a billing failure degrades to the old
