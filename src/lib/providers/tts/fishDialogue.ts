@@ -4,6 +4,14 @@
 // rendered several times, analyzed while it is still RAW speech, and only the
 // strongest passing performance is returned. Flat/metronomic output never
 // reaches storage or the final stitcher.
+//
+// Direction is NOT prose. This adapter used to open every scene with a scene
+// cue plus a ~210-char per-host delivery paragraph inside brackets ("Play her
+// low and certain, at the speed of someone reading a number off a page...").
+// An A/B on the same lines/voices/sampling (2026-09-20) had the operator pick
+// the bare version as "way more human"; Fish's own docs say bracket cues must
+// stay short or the read goes unnatural. The only brackets that reach the
+// engine now are the script's own sparse [tags] and [cutting in].
 
 import { getFishApiKey } from "../../env";
 import { analyzeSpokenPerformanceBuffer, isBrokenPerformance, type SpokenPerformanceQaReport } from "../../audio/spokenPerformanceQa";
@@ -12,28 +20,12 @@ import {
   DialogueSceneResult,
   SceneGenerationError,
   categorizeHttpStatus,
-  type DialogueSceneType,
-  type ScenePerformanceContext,
 } from "./sceneTypes";
 import { FISH_REFERENCE_ID_RE } from "./providerIds";
-import { SCRIPT_TAG_TO_FISH, TONE_TO_FISH_CUE } from "./fishFormat";
+import { SCRIPT_TAG_TO_FISH } from "./fishFormat";
 
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,80})\]/g;
-
-const SLOW_QUIET_ANGER_CUES: Record<string, string | null> = {
-  heated: "[slow, quiet, cold, precise]",
-  excited: "[measured, intense, controlled]",
-  incredulous: "[quiet disbelief, unhurried]",
-  dismissive: "[flat, slow, finished]",
-};
-
-const LOUD_SLOW_ANGER_CUES: Record<string, string | null> = {
-  heated: "[loud, slow, stretching words]",
-  excited: "[booming, slow, unhurried]",
-  incredulous: "[loud disbelief, drawn out]",
-  dismissive: "[loud, flat, dragging words]",
-};
 
 interface FishProsody {
   speed: number;
@@ -63,13 +55,9 @@ export interface FishScenePayload {
     early_stop_threshold: number;
   };
   voiceOrder: string[];
-  directionCues: Record<string, string>;
   /** Per-host sampling settings that were authored and NOT applied, recorded so
    *  the discard is inspectable instead of invisible. Empty when none exist. */
   ignoredPerHostOverrides: Record<string, { temperature?: number; topP?: number }>;
-  /** The scene-level shading cue actually emitted into `text`. Persisted so a
-   *  future "why did this scene sound flat?" is answerable from the row. */
-  sceneCue: string;
   speakerRunCount: number;
 }
 
@@ -119,96 +107,6 @@ function performanceCandidateCount(input: DialogueSceneInput): number {
   return envInt("FISH_PERFORMANCE_CANDIDATES", fallback, 1, 4);
 }
 
-function lineHeat(u: { tone?: string; energy?: string }): number {
-  const energy = u.energy === "high" ? 2 : u.energy === "medium" ? 1 : 0;
-  const hotTone = ["heated", "excited", "incredulous", "dismissive"].includes((u.tone || "").toLowerCase()) ? 2 : 0;
-  return energy + hotTone;
-}
-
-/** Scene shading, compressed for an inline bracket.
- *
- * Fish has NO natural-language `instructions` parameter — the ONLY channel for
- * direction is bracket text inside `text`. The compiled direction's scene
- * shading therefore has to be carried here explicitly or it never reaches the
- * engine at all. It previously did not: the old cue regex stopped at the very
- * words the shading starts with, so every scene of an episode — cold open,
- * peak argument and closing alike — was rendered under one identical cue.
- * That is an episode with no dynamic range by construction. */
-const SCENE_CUE: Record<DialogueSceneType, string> = {
-  cold_open: "cold open, arriving mid-energy, hooking fast, no throat-clearing",
-  conversation: "mid-conversation, reacting to what was just said before adding your own point",
-  argument_escalation: "the disagreement is building, intensity climbing across the exchange",
-  argument_resolution: "the argument is landing, letting the concession breathe",
-  transition: "moving the show to the next block, brief and forward-leaning",
-  news_block: "factual block, clarity first",
-  host_expert_exchange: "question-and-explanation rhythm, answers unhurried",
-  interview_exchange: "interview rhythm, leaving space for the answer",
-  documentary_narration: "narrative continuity, momentum across sentences",
-  rapid_fire: "rapid fire, instant and clipped, no wind-up",
-  closing: "the close, energy settling, landing the goodbye like a real conversation",
-};
-
-/** The scene-level cue, emitted once at the head of the scene. */
-export function sceneShadingCue(sceneType: DialogueSceneType): string {
-  return `[${SCENE_CUE[sceneType] ?? SCENE_CUE.conversation}]`;
-}
-
-/** How this speaker sounds under pressure — a structured profile field, not
- *  prose. Scraped from the direction string it was silently dropped; read from
- *  the profile it always survives, and it is what keeps two voices legible as
- *  two different people during a fight. */
-function angerSignature(anger: ScenePerformanceContext["angerStyle"]): string | null {
-  if (anger === "slower_quieter") return "angry here means slower, quieter, more precise — never louder";
-  if (anger === "louder_slower") return "angry here means louder and slower, stretching words out";
-  return null;
-}
-
-/** Distill the authored delivery style into a compact Fish bracket cue.
- *
- * Built from the delivery style prose PLUS the structured profile fields. The
- * old version took only the first sentence, which made the direction Fish
- * received a lottery on sentence order: a host whose style opens on timbre
- * ("Fast, flat Northwest Indiana vowels, smoker's edge.") reached the engine
- * with no performance instruction whatsoever, while a host whose style opens on
- * manner kept his. That is exactly how one host ends up flatter than the other. */
-export function compactFishDeliveryCue(ctx: ScenePerformanceContext): string | null {
-  const direction = (ctx.direction || "").replace(/\s+/g, " ").trim();
-  if (!direction) return null;
-  const match = direction.match(/Delivery style:\s*(.*?)(?=\s+(?:This is|The disagreement|Mid-conversation|Your intensity|When genuinely|Never:)|$)/i);
-  let style = (match?.[1] || "").trim();
-  if (!style) return null;
-
-  // Take whole sentences up to the budget — not just the first one — so a
-  // timbre-first style still carries its manner clauses through.
-  const BUDGET = 210;
-  const sentences = style.match(/[^.!?]+[.!?]?/g) ?? [style];
-  let taken = "";
-  for (const sentence of sentences) {
-    const next = (taken + sentence).trim();
-    if (taken && next.length > BUDGET) break;
-    taken = next;
-    if (taken.length >= BUDGET) break;
-  }
-  style = (taken || style).replace(/[.!?]+$/, "").trim();
-  if (style.length > BUDGET) {
-    const cut = style.slice(0, BUDGET);
-    style = cut.slice(0, Math.max(40, cut.lastIndexOf(" "))).trim();
-  }
-
-  const anger = angerSignature(ctx.angerStyle);
-  const parts = [style, ...(anger ? [anger] : []), "speaking to the other host, reacting in this moment, never reading"];
-  return `[${parts.join("; ")}]`;
-}
-
-function emotionalCue(
-  tone: string,
-  anger: "louder_faster" | "slower_quieter" | "louder_slower"
-): string | null {
-  if (anger === "slower_quieter") return SLOW_QUIET_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone] ?? null;
-  if (anger === "louder_slower") return LOUD_SLOW_ANGER_CUES[tone] ?? TONE_TO_FISH_CUE[tone] ?? null;
-  return TONE_TO_FISH_CUE[tone] ?? null;
-}
-
 /** Pure request builder. Candidate sampling overrides are applied later. */
 export function buildFishScenePayload(input: DialogueSceneInput): FishScenePayload {
   const model = resolveFishSceneModel();
@@ -226,66 +124,21 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     voiceOrder.push(utterance.voiceId);
   }
 
+  // Sparse script [tags] only: up to two per speaker per scene, in place.
   const cueCapByHost = new Map<string, number>();
-  const angerStyleByHost = new Map<string, "louder_faster" | "slower_quieter" | "louder_slower">();
-  const baselineCueByHost = new Map<string, string>();
-  const directionCues: Record<string, string> = {};
   for (const cast of input.cast) {
-    // Fish works best with sparse, meaningful bracket direction. Permit a
-    // baseline cue plus up to two genuine peak/turn cues per speaker per scene.
-    cueCapByHost.set(cast.speakerHostId, Math.max(1, Math.min(3, cast.maxCueDensity + 1)));
-    angerStyleByHost.set(cast.speakerHostId, cast.angerStyle ?? "louder_faster");
-    const baseline = compactFishDeliveryCue(cast);
-    if (baseline) {
-      baselineCueByHost.set(cast.speakerHostId, baseline);
-      directionCues[cast.speakerHostId] = baseline;
-    }
+    cueCapByHost.set(cast.speakerHostId, Math.max(1, Math.min(2, cast.maxCueDensity)));
   }
 
   const cuesUsedByHost = new Map<string, number>();
-  const baselineApplied = new Set<string>();
   const parts: string[] = [];
   let previousHostId: string | null = null;
-  // Scene shading is a property of the SCENE, not of a speaker, so it is
-  // emitted once at the head of the scene and is not charged to any host's cue
-  // budget — otherwise it would compete with that host's character cue and the
-  // scene would silently lose its shading again.
-  const sceneCue = sceneShadingCue(input.sceneType);
-  let sceneCueApplied = false;
-
-  // One authored emotional peak per scene. Per-host budgets allowed every hot
-  // speaker to receive a cue, which stamped synthetic emotion over the whole
-  // exchange. Pick the strongest line; on a tie, the later line wins so the
-  // performance can build rather than peak immediately.
-  let accentLineIndex: number | null = null;
-  let accentHeat = 2;
-  for (const utterance of input.utterances) {
-    const heat = lineHeat(utterance);
-    if (heat >= 3 && heat >= accentHeat) {
-      accentHeat = heat;
-      accentLineIndex = utterance.lineIndex;
-    }
-  }
 
   for (const utterance of input.utterances) {
     const speakerIndex = speakerIndexByHost.get(utterance.speakerHostId)!;
     const cap = cueCapByHost.get(utterance.speakerHostId) ?? 2;
     let used = cuesUsedByHost.get(utterance.speakerHostId) ?? 0;
     const openers: string[] = [];
-
-    if (!sceneCueApplied) {
-      openers.push(sceneCue);
-      sceneCueApplied = true;
-    }
-
-    if (!baselineApplied.has(utterance.speakerHostId) && used < cap) {
-      const baseline = baselineCueByHost.get(utterance.speakerHostId);
-      if (baseline) {
-        openers.push(baseline);
-        baselineApplied.add(utterance.speakerHostId);
-        used++;
-      }
-    }
 
     if (utterance.isInterruption && used < cap) {
       openers.push("[cutting in]");
@@ -299,18 +152,6 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       return ` ${mapped} `;
     });
 
-    // Use delivery direction at genuine peaks and sharp reactions, not once for
-    // the entire scene and not on every sentence.
-    if (used < cap && utterance.lineIndex === accentLineIndex) {
-      const cue = emotionalCue(
-        (utterance.tone || "").toLowerCase(),
-        angerStyleByHost.get(utterance.speakerHostId) ?? "louder_faster"
-      );
-      if (cue) {
-        openers.push(cue);
-        used++;
-      }
-    }
     cuesUsedByHost.set(utterance.speakerHostId, used);
 
     const body = text.replace(/\s+/g, " ").trim();
@@ -386,9 +227,7 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       early_stop_threshold: 1,
     },
     voiceOrder,
-    directionCues,
     ignoredPerHostOverrides: requestedByHost,
-    sceneCue,
     speakerRunCount: parts.length,
   };
 }
@@ -550,8 +389,6 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
       selectedBelowFloor,
       temperature: selected.temperature,
       topP: selected.topP,
-      directionCues: payload.directionCues,
-      sceneCue: payload.sceneCue,
       samplingScope: "cast_wide",
       ignoredPerHostOverrides: payload.ignoredPerHostOverrides,
       speakerRunCount: payload.speakerRunCount,

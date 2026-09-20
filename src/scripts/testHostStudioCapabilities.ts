@@ -15,7 +15,6 @@ import {
   FISH_CREATE_MODEL_URL,
   FISH_VOICE_DESIGN_URL,
 } from "../lib/providers/tts/fishVoiceStudio";
-import { compactFishDeliveryCue } from "../lib/providers/tts/fishDialogue";
 
 let passed = 0;
 let failed = 0;
@@ -76,24 +75,6 @@ async function main() {
     assert(compiled.performanceProfile.providerOverrides.fish === undefined, "per-host Fish sampling must no longer be authored — it cannot be applied per host");
     assert(compiled.bannedPhrases.includes("At the end of the day"), "banned phrase was lost");
     assert(compiled.performanceProfile.prohibitedTraits.includes("robot voice"), "delivery prohibition was lost");
-  });
-
-  await check("Fish receives a compact per-host delivery cue, not generic chair behavior", () => {
-    const settings = { ...defaultHostStudioSettings(), pace: "fast" as const, energy: "big" as const };
-    const compiled = compileHostStudioProfile(settings);
-    const cue = compactFishDeliveryCue({
-      speakerHostId: "host-test",
-      formatRoleId: "chair_b",
-      direction: `Delivery style: ${compiled.speakingStyle} This is a conversation.`,
-      intensityLevel: compiled.performanceProfile.peakIntensity,
-      angerStyle: compiled.performanceProfile.angerStyle,
-      maxCueDensity: compiled.performanceProfile.maxCueDensity,
-      profileVersion: 1,
-      providerOverrides: compiled.performanceProfile.providerOverrides.fish,
-    });
-    assert(!!cue, "Fish delivery cue was not generated");
-    assert(/fast and immediate/i.test(cue), `pace was not present in Fish cue: ${cue}`);
-    assert(/never reads or announces/i.test(cue), `anti-reader instruction was not present: ${cue}`);
   });
 
   await check("existing hosts can be opened in the simple controls without a stored UI blob", () => {

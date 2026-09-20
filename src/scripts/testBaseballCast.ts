@@ -24,7 +24,6 @@ import {
 } from "../lib/hosts/roster";
 import { hostPerformanceProfileSchema, resolveHostPerformanceProfile } from "../lib/hosts/performanceProfile";
 import { buildPerformanceDirection } from "../lib/audio/performanceDirection";
-import { compactFishDeliveryCue } from "../lib/providers/tts/fishDialogue";
 
 let passed = 0, failed = 0;
 function check(name: string, fn: () => void) {
@@ -119,47 +118,6 @@ function main() {
     for (const host of SEED_HOSTS) {
       const { source } = resolveHostPerformanceProfile(host.performanceProfile, host);
       assert(source === "stored", `${host.name} fell back to a '${source}' profile — the authored performance is gone`);
-    }
-  });
-
-  check("the acoustic inverse survives into the Fish cue", () => {
-    const cueFor = (i: number) => {
-      const host = SEED_HOSTS[i];
-      const { profile } = resolveHostPerformanceProfile(host.performanceProfile, host);
-      return compactFishDeliveryCue({
-        speakerHostId: host.slug,
-        formatRoleId: i === 0 ? "chair_a" : "chair_b",
-        direction: buildPerformanceDirection({
-          formatId: "two_host_debate", roleId: i === 0 ? "chair_a" : "chair_b",
-          host: { name: host.name, speakingStyle: host.speakingStyle },
-          profile, sceneType: "argument_escalation",
-        }),
-        intensityLevel: profile.peakIntensity, angerStyle: profile.angerStyle,
-        maxCueDensity: profile.maxCueDensity, profileVersion: 1,
-      })!;
-    };
-    const a = cueFor(0), b = cueFor(1);
-    assert(/never louder/i.test(a), `Vandergrift's cue must carry the downward anger branch: ${a}`);
-    assert(!/never louder/i.test(b), `Fettig must NOT inherit the quiet-anger branch: ${b}`);
-    assert(a !== b, "the two hosts must not receive the same cue");
-  });
-
-  check("the 210-char cue budget lands DIRECTION, not accent", () => {
-    for (const host of SEED_HOSTS) {
-      const { profile } = resolveHostPerformanceProfile(host.performanceProfile, host);
-      const cue = compactFishDeliveryCue({
-        speakerHostId: host.slug, formatRoleId: "chair_a",
-        direction: buildPerformanceDirection({
-          formatId: "two_host_debate", roleId: "chair_a",
-          host: { name: host.name, speakingStyle: host.speakingStyle },
-          profile, sceneType: "cold_open",
-        }),
-        intensityLevel: profile.peakIntensity, angerStyle: profile.angerStyle,
-        maxCueDensity: profile.maxCueDensity, profileVersion: 1,
-      })!;
-      // The accent sentence is authored LAST precisely so it truncates first.
-      assert(!/accent is/i.test(cue), `${host.name}'s accent sentence reached the cue, crowding out direction: ${cue}`);
-      assert(/Play (her|him)/i.test(cue), `${host.name}'s opening direction did not survive: ${cue}`);
     }
   });
 
