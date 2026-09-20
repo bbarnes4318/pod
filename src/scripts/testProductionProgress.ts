@@ -17,7 +17,8 @@ import {
   type DeriveInput,
   type StageJobSnapshot,
 } from "../lib/studio/productionProgress";
-import { PRODUCTION_STAGES } from "../lib/createFlow";
+import {
+  scriptGenerationAllowedFrom, PRODUCTION_STAGES } from "../lib/createFlow";
 
 let passed = 0,
   failed = 0;
@@ -280,6 +281,22 @@ async function run() {
   check("exactly one stage is marked determinate — voicing", () => {
     const det = PRODUCTION_STAGES.filter((s) => s.determinate).map((s) => s.key);
     assert(det.length === 1 && det[0] === "voices", `determinate stages: ${JSON.stringify(det)}`);
+  });
+
+  check("a FORCED regeneration may run from any pre-audio status; a first script only from a draft", () => {
+    // The Studio Regenerate button calls the forced job without resetting
+    // status. Every gate-held script is on a fact_checked episode (fact-check
+    // runs before the gate), so the one control offered for a held script was
+    // refused for a held script.
+    for (const st of ["draft", "script_draft", "script_approved", "fact_checked"]) {
+      assert(scriptGenerationAllowedFrom(st, true), `forced regeneration must be allowed from ${st}`);
+    }
+    for (const st of ["audio_segments_ready", "audio_stitching", "audio_ready", "content_ready", "published"]) {
+      assert(!scriptGenerationAllowedFrom(st, true), `forced regeneration must be refused from ${st} - it would strand voiced lines`);
+    }
+    assert(scriptGenerationAllowedFrom("draft", false) && scriptGenerationAllowedFrom("script_draft", false), "a first script runs from a draft");
+    assert(!scriptGenerationAllowedFrom("fact_checked", false), "an UNforced job still does not run over a fact-checked episode");
+    assert(scriptGenerationAllowedFrom(null, false), "a missing status reads as draft, as productionStageForStatus does");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -118,6 +118,30 @@ export const PRODUCTION_STAGE_KEYS = PRODUCTION_STAGES.map((s) => s.key);
  * Returns null when there is nothing to do — which is a normal outcome, not an
  * error.
  */
+/**
+ * May a script-generation job run against an episode in this status?
+ *
+ * A FIRST script needs a draft. A FORCED regeneration may run from any
+ * status before audio exists: the job rewrites the script and resets the
+ * episode to script_draft itself, so script_approved and fact_checked are
+ * safe starting points - there is nothing downstream of them to orphan.
+ * Once audio segments exist, a new script would strand voiced lines, so the
+ * answer is no regardless of force.
+ *
+ * Until 2026-09-20 the guard accepted only draft/script_draft with no regard
+ * to force. The Studio Regenerate button calls the forced job without
+ * resetting status, so on any episode that had already been fact-checked -
+ * which is every episode the editorial gate holds, because fact-check runs
+ * before the gate - the button failed with "can only run for episodes in
+ * draft or script_draft". The one control offered for a held script did not
+ * work on a held script.
+ */
+export function scriptGenerationAllowedFrom(episodeStatus: string | null | undefined, forceRegenerate: boolean): boolean {
+  const status = episodeStatus ?? "draft";
+  if (status === "draft" || status === "script_draft") return true;
+  return forceRegenerate && (status === "script_approved" || status === "fact_checked");
+}
+
 export function nextProductionJobFor(episodeStatus: string): string | null {
   switch (episodeStatus) {
     case "fact_checked":
