@@ -834,8 +834,12 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
     // WHAT THIS DOES NOT DO: put facts in the packet that ingest never
     // fetched. Routed web research is transient by design (evidenceRefs.ts);
     // a stronger writer cites the packet better, it cannot cite past it.
+    // 2026-09-20: back to free. topic_generation runs only from the scheduler
+    // and nowhere a person clicks; ~12 Sonnet calls a day for a cron was
+    // $2+/day of nobody's decision. Classification stays on Haiku below
+    // (pennies, and it was the most rate-limited call in the log).
     case "topic_generation":
-      return [ANTHROPIC_SONNET(), NV.nemotron(), ZAI_FLASH()];
+      return [NV.nemotron(), ZAI_FLASH()];
     // Twelve-token outputs, fifty a day: Haiku, not Sonnet.
     case "topic_classification":
       return [ANTHROPIC_HAIKU(), NV.nemotron(), ZAI_FLASH()];
@@ -852,7 +856,7 @@ function verifiedDevelopmentChain(role: LLMRole): ProfileRoleChain {
 
     // Judgement under comparison.
     case "topic_ranking":
-      return [ANTHROPIC_SONNET(), NV.nemotron(), NIM_DEEPSEEK()];
+      return [NV.nemotron(), NIM_DEEPSEEK()];
 
     // Long-context consolidation and traceable extraction.
     case "research_brief":

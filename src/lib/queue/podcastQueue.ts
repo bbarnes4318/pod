@@ -109,6 +109,16 @@ export async function queueTopicGenerationJob(
 export interface ResearchBriefJobData {
   topicId: string;
   forceRegenerate?: boolean;
+  /**
+   * True when a PERSON asked for this brief - an admin button, a Studio
+   * research request, a rundown regeneration. Absent for the scheduler's
+   * fan-out over every new topic. The worker routes a requested brief to the
+   * paid model and a scheduled one to the free chain: 2026-09-19, one day of
+   * scheduled briefs on Sonnet cost more than every episode produced,
+   * briefing ~40 topics no episode used. Money is spent when someone asks,
+   * never by a cron.
+   */
+  requested?: boolean;
 }
 
 export async function queueResearchBriefGenerationJob(

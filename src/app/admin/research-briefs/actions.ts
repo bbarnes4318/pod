@@ -30,6 +30,7 @@ export async function triggerResearchBriefGeneration(topicId: string, forceRegen
     const job = await queueResearchBriefGenerationJob({
       topicId,
       forceRegenerate,
+      requested: true,
     });
 
     revalidatePath("/admin/research-briefs");

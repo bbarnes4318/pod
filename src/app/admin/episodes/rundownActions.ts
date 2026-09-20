@@ -197,7 +197,7 @@ export async function requestResearchFromRundown(topicId: string, forceRegenerat
     const jobId = `research:${topicId}:${forceRegenerate ? "regen" : "initial"}`;
     const job = shouldStubQueue()
       ? { id: `e2e-stub-${jobId}` } // Redis is an EXTERNAL boundary; the harness runs without it.
-      : await queueResearchBriefGenerationJob({ topicId, forceRegenerate }, { jobId });
+      : await queueResearchBriefGenerationJob({ topicId, forceRegenerate, requested: true }, { jobId });
     revalidatePath("/admin/episodes");
     return { success: true as const, jobId: job.id };
   } catch (err) {

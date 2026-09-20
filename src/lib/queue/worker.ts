@@ -2507,7 +2507,12 @@ ${JSON.stringify(serializedEvidence, null, 2)}`;
 
     // Resolve the LLM for the research_brief ROLE: source consolidation and
     // claim extraction with provenance — a reasoning job, not a writing job.
-    const llm = getRoleLLMProvider("research_brief");
+    // A brief a person asked for runs on the role's real chain (Sonnet, then
+    // the free rungs). A brief the scheduler fanned out runs on the free
+    // profile only - frontier_development's research_brief is Nemotron-led,
+    // the chain that wrote every brief before 2026-09-19 and costs nothing.
+    // See ResearchBriefJobData.requested.
+    const llm = getRoleLLMProvider("research_brief", job.data.requested ? undefined : "frontier_development");
 
     let llmResult: any;
     // DURABLE-EVIDENCE PRECHECK. The brief is rejected at the end if nothing
