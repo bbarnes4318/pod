@@ -477,9 +477,15 @@ export async function generateEpisodeContentAssets(input: {
   // already reports that by leaving timestampsApproximate = true. So the right
   // behaviour for a scene-voiced episode is approximate chapters, not a dead
   // episode — the audio it is describing demonstrably exists.
-  const sceneVoiced =
-    audioSegments.length === 0 &&
-    (await db.dialogueSceneAudio.count({ where: { scriptId, status: "ready" } })) > 0;
+  //
+  // Decided by the scene rows ALONE. This used to also require an EMPTY
+  // AudioSegment list, and the per-line path leaves placeholder rows (status
+  // "pending") behind, so a fully mixed scene-voiced episode - 11 ready
+  // scenes, a 714-second master already in object storage, 2026-09-20 - was
+  // read as "not scene-voiced" and failed on "Line 0 does not have a matching
+  // AudioSegment" at the stage that merely describes it. Ready scene audio is
+  // the fact; a stray row in the other table is not evidence against it.
+  const sceneVoiced = (await db.dialogueSceneAudio.count({ where: { scriptId, status: "ready" } })) > 0;
   if (sceneVoiced) {
     console.warn(
       `[contentAssets] Script ${scriptId} is scene-voiced (no per-line AudioSegment rows). ` +
@@ -491,9 +497,11 @@ export async function generateEpisodeContentAssets(input: {
     const lineIndex = item.line.lineIndex;
     const list = segmentMap.get(lineIndex) || [];
 
-    // 11. Matching AudioSegment exists — not applicable to scene-voiced episodes.
+    // 11-13. Per-line AudioSegment checks apply to per-line voicing only. On a
+    // scene-voiced episode the audio lives in the scene rows; a placeholder
+    // AudioSegment here is neither the audio nor a defect in it.
+    if (sceneVoiced) continue;
     if (list.length === 0) {
-      if (sceneVoiced) continue;
       throw new Error(`Line ${lineIndex} does not have a matching AudioSegment.`);
     }
     // Detect duplicate AudioSegments
