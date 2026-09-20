@@ -121,7 +121,7 @@ export async function researchTake(topicId: string, forceRegenerate = false) {
     if (topic.status !== "approved") {
       throw new Error("Lock in the take before researching it.");
     }
-    const job = await queueResearchBriefGenerationJob({ topicId, forceRegenerate });
+    const job = await queueResearchBriefGenerationJob({ topicId, forceRegenerate, requested: true });
     return { success: true as const, jobId: job.id };
   } catch (err: any) {
     return { success: false as const, error: err.message || "Failed to start the research." };
