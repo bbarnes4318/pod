@@ -46,6 +46,7 @@ import {
   groupIntoMovements,
   type OutlineBeat,
   type OutlineDrivenArgs,
+  type RundownTopic,
 } from "./scriptOutlineEngine";
 import {
   directDialogueTransitions,
@@ -205,6 +206,8 @@ export interface SevenRolePipelineArgs {
   systemPrompt: string;
   episodeTitle: string;
   topicsPrompts: string;
+  /** Episode topics in rundown order; the outline skeleton is built from them. */
+  rundownTopics?: RundownTopic[];
   targetDuration: number;
   temperature: number;
   maxTokens: number;
@@ -296,6 +299,7 @@ export async function runSevenRolePipeline(
         systemPrompt: args.systemPrompt,
         episodeTitle: args.episodeTitle,
         topicsPrompts: args.topicsPrompts,
+        rundownTopics: args.rundownTopics,
         targetDuration: args.targetDuration,
         version: 0,
         temperature: args.temperature,

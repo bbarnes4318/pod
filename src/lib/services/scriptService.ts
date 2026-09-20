@@ -31,6 +31,7 @@ import { generateOutlineDrivenScript, rewriteLinesForAntithesis, rewriteLinesFor
 import { runIndependentJudgeStage, runSevenRolePipeline } from "./scriptSevenRolePipeline";
 import type { SevenRoleTrace, SevenRoleTraceRecord } from "./scriptRoles";
 import { selfVerifyAndCorrect } from "./scriptSelfVerify";
+import { buildListenerCheckContext, findListenerIssues, repairListenerIssues } from "./scriptListenerChecks";
 import { antithesisPassAndCorrect } from "./scriptAntithesisPass";
 
 /**
@@ -373,7 +374,14 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
   // the assembled prompt is unchanged; other formats supply their own
   // descriptor, persona blocks, and dynamics contract.
   const pieces = formatPromptPieces(format, cast);
-  const systemPrompt = `You are the head writer for Take Machine, ${pieces.showDescriptor}. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
+  const showName = ep.podcast?.name?.trim() || "Take Machine";
+  // The rundown skeleton is built from these in code (see buildRundownSkeleton);
+  // the model fills the beats in, it does not decide how many there are.
+  const rundownTopics = ep.topics.map((et) => {
+    const content = resolveEpisodeTopicContent(et);
+    return { id: et.topicId, title: content.title, sport: content.sport };
+  });
+  const systemPrompt = `You are the head writer for ${showName}, ${pieces.showDescriptor}. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
 
 ${castPersonaBlocks(format, cast)}
 
@@ -393,12 +401,18 @@ AUDIO DELIVERY TAGS: you may place these inline in "text", in square brackets, w
 Example: "text": "[laughs] Okay, okay. [sighs] Walk me through the math, professor."
 Use 0-2 tags per line, only where a real person would actually laugh/sigh/whisper. Most lines need none. NEVER use sound-effect tags.
 
-EPISODE SHAPE:
-- cold_open: start mid-argument, in medias res, on the hottest take of the episode. No greetings, no "welcome to the show". Hook in the first five seconds.
-- intro: THEN back off, quick show welcome with energy, banter beat, tease the topics in one breath each.
-- topic segments: the meat. Real debate arcs: stake out positions -> clash -> concede/escalate -> land a button (a punchline or a hard disagreement to break on).
-- transition: one or two lines, conversational ("Alright, next thing. And this one's gonna make you mad.").
-- closing: wind down, lower energy, quick verdict recap from each host, one last jab, out.
+EPISODE SHAPE (a RUNDOWN the listener can follow — every segment below is required, in this order):
+- cold_open: start mid-argument, in medias res, on the hottest take of the episode. No greetings. Hook in the first five seconds — but even the cold open names the team and the player it is about within its first two lines.
+- intro: THEN back off. Welcome the listener to ${showName} by name, both hosts introduce themselves by name, and tease EVERY topic on today's show in one plain sentence each — team, player, what happened ("The Rays clinched a playoff spot and Junior Caminero hit his fortieth home run; and in Kansas City the Royals benched Jac Caglianone for a night after he punched a wall."). 4-6 lines.
+- topic segments: the meat, one per topic. THE FIRST LINE OF EVERY TOPIC SEGMENT SETS THE TABLE in plain words before anyone argues: the sport's team, the player's or coach's FULL name, what happened, when, and the key number from the evidence — the way you'd catch up a friend who walked in late. Only then: stake out positions -> clash -> concede/escalate -> land a button.
+- transition: one or two lines, conversational, that name the next team or player ("Alright, Kansas City. And this one's gonna make you mad.").
+- closing: 4-6 lines. Each host gives a one-sentence verdict on the lead story, one last jab, then a real sign-off: thank the listener, say the show's name, say when they're back. The episode does not just stop.
+
+ORIENT THE LISTENER (the audience is a sports fan who did NOT watch the game and has NOT read the story):
+- The first time a person is discussed in a segment, use their FULL name and their team or job ("Royals general manager J.J. Picollo", "Rays third baseman Junior Caminero"). Never refer to someone as "the kid", "a bench guy", "somebody", "this guy" or by surname alone before they have been fully named in that segment.
+- Say the team name — "the Rays", "the Royals" — not "that building", "the club", "the organization", "the outfit". Say "home run", "strikeout", "clinched", "benched" — the actual baseball words — not euphemisms or metaphors for them.
+- Every segment is about a game, a player or a team. It is never about "the sentence", "the file", "the page", "the desk", "the receipt", "who signed it", "the paperwork" or "the story going around" — those abstractions are BANNED beyond a single use in the whole episode. If a host wants to criticize a front office, they say what the front office DID, to whom, and what it cost on the field.
+- A listener who tunes in at any segment must know within two lines what sport, which team, and which player the hosts are talking about.
 
 ${pieces.dynamicsContract}${pieces.extraSpeechRules}
 
@@ -419,7 +433,7 @@ FORWARD MOTION ONLY:
 - NEVER restate a stat, claim, take, or joke that has already been said — not even reworded. A callback is a jab of six words or fewer that references without repeating.
 - The episode moves like an argument, not a list: stake → clash → concession or escalation → button, then ON to the next thing.
 
-NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure ("Now let's discuss topic two"), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
+NEVER: "As an AI", referencing "the research brief", reading evidence like a report, announcing structure by label ("Now let's discuss topic two" — the intro's plain-words tease and a transition that names the next team are fine), both hosts using the same phrasing, teleprompter-perfect grammar on every line.
 
 FACT vs OPINION — the "isFactualClaim" field (get this right; the fact-checker now TRUSTS this flag and only checks lines set to true):
 - "isFactualClaim": true ONLY when the line asserts a specific, checkable fact about the world: a stat, score, result, record, streak, date, injury, transaction, quote, or event presented as TRUE. Every such line MUST carry the matching evidenceRefs from the allowed list — a factual line with empty evidenceRefs is a defect.
@@ -603,6 +617,7 @@ Delivery field meanings:
       systemPrompt: systemPromptWithContinuity,
       episodeTitle: ep.title,
       topicsPrompts,
+      rundownTopics,
       targetDuration,
       temperature,
       maxTokens,
@@ -678,6 +693,7 @@ Delivery field meanings:
       systemPrompt: systemPromptWithContinuity,
       episodeTitle: ep.title,
       topicsPrompts,
+      rundownTopics,
       targetDuration,
       version: nextVersion,
       temperature,
@@ -714,6 +730,7 @@ Delivery field meanings:
         systemPrompt: systemPromptWithContinuity,
         episodeTitle: ep.title,
         topicsPrompts,
+        rundownTopics,
         targetDuration,
         version: nextVersion,
         temperature,
@@ -880,6 +897,34 @@ Delivery field meanings:
   } catch (svErr: any) {
     console.warn(`[ScriptService] self-verify failed: ${svErr?.message}`);
     result.reasons.push(`Self-verify skipped (error): ${svErr?.message}`);
+  }
+
+  // LISTENER CHECKS — deterministic, on whichever path produced the script.
+  // Can a fan who missed the game follow this? Orientation (the team and the
+  // person are named at the top of every segment), no phrase recycled past
+  // twice, no front-office abstractions past one. Flagged lines get ONE
+  // batched rewrite; whatever survives is logged, never silently accepted.
+  try {
+    const ctx = buildListenerCheckContext(
+      ep.topics.map((et) => ({ id: et.topicId, text: JSON.stringify(resolveEpisodeTopicContent(et)) }))
+    );
+    const segmentsForCheck = (llmResult.segments ?? []) as import("./scriptListenerChecks").ListenerCheckSegment[];
+    const before = findListenerIssues(segmentsForCheck, ctx);
+    let repaired = { requested: 0, applied: 0 };
+    let after = before;
+    if (before.length) {
+      repaired = await repairListenerIssues(getRoleLLMProvider("script_rewrite"), segmentsForCheck, before, systemPrompt);
+      after = findListenerIssues(segmentsForCheck, ctx);
+    }
+    const tally = (list: typeof before) =>
+      `orientation ${list.filter((i) => i.kind === "orientation").length}, recycled ${list.filter((i) => i.kind === "recycled_phrase").length}, meta ${list.filter((i) => i.kind === "meta_vocabulary").length}`;
+    result.reasons.push(
+      `Listener checks: ${before.length} issue(s) before (${tally(before)}); ${repaired.applied}/${repaired.requested} line(s) rewritten; ${after.length} remain (${tally(after)}).` +
+        (after.length ? ` Remaining: ${after.slice(0, 6).map((i) => `#${i.lineIndex} ${i.kind}`).join(", ")}${after.length > 6 ? ", …" : ""}` : "")
+    );
+  } catch (lcErr: any) {
+    console.warn(`[ScriptService] listener checks failed: ${lcErr?.message}`);
+    result.reasons.push(`Listener checks skipped (error): ${lcErr?.message}`);
   }
 
   const cleanSegments: any[] = [];

@@ -199,7 +199,7 @@ function coldOpenSystemPrompt(base: string): string {
 }
 
 function coldOpenLineContract(speakerNames: string[]): string {
-  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. An evidenceRefs entry is a typed record pointer — {"type":"newsItem","id":"..."} — copied EXACTLY from the evidenceRefs already attached to the facts in the supplied evidence. A quoted phrase, a number, or a source name in that field is NOT a reference: the pipeline deletes anything that is not a {type,id} object it recognises, leaving the claim unsupported. Any line with "isFactualClaim":true must carry at least one such object; if you cannot point a specific at one, do not state that specific and leave "isFactualClaim":false. Legal speakers: ${speakerNames.join(", ")}.`;
+  return `Use ${COLD_OPEN_MIN_WORDS}-${COLD_OPEN_MAX_WORDS} spoken words and at least three turns. The team and the player's FULL name are spoken within the first two lines — a listener who missed the game knows who this is about before the first opinion lands; no "the kid", no "that building", no "somebody wrote a sentence". Every line must contain lineIndex, speakerName, text, tone, energy, pauseBefore, isInterruption, evidenceRefs, isFactualClaim and needsHumanReview. An evidenceRefs entry is a typed record pointer — {"type":"newsItem","id":"..."} — copied EXACTLY from the evidenceRefs already attached to the facts in the supplied evidence. A quoted phrase, a number, or a source name in that field is NOT a reference: the pipeline deletes anything that is not a {type,id} object it recognises, leaving the claim unsupported. Any line with "isFactualClaim":true must carry at least one such object; if you cannot point a specific at one, do not state that specific and leave "isFactualClaim":false. Legal speakers: ${speakerNames.join(", ")}.`;
 }
 
 /**
@@ -450,19 +450,19 @@ export async function pickStorySpine(input: {
 }): Promise<EpisodeSpine> {
   const result = await withLlmStage("script:story-spine", () =>
     input.llm.generateStructuredOutput<{ spine: EpisodeSpine }>({
-      systemPrompt: `${input.systemPrompt}\n\nYou are the STORY EDITOR. You do not write dialogue, beats, or jokes. You decide what this episode is about and what it refuses to resolve. A story whose question can be answered by both hosts agreeing is not a story.`,
+      systemPrompt: `${input.systemPrompt}\n\nYou are the STORY EDITOR of a sports show. You do not write dialogue, beats, or jokes. The headline IS the story: the game, the player, the team, the number. You decide what the hosts argue about each story — the argument a fan would actually have — not a theme "underneath" it. An episode about "who wrote the sentence" or "what the building is protecting" is a failed episode; an episode about whether the Rays' first-place September means anything in October is a real one.`,
       prompt: `Episode ${JSON.stringify(input.episodeTitle)} runs roughly ${input.targetDuration} minutes with ${input.speakerNames.join(" and ")}.
 
 EVIDENCE AVAILABLE:
 ${input.topicsEvidence}
 
 Decide:
-- What this episode is ACTUALLY about — not the headline, the thing underneath it.
-- The ONE unresolved question. It must be answerable in principle and unanswerable tonight.
-- Why a listener who does not already care should care.
-- What would actually settle it, so the hosts can name what they do not have.
-- What is personally at stake for each host. The stakes must differ; if both hosts want the same thing there is no episode.
-- Framings you are REJECTING, so nobody downstream drifts back into them.
+- What this episode is about, in ONE plain sentence a listener in a car would understand: the lead team, the lead player by full name, what happened.
+- The unresolved question about the LEAD STORY that two fans would argue about — stated with the team and player named. Answerable in principle, unanswerable tonight.
+- Why a fan who did not watch the game should care.
+- What would actually settle it (a result, a stat line, a series), so the hosts can name what they do not have yet.
+- Each host's position on it, from their own worldview. The positions must differ.
+- Framings you are REJECTING: always include abstractions like "the building", "the file", "who signed off", "the story going around", "the sentence" — the hosts talk about baseball, not paperwork.
 
 Return valid JSON only:
 {"spine":{"aboutInOneSentence":"...","unresolvedQuestion":"...","whyItMattersToAListener":"...","whatWouldSettleIt":"...","hostStakes":[{"speakerName":"...","stake":"..."}],"rejectedFrames":["..."]}}`,
@@ -607,7 +607,18 @@ export interface TurnPlanValidatorOptions {
    * each of those breaks the episode itself rather than its pacing.
    */
   rhythmAttempts?: number;
+  /** The rundown beats. When supplied, per-beat turn caps and the topic
+   *  orientation turn are CONTENT rules — fatal on every attempt. */
+  beats?: Array<{ beatIndex: number; segmentType: string }>;
 }
+
+/** Turn caps per rundown beat type. A closing that ran 38 lines is why. */
+export const BEAT_TURN_CAPS: Record<string, { min: number; max: number }> = {
+  intro: { min: 3, max: 6 },
+  transition: { min: 1, max: 2 },
+  closing: { min: 3, max: 6 },
+};
+export const ORIENTATION_INTENT_RE = /^set the table\b/i;
 
 export function makeTurnPlanValidator(totalWordTarget: number, opts: TurnPlanValidatorOptions = {}) {
   const minTurns = minimumTurnsFor(totalWordTarget);
@@ -617,6 +628,23 @@ export function makeTurnPlanValidator(totalWordTarget: number, opts: TurnPlanVal
     attempt++;
     const turns = (value as { turns?: unknown })?.turns;
     if (!Array.isArray(turns) || turns.length === 0) return "Missing non-empty 'turns' array.";
+
+    // THE RUNDOWN IS ENFORCED. Structure is not pacing: a 38-turn "closing" or
+    // a topic beat that opens mid-argument is a broken episode, not a flat one.
+    for (const beat of opts.beats ?? []) {
+      if (beat.segmentType === "cold_open") continue; // already written
+      const own = (turns as Array<Record<string, unknown>>).filter((t) => Number(t.beatIndex) === beat.beatIndex);
+      const cap = BEAT_TURN_CAPS[beat.segmentType];
+      if (cap && (own.length < cap.min || own.length > cap.max)) {
+        return `Beat ${beat.beatIndex} (${beat.segmentType}) has ${own.length} turn(s); it needs ${cap.min}-${cap.max}. Put the argument in the topic beats.`;
+      }
+      if (beat.segmentType === "topic") {
+        if (own.length === 0) return `Beat ${beat.beatIndex} (topic) has no turns.`;
+        if (!ORIENTATION_INTENT_RE.test(String(own[0].intent || ""))) {
+          return `Beat ${beat.beatIndex} (topic): its FIRST turn's intent must begin "set the table:" and name the team, the full name, what happened and the number, before anyone argues. Got: "${String(own[0].intent || "").slice(0, 60)}".`;
+        }
+      }
+    }
     for (const turn of turns as Array<Record<string, unknown>>) {
       if (typeof turn?.speakerName !== "string" || !turn.speakerName.trim()) return "Every turn needs a speakerName.";
       if (typeof turn?.intent !== "string" || !turn.intent.trim()) return "Every turn needs an intent.";
@@ -1044,6 +1072,8 @@ ${input.topicsEvidence}
 
 RULES:
 - Speakers are exactly: ${input.speakerNames.join(", ")}. Beat 0 (the cold open) is already written — start at beat 1.
+- THE RUNDOWN IS FIXED AND VALIDATED. Every beat gets turns. intro: ${BEAT_TURN_CAPS.intro.min}-${BEAT_TURN_CAPS.intro.max} turns (welcome, both names, one plain-sentence tease per topic). transition: ${BEAT_TURN_CAPS.transition.min}-${BEAT_TURN_CAPS.transition.max}. closing: ${BEAT_TURN_CAPS.closing.min}-${BEAT_TURN_CAPS.closing.max} (a verdict each, a jab, a sign-off). Everything else goes to the topic beats, split by how much evidence each carries.
+- EVERY TOPIC BEAT'S FIRST TURN SETS THE TABLE. Its intent begins with the words "set the table:" followed by the team and the person's full name (e.g. "set the table: Rays, Junior Caminero's fortieth home run"), targetWords 40-70, and it carries that beat's evidence refs for the facts it states. The writer will speak the beat's "orientation" in plain words there. Argument starts on the SECOND turn.
 - RHYTHM MUST VARY, and this is measured three ways. (a) No more than ${(PLAN_ALTERNATION_CEILING * 100).toFixed(0)}% of adjacent turns may change speaker — trading single lines back and forth for a whole episode is ping-pong, not an argument. (b) No single run length may cover more than 70% of the plan: a script where almost every run is one turn is a metronome, and so is a script where almost every run is two. Both are rejected. (c) At most one run in five may be three turns long, and no host may hold four. Mix them: a single sharp reaction, a pair that lands a claim then presses it, occasionally a third turn when the pressure genuinely warrants it. When you do write three, the third turn must still be aimed at the other host — never a question the absent host is expected to answer. A one-word reaction is a legitimate turn.
 - The two hosts must NOT end up with the same number of turns. Turn count follows who has something to say.
 - AT LEAST ONE TURN MUST BE A CONCESSION, CORRECTION, OR CHANGE OF MIND, and its intent must say so ("concede the attendance point", "admit the timeline was wrong", "change his mind on the trade"). This is validated. An episode where two positions are held flat for the full runtime is refused at the production gate, after every writer has been paid; a plan with no concession turn is refused here instead.
@@ -1078,7 +1108,12 @@ Return valid JSON only:
       // tier the second provider is the last one, so continuing to reject costs
       // the episode rather than a call. Content rules stay fatal on every
       // attempt; only the pacing statistics soften. See TurnPlanValidatorOptions.
-      validate: makeTurnPlanValidator(input.totalWordTarget, { rhythmAttempts: 2 }),
+      validate: makeTurnPlanValidator(input.totalWordTarget, {
+        rhythmAttempts: 2,
+        beats: (input.beats as Array<{ beatIndex?: unknown; segmentType?: unknown }>)
+          .filter((b) => Number.isInteger(b?.beatIndex) && typeof b?.segmentType === "string")
+          .map((b) => ({ beatIndex: Number(b.beatIndex), segmentType: String(b.segmentType) })),
+      }),
     })
   );
 
@@ -1255,7 +1290,12 @@ ${planView}
 WHAT IS ALREADY ON THE PAGE — continue its emotional and conversational logic. READ IT, RESPOND TO IT, NEVER REPRODUCE IT: any line below has already been spoken aloud, including lines of your own. Repeating one — verbatim or lightly reworded — is the single most obvious sign a script was assembled by a machine, and such a line is dropped without being replaced, leaving your character silent on that turn:
 ${transcriptSoFar}
 
-Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent first. Then hit targetWords: it is a FLOOR, not a ceiling, and a turn that lands well under it starves the episode — the whole script is rejected outright if the totals come up short, which no amount of good intent recovers.
+Write ${ownTurns.length} line(s): exactly the turns marked YOURS, no more and no fewer. Each must respond to what precedes it — a line that could be moved anywhere in the episode is a failed line. Hit the intent first.
+
+RUNDOWN TURNS ARE SPOKEN IN PLAIN WORDS:
+- A turn whose intent begins "set the table:" is spoken to a listener who did NOT see the game: say the beat's "orientation" from BEATS IN PLAY in your own voice — the team, the person's FULL name and job, what happened, when, the key number — before a single word of opinion. No pronouns, no "the kid", no "that building".
+- An intro-beat turn welcomes the listener to the show by name, says your own name, and teases each topic in one plain sentence (team, player, what happened).
+- A closing-beat turn is a one-sentence verdict, a jab, or the sign-off (thank the listener, the show's name, when you're back) — nothing new is argued in the closing. Then hit targetWords: it is a FLOOR, not a ceiling, and a turn that lands well under it starves the episode — the whole script is rejected outright if the totals come up short, which no amount of good intent recovers.
 
 EVIDENCE REFS ARE NOT DECORATION, AND THEY ARE NOT QUOTES. An evidenceRefs entry is a typed record pointer, copied EXACTLY as an object: {"type":"newsItem","id":"..."} . Your own turns in the plan above already carry the refs assigned to them — the "facts" array on each line marked YOURS. Copy those objects across, unchanged. Do not invent an id, do not retype it from memory, do not substitute a quoted phrase, a source name or a summary: anything that is not one of the objects handed to you is DELETED by the pipeline before the script is saved, which leaves the claim standing with no support at all.
 

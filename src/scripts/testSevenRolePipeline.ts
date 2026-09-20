@@ -94,14 +94,16 @@ function synthLine(exclusive: string[], totalWords: number): string {
   return `${parts.slice(0, totalWords).join(" ")}.`;
 }
 
+// The model's FILL for the code-built rundown skeleton (two topics ->
+// cold_open, intro, topic, transition, topic, closing). Topic beats carry an
+// orientation, which the outline validator requires.
 const BEATS = [
   { beatIndex: 0, segmentType: "cold_open", title: "The empty seats", goal: "open mid-argument", angle: "who signed off", factRefs: [] },
-  { beatIndex: 1, segmentType: "topic", title: "The number nobody defends", goal: "expose the gap", angle: "the payroll line", factRefs: [{ type: "NewsItem", id: "n1" }] },
-  { beatIndex: 2, segmentType: "topic", title: "What the room was told", goal: "shift leverage", angle: "the briefing", factRefs: [{ type: "NewsItem", id: "n2" }] },
-  { beatIndex: 3, segmentType: "topic", title: "The player's version", goal: "complicate it", angle: "the other side", factRefs: [{ type: "Injury", id: "i1" }] },
-  { beatIndex: 4, segmentType: "topic", title: "Who eats the loss", goal: "raise stakes", angle: "consequence", factRefs: [] },
-  { beatIndex: 5, segmentType: "topic", title: "The part nobody planned", goal: "surprise", angle: "the reversal", factRefs: [] },
-  { beatIndex: 6, segmentType: "closing", title: "What is still open", goal: "payoff", angle: "unresolved", factRefs: [] },
+  { beatIndex: 1, segmentType: "intro", title: "Welcome and rundown", goal: "orient", angle: "tease both stories", factRefs: [] },
+  { beatIndex: 2, segmentType: "topic", title: "The number nobody defends", goal: "expose the gap", angle: "the payroll line", topicId: "topic-1", factRefs: [{ type: "NewsItem", id: "n1" }], orientation: "The Toledo Mud Hens raised their payroll fourteen percent this winter, general manager Dale Harmon said so in March, and the briefing about it was verbal." },
+  { beatIndex: 3, segmentType: "transition", title: "To: the player", goal: "hand off", angle: "name the player", topicId: "topic-2", factRefs: [] },
+  { beatIndex: 4, segmentType: "topic", title: "The player's version", goal: "complicate it", angle: "the other side", topicId: "topic-2", factRefs: [{ type: "Injury", id: "i1" }], orientation: "Mud Hens outfielder Rex Calloway was listed day-to-day on Tuesday after the club said he was cleared to play, and he sat anyway." },
+  { beatIndex: 5, segmentType: "closing", title: "Verdicts and sign-off", goal: "payoff", angle: "verdicts", factRefs: [] },
 ];
 
 // PAIRS, not ping-pong.
@@ -147,27 +149,38 @@ const BEATS = [
  * adding turns too.
  */
 const TURN_SPEC: Array<{ speakerName: string; beatIndex: number }> = [
-  // beat 1 — A×3, B×3 (the two rare threes, spent here and nowhere else)
-  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 },
-  { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
-  // beat 2 — A×2, B×2
+  // beat 1 — intro: A×2, B×2
+  { speakerName: HOST_A, beatIndex: 1 }, { speakerName: HOST_A, beatIndex: 1 },
+  { speakerName: HOST_B, beatIndex: 1 }, { speakerName: HOST_B, beatIndex: 1 },
+  // beat 2 — topic: A×3 (sets the table, then the rare three), B×2, A×2, B×2
+  { speakerName: HOST_A, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 },
+  { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_B, beatIndex: 2 },
   { speakerName: HOST_A, beatIndex: 2 }, { speakerName: HOST_A, beatIndex: 2 },
   { speakerName: HOST_B, beatIndex: 2 }, { speakerName: HOST_B, beatIndex: 2 },
-  // beat 3 — A×2, B×2
-  { speakerName: HOST_A, beatIndex: 3 }, { speakerName: HOST_A, beatIndex: 3 },
-  { speakerName: HOST_B, beatIndex: 3 }, { speakerName: HOST_B, beatIndex: 3 },
-  // beat 4 — A×2, B×2
+  // beat 3 — transition: A×1
+  { speakerName: HOST_A, beatIndex: 3 },
+  // beat 4 — topic: B×3 (sets the table, the other rare three), A×2, B×2
+  { speakerName: HOST_B, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 },
   { speakerName: HOST_A, beatIndex: 4 }, { speakerName: HOST_A, beatIndex: 4 },
   { speakerName: HOST_B, beatIndex: 4 }, { speakerName: HOST_B, beatIndex: 4 },
-  // beat 5 — A×2, B×1
-  { speakerName: HOST_A, beatIndex: 5 }, { speakerName: HOST_A, beatIndex: 5 },
+  // beat 5 — closing singles: A, B, A, B
+  { speakerName: HOST_A, beatIndex: 5 },
   { speakerName: HOST_B, beatIndex: 5 },
-  // beat 6 — the singles: A, B, A, B
-  { speakerName: HOST_A, beatIndex: 6 },
-  { speakerName: HOST_B, beatIndex: 6 },
-  { speakerName: HOST_A, beatIndex: 6 },
-  { speakerName: HOST_B, beatIndex: 6 },
+  { speakerName: HOST_A, beatIndex: 5 },
+  { speakerName: HOST_B, beatIndex: 5 },
 ];
+
+
+/** The stub architect's intent for a turn: the first turn of a topic beat
+ *  sets the table (validated), turn 1 concedes (validated), the rest press. */
+function turnIntent(turn: { speakerName: string; beatIndex: number }, index: number): string {
+  const firstOfBeat = TURN_SPEC.findIndex((t) => t.beatIndex === turn.beatIndex) === index;
+  if (firstOfBeat && (turn.beatIndex === 2 || turn.beatIndex === 4)) {
+    return `set the table: ${turn.beatIndex === 2 ? "Mud Hens, the payroll line" : "Mud Hens, Rex Calloway sitting"}`;
+  }
+  if (index === 1) return `Turn ${index}: concede the previous point, then press what it leaves open.`;
+  return `Turn ${index}: press the point the previous turn left open.`;
+}
 
 /** Deterministic per-turn text drawn from that host's exclusive vocabulary. */
 function bodyText(host: string, turnIndex: number): string {
@@ -363,10 +376,7 @@ const defaultResponder: Responder = (kind, options) => {
           turnIndex: index,
           beatIndex: turn.beatIndex,
           speakerName: turn.speakerName,
-          intent:
-            index === 1
-              ? `Turn ${index}: concede the previous point, then press what it leaves open.`
-              : `Turn ${index}: press the point the previous turn left open.`,
+          intent: turnIntent(turn, index),
           factRefs: [],
           targetWords: 20,
         })),
@@ -462,7 +472,7 @@ async function runPipeline(
   const result = await runSevenRolePipeline({
     systemPrompt: "You are two sports hosts. HOW REAL PODCAST SPEECH WORKS: speak like people.",
     episodeTitle: "The number nobody signed",
-    topicsPrompts: "EVIDENCE:\n- NewsItem n1: payroll line rose 14 percent.\n- NewsItem n2: the briefing was verbal.\n- Injury i1: the player was listed day-to-day.",
+    topicsPrompts: "Topic #1: The payroll line\nEVIDENCE:\n- NewsItem n1: payroll line rose 14 percent.\n- NewsItem n2: the briefing was verbal.\n---\nTopic #2: The player's version\n- Injury i1: the player was listed day-to-day.",
     targetDuration: 4,
     temperature: 0.85,
     maxTokens: 16000,
@@ -648,9 +658,7 @@ async function main(): Promise<void> {
           intent:
             index === 0
               ? `Press the point. Remember: ${SENTINEL_B} protected belief`
-              : index === 1
-                ? `Turn ${index}: concede the previous point, then press what it leaves open.`
-                : `Turn ${index}: press the point the previous turn left open.`,
+              : turnIntent(turn, index),
           factRefs: [],
           targetWords: 20,
         })),
