@@ -1,7 +1,7 @@
 import type { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
-import { COLD_OPEN_MIN_WORDS, COLD_OPEN_MAX_WORDS } from "./productionInvariants";
+import { COLD_OPEN_MIN_WORDS, COLD_OPEN_MAX_WORDS, spokenWords as gateSpokenWords } from "./productionInvariants";
 import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 
 export interface PrivateHostAgenda {
@@ -140,8 +140,18 @@ export async function generatePrivateHostAgendas(input: {
   return resolved.map((r) => r.agenda!);
 }
 
+/**
+ * THE GATE'S COUNTER, not a third one.
+ *
+ * This used to split on whitespace, so "twenty-two-year-old" was one word
+ * here and four at the production gate, which splits on punctuation. A cold
+ * open this validated at 118 was measured at 124 by the gate and the episode
+ * was held for the very band this function had enforced. testRewriteBudget
+ * already insists the REWRITE counter agree with the gate; nothing insisted
+ * the tournament's did.
+ */
 function spokenWords(lines: CreativeScriptLine[]): number {
-  return lines.reduce((sum, line) => sum + stripAudioTags(String(line?.text || "")).split(/\s+/).filter(Boolean).length, 0);
+  return lines.reduce((sum, line) => sum + gateSpokenWords(String(line?.text || "")).length, 0);
 }
 
 /**

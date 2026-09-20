@@ -66,6 +66,7 @@ import {
   type TurnPlanRhythmRepair,
 } from "./scriptCreativePipeline";
 import { WordFlow, wordsIn, wordsInText } from "./scriptWordFlow";
+import { SegmentBudgetLedger } from "./scriptSegmentBudget";
 import {
   SevenRoleTrace,
   artifactRef,
@@ -736,9 +737,21 @@ export async function runSevenRolePipeline(
       note: `${guard.applied.length}/${repairs.length} repair(s) accepted`,
     });
 
+    // The fourth rewrite path that could grow the cold open past its band,
+    // and the one that did on 2026-09-19 (124 -> 128). Cold-open lines are the
+    // beatIndex-0 seeds; everything else has no hard bound.
+    const budget = new SegmentBudgetLedger([
+      { type: "cold_open", lines: draftLines.filter((l) => l.beatIndex === 0) },
+      { type: "topic", lines: draftLines.filter((l) => l.beatIndex !== 0) },
+    ]);
     for (const repair of guard.applied) {
       const line = draftLines.find((l) => l.lineIndex === repair.lineIndex);
-      if (line) line.text = repair.text;
+      if (!line) continue;
+      if (!budget.accept(line.lineIndex, repair.text)) {
+        args.log(`Dialogue director repair on line ${line.lineIndex} refused: it would take the cold open out of its spoken-word band.`);
+        continue;
+      }
+      line.text = repair.text;
     }
     if (notes.length) args.log(`Dialogue director notes: ${notes.join(" | ")}`);
 
