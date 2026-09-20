@@ -26,6 +26,7 @@ import { assessScriptQuality } from "./scriptQualityJudge";
 import { evaluateScriptEditorialGate, type ScriptPipelineProvenance } from "./scriptEditorialGate";
 import { evaluateProductionInvariants } from "./productionInvariants";
 import { retiredHostNameFragments } from "../hosts/roster";
+import { scriptGenerationAllowedFrom } from "../createFlow";
 import { generateOutlineDrivenScript, rewriteLinesForAntithesis, rewriteLinesForGrounding, validateScriptShape } from "./scriptOutlineEngine";
 import { runIndependentJudgeStage, runSevenRolePipeline } from "./scriptSevenRolePipeline";
 import type { SevenRoleTrace, SevenRoleTraceRecord } from "./scriptRoles";
@@ -196,8 +197,10 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     throw new Error(msg);
   }
 
-  if (ep.status !== "draft" && ep.status !== "script_draft") {
-    const msg = `Script generation can only run for episodes in 'draft' or 'script_draft' status. Current status: ${ep.status}`;
+  if (!scriptGenerationAllowedFrom(ep.status, !!input.forceRegenerate)) {
+    const msg = input.forceRegenerate
+      ? `A script cannot be regenerated once audio exists (episode status: ${ep.status}); voiced lines would be stranded.`
+      : `Script generation can only run for episodes in 'draft' or 'script_draft' status. Current status: ${ep.status}`;
     result.reasons.push(msg);
     throw new Error(msg);
   }
