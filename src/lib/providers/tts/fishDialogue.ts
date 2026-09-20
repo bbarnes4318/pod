@@ -6,7 +6,7 @@
 // reaches storage or the final stitcher.
 
 import { getFishApiKey } from "../../env";
-import { analyzeSpokenPerformanceBuffer, type SpokenPerformanceQaReport } from "../../audio/spokenPerformanceQa";
+import { analyzeSpokenPerformanceBuffer, isBrokenPerformance, type SpokenPerformanceQaReport } from "../../audio/spokenPerformanceQa";
 import {
   DialogueSceneInput,
   DialogueSceneResult,
@@ -493,7 +493,26 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
   }
 
   const passing = candidates.filter((candidate) => candidate.qa.passed).sort((a, b) => b.qa.score - a.qa.score);
-  const selected = passing[0];
+  let selected = passing[0];
+  let selectedBelowFloor = false;
+  if (!selected) {
+    // Nothing passed. If the best take is merely BLAND - under the loudness
+    // range or pacing floors, or the score floor those drive - it ships with
+    // a flag rather than killing the scene and the episode with it. Only a
+    // BROKEN take (clipping, dead gap, rushed render) is refused outright.
+    // See HARD_PERFORMANCE_FAILURE for the line and the episode behind it.
+    const bland = candidates
+      .filter((candidate) => !isBrokenPerformance(candidate.qa))
+      .sort((a, b) => b.qa.score - a.qa.score);
+    if (bland[0]) {
+      selected = bland[0];
+      selectedBelowFloor = true;
+      console.warn(
+        `[SceneTTS] Scene ${input.sceneIndex}: no take passed the publishing floor; shipping the best bland one ` +
+        `(candidate ${selected.index}, ${selected.qa.score}/100: ${selected.qa.failures.join("; ")}) flagged for review.`
+      );
+    }
+  }
   if (!selected) {
     const reports = candidates.map((candidate) =>
       `candidate ${candidate.index} ${candidate.qa.score}/100: ${candidate.qa.failures.join("; ") || "failed score floor"}`
@@ -527,6 +546,8 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
         topP: candidate.topP,
       })),
       selectedPerformanceQa: selected.qa,
+      /** True when no take passed and the best BLAND one shipped, flagged. */
+      selectedBelowFloor,
       temperature: selected.temperature,
       topP: selected.topP,
       directionCues: payload.directionCues,

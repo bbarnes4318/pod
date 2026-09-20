@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { scoreConversationContinuity } from "../lib/services/scriptConversationDirector";
-import { scoreSpokenPerformanceMetrics, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";
+import { scoreSpokenPerformanceMetrics, isBrokenPerformance, type SpokenPerformanceQaMetrics } from "../lib/audio/spokenPerformanceQa";
 import { resolveFishSceneModel } from "../lib/providers/tts/fishDialogue";
 import { scoreScriptQuality } from "../lib/services/episodeQualityService";
 import { evaluateMovementQuality } from "../lib/services/scriptMovementQuality";
@@ -190,6 +190,30 @@ assert.equal(flatQa.passed, false, "flat/metronomic/read-aloud audio must be rej
 assert.ok(flatQa.failures.some((failure) => /Metronome pacing|cluster|terminal cadence|Monotone phrase/.test(failure)));
 assert.equal(aliveQa.passed, true, `alive performance was rejected: ${aliveQa.failures.join("; ")}`);
 assert.ok(aliveQa.score >= 80);
+
+
+// Bland is not broken. Episode 2026-09-20: two scenes were refused because all
+// three takes measured 2.0-2.8 LU against a 3.0 floor, and the episode died.
+// The QA still FAILS a bland take - selection then ships the best bland take
+// flagged, and refuses only a broken one. This pins which is which.
+const blandCold = scoreSpokenPerformanceMetrics(
+  { ...aliveMetrics, loudnessRangeLu: 2.6 },
+  { expectedTurnCount: 6, sceneType: "cold_open", strict: true }
+);
+assert.equal(blandCold.passed, false, "a cold open under the 3.0 LU floor still fails QA");
+assert.ok(blandCold.failures.some((f) => /Flat vocal dynamics/.test(f)), blandCold.failures.join("; "));
+assert.equal(isBrokenPerformance(blandCold), false, "under-dynamic is bland, not broken - it may ship flagged");
+
+const clipped = scoreSpokenPerformanceMetrics(
+  { ...aliveMetrics, truePeakDb: 0.1 },
+  { expectedTurnCount: 6, sceneType: "cold_open", strict: true }
+);
+assert.equal(isBrokenPerformance(clipped), true, "clipping is broken - it must never ship");
+const gapped = scoreSpokenPerformanceMetrics(
+  { ...aliveMetrics, longestPauseSec: 4.0 },
+  { expectedTurnCount: 6, sceneType: "cold_open", strict: true }
+);
+assert.equal(isBrokenPerformance(gapped), true, "a dead gap is broken - it must never ship");
 
 console.log("Real podcast quality gate regression: PASS");
 console.log({
