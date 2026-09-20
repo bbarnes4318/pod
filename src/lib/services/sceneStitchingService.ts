@@ -30,7 +30,7 @@ import { DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS, DEFAULT_PAUSE_MS } from "
 import { resolveOpeningPlan } from "@/lib/audio/openingTiming";
 import { analyzeEpisodeAudio, type AudioQaReport, type ScriptedPause } from "@/lib/audio/audioQa";
 import { analyzeSceneAudioRows, type SceneQaReport } from "@/lib/audio/sceneAudioQa";
-import { runAudioSemanticQa, type AudioSemanticQaReport } from "@/lib/audio/audioSemanticQa";
+import { runAudioSemanticQa, resolveSemanticQaRequirement, type AudioSemanticQaReport } from "@/lib/audio/audioSemanticQa";
 import { loadSoundDesignAssetSet } from "@/lib/services/audioStitchingService";
 import { parseEpisodeSoundDesign, isProductionStyle, type ProductionStyle, emptyAssetSet, type SoundDesignAssetSet, mixBedUnderForeground } from "@/lib/audio/soundDesign";
 import { loadScenePlanForScript } from "@/lib/services/ttsSceneService";
@@ -186,7 +186,10 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
       expectedLineIndexes: plan.scenes.flatMap((s) => s.lineIndexes),
       expectedProvider: eligibility.provider,
       timingRequired: false,
-      transcriptQaEnabled: process.env.TTS_TRANSCRIPT_QA_ENABLED === "true",
+      // Ask the resolver, not the raw flag: in production the check runs when a
+      // provider is keyed even if the flag was left false (audioSemanticQa). A
+      // second, raw read here kept refusing the mix after that was fixed.
+      transcriptQaEnabled: resolveSemanticQaRequirement().enabled,
     });
     for (const c of sceneQa.checks) console.log(`[SceneStitcher][SceneQA:${c.kind}] ${c.status.toUpperCase()} — ${c.name}: ${c.value}`);
     if (!sceneQa.passed) {
