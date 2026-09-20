@@ -210,10 +210,10 @@ export function compileHostStudioProfile(input: HostStudioSettings): CompiledHos
       ? "lands a big theatrical finishing line only when the argument earns it"
       : "lands short, sharp finishing lines";
 
-  // Fish scene rendering distills the FIRST sentence into its per-speaker cue
-  // and caps it. Keep the acoustic sentence well under that limit so the most
-  // important guard — never reading or announcing — cannot be truncated.
-  const firstSentence = `${pace.words}; ${energy.cue}; ${humorCue}; ${interruptionCue}; talks to the other host, never reads or announces.`;
+  // The old guard here was "never reads or announces". It taught every host
+  // to skip the part where a listener learns who and what the story is about,
+  // and the 2026-09-20 episode never named its teams. Hosts now set the table.
+  const firstSentence = `${pace.words}; ${energy.cue}; ${humorCue}; ${interruptionCue}; talks to the other host and catches up a listener who missed the game — names the team and the player, then reacts.`;
   const extra = settings.extraInstructions.trim();
   const speakingStyle = [
     firstSentence,

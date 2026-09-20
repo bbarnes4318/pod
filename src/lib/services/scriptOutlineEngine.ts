@@ -28,12 +28,52 @@ export interface OutlineBeat {
   factRefs: { type: string; id: string }[];
   escalation?: string;
   callback?: string;
+  /** Topic beats only: the plain-words table-setting the segment's first line
+   *  must deliver — team, full name, what happened, when, the key number. */
+  orientation?: string;
+}
+
+export interface RundownTopic {
+  id: string;
+  title: string;
+  sport?: string | null;
+}
+
+/**
+ * The rundown skeleton, built in CODE from the episode's topics. The model
+ * fills the beats in; it never decides how many there are or what order they
+ * come in. The 2026-09-20 episode was outlined as "6-8 beats around one central
+ * question" and came back with no intro, two topics dissolved into one abstract
+ * argument, and a "closing" that was 38 of 66 lines.
+ */
+export function buildRundownSkeleton(topics: RundownTopic[]): OutlineBeat[] {
+  const beats: OutlineBeat[] = [
+    { beatIndex: 0, segmentType: "cold_open", title: "Cold open", goal: "", angle: "", factRefs: [] },
+    { beatIndex: 1, segmentType: "intro", title: "Welcome and rundown", goal: "", angle: "", factRefs: [] },
+  ];
+  topics.forEach((topic, i) => {
+    if (i > 0) beats.push({ beatIndex: beats.length, segmentType: "transition", title: `To: ${topic.title}`, goal: "", angle: "", topicId: topic.id, factRefs: [] });
+    beats.push({ beatIndex: beats.length, segmentType: "topic", title: topic.title, goal: "", angle: "", topicId: topic.id, factRefs: [] });
+  });
+  beats.push({ beatIndex: beats.length, segmentType: "closing", title: "Verdicts and sign-off", goal: "", angle: "", factRefs: [] });
+  return beats;
+}
+
+/** Legacy callers pass only the rendered topics block; recover the topics from it. */
+export function topicsFromPrompt(topicsPrompts: string): RundownTopic[] {
+  const out: RundownTopic[] = [];
+  for (const m of topicsPrompts.matchAll(/^Topic #(\d+): (.+)$/gm)) {
+    out.push({ id: `topic-${m[1]}`, title: m[2].trim() });
+  }
+  return out.length ? out : [{ id: "topic-1", title: "The story" }];
 }
 
 export interface OutlineDrivenArgs {
   systemPrompt: string;
   episodeTitle: string;
   topicsPrompts: string;
+  /** Episode topics in rundown order. Parsed from topicsPrompts when absent. */
+  rundownTopics?: RundownTopic[];
   targetDuration: number;
   version: number;
   temperature: number;
@@ -573,32 +613,29 @@ export async function generateEpisodeOutline(
   creativeSystemPrompt: string,
   spine?: unknown
 ): Promise<OutlineBeat[]> {
+  const skeleton = buildRundownSkeleton(args.rundownTopics ?? topicsFromPrompt(args.topicsPrompts));
   const prompt = [
     `You are showrunning episode "${args.episodeTitle}" (roughly ${args.targetDuration} minutes).`,
     "",
     ...(spine
-      ? [
-          "THE STORY EDITOR HAS ALREADY DECIDED WHAT THIS EPISODE IS ABOUT.",
-          "Do not replace the spine, soften it, or add a competing central question.",
-          "Every beat must serve it:",
-          JSON.stringify(spine, null, 2),
-          "",
-        ]
+      ? ["THE STORY EDITOR'S READ ON EACH STORY (serve it, don't replace it):", JSON.stringify(spine, null, 2), ""]
       : []),
     "TOPICS & EVIDENCE:",
     args.topicsPrompts,
     "",
-    "Build a SMALL story spine, not a rundown checklist.",
-    "- Use 6 to 8 beats total. Beat 1 is a cold open already in motion. The final beat is a closing payoff.",
-    "- Organize the episode around one unresolved central question. Additional topics must deepen, complicate, or unexpectedly answer it; do not merely move to the next headline.",
-    "- Every beat changes something: leverage, emotional temperature, a host's position, what the listener believes, or the relationship between the hosts.",
-    "- Plan at least one genuine position shift or newly exposed stake. It may be small; it must be caused by the discussion, not scheduled as a ceremonial concession.",
-    "- Assign each evidence fact to at most one beat. Facts are ammunition, not the plot.",
-    "- Do not schedule jokes, filler, interruptions, tangents, catchphrases, callbacks, or audio tags. A callback note is allowed only when a concrete earlier phrase or image could naturally return.",
-    "- Prefer fewer, deeper movements over exhaustive coverage. It is acceptable to leave a weak topic out.",
+    "THE RUNDOWN IS FIXED. Fill in these beats, in this order, with these beatIndex/segmentType/topicId values unchanged:",
+    JSON.stringify(skeleton, null, 2),
+    "",
+    "For every beat fill title, goal (what the beat changes), angle (the specific question or pressure), escalation, factRefs, and an optional callback.",
+    "- cold_open: mid-argument on the hottest take, and it names the team and player within its first two lines.",
+    "- intro: welcome, both hosts by name, and a one-plain-sentence tease of EVERY topic beat (team, player, what happened).",
+    "- topic: ALSO fill \"orientation\": two or three plain sentences a host will say FIRST to catch up a listener who missed it — the team, the player's or coach's full name and job, what happened, when, and the key number, all from the evidence. Then the argument: the question a FAN would actually argue about this game, this player or this team. It is about baseball/football/basketball, never about 'who wrote the sentence' or 'the building'.",
+    "- transition: names the next team or player. Nothing else.",
+    "- closing: each host's one-sentence verdict on the lead story, a last jab, a sign-off.",
+    "- Assign each evidence fact to at most one beat, on the topic it belongs to. Do not schedule jokes, interruptions, catchphrases or audio tags.",
     "",
     "Return valid JSON only:",
-    `{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open|intro|topic|transition|closing", "title": "...", "goal": "what changes", "angle": "specific pressure/question", "topicId": "optional", "factRefs": [], "escalation": "how stakes or understanding change", "callback": "optional concrete phrase/image" } ] }`,
+    `{ "beats": [ { "beatIndex": 0, "segmentType": "cold_open", "title": "...", "goal": "...", "angle": "...", "topicId": "optional", "factRefs": [], "escalation": "...", "callback": "optional", "orientation": "topic beats only" } ] }`,
   ].join("\n");
 
   const result = await withLlmStage("script:outline", () =>
@@ -607,19 +644,39 @@ export async function generateEpisodeOutline(
       systemPrompt: creativeSystemPrompt,
       temperature: Math.min(args.temperature, 0.7),
       maxTokens: Math.min(args.maxTokens, 7000),
-      validate: (value) =>
-        Array.isArray((value as { beats?: unknown })?.beats)
-          ? null
-          : "Outline is missing the required 'beats' array.",
+      validate: (value) => {
+        const got = (value as { beats?: unknown })?.beats;
+        if (!Array.isArray(got)) return "Outline is missing the required 'beats' array.";
+        const missing = skeleton
+          .filter((bone) => bone.segmentType === "topic")
+          .filter((bone) => {
+            const b = got.find((x: any) => Number(x?.beatIndex) === bone.beatIndex) ?? got[bone.beatIndex];
+            return !(typeof b?.orientation === "string" && b.orientation.trim().length >= 40);
+          });
+        return missing.length
+          ? `Topic beat(s) ${missing.map((b) => b.beatIndex).join(", ")} need an "orientation": two or three plain sentences naming the team, the full name, what happened, when and the key number.`
+          : null;
+      },
     })
   );
 
-  const beats: OutlineBeat[] = Array.isArray(result?.beats) ? result.beats.slice(0, 8) : [];
-  if (beats.length < 5) throw new Error(`Outline returned only ${beats.length} beats.`);
-  beats.forEach((beat, index) => (beat.beatIndex = index));
-  beats[0].segmentType = "cold_open";
-  beats[beats.length - 1].segmentType = "closing";
-
+  // Overlay the model's CONTENT onto the code-owned SKELETON. Structure —
+  // count, order, types, topic binding — is never taken from the model.
+  const filled: any[] = Array.isArray(result?.beats) ? result.beats : [];
+  const beats: OutlineBeat[] = skeleton.map((bone, index) => {
+    const fill = filled.find((b) => Number(b?.beatIndex) === index) ?? filled[index] ?? {};
+    const str = (v: unknown, fallback = "") => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+    return {
+      ...bone,
+      title: str(fill.title, bone.title),
+      goal: str(fill.goal),
+      angle: str(fill.angle),
+      escalation: str(fill.escalation) || undefined,
+      callback: str(fill.callback) || undefined,
+      orientation: bone.segmentType === "topic" ? str(fill.orientation) || undefined : undefined,
+      factRefs: Array.isArray(fill.factRefs) ? fill.factRefs : [],
+    };
+  });
   const seenFacts = new Set<string>();
   for (const beat of beats) {
     beat.factRefs = (Array.isArray(beat.factRefs) ? beat.factRefs : []).filter((reference) => {

@@ -81,6 +81,8 @@ jobs:
         run: npm run test:listener-learning
       - name: Seven-role writing pipeline regression
         run: npm run test:seven-role-pipeline
+      - name: Listener orientation, phrase recycling and rundown checks
+        run: npm run test:listener-checks
       - name: Editorial learning and semantic audio contracts
         run: npm run test:world-class-learning
       - name: Topic freshness and automated research regression

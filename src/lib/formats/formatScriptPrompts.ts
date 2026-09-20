@@ -202,7 +202,7 @@ export function formatPromptPieces(format: ShowFormat, cast: AiHost[]): FormatPr
   You may use this shape ONCE in the entire episode, never in the first six lines, and only
   when the host has actually earned it. Every other line carries its meaning some other way:
   a number, a name, a thing that happened, a question, an interruption, or a flat refusal.
-- When a host would reach for a definition, make them reach for a concrete image or consequence instead.`,
+- When a host would reach for a definition or a metaphor, make them reach for a concrete game, player or number from the evidence instead. The argument is about what happened on the field, to named people on named teams — never about "the building", "the file" or "who wrote the sentence".`,
         extraSpeechRules: "",
       };
     }

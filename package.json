@@ -184,6 +184,7 @@
     "write:sample": "tsx --conditions=react-server src/scripts/writeSampleEpisode.ts",
     "test:render-mode-hardening": "tsx --conditions=react-server src/scripts/testRenderModeHardening.ts",
     "test:conversation-rhythm": "tsx --conditions=react-server src/scripts/testConversationRhythm.ts",
+    "test:listener-checks": "tsx --conditions=react-server src/scripts/testListenerChecks.ts",
     "test:baseball-cast": "tsx --conditions=react-server src/scripts/testBaseballCast.ts",
     "test:season-for-league": "tsx --conditions=react-server src/scripts/testSeasonForLeague.ts",
     "test:research-brief-stagger": "tsx --conditions=react-server src/scripts/testResearchBriefStagger.ts",
