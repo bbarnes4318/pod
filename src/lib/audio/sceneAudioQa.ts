@@ -16,6 +16,9 @@ export type SceneQaStatus = "pass" | "warning" | "fail" | "not_run";
 
 export interface SceneQaCheck {
   name: string;
+  /** True when this check is not_run HERE because it runs at a later gate
+   *  on the same episode. A deferred check is not an unrun check. */
+  deferred?: boolean;
   kind: "technical" | "transcript_fidelity" | "timing" | "identity_consistency";
   status: SceneQaStatus;
   value: string;
@@ -155,6 +158,7 @@ export function analyzeSceneAudioRows(opts: {
     name: "Transcript fidelity (names/numbers preserved)",
     kind: "transcript_fidelity",
     status: "not_run",
+    deferred: opts.transcriptQaEnabled,
     value: opts.transcriptQaEnabled ? "deferred to downloaded-audio stitch gate" : "not_run (TTS_TRANSCRIPT_QA_ENABLED=false)",
     detail: opts.transcriptQaEnabled
       ? "The stitcher runs diarized transcript, critical-token, speaker-attribution and interruption QA after it downloads the real selected audio."
@@ -168,7 +172,12 @@ export function analyzeSceneAudioRows(opts: {
   // numbers precisely through this gap.
   const productionRequiresRun =
     process.env.NODE_ENV === "production" && process.env.TTS_TRANSCRIPT_QA_WAIVED !== "true";
-  const unacceptable = (c: { status: string }) =>
-    c.status === "fail" || (productionRequiresRun && c.status === "not_run");
+  // A DEFERRED not_run is not an unrun check: when transcript QA is enabled
+  // this pre-assembly pass hands the check to the downloaded-audio gate, which
+  // runs it against the real selected audio. Counting the hand-off itself as
+  // a failure meant this gate could never pass in production with the check
+  // ON or OFF - the deployment saw both, one after the other, on 2026-09-20.
+  const unacceptable = (c: { status: string; deferred?: boolean }) =>
+    c.status === "fail" || (productionRequiresRun && c.status === "not_run" && !c.deferred);
   return { passed: !checks.some(unacceptable), checks };
 }

@@ -442,6 +442,32 @@ async function main() {
     assert(!noTiming.passed, "required-but-missing timing must fail");
   });
 
+  check("scene QA in PRODUCTION: an unrun transcript check blocks, a DEFERRED one does not", () => {
+    // Both were observed on 2026-09-20, one after the other. With the check
+    // off the gate refused (correct: nothing will verify names/numbers). With
+    // the check ON the gate still refused - it had handed the check to the
+    // downloaded-audio stage and then counted the hand-off as "not run".
+    const row = (i: number) => ({
+      sceneIndex: i, status: "ready", selected: true, renderUnit: "multi_speaker_scene",
+      provider: "fish", model: "s2.1-pro-free", requestFingerprint: `fp${i}`,
+      lineIndexes: [i * 2, i * 2 + 1], durationMs: 8000, audioUrl: `https://x/${i}.mp3`,
+      timingStatus: "timing_unavailable", voiceMap: { h1: "v1" }, characterCount: 200,
+    });
+    const penv = process.env as Record<string, string | undefined>;
+    const prev = penv.NODE_ENV;
+    penv.NODE_ENV = "production";
+    try {
+      const off = analyzeSceneAudioRows({ scenes: [row(0), row(1)], expectedLineIndexes: [0, 1, 2, 3], expectedProvider: "fish", transcriptQaEnabled: false });
+      assert(!off.passed, "production with transcript QA OFF must still refuse - nothing will verify the words");
+      const on = analyzeSceneAudioRows({ scenes: [row(0), row(1)], expectedLineIndexes: [0, 1, 2, 3], expectedProvider: "fish", transcriptQaEnabled: true });
+      const t = on.checks.find((c) => c.name.startsWith("Transcript fidelity"))!;
+      assert(t.status === "not_run" && t.deferred === true, "with QA on, the pre-assembly check is honestly not_run AND marked deferred");
+      assert(on.passed, `a deferred check must not block assembly: ${JSON.stringify(on.checks.filter((c) => c.status !== "pass"))}`);
+    } finally {
+      penv.NODE_ENV = prev;
+    }
+  });
+
   await Promise.all(pending);
   console.log(`\n${passed} passed, ${failed} failed\n`);
   if (failed > 0) process.exit(1);
