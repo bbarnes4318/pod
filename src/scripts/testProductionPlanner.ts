@@ -341,6 +341,29 @@ async function main() {
     }
   });
 
+  await check("a one-bed pool is never cooldown-starved (a constant bed plays every episode)", () => {
+    // A show that pinned ONE bed (system slot / one-item pool / frozen
+    // selection) has no alternative to rotate to: the bed must play on the
+    // episodes after it was used, not go silent for cooldownEpisodes.
+    const oneBed = makeCatalog().filter((a) => a.kind !== "bed" || a.id === "bed-a");
+    const justUsed: CooldownSnapshot = { episodes: [{ episodeId: "prev-1", assetIds: ["bed-a"] }] };
+    let played = 0;
+    for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4", "ep-5", "ep-6"]) {
+      const plan = generateProductionPlan(basePlanInput({ episodeId, assets: oneBed, cooldown: justUsed }));
+      assert(
+        !plan.cues.some((c) => c.type === "silence" && c.reason.includes("bed pool exhausted")),
+        "a sole bed must not be reported as an exhausted pool"
+      );
+      const bed = plan.cues.find((c) => c.type === "bed_change");
+      if (bed) {
+        played++;
+        assert(bed.assetId === "bed-a", "the sole bed is the one that plays");
+        assert(bed.reason.includes("only bed in the pool"), "the reason must say the cooldown had no alternative");
+      }
+    }
+    assert(played > 0, "the sole bed must play on at least some episodes (arc restraint aside)");
+  });
+
   await check("per-episode max-uses is enforced (stingers once, sfx twice)", () => {
     for (const episodeId of ["ep-1", "ep-2", "ep-3", "ep-4"]) {
       const plan = generateProductionPlan(basePlanInput({ episodeId, sfxDensity: "hype" }));

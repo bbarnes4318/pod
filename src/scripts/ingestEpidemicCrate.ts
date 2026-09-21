@@ -10,15 +10,24 @@
 // expire, so this happens at run time, not at curation time), downloads,
 // verifies the file decodes (ffprobe), transcodes to the mix pipeline's native
 // 44.1kHz/16-bit stereo WAV, uploads to S3 via the app's storage client, and
-// upserts an AudioAsset row BY NAME (source="upload", isActive=true,
-// rightsConfirmed=true). Idempotent: re-runs update in place.
+// creates a shared_system AudioAsset row (contentHash, licensed + rights
+// confirmed, ready). Idempotent: an entry whose row already exists BY NAME is
+// SKIPPED (no re-download) — a ready asset's bytes are immutable (DB trigger),
+// so re-running only adds what is new.
 //
 // After ingest it (a) deactivates the synthesized seed pack (source="seed" ->
 // isActive=false) so the planner stops choosing beeps — WITHOUT deleting them,
-// and (b) repoints SoundDesignConfig's intro/outro/bed/stinger slots off the
-// seeds onto real ES assets, so a render uses ES audio whether the planner is
-// enabled (SOUND_DESIGN_PLANNER=true, picks from active assets) or the legacy
-// renderer is running (reads the config slots).
+// and (b) repoints SoundDesignConfig's slots onto ES assets. The slots ARE the
+// system-default sound profile every show inherits (soundProfileMode
+// "system_default"), so their shape decides constancy vs variety:
+//   intro/outro/bed = ONE asset each  -> the same bookends + bed every episode
+//   stingerAssetIds = EVERY stinger   -> segues rotate per episode (planner
+//                                        fit + LRU cooldown picks WHICH)
+// The intro/outro pick is the first manifest theme that passes the planner's
+// genre gate (themeGenreOk — never a cartoon/retro bookend); override with
+//   --intro "<asset name>"  --outro "<asset name>"
+// --archive-offgenre-themes additionally archives theme assets the gate
+// rejects so they stop cluttering the pool pickers (reversible; default off).
 //
 // NEVER hardcode or commit EPIDEMIC_SOUND_API_KEY — it is read from env.
 
@@ -30,6 +39,7 @@ import path from "path";
 import crypto from "crypto";
 import { getFileDurationMs, runFfmpeg } from "../lib/audio/assembly";
 import { ASSET_KINDS, SFX_CATEGORIES } from "../lib/audio/soundDesignShared";
+import { parseAssetMetadata, themeGenreOk } from "../lib/audio/assetMetadata";
 import { EpidemicMcpClient } from "../lib/epidemic/mcpClient";
 
 interface CrateEntry {
@@ -115,6 +125,16 @@ async function main() {
   try {
     for (const e of entries) {
       try {
+        // Already in the library? Reuse the row (bytes are immutable once
+        // ready) and skip the download entirely.
+        if (db) {
+          const existing = await db.audioAsset.findFirst({ where: { name: e.name } });
+          if (existing) {
+            ingested.push({ id: existing.id, name: e.name, kind: e.kind, category: e.kind === "sfx" ? e.category : null });
+            console.log(`  exists  ${e.kind.padEnd(11)} ${e.name} -> ${existing.id}`);
+            continue;
+          }
+        }
         // Resolve a fresh URL right before download (URLs expire).
         let url = await resolveWavUrl(client, e);
         const rawPath = path.join(work, `raw-${safeName(e.name)}.wav`);
@@ -144,12 +164,17 @@ async function main() {
         }
 
         const storageKey = `sound-design/uploads/${crypto.randomUUID()}-${safeName(e.name)}.wav`;
+        const prepBody = fs.readFileSync(prepPath);
         const uploaded = await storage.putObject({
           key: storageKey,
-          body: fs.readFileSync(prepPath),
+          body: prepBody,
           contentType: "audio/wav",
         });
 
+        // A shared_system asset: usable by every show, assignable to the
+        // system pools (saveSystemSoundProfile accepts shared_system only),
+        // licensed + rights-confirmed so newUseBlockReason() never blocks it.
+        const now = new Date();
         const data = {
           name: e.name,
           kind: e.kind,
@@ -163,13 +188,27 @@ async function main() {
           rightsConfirmed: true,
           isActive: true,
           source: "upload",
+          scope: "shared_system",
+          createdByAdminIdentity: "system:ingest-epidemic",
+          legacyScopeReviewRequired: false,
+          contentHash: crypto.createHash("sha256").update(prepBody).digest("hex"),
+          originalFilename: `${safeName(e.name)}.wav`,
+          mimeType: "audio/wav",
+          fileSizeBytes: prepBytes,
+          sampleRate: 44100,
+          channelCount: 2,
+          processingStatus: "ready",
+          licenseStatus: "licensed",
+          licenseName: "Epidemic Sound",
+          licenseReference: e.esId,
+          rightsStatus: "confirmed",
+          rightsConfirmedAt: now,
+          rightsConfirmedByAdminIdentity: "system:ingest-epidemic",
+          allowedUse: "podcast_production",
         };
-        const existing = await db.audioAsset.findFirst({ where: { name: e.name } });
-        const row = existing
-          ? await db.audioAsset.update({ where: { id: existing.id }, data })
-          : await db.audioAsset.create({ data });
+        const row = await db.audioAsset.create({ data });
         ingested.push({ id: row.id, name: e.name, kind: e.kind, category: e.kind === "sfx" ? e.category : null });
-        console.log(`  ${existing ? "updated" : "created"} ${e.kind.padEnd(11)} ${e.name} (${durationMs}ms) -> ${row.id}`);
+        console.log(`  created ${e.kind.padEnd(11)} ${e.name} (${durationMs}ms) -> ${row.id}`);
 
         fs.rmSync(rawPath, { force: true });
         fs.rmSync(prepPath, { force: true });
@@ -193,11 +232,37 @@ async function main() {
   console.log(`\nDeactivated ${seedResult.count} seed asset(s) (source="seed" -> isActive=false).`);
 
   // ---- Repoint SoundDesignConfig onto ES assets -------------------------
-  const firstOf = (kind: string) => ingested.find((a) => a.kind === kind)?.id ?? null;
-  const introId = firstOf("theme_intro");
-  const outroId = firstOf("theme_outro");
-  const bedId = firstOf("bed");
-  const stingerIds = ingested.filter((a) => a.kind === "stinger").slice(0, 5).map((a) => a.id);
+  // Bookends: an explicit --intro/--outro name wins; otherwise the first theme
+  // that passes the planner's genre gate. (The planner would silently swap a
+  // cartoon pin for a genre-clean theme anyway — pin what will actually play.)
+  const genreOk = (a: { name: string; kind: string; category: string | null }) =>
+    themeGenreOk(parseAssetMetadata({ name: a.name, kind: a.kind, category: a.category, tags: [] }));
+  const pickTheme = (kind: "theme_intro" | "theme_outro", wanted: string | undefined) => {
+    const themes = ingested.filter((a) => a.kind === kind);
+    if (wanted) {
+      const hit = themes.find((a) => a.name === wanted);
+      if (!hit) throw new Error(`--${kind === "theme_intro" ? "intro" : "outro"} '${wanted}' is not an ingested ${kind}`);
+      return hit.id;
+    }
+    return themes.find((a) => genreOk(a).ok)?.id ?? null;
+  };
+  const introId = pickTheme("theme_intro", arg("intro"));
+  const outroId = pickTheme("theme_outro", arg("outro"));
+  const bedId = ingested.find((a) => a.kind === "bed")?.id ?? null;
+  // EVERY stinger: the slot is the system stinger POOL, and pool depth is what
+  // lets segues differ episode to episode (cooldown 2 + 1 use/episode).
+  const stingerIds = ingested.filter((a) => a.kind === "stinger").map((a) => a.id);
+
+  if (hasFlag("archive-offgenre-themes")) {
+    const offGenre = ingested.filter((a) => (a.kind === "theme_intro" || a.kind === "theme_outro") && !genreOk(a).ok);
+    for (const a of offGenre) {
+      await db.audioAsset.update({
+        where: { id: a.id },
+        data: { isArchived: true, isActive: false, archivedAt: new Date(), archiveReason: `theme genre gate: ${genreOk(a).reason}` },
+      });
+      console.log(`  archived ${a.kind.padEnd(11)} ${a.name} (${genreOk(a).reason})`);
+    }
+  }
 
   const existingConfig = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
   const configData = {

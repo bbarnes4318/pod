@@ -98,6 +98,7 @@
     "ingest:audio-assets": "tsx --conditions=react-server src/scripts/ingestAudioAssets.ts",
     "curate:epidemic": "tsx src/scripts/curateEpidemicCrate.ts",
     "ingest:epidemic": "tsx --conditions=react-server src/scripts/ingestEpidemicCrate.ts",
+    "ingest:epidemic:remote": "tsx src/scripts/ingestEpidemicRemote.ts",
     "demo:sound-variety": "tsx src/scripts/produceLocalSoundDesignDemo.ts --variety",
     "sample:tts": "tsx --conditions=react-server src/scripts/testTtsSamples.ts",
     "test:topic-lifecycle": "tsx --conditions=react-server src/scripts/testTopicLifecycle.ts",

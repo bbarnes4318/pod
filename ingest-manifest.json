@@ -1,5 +1,233 @@
 [
   {
+    "esId": "221cc3bd-fdbc-4ff3-99ad-6a7161495fce",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Loop, Beat, Logo Intro 01",
+    "tags": [
+      "beat",
+      "logo",
+      "energetic",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 7960,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 221cc3bd-fdbc-4ff3-99ad-6a7161495fce",
+    "esTitle": "Musical, Loop, Beat, Logo Intro 01"
+  },
+  {
+    "esId": "bef52ec4-5b00-4035-a76e-f78479caf4e5",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Loop, Beat, Logo Intro 02",
+    "tags": [
+      "beat",
+      "logo",
+      "energetic",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 7962,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id bef52ec4-5b00-4035-a76e-f78479caf4e5",
+    "esTitle": "Musical, Loop, Beat, Logo Intro 02"
+  },
+  {
+    "esId": "0c4be536-73cc-4f18-98dc-29782892f599",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Stinger, Orchestral Stinger, Horns, Drums",
+    "tags": [
+      "orchestral",
+      "horns",
+      "drums",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 5883,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 0c4be536-73cc-4f18-98dc-29782892f599",
+    "esTitle": "Musical, Stinger, Orchestral Stinger, Horns, Drums"
+  },
+  {
+    "esId": "99c165dc-8576-4838-adb9-be6613dd487b",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Stinger, Orchestral, Transition, Drums, Cinematic, Strings, Horns",
+    "tags": [
+      "orchestral",
+      "cinematic",
+      "horns",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 5669,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 99c165dc-8576-4838-adb9-be6613dd487b",
+    "esTitle": "Musical, Stinger, Orchestral, Transition, Drums, Cinematic, Strings, Horns"
+  },
+  {
+    "esId": "9fcd72c2-6e15-4136-8cb8-94aab98cf537",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Sample, Short Phrase, Jingle, Intro, Gritty, Smooth",
+    "tags": [
+      "jingle",
+      "gritty",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 4000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 9fcd72c2-6e15-4136-8cb8-94aab98cf537",
+    "esTitle": "Musical, Sample, Short Phrase, Jingle, Intro, Gritty, Smooth"
+  },
+  {
+    "esId": "cfaa80f9-b998-48d7-873d-02f8e7f9312b",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Stinger, Drums, Percussion Build Up, Tribal, Impact 01",
+    "tags": [
+      "drums",
+      "percussion",
+      "impact",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 8106,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id cfaa80f9-b998-48d7-873d-02f8e7f9312b",
+    "esTitle": "Musical, Stinger, Drums, Percussion Build Up, Tribal, Impact 01"
+  },
+  {
+    "esId": "50351c1e-38ce-4cb7-b9c3-55ffda5faa1f",
+    "esType": "soundEffect",
+    "kind": "theme_intro",
+    "category": null,
+    "name": "Musical, Loop, Stomp, Hard, Aggressive",
+    "tags": [
+      "stomp",
+      "aggressive",
+      "arena",
+      "intro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 12000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 50351c1e-38ce-4cb7-b9c3-55ffda5faa1f",
+    "esTitle": "Musical, Loop, Stomp, Hard, Aggressive"
+  },
+  {
+    "esId": "aa1de6d8-0180-4b80-8710-b0bdfac767f1",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Song & Phrase, Identity, Signature, Logo, Corporate, Riser, Bright, Positive 01",
+    "tags": [
+      "signature",
+      "logo",
+      "positive",
+      "outro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 8335,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id aa1de6d8-0180-4b80-8710-b0bdfac767f1",
+    "esTitle": "Musical, Song & Phrase, Identity, Signature, Logo, Corporate, Riser, Bright, Positive 01"
+  },
+  {
+    "esId": "c71d7d77-5f9e-48a9-b598-89325108c3cc",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Song & Phrase, Branding, Signature Logo Sweep",
+    "tags": [
+      "signature",
+      "logo",
+      "sweep",
+      "outro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 11633,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id c71d7d77-5f9e-48a9-b598-89325108c3cc",
+    "esTitle": "Musical, Song & Phrase, Branding, Signature Logo Sweep"
+  },
+  {
+    "esId": "bf19511c-c397-41ba-b5b6-0ef84af12a07",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Stinger, Orchestral Stinger, Cymbal, Drums",
+    "tags": [
+      "orchestral",
+      "cymbal",
+      "drums",
+      "outro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 7716,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id bf19511c-c397-41ba-b5b6-0ef84af12a07",
+    "esTitle": "Musical, Stinger, Orchestral Stinger, Cymbal, Drums"
+  },
+  {
+    "esId": "52386613-f5af-4dab-8c05-08c9b16fe554",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Sample, Synth, Chord, Opening, End Credits 03",
+    "tags": [
+      "synth",
+      "chord",
+      "end credits",
+      "outro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 12000,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 52386613-f5af-4dab-8c05-08c9b16fe554",
+    "esTitle": "Musical, Sample, Synth, Chord, Opening, End Credits 03"
+  },
+  {
+    "esId": "15ccc514-7038-4e5e-85b5-da55975e2ed2",
+    "esType": "soundEffect",
+    "kind": "theme_outro",
+    "category": null,
+    "name": "Musical, Loop, Strings, Rising, Tension, Impact In End, Logo 01",
+    "tags": [
+      "strings",
+      "rising",
+      "impact",
+      "logo",
+      "outro",
+      "theme",
+      "broadcast"
+    ],
+    "durationMs": 8466,
+    "license": "Epidemic Sound — Pro commercial (via MCP)",
+    "licenseNote": "ES id 15ccc514-7038-4e5e-85b5-da55975e2ed2",
+    "esTitle": "Musical, Loop, Strings, Rising, Tension, Impact In End, Logo 01"
+  },
+  {
     "esId": "83f693ff-d31e-401d-9fce-20d2aaf1e5a0",
     "esType": "recording",
     "stemType": "FULL",

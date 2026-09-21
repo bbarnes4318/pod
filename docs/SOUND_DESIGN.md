@@ -123,6 +123,38 @@ with a cooldown ledger threaded across the run, writes cue sheets +
 asserts the cue sheets measurably differ, cooldown suppressed repeats, hot
 scripts out-cue calm ones, and plans replay deterministically.
 
+## Constant vs. per-episode sound — it's the pool size
+
+Nothing is "generated" per episode except the voices (Fish.audio TTS). Every
+music/SFX cue is SELECTED from the asset library, and each role (intro / outro /
+bed / stinger / reaction) is a POOL. Whether a role sounds the same every
+episode or changes is decided by how many assets are in its pool:
+
+| Want | Configure |
+| --- | --- |
+| Same intro every episode | Intro pool with ONE asset. The planner honors the pin (`selectTheme`), themes carry no cross-episode cooldown, and the diversity engine treats a one-item pool honestly (`single_item_pool`). |
+| Segues different every episode | Stinger pool with MANY assets. WHICH one plays is fit-scored + least-recently-used outside the cooldown window (`SOUND_DESIGN_COOLDOWN_EPISODES`, per-show `stingerCooldownEpisodes`); `SOUND_DESIGN_MAX_STINGER_USES` (1) stops a repeat within the episode. |
+| Mostly-fixed intro, occasional alternate | Two intros, weights e.g. 90 / 10, main one `isBrandedMotif`. |
+| Constant bed | One-bed pool. A sole bed is never cooldown-starved (it has no alternative to rotate to) — only a multi-bed pool can "exhaust". |
+
+Where the pools live:
+
+- **System default** (what every `soundProfileMode = "system_default"` show
+  inherits): `SystemSoundAssignment` rows edited on `/admin/sound-design`, or —
+  when a role has no rows — the legacy `SoundDesignConfig` slots
+  (`themeIntroAssetId` / `themeOutroAssetId` / `bedAssetId` = one each,
+  `stingerAssetIds` = the stinger pool). `npm run ingest:epidemic` writes those
+  slots as exactly this shape: one genre-clean intro, one outro, one bed, EVERY
+  stinger (override the bookends with `--intro "<name>" --outro "<name>"`).
+- **Per show**: `/app/podcasts/[id]/sound` with `soundProfileMode = "custom"`
+  (`PodcastSoundAssignment` rows: weight / cue family / motif / per-assignment
+  `maxUsesPerEpisode` + `minEpisodeCooldown` / format allow-deny).
+
+The resolved profile is FROZEN into the episode snapshot at creation, so a
+later pool edit never changes an existing episode (`remix_current_podcast`
+re-resolves on purpose). Only ~1.5s of an intro plays before the first spoken
+word (`MAX_SONIC_LOGO_MS`), so pick intros with the hit at the very start.
+
 ## Prompt 6 addendum — ownership, frozen profiles, and render isolation
 
 The sections above describe the mix engine. Ownership and selection now follow
