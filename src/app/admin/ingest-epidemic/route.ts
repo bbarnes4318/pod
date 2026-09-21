@@ -16,6 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyAdminAuthHeader } from "@/lib/adminBasicAuth";
 import { ASSET_KINDS, SFX_CATEGORIES } from "@/lib/audio/soundDesignShared";
+import { parseAssetMetadata, themeGenreOk } from "@/lib/audio/assetMetadata";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,14 +124,52 @@ export async function POST(req: NextRequest) {
     seedsDeactivated = r.count;
   }
 
+  // Bookends must pass the planner's theme genre gate (never a cartoon/retro
+  // intro — the planner would swap such a pin at render anyway).
+  const genreOk = (x: { name: string; kind: string; category: string | null }) =>
+    themeGenreOk(parseAssetMetadata({ name: x.name, kind: x.kind, category: x.category, tags: [] }));
+
+  let archivedOffGenre: string[] = [];
+  if (body?.archiveOffGenreThemes) {
+    const themes = await db.audioAsset.findMany({
+      where: { source: "upload", isArchived: false, kind: { in: ["theme_intro", "theme_outro"] } },
+    });
+    for (const t of themes) {
+      const g = genreOk(t);
+      if (g.ok) continue;
+      await db.audioAsset.update({
+        where: { id: t.id },
+        data: { isArchived: true, isActive: false, archivedAt: new Date(), archiveReason: `theme genre gate: ${g.reason}` },
+      });
+      archivedOffGenre.push(t.name);
+    }
+  }
+
+  // repoint: true | { intro?: <asset name>, outro?: <asset name> }. The slots
+  // ARE the system-default profile every show inherits: ONE intro / outro /
+  // bed (constant across episodes) and EVERY stinger (segues rotate per
+  // episode via planner fit + cooldown — a 5-deep pool was a repeat machine).
   let config: any = null;
   if (body?.repoint) {
-    const up = await db.audioAsset.findMany({ where: { source: "upload", isActive: true }, orderBy: { createdAt: "asc" } });
-    const firstOf = (k: string) => up.find((x) => x.kind === k);
-    const intro = firstOf("theme_intro");
-    const outro = firstOf("theme_outro");
-    const bed = firstOf("bed");
-    const stingerAssetIds = up.filter((x) => x.kind === "stinger").slice(0, 5).map((x) => x.id);
+    const opt = typeof body.repoint === "object" && body.repoint ? body.repoint : {};
+    const up = await db.audioAsset.findMany({
+      where: { source: "upload", isActive: true, isArchived: false },
+      orderBy: { createdAt: "asc" },
+    });
+    const pickTheme = (k: "theme_intro" | "theme_outro", wanted: unknown) => {
+      const themes = up.filter((x) => x.kind === k);
+      if (typeof wanted === "string" && wanted) {
+        const hit = themes.find((x) => x.name === wanted);
+        if (!hit) throw new Error(`repoint: '${wanted}' is not an active ingested ${k}`);
+        return hit;
+      }
+      return themes.find((x) => genreOk(x).ok);
+    };
+    const intro = pickTheme("theme_intro", opt.intro);
+    const outro = pickTheme("theme_outro", opt.outro);
+    const existingBed = up.find((x) => x.kind === "bed");
+    const bed = existingBed;
+    const stingerAssetIds = up.filter((x) => x.kind === "stinger").map((x) => x.id);
     const existingCfg = await db.soundDesignConfig.findUnique({ where: { id: "default" } });
     const cfg = {
       themeIntroAssetId: intro?.id ?? existingCfg?.themeIntroAssetId ?? null,
@@ -146,5 +185,5 @@ export async function POST(req: NextRequest) {
 
   const byKind: Record<string, number> = {};
   for (const a of [...created, ...updated]) byKind[a.kind] = (byKind[a.kind] || 0) + 1;
-  return NextResponse.json({ success: true, created: created.length, updated: updated.length, byKind, seedsDeactivated, config, failed });
+  return NextResponse.json({ success: true, created: created.length, updated: updated.length, byKind, seedsDeactivated, archivedOffGenre, config, failed });
 }

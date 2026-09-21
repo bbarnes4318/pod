@@ -258,7 +258,7 @@ async function main() {
     for (const a of offGenre) {
       await db.audioAsset.update({
         where: { id: a.id },
-        data: { isArchived: true, archivedAt: new Date(), archiveReason: `theme genre gate: ${genreOk(a).reason}` },
+        data: { isArchived: true, isActive: false, archivedAt: new Date(), archiveReason: `theme genre gate: ${genreOk(a).reason}` },
       });
       console.log(`  archived ${a.kind.padEnd(11)} ${a.name} (${genreOk(a).reason})`);
     }
