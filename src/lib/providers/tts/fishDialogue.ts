@@ -27,6 +27,14 @@ import { SCRIPT_TAG_TO_FISH } from "./fishFormat";
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const TAG_PATTERN = /\[([^\[\]]{1,80})\]/g;
 
+/** Script pause -> Fish paralinguistic cue. "beat"/"none" are the engine's own
+ *  turn-taking; only a marked breath or dramatic beat is worth a cue. */
+const PAUSE_TO_FISH: Record<string, string | undefined> = {
+  breath: "[breath]",
+  long: "[break]",
+};
+const PAUSE_CUE_SPACING = 4;
+
 interface FishProsody {
   speed: number;
   volume: number;
@@ -124,15 +132,21 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     voiceOrder.push(utterance.voiceId);
   }
 
-  // Sparse script [tags] only: up to two per speaker per scene, in place.
+  // Sparse script [tags] only, in place: the profile's density plus one, so an
+  // interruption marker never crowds out the script's own [laughs].
   const cueCapByHost = new Map<string, number>();
   for (const cast of input.cast) {
-    cueCapByHost.set(cast.speakerHostId, Math.max(1, Math.min(2, cast.maxCueDensity)));
+    cueCapByHost.set(cast.speakerHostId, Math.max(2, Math.min(3, cast.maxCueDensity + 1)));
   }
 
   const cuesUsedByHost = new Map<string, number>();
   const parts: string[] = [];
   let previousHostId: string | null = null;
+  // The script's pauses, SPOKEN rather than inserted: inside one request the
+  // engine can breathe where the writer marked a breath instead of the
+  // stitcher opening a fixed hole between two renders. Sparse on purpose —
+  // never more often than one in PAUSE_CUE_SPACING lines.
+  let linesSinceLastPauseCue = PAUSE_CUE_SPACING;
 
   for (const utterance of input.utterances) {
     const speakerIndex = speakerIndexByHost.get(utterance.speakerHostId)!;
@@ -143,7 +157,16 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
     if (utterance.isInterruption && used < cap) {
       openers.push("[cutting in]");
       used++;
+    } else if (
+      previousHostId !== null &&
+      previousHostId !== utterance.speakerHostId &&
+      linesSinceLastPauseCue >= PAUSE_CUE_SPACING &&
+      PAUSE_TO_FISH[utterance.pauseBefore ?? ""]
+    ) {
+      openers.push(PAUSE_TO_FISH[utterance.pauseBefore ?? ""]!);
+      linesSinceLastPauseCue = 0;
     }
+    linesSinceLastPauseCue++;
 
     const text = utterance.spokenText.replace(TAG_PATTERN, (_match, inner: string) => {
       const mapped = SCRIPT_TAG_TO_FISH[inner.trim().toLowerCase()];
@@ -216,11 +239,16 @@ export function buildFishScenePayload(input: DialogueSceneInput): FishScenePaylo
       ...(format === "mp3" ? { mp3_bitrate: 192 as const } : {}),
       temperature,
       top_p: topP,
-      prosody: { speed: 1, volume: 0, normalize_loudness: true },
+      // Loudness normalization flattened every take to ~3 LU of range (two
+      // people arguing sit at 8-15). The stitcher levels scenes against each
+      // other with a two-pass loudnorm; the performance keeps its dynamics.
+      prosody: { speed: 1, volume: 0, normalize_loudness: false },
       chunk_length: envInt("FISH_SCENE_CHUNK_LENGTH", 300, 100, 300),
       normalize: true,
       latency: "normal",
-      max_new_tokens: envInt("FISH_SCENE_MAX_NEW_TOKENS", 4096, 1024, 8192),
+      // 8192 rendered 286s of speech uncut (2026-09-21); 4096 covers ~100s,
+      // which the 6,000-character scene budget above now exceeds.
+      max_new_tokens: envInt("FISH_SCENE_MAX_NEW_TOKENS", 8192, 1024, 8192),
       repetition_penalty: clamp(Number(process.env.FISH_SCENE_REPETITION_PENALTY) || 1.15, 1, 2),
       min_chunk_length: envInt("FISH_SCENE_MIN_CHUNK_LENGTH", 80, 50, 300),
       condition_on_previous_chunks: true,

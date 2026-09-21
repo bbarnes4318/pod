@@ -96,7 +96,7 @@ function main() {
     // paragraphs stripped were judged "way more human". Any bracket the script
     // did not write is a regression.
     const allowed = new Set(
-      [...Object.values(SCRIPT_TAG_TO_FISH), "[cutting in]"].filter(Boolean).map((c) => String(c).slice(1, -1))
+      [...Object.values(SCRIPT_TAG_TO_FISH), "[cutting in]", "[breath]", "[break]"].filter(Boolean).map((c) => String(c).slice(1, -1))
     );
     for (const t of ["cold_open", "argument_escalation", "closing"] as DialogueSceneType[]) {
       const text = buildFishScenePayload(sceneInput(t)).body.text;
@@ -105,6 +105,20 @@ function main() {
       assert(rogue.length === 0, `${t}: prose direction leaked into the request: ${JSON.stringify(rogue)}`);
       assert(text.startsWith("<|speaker:0|>"), `${t}: text must open on a speaker tag, got: ${text.slice(0, 40)}`);
     }
+  });
+
+  check("a scripted breath or dramatic beat on a speaker change is spoken as a Fish cue, sparsely", () => {
+    const u = (lineIndex: number, host: "hostA" | "hostB", pauseBefore: "none" | "beat" | "breath" | "long") => ({
+      lineIndex, speakerHostId: host, speakerName: host === "hostA" ? "A" : "B", seatIndex: host === "hostA" ? 0 : 1,
+      voiceId: host === "hostA" ? FISH_A : FISH_B, spokenText: `Line ${lineIndex} of the argument goes here.`, isInterruption: false,
+      segmentBoundary: "none" as const, pauseBefore,
+    });
+    const text = buildFishScenePayload(sceneInput("conversation", {
+      utterances: [u(0, "hostA", "none"), u(1, "hostB", "breath"), u(2, "hostA", "long"), u(3, "hostB", "beat"), u(4, "hostA", "breath"), u(5, "hostB", "long"), u(6, "hostA", "breath")],
+    })).body.text;
+    const cues = [...text.matchAll(/\[(breath|break)\]/g)].map((m) => m[1]);
+    assert(cues[0] === "breath", `the first breath on a speaker change must be spoken; got ${JSON.stringify(cues)} in ${text}`);
+    assert(cues.length === 2, `pause cues must stay sparse (one per four lines): got ${cues.length} in ${text}`);
   });
 
   check("the same script renders the same request text regardless of scene type", () => {

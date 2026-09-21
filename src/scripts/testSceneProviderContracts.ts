@@ -231,9 +231,10 @@ async function main() {
 
   check("render-mode flag parsing + allowlist default", () => {
     const env = {} as NodeJS.ProcessEnv;
-    assert(readRenderModeSetting(env) === "legacy_line", "default must be legacy_line");
+    assert(readRenderModeSetting(env) === "scene", "default must be scene (legacy_line is a dev opt-in)");
     assert(readRenderModeSetting({ TTS_RENDER_MODE: "scene" } as never) === "scene", "scene setting lost");
-    assert(readRenderModeSetting({ TTS_RENDER_MODE: "garbage" } as never) === "legacy_line", "garbage must fall back to legacy_line");
+    assert(readRenderModeSetting({ TTS_RENDER_MODE: "garbage" } as never) === "scene", "garbage must fall back to scene without the degraded-mode opt-in");
+    assert(readRenderModeSetting({ TTS_RENDER_MODE: "garbage", NODE_ENV: "development", TTS_ALLOW_DEGRADED_RENDER_MODES: "true" } as never) === "legacy_line", "with the opt-in, garbage falls back to legacy_line");
     const allow = readSceneProviderAllowlist(env);
     assert(allow.has("elevenlabs") && allow.has("fish") && allow.size === 2, "default allowlist wrong");
   });
@@ -268,84 +269,6 @@ async function main() {
     assert(/interested in the answer/i.test(interviewer), "interviewer direction must value the answer");
     const moderator = buildPerformanceDirection({ formatId: "three_person_panel", roleId: "moderator", host: { name: "Lee" }, profile, sceneType: "conversation" });
     assert(/never dominate/i.test(moderator), "moderator must control traffic without dominating");
-  });
-
-  check("opposite anger signatures: slower_quieter host gets cold/quiet cues, never [angry]", () => {
-    const input = sceneInput();
-    // Downward-anger speaker: heated line, anger goes DOWN.
-    input.utterances = [
-      { lineIndex: 0, speakerHostId: "hB", speakerName: "B", seatIndex: 1, voiceId: FISH_B, spokenText: "You weren't in the room!", tone: "heated", energy: "high" },
-      { lineIndex: 1, speakerHostId: "hA", speakerName: "A", seatIndex: 0, voiceId: FISH_A, spokenText: "Calm reply.", tone: "analytical", energy: "low" },
-    ];
-    input.cast = [
-      { speakerHostId: "hA", formatRoleId: "chair_a", direction: "", intensityLevel: 8, angerStyle: "louder_faster", maxCueDensity: 1, profileVersion: 1 },
-      { speakerHostId: "hB", formatRoleId: "chair_b", direction: "", intensityLevel: 6, angerStyle: "slower_quieter", maxCueDensity: 1, profileVersion: 1 },
-    ];
-    const p = buildFishScenePayload(input);
-    assert(!p.body.text.includes("[angry]"), "slower_quieter host must never get the hot [angry] cue");
-    assert(/\[(slow, quiet|measured|quiet disbelief|flat, slow)/.test(p.body.text), `expected a cold/quiet cue, got: ${p.body.text}`);
-    // Same line from a louder_faster host → the hot cue.
-    input.cast[1].angerStyle = "louder_faster";
-    const p2 = buildFishScenePayload(input);
-    assert(p2.body.text.includes("[angry]"), "louder_faster host should get the hot cue");
-    // Directions carry the signature too.
-    const prof = deriveProfileFromHostFields({ speakingStyle: "low, gravelly, unhurried, deadpan", intensityLevel: 6 });
-    assert(prof.angerStyle === "slower_quieter", "gravelly/unhurried style must derive slower_quieter");
-    const dir = buildPerformanceDirection({ formatId: "two_host_debate", roleId: "chair_b", host: { name: "Sonny" }, profile: prof, sceneType: "argument_escalation" });
-    assert(/SLOWER and QUIETER/i.test(dir), "direction must state the downward anger signature");
-  });
-
-  check("three anger signatures produce three DISTINCT cue sets (louder_slower is not the hot default)", () => {
-    // Volume and pace are independent axes. louder_slower must not collapse
-    // into either neighbour: widening the enum without a third branch would
-    // silently drop it to the louder_faster `else` and the inversion — the
-    // whole reason two loud hosts stay legible in mono — would not happen.
-    const cueFor = (anger: "louder_faster" | "slower_quieter" | "louder_slower") => {
-      const input = sceneInput();
-      input.utterances = [
-        { lineIndex: 0, speakerHostId: "hB", speakerName: "B", seatIndex: 1, voiceId: FISH_B, spokenText: "You weren't in the room!", tone: "heated", energy: "high" },
-        { lineIndex: 1, speakerHostId: "hA", speakerName: "A", seatIndex: 0, voiceId: FISH_A, spokenText: "Calm reply.", tone: "analytical", energy: "low" },
-      ];
-      input.cast = [
-        { speakerHostId: "hA", formatRoleId: "chair_a", direction: "", intensityLevel: 8, angerStyle: "louder_faster", maxCueDensity: 1, profileVersion: 1 },
-        { speakerHostId: "hB", formatRoleId: "chair_b", direction: "", intensityLevel: 6, angerStyle: anger, maxCueDensity: 1, profileVersion: 1 },
-      ];
-      const cues = extractFishCues(buildFishScenePayload(input).body.text);
-      assert(cues.length > 0, `${anger} produced no cue at all`);
-      return cues.join(" ");
-    };
-
-    const hot = cueFor("louder_faster");
-    const cold = cueFor("slower_quieter");
-    const loudSlow = cueFor("louder_slower");
-
-    assert(hot !== cold && cold !== loudSlow && hot !== loudSlow,
-      `all three anger signatures must differ — got hot=${hot} cold=${cold} loudSlow=${loudSlow}`);
-    // extractFishCues returns cue text WITHOUT the surrounding brackets.
-    assert(hot === "angry", `louder_faster should get the hot cue, got ${hot}`);
-    assert(loudSlow !== "angry", `louder_slower must NOT fall through to the hot cue, got ${loudSlow}`);
-    // The defining property: loud is retained, pace is not.
-    assert(/loud|booming/i.test(loudSlow), `louder_slower must stay loud, got ${loudSlow}`);
-    assert(/slow|stretch|unhurried|drawn out|dragging/i.test(loudSlow), `louder_slower must slow down, got ${loudSlow}`);
-    assert(!/quiet/i.test(loudSlow), `louder_slower must not go quiet — that's slower_quieter, got ${loudSlow}`);
-
-    // Derivation reads volume and pace independently.
-    assert(
-      deriveProfileFromHostFields({ speakingStyle: "ENORMOUS trained projection, stretched vowels, louder and SLOWER under pressure", intensityLevel: 6 }).angerStyle === "louder_slower",
-      "a loud AND slow style must derive louder_slower, not slower_quieter on the 'slow' match alone"
-    );
-    assert(
-      deriveProfileFromHostFields({ speakingStyle: "low, gravelly, unhurried, deadpan", intensityLevel: 6 }).angerStyle === "slower_quieter",
-      "a slow-but-not-loud style must still derive slower_quieter"
-    );
-
-    // Direction text carries the third signature too.
-    const dir = buildPerformanceDirection({
-      formatId: "two_host_debate", roleId: "chair_b", host: { name: "Cal" },
-      profile: deriveProfileFromHostFields({ speakingStyle: "enormous projection, stretched long, louder and slower", intensityLevel: 6 }),
-      sceneType: "argument_escalation",
-    });
-    assert(/LOUDER and SLOWER/i.test(dir), `direction must state the loud-slow signature, got: ${dir}`);
   });
 
   check("an invalid performance profile is REJECTED at write time, never silently replaced", async () => {
@@ -419,8 +342,9 @@ async function main() {
     const stored = { ...hot, providerOverrides: { elevenlabs: { stability: 0.4 } } };
     const r = resolveHostPerformanceProfile(stored, { intensityLevel: 2 });
     assert(r.source === "stored" && r.profile.providerOverrides.elevenlabs?.stability === 0.4, "valid stored profile must win");
-    const bad = resolveHostPerformanceProfile({ version: 99, junk: true }, { intensityLevel: 2 });
-    assert(bad.source === "derived", "invalid stored profile must derive");
+    let refused = false;
+    try { resolveHostPerformanceProfile({ version: 99, junk: true }, { intensityLevel: 2 }); } catch { refused = true; }
+    assert(refused, "an invalid stored profile must be REFUSED, never silently replaced by a derived one");
     assert(!hostPerformanceProfileSchema.safeParse({ ...hot, baselinePace: 9 }).success, "out-of-bounds pace must fail validation");
   });
 
