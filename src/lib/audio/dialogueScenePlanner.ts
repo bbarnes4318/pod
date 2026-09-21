@@ -76,17 +76,6 @@ export interface ScenePlan {
 }
 
 const HOT_TONES = new Set(["heated", "excited", "incredulous"]);
-const CALM_TONES = new Set(["analytical", "reflective", "conceding", "setup", "transition"]);
-
-/** Emotional direction change big enough to justify a cut (only honored once
- *  a scene already has real length — see MIN_TURNS_BEFORE_EMOTIONAL_CUT). */
-function isEmotionalShift(prev: PlannerLine, curr: PlannerLine): boolean {
-  const prevHot = HOT_TONES.has((prev.tone || "").toLowerCase()) || prev.energy === "high";
-  const currCalm = CALM_TONES.has((curr.tone || "").toLowerCase()) && curr.energy !== "high";
-  return prevHot && currCalm;
-}
-
-const MIN_TURNS_BEFORE_EMOTIONAL_CUT = 6;
 
 /** May we cut BETWEEN prev and curr at all? (The "never split" rules.) */
 export function isSplittableBoundary(prev: PlannerLine, curr: PlannerLine): boolean {
@@ -205,16 +194,16 @@ export function planDialogueScenes(input: ScenePlanInput): ScenePlan {
       const structural = line.segmentBoundary !== "none";
       const overBudget = currentChars + chars > maxCharacters;
       const overSpeakers = !currentSpeakers.has(line.speakerHostId) && currentSpeakers.size >= maxSpeakers;
-      const emotional =
-        current.length >= MIN_TURNS_BEFORE_EMOTIONAL_CUT && isEmotionalShift(prev, line);
-
       // Structural boundaries cut even a small scene (a stinger lands there);
-      // budget/speaker limits MUST cut; emotional shifts cut mature scenes.
+      // budget/speaker limits MUST cut. Emotional shifts used to cut mature
+      // scenes too; they no longer do — a change of heat mid-segment is
+      // exactly the context the engine should hear in one request, and the
+      // 6,000-character budget (capabilities.ts) makes a whole segment fit.
       // The never-split rules veto everything except a hard budget overflow
       // (where we still cut at the nearest earlier splittable point — i.e.
       // here, since we check before adding).
-      if ((structural && splittable) || (emotional && splittable)) {
-        nextOpenedBy = structural ? (line.segmentBoundary === "topic" ? "topic" : "segment") : "emotional_shift";
+      if (structural && splittable) {
+        nextOpenedBy = line.segmentBoundary === "topic" ? "topic" : "segment";
         flush();
       } else if (overBudget || overSpeakers) {
         if (splittable) {

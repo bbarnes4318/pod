@@ -43,9 +43,13 @@ export function getTtsProviderCapabilities(providerId: string): TtsProviderCapab
         renderUnits: ["single_line", "multi_speaker_scene"],
         // Provider cap unknown — bound by the platform's 4-seat cast instead.
         maxSpeakers: 4,
-        // Not a documented provider limit: a conservative, overridable
-        // operational budget (see docs/TTS_SCENE_CAPABILITIES.md).
-        recommendedMaxCharacters: envInt("FISH_SCENE_MAX_CHARS", 2000),
+        // MEASURED 2026-09-21: s2.1-pro renders a 6,006-character two-speaker
+        // scene (45 lines, 1,012 words) in one request at a steady 212 wpm with
+        // no truncation, so a whole topic segment can be ONE performance. The
+        // point is context: every cut is a place the engine stops hearing the
+        // conversation, and the operator's blind test put the single-request
+        // render level with a live speech-to-speech model.
+        recommendedMaxCharacters: envInt("FISH_SCENE_MAX_CHARS", 6000),
         supportsContinuation: false,
         supportsSeed: false,
         supportsMultipleCandidates: false,
