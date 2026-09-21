@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   triggerTtsGeneration,
   triggerTtsRange,
@@ -76,6 +77,12 @@ export default function AudioSegmentsConsole({
   episodeVoiceOverrides,
 }: ConsoleProps) {
   const [segments, setSegments] = useState<any[]>(initialSegments);
+  const router = useRouter();
+  // Scene rows arrive via server props, so a finished scene render only shows
+  // up after router.refresh(). Poll while scenes are processing, and for a
+  // grace window after an enqueue so the worker has time to create them.
+  const [scenesProcessing, setScenesProcessing] = useState(0);
+  const [enqueuedAt, setEnqueuedAt] = useState(0);
 
   // lineIndex -> the scene that voiced it. A scene render is ONE audio file
   // covering many lines, so the player is shown on the scene's first line and
@@ -132,18 +139,26 @@ export default function AudioSegmentsConsole({
 
   // Poll segments status while there are pending or processing items
   useEffect(() => {
-    const hasActive = segments.some((s) => s.status === "pending" || s.status === "processing");
+    const hasActive =
+      segments.some((s) => s.status === "pending" || s.status === "processing") ||
+      scenesProcessing > 0 ||
+      Date.now() - enqueuedAt < 3 * 60_000;
     if (!hasActive) return;
 
     const interval = setInterval(async () => {
       const res = await fetchTtsSegments(script.id);
       if (res.success && res.segments) {
         setSegments(res.segments);
+        const now = res.scenesProcessing ?? 0;
+        if (now !== scenesProcessing) {
+          setScenesProcessing(now);
+          if (now === 0) router.refresh(); // renders finished → pull the new scene rows
+        }
       }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [segments, script.id]);
+  }, [segments, scenesProcessing, enqueuedAt, script.id, router]);
 
   const refreshSegments = async () => {
     setLoading(true);
@@ -160,6 +175,7 @@ export default function AudioSegmentsConsole({
     const res = await triggerTtsGeneration(script.id, force, providerOverride || undefined, currentVoiceOverrides(), saveToEpisode);
     if (res.success) {
       setMessage({ type: "success", text: "TTS generation enqueued successfully." });
+      setEnqueuedAt(Date.now());
       await refreshSegments();
     } else {
       setMessage({ type: "error", text: res.error || "Failed to trigger TTS generation." });

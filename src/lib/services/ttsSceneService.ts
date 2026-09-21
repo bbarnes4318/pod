@@ -139,7 +139,12 @@ interface GenerateScenesInput {
 }
 
 /** Load everything the planner needs and build the ScenePlan for a script. */
-export async function loadScenePlanForScript(scriptId: string): Promise<{
+export async function loadScenePlanForScript(
+  scriptId: string,
+  // Run-only picks from the trigger. Without these the scene path resolved
+  // from the episode pin alone, so an unsaved voice pick voiced nothing.
+  run: { providerOverride?: string; voiceOverrides?: TtsVoiceOverrides } = {}
+): Promise<{
   script: { id: string; episodeId: string; content: unknown };
   episode: { id: string; formatId: string; ttsProvider: string | null; ttsVoiceOverrides: unknown; hostIds: string[]; status: string; ttsRenderMode?: string | null };
   plan: ScenePlan;
@@ -167,6 +172,8 @@ export async function loadScenePlanForScript(scriptId: string): Promise<{
     resolvedByHostId.set(
       m.host.id,
       resolveTtsProviderAndVoice({
+        providerOverride: run.providerOverride,
+        runVoiceOverrides: run.voiceOverrides,
         episodeProvider: episode.ttsProvider,
         episodeVoiceOverrides: (episode.ttsVoiceOverrides as TtsVoiceOverrides | null) || null,
         host: {
@@ -285,7 +292,10 @@ function buildSceneInput(opts: {
  */
 export async function generateDialogueScenes(input: GenerateScenesInput): Promise<SceneGenerationSummary> {
   const { scriptId, forceRegenerate = false, onlySceneIndexes } = input;
-  const loaded = await loadScenePlanForScript(scriptId);
+  const loaded = await loadScenePlanForScript(scriptId, {
+    providerOverride: input.providerOverride,
+    voiceOverrides: input.voiceOverrides,
+  });
   const { plan, episode, resolvedByHostId, castByHostId, eligibility } = loaded;
   const episodeId = loaded.script.episodeId;
 
@@ -492,7 +502,11 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
         }
 
         const ext = (process.env.TTS_AUDIO_FORMAT === "wav" ? "wav" : "mp3");
-        const storageKey = `episodes/${episodeId}/scripts/${scriptId}/scenes/${scene.sceneIndex}-c${candidateIndex}.${ext}`;
+        // The fingerprint is part of the key: a re-render with new voices is
+        // candidate 0 of a NEW fingerprint, and without it that overwrote the
+        // old fingerprint's candidate 0 at the same URL — which the browser
+        // then kept serving from cache as the old voices.
+        const storageKey = `episodes/${episodeId}/scripts/${scriptId}/scenes/${scene.sceneIndex}-${fingerprint.slice(0, 12)}-c${candidateIndex}.${ext}`;
         let uploadUrl: string;
         try {
           const up = await storage.putObject({ key: storageKey, body: audioBuffer, contentType });

@@ -205,9 +205,13 @@ export async function fetchTtsSegments(scriptId: string) {
       where: { scriptId },
       orderBy: { lineIndex: "asc" },
     });
+    // Scene mode never touches AudioSegment, so the console's poll also has to
+    // see in-flight scene renders or it stops before the new take lands.
+    const scenesProcessing = await db.dialogueSceneAudio.count({ where: { scriptId, status: "processing" } });
 
     return {
       success: true,
+      scenesProcessing,
       segments: segments.map((s) => ({
         id: s.id,
         episodeId: s.episodeId,
