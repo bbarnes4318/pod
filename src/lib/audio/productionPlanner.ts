@@ -587,8 +587,14 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
 
   // --- Music bed (full style): cooldown-aware choice, or a deliberate no ---
   if (input.style === "full" && lines.length > 0) {
-    const freshBeds = beds.filter((b) => episodesAgo(b.id) > config.cooldownEpisodes);
-    cooldownSuppressions += beds.length - freshBeds.length;
+    const coolBeds = beds.filter((b) => episodesAgo(b.id) > config.cooldownEpisodes);
+    cooldownSuppressions += beds.length - coolBeds.length;
+    // Cooldown STEERS between alternatives. A one-bed pool (a show that chose a
+    // constant bed, or a frozen per-episode selection) has none — rotating it
+    // out would silence the bed for `cooldownEpisodes` episodes after every
+    // use, which is a famine, not restraint. Only a multi-bed pool can exhaust.
+    const soleBed = beds.length === 1 && coolBeds.length === 0;
+    const freshBeds = soleBed ? beds : coolBeds;
     if (freshBeds.length === 0) {
       // TRUE pool exhaustion: every bed in the library genuinely ran within
       // the window. Only then may cooldown silence the bed slot.
@@ -638,6 +644,7 @@ export function generateProductionPlan(input: PlannerInput): ProductionPlan {
           reason:
             `${episodeTarget.tone} episode (intensity ${episodeTarget.intensity}) → ` +
             `${episodeTarget.energyFamily} bed '${bed.name}'` +
+            (soleBed ? " (only bed in the pool — cooldown has no alternative)" : "") +
             (fitLabel(m) ? ` (${fitLabel(m)})` : "") +
             `, fit ${bedPick.fit.toFixed(2)}`,
         });
