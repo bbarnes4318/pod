@@ -212,7 +212,8 @@
     "measure:delivered-duration": "tsx src/scripts/measureDeliveredDuration.ts",
     "test:env-name-guard": "tsx src/scripts/testEnvNameGuard.ts",
     "logos:manifest": "tsx src/scripts/generateSportsLogoManifest.ts",
-    "test:board-browse": "tsx --conditions=react-server src/scripts/testBoardTeamBrowse.ts"
+    "test:board-browse": "tsx --conditions=react-server src/scripts/testBoardTeamBrowse.ts",
+    "seed:sports-characters": "tsx --conditions=react-server src/scripts/seedSportsCharacterCatalog.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
