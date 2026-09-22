@@ -227,7 +227,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A male American sports-podcast host in his late 30s with a strong grounded baritone, dry edge, compact chest resonance and immediate consonant attack. Fast, athletic speaking pace around 180 words per minute, with natural bursts above 205 when excited. Confident, street-smart, amused, competitive and highly reactive, but never an announcer and never a shouting talk-radio caricature. The voice should sound close-mic, intimate and alive, like one smart guy arguing with another in a packed sports bar after a huge NFL game. It should have a controlled rasp that appears only at higher intensity, a quick upward energy lift when incredulous, and a hard, decisive landing on short sentences. Natural contractions, tiny laughs inside speech, occasional clipped pickups and strong rhythmic contrast between rapid argument and calm setup. Original synthetic character; do not imitate any real person.",
+        "A male American sports-podcast host in his late 30s with a strong grounded baritone, dry edge, compact chest resonance and immediate consonant attack. Fast, athletic speaking pace around 180 words per minute, with natural bursts above 205 when excited. Confident, street-smart, amused, competitive and highly reactive, but never an announcer and never a shouting talk-radio caricature. The voice should sound close-mic, intimate and alive, like one smart guy arguing with another in a packed sports bar after a huge NFL game. It should have a controlled rasp that appears only at higher intensity, a quick upward energy lift when incredulous, and a hard, decisive landing on short sentences. Natural contractions, tiny laughs inside speech, occasional clipped pickups and strong rhythmic contrast between rapid argument and calm setup..",
       previewText:
         "Fourth-and-two, twelve minutes left, tie game. You don't get to tell me the result made the decision right. Own the decision first. Then we can argue about the score.",
       tags: ["male", "American", "baritone", "raspy", "fast", "competitive", "sports podcast", "NFL", "energetic"],
@@ -617,7 +617,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A woman in her late 20s with a bright, slightly dry American alto and crisp consonants. Fast conversational pace around 190 words per minute, accelerating when amused or excited but deliberately slowing for numbers and complicated explanations. Energetic, clever, mildly mischievous and highly articulate. Close-mic podcast intimacy, tiny amused breaths, natural contractions and a sharp upward lift when she catches an inconsistency. She should sound like a brilliant sports obsessive explaining roster mechanics to a friend, never like an accountant, professor, or TV financial analyst. Original synthetic character; do not imitate any real person.",
+        "A woman in her late 20s with a bright, slightly dry American alto and crisp consonants. Fast conversational pace around 190 words per minute, accelerating when amused or excited but deliberately slowing for numbers and complicated explanations. Energetic, clever, mildly mischievous and highly articulate. Close-mic podcast intimacy, tiny amused breaths, natural contractions and a sharp upward lift when she catches an inconsistency. She should sound like a brilliant sports obsessive explaining roster mechanics to a friend, never like an accountant, professor, or TV financial analyst..",
       previewText:
         "Everybody loves the signing until you ask the boring question: what did it take off the table? That's the bill. Now what do you lose?",
       tags: ["female", "American", "alto", "bright", "fast", "clever", "NFL", "roster", "podcast"],
@@ -750,7 +750,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A man in his mid-40s with a warm low baritone, subtle Appalachian-adjacent American color, lightly weathered texture and a grin that is audible in his voice. Fast, loose conversational pacing around 175 words per minute, with bursts past 200 when a Saturday game goes off the rails. Big personality, natural laughter, delighted disbelief, strong rhythmic emphasis and a sudden lift in energy. He sounds like a charismatic tailgate storyteller who genuinely understands football, never like a caricature, announcer, or country-radio host. Original synthetic character; do not imitate any real person.",
+        "A man in his mid-40s with a warm low baritone, subtle Appalachian-adjacent American color, lightly weathered texture and a grin that is audible in his voice. Fast, loose conversational pacing around 175 words per minute, with bursts past 200 when a Saturday game goes off the rails. Big personality, natural laughter, delighted disbelief, strong rhythmic emphasis and a sudden lift in energy. He sounds like a charismatic tailgate storyteller who genuinely understands football, never like a caricature, announcer, or country-radio host..",
       previewText:
         "Three hours ago nobody picked them. Now it's eleven at night, the stadium is shaking, and somebody's about to ruin a ranked team's season. It's college football. Let it be weird.",
       tags: ["male", "American", "baritone", "warm", "gritty", "fast", "NCAAF", "college football", "funny"],
@@ -878,7 +878,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A woman in her early 30s with a dark, focused American alto and clean center tone. Fast but controlled conversational pace around 185 words per minute. Dry, intelligent, skeptical and quietly amused. Crisp consonants, compact sentence endings, low breath noise and an intimate close-mic presence. When correcting hype, she becomes slightly slower and more precise rather than louder. She should sound like someone who has actually watched the film but still talks like a passionate fan at a kitchen table. No professor voice, no recruiting-influencer performance. Original synthetic character; do not imitate any real person.",
+        "A woman in her early 30s with a dark, focused American alto and clean center tone. Fast but controlled conversational pace around 185 words per minute. Dry, intelligent, skeptical and quietly amused. Crisp consonants, compact sentence endings, low breath noise and an intimate close-mic presence. When correcting hype, she becomes slightly slower and more precise rather than louder. She should sound like someone who has actually watched the film but still talks like a passionate fan at a kitchen table. No professor voice, no recruiting-influencer performance..",
       previewText:
         "That's a headline, not a fit. Great, he can play. Show me the snaps. Who loses the reps, and what changes when he gets them?",
       tags: ["female", "American", "alto", "dark", "clean", "dry", "fast", "NCAAF", "recruiting"],
@@ -1005,7 +1005,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A man in his early 60s with a warm mature baritone, subtle lower-register grain, precise diction and an easy American conversational presence. Relaxed pacing around 150 words per minute with spacious pauses. Refined but never announcer-like; quietly amused, observant, and authoritative without sounding like a professor. Small natural laughs, gentle breath, clear dates and names, and slower emphasis on a key historical fact. The voice should feel like an excellent storyteller in a studio, not a documentary narrator. Original synthetic character; do not imitate any real person.",
+        "A man in his early 60s with a warm mature baritone, subtle lower-register grain, precise diction and an easy American conversational presence. Relaxed pacing around 150 words per minute with spacious pauses. Refined but never announcer-like; quietly amused, observant, and authoritative without sounding like a professor. Small natural laughs, gentle breath, clear dates and names, and slower emphasis on a key historical fact. The voice should feel like an excellent storyteller in a studio, not a documentary narrator..",
       previewText:
         "History explains why this rivalry feels like a live wire. It doesn't decide the game tonight. Now watch what happens when the ball actually moves.",
       tags: ["male", "American", "mature", "baritone", "warm", "storyteller", "calm", "NCAAF", "history"],
@@ -1391,7 +1391,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A man in his mid-50s with a warm weathered baritone, thick low-mid body, subtle rasp and relaxed American cadence. Easy pace around 155 words per minute, with deliberate pauses and a slower, louder emphasis during disagreement. Friendly, funny, grounded and deeply conversational. Natural chest laugh, slightly longer vowels, comfortable breaths and an intimate podcast microphone feel. Never a cartoon old-school voice, never a gruff movie character, never play-by-play. Original synthetic character; do not imitate any real person.",
+        "A man in his mid-50s with a warm weathered baritone, thick low-mid body, subtle rasp and relaxed American cadence. Easy pace around 155 words per minute, with deliberate pauses and a slower, louder emphasis during disagreement. Friendly, funny, grounded and deeply conversational. Natural chest laugh, slightly longer vowels, comfortable breaths and an intimate podcast microphone feel. Never a cartoon old-school voice, never a gruff movie character, never play-by-play..",
       previewText:
         "Everybody saw the pitch count. I saw the inning. Let him finish it. If the fastball is still where it needs to be, that's a pitching game.",
       tags: ["male", "American", "baritone", "weathered", "warm", "relaxed", "MLB", "pitching"],
@@ -2161,7 +2161,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
     },
     fishVoiceDesign: {
       description:
-        "A woman in her mid-40s with a low contralto, velvety dry texture and intimate close-mic presence. Relaxed pace around 155 words per minute with very controlled breathing and sparse phrasing. Quiet, confident, observant and subtly funny. She should be able to deliver a devastating line at low volume without sounding sleepy, whispery or theatrical. Tiny amused breaths, crisp sentence endings and brief purposeful pauses. When angry, become even quieter and more precise. Original synthetic character; do not imitate any real person.",
+        "A woman in her mid-40s with a low contralto, velvety dry texture and intimate close-mic presence. Relaxed pace around 155 words per minute with very controlled breathing and sparse phrasing. Quiet, confident, observant and subtly funny. She should be able to deliver a devastating line at low volume without sounding sleepy, whispery or theatrical. Tiny amused breaths, crisp sentence endings and brief purposeful pauses. When angry, become even quieter and more precise..",
       previewText:
         "That's a different question. You said the star had no help. Fine. Keep the same standard when the other star has no help, too.",
       tags: ["female", "American", "contralto", "velvety", "dry", "quiet", "NBA", "sharp", "podcast"],
