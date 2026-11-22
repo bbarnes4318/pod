@@ -283,6 +283,8 @@ export async function startBusinessResearch(podcastId: string, depth: Depth): Pr
   try {
     const existing = await db.businessResearchRun.findUnique({ where: { idempotencyKey: key } });
     if (existing && existing.status !== "failed" && existing.status !== "cancelled") return { success: true, runId: existing.id, reused: true };
+    // A run whose worker died stops updating; past the longest run limit it no longer blocks new research.
+    await db.businessResearchRun.updateMany({ where: { podcastId, kind: "industry", status: "running", updatedAt: { lt: staleBefore() } }, data: { status: "failed", error: "The research worker stopped reporting progress.", completedAt: new Date() } });
     const running = await db.businessResearchRun.findFirst({ where: { podcastId, kind: "industry", status: { in: ["queued", "running"] } } });
     if (running) return { success: false, error: "Research is already running for this show." };
     const run = existing
@@ -298,13 +300,19 @@ export async function startBusinessResearch(podcastId: string, depth: Depth): Pr
   }
 }
 
+/** Longer than the DEEP run limit (15 min) plus one slow model call. */
+const staleBefore = () => new Date(Date.now() - 25 * 60_000);
+
 export async function cancelBusinessRun(podcastId: string, runId: string): Promise<Result> {
   const owned = await ownedProfile(podcastId);
   if ("error" in owned) return { success: false, error: owned.error! };
   const res = await db.businessResearchRun.updateMany({ where: { id: runId, podcastId, status: { in: ["queued", "running"] } }, data: { cancelRequested: true } });
   if (res.count === 0) return { success: false, error: "That run isn't running." };
-  // A run still waiting in the queue is cancelled immediately.
-  await db.businessResearchRun.updateMany({ where: { id: runId, podcastId, status: "queued" }, data: { status: "cancelled", completedAt: new Date() } });
+  // A run still waiting in the queue, or one whose worker stopped reporting, is cancelled immediately.
+  await db.businessResearchRun.updateMany({
+    where: { id: runId, podcastId, OR: [{ status: "queued" }, { status: "running", updatedAt: { lt: staleBefore() } }] },
+    data: { status: "cancelled", completedAt: new Date(), error: "Cancelled by the user." },
+  });
   revalidateShow(podcastId);
   return { success: true };
 }
