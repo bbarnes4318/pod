@@ -1,8 +1,11 @@
+# RETIRED: this now runs in scripts/ci/run.sh (GitHub Actions no longer runs here).
 name: Real Podcast Quality
 
 on:
-  pull_request:
-    branches: [main]
+  # RETIRED: the pull_request trigger is gone on purpose. Actions is locked for
+  # this account, so a queued job reports a 2-second "failure" that is about
+  # billing, not the code. scripts/ci/run.sh runs these checks locally instead.
+  # Re-add `pull_request: {branches: [main]}` here if Actions is ever restored.
   workflow_dispatch:
 
 permissions:
