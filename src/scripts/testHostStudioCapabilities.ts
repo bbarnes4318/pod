@@ -15,6 +15,9 @@ import {
   FISH_CREATE_MODEL_URL,
   FISH_VOICE_DESIGN_URL,
 } from "../lib/providers/tts/fishVoiceStudio";
+import { FISH_VOICE_DESCRIPTION_MAX, FISH_VOICE_TEST_LINE_MAX } from "../lib/providers/tts/fishVoiceLimits";
+import { SPORTS_CHARACTER_PACK } from "../lib/hosts/sportsCharacterPack";
+import { voiceBriefForHost } from "../lib/hosts/voiceBriefs";
 
 let passed = 0;
 let failed = 0;
@@ -198,6 +201,51 @@ async function main() {
       /return \{ success: true as const, hostId: copy\.id \}/.test(source("app/studio/hosts/actions.ts")),
       "cloneHostToRoster no longer returns the new host id"
     );
+  });
+
+  await check("every catalog character's voice brief is accepted by Fish Voice Design as written", () => {
+    // Five briefs once shipped test lines over Fish's 150-character limit: the
+    // designer would have failed for those characters on the first click.
+    assert(SPORTS_CHARACTER_PACK.length === 16, `expected 16 catalog characters, found ${SPORTS_CHARACTER_PACK.length}`);
+    for (const character of SPORTS_CHARACTER_PACK) {
+      const { description, previewText } = character.fishVoiceDesign;
+      assert(description.trim().length > 0 && description.length <= FISH_VOICE_DESCRIPTION_MAX, `${character.slug}: description is ${description.length} chars`);
+      assert(previewText.length <= FISH_VOICE_TEST_LINE_MAX, `${character.slug}: test line is ${previewText.length} chars (max ${FISH_VOICE_TEST_LINE_MAX})`);
+      const body = buildFishVoiceDesignBody({ instruction: description, referenceText: previewText, candidateCount: 3 });
+      assert(body.instruction === description.trim() && body.reference_text === previewText.trim(), `${character.slug}: brief was altered`);
+    }
+  });
+
+  await check("a catalog character opens the voice designer with its own brief", () => {
+    const rocco = SPORTS_CHARACTER_PACK.find((character) => character.slug === "rocco-vale")!;
+    const seeded = voiceBriefForHost({ slug: "rocco-vale", name: "Rocco Vale" });
+    assert(seeded?.description === rocco.fishVoiceDesign.description, "seeded slug did not find the brief");
+    assert(seeded?.testLine === rocco.fishVoiceDesign.previewText, "seeded slug returned the wrong test line");
+    assert(voiceBriefForHost({ slug: "rocco-vale-1a2b3c", name: "Rocco Vale" })?.description === rocco.fishVoiceDesign.description, "a roster copy lost the brief");
+    assert(voiceBriefForHost({ slug: null, name: "rocco vale" }) !== null, "name fallback failed");
+    assert(voiceBriefForHost({ slug: "my-own-host", name: "My Own Host" }) === null, "a non-catalog host was given a catalog brief");
+    const page = source("app/studio/hosts/page.tsx");
+    assert(/voiceBrief: voiceBriefForHost\(/.test(page), "the hosts page no longer passes the brief to the UI");
+  });
+
+  await check("a host without a voice gets Create voice on its card, saved straight to Fish", () => {
+    const ui = withoutComments(source("app/studio/hosts/CharacterStudio.tsx"));
+    assert(ui.includes("Create voice"), "the card has no Create voice button");
+    assert(/<VoiceDesigner[\s\S]*?brief=\{host\.voiceBrief\}/.test(ui), "the card's designer is not given the character's brief");
+    assert(/saveDesignedHostVoice\(host\.id/.test(ui), "the card does not save the picked take as the host's voice");
+    assert(/previewText: selection\.testLine/.test(ui), "the saved voice is not trained on the words the take actually spoke");
+    const designer = source("app/studio/hosts/VoiceDesigner.tsx");
+    assert(/designHostVoice\(/.test(designer), "the designer does not call Fish Voice Design");
+    assert(designer.includes("Create 3 more takes"), "the designer cannot ask for more takes");
+  });
+
+  await check("only a host with a real voice can be put on air, and only by its owner", () => {
+    const actions = source("app/studio/hosts/actions.ts");
+    const fn = actions.slice(actions.indexOf("export async function setHostOnAir"));
+    assert(fn.length > 0 && /requireOwnedHost\(hostId\)/.test(fn.slice(0, 400)), "setHostOnAir is not owner-gated");
+    assert(/FISH_DESIGN_PENDING/.test(fn.slice(0, 1400)), "setHostOnAir does not refuse a catalog placeholder voice");
+    assert(/isVoiceIdValidForProvider\(host\.ttsProvider, host\.ttsVoiceId\)/.test(fn.slice(0, 1400)), "setHostOnAir does not check the voice id");
+    assert(/setHostOnAir\(host\.id, !host\.isActive\)/.test(source("app/studio/hosts/CharacterStudio.tsx")), "the card has no on-air switch");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

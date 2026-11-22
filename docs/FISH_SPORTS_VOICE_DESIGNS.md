@@ -34,7 +34,7 @@ A male American sports-podcast host in his late 30s with a strong grounded barit
 **Preview Text — COPY THIS**
 
 ```text
-Fourth-and-two, twelve minutes left, tie game. You don't get to tell me the result made the decision right. Own the decision first. Then we can argue about the score.
+Fourth-and-two, tie game. Don't tell me the result made the decision right. Own the decision first. Then we can argue about the score.
 ```
 
 **Tags:** male, American, baritone, raspy, fast, competitive, sports podcast, NFL, energetic
@@ -152,7 +152,7 @@ A woman in her early 30s with a smoky mezzo voice, slightly grainy texture, cris
 **Preview Text — COPY THIS**
 
 ```text
-You can call it execution all night. The problem is, execution happened to somebody. Tell me who had the choice, because that's where the story starts.
+Call it execution all night. Execution happened to somebody. Tell me who had the choice, because that's where the story starts.
 ```
 
 **Tags:** female, American, mezzo, smoky, intimate, sharp, NFL, sports podcast
@@ -268,7 +268,7 @@ A male American host in his late 50s with a warm weathered baritone, rounded low
 **Preview Text — COPY THIS**
 
 ```text
-Everybody saw the late hit. I remember the play before it, because that's when the quarterback started rushing everything. The box score doesn't show that part.
+Everybody saw the late hit. I remember the play before it, when the quarterback started rushing everything. The box score doesn't show that.
 ```
 
 **Tags:** male, American, baritone, warm, weathered, storyteller, NFL, podcast
@@ -499,7 +499,7 @@ A man in his mid-40s with a warm low baritone, subtle Appalachian-adjacent Ameri
 **Preview Text — COPY THIS**
 
 ```text
-Three hours ago nobody picked them. Now it's eleven at night, the stadium is shaking, and somebody's about to ruin a ranked team's season. It's college football. Let it be weird.
+Nobody picked them. Now it's eleven at night, the stadium is shaking, and a ranked team is in trouble. It's college football. Let it be weird.
 ```
 
 **Tags:** male, American, baritone, warm, gritty, fast, NCAAF, college football, funny
@@ -1300,7 +1300,7 @@ A male American host in his early 40s with a warm tenor-baritone blend, rounded 
 **Preview Text — COPY THIS**
 
 ```text
-Don't skip that part. The double took the extra step, the center fielder moved three feet, and suddenly the whole inning felt different. That's where the baseball gets human.
+Don't skip that part. The center fielder moved three feet, and suddenly the whole inning felt different. That's where the baseball gets human.
 ```
 
 **Tags:** male, American, tenor-baritone, warm, storyteller, melodic, MLB, podcast

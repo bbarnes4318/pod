@@ -229,7 +229,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
       description:
         "A male American sports-podcast host in his late 30s with a strong grounded baritone, dry edge, compact chest resonance and immediate consonant attack. Fast, athletic speaking pace around 180 words per minute, with natural bursts above 205 when excited. Confident, street-smart, amused, competitive and highly reactive, but never an announcer and never a shouting talk-radio caricature. The voice should sound close-mic, intimate and alive, like one smart guy arguing with another in a packed sports bar after a huge NFL game. It should have a controlled rasp that appears only at higher intensity, a quick upward energy lift when incredulous, and a hard, decisive landing on short sentences. Natural contractions, tiny laughs inside speech, occasional clipped pickups and strong rhythmic contrast between rapid argument and calm setup..",
       previewText:
-        "Fourth-and-two, twelve minutes left, tie game. You don't get to tell me the result made the decision right. Own the decision first. Then we can argue about the score.",
+        "Fourth-and-two, tie game. Don't tell me the result made the decision right. Own the decision first. Then we can argue about the score.",
       tags: ["male", "American", "baritone", "raspy", "fast", "competitive", "sports podcast", "NFL", "energetic"],
       useCases: ["NFL debate podcast", "two-host sports argument", "game recap", "hot-take segment"],
     },
@@ -360,7 +360,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
       description:
         "A woman in her early 30s with a smoky mezzo voice, slightly grainy texture, crisp diction and an intimate studio presence. Medium-fast American conversational pacing around 170 words per minute. Warm and engaging when explaining a game, but able to become cool, narrow and surgical without raising volume. Dry smile, controlled breath, quick pickup on disagreement, strong consonants and short decisive endings. She sounds like a smart sports host speaking directly to one person who is already emotionally invested. No announcer polish, no cheerleader brightness, no exaggerated femininity..",
       previewText:
-        "You can call it execution all night. The problem is, execution happened to somebody. Tell me who had the choice, because that's where the story starts.",
+        "Call it execution all night. Execution happened to somebody. Tell me who had the choice, because that's where the story starts.",
       tags: ["female", "American", "mezzo", "smoky", "intimate", "sharp", "NFL", "sports podcast"],
       useCases: ["NFL debate", "postgame analysis", "story-driven sports podcast", "two-host chemistry"],
     },
@@ -490,7 +490,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
       description:
         "A male American host in his late 50s with a warm weathered baritone, rounded low-mid resonance, subtle gravel and an easy conversational presence. Relaxed pacing around 150 words per minute with spacious pauses and occasional slower emphasis on an important word. Friendly, seasoned, amused and quietly authoritative without sounding formal. He should feel like the smartest person at a late Sunday bar table who has watched football for decades but never turns nostalgia into a performance. Small natural chuckles, comfortable breaths, lived-in contractions, and a gentle rise when telling a memorable story..",
       previewText:
-        "Everybody saw the late hit. I remember the play before it, because that's when the quarterback started rushing everything. The box score doesn't show that part.",
+        "Everybody saw the late hit. I remember the play before it, when the quarterback started rushing everything. The box score doesn't show that.",
       tags: ["male", "American", "baritone", "warm", "weathered", "storyteller", "NFL", "podcast"],
       useCases: ["NFL storytelling", "game recap", "veteran-fan perspective", "warm co-host"],
     },
@@ -752,7 +752,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
       description:
         "A man in his mid-40s with a warm low baritone, subtle Appalachian-adjacent American color, lightly weathered texture and a grin that is audible in his voice. Fast, loose conversational pacing around 175 words per minute, with bursts past 200 when a Saturday game goes off the rails. Big personality, natural laughter, delighted disbelief, strong rhythmic emphasis and a sudden lift in energy. He sounds like a charismatic tailgate storyteller who genuinely understands football, never like a caricature, announcer, or country-radio host..",
       previewText:
-        "Three hours ago nobody picked them. Now it's eleven at night, the stadium is shaking, and somebody's about to ruin a ranked team's season. It's college football. Let it be weird.",
+        "Nobody picked them. Now it's eleven at night, the stadium is shaking, and a ranked team is in trouble. It's college football. Let it be weird.",
       tags: ["male", "American", "baritone", "warm", "gritty", "fast", "NCAAF", "college football", "funny"],
       useCases: ["college football podcast", "rivalry recap", "Saturday debate", "high-energy co-host"],
     },
@@ -1647,7 +1647,7 @@ export const SPORTS_CHARACTER_PACK: SportsCharacterSeed[] = [
       description:
         "A male American host in his early 40s with a warm tenor-baritone blend, rounded resonance and relaxed intimate studio presence. Natural pace around 165 words per minute, with a slightly more melodic rhythm than a hard-news host. Warm, vivid, amused and emotionally open without becoming sentimental. Natural laughs, tiny false starts, expressive sentence shapes and a stronger lift when a story turns. Never an audiobook narrator or movie-trailer voice..",
       previewText:
-        "Don't skip that part. The double took the extra step, the center fielder moved three feet, and suddenly the whole inning felt different. That's where the baseball gets human.",
+        "Don't skip that part. The center fielder moved three feet, and suddenly the whole inning felt different. That's where the baseball gets human.",
       tags: ["male", "American", "tenor-baritone", "warm", "storyteller", "melodic", "MLB", "podcast"],
       useCases: ["MLB storytelling", "game recap", "character-driven baseball show", "feature segment"],
     },

@@ -20,7 +20,14 @@ import {
   designFishVoice,
   type FishVoiceSample,
 } from "@/lib/providers/tts/fishVoiceStudio";
+import { shouldStubFish } from "@/lib/e2eSeam";
+import { e2eFishFetch } from "@/lib/providers/tts/e2eFishStub";
 import { PLACEHOLDER_USER_VOICE, VOICE_SOURCES, type PreviewScenario, type StudioHostInput } from "./constants";
+
+/** Fish's transport: the real network, or the E2E stub inside the harness only. */
+function fishFetch(): typeof fetch {
+  return shouldStubFish() ? e2eFishFetch : fetch;
+}
 
 async function requireSignedIn(): Promise<{ success: false; error: string } | null> {
   if (!(await currentUser())) return { success: false as const, error: "Please sign in to manage hosts." };
@@ -278,7 +285,7 @@ export async function designHostVoice(input: {
       speed: input.speed,
       candidateCount: 3,
       language: "en",
-    });
+    }, fishFetch());
     return {
       success: true as const,
       candidates: candidates.map((candidate) => ({
@@ -318,11 +325,37 @@ export async function saveDesignedHostVoice(hostId: string, input: {
         contentType: "audio/wav",
         transcript: input.previewText,
       }],
-    });
+    }, fishFetch());
     await attachFishVoice(hostId, voice.id, "synthetic-stock", `Fish voice-design candidate selected in Host Studio. Model state: ${voice.state}.`);
     return { success: true as const, voiceId: voice.id, state: voice.state };
   } catch (error) {
     return { success: false as const, error: error instanceof Error ? error.message : "Could not save the designed voice." };
+  }
+}
+
+/**
+ * Put a host on air (into the auto-cast roster) or bench it. Catalog
+ * characters are seeded benched; this is the producer's deliberate switch once
+ * the character has a voice. A host with no real voice cannot go on air: every
+ * line it was cast for would fail at the voice step.
+ */
+export async function setHostOnAir(hostId: string, onAir: boolean) {
+  const owned = await requireOwnedHost(hostId);
+  if (!owned.ok) return { success: false as const, error: owned.error };
+  try {
+    if (onAir) {
+      const host = await db.aiHost.findUnique({ where: { id: hostId }, select: { ttsProvider: true, ttsVoiceId: true, isArchived: true } });
+      if (!host) return { success: false as const, error: "That host no longer exists." };
+      if (host.isArchived) return { success: false as const, error: "Restore this host before putting it on air." };
+      if (!isVoiceIdValidForProvider(host.ttsProvider, host.ttsVoiceId) || /^(PLACEHOLDER|FISH_DESIGN_PENDING)[_-]/i.test(host.ttsVoiceId)) {
+        return { success: false as const, error: `Create a voice for ${owned.host.name} before putting them on air.` };
+      }
+    }
+    await db.aiHost.update({ where: { id: hostId }, data: { isActive: onAir } });
+    revalidatePath("/studio/hosts");
+    return { success: true as const, isActive: onAir };
+  } catch (error) {
+    return { success: false as const, error: error instanceof Error ? error.message : "Could not change this host." };
   }
 }
 
@@ -347,7 +380,7 @@ export async function cloneHostVoice(hostId: string, formData: FormData) {
       description: "Private voice clone created through Host Studio with user attestation.",
       sourceTag: "authorized-clone",
       samples,
-    });
+    }, fishFetch());
     await attachFishVoice(hostId, voice.id, source, `User attested on ${new Date().toISOString()} that they own this voice or have written permission to clone it. Fish model state: ${voice.state}.`);
     return { success: true as const, voiceId: voice.id, state: voice.state };
   } catch (error) {

@@ -2,6 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { settingsFromHost } from "@/lib/hosts/hostStudioProfile";
+import { voiceBriefForHost } from "@/lib/hosts/voiceBriefs";
 import CharacterStudio, { type StudioHostVM } from "./CharacterStudio";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export default async function HostsPage() {
     return {
       id: host.id,
       name: host.name,
+      voiceBrief: voiceBriefForHost({ slug: host.slug, name: host.name }),
       role: host.role,
       worldview: host.worldview,
       speakingStyle: host.speakingStyle,
