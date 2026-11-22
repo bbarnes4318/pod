@@ -1,4 +1,6 @@
 import { getFishApiKey } from "../../env";
+import { shouldStubFish } from "../../e2eSeam";
+import { FISH_VOICE_DESCRIPTION_MAX, FISH_VOICE_TEST_LINE_MAX } from "./fishVoiceLimits";
 
 const FISH_API_BASE = "https://api.fish.audio";
 export const FISH_VOICE_DESIGN_URL = `${FISH_API_BASE}/v1/voice-design`;
@@ -48,6 +50,8 @@ function boundedText(value: unknown, label: string, min: number, max: number): s
 }
 
 function fishKey(): string {
+  // The E2E harness talks to a stub, never to Fish, and has no key.
+  if (shouldStubFish()) return "e2e-stub-key";
   const apiKey = getFishApiKey();
   if (!apiKey) throw new Error("Voice creation is unavailable because FISH_API_KEY is not configured on the web app.");
   return apiKey;
@@ -62,9 +66,11 @@ async function fishError(response: Response, action: string): Promise<Error> {
 }
 
 export function buildFishVoiceDesignBody(input: FishVoiceDesignInput) {
-  const instruction = boundedText(input.instruction, "Voice description", 1, 2000);
+  const instruction = boundedText(input.instruction, "Voice description", 1, FISH_VOICE_DESCRIPTION_MAX);
   const referenceText = input.referenceText?.trim();
-  if (referenceText && referenceText.length > 150) throw new Error("Preview text must be 150 characters or fewer.");
+  if (referenceText && referenceText.length > FISH_VOICE_TEST_LINE_MAX) {
+    throw new Error(`The test line must be ${FISH_VOICE_TEST_LINE_MAX} characters or fewer.`);
+  }
   return {
     instruction,
     reference_text: referenceText || null,

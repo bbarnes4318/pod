@@ -53,3 +53,14 @@ export function shouldStubQueue(): boolean {
 export function shouldStubOutboundFetch(): boolean {
   return e2eEnabled();
 }
+
+/**
+ * Stub the FISH AUDIO API (voice design + voice creation) in E2E only. Fish is
+ * a paid external service; the harness has no key and must never call it.
+ * Everything on our side of the socket still runs for real: auth, ownership,
+ * request building and limits, response parsing, the database write. Inert in
+ * production: every call re-checks E2E_TEST_MODE.
+ */
+export function shouldStubFish(): boolean {
+  return e2eEnabled();
+}

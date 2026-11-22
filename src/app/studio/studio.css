@@ -2870,12 +2870,15 @@
 .hostCardName { font-size: 1.55rem; color: var(--host-accent, var(--accent)); }
 .hostCardNameSm { font-size: 1.3rem; }
 .hostCardRole { font-size: 0.84rem; color: var(--text-muted); margin-top: var(--sp-1); }
-.hostCardAside { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.hostCardAside { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); flex: none; }
+.hostCardAside .chip { white-space: nowrap; }
 .hostCardActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
 .hostCardUsage { font-size: 0.7rem; color: var(--text-muted); margin-top: var(--sp-3); }
 
 .hostChipRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin: var(--sp-4) 0; }
 .hostBelief { font-size: 0.86rem; line-height: 1.55; color: var(--text); }
+/* Catalog bios run to a paragraph; the card shows the gist, Edit host shows all of it. */
+.hostBelief { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
 
 .hostChoiceRow { padding: var(--sp-4) 0; border-bottom: 1px solid var(--border); }
 .hostChoiceTitle { font-weight: 700; margin-bottom: var(--sp-1); }
@@ -2900,6 +2903,101 @@
 .hostAudition { width: 100%; margin: var(--sp-3) 0; }
 
 .hostFieldHint { font-size: 0.74rem; color: var(--text-muted); }
+
+/* ---- Voice creation (VoiceDesigner) ----
+   The card being designed in spans the whole grid: three takes side by side
+   need the room, and the producer's attention is on this one host. */
+.hostFilterRow { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.hostVoiceBanner {
+  font-size: 0.84rem; line-height: 1.5; padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--warning-border); background: var(--warning-muted); color: var(--text);
+  border-radius: var(--radius);
+}
+.hostCardDesigning { grid-column: 1 / -1; }
+.hostCardDesigner {
+  margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--border);
+  animation: fadeUp 0.3s ease both;
+}
+
+.voiceDesigner { display: flex; flex-direction: column; }
+.voiceDesignerIntro { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); flex-wrap: wrap; }
+.voiceDesignerTitle { font-family: var(--font-display); font-size: 1.2rem; font-weight: 800; color: var(--host-accent, var(--accent)); }
+.voiceDesignerSub { font-size: 0.8rem; color: var(--text-muted); margin-top: var(--sp-1); max-width: 60ch; line-height: 1.45; }
+.voiceBriefChip { white-space: nowrap; }
+
+.voiceQuickGrid { display: grid; gap: var(--sp-3); margin-top: var(--sp-4); }
+.voiceQuickRow { display: grid; grid-template-columns: 80px minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
+.voiceQuickLabel { font-size: 0.76rem; font-weight: 700; color: var(--text-muted); }
+
+.voiceFieldHead { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+.voiceCount { font-size: 0.7rem; font-variant-numeric: tabular-nums; color: var(--text-muted); }
+.voiceCountOver { color: var(--error-text); font-weight: 700; }
+.voiceReset { align-self: flex-start; }
+
+.voiceDesignActions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); }
+.voiceDesignWait { font-size: 0.76rem; color: var(--text-muted); }
+
+.voiceRound { margin-top: var(--sp-4); }
+.voiceRoundLabel {
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); margin-bottom: var(--sp-2);
+}
+.voiceTakeGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--sp-3); margin-top: var(--sp-2); }
+.voiceTake {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  animation: fadeUp 0.3s ease both;
+}
+.voiceTake:hover { border-color: var(--border-hover); }
+.voiceTake[data-playing="true"] { border-color: var(--host-accent, var(--accent)); }
+.voiceTake[data-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted), var(--shadow-accent);
+}
+.voiceTakeHead { display: flex; justify-content: space-between; align-items: baseline; }
+.voiceTakeName { font-weight: 800; }
+.voiceTakeTime { font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.voicePlay {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%; padding: var(--sp-3); cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface); color: var(--text);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.voicePlay:hover { border-color: var(--host-accent, var(--accent)); }
+.voicePlay:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.voicePlayIcon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2.25rem; height: 2.25rem; border-radius: 999px; flex: none;
+  background: var(--host-accent, var(--accent)); color: var(--bg);
+  font-size: 0.8rem; font-weight: 900;
+}
+.voiceTakeSkeleton {
+  min-height: 150px;
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: skelShimmer 1.4s ease-in-out infinite;
+}
+
+.voiceSaveBar {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--border);
+}
+.voiceSaveHint { font-size: 0.78rem; color: var(--text-muted); margin-right: auto; }
+
+@media (max-width: 560px) {
+  .voiceQuickRow { grid-template-columns: 1fr; gap: var(--sp-1); }
+  .voiceTakeGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .voiceTake { padding: var(--sp-3); }
+  .voiceSaveBar .btnPrimary { width: 100%; }
+  .voiceSaveHint { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hostCardDesigner, .voiceTake, .voiceTakeSkeleton { animation: none; }
+}
+
 .hostFieldNarrow { max-width: 240px; }
 
 .hostConsentRow {
