@@ -122,6 +122,7 @@
     "audit:migration-adoption": "tsx --conditions=react-server src/scripts/auditMigrationAdoption.ts",
     "test:migration-adoption": "tsx --conditions=react-server src/scripts/testMigrationAdoption.ts",
     "test:podcast-configuration": "tsx --conditions=react-server src/scripts/testPodcastConfiguration.ts",
+    "test:business-intelligence": "tsx --conditions=react-server src/scripts/testBusinessIntelligence.ts",
     "test:podcast-configuration-migration": "tsx --conditions=react-server src/scripts/testPodcastConfigurationMigration.ts",
     "audit:audio-assets": "tsx --conditions=react-server src/scripts/auditAudioAssets.ts",
     "repair:audio-asset-metadata": "tsx --conditions=react-server src/scripts/repairAudioAssetMetadata.ts",

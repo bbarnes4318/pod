@@ -607,6 +607,15 @@ model Podcast {
   formatId      String?
   format        ShowFormat? @relation(fields: [formatId], references: [id], onDelete: Restrict)
 
+  // --- Intelligence engine ------------------------------------------------
+  // Which research engine feeds this show. Every podcast that existed before
+  // this column is SPORTS (the creation path only ever accepted sports
+  // verticals), so the default IS the deterministic backfill. Set once at
+  // creation, server-side; no edit path rewrites it. See
+  // docs/PODCAST_INTELLIGENCE.md.
+  intelligenceType PodcastIntelligenceType @default(SPORTS)
+  businessProfile  BusinessProfile?
+
   editorialConfig  PodcastEditorialConfig?
   productionConfig PodcastProductionConfig?
   publishingConfig PodcastPublishingConfig?
@@ -621,6 +630,49 @@ model Podcast {
   @@index([ownerId])
   @@index([visibility])
   @@index([formatId])
+  @@index([intelligenceType])
+}
+
+/// Which research engine feeds a podcast. SPORTS = the existing sports
+/// pipeline (TopicCandidate/ResearchBrief); BUSINESS = the business
+/// intelligence engine (BusinessProfile and its research).
+enum PodcastIntelligenceType {
+  SPORTS
+  BUSINESS
+}
+
+// The business a BUSINESS podcast is about. One per podcast; tenancy is the
+// podcast's (every read goes through a podcast ownership check).
+//
+// Essentials are real columns (validated, queryable). Everything learned or
+// answered later lives in `findings` (provenance-tagged facts) and `answers`
+// (advanced sections + adaptive follow-ups), both validated by
+// src/lib/business/profileSchema.ts — never free-form JSON from the client.
+model BusinessProfile {
+  id                String   @id @default(uuid())
+  podcastId         String   @unique
+  podcast           Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  businessName      String
+  websiteUrl        String?
+  description       String?
+  industry          String
+  subIndustries     String[] @default([])
+  targetAudiences   String[] @default([])
+  primaryGoal       String
+  geographicMarkets String[] @default([])
+  language          String   @default("en")
+  /// ProfileFinding[]: { field, value, provenance, sourceUrl?, retrievedAt?, confidence, status }
+  findings          Json     @default("[]")
+  /// Advanced answers keyed by section → field. Values are the user's words.
+  answers           Json     @default("{}")
+  /// "not_started" | "running" | "complete" | "failed"
+  discoveryStatus   String   @default("not_started")
+  discoveryError    String?
+  discoveredAt      DateTime?
+  /// Bumped on every accepted edit (optimistic concurrency, like configVersion).
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 // One-to-one editorial settings: WHAT a show covers and HOW its script is shaped.
