@@ -86,6 +86,13 @@ REDIS_PORT=''
 [[ -n "$(git status --porcelain --untracked-files=no)" ]] && DIRTY=yes || DIRTY=no
 
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/take-machine-ci"
+# Running as root (servers, cloud runners): the tests that start an embedded
+# Postgres cannot run as root -- embedded-postgres drops to a `postgres` user
+# that can enter neither /root nor the test's root-owned temp directory. So as
+# root the working copy lives outside /root and the test steps run as an
+# unprivileged user (see do_quality). Nothing changes for a normal user.
+CI_UNPRIV_USER="${CI_UNPRIV_USER:-takemachine-ci}"
+if [[ $EUID -eq 0 && -z "${XDG_CACHE_HOME:-}" ]]; then CACHE=/var/cache/take-machine-ci; fi
 # Checks run against a clean export of HEAD, never the working tree: the tree
 # is never written to (no npm ci over the developer's node_modules, no .next,
 # no generated Prisma client) and, like GitHub, only committed code is tested.
@@ -375,6 +382,11 @@ need_services() {
   local out
   if out=$(services_up 2>&1); then
     echo "$out" >&2
+    # services_up ran in a subshell ($(...)), so the ports it read are gone:
+    # read them again here, or every check falls back to 5432/6379.
+    PG_PORT=$(docker port "tmci-$RUN_ID-pg" 5432/tcp | head -1 | sed 's/.*://')
+    REDIS_PORT=$(docker port "tmci-$RUN_ID-redis" 6379/tcp | head -1 | sed 's/.*://')
+    export PG_PORT REDIS_PORT
     record services PASS 0 - "$out"
   else
     echo "$out" >&2
@@ -439,8 +451,23 @@ do_quality() {
     # The routing audit is configuration-only -- it reports and exits, with no
     # assertions to count -- so it is checked by its exit code alone.
     if [[ $name == llm-routing-audit ]]; then flag=''; fi
-    step ${flag:+$flag} "$name" "${CI_STEP_TIMEOUT:-900}" "$(base_env); $cmd"
+    if [[ $EUID -eq 0 ]]; then
+      local home="/var/lib/$CI_UNPRIV_USER"
+      step ${flag:+$flag} "$name" "${CI_STEP_TIMEOUT:-900}" \
+        "$(base_env); export HOME='$home' npm_config_cache='$home/.npm'; runuser -u '$CI_UNPRIV_USER' -- bash -c $(printf '%q' "set -euo pipefail; cd '$TREE'; $cmd")"
+    else
+      step ${flag:+$flag} "$name" "${CI_STEP_TIMEOUT:-900}" "$(base_env); $cmd"
+    fi
   done
+}
+
+# As root: an unprivileged user that owns the working copy, for do_quality.
+unpriv_prepare() {
+  [[ $EUID -eq 0 ]] || return 0
+  id "$CI_UNPRIV_USER" >/dev/null 2>&1 ||
+    useradd --system --create-home --home-dir "/var/lib/$CI_UNPRIV_USER" --shell /bin/bash "$CI_UNPRIV_USER"
+  chmod a+rx "$CACHE"
+  chown -R "$CI_UNPRIV_USER" "$TREE"
 }
 
 # ── integration.yml -> migrate + the five suites ────────────────────────
@@ -472,7 +499,18 @@ do_image() {
   local ctx="$RD/.ctx" tag="take-machine:ci-${SHA:0:12}" net="tmci-$RUN_ID-iso" c="tmci-$RUN_ID-web"
   mkdir -p "$ctx"
   git archive --format=tar "$SHA" | tar -x -C "$ctx"
-  docker build -t "$tag" "$ctx"
+  local file="$ctx/Dockerfile"
+  if [[ -n "${CI_BUILD_CA_BUNDLE:-}" ]]; then
+    # Only behind a TLS-intercepting proxy (corporate networks, some cloud
+    # sandboxes); the bundle must include the public roots. Added to a
+    # throwaway copy of the Dockerfile, never to the repository.
+    cp "$CI_BUILD_CA_BUNDLE" "$ctx/ci-proxy-ca.bundle"
+    awk '{print} /^FROM /{print "COPY ci-proxy-ca.bundle /usr/local/share/ci-ca.bundle"; print "ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ci-ca.bundle SSL_CERT_FILE=/usr/local/share/ci-ca.bundle"}' \
+      "$ctx/Dockerfile" >"$ctx/ci.Dockerfile"
+    file="$ctx/ci.Dockerfile"
+    echo "image built with CI_BUILD_CA_BUNDLE (proxy CA in a throwaway copy of the Dockerfile)" >>"$RD/notes.txt"
+  fi
+  docker build -f "$file" -t "$tag" "$ctx"
   docker network create --internal --label take-machine-ci=1 --label "take-machine-ci.run=$RUN_ID" "$net" >/dev/null
   docker run -d --name "$c-db" --network "$net" --network-alias db \
     --label take-machine-ci=1 --label "take-machine-ci.run=$RUN_ID" --memory 1g \
@@ -480,7 +518,7 @@ do_image() {
     "${CI_PG_IMAGE:-postgres:16}" -c fsync=off >/dev/null
   docker run -d --name "$c-redis" --network "$net" --network-alias redis \
     --label take-machine-ci=1 --label "take-machine-ci.run=$RUN_ID" --memory 512m \
-    "${CI_REDIS_IMAGE:-redis:7}" >/dev/null
+    "${CI_REDIS_IMAGE:-redis:7}" redis-server --requirepass ci-only-redis-password >/dev/null
   local i
   for i in $(seq 1 60); do
     docker exec "$c-db" pg_isready -U postgres -d takemachine_boot >/dev/null 2>&1 && break
@@ -490,8 +528,17 @@ do_image() {
   # Obviously fake, CI-only values for whatever production config demands.
   local envs=(-e NODE_ENV=production -e PORT=3000 -e HOSTNAME=0.0.0.0
     -e DATABASE_URL=postgresql://postgres:postgres@db:5432/takemachine_boot
-    -e REDIS_URL=redis://redis:6379
+    # Production refuses a Redis without a password (src/lib/env), so the
+    # boot test's Redis has a CI-only one.
+    -e REDIS_URL=redis://:ci-only-redis-password@redis:6379
     -e LLM_PROVIDER=stub -e TTS_PROVIDER=stub -e STORAGE_PROVIDER=stub
+    # src/lib/env refuses stub sports/research providers in production. Real
+    # provider names with fake keys: the --internal network has no route out,
+    # so nothing is ever called. /api/readiness then reports the missing
+    # production keys/domain as failures (503), which is expected here; this
+    # check only requires its database and redis checks to pass.
+    -e SPORTS_PROVIDER=sportsdataio -e SPORTSDATAIO_API_KEY=ci-only-sportsdataio-key
+    -e RESEARCH_PROVIDER=exa -e EXA_API_KEY=ci-only-exa-key
     -e ADMIN_PASSWORD=ci-only-admin-password-not-a-real-one-000
     -e NEXTAUTH_SECRET=ci-only-nextauth-secret-not-a-real-one-000
     -e NEXTAUTH_URL=http://127.0.0.1:3000)
@@ -503,7 +550,7 @@ do_image() {
   for i in $(seq 1 90); do
     if out=$(docker exec "$c" node -e "
         Promise.all(['/api/health','/api/readiness'].map(p =>
-          fetch('http://127.0.0.1:3000'+p).then(async r => p+' '+r.status+' '+(await r.text()).slice(0,400))))
+          fetch('http://127.0.0.1:3000'+p).then(async r => p+' '+r.status+' '+(await r.text()).slice(0,4000))))
           .then(rs => { console.log(rs.join('\n')); process.exit(/\/api\/health 200 /.test(rs[0]) ? 0 : 1); })
           .catch(() => process.exit(1))" 2>/dev/null); then
       echo "answered after ${i}s:"
@@ -511,6 +558,10 @@ do_image() {
       grep -q '"ok":true' <<<"$out" || { echo "/api/health did not report ok"; return 1; }
       grep -qE '"name":"database","status":"pass"' <<<"$out" || {
         echo "/api/readiness does not see the database from inside the container"
+        return 1
+      }
+      grep -qE '"name":"redis","status":"pass"' <<<"$out" || {
+        echo "/api/readiness does not see Redis from inside the container"
         return 1
       }
       return 0
@@ -542,7 +593,7 @@ case "$PROFILE" in
   typecheck | fast | full) step typecheck "${CI_TYPECHECK_TIMEOUT:-1800}" "$(base_env); npx tsc --noEmit" ;;
 esac
 case "$PROFILE" in
-  quality | fast | full) do_quality ;;
+  quality | fast | full) unpriv_prepare; do_quality ;;
 esac
 
 case "$PROFILE" in
