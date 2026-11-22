@@ -421,3 +421,19 @@ export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
     jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Business research (background queue — never blocks Studio production jobs).
+// jobId = run id, so a re-click or retry never runs the same research twice.
+// ---------------------------------------------------------------------------
+export interface BusinessRunJobData {
+  runId: string;
+}
+
+export async function queueBusinessResearchJob(data: BusinessRunJobData) {
+  return podcastQueue.add("business:research", data, { jobId: `business-research-${data.runId}`, attempts: 2 });
+}
+
+export async function queueBusinessDossierJob(data: BusinessRunJobData) {
+  return podcastQueue.add("business:dossier", data, { jobId: `business-dossier-${data.runId}`, attempts: 2 });
+}

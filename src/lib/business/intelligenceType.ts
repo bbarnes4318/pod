@@ -15,9 +15,11 @@ export function businessPodcastsEnabledFor(user: { role?: string | null; email?:
   return process.env.BUSINESS_PODCASTS_ENABLED === "1" || isOwnerAccount(user);
 }
 
-/** Copy shown when a business show reaches a sports-only production path. */
+/** Copy shown when a business show reaches a SPORTS-only production path. Business
+ *  episodes are produced from the show's own approved topics and dossiers
+ *  (businessActions.generateBusinessEpisode), never from sports topics. */
 export const BUSINESS_PRODUCTION_NOT_READY =
-  "Business shows can't generate episodes yet — their research-to-production adapter isn't built. Your business profile and research are saved.";
+  "Business shows produce episodes from their own research. Open the show, approve a researched topic, and generate the episode from there.";
 
 export function isBusinessPodcast(p: { intelligenceType?: string | null } | null | undefined): boolean {
   return p?.intelligenceType === "BUSINESS";

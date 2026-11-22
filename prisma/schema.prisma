@@ -615,6 +615,8 @@ model Podcast {
   // docs/PODCAST_INTELLIGENCE.md.
   intelligenceType PodcastIntelligenceType @default(SPORTS)
   businessProfile  BusinessProfile?
+  businessResearchRuns   BusinessResearchRun[]
+  businessOpportunities  BusinessTopicOpportunity[]
 
   editorialConfig  PodcastEditorialConfig?
   productionConfig PodcastProductionConfig?
@@ -673,6 +675,208 @@ model BusinessProfile {
   version           Int      @default(1)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Business research (docs/PODCAST_INTELLIGENCE.md). Every row carries
+// podcastId (+ ownerId denormalized) so tenant scoping is a WHERE clause, not a
+// join. Sports tables are not referenced and not changed.
+// ---------------------------------------------------------------------------
+
+/// One research job: industry research (topic generation) or a dossier.
+model BusinessResearchRun {
+  id              String    @id @default(uuid())
+  podcastId       String
+  podcast         Podcast   @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  ownerId         String?
+  /// "industry" | "dossier"
+  kind            String
+  /// "QUICK" | "STANDARD" | "DEEP"
+  depth           String
+  /// "queued" | "running" | "completed" | "partial" | "failed" | "cancelled"
+  status          String    @default("queued")
+  cancelRequested Boolean   @default(false)
+  /// Same profile version + kind + depth (+ opportunity) = same run. Re-clicking reuses it.
+  idempotencyKey  String    @unique
+  profileVersion  Int
+  opportunityId   String?
+  /// { pass, message, pct, updatedAt }
+  progress        Json      @default("{}")
+  /// Ceilings this run was allowed (requests, llmCalls, estCostUsd, durationMs).
+  budget          Json
+  /// { apiRequests: {provider: n}, llmCalls, tokensIn, tokensOut, estCostUsd, cacheHits, retries, durationMs }
+  usage           Json      @default("{}")
+  /// Provider limitations surfaced to the user: [{ adapter, status, message }]
+  limitations     Json      @default("[]")
+  error           String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  sources         BusinessResearchSource[]
+  observations    DemandObservation[]
+
+  @@index([podcastId, createdAt])
+  @@index([status])
+}
+
+/// A retrieved source. Interest evidence and claim evidence both point here.
+model BusinessResearchSource {
+  id           String              @id @default(uuid())
+  runId        String
+  run          BusinessResearchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  podcastId    String
+  ownerId      String?
+  /// FIRST_PARTY_SITE | WEB | PUBLICATION | GOVERNMENT | VIDEO | PODCAST | COMMUNITY
+  sourceType   String
+  /// safe_fetch | exa | youtube | stackexchange | hackernews | itunes
+  provider     String
+  canonicalUrl String
+  title        String?
+  publisher    String?
+  publishedAt  DateTime?
+  retrievedAt  DateTime
+  /// Bounded retrieved text — what verification checks quotes against.
+  excerpt      String
+  contentHash  String
+  /// Independent-origin group: syndicated copies share one key.
+  originKey    String
+  /// "ok" | "failed" | "skipped"
+  fetchStatus  String              @default("ok")
+  createdAt    DateTime            @default(now())
+  observations DemandObservation[]
+
+  @@unique([runId, canonicalUrl])
+  @@index([podcastId, contentHash])
+  @@index([podcastId, canonicalUrl])
+}
+
+/// One measured demand signal. Metric kinds are NOT interchangeable.
+model DemandObservation {
+  id                  String                  @id @default(uuid())
+  runId               String
+  run                 BusinessResearchRun     @relation(fields: [runId], references: [id], onDelete: Cascade)
+  podcastId           String
+  ownerId             String?
+  sourceId            String?
+  source              BusinessResearchSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  /// YOUTUBE | COMMUNITY_DISCUSSIONS | PODCAST_DISCOVERY | INDUSTRY_PUBLICATIONS | ...
+  adapter             String
+  /// search | video | podcast | community | publication | first_party | government
+  sourceFamily        String
+  query               String
+  /// e.g. youtube_views, stackexchange_question_views, hn_points, matching_podcast_count
+  observedMetric      String
+  /// RELATIVE_INTEREST | ESTIMATED_VOLUME | IMPRESSIONS | VIEWS | ENGAGEMENT | DISCUSSION_ACTIVITY | CONTENT_SUPPLY
+  metricKind          String
+  metricValue         Float?
+  measurementWindow   String
+  audienceRelevance   Float
+  geographicRelevance String?
+  observedAt          DateTime
+  publishedAt         DateTime?
+  originKey           String
+  confidence          Float
+  limitations         String
+  title               String?
+  url                 String?
+  createdAt           DateTime                @default(now())
+
+  @@index([runId])
+  @@index([podcastId])
+}
+
+/// A structured topic opportunity (not just a title).
+model BusinessTopicOpportunity {
+  id                        String   @id @default(uuid())
+  podcastId                 String
+  podcast                   Podcast  @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  ownerId                   String?
+  runId                     String?
+  /// TRENDING | EVERGREEN | INSIDER_INTELLIGENCE | HIDDEN_OPPORTUNITY
+  category                  String
+  title                     String
+  normalizedTitle           String
+  businessNiche             String
+  targetListener            String
+  coreQuestion              String
+  listenerProblem           String
+  whyItMatters              String
+  whyNow                    String?
+  undercoveredInformation   String?
+  potentialOriginalAnalysis String?
+  practicalValue            String?
+  /// { observationIds, summary, independentOrigins, kinds }
+  demandEvidence            Json     @default("{}")
+  citedSourceIds            String[] @default([])
+  /// Verified claims: [{ claim, sourceId, quote, verdict, reasons }]
+  keyClaims                 Json     @default("[]")
+  researchLimitations       Json     @default("[]")
+  /// Full scoring breakdown with justifications (potential + achieved IAS, opportunity, demand).
+  scores                    Json     @default("{}")
+  opportunityScore          Int      @default(0)
+  potentialIas              Int      @default(0)
+  /// Null until a dossier has done the research.
+  achievedIas               Int?
+  demandConfidence          Float    @default(0)
+  /// NONE | LOW | MODERATE | HIGH | UNMEASURED
+  demandStrength            String   @default("UNMEASURED")
+  evidenceQuality           Float    @default(0)
+  /// CANDIDATE | HELD | APPROVED | REJECTED | PRODUCED
+  editorialStatus           String   @default("CANDIDATE")
+  holdReasons               Json     @default("[]")
+  /// Independent editorial review: { verdict, genericness, notes, reviewer }
+  review                    Json?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+  dossier                   BusinessResearchDossier?
+  episodeLinks              BusinessEpisodeTopic[]
+
+  @@index([podcastId, editorialStatus])
+  @@index([podcastId, normalizedTitle])
+}
+
+/// The deep research packet an episode is written from.
+model BusinessResearchDossier {
+  id                    String                   @id @default(uuid())
+  opportunityId         String                   @unique
+  opportunity           BusinessTopicOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  podcastId             String
+  ownerId               String?
+  runId                 String?
+  /// RESEARCHING | READY | HOLD | FAILED
+  status                String                   @default("RESEARCHING")
+  version               Int                      @default(1)
+  /// The 20 sections (businessDossier.ts DossierContent).
+  content               Json                     @default("{}")
+  sourceIds             String[]                 @default([])
+  verifiedClaimCount    Int                      @default(0)
+  unsupportedClaimCount Int                      @default(0)
+  holdReasons           Json                     @default("[]")
+  additionalResearch    Json                     @default("[]")
+  fingerprint           String?
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+}
+
+/// Business counterpart of EpisodeTopic. A separate table (not a nullable
+/// EpisodeTopic.topicId) so every sports reader of EpisodeTopic.topic stays
+/// exactly as it was. The snapshot is immutable and self-contained.
+model BusinessEpisodeTopic {
+  id            String                   @id @default(uuid())
+  episodeId     String
+  episode       Episode                  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  /// Null once the source opportunity is deleted; the snapshot still reproduces the episode.
+  opportunityId String?
+  opportunity   BusinessTopicOpportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  dossierId     String
+  orderIndex    Int                      @default(0)
+  /// businessTopicSnapshot.ts BusinessTopicSnapshotV1
+  snapshot      Json
+  selectedAt    DateTime                 @default(now())
+
+  @@unique([episodeId, opportunityId])
+  @@index([opportunityId])
 }
 
 // One-to-one editorial settings: WHAT a show covers and HOW its script is shaped.
@@ -931,6 +1135,8 @@ model Episode {
   podcast                     Podcast?             @relation(fields: [podcastId], references: [id], onDelete: SetNull)
   ownerUser                   User?                @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   topics                      EpisodeTopic[]
+  // Business episodes link here instead (never to a sports TopicCandidate).
+  businessTopics              BusinessEpisodeTopic[]
   scripts                     Script[]
   audioSegments               AudioSegment[]
   socialClips                 SocialClip[]

@@ -19,13 +19,19 @@ import {
 } from "@/lib/shows/showForge";
 import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
 import QualityTierSection from "./QualityTierSection";
-import BusinessShowView from "./BusinessShowView";
+import BusinessShowView, { BUSINESS_TABS, type BusinessTab } from "./BusinessShowView";
 
 export const dynamic = "force-dynamic";
 
 const PRODUCED = new Set(["audio_ready", "content_generating", "content_ready", "publish_ready", "published"]);
 
-export default async function StudioShowHeadquartersPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function StudioShowHeadquartersPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const { id } = await params;
   const user = await requireUserPage(`/studio/shows/${id}`);
   const podcast = await db.podcast.findUnique({
@@ -47,7 +53,9 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
   if (podcast.intelligenceType === "BUSINESS") {
     const profile = await db.businessProfile.findUnique({ where: { podcastId: podcast.id } });
     if (!profile) notFound();
-    return <BusinessShowView podcastName={podcast.name} profile={profile} />;
+    const rawTab = (await searchParams).tab;
+    const tab = BUSINESS_TABS.find((t) => t.id === rawTab)?.id ?? ("overview" as BusinessTab);
+    return <BusinessShowView podcast={{ id: podcast.id, name: podcast.name }} profile={profile} tab={tab} />;
   }
 
   const [hostsRaw, teamsRaw] = await Promise.all([

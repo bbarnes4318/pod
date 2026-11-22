@@ -87,6 +87,8 @@ export interface SafeFetchDeps {
   request?: typeof https.request;
   /** Same for cleartext http. */
   httpRequest?: typeof http.request;
+  /** Opt-in widening of accepted MIME types (sitemaps, robots.txt). Every other rule still applies. */
+  allowedContentTypes?: readonly string[];
 }
 
 async function defaultResolve(hostname: string): Promise<string[]> {
@@ -323,9 +325,9 @@ async function readBounded(
   });
 }
 
-function contentTypeAllowed(raw: string | undefined): boolean {
+function contentTypeAllowed(raw: string | undefined, allowed: readonly string[] = ALLOWED_CONTENT_TYPES): boolean {
   const mime = (raw || "").split(";")[0].trim().toLowerCase();
-  return (ALLOWED_CONTENT_TYPES as readonly string[]).includes(mime);
+  return allowed.includes(mime);
 }
 
 /**
@@ -405,7 +407,7 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
     }
 
     const contentType = String(response.headers["content-type"] || "");
-    if (!contentTypeAllowed(contentType)) {
+    if (!contentTypeAllowed(contentType, deps.allowedContentTypes)) {
       response.stream.destroy();
       return fail("unsupported_content_type", `content-type: ${contentType || "(none)"}`);
     }

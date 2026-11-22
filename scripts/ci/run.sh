@@ -440,6 +440,9 @@ QUALITY_STEPS=(
   "show-forge-discoverability|npx tsx --conditions=react-server src/scripts/testShowForgeDiscoverability.ts"
   "production-chain|npm run test:production-chain"
   "audio-stitch-recovery|npm run test:audio-stitch-recovery"
+  "business-intelligence|npm run test:business-intelligence"
+  "business-engine|npm run test:business-engine"
+  "business-integration|npm run test:business-integration"
 )
 
 do_quality() {

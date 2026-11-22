@@ -102,21 +102,27 @@ async function main() {
     assert.ok(!quoteAppearsIn("plans start at $19 per month", page));
     assert.ok(!quoteAppearsIn("seniors", page), "too-short quotes prove nothing");
   });
-  await check("fabricated quote → AI_INFERRED, quote dropped, confidence capped", () => {
-    const [real, fake] = assignProvenance([
+  await check("fabricated quote → UNVERIFIED, quote not shown as evidence, confidence capped", async () => {
+    const [real, fake] = await assignProvenance([
       { field: "PUBLIC_PRICING", value: "From $28/month", evidenceQuote: "Plans start at $28 per month", sourceIndex: 0, confidence: 0.95 },
       { field: "COMPETITORS", value: "Acme Life", evidenceQuote: "unlike Acme Life, we answer the phone", sourceIndex: 0, confidence: 0.9 },
     ], sources);
-    assert.equal(real.provenance, "SOURCE_VERIFIED");
+    assert.equal(real.provenance, "SOURCE_SUPPORTED");
     assert.equal(real.sourceUrl, "https://example.com/");
-    assert.equal(fake.provenance, "AI_INFERRED");
+    assert.equal(fake.provenance, "UNVERIFIED");
     assert.equal(fake.evidenceQuote, null);
-    assert.ok(fake.confidence <= 0.6);
+    assert.equal(fake.offeredQuote, "unlike Acme Life, we answer the phone", "kept for audit");
+    assert.ok(fake.confidence <= 0.5);
     assert.ok([real, fake].every((f) => f.status === "pending"), "nothing is accepted on the user's behalf");
   });
-  await check("out-of-range sourceIndex can't verify", () => {
-    const [f] = assignProvenance([{ field: "SERVICES", value: "x", evidenceQuote: "final expense policies for seniors", sourceIndex: 7, confidence: 1 }], sources);
-    assert.equal(f.provenance, "AI_INFERRED");
+  await check("correct quote contradicting the claimed price → SOURCE_CONTRADICTED", async () => {
+    const [f] = await assignProvenance([{ field: "PUBLIC_PRICING", value: "Plans start at $19 per month", evidenceQuote: "Plans start at $28 per month", sourceIndex: 0, confidence: 0.95 }], sources);
+    assert.equal(f.provenance, "SOURCE_CONTRADICTED");
+    assert.match(f.verification!.reasons.join(" "), /\$19.*\$28/);
+  });
+  await check("out-of-range sourceIndex can't verify", async () => {
+    const [f] = await assignProvenance([{ field: "SERVICES", value: "x", evidenceQuote: "final expense policies for seniors", sourceIndex: 7, confidence: 1 }], sources);
+    assert.equal(f.provenance, "UNVERIFIED");
   });
 
   console.log("Discovery");
@@ -133,7 +139,8 @@ async function main() {
     ] }) });
     assert.ok(res.ok);
     if (!res.ok) return;
-    assert.deepEqual(res.findings.map((f) => f.provenance), ["SOURCE_VERIFIED", "AI_INFERRED"]);
+    assert.deepEqual(res.findings.map((f) => f.provenance), ["SOURCE_SUPPORTED", "AI_INFERRED"]);
+    assert.equal(res.findings[0].verification?.authority, "FIRST_PARTY", "the business's own site is first-party, not independent");
     assert.equal(res.sources.length, 1);
     assert.match(res.skipped.join(), /off-site/);
   });
