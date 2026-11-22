@@ -328,7 +328,13 @@ async function main() {
   }
 
   console.log(`\n${passed} passed, ${failed} failed\n`);
-  if (failed > 0) process.exit(1);
+  // Exit explicitly rather than letting the loop drain. `pg.stop()` above does
+  // not reap the embedded PostgreSQL on windows-x64 and its error is
+  // swallowed, so the child keeps the process alive: the suite printed its
+  // verdict and then sat for five and a half hours until CI killed it, which
+  // CI can only report as a failure. Every other suite here exits on its own
+  // verdict; these two were the exceptions.
+  process.exit(failed > 0 ? 1 : 0);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

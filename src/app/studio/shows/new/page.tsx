@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { SEED_TEAMS } from "@/lib/data/teamSeed";
 import { verticalForTopic } from "@/lib/verticals";
 import { requireUserPage } from "@/lib/currentUser";
+import { businessPodcastsEnabledFor } from "@/lib/business/intelligenceType";
+import Link from "next/link";
 import PodcastWizard, {
   type WizardHost,
   type WizardTeam,
@@ -15,10 +17,16 @@ export const dynamic = "force-dynamic";
 export default async function NewStudioShowPage({
   searchParams,
 }: {
-  searchParams: Promise<{ topic?: string }>;
+  searchParams: Promise<{ topic?: string; type?: string }>;
 }) {
   const user = await requireUserPage("/studio/shows/new");
-  const { topic: topicId } = await searchParams;
+  const { topic: topicId, type } = await searchParams;
+
+  // Two engines, one choice. Accounts without business access (and any
+  // topic-seeded sports flow) go straight to the sports wizard, exactly as before.
+  if (!topicId && type !== "sports" && businessPodcastsEnabledFor(user)) {
+    return <ShowTypeChooser />;
+  }
 
   const [hostsRaw, teamsRaw] = await Promise.all([
     db.aiHost.findMany({
@@ -82,6 +90,41 @@ export default async function NewStudioShowPage({
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
       />
       <PodcastWizard hosts={hosts} teams={teams} initial={initial} hideIdentity />
+    </div>
+  );
+}
+
+function ShowTypeChooser() {
+  const cards = [
+    {
+      href: "/studio/shows/new?type=sports",
+      title: "Sports podcast",
+      body: "Turn sports news, statistics, rivalries, and debates into compelling episodes.",
+      testId: "choose-sports",
+    },
+    {
+      href: "/studio/shows/new/business",
+      title: "Business podcast",
+      body: "Discover what your industry's audience wants to know and create podcasts powered by deep research.",
+      testId: "choose-business",
+    },
+  ];
+  return (
+    <div className="fadeUp">
+      <StudioPageHeader
+        title="What kind of show?"
+        subtitle="Each type runs on its own research engine. You can run both."
+        breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
+      />
+      <div className="bizTypeGrid">
+        {cards.map((c) => (
+          <Link key={c.href} href={c.href} className="studioCard bizTypeCard" data-testid={c.testId}>
+            <h2 className="m-0">{c.title}</h2>
+            <p className="bizLead bizFlush">{c.body}</p>
+            <span className="btnGhost bizTypeStart">Start →</span>
+          </Link>
+        ))}
+      </div>
     </div>
   );
 }

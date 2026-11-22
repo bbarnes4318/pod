@@ -126,7 +126,7 @@ export interface StudioPodcast {
  *  with Team IDs resolved to display/selection names. */
 export async function getStudioPodcastsFor(ctx: StudioCtx): Promise<{ success: true; podcasts: StudioPodcast[] }> {
   const rows = await ctx.db.podcast.findMany({
-    where: { ownerId: ctx.user.id },
+    where: { ownerId: ctx.user.id, intelligenceType: "SPORTS" },
     orderBy: { createdAt: "desc" },
     select: {
       id: true, name: true, verticals: true, teams: true, segmentCount: true, hostIds: true,

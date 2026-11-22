@@ -33,6 +33,7 @@ import {
   scopedRecentUseCount,
 } from "./topicUsageService";
 import { loadPodcastConfiguration, resolveEpisodeConfiguration } from "./podcastConfiguration";
+import { BUSINESS_PRODUCTION_NOT_READY, isBusinessPodcast } from "../business/intelligenceType";
 import { buildEpisodeConfigurationSnapshot, snapshotCastFor, type EpisodeSnapshotColumns } from "./episodeConfigurationSnapshot";
 import { resolvePodcastSoundProfile, resolveStandaloneSoundProfile } from "./podcastSoundProfile";
 import { resolveEffectiveRollout } from "../audio/soundDiversityFlags";
@@ -321,8 +322,11 @@ export async function createEpisodeDraft(
 
   // ---- Owner / podcast access ----
   if (input.podcastId) {
-    const podcast = await dbi.podcast.findUnique({ where: { id: input.podcastId }, select: { id: true, ownerId: true } });
+    const podcast = await dbi.podcast.findUnique({ where: { id: input.podcastId }, select: { id: true, ownerId: true, intelligenceType: true } });
     if (!podcast) return fail(mode, "That podcast no longer exists.");
+    // This path builds from sports TopicCandidates. A business show must never
+    // be fed sports topics — refuse until its own adapter exists.
+    if (isBusinessPodcast(podcast)) return fail(mode, BUSINESS_PRODUCTION_NOT_READY);
     if (podcast.ownerId && input.ownerId && podcast.ownerId !== input.ownerId) {
       return fail(mode, "That podcast belongs to another account.");
     }

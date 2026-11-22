@@ -13,6 +13,7 @@ import {
 import { encodeShowForgeState, showForgeStateSchema, type ShowForgeState } from "@/lib/shows/showForge";
 import { WEEKDAYS, SEGMENT_MIN, SEGMENT_MAX, type PodcastInput } from "./config";
 import { enqueueEpisodeBuildForPodcast } from "@/lib/services/recurringPodcastService";
+import { BUSINESS_PRODUCTION_NOT_READY, isBusinessPodcast } from "@/lib/business/intelligenceType";
 
 interface Validated {
   name: string;
@@ -171,6 +172,7 @@ export async function generateEpisodesNow(podcastId: string) {
     const podcast = await db.podcast.findUnique({ where: { id: podcastId } });
     if (!podcast) return { success: false as const, error: "Show not found." };
     if (!canViewOwned(user, podcast)) return { success: false as const, error: "This show belongs to another account." };
+    if (isBusinessPodcast(podcast)) return { success: false as const, error: BUSINESS_PRODUCTION_NOT_READY };
 
     const stamp = new Date().toISOString();
     const job = await enqueueEpisodeBuildForPodcast(podcast, {
@@ -191,9 +193,11 @@ export async function updatePodcast(id: string, input: PodcastInput) {
   try {
     const user = await currentUser();
     if (!user) return { success: false as const, error: "Please sign in to edit a show." };
-    const existing = await db.podcast.findUnique({ where: { id }, select: { id: true, ownerId: true } });
+    const existing = await db.podcast.findUnique({ where: { id }, select: { id: true, ownerId: true, intelligenceType: true } });
     if (!existing) return { success: false as const, error: "Show not found." };
     if (!canViewOwned(user, existing)) return { success: false as const, error: "This show belongs to another account." };
+    // The sports editor would overwrite a business show with sports verticals.
+    if (isBusinessPodcast(existing)) return { success: false as const, error: "Business shows are edited from their business profile." };
 
     const validated = await validatePodcastInput(input, user.id);
     if (!validated.ok) return { success: false as const, error: validated.error };

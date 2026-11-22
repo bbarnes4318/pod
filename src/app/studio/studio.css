@@ -3160,3 +3160,38 @@
 .u-hidden { display: none; }
 .u-semibold { font-weight: 600; }
 .hostPresetGrid [data-tallish="true"] { min-height: 54px; }
+
+/* ---- Business podcasts (docs/PODCAST_INTELLIGENCE.md) ---- */
+.bizStack { display: grid; gap: var(--sp-4); }
+.bizStackTight { display: grid; gap: var(--sp-2); }
+.bizForm { display: grid; gap: var(--sp-4); max-width: 820px; }
+.bizGrid2 { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.bizFieldset { border: 0; padding: 0; margin: 0; }
+.bizChips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.bizToggle { cursor: pointer; }
+.bizLead { color: var(--text-muted); margin: var(--sp-1) 0 0; line-height: 1.5; }
+.bizNote { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.bizBody { margin: 0; line-height: 1.55; max-width: 760px; }
+.bizFlush { margin: 0; }
+.bizSection { margin-top: var(--sp-4); display: grid; gap: var(--sp-3); }
+.bizCount { margin-left: var(--sp-2); }
+.bizTypeGrid { display: grid; gap: var(--sp-4); grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); max-width: 860px; }
+.bizTypeCard { text-decoration: none; color: inherit; display: grid; gap: var(--sp-2); }
+.bizTypeCard:hover { border-color: var(--border-hover); }
+.bizTypeStart { justify-self: start; margin-top: var(--sp-2); }
+.bizFilter { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.bizFilter a { text-decoration: none; }
+.bizFinding { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); }
+.bizFinding.isPending { opacity: 0.6; }
+.bizFindingHead { display: flex; gap: var(--sp-3); align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.bizFindingValue { flex: 1; min-width: 220px; line-height: 1.5; }
+.bizFindingEdit { flex: 1; min-height: 70px; }
+.bizFindingActions { display: inline-flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.bizQuote { font-size: 0.8rem; color: var(--text-muted); }
+.bizDetails { border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); }
+.bizDetails summary { cursor: pointer; font-weight: 700; }
+.bizDetailsWhy { font-weight: 400; color: var(--text-muted); margin-left: var(--sp-2); font-size: 0.85rem; }
+.bizDetailsBody { display: grid; gap: var(--sp-3); margin-top: var(--sp-3); }
+.bizAnswer { min-height: 72px; }
+.bizRow { display: inline-flex; gap: var(--sp-3); align-items: center; }
+.bizError { color: var(--error-text); font-size: 0.85rem; }

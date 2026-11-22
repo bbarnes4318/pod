@@ -19,6 +19,7 @@ import {
 } from "@/lib/shows/showForge";
 import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
 import QualityTierSection from "./QualityTierSection";
+import BusinessShowView from "./BusinessShowView";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,13 @@ export default async function StudioShowHeadquartersPage({ params }: { params: P
   }).catch(() => null);
 
   if (!podcast || !canViewOwned(user, podcast)) notFound();
+
+  // Business shows have their own headquarters; nothing below is reached for them.
+  if (podcast.intelligenceType === "BUSINESS") {
+    const profile = await db.businessProfile.findUnique({ where: { podcastId: podcast.id } });
+    if (!profile) notFound();
+    return <BusinessShowView podcastName={podcast.name} profile={profile} />;
+  }
 
   const [hostsRaw, teamsRaw] = await Promise.all([
     db.aiHost.findMany({
