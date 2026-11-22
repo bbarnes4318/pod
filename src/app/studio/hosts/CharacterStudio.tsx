@@ -16,11 +16,13 @@ import {
   cloneHostVoice,
   createStudioHost,
   deleteHostSafely,
-  designHostVoice,
   saveDesignedHostVoice,
   saveStudioHost,
+  setHostOnAir,
   unarchiveHost,
 } from "./actions";
+import VoiceDesigner, { type VoiceDesignSelection } from "./VoiceDesigner";
+import type { HostVoiceBrief } from "@/lib/hosts/voiceBriefs";
 import {
   PLACEHOLDER_USER_VOICE,
   type PreviewScenario,
@@ -38,6 +40,8 @@ export interface StudioHostVM {
   boundaries: string[];
   argumentPatterns: string[];
   settings: HostStudioSettings;
+  /** The written Fish voice brief, for catalog characters. */
+  voiceBrief: HostVoiceBrief | null;
   ttsProvider: string;
   ttsVoiceId: string;
   voiceSource: string;
@@ -50,15 +54,6 @@ export interface StudioHostVM {
   ownedByMe: boolean;
   canEdit: boolean;
 }
-
-type DesignedCandidate = {
-  id: string;
-  index: number;
-  audioBase64: string;
-  audioDataUrl: string;
-  sampleRate: number;
-  durationMs: number;
-};
 
 const previewLines: Record<PreviewScenario, string> = {
   hello: "Alright, let's get into it. I know exactly which part of this story does not add up.",
@@ -95,6 +90,10 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [filter, setFilter] = useState<"all" | "needsVoice" | "onAir">("all");
+  const needsVoice = active.filter((host) => !voiceReady(host.ttsVoiceId));
+  const onAir = active.filter((host) => host.isActive && voiceReady(host.ttsVoiceId));
+  const shown = filter === "needsVoice" ? needsVoice : filter === "onAir" ? onAir : active;
 
   return (
     <div className="fadeUp">
@@ -122,8 +121,28 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
         </div>
       )}
 
+      {active.length > 0 && (
+        <div className="hostFilterRow mt-6" role="group" aria-label="Filter hosts">
+          {([
+            ["all", `All hosts (${active.length})`],
+            ["needsVoice", `Need a voice (${needsVoice.length})`],
+            ["onAir", `On air (${onAir.length})`],
+          ] as Array<[typeof filter, string]>).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={filter === value} className={filter === value ? "btnPrimary" : "btnGhost"} onClick={() => setFilter(value)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {filter === "needsVoice" && needsVoice.length > 0 && (
+        <div className="hostVoiceBanner mt-4">
+          These hosts can&apos;t speak yet. Open <strong>Create voice</strong> on a card: Fish designs three takes, you keep one, and the host is ready to put on air.
+        </div>
+      )}
+
       <div className="grid2 mt-6">
-        {active.map((host, index) => (
+        {shown.map((host, index) => (
           <HostCard
             key={host.id}
             host={host}
@@ -139,6 +158,9 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
       </div>
 
       {active.length === 0 && <div className="emptyNote mt-6">No hosts yet. Create one above, or open a starter host and edit it.</div>}
+      {active.length > 0 && shown.length === 0 && (
+        <div className="emptyNote mt-6">{filter === "needsVoice" ? "Every host has a voice." : "No host is on air yet. Create a voice, then press Put on air."}</div>
+      )}
 
       {archived.length > 0 && (
         <div className="mt-8">
@@ -161,7 +183,9 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
   onCloseEdit: () => void;
 }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<null | "play" | "archive" | "clone">(null);
+  const [busy, setBusy] = useState<null | "play" | "archive" | "clone" | "air" | "saveVoice">(null);
+  const [designing, setDesigning] = useState(false);
+  const [selection, setSelection] = useState<VoiceDesignSelection | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -182,6 +206,38 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
       await audioRef.current.play().catch(() => undefined);
       setMessage("Playing this host in normal conversation.");
     } else setError("error" in result ? result.error : "Couldn't play this voice.");
+    setBusy(null);
+  };
+
+  const hasVoice = voiceReady(host.ttsVoiceId);
+
+  const saveVoice = async () => {
+    if (!selection) return;
+    setBusy("saveVoice"); setError(null); setMessage(null);
+    const result = await saveDesignedHostVoice(host.id, {
+      title: `${host.name} — designed voice`,
+      audioBase64: selection.audioBase64,
+      previewText: selection.testLine,
+      instruction: selection.description,
+    });
+    if (result.success) {
+      setDesigning(false);
+      setSelection(null);
+      setMessage(host.isActive
+        ? `${host.name} has a voice. Press Hear host to listen.`
+        : `${host.name} has a voice. Press Hear host to listen, then Put on air when you're happy.`);
+      router.refresh();
+    } else setError(result.error);
+    setBusy(null);
+  };
+
+  const toggleOnAir = async () => {
+    setBusy("air"); setError(null); setMessage(null);
+    const result = await setHostOnAir(host.id, !host.isActive);
+    if (result.success) {
+      setMessage(result.isActive ? `${host.name} is on air and can be cast in episodes.` : `${host.name} is benched and won't be cast.`);
+      router.refresh();
+    } else setError(result.error);
     setBusy(null);
   };
 
@@ -231,14 +287,14 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
   };
 
   return (
-    <div className="studioCard hostCard" style={{ "--host-accent": accent } as React.CSSProperties}>
+    <div className={`studioCard hostCard ${designing ? "hostCardDesigning" : ""}`} style={{ "--host-accent": accent } as React.CSSProperties}>
       <div className="hostCardHead">
         <div>
           <div className="displayTitle hostCardName">{host.name}</div>
           <div className="hostCardRole">{host.role}</div>
         </div>
         <div className="hostCardAside">
-          <span className={`chip ${host.isActive ? "chipSuccess" : ""}`}>{host.isActive ? "On air" : "Benched"}</span>
+          <span className={`chip ${host.isActive && hasVoice ? "chipSuccess" : ""}`}>{host.isActive && hasVoice ? "On air" : "Benched"}</span>
           {host.isShared && <span className="chip">Starter</span>}
         </div>
       </div>
@@ -250,21 +306,65 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
         <span className="chip">{labels.pressure[host.settings.pressure]}</span>
       </div>
 
-      <p className="hostBelief">{host.settings.belief}</p>
+      <p className="hostBelief" title={host.settings.belief}>{host.settings.belief}</p>
 
-      <div className={`provRow ${voiceReady(host.ttsVoiceId) ? "" : "gate-err"}`}>
-        <span className={`provBadge ${voiceReady(host.ttsVoiceId) ? "provOk" : "provRisk"}`}>
-          {voiceReady(host.ttsVoiceId) ? "✓ Voice ready" : "Voice needed"}
+      <div className={`provRow ${hasVoice ? "" : "gate-err"}`}>
+        <span className={`provBadge ${hasVoice ? "provOk" : "provRisk"}`}>
+          {hasVoice ? "✓ Voice ready" : "Voice needed"}
         </span>
-        {host.voiceSource && <span className="provVoice">{host.voiceSource === "synthetic-stock" ? "Designed voice" : host.voiceSource === "owned" ? "Owned voice" : "Licensed voice"}</span>}
+        {hasVoice && host.voiceSource && <span className="provVoice">{host.voiceSource === "synthetic-stock" ? "Designed voice" : host.voiceSource === "owned" ? "Owned voice" : "Licensed voice"}</span>}
+        {!hasVoice && host.voiceBrief && <span className="provVoice">Voice brief ready</span>}
       </div>
 
       {(message || error) && <div className={`gateResult mt-3 mb-3 ${error ? "gate-err" : "gate-ok"}`}>{error || message}</div>}
 
+      {designing && (
+        <div className="hostCardDesigner">
+          <VoiceDesigner
+            hostName={host.name}
+            brief={host.voiceBrief}
+            pace={host.settings.pace}
+            onSelectionChange={setSelection}
+            footer={
+              <div className="voiceSaveBar">
+                <span className="voiceSaveHint">
+                  {selection ? `Take ${selection.take} selected. Saving creates a private voice in your Fish account.` : "Pick a take to keep."}
+                </span>
+                <button type="button" className="btnGhost" onClick={() => { setDesigning(false); setSelection(null); }} disabled={busy === "saveVoice"}>Cancel</button>
+                <button type="button" className="btnPrimary" onClick={saveVoice} disabled={!selection || busy === "saveVoice"}>
+                  {busy === "saveVoice" && <span className="btnSpin" aria-hidden="true" />}
+                  {busy === "saveVoice" ? "Saving voice…" : `Save as ${host.name}'s voice`}
+                </button>
+              </div>
+            }
+          />
+        </div>
+      )}
+
       <div className="hostCardActions">
-        <button type="button" className="btnPrimary" onClick={play} disabled={busy === "play" || !voiceReady(host.ttsVoiceId)}>
-          {busy === "play" ? "Making preview…" : "▶ Hear host"}
-        </button>
+        {hasVoice ? (
+          <button type="button" className="btnPrimary" onClick={play} disabled={busy === "play"}>
+            {busy === "play" ? "Making preview…" : "▶ Hear host"}
+          </button>
+        ) : host.canEdit ? (
+          !designing && (
+            <button type="button" className="btnPrimary" onClick={() => { setDesigning(true); setError(null); setMessage(null); }}>
+              Create voice
+            </button>
+          )
+        ) : (
+          <button type="button" className="btnPrimary" disabled>▶ Hear host</button>
+        )}
+        {host.canEdit && hasVoice && (
+          <button type="button" className={host.isActive ? "btnGhost" : "btnPrimary"} onClick={toggleOnAir} disabled={busy === "air"}>
+            {busy === "air" ? "Saving…" : host.isActive ? "Bench" : "Put on air"}
+          </button>
+        )}
+        {host.canEdit && hasVoice && !designing && (
+          <button type="button" className="btnGhost" onClick={() => { setDesigning(true); setError(null); setMessage(null); }}>
+            New voice
+          </button>
+        )}
         {/* Present on EVERY card, owned or shared — see editHost for why. */}
         <button type="button" className="btnGhost" onClick={editHost} disabled={busy === "clone"}>
           {busy === "clone" ? "Making your copy…" : "Edit host"}
@@ -328,15 +428,7 @@ function HostEditor({ mode, host, accent, onClose }: {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const [voiceGender, setVoiceGender] = useState("Man");
-  const [voiceAge, setVoiceAge] = useState("Middle-aged");
-  const [voiceSound, setVoiceSound] = useState("Warm and natural");
-  const [voiceDelivery, setVoiceDelivery] = useState("Conversational");
-  const [voiceAccent, setVoiceAccent] = useState("General American");
-  const [voiceExtra, setVoiceExtra] = useState("");
-  const [designText, setDesignText] = useState("Alright, let's get into it. This story has one detail nobody wants to say out loud.");
-  const [candidates, setCandidates] = useState<DesignedCandidate[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<number | null>(null);
+  const [designSelection, setDesignSelection] = useState<VoiceDesignSelection | null>(null);
 
   const [cloneFiles, setCloneFiles] = useState<File[]>([]);
   const [cloneTranscript, setCloneTranscript] = useState("");
@@ -350,8 +442,6 @@ function HostEditor({ mode, host, accent, onClose }: {
   const setSetting = <K extends keyof HostStudioSettings>(key: K, value: HostStudioSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));
 
-  const designInstruction = `${voiceAge} ${voiceGender.toLowerCase()} voice. ${voiceSound}. ${voiceDelivery} delivery. ${voiceAccent} accent. ${voiceExtra}`.trim();
-  const selected = selectedCandidate === null ? null : candidates[selectedCandidate] || null;
 
   const hostInput = (voiceId?: string): StudioHostInput => ({
     name,
@@ -377,12 +467,12 @@ function HostEditor({ mode, host, accent, onClose }: {
       if (!hostId) return;
 
       if (voiceMode === "design") {
-        if (!selected) throw new Error("Choose one of the designed voices, or select Save voice later.");
+        if (!designSelection) throw new Error("Create takes and pick one, or choose \"Choose later\".");
         const result = await saveDesignedHostVoice(hostId, {
-          title: `${name || "Host"} designed voice`,
-          audioBase64: selected.audioBase64,
-          previewText: designText,
-          instruction: designInstruction,
+          title: `${name || "Host"} — designed voice`,
+          audioBase64: designSelection.audioBase64,
+          previewText: designSelection.testLine,
+          instruction: designSelection.description,
         });
         if (!result.success) throw new Error(result.error);
       } else if (voiceMode === "clone") {
@@ -409,17 +499,6 @@ function HostEditor({ mode, host, accent, onClose }: {
     } finally {
       setBusy(null);
     }
-  };
-
-  const generateDesign = async () => {
-    setBusy("design"); setError(null); setMessage(null); setCandidates([]); setSelectedCandidate(null);
-    const speed = settings.pace === "fast" ? 1.1 : settings.pace === "easy" ? 0.92 : 1;
-    const result = await designHostVoice({ instruction: designInstruction, previewText: designText, speed });
-    if (result.success) {
-      setCandidates(result.candidates as DesignedCandidate[]);
-      setMessage("Three real voice choices are ready. Play them and choose one.");
-    } else setError(result.error);
-    setBusy(null);
   };
 
   const playPreview = async () => {
@@ -558,38 +637,13 @@ function HostEditor({ mode, host, accent, onClose }: {
 
           {voiceMode === "design" && (
             <div className="mt-6">
-              <ChoiceRow title="Voice" value={voiceGender} onChange={setVoiceGender} options={[
-                { value: "Woman", label: "Woman" }, { value: "Man", label: "Man" }, { value: "Neutral", label: "Neutral" },
-              ]} />
-              <ChoiceRow title="Age" value={voiceAge} onChange={setVoiceAge} options={[
-                { value: "Young adult", label: "Young adult" }, { value: "Middle-aged", label: "Middle-aged" }, { value: "Older", label: "Older" },
-              ]} />
-              <ChoiceRow title="Sound" value={voiceSound} onChange={setVoiceSound} options={[
-                { value: "Low and deep", label: "Low + deep" }, { value: "Warm and natural", label: "Warm" }, { value: "Bright and clear", label: "Bright" }, { value: "Raspy and weathered", label: "Raspy" },
-              ]} />
-              <ChoiceRow title="Delivery" value={voiceDelivery} onChange={setVoiceDelivery} options={[
-                { value: "Calm", label: "Calm" }, { value: "Conversational", label: "Conversational" }, { value: "High energy", label: "High energy" }, { value: "Authoritative", label: "Authoritative" },
-              ]} />
-              <div className="hostFormGrid mt-4">
-                <label className="hostField"><span className="fieldLabel">Accent</span><input className="advSelect" value={voiceAccent} onChange={(event) => setVoiceAccent(event.target.value)} /></label>
-                <label className="hostField"><span className="fieldLabel">Anything else?</span><input className="advSelect" value={voiceExtra} onChange={(event) => setVoiceExtra(event.target.value)} placeholder="Light smoker's edge, no announcer sound..." /></label>
-                <label className="hostField hostFieldWide"><span className="fieldLabel">Words used to test the voice</span><textarea className="advSelect" rows={3} maxLength={150} value={designText} onChange={(event) => setDesignText(event.target.value)} /></label>
-              </div>
-              <button type="button" className="btnPrimary" onClick={generateDesign} disabled={busy === "design"}>{busy === "design" ? "Creating choices…" : "Create 3 voice choices"}</button>
-
-              {candidates.length > 0 && (
-                <div className="hostCandidateGrid">
-                  {candidates.map((candidate, index) => (
-                    <div key={candidate.id} className="studioCard" data-selected={selectedCandidate === index ? "true" : undefined}>
-                      <strong>Choice {index + 1}</strong>
-                      <audio controls src={candidate.audioDataUrl} className="hostAudition" />
-                      <button type="button" className={selectedCandidate === index ? "btnPrimary" : "btnGhost"} onClick={() => setSelectedCandidate(index)}>
-                        {selectedCandidate === index ? "✓ Selected" : "Use this voice"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <VoiceDesigner
+                hostName={name}
+                brief={host?.voiceBrief ?? null}
+                pace={settings.pace}
+                onSelectionChange={setDesignSelection}
+                footer={designSelection && <div className="gateResult gate-ok mt-4">Take {designSelection.take} will be saved as this host&apos;s voice when you save the host.</div>}
+              />
             </div>
           )}
 
@@ -646,7 +700,7 @@ function HostEditor({ mode, host, accent, onClose }: {
             <span className="fieldLabel">Preview words</span>
             <textarea className="advSelect" rows={4} value={previewText} onChange={(event) => setPreviewText(event.target.value)} />
           </label>
-          {voiceMode === "design" && selected ? (
+          {voiceMode === "design" && designSelection ? (
             <div className="advNote mt-4">The selected designed voice is playable in the Voice step. Save the host to test that new voice with all three behavior situations.</div>
           ) : (
             <button type="button" className="btnPrimary" onClick={playPreview} disabled={busy === "preview" || !(voiceMode === "existing" ? voiceReady(existingVoiceId) : host && voiceReady(host.ttsVoiceId))}>
