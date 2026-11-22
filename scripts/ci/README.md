@@ -121,13 +121,17 @@ Every test step is checked after it exits 0:
 
 ## Known platform limits
 
-- **`CI_REUSE_NODE_MODULES=1` (link mode) breaks two kinds of step.** Turbopack
-  refuses a linked `node_modules` ("points out of the filesystem root"), so
-  `build` fails, and the two suites that start a real PostgreSQL through
-  `embedded-postgres` (`podcast-configuration-migration`,
-  `migration-adoption`) complete their assertions and then never exit, leaving
-  a stray `postgres.exe`. Use `CI_REUSE_NODE_MODULES=copy` (or a real
-  `npm ci`): all three pass that way. `./scripts/ci/run.sh clean` removes
-  containers, not a stray embedded PostgreSQL.
+- **`CI_REUSE_NODE_MODULES=1` (link mode) breaks `build`.** Turbopack refuses a
+  linked `node_modules` ("points out of the filesystem root"). Use
+  `CI_REUSE_NODE_MODULES=copy`, or a real `npm ci`.
+- **`embedded-postgres` is not reaped on `windows-x64`.** The two suites that
+  start a real PostgreSQL (`migration-adoption`,
+  `podcast-configuration-migration`) leave a `postgres.exe` behind, whatever
+  the dependency mode: `pg.stop()` fails and swallows its error. Both suites
+  now exit on their own verdict, so the step still finishes; before that they
+  printed `N passed, 0 failed` and hung until the step timed out, which CI can
+  only report as a failure. `./scripts/ci/run.sh clean` removes containers,
+  not that stray process — on Windows, kill leftover `postgres.exe` whose
+  command line points into the CI tree.
 - **WSL2 needs at least 4GB** for `tsc` and `next build` on this repo. A 2GB
   `.wslconfig` cap kills the WSL instance mid-run.
