@@ -73,7 +73,9 @@ export async function runRecurringPodcastGeneration(now: Date = new Date()) {
   const { dateKey, weekday } = schedulerDateParts(now);
 
   const due = await db.podcast.findMany({
-    where: { cadence: "recurring", scheduleDays: { has: weekday } },
+    // Sports only: business shows have no topic->episode adapter yet, and the
+    // sports schedule must not change because a business show exists.
+    where: { cadence: "recurring", scheduleDays: { has: weekday }, intelligenceType: "SPORTS" },
   });
 
   const outcomes: PodcastGenerationOutcome[] = [];
