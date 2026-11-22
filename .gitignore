@@ -74,3 +74,6 @@ _es_payload.json
 tests/e2e/.auth/
 test-results/
 playwright-report/
+
+# Local CI run reports (scripts/ci/run.sh)
+.ci-reports/
