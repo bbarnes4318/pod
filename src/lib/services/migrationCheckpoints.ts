@@ -233,6 +233,20 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "ShowFormat + FormatSegment as first-class data. BACKFILLS the two-host generic 'classic-debate' format (plus its three segments) and points EVERY existing Podcast at it. A matching schema does NOT prove the backfill ran: the tables can exist while ShowFormat is empty and every Podcast.formatId is NULL, which is exactly the state that makes formats look optional. The seven authored formats are NOT seeded here — they come from `npm run seed:formats`, which is deliberate and is not run on deploy.",
   },
+  {
+    name: "20261121000000_podcast_intelligence_type",
+    hasDataTransform: true,
+    schemaEqualitySufficient: false,
+    invariants: [
+      "podcast_intelligence_type_enum_values_only",
+      "every_podcast_has_an_intelligence_type",
+      "podcast_intelligence_type_defaults_to_sports",
+      "business_profile_table_present",
+      "business_profiles_belong_to_business_shows",
+      "business_profiles_have_no_orphans",
+    ],
+    note: "Adds the PodcastIntelligenceType enum, Podcast.intelligenceType and BusinessProfile. The backfill is carried by `ADD COLUMN ... NOT NULL DEFAULT 'SPORTS'`, which writes every existing row inside the DDL — so what has to be verified is not a separate UPDATE but that the NOT NULL + DEFAULT pair is actually intact. A database built by `prisma db push` can present the column while the default is missing, and then a show created by any path that does not name the column stops being deterministically SPORTS. Nor can a schema diff see a BusinessProfile hanging off a show that is not BUSINESS: the app writes both in one transaction, so that state means something wrote around it.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -651,6 +665,58 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
     }
   } else {
     add("every_show_has_a_format", false, "Podcast does not exist", true);
+  }
+
+  // --- 20261121000000_podcast_intelligence_type --------------------------
+  // The data effect rides inside the DDL: ADD COLUMN ... NOT NULL DEFAULT
+  // 'SPORTS' fills every existing row as part of the statement. So the thing
+  // worth checking is that the pair is intact, and that nothing wrote a
+  // BusinessProfile onto a show that is not a business show.
+  if (await columnExists(db, "Podcast", "intelligenceType")) {
+    const labels = await one(db, `SELECT COUNT(*)::int AS n FROM pg_enum e JOIN pg_type t ON t."oid" = e."enumtypid" WHERE t."typname" = 'PodcastIntelligenceType'`);
+    const unexpected = await one(db, `SELECT COUNT(*)::int AS n FROM pg_enum e JOIN pg_type t ON t."oid" = e."enumtypid" WHERE t."typname" = 'PodcastIntelligenceType' AND e."enumlabel" NOT IN ('SPORTS', 'BUSINESS')`);
+    add("podcast_intelligence_type_enum_values_only", labels === 2 && unexpected === 0,
+      labels === 2 && unexpected === 0
+        ? "the enum is exactly SPORTS, BUSINESS"
+        : `expected exactly SPORTS and BUSINESS, found ${labels} label(s) of which ${unexpected} unexpected`);
+
+    const untyped = await one(db, `SELECT COUNT(*)::int AS n FROM "Podcast" WHERE "intelligenceType" IS NULL`);
+    add("every_podcast_has_an_intelligence_type", untyped === 0,
+      untyped > 0
+        ? `${untyped} show(s) have a NULL intelligenceType — the column was added without the NOT NULL default, so the backfill never reached them`
+        : "every show carries an intelligence type (legacy shows correctly read SPORTS)");
+
+    const defaulted = await one(db, `SELECT COUNT(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='Podcast' AND column_name='intelligenceType' AND is_nullable = 'NO' AND column_default LIKE '%SPORTS%'`);
+    add("podcast_intelligence_type_defaults_to_sports", defaulted === 1,
+      defaulted === 1
+        ? "the column is NOT NULL and defaults to SPORTS, so a show is only ever BUSINESS on purpose"
+        : "Podcast.intelligenceType is missing its NOT NULL and/or its SPORTS default — a show created without naming the column is no longer deterministically a sports show");
+  } else {
+    for (const name of ["podcast_intelligence_type_enum_values_only", "every_podcast_has_an_intelligence_type", "podcast_intelligence_type_defaults_to_sports"]) {
+      add(name, false, "Podcast.intelligenceType does not exist — the migration never ran", true);
+    }
+  }
+
+  if (await tableExists(db, "BusinessProfile")) {
+    add("business_profile_table_present", true, "BusinessProfile exists");
+
+    if (await columnExists(db, "Podcast", "intelligenceType")) {
+      const mismatched = await one(db, `SELECT COUNT(*)::int AS n FROM "BusinessProfile" b JOIN "Podcast" p ON p."id" = b."podcastId" WHERE p."intelligenceType" <> 'BUSINESS'`);
+      add("business_profiles_belong_to_business_shows", mismatched === 0,
+        mismatched > 0
+          ? `${mismatched} business profile(s) hang off a show that is not BUSINESS — the show and its profile are written in one transaction, so something wrote around that path`
+          : "every business profile belongs to a BUSINESS show");
+    } else {
+      add("business_profiles_belong_to_business_shows", false, "Podcast.intelligenceType does not exist", true);
+    }
+
+    const orphans = await one(db, `SELECT COUNT(*)::int AS n FROM "BusinessProfile" b LEFT JOIN "Podcast" p ON p."id" = b."podcastId" WHERE p."id" IS NULL`);
+    add("business_profiles_have_no_orphans", orphans === 0,
+      orphans > 0 ? `${orphans} business profile(s) point at no show` : "every business profile points at a show");
+  } else {
+    for (const name of ["business_profile_table_present", "business_profiles_belong_to_business_shows", "business_profiles_have_no_orphans"]) {
+      add(name, false, "BusinessProfile does not exist — the migration never ran", true);
+    }
   }
 
   return out;
