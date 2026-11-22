@@ -102,7 +102,7 @@ INTERRUPTED=''
 finish() {
   local rc=$? status code
   trap - EXIT INT TERM
-  [[ -f "$RD/.sid" ]] && kill -TERM -- "-$(cat "$RD/.sid")" 2>/dev/null || true
+  [[ -f "$RD/.sid" ]] && kill_tree "$(cat "$RD/.sid" 2>/dev/null)"
   local ids
   ids=$(docker ps -aq --filter "label=take-machine-ci.run=$RUN_ID" 2>/dev/null || true)
   if [[ -n "$ids" ]]; then
@@ -149,6 +149,22 @@ finish() {
 }
 trap finish EXIT
 trap 'INTERRUPTED=1; exit 130' INT TERM
+
+# Kill a step's whole process tree. `kill -- -pid` needs a process group,
+# which needs setsid; Git Bash has neither, and a killed run there used to
+# leave tsx/prisma/postgres children holding files in the export tree, which
+# then broke the NEXT run with EPERM. taskkill does the same job on Windows.
+kill_tree() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 0
+  if [[ -n "${SETSID:-}" ]]; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+  elif command -v taskkill >/dev/null; then
+    taskkill //T //F //PID "$pid" >/dev/null 2>&1 || true
+  else
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
+}
 
 record() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "${5:-}" >>"$RD/steps.tsv"; }
 blocked() {
@@ -211,6 +227,7 @@ step() {
   echo "$pid" >"$RD/.sid"
   wait "$pid" || rc=$?
   rm -f "$RD/.sid"
+  ((rc != 0)) && kill_tree "$pid" # timeout kills the shell, not its children
   local secs=$((SECONDS - t0)) st=PASS note=''
   ((rc != 0)) && st=FAIL note="exit $rc"
   ((rc == 124 || rc == 137)) && st=TIMEOUT note="exceeded ${limit}s"
