@@ -247,6 +247,13 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     ],
     note: "Adds the PodcastIntelligenceType enum, Podcast.intelligenceType and BusinessProfile. The backfill is carried by `ADD COLUMN ... NOT NULL DEFAULT 'SPORTS'`, which writes every existing row inside the DDL — so what has to be verified is not a separate UPDATE but that the NOT NULL + DEFAULT pair is actually intact. A database built by `prisma db push` can present the column while the default is missing, and then a show created by any path that does not name the column stops being deterministically SPORTS. Nor can a schema diff see a BusinessProfile hanging off a show that is not BUSINESS: the app writes both in one transaction, so that state means something wrote around it.",
   },
+  {
+    name: "20261122000000_business_research_engine",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: ["business_research_tables_present", "business_research_foreign_keys_present"],
+    note: "Additive only: six new business research tables (runs, sources, demand observations, topic opportunities, dossiers, episode topic snapshots) and their foreign keys. No data transform, no existing table altered.",
+  },
 ];
 
 export const EXPECTED_MIGRATION_COUNT = MIGRATION_CHECKPOINTS.length;
@@ -718,6 +725,28 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
       add(name, false, "BusinessProfile does not exist — the migration never ran", true);
     }
   }
+
+  // --- 20261122000000_business_research_engine ---------------------------
+  // Additive only. Check each table exists and each foreign key the
+  // migration declared is present (a db push can drop or rename them).
+  const BUSINESS_RESEARCH_TABLES = ["BusinessResearchRun", "BusinessResearchSource", "DemandObservation", "BusinessTopicOpportunity", "BusinessResearchDossier", "BusinessEpisodeTopic"];
+  const BUSINESS_RESEARCH_FKS = [
+    "BusinessResearchRun_podcastId_fkey", "BusinessResearchSource_runId_fkey", "DemandObservation_runId_fkey", "DemandObservation_sourceId_fkey",
+    "BusinessTopicOpportunity_podcastId_fkey", "BusinessResearchDossier_opportunityId_fkey", "BusinessEpisodeTopic_episodeId_fkey", "BusinessEpisodeTopic_opportunityId_fkey",
+  ];
+  const missingTables: string[] = [];
+  for (const t of BUSINESS_RESEARCH_TABLES) if (!(await tableExists(db, t))) missingTables.push(t);
+  add("business_research_tables_present", missingTables.length === 0,
+    missingTables.length ? `missing table(s): ${missingTables.join(", ")} — the migration never ran` : "all six business research tables exist",
+    missingTables.length === BUSINESS_RESEARCH_TABLES.length);
+  const fkRows = await db.$queryRawUnsafe<Array<{ conname: string }>>(
+    `SELECT conname FROM pg_constraint WHERE contype = 'f' AND conname IN (${BUSINESS_RESEARCH_FKS.map((n) => `'${n}'`).join(", ")})`
+  );
+  const haveFks = new Set((fkRows ?? []).map((r) => r.conname));
+  const missingFks = BUSINESS_RESEARCH_FKS.filter((n) => !haveFks.has(n));
+  add("business_research_foreign_keys_present", missingFks.length === 0,
+    missingFks.length ? `missing foreign key(s): ${missingFks.join(", ")}` : "every business research foreign key is present",
+    missingTables.length === BUSINESS_RESEARCH_TABLES.length);
 
   return out;
 }

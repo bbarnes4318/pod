@@ -6,8 +6,12 @@ import type { AdvancedSection, BusinessAnswers, ProfileFinding } from "@/lib/bus
 import { reviewFinding, runBusinessDiscovery, saveBusinessAnswers } from "../businessActions";
 
 const PROVENANCE_CHIP: Record<ProfileFinding["provenance"], { label: string; cls: string }> = {
+  SOURCE_SUPPORTED: { label: "Source supports", cls: "chip chipSuccess" },
   SOURCE_VERIFIED: { label: "Verified", cls: "chip chipSuccess" },
+  SOURCE_CONTRADICTED: { label: "Source contradicts", cls: "chip bizChipDanger" },
+  USER_PROVIDED: { label: "You said", cls: "chip chipAccent" },
   USER_CONFIRMED: { label: "You confirmed", cls: "chip chipAccent" },
+  UNVERIFIED: { label: "Unverified", cls: "chip bizChipWarn" },
   AI_INFERRED: { label: "Inferred", cls: "chip" },
   UNKNOWN: { label: "Unknown", cls: "chip" },
 };
@@ -87,6 +91,17 @@ export function FindingRow({ podcastId, finding }: { podcastId: string; finding:
           &ldquo;{finding.evidenceQuote}&rdquo;
           {finding.sourceUrl && <> — <a href={finding.sourceUrl} target="_blank" rel="noopener noreferrer nofollow">{new URL(finding.sourceUrl).pathname || "/"}</a></>}
         </div>
+      )}
+      {!finding.evidenceQuote && finding.offeredQuote && (
+        <div className="bizQuote">Quoted text not found on the page: &ldquo;{finding.offeredQuote}&rdquo;</div>
+      )}
+      {finding.verification && finding.verification.reasons.length > 0 && finding.provenance !== "SOURCE_SUPPORTED" && (
+        <ul className="bizReasons">
+          {finding.verification.reasons.slice(0, 3).map((r) => <li key={r}>{r}</li>)}
+        </ul>
+      )}
+      {finding.verification?.authority === "FIRST_PARTY" && finding.provenance === "SOURCE_SUPPORTED" && (
+        <span className="bizNote">Your own website says this — it isn&rsquo;t independent confirmation.</span>
       )}
       {error && <div role="alert" className="gateResult gate-err">{error}</div>}
     </div>

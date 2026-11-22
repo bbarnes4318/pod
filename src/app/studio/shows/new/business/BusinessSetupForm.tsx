@@ -27,6 +27,8 @@ export default function BusinessSetupForm() {
     industry: "",
     subIndustries: "",
     targetAudiences: [] as string[],
+    customAudiences: "",
+    primaryAudience: "",
     primaryGoal: PODCAST_GOALS[0] as string,
     geographicMarkets: [] as string[],
     language: "en",
@@ -35,12 +37,19 @@ export default function BusinessSetupForm() {
   const flip = (k: "targetAudiences" | "geographicMarkets", v: string) =>
     set(k, f[k].includes(v) ? f[k].filter((x) => x !== v) : [...f[k], v]);
 
+  // Picked + typed audiences; the chosen primary goes first (order = priority).
+  const audiences = [...new Set([...f.targetAudiences, ...splitList(f.customAudiences)])];
+  const primary = audiences.includes(f.primaryAudience) ? f.primaryAudience : audiences[0] ?? "";
+  const orderedAudiences = primary ? [primary, ...audiences.filter((a) => a !== primary)] : audiences;
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     start(async () => {
+      const { customAudiences: _c, primaryAudience: _p, ...essentials } = f;
       const res = await createBusinessPodcast({
-        ...f,
+        ...essentials,
+        targetAudiences: orderedAudiences,
         showName: f.showName || `${f.businessName} Podcast`,
         websiteUrl: f.websiteUrl.trim() || null,
         description: f.description.trim() || null,
@@ -99,6 +108,20 @@ export default function BusinessSetupForm() {
         <div className="bizChips">
           {TARGET_AUDIENCES.map((a) => <Toggle key={a} label={a} on={f.targetAudiences.includes(a)} onClick={() => flip("targetAudiences", a)} />)}
         </div>
+        <div className="bizGrid2 bizSection">
+          <label>
+            <span className="fieldLabel">Your own audiences</span>
+            <input className="input" maxLength={600} value={f.customAudiences} onChange={(e) => set("customAudiences", e.target.value)} placeholder="e.g. Final expense agency owners, Call center managers" />
+          </label>
+          {audiences.length > 1 && (
+            <label>
+              <span className="fieldLabel">Primary audience</span>
+              <select className="select" value={primary} onChange={(e) => set("primaryAudience", e.target.value)}>
+                {audiences.map((a) => <option key={a}>{a}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
       </fieldset>
 
       <div className="bizGrid2">
@@ -124,7 +147,7 @@ export default function BusinessSetupForm() {
       {error && <p role="alert" className="gateResult gate-err bizFlush">{error}</p>}
 
       <div>
-        <button className="btnPrimary" disabled={pending || !f.businessName || !f.industry || f.targetAudiences.length === 0}>
+        <button className="btnPrimary" disabled={pending || !f.businessName || !f.industry || audiences.length === 0}>
           {pending ? "Creating…" : "Create business podcast"}
         </button>
       </div>

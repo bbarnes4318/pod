@@ -61,6 +61,7 @@ import { renderSocialClip } from "../services/socialClipService";
 import { buildEpisodeFromTopics } from "../services/episodeCreation";
 import { generateScriptForEpisode } from "../services/scriptService";
 import { factCheckScript } from "../services/factCheckService";
+import { runBusinessResearchJob, runBusinessDossierJob, runBusinessScriptJob, runBusinessFactCheckJob, episodeIsBusiness, scriptIsBusiness } from "../business/businessJobs";
 import { dispatchTtsGeneration, dispatchFinalStitch, dispatchLineRegen } from "../services/stitchDispatch";
 import { generateEpisodeContentAssets } from "../services/contentAssetService";
 import { ensureStarterSoundPack } from "../services/soundDesignSeedService";
@@ -288,6 +289,8 @@ async function processPodcastJob(job: Job) {
     return handleTopicsGenerateScheduler(job);
   } else if (job.name === "generate-podcast") {
     return handlePodcastGeneration(job as Job<JobData>);
+  } else if (job.name === "business:research" || job.name === "business:dossier") {
+    return handleBusinessRun(job as Job<{ runId: string }>);
   }
 
   console.warn(`[Worker] Unknown job type received: ${job.name}`);
@@ -3157,6 +3160,21 @@ async function withScriptBudget<T>(budgetMs: number, tier: QualityTier, fn: () =
   }
 }
 
+// Business research + dossiers. Background queue; the run row carries progress,
+// usage, limitations and errors, so the JobLog only records the outcome.
+async function handleBusinessRun(job: Job<{ runId: string }>) {
+  const jobLog = await beginJobLog(job, job.name, job.data);
+  try {
+    const res = job.name === "business:research" ? await runBusinessResearchJob(job.data.runId) : await runBusinessDossierJob(job.data.runId);
+    await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "completed", output: res as any } });
+    return res;
+  } catch (err: any) {
+    await db.jobLog.update({ where: { id: jobLog.id }, data: { status: "failed", error: err?.message || "business run failed", output: {} as any } });
+    // Provider/config failures are recorded on the run; a retry would not fix them.
+    throw new UnrecoverableError(err?.message || "business run failed");
+  }
+}
+
 async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
   console.log(`[Worker] Starting Script Generation job: EpisodeID=${job.data.episodeId}`);
 
@@ -3193,7 +3211,14 @@ async function handleScriptGeneration(job: Job<ScriptGenJobData>) {
       })
       .catch(() => null);
     const chosenTier = tierRow?.qualityTier ?? tierRow?.podcast?.qualityTier;
-    const runScript = () => withLlmJob(jobLog.id, () => generateScriptForEpisode(job.data));
+    // Type-aware dispatch: a business episode is written from its business
+    // snapshot by its own writer; sports episodes take the unchanged path.
+    const runScript = () =>
+      withLlmJob(jobLog.id, async () =>
+        (await episodeIsBusiness(job.data.episodeId))
+          ? runBusinessScriptJob(job.data.episodeId, job.data.forceRegenerate)
+          : generateScriptForEpisode(job.data)
+      );
 
     // The budget is sized against the tier the user was SHOWN. An unchosen tier
     // routes by the deployment default, so it is measured against the default's
@@ -3250,7 +3275,11 @@ async function handleFactChecking(job: Job<FactCheckJobData>) {
   // cost by 50% on 2026-08-10.
   const llmMark = llmCostMark();
   try {
-    const res = await withLlmJob(jobLog.id, () => factCheckScript({ scriptId, forceRecheck }));
+    const res = await withLlmJob(jobLog.id, async () => {
+      if (!(await scriptIsBusiness(scriptId))) return factCheckScript({ scriptId, forceRecheck });
+      const b = await runBusinessFactCheckJob(scriptId);
+      return { id: b.id, status: b.status, summary: { engine: "business" }, evidenceCoverage: {}, issues: { errors: b.errors.map((reason) => ({ reason })), warnings: b.warnings.map((reason) => ({ reason })) } };
+    });
 
     const summary = (res.summary as any) || {};
     const coverage = (res.evidenceCoverage as any) || {};
