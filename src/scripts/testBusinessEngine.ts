@@ -704,6 +704,34 @@ async function main() {
     assert.equal(calls, 1);
   });
 
+  await check("business writing calls ask Claude for medium effort; sports calls are unchanged (M2 live run 3)", async () => {
+    const { AnthropicLLMProvider: AnthropicProvider } = await import("../lib/providers/llm/anthropic");
+    const { withCreativeDomain } = await import("../lib/services/creativeDomain");
+    const prevKey = process.env.ANTHROPIC_API_KEY;
+    const prevEffort = process.env.LLM_EFFORT;
+    process.env.ANTHROPIC_API_KEY = "test-not-a-real-key";
+    try {
+      delete process.env.LLM_EFFORT;
+      const p = new AnthropicProvider("claude-sonnet-5") as unknown as { buildBody(o: object, s: string): Record<string, any> };
+      const opts = { prompt: "p", maxTokens: 10000 };
+      // Sports (no domain): byte-for-byte what it was — no effort sent.
+      assert.equal(p.buildBody(opts, "S").output_config, undefined);
+      const business = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody(opts, "S"));
+      assert.deepEqual(business.output_config, { effort: "medium" });
+      // An explicit per-call effort still wins inside a business episode.
+      const explicit = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody({ ...opts, effort: "low" }, "S"));
+      assert.deepEqual(explicit.output_config, { effort: "low" });
+      // The operator's LLM_EFFORT still applies to sports, and does not push business back to the cap-filling default.
+      process.env.LLM_EFFORT = "high";
+      assert.deepEqual(p.buildBody(opts, "S").output_config, { effort: "high" });
+      const b2 = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody(opts, "S"));
+      assert.deepEqual(b2.output_config, { effort: "medium" });
+    } finally {
+      if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+      if (prevEffort === undefined) delete process.env.LLM_EFFORT; else process.env.LLM_EFFORT = prevEffort;
+    }
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

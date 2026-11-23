@@ -2,6 +2,7 @@ import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOpt
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
 import { categoryOf } from "./errors";
 import { numberFromEnv } from "./openaiCompatible";
+import { creativeDomainEffort } from "../../services/creativeDomain";
 
 /**
  * Wall-clock ceiling on ONE Anthropic HTTP attempt.
@@ -243,7 +244,9 @@ export class AnthropicLLMProvider implements LLMProvider {
     // An explicit per-call effort wins; otherwise the operator's LLM_EFFORT.
     // Business research passes one: at the default "high", thinking tokens
     // filled the output cap and the 240s timeout on topic and dossier calls.
-    const effort = (options.effort || process.env.LLM_EFFORT || "").trim().toLowerCase();
+    // A business episode's writing calls carry a domain effort (creativeDomain.ts);
+    // sports calls have no domain, so this is unchanged for them.
+    const effort = (options.effort || creativeDomainEffort() || process.env.LLM_EFFORT || "").trim().toLowerCase();
     if (effort && this.supportsAdaptiveThinking()) {
       body.output_config = { effort };
     }
