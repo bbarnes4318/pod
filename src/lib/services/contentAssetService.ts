@@ -1,3 +1,4 @@
+import { businessContentTopics } from "../business/businessTopicSnapshot";
 import { db } from "../db";
 import { formatChapterTime } from "../chapterTime";
 import {
@@ -289,6 +290,8 @@ export async function generateEpisodeContentAssets(input: {
               },
             },
           },
+          podcast: { select: { name: true, intelligenceType: true } },
+          businessTopics: { orderBy: { orderIndex: "asc" }, select: { id: true, opportunityId: true, snapshot: true } },
         },
       },
       audioSegments: true,
@@ -319,10 +322,14 @@ export async function generateEpisodeContentAssets(input: {
   }
 
   // 5. Linked Episode exists
-  const episode = script.episode;
+  const episode = script.episode as any;
   if (!episode) {
     throw new Error(`Episode not linked to Script ${scriptId}.`);
   }
+  // A business episode's topic, facts and sources live on its business link
+  // (frozen snapshot), not on sports EpisodeTopic rows. Sports: unchanged.
+  const isBusiness = episode.podcast?.intelligenceType === "BUSINESS";
+  if (isBusiness) episode.topics = businessContentTopics(episode.businessTopics ?? []);
 
   // 6. Episode status check
   if (episode.status === "content_generating") {
@@ -895,7 +902,14 @@ export async function generateEpisodeContentAssets(input: {
     try {
       const llm = getRoleLLMProvider("show_notes");
 
-      const topicsEvidence = episode.topics.map((et: any) => {
+      const topicsEvidence = isBusiness
+        ? episode.topics.map((et: any) => ({
+            topicTitle: et.topic.title,
+            summary: et.topic.summary,
+            facts: et.topic.researchBrief.facts,
+            sourceUrls: et.topic.researchBrief.sourceUrls,
+          }))
+        : episode.topics.map((et: any) => {
         const rb = et.topic.researchBrief!;
         return {
           topicTitle: et.topic.title,
@@ -919,7 +933,18 @@ export async function generateEpisodeContentAssets(input: {
         transcriptText: script.plainText,
       };
 
-      const systemPrompt = `You are a show notes generator for the sports debate podcast 'Take Machine'.
+      const systemPrompt = isBusiness
+        ? `You are a show notes generator for the business podcast '${String(episode.podcast?.name ?? "").replace(/'/g, "")}'.
+Your task is to generate show notes grounded ONLY in the provided input evidence packet.
+Rules:
+1. Do not use outside knowledge or web browsing.
+2. Do not invent any new facts, figures, prices, rates, names or quotes.
+3. Every claim in the show notes must be grounded in the transcript text or the topic's verified facts.
+4. Quotes in 'bestLines' must be short and verbatim from the transcript text.
+5. Do not include any sponsor or ad copy.
+6. Do not include any source links other than the sourceUrls given.
+7. Return your response as a JSON object matching the requested schema.`
+        : `You are a show notes generator for the sports debate podcast 'Take Machine'.
 Your task is to generate show notes grounded ONLY in the provided input evidence packet.
 Rules:
 1. Do not use outside knowledge or web browsing.

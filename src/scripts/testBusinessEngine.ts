@@ -832,6 +832,20 @@ async function main() {
     assert.equal(coverTagFor({ sport: null, verticals: null }), "Sports");
   });
 
+  await check("a business episode's topic reaches transcript/show-notes generation from its snapshot, with no sports fields (M2 live run)", async () => {
+    const { businessContentTopics } = await import("../lib/business/businessTopicSnapshot");
+    const snap = makeSnapshot();
+    const [t, ...rest] = businessContentTopics([{ id: "bt1", opportunityId: "op1", snapshot: snap }, { id: "bt2", opportunityId: "op2", snapshot: { kind: "nope" } }]);
+    assert.equal(rest.length, 0, "a corrupt snapshot is skipped, never invented");
+    assert.equal(t.topicId, "op1");
+    assert.equal(t.topic.title, snap.title);
+    assert.equal(t.topic.researchBrief.facts.length, snap.facts.length);
+    assert.equal(t.topic.researchBrief.facts[0].text, snap.facts[0].claim);
+    assert.deepEqual(t.topic.researchBrief.sourceUrls, snap.sources.map((x) => x.url));
+    const brief = t.topic.researchBrief as Record<string, unknown>;
+    for (const k of ["injuryContext", "oddsContext", "stats", "argumentForHostA", "leagueId", "sport"]) assert.ok(!(k in brief), `no sports field ${k}`);
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);
