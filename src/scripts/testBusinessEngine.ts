@@ -768,6 +768,38 @@ async function main() {
     );
   });
 
+  await check("inside a business episode a broken-JSON reply from Claude is asked for once more; sports is unchanged (M2 live run 5)", async () => {
+    const { AnthropicLLMProvider } = await import("../lib/providers/llm/anthropic");
+    const { withCreativeDomain } = await import("../lib/services/creativeDomain");
+    const prevKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-not-a-real-key";
+    try {
+      const make = (replies: string[]) => {
+        const p = new AnthropicLLMProvider("claude-opus-5") as unknown as { request: (b: unknown) => Promise<unknown>; generateStructuredOutput: (o: object) => Promise<unknown>; calls: number };
+        p.calls = 0;
+        // The real reply shape; the first one is the live judge's broken JSON.
+        p.request = async () => ({ content: [{ type: "text", text: replies[Math.min(p.calls++, replies.length - 1)] }], stop_reason: "end_turn" });
+        return p;
+      };
+      const broken = '{"judgments":[{"id":"consequence","score":81,"reasons":["Opens with a concrete scenario" — eight seconds"]}]}';
+      const good = '{"judgments":[{"id":"consequence","score":81,"reasons":["ok"]}]}';
+      const biz = make([broken, good]);
+      const out = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => biz.generateStructuredOutput({ prompt: "p", maxTokens: 500 }));
+      assert.deepEqual(out, JSON.parse(good));
+      assert.equal(biz.calls, 2);
+      // Sports: no domain, no retry — the provider fails exactly as before.
+      const sports = make([broken, good]);
+      await assert.rejects(() => sports.generateStructuredOutput({ prompt: "p", maxTokens: 500 }), /valid JSON/);
+      assert.equal(sports.calls, 1);
+      // Business, broken twice: fails loudly after one retry.
+      const twice = make([broken, broken]);
+      await assert.rejects(() => withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => twice.generateStructuredOutput({ prompt: "p", maxTokens: 500 })), /valid JSON/);
+      assert.equal(twice.calls, 2);
+    } finally {
+      if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+    }
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

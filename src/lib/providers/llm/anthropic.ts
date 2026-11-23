@@ -2,7 +2,8 @@ import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOpt
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
 import { categoryOf } from "./errors";
 import { numberFromEnv } from "./openaiCompatible";
-import { creativeDomainEffort } from "../../services/creativeDomain";
+import { creativeDomainEffort, isBusinessDomain } from "../../services/creativeDomain";
+import { isMalformedJsonError } from "../../business/schemaInstructions";
 
 /**
  * Wall-clock ceiling on ONE Anthropic HTTP attempt.
@@ -408,6 +409,21 @@ export class AnthropicLLMProvider implements LLMProvider {
   }
 
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
+    try {
+      return await this.structuredOnce<T>(options);
+    } catch (err) {
+      // JSON is forced by instruction only and this provider makes no repair
+      // request, so one stray quote in a long reply killed a whole business
+      // script (fifth Milestone 2 live run: the cold-open judge's reply). Inside
+      // a business episode only, a reply that is not valid JSON is asked for
+      // once more. Sports runs with no creative domain: behaviour unchanged.
+      if (!isBusinessDomain() || !isMalformedJsonError(err)) throw err;
+      console.warn(`[Anthropic] business structured reply was not valid JSON; asking once more (${(err as Error).message.slice(0, 120)})`);
+      return this.structuredOnce<T>(options);
+    }
+  }
+
+  private async structuredOnce<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
     console.log(`[Anthropic] Requesting structured output (JSON forced) via model: ${this.model}`);
 
     // Instruction-based JSON forcing — assistant prefill 400s on Opus 4.6+.
