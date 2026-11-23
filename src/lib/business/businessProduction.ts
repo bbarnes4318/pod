@@ -571,6 +571,24 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
  * status moves only between "needs_revision" and "draft". Approved or later
  * scripts are never touched here (their edits go through fact-check re-review).
  */
+/**
+ * The status approval should judge, after re-auditing a "needs_revision" script.
+ *
+ * Found in the sixth Milestone 2 live run: a fact-check failed on a false
+ * contradiction (a judge defect, since fixed), which set the script to
+ * "needs_revision". Re-running the fact-check cleared it, but the script had
+ * zero flagged lines and approval still refused it ("has flagged lines.
+ * Regenerate it") — the only way out was paying for a new script. Approval now
+ * re-runs the same deterministic line audit first: zero flags → "draft"
+ * (approvable, and approval queues a fresh fact-check); any flag → still
+ * "needs_revision". Never touches approved or later scripts.
+ */
+export async function statusForApproval(db: PrismaClient, script: { id: string; status: string }): Promise<string> {
+  if (script.status !== "needs_revision") return script.status;
+  const r = await reauditBusinessScript(db, script.id);
+  return r?.status ?? script.status;
+}
+
 export async function reauditBusinessScript(db: PrismaClient, scriptId: string): Promise<{ flaggedLines: number; status: string } | null> {
   const s = await db.script.findUnique({ where: { id: scriptId }, select: { id: true, status: true, content: true, episodeId: true } });
   if (!s || !["draft", "needs_revision"].includes(s.status)) return null;

@@ -21,7 +21,7 @@ import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
 import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS, parseTopicsOutput, topicBatches, mergeTopicBatches } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, statusForApproval, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 import { businessLLM, withSchemaInstructions } from "../lib/business/schemaInstructions";
 import { zodToJsonSchema } from "../lib/business/zodJsonSchema";
@@ -892,6 +892,27 @@ async function main() {
     // Approved scripts are never re-statused here.
     stored = { ...stored, status: "approved" };
     assert.equal(await reauditBusinessScript(db, "s1"), null);
+  });
+
+  await check("approval re-audits a needs_revision script: zero flags → approvable, any flag → refused (M2 live run 6)", async () => {
+    const snap = makeSnapshot();
+    const mk = (text: string) => ({ lineIndex: 0, speakerName: "A", speakerHostId: "h", text, tone: "x", isFactualClaim: false, needsHumanReview: false, evidenceRefs: [], isInterruption: false });
+    let stored = { id: "s1", status: "needs_revision", episodeId: "e1", content: { segments: [{ lines: [mk("So walk me through what that means.")] }] } as Record<string, unknown> };
+    const db = {
+      script: {
+        findUnique: async () => stored,
+        update: async ({ data }: { data: { content: Record<string, unknown>; status: string } }) => { stored = { ...stored, ...data }; return stored; },
+      },
+      businessEpisodeTopic: { findFirst: async () => ({ snapshot: snap }) },
+    } as never;
+    // Left at needs_revision by a failed fact-check, but nothing in it is flagged.
+    assert.equal(await statusForApproval(db, stored), "draft");
+    // Still an invented figure → still refused.
+    stored = { ...stored, status: "needs_revision", content: { segments: [{ lines: [mk("Carriers bill on a four hundred and twelve second minimum.")] }] } };
+    assert.equal(await statusForApproval(db, stored), "needs_revision");
+    // Anything else is judged as it is.
+    assert.equal(await statusForApproval(db, { id: "s1", status: "draft" }), "draft");
+    assert.equal(await statusForApproval(db, { id: "s1", status: "approved" }), "approved");
   });
 
   // OWNER FEEDBACK (Milestone 2): business episodes sounded like 1940s robots —
