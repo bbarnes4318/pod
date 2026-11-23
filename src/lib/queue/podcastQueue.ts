@@ -4,7 +4,7 @@ import { db } from "../db";
 import type { TtsVoiceOverrides } from "../providers/tts/voiceResolution";
 import type { EpisodeBuildInput } from "../services/episodeService";
 import { scriptJobIsInFlight, scriptQueueIdentity } from "./scriptQueueIdentity";
-import { assertScriptReleasableForProduction } from "./productionGuard";
+import { assertScriptReleasableForProduction, assertBusinessScriptReleasable } from "./productionGuard";
 
 export const BACKGROUND_QUEUE_NAME = "podcast-generation";
 export const PRODUCTION_QUEUE_NAME = "podcast-production";
@@ -417,6 +417,9 @@ export interface LineAudioRegenJobData {
  * episode re-render. jobId is per (script,line) so rapid re-clicks coalesce.
  */
 export async function queueLineAudioRegenJob(data: LineAudioRegenJobData) {
+  // Re-voicing an edited business line must not bypass its fact-check. Sports
+  // keeps its existing (unguarded) line-regen behaviour.
+  await assertBusinessScriptReleasable(data.scriptId, "audio:regenerate-line");
   return productionQueue.add("audio:regenerate-line", data, {
     jobId: `line-regen-${data.scriptId}-${data.lineIndex}`,
   });

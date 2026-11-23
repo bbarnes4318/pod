@@ -40,9 +40,9 @@ export interface VerifyContext {
   entity?: string | null;
   /** Registrable host of the entity's own website (first-party authority). */
   entityHost?: string | null;
-  /** Force the time-sensitivity rule (auto-detected for prices/rates/"currently"). */
+  /** Force the time-sensitivity rule. false = evergreen; true = needs a current source. Default: per-claim policy. */
   timeSensitive?: boolean;
-  /** Max age for time-sensitive claims. Default 540 days. */
+  /** Override the policy's max source age. */
   maxAgeDays?: number;
   now?: Date;
 }
@@ -56,6 +56,7 @@ export interface ClaimChecks {
   geographyConsistent: boolean | null;
   entityMatch: boolean | null; // null = no entity to check
   current: boolean | null; // null = not time-sensitive or date unknown
+  freshness: Freshness;
   lexicalCoverage: number; // share of claim content words found in quote
   entailment: Entailment;
   authority: Authority;
@@ -228,12 +229,117 @@ export function hostOf(url: string | null | undefined): string | null {
   }
 }
 
-const TIME_SENSITIVE_RE = /\b(currently|now|today|this year|latest|recent(ly)?|price[sd]?|pricing|cost[s]?|rate[s]?|starts? at|per (month|year|minute|call|lead)|fee[s]?)\b|\$|%/i;
+// ---------------------------------------------------------------------------
+// Freshness: claim-specific policies (directive §6). One flat 540-day rule
+// treated "plans start at $28" and "the TCPA passed in 1991" the same way, and
+// let an UNDATED source certify a current price.
+// ---------------------------------------------------------------------------
+
+export type FreshnessPolicy = "CURRENT_PRICE" | "REGULATION" | "COMPANY_PERFORMANCE" | "HISTORICAL" | "EVERGREEN";
+export type FreshnessStatus = "CURRENTLY_VERIFIED" | "HISTORICALLY_SUPPORTED" | "DATE_UNKNOWN" | "STALE" | "NOT_REQUIRED";
+export interface Freshness {
+  policy: FreshnessPolicy;
+  status: FreshnessStatus;
+  maxAgeDays: number | null;
+  publishedAt: string | null;
+  retrievedAt: string | null;
+  effectiveAt: string | null;
+  /** Which date the age was measured from. */
+  datedBy: "published" | "effective" | "first_party_retrieval" | null;
+  ageDays: number | null;
+  geography: string[];
+  reason: string;
+}
+
+// Editorial starting points, not calibrated constants.
+export const FRESHNESS_MAX_AGE_DAYS: Record<FreshnessPolicy, number | null> = {
+  CURRENT_PRICE: 180,
+  REGULATION: 365,
+  COMPANY_PERFORMANCE: 540,
+  HISTORICAL: null,
+  EVERGREEN: null,
+};
+
+const REGULATION_RE = /\b(regulat\w*|law|laws|statute|illegal|mandat\w*|compliance|FCC|FTC|TCPA|CMS|HIPAA|SEC|FINRA|OSHA|EPA|GDPR|CCPA|STIR\/SHAKEN|NAIC)\b/i;
+const PRESENT_RE = /\b(currently|now|today|this year|latest|as of)\b/i;
+const PRICE_RE = /\b(price[sd]?|pricing|cost[s]?|rate[s]?|starts? at|per (month|year|minute|call|lead|transfer)|fee[s]?|premium[s]?|commission[s]?)\b|\$/i;
+const PERFORMANCE_RE = /%|\b(percent|growth|grew|revenue|customers|clients|conversion|answer rate|retention|margin[s]?|market share)\b/i;
+const PAST_RE = /\b(was|were|passed|enacted|launched|founded|introduced|began|happened|ruled|in (19|20)\d\d)\b/i;
+
+export function classifyFreshnessPolicy(claim: string, now: Date = new Date()): FreshnessPolicy {
+  const pastYear = extractNumbers(claim).some((n) => n.kind === "year" && n.value < now.getUTCFullYear());
+  if (pastYear && PAST_RE.test(claim) && !PRESENT_RE.test(claim)) return "HISTORICAL";
+  if (REGULATION_RE.test(claim)) return "REGULATION";
+  if (PRICE_RE.test(claim) || PRESENT_RE.test(claim)) return "CURRENT_PRICE";
+  if (PERFORMANCE_RE.test(claim)) return "COMPANY_PERFORMANCE";
+  return "EVERGREEN";
+}
+
+/**
+ * Does the source establish the claim's currency?
+ * - Undated independent source + current claim → DATE_UNKNOWN (held).
+ * - The company's own live page, retrieved now, is an observation of what it
+ *   says NOW — so retrieval dates a first-party price/performance claim. Never
+ *   a third party's, and never a regulation.
+ * - A historical claim needs its year in the source, not a recent source.
+ */
+export function assessFreshness(
+  claim: string,
+  quote: string,
+  source: { publishedAt?: string | null; retrievedAt?: string | null; effectiveAt?: string | null },
+  opts: { authority: Authority; now: Date; timeSensitive?: boolean; maxAgeDays?: number }
+): Freshness {
+  let policy = classifyFreshnessPolicy(claim, opts.now);
+  if (opts.timeSensitive === false) policy = "EVERGREEN";
+  else if (opts.timeSensitive === true && (policy === "EVERGREEN" || policy === "HISTORICAL")) policy = "CURRENT_PRICE";
+  const maxAgeDays = opts.maxAgeDays ?? FRESHNESS_MAX_AGE_DAYS[policy];
+  const iso = (d?: string | null) => (d && Number.isFinite(Date.parse(d)) ? new Date(d).toISOString() : null);
+  const base = {
+    policy,
+    maxAgeDays,
+    publishedAt: iso(source.publishedAt),
+    retrievedAt: iso(source.retrievedAt),
+    effectiveAt: iso(source.effectiveAt),
+    geography: extractPlaces(claim),
+  };
+  const out = (status: FreshnessStatus, reason: string, datedBy: Freshness["datedBy"] = null, ageDays: number | null = null): Freshness => ({
+    ...base,
+    status,
+    reason,
+    datedBy,
+    ageDays: ageDays === null ? null : Math.round(ageDays),
+  });
+
+  if (policy === "EVERGREEN") return out("NOT_REQUIRED", "Evergreen explanation; no publication date needed.");
+  if (policy === "HISTORICAL") {
+    const years = extractNumbers(claim).filter((n) => n.kind === "year").map((n) => n.value);
+    const quoteYears = extractNumbers(quote).filter((n) => n.kind === "year").map((n) => n.value);
+    return years.every((y) => quoteYears.includes(y))
+      ? out("HISTORICALLY_SUPPORTED", "Historical claim; the source states the same year, so it stays valid regardless of age.")
+      : out("DATE_UNKNOWN", "Historical claim, but the source does not state its year.");
+  }
+
+  let dated: { at: string; by: NonNullable<Freshness["datedBy"]> } | null = null;
+  if (policy === "REGULATION" && base.effectiveAt && base.publishedAt && Date.parse(base.effectiveAt) <= opts.now.getTime()) dated = { at: base.publishedAt, by: "effective" };
+  else if (base.publishedAt) dated = { at: base.publishedAt, by: "published" };
+  else if (base.retrievedAt && opts.authority === "FIRST_PARTY" && policy !== "REGULATION") dated = { at: base.retrievedAt, by: "first_party_retrieval" };
+  if (!dated) {
+    return out(
+      "DATE_UNKNOWN",
+      `${policy === "REGULATION" ? "Regulatory" : "Time-sensitive"} claim from an undated source; its currency can't be established.`
+    );
+  }
+  const ageDays = (opts.now.getTime() - Date.parse(dated.at)) / 86_400_000;
+  if (maxAgeDays !== null && ageDays > maxAgeDays) {
+    return out("STALE", `Time-sensitive claim from a source published ${Math.round(ageDays)} days ago (limit ${maxAgeDays} for ${policy.toLowerCase().replace("_", " ")}).`, dated.by, ageDays);
+  }
+  const how =
+    dated.by === "first_party_retrieval" ? "the company's own page, retrieved" : dated.by === "effective" ? "an authoritative source for a rule in effect, published" : "a source published";
+  return out("CURRENTLY_VERIFIED", `Current per ${how} ${Math.max(0, Math.round(ageDays))} days ago.`, dated.by, ageDays);
+}
+
 const MARKETING_RE = /\b(best|leading|#1|number one|top[- ]rated|fastest|cheapest|guarantee[sd]?|unmatched|world[- ]class|award[- ]winning|industry[- ]leading|save (up to )?\d+)/i;
 
-export function isTimeSensitive(claim: string): boolean {
-  return TIME_SENSITIVE_RE.test(claim);
-}
 export function isMarketingClaim(text: string): boolean {
   return MARKETING_RE.test(text);
 }
@@ -276,7 +382,7 @@ export function llmEntailmentJudge(llm: LLMProvider): EntailmentJudge {
 export const VERBATIM_COVERAGE = 0.8;
 
 export async function verifyClaim(
-  input: { claim: string; quote?: string | null; source: VerifySource | null },
+  input: { claim: string; quote?: string | null; source: (VerifySource & { effectiveAt?: string | null }) | null },
   ctx: VerifyContext = {},
   judge?: EntailmentJudge
 ): Promise<ClaimVerification> {
@@ -300,6 +406,7 @@ export async function verifyClaim(
     geographyConsistent: null,
     entityMatch: null,
     current: null,
+    freshness: assessFreshness(input.claim, quote, input.source ?? {}, { authority, now, timeSensitive: ctx.timeSensitive, maxAgeDays: ctx.maxAgeDays }),
     lexicalCoverage: 0,
     entailment: "not_run",
     authority,
@@ -345,16 +452,11 @@ export async function verifyClaim(
     }
   }
 
-  if (ctx.timeSensitive ?? isTimeSensitive(input.claim)) {
-    const dated = input.source?.publishedAt ? Date.parse(input.source.publishedAt) : NaN;
-    if (Number.isFinite(dated)) {
-      const ageDays = (now.getTime() - dated) / 86_400_000;
-      checks.current = ageDays <= (ctx.maxAgeDays ?? 540);
-      if (!checks.current) {
-        reasons.push(`Time-sensitive claim from a source published ${Math.round(ageDays)} days ago.`);
-        return done("UNVERIFIED", 0.3);
-      }
-    }
+  const fresh = checks.freshness;
+  checks.current = fresh.status === "CURRENTLY_VERIFIED" ? true : fresh.status === "STALE" ? false : null;
+  if (fresh.status === "STALE" || fresh.status === "DATE_UNKNOWN") {
+    reasons.push(fresh.reason);
+    return done("UNVERIFIED", 0.3);
   }
 
   checks.lexicalCoverage = Math.round(lexicalCoverage(input.claim, quote) * 100) / 100;

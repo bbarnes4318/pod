@@ -14,6 +14,7 @@
 import { evaluateDownstreamBlock, type DownstreamBlockVerdict } from "../services/scriptEditorialGate";
 import { evaluateRolloutDisposition, type RolloutDecision } from "./rolloutPolicy";
 import { resolveLegacyRelease, type LegacyReleaseRecord } from "./legacyRelease";
+import { assertBusinessRelease } from "../business/businessVerification";
 
 export class ProductionHoldError extends Error {
   readonly code = "PRODUCTION_HOLD";
@@ -88,6 +89,13 @@ export function setGrandfatherObserver(fn: ((notice: GrandfatherNotice) => void)
   onGrandfather = fn;
 }
 
+/** Business factual rule only — for queue boundaries that never consulted the editorial gate (line regen). */
+export async function assertBusinessScriptReleasable(scriptId: string, stage: string): Promise<void> {
+  const loaded = await activeLoader(scriptId);
+  if (!loaded) throw new Error(`Script ${scriptId} not found; refusing to queue ${stage}.`);
+  assertBusinessRelease(scriptId, loaded.content, stage);
+}
+
 export async function assertScriptReleasableForProduction(
   scriptId: string,
   stage: string,
@@ -97,6 +105,10 @@ export async function assertScriptReleasableForProduction(
   if (!loaded || loaded.content === null || loaded.content === undefined) {
     throw new Error(`Script ${scriptId} not found; refusing to queue ${stage}.`);
   }
+  // BUSINESS FACTUAL RULE first, and independent of the editorial gate: an
+  // editorial `humanRelease` is not a statement about factual accuracy, so it
+  // can never let an unverified business script through. No-op for sports.
+  assertBusinessRelease(scriptId, loaded.content, stage);
   const verdict = evaluateDownstreamBlock(loaded.content, env);
   if (!verdict.blocked) return verdict;
 

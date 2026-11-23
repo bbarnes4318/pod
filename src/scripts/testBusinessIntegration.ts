@@ -375,12 +375,18 @@ async function run(db: PrismaClient) {
     assert.ok(lines.filter((l) => l.isFactualClaim).every((l) => (l.evidenceRefs as unknown[]).length > 0));
     assert.equal((await db.episode.findUniqueOrThrow({ where: { id: episodeId } })).status, "script_draft");
   });
-  await check("fact-check passes; approval then moves the episode to fact_checked", async () => {
-    const r1 = await factCheckBusinessScript(db, scriptId);
-    assert.equal(r1.status, "passed", r1.errors.join(" "));
+  await check("no independent judge → needs_review, never passed; the episode does not advance", async () => {
+    const r0 = await factCheckBusinessScript(db, scriptId);
+    assert.equal(r0.status, "needs_review", r0.errors.join(" "));
+    assert.equal(r0.verification.semantic, "SEMANTIC_VERIFICATION_UNAVAILABLE");
+  });
+  const entail = async () => "entailed" as const;
+  await check("fact-check passes with an independent judge; approval then moves the episode to fact_checked", async () => {
+    const r1 = await factCheckBusinessScript(db, scriptId, { judge: entail });
+    assert.equal(r1.status, "passed", [...r1.errors, ...r1.warnings].join(" "));
     assert.equal((await db.episode.findUniqueOrThrow({ where: { id: episodeId } })).status, "script_draft", "unapproved script doesn't advance");
     await db.script.update({ where: { id: scriptId }, data: { status: "approved" } });
-    const r2 = await factCheckBusinessScript(db, scriptId);
+    const r2 = await factCheckBusinessScript(db, scriptId, { judge: entail });
     assert.equal(r2.status, "passed");
     assert.equal((await db.episode.findUniqueOrThrow({ where: { id: episodeId } })).status, "fact_checked");
   });

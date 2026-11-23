@@ -9,7 +9,9 @@
  * snapshot readiness, script line audit, and the sports/business packet split.
  */
 import assert from "node:assert/strict";
-import { verifyClaim, assignOrigins, type EntailmentJudge } from "../lib/business/claimVerification";
+import { verifyClaim, assignOrigins, assessFreshness, type EntailmentJudge } from "../lib/business/claimVerification";
+import { detectClaims, type ClaimClassifier } from "../lib/business/factualClaims";
+import { BUSINESS_RELEASE_STAGES, BusinessFactHoldError, assertBusinessRelease, buildFactReview, combineStates, evaluateBusinessRelease, scriptTextFingerprint, type ClaimOutcome, type OverallState, type VerificationBasis } from "../lib/business/businessVerification";
 import { parseRobots, robotsAllows, selectPages, classifyPage } from "../lib/business/discovery";
 import { ADVANCED_FIELDS } from "../lib/business/profileSchema";
 import { renderProfileContext, excludedTopics, type ProfileLike } from "../lib/business/researchContext";
@@ -19,7 +21,7 @@ import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
 import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 
 let passed = 0;
@@ -291,6 +293,245 @@ async function main() {
     assert.equal(b.kind === "BUSINESS" && b.snapshots.length, 0);
     assert.equal(b.kind === "BUSINESS" && b.problems.length, 2);
   });
+
+
+  console.log("Freshness policies (§6)");
+  {
+    const indep = (publishedAt: string | null, text: string) => ({ url: "https://news.example/a", text, publishedAt, retrievedAt: "2026-11-20" });
+    const fx = { entityHost: "buckeye.example", now: NOW };
+    await check("current price from an UNDATED independent source → UNVERIFIED, DATE_UNKNOWN", async () => {
+      const v = await verifyClaim({ claim: "Leads cost $40 per lead", quote: "Leads cost $40 per lead", source: indep(null, "Exclusive leads cost $40 per lead on most exchanges.") }, fx);
+      assert.equal(v.verdict, "UNVERIFIED");
+      assert.equal(v.checks.freshness.status, "DATE_UNKNOWN");
+      assert.equal(v.checks.freshness.policy, "CURRENT_PRICE");
+    });
+    await check("company's own live page, undated but retrieved now → CURRENTLY_VERIFIED by retrieval", async () => {
+      const v = await verifyClaim({ claim: "Plans start at $28 per month", quote: "Plans start at $28 per month", source: { url: "https://buckeye.example/pricing", text: "Plans start at $28 per month.", publishedAt: null, retrievedAt: "2026-11-20" } }, fx);
+      assert.equal(v.verdict, "SOURCE_SUPPORTED");
+      assert.equal(v.checks.freshness.datedBy, "first_party_retrieval");
+    });
+    await check("historical claim from an old source stating the year → HISTORICALLY_SUPPORTED", async () => {
+      const v = await verifyClaim({ claim: "The TCPA was enacted in 1991", quote: "the TCPA was enacted in 1991", source: indep("2015-04-01", "Congress passed it: the TCPA was enacted in 1991 to curb robocalls.") }, fx);
+      assert.equal(v.verdict, "SOURCE_SUPPORTED");
+      assert.equal(v.checks.freshness.status, "HISTORICALLY_SUPPORTED");
+    });
+    await check("regulation from a two-year-old source → STALE", async () => {
+      const v = await verifyClaim({ claim: "The FCC requires one-to-one consent for lead sharing", quote: "the FCC requires one-to-one consent for lead sharing", source: indep("2024-09-01", "Under the new order the FCC requires one-to-one consent for lead sharing.") }, fx);
+      assert.equal(v.verdict, "UNVERIFIED");
+      assert.equal(v.checks.freshness.status, "STALE");
+      assert.equal(v.checks.freshness.policy, "REGULATION");
+    });
+    await check("evergreen mechanism from an undated source → no date needed", async () => {
+      const v = await verifyClaim({ claim: "Chargebacks apply when a policy lapses early", quote: "chargebacks apply when a policy lapses early", source: indep(null, "In general, chargebacks apply when a policy lapses early.") }, fx);
+      assert.equal(v.verdict, "SOURCE_SUPPORTED");
+      assert.equal(v.checks.freshness.status, "NOT_REQUIRED");
+    });
+    await check("freshness persists dates, geography and reasoning", () => {
+      const f = assessFreshness("Rates in Texas are $30 per month", "", { publishedAt: "2026-10-01", retrievedAt: "2026-11-20" }, { authority: "INDEPENDENT", now: NOW });
+      assert.equal(f.status, "CURRENTLY_VERIFIED");
+      assert.deepEqual(f.geography, ["texas"]);
+      assert.ok(f.publishedAt && f.retrievedAt && f.reason && f.ageDays === 52);
+    });
+  }
+
+  console.log("Independent claim detection (§5)");
+  await check("superlative with no digits is a strong claim", () => {
+    const d = detectClaims("Our system has the highest answer rate in the industry.");
+    assert.equal(d.length, 1);
+    assert.equal(d[0].strength, "strong");
+    assert.ok(d[0].kinds.includes("superlative"));
+  });
+  await check("generalisation with no digits is a claim", () => {
+    const d = detectClaims("Most insurance agents lose money on purchased leads.");
+    assert.equal(d.length, 1);
+    assert.ok(d[0].kinds.includes("generalization") && d[0].kinds.includes("causal"));
+  });
+  await check("hedged opinion, questions and counting words are not claims", () => {
+    assert.equal(detectClaims("I think most agents probably overpay.").length, 0);
+    assert.equal(detectClaims("Do most agents lose money on these?").length, 0);
+    assert.equal(detectClaims("Two things matter here.").length, 0);
+  });
+  await check("compound line splits into separately verifiable claims; host names aren't organisations", () => {
+    const d = detectClaims("Zabala, premiums rose 12% last year. And the NAIC flagged lead resale.", ["Zabala"]);
+    assert.equal(d.length, 2);
+    assert.ok(d[0].kinds.includes("percent"));
+    assert.ok(d[1].kinds.includes("regulatory") || d[1].kinds.includes("organization"));
+    assert.equal(detectClaims("Right, Zabala, walk me through it.", ["Zabala"]).length, 0);
+  });
+
+  console.log("Business verification states + release rule (§4, §7)");
+  {
+    const stage = "tts:generate-segments";
+    const body = (text = "The average annual premium was $1,140 in 2025.") => ({ kind: "business", segments: [{ type: "intro", lines: [{ lineIndex: 0, speakerHostId: "h1", speakerName: "Zabala", text }] }] });
+    const withV = (overall: OverallState, basis: VerificationBasis, extra: Record<string, unknown> = {}, text?: string) => {
+      const c = body(text) as Record<string, unknown>;
+      c.businessVerification = { deterministic: "DETERMINISTIC_CHECK_PASSED", semantic: "SEMANTIC_VERIFICATION_PASSED", overall, basis, fingerprint: scriptTextFingerprint(body()), factCheckResultId: "fc1", checkedAt: NOW.toISOString(), judge: null, reasons: [], claimCounts: {} };
+      return { ...c, ...extra };
+    };
+    await check("combineStates covers every overall state", () => {
+      assert.deepEqual(combineStates({ deterministicErrors: 1, contradicted: 0, semantic: "SEMANTIC_VERIFICATION_PASSED", unresolved: 0 }), { deterministic: "FACT_CHECK_FAILED", overall: "FACT_CHECK_FAILED" });
+      assert.equal(combineStates({ deterministicErrors: 0, contradicted: 1, semantic: "SEMANTIC_VERIFICATION_FAILED", unresolved: 0 }).overall, "FACT_CHECK_FAILED");
+      assert.equal(combineStates({ deterministicErrors: 0, contradicted: 0, semantic: "SEMANTIC_VERIFICATION_UNAVAILABLE", unresolved: 0 }).overall, "NEEDS_HUMAN_REVIEW");
+      assert.equal(combineStates({ deterministicErrors: 0, contradicted: 0, semantic: "SEMANTIC_VERIFICATION_FAILED", unresolved: 1 }).overall, "NEEDS_HUMAN_REVIEW");
+      assert.equal(combineStates({ deterministicErrors: 0, contradicted: 0, semantic: "SEMANTIC_VERIFICATION_PASSED", unresolved: 1 }).overall, "NEEDS_HUMAN_REVIEW");
+      assert.deepEqual(combineStates({ deterministicErrors: 0, contradicted: 0, semantic: "SEMANTIC_VERIFICATION_PASSED", unresolved: 0 }), { deterministic: "DETERMINISTIC_CHECK_PASSED", overall: "FACT_CHECK_PASSED" });
+    });
+    await check("sports content is never touched by the business rule", () => {
+      assert.equal(evaluateBusinessRelease({ segments: [] }, stage).applies, false);
+      assert.equal(evaluateBusinessRelease({ editorialGate: { decision: "pass" } }, "publish").allowed, true);
+    });
+    await check("unchecked, needs-review, failed and edited-after-check business scripts are blocked", () => {
+      assert.equal(evaluateBusinessRelease(body(), stage).state, "NOT_FACT_CHECKED");
+      assert.equal(evaluateBusinessRelease(withV("NEEDS_HUMAN_REVIEW", null), stage).allowed, false);
+      assert.equal(evaluateBusinessRelease(withV("FACT_CHECK_FAILED", null), stage).allowed, false);
+      assert.equal(evaluateBusinessRelease(withV("FACT_CHECK_PASSED", "SEMANTIC", {}, "The average premium was $1,600."), stage).state, "TEXT_CHANGED_SINCE_CHECK");
+      assert.throws(() => assertBusinessRelease("s1", withV("NEEDS_HUMAN_REVIEW", null), stage), BusinessFactHoldError);
+    });
+    await check("an EDITORIAL release does not satisfy the business fact rule", () => {
+      const c = withV("NEEDS_HUMAN_REVIEW", null, { humanRelease: { approvedBy: "ops@x", approvedDecision: "unknown" } });
+      assert.equal(evaluateBusinessRelease(c, stage).allowed, false);
+    });
+    await check("semantic pass is releasable at every stage", () => {
+      for (const s of BUSINESS_RELEASE_STAGES) assert.equal(evaluateBusinessRelease(withV("FACT_CHECK_PASSED", "SEMANTIC"), s).allowed, true);
+    });
+    const claims: ClaimOutcome[] = [
+      { lineIndex: 0, text: "premium was $1,140", kinds: ["money"], detectedBy: ["writer_label"], status: "CITED_UNVERIFIED", factIds: ["F1"] },
+      { lineIndex: 3, text: "a chatty aside", kinds: ["organization"], detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [] },
+    ];
+    await check("human factual review: attributable, keeps claim statuses, scoped by stage and text", () => {
+      const r = buildFactReview({ content: withV("NEEDS_HUMAN_REVIEW", null), scriptId: "s1", scriptVersion: 2, actor: "owner@x", reason: "Checked line 0 against the NAIC report.", claims, permittedStages: ["tts:generate-segments"], now: NOW });
+      assert.ok(r.ok);
+      if (!r.ok) return;
+      assert.equal(r.verification.basis, "HUMAN_REVIEW");
+      assert.deepEqual(r.review.unresolved, [{ lineIndex: 0, text: "premium was $1,140", status: "CITED_UNVERIFIED" }]);
+      const reviewed = { ...withV("NEEDS_HUMAN_REVIEW", null), businessVerification: r.verification, businessFactReview: r.review };
+      assert.equal(evaluateBusinessRelease(reviewed, "tts:generate-segments").allowed, true);
+      assert.equal(evaluateBusinessRelease(reviewed, "publish").allowed, false, "stage outside the review's scope");
+      const edited = { ...reviewed, segments: body("The premium was $1,600.").segments };
+      assert.equal(evaluateBusinessRelease(edited, "tts:generate-segments").allowed, false, "edit after review");
+    });
+    await check("human review refuses failed checks, empty reasons, anonymous actors, already-verified scripts", () => {
+      const base = { scriptId: "s1", scriptVersion: 1, actor: "owner@x", reason: "Checked everything against sources.", claims };
+      assert.equal(buildFactReview({ ...base, content: withV("FACT_CHECK_FAILED", null) }).ok, false);
+      assert.equal(buildFactReview({ ...base, content: withV("NEEDS_HUMAN_REVIEW", null), reason: "ok" }).ok, false);
+      assert.equal(buildFactReview({ ...base, content: withV("NEEDS_HUMAN_REVIEW", null), actor: " " }).ok, false);
+      assert.equal(buildFactReview({ ...base, content: withV("FACT_CHECK_PASSED", "SEMANTIC") }).ok, false);
+      assert.equal(buildFactReview({ ...base, content: body() }).ok, false);
+    });
+  }
+
+  console.log("factCheckBusinessScript end to end (in-memory DB double)");
+  {
+    const mkLine = (lineIndex: number, text: string, isFactualClaim: boolean, factIds: string[] = []) => ({
+      lineIndex, speakerName: lineIndex % 2 ? "Mercer" : "Zabala", speakerHostId: lineIndex % 2 ? "h2" : "h1", text, tone: "conversational",
+      isFactualClaim, needsHumanReview: false, evidenceRefs: factIds.map((f) => ({ type: "businessSource", id: "S1", factId: f })), isInterruption: false,
+    });
+    const goodLines = [
+      mkLine(0, "The average annual final expense premium was $1,140 in 2025.", true, ["F1"]),
+      mkLine(1, "Right, and chargebacks apply when a policy lapses in the first year.", true, ["F3"]),
+      mkLine(2, "So walk me through what that means for an agency owner.", false),
+    ];
+    const run = async (lines: ReturnType<typeof mkLine>[], deps: Parameters<typeof factCheckBusinessScript>[2], scriptStatus = "approved") => {
+      const state = {
+        script: { id: "s1", version: 1, status: scriptStatus, episodeId: "e1", content: { kind: "business", segments: [{ type: "intro", lines }] } as Record<string, unknown> },
+        episode: { id: "e1", status: "script_draft" },
+        results: [] as Record<string, unknown>[],
+      };
+      const fake = {
+        script: {
+          findUnique: async () => ({ ...state.script, episode: { ...state.episode, podcast: { name: "Buckeye Show", intelligenceType: "BUSINESS" }, topics: [], businessTopics: [{ snapshot: snap }] } }),
+          update: async ({ data }: { data: Record<string, unknown> }) => Object.assign(state.script, data),
+        },
+        factCheckResult: {
+          create: async ({ data }: { data: Record<string, unknown> }) => { const r = { id: `fc${state.results.length + 1}`, ...data }; state.results.push(r); return r; },
+          findUnique: async ({ where }: { where: { id: string } }) => state.results.find((r) => r.id === where.id) ?? null,
+        },
+        episode: {
+          update: async ({ data }: { data: Record<string, unknown> }) => Object.assign(state.episode, data),
+          updateMany: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(state.episode, data); return { count: 1 }; },
+        },
+        $transaction: async (fn: (tx: unknown) => unknown) => fn(fake),
+      };
+      const res = await factCheckBusinessScript(fake as never, "s1", { now: NOW, ...deps });
+      return { res, state, fake };
+    };
+    const entail: EntailmentJudge = async () => "entailed";
+
+    await check("no judge configured → SEMANTIC_VERIFICATION_UNAVAILABLE → needs_review (was: passed)", async () => {
+      const { res, state } = await run(goodLines, {});
+      assert.equal(res.status, "needs_review");
+      assert.equal(res.verification.semantic, "SEMANTIC_VERIFICATION_UNAVAILABLE");
+      assert.equal(res.verification.deterministic, "DETERMINISTIC_CHECK_PASSED");
+      assert.equal(state.episode.status, "script_draft", "doesn't advance to fact_checked");
+      assert.equal(evaluateBusinessRelease(state.script.content, "tts:generate-segments").allowed, false);
+    });
+    await check("independent judge entails every claim → FACT_CHECK_PASSED (SEMANTIC) → releasable", async () => {
+      const { res, state } = await run(goodLines, { judge: entail, judgeLabel: "fake-judge" });
+      assert.equal(res.status, "passed", [...res.errors, ...res.warnings].join(" | "));
+      assert.equal(res.verification.overall, "FACT_CHECK_PASSED");
+      assert.equal(res.verification.basis, "SEMANTIC");
+      assert.equal(state.episode.status, "fact_checked");
+      assert.equal(evaluateBusinessRelease(state.script.content, "tts:generate-segments").allowed, true);
+    });
+    await check("judge says neutral → SEMANTIC_VERIFICATION_FAILED → needs_review", async () => {
+      const { res } = await run(goodLines, { judge: async () => "neutral" });
+      assert.equal(res.verification.semantic, "SEMANTIC_VERIFICATION_FAILED");
+      assert.equal(res.status, "needs_review");
+      assert.ok(res.claims.some((c) => c.status === "INSUFFICIENT_EVIDENCE"));
+    });
+    await check("judge says contradicted → FACT_CHECK_FAILED, script back to needs_revision", async () => {
+      const { res, state } = await run(goodLines, { judge: async () => "contradicted" });
+      assert.equal(res.status, "failed");
+      assert.equal(state.script.status, "needs_revision");
+    });
+    await check("judge call errors → UNAVAILABLE, never passed", async () => {
+      const { res } = await run(goodLines, { judge: async () => "not_run" });
+      assert.equal(res.verification.semantic, "SEMANTIC_VERIFICATION_UNAVAILABLE");
+      assert.equal(res.status, "needs_review");
+    });
+    await check("a factual line the WRITER labelled non-factual is still caught (no digits)", async () => {
+      const lines = [...goodLines, mkLine(3, "Honestly, most agencies lose money on purchased leads.", false)];
+      const { res } = await run(lines, { judge: entail });
+      assert.equal(res.status, "needs_review");
+      const c = res.claims.find((x) => x.lineIndex === 3);
+      assert.equal(c?.status, "UNSUPPORTED");
+      assert.deepEqual(c?.detectedBy, ["deterministic"]);
+    });
+    await check("independent classifier catches what regexes miss, and can clear soft chatter", async () => {
+      const lines = [...goodLines, mkLine(3, "The carriers quietly changed how they score these applications.", false), mkLine(4, "Mercer, you love this stuff.", false)];
+      const classifier: ClaimClassifier = async (ls) => new Map(ls.map((l) => [l.lineIndex, { factual: l.lineIndex === 3, claims: l.lineIndex === 3 ? ["carriers changed application scoring"] : [] }]));
+      const { res } = await run(lines, { judge: entail, classifier });
+      assert.equal(res.claims.find((x) => x.lineIndex === 3)?.status, "UNSUPPORTED");
+      assert.deepEqual(res.claims.find((x) => x.lineIndex === 3)?.detectedBy, ["classifier"]);
+      assert.ok(res.claims.filter((x) => x.lineIndex === 4).every((x) => x.status === "NOT_A_CLAIM"));
+    });
+    await check("compound cited line is judged clause by clause", async () => {
+      const seen: string[] = [];
+      const judge: EntailmentJudge = async (claim) => { seen.push(claim); return claim.includes("$1,140") ? "entailed" : "neutral"; };
+      const lines = [mkLine(0, "The average annual final expense premium was $1,140 in 2025. And that's the highest premium in the industry.", true, ["F1"]), goodLines[2]];
+      const { res } = await run(lines, { judge });
+      assert.equal(seen.length, 2);
+      assert.deepEqual(res.claims.map((c) => c.status), ["SUPPORTED", "INSUFFICIENT_EVIDENCE"]);
+    });
+    await check("recordBusinessFactReview: needs-review → passed (HUMAN_REVIEW), claims untouched, episode advances", async () => {
+      const { state, fake } = await run(goodLines, {});
+      const r = await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against the NAIC report and trade story." }, NOW);
+      assert.ok(r.success, !r.success ? r.error : "");
+      const content = state.script.content as { businessVerification: { basis: string; overall: string } };
+      assert.equal(content.businessVerification.basis, "HUMAN_REVIEW");
+      assert.equal(state.results.at(-1)?.provider, "business:human_review");
+      assert.ok(((state.results.at(-1)?.issues as { claims: ClaimOutcome[] }).claims).every((c) => c.status !== "SUPPORTED"), "review doesn't relabel claims as verified");
+      assert.equal(state.episode.status, "fact_checked");
+      assert.equal(evaluateBusinessRelease(state.script.content, "publish").allowed, true);
+    });
+    await check("re-running the fact-check discards an earlier human review", async () => {
+      const { state, fake } = await run(goodLines, {});
+      await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against sources." }, NOW);
+      await factCheckBusinessScript(fake as never, "s1", { now: NOW });
+      assert.equal((state.script.content as Record<string, unknown>).businessFactReview, undefined);
+      assert.equal(evaluateBusinessRelease(state.script.content, "tts:generate-segments").allowed, false);
+    });
+  }
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exitCode = 1;

@@ -353,7 +353,7 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
     }
     const srcList = [...unique.values()];
     const srcOrigins = assignOrigins(srcList);
-    const sourceRows: { id: string; url: string; text: string; title: string | null; publisher: string | null; publishedAt: string | null; originKey: string }[] = [];
+    const sourceRows: { id: string; url: string; text: string; title: string | null; publisher: string | null; publishedAt: string | null; retrievedAt: string | null; originKey: string }[] = [];
     for (let i = 0; i < srcList.length; i++) {
       const s = srcList[i];
       const row = await db.businessResearchSource.upsert({
@@ -365,13 +365,13 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
           retrievedAt: now(), excerpt: s.text.slice(0, 6000), contentHash: contentHash(s.text), originKey: srcOrigins[i], fetchStatus: "ok",
         },
       });
-      sourceRows.push({ id: row.id, url: s.url, text: row.excerpt, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, originKey: srcOrigins[i] });
+      sourceRows.push({ id: row.id, url: s.url, text: row.excerpt, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt, retrievedAt: row.retrievedAt.toISOString(), originKey: srcOrigins[i] });
     }
     // The business's own discovered site pages are first-party sources too.
     const firstParty = await db.businessResearchSource.findMany({ where: { podcastId: podcast.id, sourceType: "FIRST_PARTY_SITE" }, orderBy: { retrievedAt: "desc" }, take: 8 });
     for (const s of firstParty) {
       if (!sourceRows.some((r) => r.url === s.canonicalUrl)) {
-        sourceRows.push({ id: s.id, url: s.canonicalUrl, text: s.excerpt, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt?.toISOString() ?? null, originKey: s.originKey });
+        sourceRows.push({ id: s.id, url: s.canonicalUrl, text: s.excerpt, title: s.title, publisher: s.publisher, publishedAt: s.publishedAt?.toISOString() ?? null, retrievedAt: s.retrievedAt.toISOString(), originKey: s.originKey });
       }
     }
 
@@ -505,7 +505,7 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
         const src = srcById.get(k.sourceId);
         if (!src) { fabricatedRefs++; claims.push({ ...k, verdict: "UNVERIFIED", reasons: ["Cited source id does not exist in this research run."] }); continue; }
         const v = await verifyClaim(
-          { claim: k.claim, quote: k.quote, source: { url: src.url, text: src.text, publishedAt: src.publishedAt } },
+          { claim: k.claim, quote: k.quote, source: { url: src.url, text: src.text, publishedAt: src.publishedAt, retrievedAt: src.retrievedAt } },
           { entityHost, now: now() },
           deps.judge
         );

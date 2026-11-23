@@ -8,12 +8,13 @@
 //   business script    → script_movement
 
 import { db } from "../db";
-import { getRoleLLMProvider, roleHasRealProvider } from "../providers/llm/routing";
+import { getRoleLLMProvider, roleHasRealProvider, resolveRolePlan, candidateKey, roleProviderLabel } from "../providers/llm/routing";
 import type { LLMRole } from "../providers/llm/roles";
 import { llmCostMark, llmCostSince, withLlmJob } from "../providers/llm/costLedger";
 import { resolveEpisodeCast } from "../services/hostCasting";
 import { exaClient } from "./researchProviders";
 import { llmEntailmentJudge } from "./claimVerification";
+import { llmClaimClassifier } from "./factualClaims";
 import { runIndustryResearch } from "./researchEngine";
 import { runDossier } from "./businessDossier";
 import { generateBusinessScript, factCheckBusinessScript } from "./businessProduction";
@@ -66,8 +67,19 @@ export function runBusinessScriptJob(episodeId: string, forceRegenerate?: boolea
   });
 }
 
+/** The judge must not be the model that wrote the script: same model = self-certification = unavailable. */
+function independentFactCheckDeps() {
+  const first = (r: LLMRole) => resolveRolePlan(r).candidates[0];
+  const j = first("fact_check");
+  const w = first("script_movement");
+  const l = role("fact_check");
+  if (!l) return { judgeUnavailableReason: "no fact_check model configured" };
+  if (j && w && candidateKey(j) === candidateKey(w)) return { judgeUnavailableReason: "the fact_check model is the same model that wrote the script" };
+  return { judge: llmEntailmentJudge(l), classifier: llmClaimClassifier(l), judgeLabel: roleProviderLabel("fact_check") };
+}
+
 export function runBusinessFactCheckJob(scriptId: string) {
-  return factCheckBusinessScript(db, scriptId, { judge: judge() });
+  return factCheckBusinessScript(db, scriptId, independentFactCheckDeps());
 }
 
 /** Which engine owns this episode — the worker's dispatch question. */

@@ -16,6 +16,7 @@ import { canViewOwned } from "@/lib/ownerScope";
 import { recordHumanRelease, revokeHumanRelease } from "@/lib/services/scriptRelease";
 import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import type { ScriptEditorialDecision } from "@/lib/services/scriptEditorialGate";
+import { recordBusinessFactReview } from "@/lib/business/businessProduction";
 
 type Fail = { success: false; error: string };
 
@@ -99,4 +100,19 @@ export async function revokeScriptEditorialRelease(episodeId: string) {
   if (!res.success) return { success: false as const, error: res.error || "Couldn't revoke the release." };
   revalidatePath(`/studio/episodes/${episodeId}`);
   return { success: true as const };
+}
+
+/**
+ * Record an attributable human factual review for a BUSINESS script whose
+ * independent verification was unavailable or inconclusive. Separate from the
+ * editorial release above: that one says "voice it anyway", this one says
+ * "I checked these facts" — and only this one satisfies the business fact rule.
+ */
+export async function recordBusinessFactReviewAction(episodeId: string, reason: string) {
+  const gate = await ownedLatestScript(episodeId);
+  if (!gate.success) return gate;
+  const res = await recordBusinessFactReview(db, { scriptId: gate.scriptId, actor: gate.approvedBy, reason: String(reason ?? "") });
+  if (!res.success) return { success: false as const, error: res.error };
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  return { success: true as const, unresolved: res.unresolved };
 }

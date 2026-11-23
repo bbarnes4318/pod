@@ -43,6 +43,7 @@ import { reconcileOrphanedJobLogsOnBoot } from "../services/jobLogReconciliation
 const WORKER_STARTED_AT = new Date();
 import { JobData, IngestJobData, TopicGenJobData, ResearchBriefJobData, EpisodeBuildJobData, ScriptGenJobData, FactCheckJobData, TtsSegmentJobData, FinalAudioStitchJobData, ContentAssetJobData, LineAudioRegenJobData, SocialClipJobData } from "./podcastQueue";
 import { ProductionHoldError } from "./productionGuard";
+import { BusinessFactHoldError } from "../business/businessVerification";
 // Stage-chaining enqueuers: build:episode -> generate:script, and
 // generate:topics -> generate:research-brief. Without these two chains an
 // episode never leaves 'draft' and a topic never becomes pickable.
@@ -3092,6 +3093,10 @@ async function chainProductionStage(scriptId: string): Promise<ChainResult> {
             chainHeldDecision: e.verdict.decision,
             chainHeldAxes: e.verdict.failedCriticalAxes.length ? e.verdict.failedCriticalAxes : null,
           };
+        }
+        if (e instanceof BusinessFactHoldError) {
+          console.warn(`[Worker] ${stage} HELD (business fact-check) for episode ${episode.id}: ${e.verdict.state}`);
+          return { ...NO_CHAIN, chainedStage: stage, chainHeldReason: e.verdict.reasons.join(" | ") || e.message, chainHeldDecision: `business:${e.verdict.state}` };
         }
         const msg = e instanceof Error ? e.message : "unknown enqueue error";
         console.error(`[Worker] Could not chain ${stage} for episode ${episode.id}: ${msg}`);

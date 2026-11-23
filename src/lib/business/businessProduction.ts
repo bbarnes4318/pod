@@ -4,9 +4,11 @@
 //                           BusinessEpisodeTopic (immutable V1 snapshot)
 //   generateBusinessScript  grounded script in the exact segment/line shape the
 //                           existing TTS, stitch and transcript stages consume
-//   factCheckBusinessScript deterministic grounding checks + independent
-//                           semantic check; writes a normal FactCheckResult and
-//                           the SAME status transitions as sports
+//   factCheckBusinessScript deterministic checks + independent claim detection
+//                           + independent semantic check; explicit verification
+//                           states (businessVerification.ts); writes a normal
+//                           FactCheckResult and the SAME status transitions as sports
+//   recordBusinessFactReview attributable human factual review (manual path)
 //
 // After fact-check the episode is on the shared path: the production guard,
 // voicing, mixing and publishing are unchanged and unaware of the engine.
@@ -22,6 +24,8 @@ import { readAnswers } from "./profileSchema";
 import { buildBusinessSnapshot, evaluateBusinessScriptReadiness, resolveEditorialPacket, type BusinessTopicSnapshotV1 } from "./businessTopicSnapshot";
 import type { DossierContent } from "./businessDossier";
 import { extractNumbers, type EntailmentJudge } from "./claimVerification";
+import { detectClaims, type ClaimClassifier } from "./factualClaims";
+import { buildFactReview, combineStates, scriptTextFingerprint, type BusinessVerification, type ClaimOutcome, type SemanticState } from "./businessVerification";
 
 type Result<T = object> = ({ success: true } & T) | { success: false; error: string };
 
@@ -324,12 +328,32 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
 // ---------------------------------------------------------------------------
 // Fact-check
 // ---------------------------------------------------------------------------
+//
+// Three independent layers, reported separately (directive §4–§5):
+//   1. deterministic  — citation validity, numbers-in-evidence, quotations,
+//                       synthetic-host experience (auditBusinessLine)
+//   2. detection      — every line is scanned for material claims regardless
+//                       of the writer's isFactualClaim label (factualClaims.ts);
+//                       an optional independent classifier catches the rest
+//   3. semantic       — an independent judge (never the writer's role) checks
+//                       each cited claim against its evidence, per clause
+// No judge = SEMANTIC_VERIFICATION_UNAVAILABLE = NEEDS_HUMAN_REVIEW, never PASSED.
+
+export interface BusinessFactCheckDeps {
+  judge?: EntailmentJudge;
+  /** Credential-free label of the judge model, recorded on the result. */
+  judgeLabel?: string | null;
+  classifier?: ClaimClassifier;
+  /** Why no judge ran, when the caller knows (e.g. "same model as the writer"). */
+  judgeUnavailableReason?: string | null;
+  now?: Date;
+}
 
 export async function factCheckBusinessScript(
   db: PrismaClient,
   scriptId: string,
-  deps: { judge?: EntailmentJudge } = {}
-): Promise<{ id: string; status: "passed" | "failed" | "needs_review"; errors: string[]; warnings: string[] }> {
+  deps: BusinessFactCheckDeps = {}
+): Promise<{ id: string; status: "passed" | "failed" | "needs_review"; errors: string[]; warnings: string[]; verification: BusinessVerification; claims: ClaimOutcome[] }> {
   const script = await db.script.findUnique({
     where: { id: scriptId },
     include: { episode: { include: { podcast: true, topics: { select: { id: true } }, businessTopics: true } } },
@@ -338,49 +362,173 @@ export async function factCheckBusinessScript(
   const packet = resolveEditorialPacket(script.episode);
   if (packet.kind !== "BUSINESS" || !packet.snapshots[0]) throw new Error("Not a business episode, or its snapshot is unreadable.");
   const snapshot = packet.snapshots[0];
-  const segs = (script.content as { segments?: { lines: ScriptLine[] }[] }).segments ?? [];
+  const content = (script.content ?? {}) as Record<string, unknown> & { segments?: { lines: ScriptLine[] }[] };
+  const lines = (content.segments ?? []).flatMap((s) => s.lines ?? []);
+  const names = [...new Set(lines.map((l) => l.speakerName)), snapshot.style.businessName, script.episode.podcast?.name ?? ""].filter(Boolean);
 
   const errors: string[] = [];
   const warnings: string[] = [];
+  const claims: ClaimOutcome[] = [];
   let factual = 0;
   let factualCited = 0;
-  for (const seg of segs) {
-    for (const line of seg.lines) {
-      const factIds = (line.evidenceRefs ?? []).map((r) => r.factId);
-      const audit = auditBusinessLine(snapshot, { text: line.text, isFactualClaim: line.isFactualClaim, factIds });
-      for (const e of audit.errors) errors.push(`Line ${line.lineIndex} (${line.speakerName}): ${e}.`);
-      if (!line.isFactualClaim) continue;
+  let judgeFailed = 0;
+  let judgeUnrun = 0;
+  let contradicted = 0;
+
+  // Independent classification of every UNCITED line, in one call — this is
+  // what catches a factual line the writer labelled false and the regexes missed.
+  const uncited = lines.filter((l) => !(l.evidenceRefs ?? []).length).map((l) => ({ lineIndex: l.lineIndex, text: stripAudioTags(l.text) }));
+  const classification = deps.classifier ? await deps.classifier(uncited) : null;
+  if (deps.classifier && !classification) warnings.push("Independent claim classifier failed; uncited lines were checked by deterministic detection only.");
+
+  for (const line of lines) {
+    const spoken = stripAudioTags(line.text);
+    const factIds = (line.evidenceRefs ?? []).map((r) => r.factId);
+    const audit = auditBusinessLine(snapshot, { text: line.text, isFactualClaim: line.isFactualClaim, factIds });
+    for (const e of audit.errors) errors.push(`Line ${line.lineIndex} (${line.speakerName}): ${e}.`);
+    const detected = detectClaims(spoken, names);
+    const push = (o: Omit<ClaimOutcome, "lineIndex">) => claims.push({ lineIndex: line.lineIndex, ...o });
+
+    if (audit.refs.length) {
       factual++;
-      if (audit.refs.length) factualCited++;
-      if (deps.judge && audit.refs.length) {
-        const passage = snapshot.facts.filter((f) => audit.refs.includes(f.id)).map((f) => `${f.claim} (source: "${f.quote}")`).join("\n");
-        const verdict = await deps.judge(stripAudioTags(line.text), passage);
-        if (verdict === "contradicted") errors.push(`Line ${line.lineIndex}: independent check — contradicts its cited evidence.`);
-        else if (verdict === "neutral") warnings.push(`Line ${line.lineIndex}: independent check — cited evidence doesn't fully establish the line.`);
+      factualCited++;
+      const passage = snapshot.facts.filter((f) => audit.refs.includes(f.id)).map((f) => `${f.claim} (source: "${f.quote}")`).join("\n");
+      // Compound lines are judged clause by clause; a single-claim line as a whole.
+      const parts = detected.length > 1 ? detected : [{ text: spoken, kinds: detected[0]?.kinds ?? [] }];
+      for (const part of parts) {
+        const detectedBy: ClaimOutcome["detectedBy"] = [...(line.isFactualClaim ? ["writer_label" as const] : []), ...(detected.length ? ["deterministic" as const] : [])];
+        if (audit.errors.length) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "UNSUPPORTED", factIds: audit.refs, note: audit.errors.join("; ") }); continue; }
+        if (!deps.judge) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs }); continue; }
+        const verdict = await deps.judge(part.text, passage);
+        if (verdict === "entailed") push({ text: part.text, kinds: part.kinds, detectedBy, status: "SUPPORTED", factIds: audit.refs });
+        else if (verdict === "contradicted") {
+          contradicted++;
+          errors.push(`Line ${line.lineIndex}: independent check — "${part.text.slice(0, 80)}" contradicts its cited evidence.`);
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CONTRADICTED", factIds: audit.refs });
+        } else if (verdict === "neutral") {
+          judgeFailed++;
+          warnings.push(`Line ${line.lineIndex}: independent check — cited evidence doesn't establish "${part.text.slice(0, 80)}".`);
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "INSUFFICIENT_EVIDENCE", factIds: audit.refs });
+        } else {
+          judgeUnrun++;
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, note: "independent judge call failed" });
+        }
       }
+      continue;
+    }
+
+    // Uncited line: anything factual here is unsupported, whatever the writer said.
+    const cls = classification?.get(line.lineIndex);
+    const before = claims.length;
+    for (const d of detected) {
+      const hypotheticalNumbers = d.hedged && audit.errors.length === 0 && d.kinds.every((k) => k === "number" || k === "money" || k === "percent");
+      if (hypotheticalNumbers) { push({ text: d.text, kinds: d.kinds, detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [], note: "labelled hypothetical using dossier inputs" }); continue; }
+      if (d.strength === "soft" && cls && !cls.factual) { push({ text: d.text, kinds: d.kinds, detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [], note: "independent classifier: not an assertion of fact" }); continue; }
+      push({ text: d.text, kinds: d.kinds, detectedBy: cls?.factual ? ["deterministic", "classifier"] : ["deterministic"], status: "UNSUPPORTED", factIds: [] });
+    }
+    if (!detected.length && cls?.factual) {
+      for (const t of cls.claims.length ? cls.claims : [spoken]) push({ text: t, kinds: [], detectedBy: ["classifier"], status: "UNSUPPORTED", factIds: [] });
+    }
+    if (!detected.length && !cls?.factual && line.isFactualClaim) push({ text: spoken, kinds: [], detectedBy: ["writer_label"], status: "UNSUPPORTED", factIds: [] });
+    const unsupportedHere = claims.slice(before).filter((c) => c.status === "UNSUPPORTED");
+    if (unsupportedHere.length) {
+      factual++;
+      warnings.push(`Line ${line.lineIndex} (${line.speakerName}): states ${unsupportedHere.length === 1 ? "a claim" : `${unsupportedHere.length} claims`} with no citation — "${unsupportedHere[0].text.slice(0, 80)}".`);
     }
   }
-  if (!deps.judge) warnings.push("Independent semantic check not run (no fact_check model configured); deterministic checks only.");
-  const status: "passed" | "failed" | "needs_review" = errors.length ? "failed" : warnings.some((w) => w.includes("doesn't fully establish")) ? "needs_review" : "passed";
+
+  let semantic: SemanticState;
+  if (!deps.judge) semantic = "SEMANTIC_VERIFICATION_UNAVAILABLE";
+  else if (contradicted || judgeFailed) semantic = "SEMANTIC_VERIFICATION_FAILED";
+  else if (judgeUnrun) semantic = "SEMANTIC_VERIFICATION_UNAVAILABLE";
+  else semantic = "SEMANTIC_VERIFICATION_PASSED";
+  if (!deps.judge) warnings.push(`Independent semantic verification unavailable${deps.judgeUnavailableReason ? ` (${deps.judgeUnavailableReason})` : " (no fact_check model configured)"}; deterministic checks only. A human factual review is required before voicing.`);
+  else if (judgeUnrun) warnings.push(`${judgeUnrun} claim(s) could not be checked by the independent judge (call failed).`);
+
+  const unresolved = claims.filter((c) => c.status === "UNSUPPORTED" || c.status === "CITED_UNVERIFIED" || c.status === "INSUFFICIENT_EVIDENCE").length;
+  const { deterministic, overall } = combineStates({ deterministicErrors: errors.length - contradicted, contradicted, semantic, unresolved });
+  const status: "passed" | "failed" | "needs_review" = overall === "FACT_CHECK_PASSED" ? "passed" : overall === "FACT_CHECK_FAILED" ? "failed" : "needs_review";
+  const claimCounts: BusinessVerification["claimCounts"] = {};
+  for (const c of claims) claimCounts[c.status] = (claimCounts[c.status] ?? 0) + 1;
+  const checkedAt = (deps.now ?? new Date()).toISOString();
+  const reasons = overall === "FACT_CHECK_PASSED" ? [] : [...errors, ...warnings].slice(0, 12);
 
   const r = await db.$transaction(async (tx) => {
     const created = await tx.factCheckResult.create({
       data: {
         scriptId, episodeId: script.episodeId, passed: status === "passed", status,
         warnings: warnings as unknown as Prisma.InputJsonValue, errors: errors as unknown as Prisma.InputJsonValue,
-        provider: deps.judge ? "business:deterministic+fact_check" : "business:deterministic",
-        summary: { engine: "business", totalErrors: errors.length, totalWarnings: warnings.length, evidenceFingerprint: snapshot.evidenceFingerprint } as Prisma.InputJsonValue,
+        provider: deps.judge ? `business:deterministic+fact_check${deps.judgeLabel ? `(${deps.judgeLabel})` : ""}` : "business:deterministic",
+        summary: { engine: "business", deterministic, semantic, overall, basis: overall === "FACT_CHECK_PASSED" ? "SEMANTIC" : null, totalErrors: errors.length, totalWarnings: warnings.length, claimCounts, evidenceFingerprint: snapshot.evidenceFingerprint } as Prisma.InputJsonValue,
+        issues: { claims } as unknown as Prisma.InputJsonValue,
         evidenceCoverage: { factualLineCount: factual, factualLineWithValidEvidenceCount: factualCited, evidenceCoveragePercent: factual ? Math.round((factualCited / factual) * 100) : 100 } as Prisma.InputJsonValue,
       },
+    });
+    const verification: BusinessVerification = {
+      deterministic, semantic, overall, basis: overall === "FACT_CHECK_PASSED" ? "SEMANTIC" : null,
+      fingerprint: scriptTextFingerprint(content), factCheckResultId: created.id, checkedAt,
+      judge: deps.judge ? deps.judgeLabel ?? "fact_check" : null, reasons, claimCounts,
+    };
+    // A new check supersedes any earlier human review: it was signed against a different verdict.
+    const { businessFactReview: _old, ...rest } = content as Record<string, unknown>;
+    void _old;
+    await tx.script.update({
+      where: { id: scriptId },
+      data: { content: { ...rest, businessVerification: verification } as unknown as Prisma.InputJsonValue, ...(status === "failed" ? { status: "needs_revision" } : {}) },
     });
     // Same transitions as the sports fact-checker.
     if (status === "passed" && script.status === "approved") {
       await tx.episode.update({ where: { id: script.episodeId }, data: { status: "fact_checked" } });
     } else if (status === "failed") {
-      await tx.script.update({ where: { id: scriptId }, data: { status: "needs_revision" } });
       await tx.episode.update({ where: { id: script.episodeId }, data: { status: "script_draft" } });
+    }
+    return { created, verification };
+  });
+  return { id: r.created.id, status, errors, warnings, verification: r.verification, claims };
+}
+
+/**
+ * Record an attributable human factual review (the audited manual path when
+ * semantic verification is unavailable or inconclusive). Writes the review onto
+ * the script and a FactCheckResult with provider "business:human_review" so the
+ * shared pipeline sees a passed check — while the per-claim outcomes keep their
+ * original statuses and the verification basis reads HUMAN_REVIEW, not SEMANTIC.
+ */
+export async function recordBusinessFactReview(
+  db: PrismaClient,
+  input: { scriptId: string; actor: string; reason: string; permittedStages?: string[] },
+  now: Date = new Date()
+): Promise<Result<{ factCheckResultId: string; unresolved: number }>> {
+  const script = await db.script.findUnique({ where: { id: input.scriptId } });
+  if (!script) return { success: false, error: "Script not found." };
+  const v = (script.content as { businessVerification?: BusinessVerification } | null)?.businessVerification;
+  const last = v?.factCheckResultId ? await db.factCheckResult.findUnique({ where: { id: v.factCheckResultId } }) : null;
+  const claims = ((last?.issues as { claims?: ClaimOutcome[] } | null)?.claims ?? []) as ClaimOutcome[];
+  const built = buildFactReview({ content: script.content, scriptId: script.id, scriptVersion: script.version, actor: input.actor, reason: input.reason, claims, permittedStages: input.permittedStages, now });
+  if (!built.ok) return { success: false, error: built.error };
+
+  const r = await db.$transaction(async (tx) => {
+    // Optimistic concurrency: refuse if the script changed between read and write.
+    const fresh = await tx.script.findUnique({ where: { id: script.id }, select: { content: true, status: true, episodeId: true } });
+    if (!fresh || scriptTextFingerprint(fresh.content) !== built.review.fingerprint) throw new Error("The script changed while you were reviewing it. Reload and review again.");
+    const created = await tx.factCheckResult.create({
+      data: {
+        scriptId: script.id, episodeId: script.episodeId, passed: true, status: "passed", provider: "business:human_review",
+        warnings: built.review.unresolved.map((u) => `Line ${u.lineIndex}: ${u.status} — "${u.text.slice(0, 100)}" (human-reviewed, not independently verified)`) as unknown as Prisma.InputJsonValue,
+        errors: [] as unknown as Prisma.InputJsonValue,
+        summary: { engine: "business", overall: "FACT_CHECK_PASSED", basis: "HUMAN_REVIEW", reviewedBy: built.review.actor, reason: built.review.reason, supersedes: v?.factCheckResultId ?? null } as Prisma.InputJsonValue,
+        issues: { claims, humanReview: built.review } as unknown as Prisma.InputJsonValue,
+      },
+    });
+    const verification = { ...built.verification, factCheckResultId: created.id };
+    await tx.script.update({
+      where: { id: script.id },
+      data: { content: { ...(fresh.content as object), businessVerification: verification, businessFactReview: built.review } as unknown as Prisma.InputJsonValue },
+    });
+    if (fresh.status === "approved") {
+      await tx.episode.updateMany({ where: { id: fresh.episodeId, status: { in: ["script_draft", "script_approved", "draft"] } }, data: { status: "fact_checked" } });
     }
     return created;
   });
-  return { id: r.id, status, errors, warnings };
+  return { success: true, factCheckResultId: r.id, unresolved: built.review.unresolved.length };
 }
