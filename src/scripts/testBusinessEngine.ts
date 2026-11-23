@@ -846,6 +846,27 @@ async function main() {
     for (const k of ["injuryContext", "oddsContext", "stats", "argumentForHostA", "leagueId", "sport"]) assert.ok(!(k in brief), `no sports field ${k}`);
   });
 
+  await check("a fact_check model that cannot even start is an unavailable judge, not a crashed job (M2 live run)", async () => {
+    const { db } = await import("../lib/db");
+    const { independentFactCheckDeps } = await import("../lib/business/businessJobs");
+    const saved = { ...process.env };
+    const realScript = db.script;
+    Object.defineProperty(db, "script", { configurable: true, value: { findUnique: async () => ({ content: { kind: "business" } }) } });
+    try {
+      process.env.LLM_ROUTING_PROFILE = "legacy";
+      process.env.VERIFY_LLM_PROVIDER = "openai";
+      process.env.VERIFY_MODEL = "gpt-5";
+      delete process.env.OPENAI_API_KEY;
+      const deps = await independentFactCheckDeps("s1") as { judge?: unknown; judgeUnavailableReason?: string };
+      assert.equal(deps.judge, undefined);
+      assert.match(deps.judgeUnavailableReason ?? "", /could not be started/);
+    } finally {
+      Object.defineProperty(db, "script", { configurable: true, value: realScript });
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

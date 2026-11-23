@@ -147,11 +147,19 @@ async function runBusinessCreativePipeline(run: BusinessCreativeRun): Promise<Bu
  * run against the judge models that actually answered (a fallback can land on
  * the writer's model) — see factCheckBusinessScript.
  */
-async function independentFactCheckDeps(scriptId: string) {
+export async function independentFactCheckDeps(scriptId: string) {
   const s = await db.script.findUnique({ where: { id: scriptId }, select: { content: true } });
   const writers = recordedWriterModels(s?.content);
   const j = resolveRolePlan("fact_check").candidates[0];
-  const l = role("fact_check");
+  // A configured judge that cannot even be built (e.g. its API key is missing)
+  // is an UNAVAILABLE judge — the fact-check records NEEDS_HUMAN_REVIEW. It used
+  // to throw here and crash the whole job (Milestone 2 live run negative test).
+  let l: ReturnType<typeof role>;
+  try {
+    l = role("fact_check");
+  } catch (err) {
+    return { judgeUnavailableReason: `the fact_check model could not be started (${err instanceof Error ? err.message.slice(0, 160) : "unknown error"})` };
+  }
   if (!l) return { judgeUnavailableReason: "no fact_check model configured" };
   if (j && writers.includes(candidateKey(j))) return { judgeUnavailableReason: "the fact_check model is the same model that wrote the script" };
   return { judge: llmEntailmentJudge(l), classifier: llmClaimClassifier(l), judgeLabel: roleProviderLabel("fact_check"), judgeModelsUsed: () => modelsUsedBy(l, "fact_check") };
