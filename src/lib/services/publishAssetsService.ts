@@ -148,11 +148,22 @@ export interface EnsurePublishAssetsResult {
  * into a betting episode's show notes (if missing), generate + store cover art,
  * and compute title options. Reuses the episode's existing longShowNotes.
  */
+/**
+ * The small label under the show name on generated cover art. A business
+ * episode has no sport and usually no verticals, so it fell through to
+ * "Sports" — the Milestone 2 live run's wholesale VoIP episode cover read
+ * "TAKE MACHINE / SPORTS". Sports episodes resolve exactly as before.
+ */
+export function coverTagFor(input: { sport?: string | null; verticals?: string[] | null; intelligenceType?: string | null }): string {
+  if (input.intelligenceType === "BUSINESS") return input.verticals?.[0] || "Business";
+  return input.sport || input.verticals?.[0] || "Sports";
+}
+
 export async function ensurePublishAssets(episodeId: string, opts?: { regenerateCover?: boolean }): Promise<EnsurePublishAssetsResult> {
   const episode = await db.episode.findUnique({
     where: { id: episodeId },
     include: {
-      podcast: { select: { verticals: true } },
+      podcast: { select: { verticals: true, intelligenceType: true } },
       topics: { orderBy: { orderIndex: "asc" }, include: { topic: { select: { title: true, summary: true, leagueId: true, bettingRelevanceScore: true, sport: true } } } },
     },
   });
@@ -186,7 +197,7 @@ export async function ensurePublishAssets(episodeId: string, opts?: { regenerate
   const isLegacySvg = !!coverArtUrl && coverArtUrl.toLowerCase().endsWith(".svg");
   if (!coverArtUrl || isLegacySvg || opts?.regenerateCover) {
     try {
-      const tag = episode.topics[0]?.topic?.sport || episode.podcast?.verticals?.[0] || "Sports";
+      const tag = coverTagFor({ sport: episode.topics[0]?.topic?.sport, verticals: episode.podcast?.verticals, intelligenceType: episode.podcast?.intelligenceType });
       const svg = generateCoverArtSvg(episode.title, tag);
       const storage = getStorageProvider();
       // Keep the editable vector source.

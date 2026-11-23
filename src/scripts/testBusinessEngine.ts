@@ -821,6 +821,17 @@ async function main() {
     }
   });
 
+  await check("a business episode's cover art is never labelled SPORTS; sports labels unchanged (M2 live run)", async () => {
+    const { coverTagFor } = await import("../lib/services/publishAssetsService");
+    assert.equal(coverTagFor({ intelligenceType: "BUSINESS", verticals: [], sport: null }), "Business");
+    assert.equal(coverTagFor({ intelligenceType: "BUSINESS", verticals: null }), "Business");
+    // Sports: byte-for-byte the old precedence.
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: "NFL", verticals: ["Betting"] }), "NFL");
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: null, verticals: ["Betting"] }), "Betting");
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: null, verticals: [] }), "Sports");
+    assert.equal(coverTagFor({ sport: null, verticals: null }), "Sports");
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);
