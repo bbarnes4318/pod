@@ -9,7 +9,7 @@
  * snapshot readiness, script line audit, and the sports/business packet split.
  */
 import assert from "node:assert/strict";
-import { verifyClaim, assignOrigins, assessFreshness, extractNumbers, compareNumbers, type EntailmentJudge } from "../lib/business/claimVerification";
+import { verifyClaim, assignOrigins, assessFreshness, extractNumbers, compareNumbers, llmEntailmentJudge, type EntailmentJudge } from "../lib/business/claimVerification";
 import { detectClaims, type ClaimClassifier } from "../lib/business/factualClaims";
 import { BUSINESS_RELEASE_STAGES, BusinessFactHoldError, assertBusinessRelease, buildFactReview, combineStates, evaluateBusinessRelease, scriptTextFingerprint, type ClaimOutcome, type OverallState, type VerificationBasis } from "../lib/business/businessVerification";
 import { parseRobots, robotsAllows, selectPages, classifyPage } from "../lib/business/discovery";
@@ -565,6 +565,27 @@ async function main() {
       assert.equal(res.status, "passed", [...res.errors, ...res.warnings].join(" | "));
       assert.equal(res.verification.judge, "anthropic/claude-sonnet-5");
       assert.ok(res.claims.find((c) => c.lineIndex === 0)?.evidence?.[0]?.url, "cited evidence attached for reviewers");
+    });
+    await check("a clause cut from a compound line is judged WITH its line as context (M2 live run 6)", async () => {
+      // Live: "Fifty percent there is normal." was judged alone and marked CONTRADICTED.
+      const seen: { claim: string; context?: string }[] = [];
+      const judge = async (claim: string, _p: string, context?: string) => { seen.push({ claim, context }); return "entailed" as const; };
+      const compound = "The premium was $1,140 in 2025. Chargebacks apply in the first year. Most carriers pay advance commissions.";
+      await run([mkLine(0, compound, true, ["F1", "F3", "F4"]), mkLine(1, "The average annual final expense premium was $1,140 in 2025.", true, ["F1"])], { judge, judgeModelsUsed: () => ["anthropic/claude-sonnet-5"] }, "approved", ["anthropic/claude-opus-5"]);
+      const fromCompound = seen.filter((x) => x.context);
+      assert.ok(fromCompound.length >= 2, `compound clauses carry context: ${JSON.stringify(seen)}`);
+      assert.ok(fromCompound.every((x) => x.context === compound));
+      assert.ok(seen.some((x) => x.claim.startsWith("The average annual") && x.context === undefined), "a single-claim line is judged as itself, no context");
+    });
+    await check("the judge prompt shows context only when given (research/dossier prompts unchanged)", async () => {
+      const prompts: string[] = [];
+      const llm = { name: "x", generateStructuredOutput: async (o: { prompt: string }) => { prompts.push(o.prompt); return { label: "entailed" }; } } as unknown as LLMProvider;
+      const j = llmEntailmentJudge(llm);
+      await j("A claim.", "A passage.");
+      await j("Fifty percent there is normal.", "US DID 40-70%.", "It is fine on US DID. Fifty percent there is normal.");
+      assert.equal(prompts[0], "<passage>\nA passage.\n</passage>\n<claim>\nA claim.\n</claim>");
+      assert.match(prompts[1], /<context>\nIt is fine on US DID\. Fifty percent there is normal\.\n<\/context>/);
+      assert.match(prompts[1], /Judge the claim alone/);
     });
     await check("judge says neutral → SEMANTIC_VERIFICATION_FAILED → needs_review", async () => {
       const { res } = await run(goodLines, { judge: async () => "neutral" });

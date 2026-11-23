@@ -683,7 +683,9 @@ export async function factCheckBusinessScript(
         const detectedBy: ClaimOutcome["detectedBy"] = [...(line.isFactualClaim ? ["writer_label" as const] : []), ...(detected.length ? ["deterministic" as const] : [])];
         if (audit.errors.length) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "UNSUPPORTED", factIds: audit.refs, evidence, note: audit.errors.join("; ") }); continue; }
         if (!deps.judge) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, evidence }); continue; }
-        const verdict = await deps.judge(part.text, passage);
+        // A clause cut from a compound line is judged with that line as context,
+        // so "there" / "it" / "same" resolve to what the host actually meant.
+        const verdict = await deps.judge(part.text, passage, parts.length > 1 ? spoken : undefined);
         if (verdict === "entailed") push({ text: part.text, kinds: part.kinds, detectedBy, status: "SUPPORTED", factIds: audit.refs, evidence });
         else if (verdict === "contradicted") {
           contradicted++;
