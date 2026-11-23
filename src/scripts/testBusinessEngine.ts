@@ -291,6 +291,18 @@ async function main() {
     const tampered = { ...snap, facts: snap.facts.map((f, i) => (i === 0 ? { ...f, claim: "Premiums average $9,999" } : f)) };
     assert.match(evaluateBusinessScriptReadiness(tampered).reasons.join(), /fingerprint/);
   });
+  await check("a small number that measures something is checked; counting words are not (M2 live run 4)", () => {
+    // Live lines: "longer than eight seconds" / "fifty percent with eight-second calls" passed
+    // because every whole number up to ten was skipped. Nothing in this dossier says eight.
+    assert.match(auditBusinessLine(snap, { text: "Then you better hope those calls ran longer than eight seconds.", isFactualClaim: false, factIds: [] }).errors.join(), /eight/);
+    assert.match(auditBusinessLine(snap, { text: "Check the eight-second calls before you bill.", isFactualClaim: false, factIds: [] }).errors.join(), /eight/);
+    assert.match(auditBusinessLine(snap, { text: "That's a 7 percent lapse rate.", isFactualClaim: false, factIds: [] }).errors.join(), /7/);
+    assert.match(auditBusinessLine(snap, { text: "It costs three cents more a minute.", isFactualClaim: false, factIds: [] }).errors.join(), /three/);
+    // Counting words are still not claims.
+    for (const text of ["Two hosts, one question, three numbers to read together.", "First thing: we take it one step at a time.", "I'll give you two reasons."]) {
+      assert.deepEqual(auditBusinessLine(snap, { text, isFactualClaim: false, factIds: [] }).errors, [], text);
+    }
+  });
   await check("readiness never asks for sports fields", () => {
     const text = JSON.stringify(evaluateBusinessScriptReadiness({ ...snap, facts: [], storyStructure: [] }).reasons).toLowerCase();
     for (const w of ["league", "sport", "betting", "injur", "odds"]) assert.ok(!text.includes(w), w);
@@ -730,6 +742,30 @@ async function main() {
       if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
       if (prevEffort === undefined) delete process.env.LLM_EFFORT; else process.env.LLM_EFFORT = prevEffort;
     }
+  });
+
+  await check("the cold-open judge is not recorded as a script writer; every writing model is (M2 live run 4)", async () => {
+    const { writerModelsFromLedger } = await import("../lib/business/businessJobs");
+    // The real stage list of the fourth live run (legacy profile: Sonnet writes, Opus judges).
+    const stages = [
+      { stage: "script:story-spine", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:outline", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:private-agendas", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:cold-open-variants", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:cold-open-judge", models: ["anthropic/claude-opus-5"] },
+      { stage: "script:turn-plan", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:host-writer:Dana Reyes", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:host-writer:Marcus Hale", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:dialogue-director", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:continuity-editor", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "quality:judge", models: ["anthropic/claude-opus-5"] },
+    ];
+    assert.deepEqual(writerModelsFromLedger(stages), ["anthropic/claude-sonnet-5"]);
+    // A writer that fell back to another model is still a writer: never under-count.
+    assert.deepEqual(
+      writerModelsFromLedger([...stages, { stage: "script:host-writer:Dana Reyes", models: ["anthropic/claude-opus-5"] }]).sort(),
+      ["anthropic/claude-opus-5", "anthropic/claude-sonnet-5"]
+    );
   });
 
   await check("the dossier is shown its real schema (names, required, limits)", () => {

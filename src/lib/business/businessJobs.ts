@@ -83,8 +83,31 @@ export function runBusinessScriptJob(episodeId: string, forceRegenerate?: boolea
  */
 const LINE_WRITING_ROLES = new Set(["debate_architect", "host_a_writer", "host_b_writer", "dialogue_director"]);
 
+/**
+ * Which models put words on the page, read from the cost ledger's per-call
+ * stage labels rather than from the role records.
+ *
+ * Under the legacy routing profile a role record's model is inferred from the
+ * ledger window of that role, and the debate architect's window also holds the
+ * cold-open JUDGE call. In the fourth Milestone 2 live run that recorded
+ * claude-opus-5 (the judge, also the fact-check model) as a script writer, so
+ * an independent fact-check would have been refused as self-certification.
+ * Conservative by construction: every model that served any call during the
+ * writing run counts as a writer, except calls whose stage only grades or
+ * reviews (cold-open judge, quality judge, semantic review).
+ */
+const NON_WRITING_STAGE = /judge|review|semantic/i;
+export function writerModelsFromLedger(stages: { stage: string; models: string[] }[]): string[] {
+  return [...new Set(stages
+    .filter((s) => !NON_WRITING_STAGE.test(s.stage))
+    .flatMap((s) => s.models)
+    .map((m) => m.toLowerCase()))];
+}
+
 async function runBusinessCreativePipeline(run: BusinessCreativeRun): Promise<BusinessCreativeResult> {
   const reasons: string[] = [];
+  // Scoped to this script job by the worker's withLlmJob.
+  const mark = llmCostMark();
   const seven = await withCreativeDomain(run.domain, () =>
     runSevenRolePipeline({
       systemPrompt: run.systemPrompt,
@@ -102,12 +125,17 @@ async function runBusinessCreativePipeline(run: BusinessCreativeRun): Promise<Bu
     const failed = seven.trace.stageRecords.find((r) => r.status === "failed");
     return { ok: false, error: `${failed ? `${failed.role} failed: ` : ""}${seven.error ?? "the pipeline returned no script"}` };
   }
-  const writerModels = [...new Set(seven.trace.stageRecords
+  const roleRecordModels = [...new Set(seven.trace.stageRecords
     // Only roles that put words on the page: the architect writes the cold open,
     // the host writers write the lines, the director repairs joins. The story
     // editor and continuity editor plan and report; the judge only scores.
     .filter((r) => r.status === "ok" && LINE_WRITING_ROLES.has(r.role) && r.actualProvider && r.actualModel)
     .map((r) => `${r.actualProvider}/${r.actualModel}`.toLowerCase()))];
+  const ledgerModels = writerModelsFromLedger(llmCostSince(mark).stages);
+  // The ledger is authoritative when it saw the calls; the role records are the
+  // fallback for a provider that records nothing.
+  const writerModels = ledgerModels.length ? ledgerModels : roleRecordModels;
+  reasons.push(`Writer models (from the calls that wrote): ${writerModels.join(", ") || "none observed"}.`);
   reasons.push(`Seven-role pipeline: ${seven.trace.stageRecords.filter((r) => r.status === "ok").length} role(s) ok, ${seven.trace.violations.length} violation(s).`);
   return { ok: true, segments: seven.segments as never, writerModels, reasons };
 }

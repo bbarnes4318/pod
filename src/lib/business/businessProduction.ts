@@ -196,6 +196,25 @@ function packetNumbers(snapshot: BusinessTopicSnapshotV1): number[] {
 const has = (pool: number[], v: number) => pool.some((p) => Math.abs(p - v) <= Math.max(1e-9, Math.abs(v) * 0.01));
 /** Small counting words ("two hosts", "one thing") aren't claims. */
 const trivial = (v: number) => v <= 10 && Number.isInteger(v);
+/**
+ * ...but a small number that MEASURES something is ("eight-second calls",
+ * "five percent", "three cents", "two hops"). In the fourth Milestone 2 live
+ * run "fifty percent with eight-second calls" / "longer than eight seconds"
+ * went through because every whole number up to ten was skipped, though no
+ * source said eight seconds (it said "under roughly ten").
+ */
+const SMALL_WORDS = "zero|one|two|three|four|five|six|seven|eight|nine|ten";
+const MEASURED_SMALL = new RegExp(`\\b(\\d{1,2}(?:\\.\\d+)?|${SMALL_WORDS})[\\s-]+(?:%|percent|per\\s?cent|cents?|dollars?|bucks|seconds?|secs?|milliseconds?|ms|minutes?|mins?|hours?|days?|weeks?|months?|years?|hops?|times|x)\\b`, "gi");
+const WORD_VALUE: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+export function measuredSmallNumbers(spoken: string): number[] {
+  const out: number[] = [];
+  for (const m of spoken.matchAll(MEASURED_SMALL)) {
+    const w = m[1].toLowerCase();
+    const v = w in WORD_VALUE ? WORD_VALUE[w] : Number(w);
+    if (Number.isFinite(v) && trivial(v)) out.push(v);
+  }
+  return out;
+}
 
 /** A line the writer labelled as an illustration. "hypothetically", "illustrative",
  *  "supposing" count too — the old pattern required the bare stems. */
@@ -215,7 +234,8 @@ export function auditBusinessLine(snapshot: BusinessTopicSnapshotV1, line: { tex
   // not a factual claim (the writer is told to do exactly this); its numbers are
   // still checked against the dossier below.
   if (line.isFactualClaim && refs.length === 0 && !hypothetical) errors.push("factual line has no valid fact citation");
-  const nums = extractNumbers(spoken).filter((n) => !trivial(n.value));
+  const measured = measuredSmallNumbers(spoken);
+  const nums = extractNumbers(spoken).filter((n) => !trivial(n.value) || n.kind === "money" || n.kind === "percent" || measured.includes(n.value));
   const allowed = line.isFactualClaim ? allowedNumbersFor(snapshot, refs) : packetNumbers(snapshot);
   for (const n of nums) {
     if (has(allowed, n.value)) continue;
