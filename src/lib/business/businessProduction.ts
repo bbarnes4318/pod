@@ -21,7 +21,7 @@ import { getShowFormat, type ShowFormat } from "../formats/showFormatRegistry";
 import { scriptGenerationAllowedFrom } from "../createFlow";
 import { stripAudioTags } from "../audio/speechText";
 import { readAnswers } from "./profileSchema";
-import { buildBusinessSnapshot, evaluateBusinessScriptReadiness, resolveEditorialPacket, type BusinessTopicSnapshotV1 } from "./businessTopicSnapshot";
+import { buildBusinessSnapshot, evaluateBusinessScriptReadiness, parseBusinessSnapshot, resolveEditorialPacket, type BusinessTopicSnapshotV1 } from "./businessTopicSnapshot";
 import type { DossierContent } from "./businessDossier";
 import { extractNumbers, type EntailmentJudge } from "./claimVerification";
 import { detectClaims, type ClaimClassifier } from "./factualClaims";
@@ -169,17 +169,26 @@ const has = (pool: number[], v: number) => pool.some((p) => Math.abs(p - v) <= M
 /** Small counting words ("two hosts", "one thing") aren't claims. */
 const trivial = (v: number) => v <= 10 && Number.isInteger(v);
 
+/** A line the writer labelled as an illustration. "hypothetically", "illustrative",
+ *  "supposing" count too — the old pattern required the bare stems. */
+const HYPOTHETICAL_RE = /\b(hypothetical\w*|for example|say|imagine|illustrat\w*|suppos\w*)\b/i;
+
 /** Deterministic line audit. Pure; shared by the writer and the fact-checker. */
 export function auditBusinessLine(snapshot: BusinessTopicSnapshotV1, line: { text: string; isFactualClaim: boolean; factIds: string[] }) {
   const errors: string[] = [];
   const known = new Set(snapshot.facts.map((f) => f.id));
   const refs = line.factIds.filter((id) => known.has(id));
   if (line.factIds.length !== refs.length) errors.push("cites a fact id that is not in the dossier");
-  if (line.isFactualClaim && refs.length === 0) errors.push("factual line has no valid fact citation");
   const spoken = stripAudioTags(line.text);
+  // "hypothetically", "illustrative", "supposing" count too — the old pattern
+  // required the bare stems and missed every one of them in a live script.
+  const hypothetical = HYPOTHETICAL_RE.test(spoken);
+  // A clearly labelled illustration built from the dossier's labelled inputs is
+  // not a factual claim (the writer is told to do exactly this); its numbers are
+  // still checked against the dossier below.
+  if (line.isFactualClaim && refs.length === 0 && !hypothetical) errors.push("factual line has no valid fact citation");
   const nums = extractNumbers(spoken).filter((n) => !trivial(n.value));
   const allowed = line.isFactualClaim ? allowedNumbersFor(snapshot, refs) : packetNumbers(snapshot);
-  const hypothetical = /\b(hypothetical|for example|say|imagine|illustrat|suppose)\b/i.test(spoken);
   for (const n of nums) {
     if (has(allowed, n.value)) continue;
     if (hypothetical && has(packetNumbers(snapshot), n.value)) continue;
@@ -331,6 +340,43 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
   return { scriptId: saved.id, version, reasons, flaggedLines };
 }
 
+/**
+ * Re-run the deterministic line audit after a human edits a business script.
+ *
+ * Found in the Milestone 2 live run: a script came back "needs revision" with
+ * two genuinely ungrounded details, the owner fixed both lines in the
+ * transcript editor, and the script stayed "needs revision" forever — the
+ * edit changed the text but not the flags, and approval refuses that status.
+ * The only way out was paying to regenerate (and hoping). Now an edit re-audits
+ * every line against the frozen snapshot with the SAME rules generation uses:
+ * a fixed line is cleared, a still-ungrounded line stays flagged, and the
+ * status moves only between "needs_revision" and "draft". Approved or later
+ * scripts are never touched here (their edits go through fact-check re-review).
+ */
+export async function reauditBusinessScript(db: PrismaClient, scriptId: string): Promise<{ flaggedLines: number; status: string } | null> {
+  const s = await db.script.findUnique({ where: { id: scriptId }, select: { id: true, status: true, content: true, episodeId: true } });
+  if (!s || !["draft", "needs_revision"].includes(s.status)) return null;
+  const topic = await db.businessEpisodeTopic.findFirst({ where: { episodeId: s.episodeId }, orderBy: { orderIndex: "asc" } });
+  const parsed = parseBusinessSnapshot(topic?.snapshot);
+  if (parsed.status !== "valid") return null;
+  const snapshot = parsed.snapshot;
+  const content = (s.content ?? {}) as { segments?: { lines?: ScriptLine[] }[]; safety?: Record<string, unknown> };
+  let flaggedLines = 0;
+  for (const seg of content.segments ?? []) {
+    for (const line of seg.lines ?? []) {
+      const factIds = (line.evidenceRefs ?? []).map((r) => r.factId);
+      const audit = auditBusinessLine(snapshot, { text: line.text, isFactualClaim: !!line.isFactualClaim, factIds });
+      line.needsHumanReview = audit.errors.length > 0;
+      if (audit.errors.length) { line.reviewNotes = audit.errors; flaggedLines++; }
+      else delete line.reviewNotes;
+    }
+  }
+  content.safety = { ...(content.safety ?? {}), flaggedLines };
+  const status = flaggedLines ? "needs_revision" : "draft";
+  await db.script.update({ where: { id: s.id }, data: { content: content as unknown as Prisma.InputJsonValue, status } });
+  return { flaggedLines, status };
+}
+
 // ---------------------------------------------------------------------------
 // Fact-check
 // ---------------------------------------------------------------------------
@@ -441,7 +487,13 @@ export async function factCheckBusinessScript(
     const cls = classification?.get(line.lineIndex);
     const before = claims.length;
     for (const d of detected) {
-      const hypotheticalNumbers = d.hedged && audit.errors.length === 0 && d.kinds.every((k) => k === "number" || k === "money" || k === "percent");
+      // The label belongs to the LINE: "This is a hypothetical… On one-one you pay
+      // six hundredths of a cent… On sixty-sixty, one point two cents." Judged
+      // sentence by sentence, only the first carried the word, so a live run
+      // reported the rest of a clearly labelled example as unsupported. The line
+      // audit has already confirmed every number comes from the dossier.
+      const labelled = d.hedged || HYPOTHETICAL_RE.test(spoken);
+      const hypotheticalNumbers = labelled && audit.errors.length === 0 && d.kinds.every((k) => k === "number" || k === "money" || k === "percent");
       if (hypotheticalNumbers) { push({ text: d.text, kinds: d.kinds, detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [], note: "labelled hypothetical using dossier inputs" }); continue; }
       if (d.strength === "soft" && cls && !cls.factual) { push({ text: d.text, kinds: d.kinds, detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [], note: "independent classifier: not an assertion of fact" }); continue; }
       push({ text: d.text, kinds: d.kinds, detectedBy: cls?.factual ? ["deterministic", "classifier"] : ["deterministic"], status: "UNSUPPORTED", factIds: [] });

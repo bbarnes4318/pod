@@ -16,6 +16,10 @@ export interface GenerateTextOptions {
    *  content is always separated from the answer — it never reaches dialogue,
    *  show notes or TTS. Defaults to the role's posture when routed by role. */
   reasoning?: "off" | "on";
+  /** Explicit thinking-effort for adaptive-thinking models (Anthropic
+   *  output_config.effort). Only callers that pass it are affected; when unset
+   *  the provider keeps its existing behaviour (LLM_EFFORT, else API default). */
+  effort?: "low" | "medium" | "high";
 }
 
 export interface GenerateStructuredOutputOptions extends GenerateTextOptions {

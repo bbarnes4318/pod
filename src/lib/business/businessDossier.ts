@@ -19,6 +19,7 @@ import { exaSearch, withRetry, canonicalUrl, type ExaLike } from "./researchProv
 import { assignOrigins, contentHash, verifyClaim, extractNumbers, hostOf, type EntailmentJudge, type Freshness } from "./claimVerification";
 import { scoreAchievedIas, scoreOpportunity, type IasResult, type OpportunityResult, type DemandAssessment } from "./scoring";
 import { topicWords, type Depth, type Limitation } from "./researchEngine";
+import { zodToJsonSchema } from "./zodJsonSchema";
 
 const cited = z.object({ claim: z.string().max(600), sourceId: z.string(), quote: z.string().max(500) });
 export const DossierDraftSchema = z.object({
@@ -49,6 +50,7 @@ export const DossierDraftSchema = z.object({
   factCheckRequirements: z.array(z.string().max(300)).max(12),
 });
 export type DossierDraft = z.infer<typeof DossierDraftSchema>;
+const DOSSIER_JSON_SCHEMA = zodToJsonSchema(DossierDraftSchema);
 
 export interface VerifiedItem { claim: string; sourceId: string; quote: string; url: string; publisher: string | null; authority: string; asOf?: string | null }
 export interface DossierContent extends Omit<DossierDraft, "industryContext" | "verifiedFacts" | "verifiedStatistics" | "expertDetails" | "misconceptions"> {
@@ -73,7 +75,8 @@ Rules:
 - workedExamples: if any number is illustrative, hypothetical=true.
 - Business-owner statements and company proprietary data are the owner's claims — do not present them as independent facts.
 - Never invent sources, quotes, statistics, people or quotations. Never give the AI hosts personal experiences.
-- uncertainties: what remains unknown or disputed. factCheckRequirements: what a fact-checker must confirm before air.`;
+- uncertainties: what remains unknown or disputed. factCheckRequirements: what a fact-checker must confirm before air.
+- Be selective and brief: this feeds a short episode. Aim for 6-10 verifiedFacts, at most 6 verifiedStatistics, 3-5 mechanisms, 1-3 originalAnalysis items, 1-2 workedExamples, at most 4 of each other list. One or two sentences per entry; respect every maxLength in the schema.`;
 
 export function dossierFingerprint(content: unknown): string {
   return createHash("sha256").update(JSON.stringify(content)).digest("hex");
@@ -186,13 +189,23 @@ export async function runDossier(runId: string, deps: DossierDeps): Promise<{ st
     const draftRaw = await deps.writer.generateStructuredOutput({
       systemPrompt: SYSTEM,
       prompt: `${renderProfileContext(profile as unknown as ProfileLike, "dossier")}\n\nTOPIC: ${opp.title}\nCategory: ${opp.category}\nCore question: ${opp.coreQuestion}\nListener: ${opp.targetListener}\nProblem: ${opp.listenerProblem}\nWhy it matters: ${opp.whyItMatters}\nProposed analysis: ${opp.potentialOriginalAnalysis ?? "(none)"}\n\nSOURCES:\n${sources.slice(0, 36).map((s) => `<source id="${s.id}" publisher="${(s.publisher ?? "").replace(/"/g, "")}" published="${s.publishedAt?.toISOString().slice(0, 10) ?? "unknown"}" type="${s.sourceType}">\n${(s.title ?? "").replace(/[<>]/g, "")}\n${s.excerpt.replace(/<\/?source[^>]*>/gi, "").slice(0, 2500)}\n</source>`).join("\n")}`,
-      jsonSchema: { type: "object" },
+      // The real shape and limits — "{type: object}" left the model guessing.
+      jsonSchema: DOSSIER_JSON_SCHEMA,
       temperature: 0.2,
-      maxTokens: 16000,
-      validate: (v) => (DossierDraftSchema.safeParse(v).success ? null : "dossier did not match the schema"),
+      effort: "medium",
+      // A live run asking for the full maximum ran past the 240s request
+      // timeout twice; the selective brief above keeps it to ~2 minutes.
+      maxTokens: 12000,
+      validate: (v) => {
+        const r = DossierDraftSchema.safeParse(v);
+        return r.success ? null : `dossier did not match the schema: ${r.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`;
+      },
     });
     const parsed = DossierDraftSchema.safeParse(draftRaw);
-    if (!parsed.success) throw new Error("The dossier writer returned an unusable result.");
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      throw new Error(`The dossier writer returned an unusable result (${issue ? `${issue.path.join(".")}: ${issue.message}` : "schema mismatch"}).`);
+    }
     const draft = parsed.data;
 
     // 3. Verify.

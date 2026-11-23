@@ -16,8 +16,14 @@ export function fmtDay(d: Date | string): string {
   return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Friendly production-stage label for end users (no pipeline jargon). */
-export function friendlyStage(status: string): { label: string; done: boolean } {
+/** Friendly production-stage label for end users (no pipeline jargon).
+ *  Business episodes are not debates and their draft script waits on the owner,
+ *  so they get their own wording for the early stages; sports is unchanged. */
+export function friendlyStage(status: string, kind: "sports" | "business" = "sports"): { label: string; done: boolean } {
+  if (kind === "business") {
+    if (status === "draft") return { label: "Writing the script…", done: false };
+    if (status === "script_draft") return { label: "Script ready for your review", done: false };
+  }
   switch (status) {
     case "draft": return { label: "Getting started", done: false };
     case "script_draft": return { label: "Writing the debate…", done: false };

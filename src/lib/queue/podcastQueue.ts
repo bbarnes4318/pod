@@ -433,10 +433,34 @@ export interface BusinessRunJobData {
   runId: string;
 }
 
+/**
+ * Business runs keep a deterministic job id (one run = one job, so a double
+ * click cannot start two paid runs). But BullMQ keeps FAILED jobs, and add()
+ * with an id that still exists is silently ignored — so retrying a failed run
+ * left it "queued" forever with no worker ever picking it up (found in the
+ * Milestone 2 live run). Same rule as script jobs: an in-flight job is reused,
+ * a finished one is removed so the retry can take the id.
+ */
+async function addBusinessRunJob(name: "business:research" | "business:dossier", data: BusinessRunJobData) {
+  const jobId = `${name.replace(":", "-")}-${data.runId}`;
+  const existing = await podcastQueue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (scriptJobIsInFlight(state)) return existing;
+    try {
+      await existing.remove();
+    } catch {
+      if (scriptJobIsInFlight(await existing.getState())) return existing;
+      throw new Error(`Could not clear the previous ${name} job for run ${data.runId}.`);
+    }
+  }
+  return podcastQueue.add(name, data, { jobId, attempts: 2 });
+}
+
 export async function queueBusinessResearchJob(data: BusinessRunJobData) {
-  return podcastQueue.add("business:research", data, { jobId: `business-research-${data.runId}`, attempts: 2 });
+  return addBusinessRunJob("business:research", data);
 }
 
 export async function queueBusinessDossierJob(data: BusinessRunJobData) {
-  return podcastQueue.add("business:dossier", data, { jobId: `business-dossier-${data.runId}`, attempts: 2 });
+  return addBusinessRunJob("business:dossier", data);
 }

@@ -240,7 +240,10 @@ export class AnthropicLLMProvider implements LLMProvider {
     // models (API default is "high"). Left unset unless an operator opts in,
     // so behavior is unchanged until someone deliberately tunes it. Applies
     // only where adaptive thinking does — older models reject output_config.
-    const effort = (process.env.LLM_EFFORT || "").trim().toLowerCase();
+    // An explicit per-call effort wins; otherwise the operator's LLM_EFFORT.
+    // Business research passes one: at the default "high", thinking tokens
+    // filled the output cap and the 240s timeout on topic and dossier calls.
+    const effort = (options.effort || process.env.LLM_EFFORT || "").trim().toLowerCase();
     if (effort && this.supportsAdaptiveThinking()) {
       body.output_config = { effort };
     }
@@ -370,6 +373,10 @@ export class AnthropicLLMProvider implements LLMProvider {
         // Network-level failure — retry unless out of attempts
         lastErr = err;
         if (attempt === maxRetries) throw err;
+        // Say so: a timed-out attempt can still be billed, and a silent retry
+        // hid a 4-minute timeout (and a doubled bill) in a live business run.
+        const timedOut = controller.signal.aborted;
+        console.warn(`[Anthropic] ${timedOut ? `request timed out after ${Math.round(anthropicRequestTimeoutMs() / 1000)}s` : `network error (${String(err?.message ?? err).slice(0, 120)})`} — retrying (attempt ${attempt + 1}/${maxRetries}). model=${this.model}`);
         await new Promise((r) => setTimeout(r, 2000 * Math.pow(4, attempt)));
       } finally {
         clearTimeout(timer);
