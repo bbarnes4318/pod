@@ -18,8 +18,10 @@ import { llmClaimClassifier } from "./factualClaims";
 import { runIndustryResearch } from "./researchEngine";
 import { runDossier } from "./businessDossier";
 import { generateBusinessScript, factCheckBusinessScript, recordedWriterModels } from "./businessProduction";
+import { businessLLM } from "./schemaInstructions";
 
-const role = (r: LLMRole) => (roleHasRealProvider(r) ? getRoleLLMProvider(r) : null);
+// Every business model call carries its output schema (see schemaInstructions.ts).
+const role = (r: LLMRole) => (roleHasRealProvider(r) ? businessLLM(getRoleLLMProvider(r)) : null);
 const judge = () => {
   const l = role("fact_check");
   return l ? llmEntailmentJudge(l) : undefined;

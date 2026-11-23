@@ -108,10 +108,69 @@ export interface NumToken {
   raw: string;
 }
 
-const WORD_NUM: Record<string, number> = {
+const UNITS: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, hundred: 100,
+  eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
 };
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+const SPOKEN_SCALES: Record<string, number> = { thousand: 1e3, million: 1e6, billion: 1e9 };
+const FRACTIONS: Record<string, number> = { tenth: 10, tenths: 10, hundredth: 100, hundredths: 100, thousandth: 1000, thousandths: 1000 };
+
+/**
+ * Numbers as they are SPOKEN. Scripts are written for voices, so amounts are
+ * spelled out: "a hundred thousand calls", "eleven hundred and forty dollars",
+ * "one-point-two cents", "six hundredths of a cent". These used to be read one
+ * word at a time ("hundred", "eleven", "forty"), so every correct spoken figure
+ * in a live business script was flagged as unsupported. Cents are converted to
+ * dollars so they compare with "$0.012"-style evidence.
+ */
+function spokenNumbers(text: string): NumToken[] {
+  const toks = text.toLowerCase().replace(/[-\u2013]/g, " ").match(/[a-z]+|[^a-z\s]/g) ?? [];
+  const isNum = (w: string | undefined) => !!w && (w in UNITS || w in TENS);
+  const isScaleWord = (w: string | undefined) => w === "hundred" || (!!w && w in SPOKEN_SCALES);
+  const out: NumToken[] = [];
+  let i = 0;
+  while (i < toks.length) {
+    const start = i;
+    let w = toks[i];
+    const leadingA = w === "a" && isScaleWord(toks[i + 1]);
+    if (!isNum(w) && !leadingA) { i++; continue; }
+    if (leadingA) i++;
+    let total = 0;
+    let cur = leadingA ? 1 : 0;
+    let any = leadingA;
+    let decimals = "";
+    while (i < toks.length) {
+      w = toks[i];
+      if (w in UNITS || w in TENS) {
+        // Spoken grammar: a unit may follow a ten ("sixty five"), a teen or ten
+        // may only start a fresh hundred. "sixty sixty" (60/60 billing) and
+        // "six six" are two numbers, not 120 and 12.
+        const v = UNITS[w] ?? TENS[w];
+        const fits = any ? (v < 10 ? cur % 10 === 0 : cur % 100 === 0) : true;
+        if (!fits) break;
+        cur += v;
+        any = true;
+      }
+      else if (w === "hundred" && any) cur = (cur || 1) * 100;
+      else if (w in SPOKEN_SCALES && any) { total += (cur || 1) * SPOKEN_SCALES[w]; cur = 0; }
+      else if (w === "and" && any && (isNum(toks[i + 1]))) { /* "eleven hundred and forty" */ }
+      else if (w === "point" && any && toks[i + 1] !== undefined && toks[i + 1] in UNITS && UNITS[toks[i + 1]] <= 9) {
+        while (toks[i + 1] !== undefined && toks[i + 1] in UNITS && UNITS[toks[i + 1]] <= 9) { decimals += String(UNITS[toks[i + 1]]); i++; }
+      } else break;
+      i++;
+    }
+    let value = total + cur + (decimals ? Number(`0.${decimals}`) : 0);
+    if (toks[i] && toks[i] in FRACTIONS) { value /= FRACTIONS[toks[i]]; i++; }
+    let kind: NumKind = "number";
+    if (toks[i] === "percent") { kind = "percent"; i++; }
+    else if (toks[i] === "cent" || toks[i] === "cents") { kind = "money"; value /= 100; i++; }
+    else if (toks[i] === "of" && toks[i + 1] === "a" && toks[i + 2] === "cent") { kind = "money"; value /= 100; i += 3; }
+    else if (toks[i] === "dollar" || toks[i] === "dollars") { kind = "money"; i++; }
+    out.push({ kind, value, raw: toks.slice(start, i).join(" ") });
+  }
+  return out;
+}
 const SCALE: Record<string, number> = { k: 1e3, thousand: 1e3, m: 1e6, mm: 1e6, million: 1e6, b: 1e9, bn: 1e9, billion: 1e9 };
 
 /** Extract typed numbers. "$28/mo" → money 28, "40%" → percent 40, "2025" → year. */
@@ -132,9 +191,7 @@ export function extractNumbers(text: string): NumToken[] {
     else if (!suf && /^\d{4}$/.test(digits) && value >= 1900 && value <= 2100) kind = "year";
     out.push({ kind, value, raw: raw.trim() });
   }
-  for (const w of text.toLowerCase().match(/\b[a-z]+\b/g) ?? []) {
-    if (w in WORD_NUM) out.push({ kind: "number", value: WORD_NUM[w], raw: w });
-  }
+  out.push(...spokenNumbers(text));
   return out;
 }
 

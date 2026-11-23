@@ -416,7 +416,7 @@ async function Episodes({ podcastId }: { podcastId: string }) {
             <div className="bizCardHead">
               <h3 className="bizCardTitle"><Link href={`/studio/episodes/${e.id}`}>{e.title}</Link></h3>
               <span className="bizChips">
-                <span className="chip">{friendlyStage(e.status).label}</span>
+                <span className="chip">{friendlyStage(e.status, "business").label}</span>
                 {s && <span className={s.status === "needs_revision" ? "chip bizChipWarn" : s.status === "approved" ? "chip chipSuccess" : "chip"}>script v{s.version} {s.status.replace(/_/g, " ")}</span>}
                 {fc && <span className={fc.status === "passed" ? "chip chipSuccess" : fc.status === "failed" ? "chip bizChipDanger" : "chip bizChipWarn"}>fact-check {fc.status.replace(/_/g, " ")}</span>}
               </span>

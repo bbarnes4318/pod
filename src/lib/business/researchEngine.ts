@@ -41,10 +41,15 @@ export interface Budget {
   durationMs: number;
 }
 
+// Cost ceilings re-set from a live STANDARD run (Milestone 2, Sonnet 5 at $3/$15
+// per MTok): planning ~$0.02, three parallel topic batches ~$0.93 (each re-reads
+// the ~29k-token source pack), then claim judging and editorial review. At the
+// old $1.00 the run hit its ceiling right after topic generation, every time,
+// so no claim was ever independently verified.
 export const BUDGETS: Record<Depth, Budget> = {
-  QUICK: { searchQueries: 3, resultsPerQuery: 4, demandTerms: 2, llmCalls: 4, maxCandidates: 10, estCostUsd: 0.4, durationMs: 4 * 60_000 },
-  STANDARD: { searchQueries: 6, resultsPerQuery: 6, demandTerms: 4, llmCalls: 5, maxCandidates: 18, estCostUsd: 1.0, durationMs: 8 * 60_000 },
-  DEEP: { searchQueries: 10, resultsPerQuery: 8, demandTerms: 6, llmCalls: 6, maxCandidates: 25, estCostUsd: 2.5, durationMs: 15 * 60_000 },
+  QUICK: { searchQueries: 3, resultsPerQuery: 4, demandTerms: 2, llmCalls: 4, maxCandidates: 10, estCostUsd: 0.75, durationMs: 6 * 60_000 },
+  STANDARD: { searchQueries: 6, resultsPerQuery: 6, demandTerms: 4, llmCalls: 5, maxCandidates: 18, estCostUsd: 1.5, durationMs: 8 * 60_000 },
+  DEEP: { searchQueries: 10, resultsPerQuery: 8, demandTerms: 6, llmCalls: 6, maxCandidates: 25, estCostUsd: 3.0, durationMs: 15 * 60_000 },
 };
 
 /** Provider list prices used for ESTIMATES only (documented, not billed amounts). */
@@ -171,6 +176,98 @@ const TopicsSchema = z.object({
 });
 export type RawCandidate = z.infer<typeof CandidateSchema>;
 
+/** Descriptive prose the model over-wrote is trimmed at a word boundary.
+ *  Never used on titles' meaning-bearing claims or quotes (see below). */
+function trimProse(v: unknown, max: number): unknown {
+  if (typeof v !== "string" || v.length <= max) return v;
+  const cut = v.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  return `${(sp > max * 0.6 ? cut.slice(0, sp) : cut).trimEnd()}…`;
+}
+const PROSE_LIMITS: Record<string, number> = {
+  title: 160, businessNiche: 200, targetListener: 200, coreQuestion: 300, listenerProblem: 500, whyItMatters: 600,
+  whyNow: 400, undercoveredInformation: 600, potentialOriginalAnalysis: 600, practicalValue: 500,
+};
+
+/**
+ * Parse the topic model's output ONE TOPIC AT A TIME.
+ *
+ * The model is told the limits but nothing enforces them on its side, and a
+ * live run returned 18 topics in ~20k tokens. Validating the whole object at
+ * once threw every topic away because one field ran long. So: over-long prose
+ * is trimmed, over-long lists are cut, and a topic that is still malformed is
+ * dropped on its own and reported. Claims and quotes are never trimmed — a
+ * shortened claim can change what it asserts — an over-long one is dropped.
+ */
+/** Split a run's topic budget into parallel batches of ~6, each focused on
+ *  a subset of categories (every category is covered by some batch). */
+export function topicBatches(maxCandidates: number): { categories: (typeof TOPIC_CATEGORIES)[number][]; count: number }[] {
+  const n = Math.min(TOPIC_CATEGORIES.length, Math.max(1, Math.ceil(maxCandidates / 6)));
+  return Array.from({ length: n }, (_, i) => ({
+    categories: TOPIC_CATEGORIES.filter((_, c) => c % n === i),
+    count: Math.floor(maxCandidates / n) + (i < maxCandidates % n ? 1 : 0),
+  }));
+}
+
+/** Combine batch results; a batch that failed outright is reported, not fatal. */
+export function mergeTopicBatches(results: (ReturnType<typeof parseTopicsOutput> | null)[]): ReturnType<typeof parseTopicsOutput> {
+  const out: ReturnType<typeof parseTopicsOutput> = { mechanisms: [], topics: [], dropped: [] };
+  const seenMech = new Set<string>();
+  results.forEach((r, b) => {
+    if (!r) { out.dropped.push({ index: -1, title: `batch ${b + 1}`, issue: "the batch returned nothing" }); return; }
+    for (const m of r.mechanisms) {
+      const key = m.mechanism.toLowerCase().slice(0, 80);
+      if (!seenMech.has(key)) { seenMech.add(key); out.mechanisms.push(m); }
+    }
+    out.topics.push(...r.topics);
+    out.dropped.push(...r.dropped);
+  });
+  return out;
+}
+
+export function parseTopicsOutput(raw: unknown): {
+  mechanisms: z.infer<typeof TopicsSchema>["mechanisms"];
+  topics: RawCandidate[];
+  dropped: { index: number; title: string; issue: string }[];
+} {
+  const obj = (raw && typeof raw === "object" ? raw : {}) as { mechanisms?: unknown; topics?: unknown };
+  const mechSchema = TopicsSchema.shape.mechanisms.element;
+  const mechanisms = (Array.isArray(obj.mechanisms) ? obj.mechanisms : [])
+    .map((m) => (m && typeof m === "object" ? { ...m, mechanism: trimProse((m as { mechanism?: unknown }).mechanism, 400), sourceIds: Array.isArray((m as { sourceIds?: unknown }).sourceIds) ? ((m as { sourceIds: unknown[] }).sourceIds).slice(0, 6) : (m as { sourceIds?: unknown }).sourceIds } : m))
+    .map((m) => mechSchema.safeParse(m))
+    .filter((r) => r.success)
+    .map((r) => r.data!)
+    .slice(0, 15);
+
+  const topics: RawCandidate[] = [];
+  const dropped: { index: number; title: string; issue: string }[] = [];
+  const list = Array.isArray(obj.topics) ? obj.topics.slice(0, 30) : [];
+  list.forEach((rawTopic, index) => {
+    if (!rawTopic || typeof rawTopic !== "object") { dropped.push({ index, title: "", issue: "not an object" }); return; }
+    const c = { ...(rawTopic as Record<string, unknown>) };
+    for (const [k, max] of Object.entries(PROSE_LIMITS)) c[k] = trimProse(c[k], max);
+    if (Array.isArray(c.researchLimitations)) c.researchLimitations = c.researchLimitations.map((x) => trimProse(x, 300)).slice(0, 6);
+    if (Array.isArray(c.sourceIds)) c.sourceIds = c.sourceIds.slice(0, 12);
+    if (Array.isArray(c.observationIds)) c.observationIds = c.observationIds.slice(0, 12);
+    if (Array.isArray(c.keyClaims)) {
+      c.keyClaims = c.keyClaims
+        .filter((k) => k && typeof k === "object" && String((k as { claim?: unknown }).claim ?? "").length <= 400 && String((k as { quote?: unknown }).quote ?? "").length <= 500)
+        .slice(0, 6);
+    }
+    if (c.ratings && typeof c.ratings === "object") {
+      c.ratings = Object.fromEntries(Object.entries(c.ratings as Record<string, unknown>).map(([k, r]) =>
+        [k, r && typeof r === "object" ? { ...(r as object), justification: trimProse((r as { justification?: unknown }).justification, 400) } : r]));
+    }
+    const parsed = CandidateSchema.safeParse(c);
+    if (parsed.success) topics.push(parsed.data);
+    else {
+      const first = parsed.error.issues[0];
+      dropped.push({ index, title: String(c.title ?? "").slice(0, 80), issue: `${first?.path.join(".") || "topic"}: ${first?.message ?? "invalid"}` });
+    }
+  });
+  return { mechanisms, topics, dropped };
+}
+
 const ReviewSchema = z.object({
   reviews: z.array(z.object({ index: z.number().int(), verdict: z.enum(["keep", "hold", "reject"]), genericness: z.number().min(0).max(1), note: z.string().max(400) })),
 });
@@ -195,7 +292,8 @@ Hard rules:
 - keyClaims: factual claims the episode relies on, each with the sourceId and an EXACT quote (12–300 chars, verbatim) from that source. The claim must say what the quote says.
 - An analysis you propose but that hasn't been done goes in potentialOriginalAnalysis, labelled as proposed. Hypothetical calculations must be labelled hypothetical.
 - Ratings 0–1 with one-sentence justifications. Rate evidenceSupportedDepth from what the cited sources actually contain, not from what the analysis could become.
-- Prefer fewer strong topics over filler. Never pad to reach a count. Do not repeat the "previous titles".`;
+- Prefer fewer strong topics over filler. Never pad to reach a count. Do not repeat the "previous titles".
+- Be concise: every text field has a character limit in the schema (titles 160, most fields 200–600). Write tight sentences, not essays. At most 5 mechanisms, at most 3 keyClaims per topic, and rating justifications of one short sentence (under 25 words).`;
 
 const REVIEW_SYSTEM = `You are an independent podcast editor reviewing topic proposals for a specific business show. You did not write them.
 ${DATA_RULE}
@@ -243,12 +341,26 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
       },
     });
   };
+  // Once topics have been written (and paid for), going over budget must not
+  // throw them away: a live run hit the ceiling right after topic generation
+  // and saved nothing. From then on a budget overrun only stops further PAID
+  // work (independent claim judging, editorial review) and the topics are
+  // saved, held as unreviewed. Cancellation and the time limit still stop.
+  let keepResultsOnBudget = false;
+  let budgetExhausted = false;
   const checkpoint = async () => {
     const r = await db.businessResearchRun.findUnique({ where: { id: runId }, select: { cancelRequested: true } });
     if (r?.cancelRequested) throw new StopRun("cancelled", "Cancelled by the user.");
     if (Date.now() - started > budget.durationMs) throw new StopRun("timeout", `Run exceeded its ${Math.round(budget.durationMs / 60000)}-minute limit.`);
     const cost = usage.estProviderCostUsd + (deps.llmCostUsd?.() ?? 0);
-    if (cost > budget.estCostUsd) throw new StopRun("budget", `Estimated spend $${cost.toFixed(2)} reached the $${budget.estCostUsd} ceiling.`);
+    if (cost > budget.estCostUsd) {
+      const message = `Estimated spend $${cost.toFixed(2)} reached the $${budget.estCostUsd} ceiling.`;
+      if (!keepResultsOnBudget) throw new StopRun("budget", message);
+      if (!budgetExhausted) {
+        budgetExhausted = true;
+        limitations.push({ adapter: "run", status: "BUDGET", message: `${message} Topics already written are saved; independent claim judging and editorial review were skipped, so they are held as unreviewed.` });
+      }
+    }
   };
   const callLlm = async <T>(llm: LLMProvider | null, label: string, fn: (l: LLMProvider) => Promise<T>): Promise<T | null> => {
     if (!llm) {
@@ -293,6 +405,7 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
           required: ["audienceNeeds", "researchQueries", "demandTerms"],
         },
         temperature: 0.2,
+        effort: "low",
       })
     ).then((r) => (r ? PlanSchema.safeParse(r) : null));
     const fallbackTerms = [profile.industry, ...profile.subIndustries].filter(Boolean);
@@ -376,6 +489,9 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
     }
 
     // Demand adapters.
+    // A re-run of a stopped run rebuilds its demand evidence; drop its earlier
+    // rows so measurements are not counted twice.
+    await db.demandObservation.deleteMany({ where: { runId } });
     const rawObs: RawObservation[] = [];
     const market = profile.geographicMarkets.length === 1 ? countryCode(profile.geographicMarkets[0]) : null;
     for (const def of ADAPTERS) {
@@ -460,19 +576,39 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
     const obsBlock = obsRows.slice(0, 60).map((o) =>
       `<observation id="${o.id}" adapter="${o.adapter}" metric="${o.observedMetric}" kind="${o.metricKind}" value="${o.metricValue ?? "n/a"}" query="${o.query.replace(/"/g, "")}">${(o.title ?? "").replace(/[<>]/g, "")}</observation>`
     ).join("\n");
-    const topicsRaw = await callLlm(deps.llm.topics, "topic generation", (l) =>
-      l.generateStructuredOutput({
-        systemPrompt: TOPICS_SYSTEM,
-        prompt: `${renderProfileContext(profileLike, "topics")}\n\n${renderProfileContext(profileLike, "insider").split("\n\n").slice(-1)[0]}\n\nAudience needs (from planning):\n${audienceNeeds.map((n) => `- ${n}`).join("\n") || "(none)"}\n\nPrevious titles (do not repeat):\n${previousTitles.slice(0, 60).map((t) => `- ${t}`).join("\n") || "(none)"}\n\nSOURCES:\n${srcBlock || "(none retrieved)"}\n\nDEMAND OBSERVATIONS:\n${obsBlock || "(none measured)"}\n\nReturn at most ${budget.maxCandidates} topics.`,
-        jsonSchema: topicsJsonSchema,
-        temperature: 0.4,
-        maxTokens: 16000,
-      })
-    );
-    const parsedTopics = topicsRaw ? TopicsSchema.safeParse(topicsRaw) : null;
-    if (!parsedTopics?.success) {
-      throw new Error(topicsRaw ? "Topic generation returned an unusable result." : "Topic generation could not run — no topic model is configured or it failed. No topics were invented.");
+    // Topics are written in parallel BATCHES, each focused on some categories.
+    // One call for 18 detailed topics ran ~23k output tokens, past the 240s
+    // request timeout twice in the Milestone 2 live run (paid each time, then
+    // failed). ~6 topics per call finishes in about a minute, and one bad batch
+    // no longer sinks the run.
+    const batches = topicBatches(budget.maxCandidates);
+    const sharedPrompt = `${renderProfileContext(profileLike, "topics")}\n\n${renderProfileContext(profileLike, "insider").split("\n\n").slice(-1)[0]}\n\nAudience needs (from planning):\n${audienceNeeds.map((n) => `- ${n}`).join("\n") || "(none)"}\n\nPrevious titles (do not repeat):\n${previousTitles.slice(0, 60).map((t) => `- ${t}`).join("\n") || "(none)"}\n\nSOURCES:\n${srcBlock || "(none retrieved)"}\n\nDEMAND OBSERVATIONS:\n${obsBlock || "(none measured)"}`;
+    const batchResults = await Promise.all(batches.map((b, i) =>
+      callLlm(deps.llm.topics, `topic generation (batch ${i + 1}/${batches.length})`, (l) =>
+        l.generateStructuredOutput({
+          systemPrompt: TOPICS_SYSTEM,
+          prompt: `${sharedPrompt}\n\nTHIS BATCH: propose topics ONLY in these categories: ${b.categories.join(", ")}. Other categories are written separately. Return at most ${b.count} topics.`,
+          jsonSchema: topicsJsonSchema,
+          temperature: 0.4,
+          maxTokens: 16000,
+          effort: "medium",
+        })
+      )
+    ));
+    if (batchResults.every((r) => !r)) {
+      throw new Error("Topic generation could not run — no topic model is configured or it failed. No topics were invented.");
     }
+    const parsedTopics = mergeTopicBatches(batchResults.map((r) => (r ? parseTopicsOutput(r) : null)));
+    if (parsedTopics.dropped.length) {
+      limitations.push({
+        adapter: "topic generation", status: "SKIPPED",
+        message: `${parsedTopics.dropped.length} proposed topic(s) were malformed and discarded: ${parsedTopics.dropped.slice(0, 3).map((d) => `${d.title || `#${d.index + 1}`} (${d.issue})`).join("; ")}`.slice(0, 300),
+      });
+    }
+    if (parsedTopics.topics.length === 0) {
+      throw new Error(`Topic generation returned no usable topics${parsedTopics.dropped.length ? `: ${parsedTopics.dropped[0].issue}` : ""}. No topics were invented.`);
+    }
+    keepResultsOnBudget = true;
     await checkpoint();
 
     // ── PASS E/F: verify claims + score ─────────────────────────────────────
@@ -491,7 +627,7 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
       held: boolean;
     }
     const scored: Scored[] = [];
-    for (const c of parsedTopics.data.topics.slice(0, budget.maxCandidates)) {
+    for (const c of parsedTopics.topics.slice(0, budget.maxCandidates)) {
       const ex = isExcluded(`${c.title} ${c.coreQuestion}`, excluded);
       if (ex) { limitations.push({ adapter: "exclusions", status: "SKIPPED", message: `Dropped "${c.title.slice(0, 80)}" — matches excluded topic "${ex}".` }); continue; }
       if (previousTitles.some((t) => titleSimilarity(t, c.title) >= 0.6) || scored.some((s) => titleSimilarity(s.c.title, c.title) >= 0.6)) { duplicates++; continue; }
@@ -507,7 +643,7 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
         const v = await verifyClaim(
           { claim: k.claim, quote: k.quote, source: { url: src.url, text: src.text, publishedAt: src.publishedAt, retrievedAt: src.retrievedAt } },
           { entityHost, now: now() },
-          deps.judge
+          budgetExhausted ? undefined : deps.judge
         );
         claims.push({ ...k, verdict: v.verdict, reasons: v.reasons, authority: v.checks.authority, originKey: src.originKey, url: src.url });
       }
@@ -574,17 +710,27 @@ export async function runIndustryResearch(runId: string, deps: EngineDeps): Prom
 
     // ── PASS G: independent editorial review ────────────────────────────────
     await save("G", "Independent editorial review", 85);
-    const review = scored.length
+    const review = scored.length && !budgetExhausted
       ? await callLlm(deps.llm.reviewer, "editorial review", (l) =>
           l.generateStructuredOutput({
             systemPrompt: REVIEW_SYSTEM,
             prompt: `Show audience: ${profile.targetAudiences.join(", ")}\nIndustry: ${profile.industry} ${profile.subIndustries.join(", ")}\n\n${scored.map((s, i) => `<proposal index="${i}">\n${s.c.title}\nQuestion: ${s.c.coreQuestion}\nListener: ${s.c.targetListener}\nWhy: ${s.c.whyItMatters}\n</proposal>`).join("\n")}`,
             jsonSchema: { type: "object", properties: { reviews: { type: "array", items: { type: "object", properties: { index: { type: "integer" }, verdict: { type: "string", enum: ["keep", "hold", "reject"] }, genericness: { type: "number" }, note: { type: "string" } }, required: ["index", "verdict", "genericness", "note"] } } }, required: ["reviews"] },
             temperature: 0,
+            effort: "low",
           })
         ).then((r) => (r ? ReviewSchema.safeParse(r) : null))
       : null;
-    if (scored.length && !review?.success) limitations.push({ adapter: "editorial review", status: "SKIPPED", message: "Independent editorial review did not run; topics are unreviewed." });
+    if (scored.length && !review?.success) {
+      limitations.push({ adapter: "editorial review", status: "SKIPPED", message: "Independent editorial review did not run; topics are unreviewed." });
+      // An unreviewed topic is never presented as a ready candidate.
+      for (const s of scored) {
+        if (s.data.editorialStatus === "CANDIDATE") {
+          s.data.editorialStatus = "HELD";
+          s.data.holdReasons = [...((s.data.holdReasons as string[]) ?? []), "Not yet reviewed by the independent editor."] as Prisma.InputJsonValue;
+        }
+      }
+    }
     for (const r of review?.success ? review.data.reviews : []) {
       const s = scored[r.index];
       if (!s) continue;
@@ -623,24 +769,25 @@ export function countryCode(market: string): string | null {
   return COUNTRY[m] ?? null;
 }
 
-const ratingJson = { type: "object", properties: { rating: { type: "number" }, justification: { type: "string" } }, required: ["rating", "justification"] };
+const ratingJson = { type: "object", properties: { rating: { type: "number", minimum: 0, maximum: 1 }, justification: { type: "string", maxLength: 400 } }, required: ["rating", "justification"] };
 const topicsJsonSchema = {
   type: "object",
   properties: {
-    mechanisms: { type: "array", items: { type: "object", properties: { mechanism: { type: "string" }, sourceIds: { type: "array", items: { type: "string" } } }, required: ["mechanism", "sourceIds"] } },
+    mechanisms: { type: "array", maxItems: 15, items: { type: "object", properties: { mechanism: { type: "string", maxLength: 400 }, sourceIds: { type: "array", maxItems: 6, items: { type: "string" } } }, required: ["mechanism", "sourceIds"] } },
     topics: {
       type: "array",
+      maxItems: 30,
       items: {
         type: "object",
         properties: {
           category: { type: "string", enum: [...TOPIC_CATEGORIES] },
-          title: { type: "string" }, businessNiche: { type: "string" }, targetListener: { type: "string" },
-          coreQuestion: { type: "string" }, listenerProblem: { type: "string" }, whyItMatters: { type: "string" },
-          whyNow: { type: ["string", "null"] }, undercoveredInformation: { type: ["string", "null"] },
-          potentialOriginalAnalysis: { type: ["string", "null"] }, practicalValue: { type: ["string", "null"] },
-          researchLimitations: { type: "array", items: { type: "string" } },
-          sourceIds: { type: "array", items: { type: "string" } }, observationIds: { type: "array", items: { type: "string" } },
-          keyClaims: { type: "array", items: { type: "object", properties: { claim: { type: "string" }, sourceId: { type: "string" }, quote: { type: "string" } }, required: ["claim", "sourceId", "quote"] } },
+          title: { type: "string", maxLength: 160 }, businessNiche: { type: "string", maxLength: 200 }, targetListener: { type: "string", maxLength: 200 },
+          coreQuestion: { type: "string", maxLength: 300 }, listenerProblem: { type: "string", maxLength: 500 }, whyItMatters: { type: "string", maxLength: 600 },
+          whyNow: { type: ["string", "null"], maxLength: 400 }, undercoveredInformation: { type: ["string", "null"], maxLength: 600 },
+          potentialOriginalAnalysis: { type: ["string", "null"], maxLength: 600 }, practicalValue: { type: ["string", "null"], maxLength: 500 },
+          researchLimitations: { type: "array", maxItems: 6, items: { type: "string", maxLength: 300 } },
+          sourceIds: { type: "array", maxItems: 12, items: { type: "string" } }, observationIds: { type: "array", maxItems: 12, items: { type: "string" } },
+          keyClaims: { type: "array", maxItems: 6, items: { type: "object", properties: { claim: { type: "string", maxLength: 400 }, sourceId: { type: "string" }, quote: { type: "string", maxLength: 500 } }, required: ["claim", "sourceId", "quote"] } },
           ratings: {
             type: "object",
             properties: {
