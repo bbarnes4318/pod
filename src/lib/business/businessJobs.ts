@@ -19,6 +19,9 @@ import { runIndustryResearch } from "./researchEngine";
 import { runDossier } from "./businessDossier";
 import { generateBusinessScript, factCheckBusinessScript, recordedWriterModels } from "./businessProduction";
 import { businessLLM } from "./schemaInstructions";
+import { runSevenRolePipeline } from "../services/scriptSevenRolePipeline";
+import { withCreativeDomain } from "../services/creativeDomain";
+import type { BusinessCreativeRun, BusinessCreativeResult } from "./businessProduction";
 
 // Every business model call carries its output schema (see schemaInstructions.ts).
 const role = (r: LLMRole) => (roleHasRealProvider(r) ? businessLLM(getRoleLLMProvider(r)) : null);
@@ -67,7 +70,46 @@ export function runBusinessScriptJob(episodeId: string, forceRegenerate?: boolea
     writer,
     writerModels: () => modelsUsedBy(writer, "script_movement"),
     resolveCast: async (ep) => (await resolveEpisodeCast({ hostIds: ep.hostIds, formatId: ep.formatId })).members.map((m) => ({ host: m.host, role: m.role })),
+    creative: runBusinessCreativePipeline,
   });
+}
+
+/**
+ * Business scripts are written by the SAME seven-role pipeline as sports
+ * (story editor, debate architect, one writer per host with private briefs,
+ * dialogue director, continuity), with business wording switched on for the
+ * few sports-specific prompt sentences. The models that actually served each
+ * writing role are recorded so the fact-check can prove it is independent.
+ */
+const LINE_WRITING_ROLES = new Set(["debate_architect", "host_a_writer", "host_b_writer", "dialogue_director"]);
+
+async function runBusinessCreativePipeline(run: BusinessCreativeRun): Promise<BusinessCreativeResult> {
+  const reasons: string[] = [];
+  const seven = await withCreativeDomain(run.domain, () =>
+    runSevenRolePipeline({
+      systemPrompt: run.systemPrompt,
+      episodeTitle: run.episodeTitle,
+      topicsPrompts: run.topicsPrompts,
+      rundownTopics: run.rundownTopics,
+      targetDuration: run.targetDuration,
+      temperature: Number(process.env.SCRIPT_GEN_TEMPERATURE) || 0.85,
+      maxTokens: Number(process.env.SCRIPT_GEN_MAX_TOKENS) || 16000,
+      speakerNames: run.speakerNames,
+      log: (m) => reasons.push(m),
+    })
+  );
+  if (!seven.ok || !seven.segments) {
+    const failed = seven.trace.stageRecords.find((r) => r.status === "failed");
+    return { ok: false, error: `${failed ? `${failed.role} failed: ` : ""}${seven.error ?? "the pipeline returned no script"}` };
+  }
+  const writerModels = [...new Set(seven.trace.stageRecords
+    // Only roles that put words on the page: the architect writes the cold open,
+    // the host writers write the lines, the director repairs joins. The story
+    // editor and continuity editor plan and report; the judge only scores.
+    .filter((r) => r.status === "ok" && LINE_WRITING_ROLES.has(r.role) && r.actualProvider && r.actualModel)
+    .map((r) => `${r.actualProvider}/${r.actualModel}`.toLowerCase()))];
+  reasons.push(`Seven-role pipeline: ${seven.trace.stageRecords.filter((r) => r.status === "ok").length} role(s) ok, ${seven.trace.violations.length} violation(s).`);
+  return { ok: true, segments: seven.segments as never, writerModels, reasons };
 }
 
 /**

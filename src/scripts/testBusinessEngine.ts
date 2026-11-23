@@ -21,7 +21,7 @@ import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
 import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS, parseTopicsOutput, topicBatches, mergeTopicBatches } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 import { businessLLM, withSchemaInstructions } from "../lib/business/schemaInstructions";
 import { zodToJsonSchema } from "../lib/business/zodJsonSchema";
@@ -740,6 +740,44 @@ async function main() {
     assert.deepEqual(lines.map((l) => l.pauseBefore), ["long", "beat", "long", "breath"]);
     // Expressive tags never count as spoken words for the grounding audit.
     assert.deepEqual(auditBusinessLine(makeSnapshot(), { text: "[laughs] Okay, that's nasty. [sighs]", isFactualClaim: false, factIds: [] }).errors, []);
+  });
+
+  // OWNER FEEDBACK (Milestone 2): "study how the sports podcasts are generated".
+  // Business two-host scripts now go through the sports seven-role pipeline.
+  await check("the dossier reaches the sports writing pipeline as typed fact refs, unsafe claims fenced off", () => {
+    const snap = makeSnapshot();
+    snap.uncertainties = ["Unverified: carriers lose 9% to fraud.", "No source gives a standard threshold."];
+    const prompt = businessTopicsPrompt(snap);
+    assert.match(prompt, /Key Grounded Facts: \[/);
+    assert.ok(prompt.includes(`{"type":"${BUSINESS_FACT_REF_TYPE}","id":"F1"}`), "facts carry the ref the writers must copy");
+    assert.match(prompt, /Unsafe Claims \(DO NOT USE AS FACTS OR TRUTHS\): \["Unverified: carriers lose 9% to fraud\."\]/);
+    assert.match(prompt, /Open Questions[^\n]*No source gives a standard threshold/);
+  });
+
+  await check("host personas sit BEFORE the speech-rules marker (that prefix is what the host writers see)", () => {
+    const snap = makeSnapshot();
+    const host = (name: string) => ({ id: name, name, role: "host", worldview: `${name} worldview`, speakingStyle: `${name} talks in short bursts`, likes: [], dislikes: [], argumentPatterns: [], bannedPhrases: [], catchphrases: [], intensityLevel: 5 }) as never;
+    const fmt = { id: "host_and_expert", roles: [{ id: "host", name: "Host", direction: "asks" }, { id: "expert", name: "Expert", direction: "explains" }] } as never;
+    const prompt = businessHeadWriterPrompt("Carrier Economics", snap, fmt, [host("Marisol"), host("Ambrose")]);
+    const marker = prompt.indexOf("HOW REAL PODCAST SPEECH WORKS");
+    assert.ok(marker > 0);
+    assert.ok(prompt.indexOf("Marisol talks in short bursts") < marker && prompt.indexOf("Ambrose talks in short bursts") < marker, "each host's speaking style reaches the writers");
+    assert.ok(prompt.indexOf("no careers, clients") < marker, "the synthetic-host rule reaches the writers too");
+    assert.doesNotMatch(prompt, /per episode|every two or three lines/i, "no mannerism quotas (sports forbids them)");
+  });
+
+  await check("pipeline lines map back to dossier facts; unknown refs and bad tags are dropped; interruptions cut a sentence", () => {
+    const known = new Set(["F1", "F2"]);
+    const l = fromCreativeLine({ speakerName: "Ambrose", text: "[laughs] [explodes] Twenty times the cost.", evidenceRefs: [{ type: "businessFact", id: "F2" }, { type: "businessFact", id: "F9" }, { type: "newsItem", id: "x" }], pauseBefore: "sideways", energy: "high" }, known);
+    assert.deepEqual(l.factIds, ["F2"]);
+    assert.equal(l.isFactualClaim, true, "a line carrying a fact is a factual claim");
+    assert.ok(l.text.includes("[laughs]") && !l.text.includes("[explodes]"));
+    assert.equal(l.pauseBefore, undefined);
+    assert.equal(l.energy, "high");
+    const lines = [{ text: "So the clock starts.", isInterruption: true }, { text: "And then the carrier bills it.", isInterruption: false }, { text: "Hold on.", isInterruption: true }];
+    assert.equal(guardInterruptions(lines), 1);
+    assert.equal(lines[0].isInterruption, false, "nothing to interrupt on the first line");
+    assert.equal(lines[1].text, "And then the carrier bills it—");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);
