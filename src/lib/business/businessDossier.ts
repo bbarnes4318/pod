@@ -16,7 +16,7 @@ import { z } from "zod";
 import type { LLMProvider } from "../providers/llm/interface";
 import { renderProfileContext, specificityTerms, type ProfileLike } from "./researchContext";
 import { exaSearch, withRetry, canonicalUrl, type ExaLike } from "./researchProviders";
-import { assignOrigins, contentHash, verifyClaim, extractNumbers, hostOf, type EntailmentJudge } from "./claimVerification";
+import { assignOrigins, contentHash, verifyClaim, extractNumbers, hostOf, type EntailmentJudge, type Freshness } from "./claimVerification";
 import { scoreAchievedIas, scoreOpportunity, type IasResult, type OpportunityResult, type DemandAssessment } from "./scoring";
 import { topicWords, type Depth, type Limitation } from "./researchEngine";
 
@@ -58,7 +58,7 @@ export interface DossierContent extends Omit<DossierDraft, "industryContext" | "
   expertDetails: VerifiedItem[];
   misconceptions: { myth: string; reality: string; sourceId: string; quote: string; url: string }[];
   sourceReferences: { id: string; url: string; title: string | null; publisher: string | null; publishedAt: string | null; retrievedAt: string; originKey: string }[];
-  verificationLog: { claim: string; verdict: string; reasons: string[] }[];
+  verificationLog: { claim: string; verdict: string; reasons: string[]; freshness?: Freshness }[];
 }
 
 const MIN_VERIFIED = 3;
@@ -206,11 +206,11 @@ export async function runDossier(runId: string, deps: DossierDeps): Promise<{ st
         const src = byId.get(it.sourceId);
         if (!src) { log.push({ claim: it.claim, verdict: "UNVERIFIED", reasons: ["Cited source id does not exist."] }); uncertainties.push(`Unverified (no valid source): ${it.claim}`); continue; }
         const v = await verifyClaim(
-          { claim: it.claim, quote: it.quote, source: { url: src.canonicalUrl, text: src.excerpt, publishedAt: src.publishedAt?.toISOString() ?? null } },
+          { claim: it.claim, quote: it.quote, source: { url: src.canonicalUrl, text: src.excerpt, publishedAt: src.publishedAt?.toISOString() ?? null, retrievedAt: src.retrievedAt?.toISOString() ?? null } },
           { entityHost, now: now() },
           deps.judge
         );
-        log.push({ claim: it.claim, verdict: v.verdict, reasons: v.reasons });
+        log.push({ claim: it.claim, verdict: v.verdict, reasons: v.reasons, freshness: v.checks.freshness });
         if (v.verdict === "SOURCE_SUPPORTED") out.push({ claim: it.claim, sourceId: src.id, quote: it.quote, url: src.canonicalUrl, publisher: src.publisher, authority: v.checks.authority, asOf: it.asOf ?? null });
         else if (v.verdict === "SOURCE_CONTRADICTED") uncertainties.push(`Removed — contradicted by its source: ${it.claim}`);
         else uncertainties.push(`Unverified: ${it.claim}`);

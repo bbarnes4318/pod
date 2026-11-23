@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { evaluateBusinessRelease } from "../business/businessVerification";
 import { getStorageProvider } from "../providers/storage/factory";
 import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance";
 
@@ -81,6 +82,12 @@ export async function validateEpisodeForRss(
     checks.scriptApproved = true;
   } else {
     errorReasons.push(`Script status is '${script.status}', must be 'approved'.`);
+  }
+
+  // 2b. Business factual rule (no-op for sports). Unpublishing is always allowed.
+  if (action !== "unpublish") {
+    const business = evaluateBusinessRelease(script.content, "publish");
+    if (!business.allowed) errorReasons.push(`Business fact-check: ${business.state}. ${business.reasons.join(" ")}`);
   }
 
   // 3. Episode linked

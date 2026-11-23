@@ -9,6 +9,8 @@ import { getEpisodeMixVM } from "@/lib/services/mixView";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import EpisodeWorkspace, { WorkspaceTab } from "./EpisodeWorkspace";
 import EditorialGatePanel from "./EditorialGatePanel";
+import BusinessFactCheckPanel from "./BusinessFactCheckPanel";
+import { scriptTextFingerprint, type BusinessFactReview, type BusinessVerification, type ClaimOutcome } from "@/lib/business/businessVerification";
 import RoleTracePanel from "./RoleTracePanel";
 import TranscriptWorkspace from "../../TranscriptWorkspace";
 import MixView from "../../MixView";
@@ -54,6 +56,12 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
   // Editable transcript + citations + fact-check view-model (real data).
   const transcriptVm = script ? await getEpisodeTranscriptVM(id) : null;
+  // Business fact-check view (null for sports scripts).
+  const bizContent = script?.content as { kind?: string; businessVerification?: BusinessVerification; businessFactReview?: BusinessFactReview } | null | undefined;
+  const bv = bizContent?.kind === "business" ? bizContent.businessVerification ?? null : undefined;
+  const businessClaims: ClaimOutcome[] = bv?.factCheckResultId
+    ? (((await db.factCheckResult.findUnique({ where: { id: bv.factCheckResultId }, select: { issues: true } }))?.issues as { claims?: ClaimOutcome[] } | null)?.claims ?? [])
+    : [];
   // Mix / timeline view-model (real per-line audio + sound-design plan).
   const mixVm = script ? await getEpisodeMixVM(id) : null;
 
@@ -194,6 +202,15 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         humanRelease={(script?.content as any)?.humanRelease ?? null}
         legacyRelease={(script?.content as any)?.legacyRelease ?? null}
       />
+      {bv !== undefined && (
+        <BusinessFactCheckPanel
+          episodeId={episode.id}
+          verification={bv}
+          review={bizContent?.businessFactReview ?? null}
+          claims={businessClaims}
+          current={!!bv && bv.fingerprint === scriptTextFingerprint(script?.content)}
+        />
+      )}
       <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
 
       <div className="studioCard">

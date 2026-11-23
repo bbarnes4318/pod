@@ -106,7 +106,7 @@ async function main() {
     const [real, fake] = await assignProvenance([
       { field: "PUBLIC_PRICING", value: "From $28/month", evidenceQuote: "Plans start at $28 per month", sourceIndex: 0, confidence: 0.95 },
       { field: "COMPETITORS", value: "Acme Life", evidenceQuote: "unlike Acme Life, we answer the phone", sourceIndex: 0, confidence: 0.9 },
-    ], sources);
+    ], sources, { websiteUrl: "https://example.com/" });
     assert.equal(real.provenance, "SOURCE_SUPPORTED");
     assert.equal(real.sourceUrl, "https://example.com/");
     assert.equal(fake.provenance, "UNVERIFIED");
@@ -114,6 +114,11 @@ async function main() {
     assert.equal(fake.offeredQuote, "unlike Acme Life, we answer the phone", "kept for audit");
     assert.ok(fake.confidence <= 0.5);
     assert.ok([real, fake].every((f) => f.status === "pending"), "nothing is accepted on the user's behalf");
+  });
+  await check("undated page of unknown ownership can't establish a CURRENT price → UNVERIFIED (date unknown)", async () => {
+    const [f] = await assignProvenance([{ field: "PUBLIC_PRICING", value: "From $28/month", evidenceQuote: "Plans start at $28 per month", sourceIndex: 0, confidence: 0.95 }], sources);
+    assert.equal(f.provenance, "UNVERIFIED");
+    assert.match(f.verification!.reasons.join(" "), /currency can.t be established/);
   });
   await check("correct quote contradicting the claimed price → SOURCE_CONTRADICTED", async () => {
     const [f] = await assignProvenance([{ field: "PUBLIC_PRICING", value: "Plans start at $19 per month", evidenceQuote: "Plans start at $28 per month", sourceIndex: 0, confidence: 0.95 }], sources);
