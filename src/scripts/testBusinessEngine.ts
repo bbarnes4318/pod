@@ -21,7 +21,7 @@ import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
 import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS, parseTopicsOutput, topicBatches, mergeTopicBatches } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 import { businessLLM, withSchemaInstructions } from "../lib/business/schemaInstructions";
 import { zodToJsonSchema } from "../lib/business/zodJsonSchema";
@@ -726,6 +726,20 @@ async function main() {
     // Approved scripts are never re-statused here.
     stored = { ...stored, status: "approved" };
     assert.equal(await reauditBusinessScript(db, "s1"), null);
+  });
+
+  // OWNER FEEDBACK (Milestone 2): business episodes sounded like 1940s robots —
+  // the writer gave Fish no delivery at all. Lines now carry it.
+  await check("business lines carry delivery to the voice engine (energy, pause, interruption)", () => {
+    assert.deepEqual(businessLineDelivery({ energy: "high", pauseBefore: "breath" }, 3), { isInterruption: false, energy: "high", pauseBefore: "breath" });
+    assert.deepEqual(businessLineDelivery({ isInterruption: true, pauseBefore: "long" }, 5), { isInterruption: true, energy: "medium", pauseBefore: "none" }, "an interruption jumps straight in");
+    assert.equal(businessLineDelivery({ isInterruption: true }, 0).isInterruption, false, "nothing to interrupt on the first line");
+    assert.deepEqual(businessLineDelivery({}, 2), { isInterruption: false, energy: "medium", pauseBefore: "beat" });
+    const lines = [{ pauseBefore: "long" as const }, { pauseBefore: "beat" as const }, { pauseBefore: "long" as const }, { pauseBefore: "long" as const }];
+    capDramaticPauses(lines);
+    assert.deepEqual(lines.map((l) => l.pauseBefore), ["long", "beat", "long", "breath"]);
+    // Expressive tags never count as spoken words for the grounding audit.
+    assert.deepEqual(auditBusinessLine(makeSnapshot(), { text: "[laughs] Okay, that's nasty. [sighs]", isFactualClaim: false, factIds: [] }).errors, []);
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

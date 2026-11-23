@@ -58,6 +58,13 @@ export interface DeriveInput {
   mixStartedAtMs: number | null;
   /** EpisodeAudioRender.failureReason when the latest mix failed. */
   mixFailureReason: string | null;
+  /**
+   * Why the active stage CANNOT start yet — a release gate waiting on a person
+   * (editorial release, business factual review). Without this the console read
+   * "Recording the hosts" from the status alone while nothing was queued,
+   * because the job was refused at the gate.
+   */
+  releaseBlock?: string | null;
 }
 
 export interface DeriveResult {
@@ -116,7 +123,10 @@ export function deriveProduction(input: DeriveInput): DeriveResult {
     }
 
     if (state === "active") {
-      if (stage.checkpoint) {
+      if (input.releaseBlock && job?.status !== "running" && !(stage.key === "mix" && input.mixStartedAtMs !== null)) {
+        // Held at a release gate: waiting on a person, not a worker.
+        state = "checkpoint";
+      } else if (stage.checkpoint) {
         // Waiting on the human, not on a worker — never show a busy affordance.
         state = "checkpoint";
       } else if (job?.status === "running") {
@@ -139,7 +149,7 @@ export function deriveProduction(input: DeriveInput): DeriveResult {
     return {
       key: stage.key,
       label: stage.label,
-      blurb: stage.blurb,
+      blurb: state === "checkpoint" && input.releaseBlock && idx === activeIdx ? input.releaseBlock : stage.blurb,
       state,
       elapsedMs,
       typicalMs,
@@ -183,7 +193,7 @@ export function deriveProduction(input: DeriveInput): DeriveResult {
       : stalled
         ? "Waiting for a production worker"
         : awaitingUser
-          ? "Your read is next"
+          ? input.releaseBlock && activeKey !== "review" ? "Waiting for your approval" : "Your read is next"
           : stageDef?.verb ?? "Working…";
 
   // Poll fast while voicing (the only stage that visibly ticks), slower on

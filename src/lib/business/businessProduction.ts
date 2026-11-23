@@ -129,6 +129,12 @@ const LineSchema = z.object({
   speakerName: z.string(),
   text: z.string().min(1).max(1200),
   tone: z.string().max(40).optional(),
+  // Delivery: the same controls sports scripts give the voice engine. Business
+  // scripts used to carry none of them, so Fish read every line flat with the
+  // same gap between turns — "robots from the 1940s" (owner, Milestone 2).
+  energy: z.enum(["low", "medium", "high"]).optional(),
+  pauseBefore: z.enum(["none", "beat", "breath", "long"]).optional(),
+  isInterruption: z.boolean().optional(),
   isFactualClaim: z.boolean(),
   factIds: z.array(z.string()).max(6),
 });
@@ -149,7 +155,26 @@ export interface ScriptLine {
   needsHumanReview: boolean;
   evidenceRefs: { type: "businessSource"; id: string; factId: string }[];
   isInterruption: boolean;
+  energy?: "low" | "medium" | "high";
+  pauseBefore?: "none" | "beat" | "breath" | "long";
   reviewNotes?: string[];
+}
+
+/** Delivery for one written line. An interruption needs something to cut, so
+ *  never on the first line, and it always jumps straight in. */
+export function businessLineDelivery(l: { energy?: ScriptLine["energy"]; pauseBefore?: ScriptLine["pauseBefore"]; isInterruption?: boolean }, index: number) {
+  const isInterruption = !!l.isInterruption && index > 0;
+  return {
+    isInterruption,
+    energy: l.energy ?? ("medium" as const),
+    pauseBefore: isInterruption ? ("none" as const) : (l.pauseBefore ?? ("beat" as const)),
+  };
+}
+
+/** A dramatic beat stops being dramatic when it's everywhere: keep the first two. */
+export function capDramaticPauses(lines: { pauseBefore?: ScriptLine["pauseBefore"] }[]): void {
+  let longs = 0;
+  for (const l of lines) if (l.pauseBefore === "long" && ++longs > 2) l.pauseBefore = "breath";
 }
 
 /** Numbers a line may say: anything in the facts it cites, plus labelled hypothetical analysis inputs/results. */
@@ -216,7 +241,21 @@ GROUNDING (non-negotiable):
 
 SHAPE: open with the hook within the first two lines; make the listener's stake clear immediately; go progressively deeper (context → mechanism → analysis → practical application); use the worked examples; acknowledge uncertainties honestly; close with the takeaway and a natural sign-off. No sports framing, no betting, no manufactured "two sides" unless the format is a debate.
 Segment types: cold_open, intro, a segment per story beat, closing.
-Return {"segments":[{type, title, lines:[{speakerName, text, tone, isFactualClaim, factIds}]}]}.`;
+PODCAST TIMING AND DELIVERY — this is what makes synthetic voices sound like two smart people instead of a text-to-speech demo:
+- A real conversation, not a lecture with a question-asker. Both hosts think out loud: one explains, the other pushes back, reframes in plain words, connects it to the listener's day, finishes the other's thought, cracks a dry joke.
+- SHORT TURNS. Most lines 4–30 words. Never a paragraph: if an explanation runs past ~40 words, break it up — the other host reacts, asks the obvious follow-up, or says the conclusion before the expert does.
+- Reactions as their own tiny lines, the way people actually listen: "Wait—", "Right.", "Huh.", "Oh, that's nasty.", "Okay, say that again.", "No way." (pauseBefore "none").
+- Interruptions: two to four per episode a host cuts in mid-sentence — the previous line ends with "—" and the next line has isInterruption true and pauseBefore "none".
+- Thinking out loud now and then: a false start or a self-correction ("So it's— actually, no, it's worse than that.").
+- Inline expressive tags, square brackets, EXACTLY these spellings, placed right where it happens: [laughs] [laughs softly] [chuckles] [sighs] [exhales] [inhales] [scoffs] [hesitates] [pause] [gasps] [excited] [curious] [deadpan] [sarcastic] [frustrated]. Use them where a real person would — a laugh at something absurd, a sigh at a bad practice, [curious] on a genuine question, [deadpan] on a dry aside. About one every two or three lines, never two in a row from the same host, never inside a number or a cited fact.
+- "pauseBefore" on every line: "none" = jumps straight in (reactions, interruptions, quick back-and-forth); "beat" = normal turn-taking; "breath" = before a pivot, a punchline or a key number; "long" = a dramatic beat before a big reveal, at most twice per episode.
+- "energy" on every line: "low", "medium" or "high". Vary it: quieter and slower for a careful explanation, up for a surprising fact or a joke. An episode that's all one level sounds fake.
+- "tone": one word for how the line is meant (curious, amused, skeptical, emphatic, reflective, dry, warm, incredulous).
+- Write numbers the way people say them out loud.
+- Short lines still cite: EVERY line that states a fact, or any part of one, sets isFactualClaim true and lists its fact ids — splitting a fact across three quick lines means citing it on each line that carries it. Reactions, questions and jokes don't cite.
+- Don't read unverified material on air ("there's a claim that…", "not independently verified"). Leave it out, or put it in the honest-uncertainty moment near the end, once.
+
+Return {"segments":[{type, title, lines:[{speakerName, text, tone, energy, pauseBefore, isInterruption, isFactualClaim, factIds}]}]}.`;
 
 export async function generateBusinessScript(
   db: PrismaClient,
@@ -285,7 +324,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
     jsonSchema: { type: "object" },
     temperature: 0.6,
     maxTokens: 16000,
-    validate: (v) => (ScriptSchema.safeParse(v).success ? null : "script did not match {segments:[{type,title,lines:[{speakerName,text,tone,isFactualClaim,factIds}]}]}"),
+    validate: (v) => (ScriptSchema.safeParse(v).success ? null : "script did not match {segments:[{type,title,lines:[{speakerName,text,tone,energy,pauseBefore,isInterruption,isFactualClaim,factIds}]}]}"),
   });
   const parsed = ScriptSchema.safeParse(raw);
   if (!parsed.success) throw new Error("The business script writer returned an unusable result.");
@@ -303,15 +342,18 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
       if (!host) { dropped++; return []; }
       const audit = auditBusinessLine(snapshot, l);
       if (audit.errors.length) flaggedLines++;
+      const idx = lineIndex++;
+      const delivery = businessLineDelivery(l, idx);
       return [{
-        lineIndex: lineIndex++, speakerName: host.name, speakerHostId: host.id, text: l.text.trim(), tone: l.tone || "conversational",
+        lineIndex: idx, speakerName: host.name, speakerHostId: host.id, text: l.text.trim(), tone: l.tone || "conversational",
         isFactualClaim: l.isFactualClaim, needsHumanReview: audit.errors.length > 0,
         evidenceRefs: audit.refs.map((id) => ({ type: "businessSource" as const, id: snapshot.facts.find((f) => f.id === id)!.sourceId, factId: id })),
-        isInterruption: false,
+        ...delivery,
         ...(audit.errors.length ? { reviewNotes: audit.errors } : {}),
       }];
     }),
   })).filter((s) => s.lines.length > 0);
+  capDramaticPauses(segments.flatMap((s) => s.lines));
   if (dropped) reasons.push(`${dropped} line(s) used a speaker outside the cast and were dropped.`);
   if (flaggedLines) reasons.push(`${flaggedLines} line(s) flagged for grounding problems — fact-check will block them until fixed.`);
   const total = segments.reduce((n, s) => n + s.lines.length, 0);

@@ -8,7 +8,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { recordBusinessFactReviewAction } from "./actions";
+import { recordBusinessFactReviewAction, rerunBusinessFactCheckAction } from "./actions";
 import { claimsNeedingReview, type BusinessFactReview, type BusinessVerification, type ClaimDecision, type ClaimOutcome, type ClaimStatus } from "@/lib/business/businessVerification";
 
 const STATE_COPY: Record<string, string> = {
@@ -37,10 +37,31 @@ export interface BusinessFactCheckPanelProps {
   claims: ClaimOutcome[];
   /** False when the script text changed after the check. */
   current: boolean;
+  /** True when the latest script is approved, so a fact-check can be (re)run. */
+  canRun?: boolean;
 }
 
-export default function BusinessFactCheckPanel({ episodeId, verification, review, claims, current }: BusinessFactCheckPanelProps) {
+export default function BusinessFactCheckPanel({ episodeId, verification, review, claims, current, canRun = false }: BusinessFactCheckPanelProps) {
   const router = useRouter();
+  const [rerunning, setRerunning] = useState(false);
+  const [rerunMsg, setRerunMsg] = useState<string | null>(null);
+  const rerun = async () => {
+    setRerunning(true);
+    setRerunMsg(null);
+    const res = (await rerunBusinessFactCheckAction(episodeId)) as { success: boolean; error?: string };
+    setRerunMsg(res.success ? "Fact-check queued — this page updates when it finishes." : res.error || "Couldn't queue the fact-check.");
+    setRerunning(false);
+    if (res.success) router.refresh();
+  };
+  const rerunButton = (label: string, primary: boolean) =>
+    canRun ? (
+      <div className="gate-actions">
+        <button type="button" className={primary ? "btnPrimary" : "btnGhost"} onClick={rerun} disabled={rerunning}>
+          {rerunning ? "Queuing…" : label}
+        </button>
+        {rerunMsg && <span className="epNoteSmall" role="status">{rerunMsg}</span>}
+      </div>
+    ) : null;
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +76,7 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
       <section className="studio-panel gate-panel gate-review" aria-label="Business fact-check">
         <div className="gate-head"><span className="gate-badge">Not fact-checked</span></div>
         <p className="gate-blurb">This business script hasn&apos;t been fact-checked. Voicing and publishing stay locked until it is.</p>
+        {rerunButton("Run fact-check", true)}
       </section>
     );
   }
@@ -97,6 +119,7 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
         <dd>{new Date(verification.checkedAt).toLocaleString()}</dd>
       </dl>
       {!current && <p className="gate-blurb">The text was edited after this check. Re-run the fact-check before voicing.</p>}
+      {!current ? rerunButton("Re-run fact-check", true) : verification.overall !== "FACT_CHECK_PASSED" ? rerunButton("Re-run fact-check", false) : null}
       {review && current && (
         <p className="gate-blurb">
           Reviewed by <strong>{review.actor}</strong> on {new Date(review.at).toLocaleString()}: &ldquo;{review.reason}&rdquo;.{" "}
@@ -153,8 +176,8 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
         <div className="gate-release-confirm mt-3">
           <p>
             Independent verification couldn&apos;t confirm everything. Decide each of the {flagged.length} unverified
-            claim{flagged.length === 1 ? "" : "s"} below. Wrong or unsupported? Edit or delete the line in the transcript
-            instead &mdash; that re-runs the check. Your name, decisions and notes are stored; the claims stay marked as not
+            claim{flagged.length === 1 ? "" : "s"} below. Wrong or unsupported? Fix the line in the Transcript tab, then press
+            Re-run fact-check above. Your name, decisions and notes are stored; the claims stay marked as not
             independently verified.
           </p>
           <ol className="gate-reasons">
