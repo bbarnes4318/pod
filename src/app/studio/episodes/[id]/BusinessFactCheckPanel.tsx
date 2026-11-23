@@ -9,7 +9,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { recordBusinessFactReviewAction } from "./actions";
-import type { BusinessFactReview, BusinessVerification, ClaimOutcome, ClaimStatus } from "@/lib/business/businessVerification";
+import { claimsNeedingReview, type BusinessFactReview, type BusinessVerification, type ClaimDecision, type ClaimOutcome, type ClaimStatus } from "@/lib/business/businessVerification";
 
 const STATE_COPY: Record<string, string> = {
   DETERMINISTIC_CHECK_PASSED: "Deterministic checks passed",
@@ -45,6 +45,10 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [decisions, setDecisions] = useState<Record<string, { decision: ClaimDecision | ""; note: string }>>({});
+  const keyOf = (c: { lineIndex: number; text: string }) => `${c.lineIndex}|${c.text}`;
+  const setDecision = (k: string, patch: Partial<{ decision: ClaimDecision | ""; note: string }>) =>
+    setDecisions((d) => ({ ...d, [k]: { ...(d[k] ?? { decision: "", note: "" }), ...patch } }));
 
   if (!verification) {
     return (
@@ -56,7 +60,8 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
   }
 
   const tone = !current ? "gate-review" : verification.overall === "FACT_CHECK_PASSED" ? "gate-pass" : verification.overall === "FACT_CHECK_FAILED" ? "gate-hold" : "gate-review";
-  const flagged = claims.filter((c) => c.status !== "SUPPORTED" && c.status !== "NOT_A_CLAIM");
+  const flagged = claimsNeedingReview(claims);
+  const allDecided = flagged.every((c) => decisions[keyOf(c)]?.decision && (decisions[keyOf(c)]?.note.trim().length ?? 0) >= 15);
   const shown = showAll ? claims : flagged;
   const canReview = current && verification.overall === "NEEDS_HUMAN_REVIEW";
 
@@ -64,7 +69,8 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
     setBusy(true);
     setError(null);
     try {
-      const res = (await recordBusinessFactReviewAction(episodeId, reason)) as { success: boolean; error?: string };
+      const dispositions = flagged.map((c) => ({ lineIndex: c.lineIndex, text: c.text, decision: decisions[keyOf(c)]?.decision, note: decisions[keyOf(c)]?.note ?? "" }));
+      const res = (await recordBusinessFactReviewAction(episodeId, reason, dispositions)) as { success: boolean; error?: string };
       if (!res.success) setError(res.error || "Couldn't record the review.");
       else router.refresh();
     } finally {
@@ -94,8 +100,19 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
       {review && current && (
         <p className="gate-blurb">
           Reviewed by <strong>{review.actor}</strong> on {new Date(review.at).toLocaleString()}: &ldquo;{review.reason}&rdquo;.{" "}
-          {review.unresolved.length} claim{review.unresolved.length === 1 ? " was" : "s were"} accepted without independent verification.
+          {review.unresolved.length} claim{review.unresolved.length === 1 ? " was" : "s were"} decided by the reviewer, not independently verified.
         </p>
+      )}
+      {review && current && review.unresolved.length > 0 && (
+        <ul className="gate-reasons">
+          {review.unresolved.map((u, i) => (
+            <li key={i}>
+              <strong>Line {u.lineIndex}</strong> · was {CLAIM_COPY[u.status]} · {u.decision === "VERIFIED_BY_REVIEWER" ? "checked by the reviewer" : "judged not a factual claim"}
+              <br />
+              <span className="epNoteSmall">&ldquo;{u.text}&rdquo; — {u.note}</span>
+            </li>
+          ))}
+        </ul>
       )}
       {verification.reasons.length > 0 && verification.overall !== "FACT_CHECK_PASSED" && (
         <ul className="gate-reasons">
@@ -115,6 +132,12 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
                 {c.detectedBy.includes("writer_label") ? "" : " · found by the checker, not labelled by the writer"}
                 <br />
                 <span className="epNoteSmall">&ldquo;{c.text}&rdquo;{c.note ? ` — ${c.note}` : ""}</span>
+                {(c.evidence ?? []).map((e) => (
+                  <span key={e.factId} className="epNoteSmall">
+                    <br />Cited {e.factId}: {e.claim} · source says &ldquo;{e.quote}&rdquo; ·{" "}
+                    <a href={e.url} target="_blank" rel="noopener noreferrer">open source</a>
+                  </span>
+                ))}
               </li>
             ))}
           </ul>
@@ -129,16 +152,48 @@ export default function BusinessFactCheckPanel({ episodeId, verification, review
       {canReview && (
         <div className="gate-release-confirm mt-3">
           <p>
-            Independent verification couldn&apos;t confirm everything. You can record that <strong>you</strong> checked the
-            {" "}{flagged.length} unverified claim{flagged.length === 1 ? "" : "s"} against the sources. Your name, your note and
-            the exact claims are stored; they stay marked as not independently verified.
+            Independent verification couldn&apos;t confirm everything. Decide each of the {flagged.length} unverified
+            claim{flagged.length === 1 ? "" : "s"} below. Wrong or unsupported? Edit or delete the line in the transcript
+            instead &mdash; that re-runs the check. Your name, decisions and notes are stored; the claims stay marked as not
+            independently verified.
           </p>
+          <ol className="gate-reasons">
+            {flagged.map((c) => {
+              const k = keyOf(c);
+              const d = decisions[k];
+              return (
+                <li key={k}>
+                  <strong>Line {c.lineIndex}</strong> · {CLAIM_COPY[c.status]}
+                  <br />
+                  <span className="epNoteSmall">&ldquo;{c.text}&rdquo;</span>
+                  {(c.evidence ?? []).map((e) => (
+                    <span key={e.factId} className="epNoteSmall">
+                      <br />Cited {e.factId}: source says &ldquo;{e.quote}&rdquo; ·{" "}
+                      <a href={e.url} target="_blank" rel="noopener noreferrer">open source</a>
+                    </span>
+                  ))}
+                  <label className="gate-release-note">
+                    <span>Your decision</span>
+                    <select value={d?.decision ?? ""} onChange={(e) => setDecision(k, { decision: e.target.value as ClaimDecision | "" })}>
+                      <option value="">Choose…</option>
+                      <option value="VERIFIED_BY_REVIEWER">I checked it against a source and it is accurate</option>
+                      <option value="NOT_A_FACTUAL_CLAIM">It is opinion or framing, not a statement of fact</option>
+                    </select>
+                  </label>
+                  <label className="gate-release-note">
+                    <span>{d?.decision === "NOT_A_FACTUAL_CLAIM" ? "Why it isn't a factual claim" : `What you checked${c.factIds.length ? "" : " (include the source URL)"}`}</span>
+                    <textarea value={d?.note ?? ""} onChange={(e) => setDecision(k, { note: e.target.value })} rows={2} />
+                  </label>
+                </li>
+              );
+            })}
+          </ol>
           <label className="gate-release-note">
-            <span>What did you check?</span>
+            <span>Summary of your review</span>
             <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder="e.g. Checked lines 4, 12 and 30 against the cited NAIC report and the carrier's rate page" />
           </label>
           <div className="gate-release-buttons">
-            <button type="button" className="btnPrimary" onClick={submit} disabled={busy || reason.trim().length < 10}>
+            <button type="button" className="btnPrimary" onClick={submit} disabled={busy || reason.trim().length < 10 || !allDecided}>
               {busy ? "Recording…" : "Record my factual review"}
             </button>
           </div>

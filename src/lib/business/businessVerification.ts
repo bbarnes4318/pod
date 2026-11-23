@@ -36,6 +36,22 @@ export interface ClaimOutcome {
   status: ClaimStatus;
   factIds: string[];
   note?: string;
+  /** The cited dossier evidence, so a reviewer can inspect it. */
+  evidence?: { factId: string; claim: string; quote: string; url: string }[];
+}
+
+/**
+ * A reviewer's decision on ONE unresolved claim. "Correct or remove" is not a
+ * disposition: edit the line in the transcript, which voids this check and
+ * forces a re-check of the new text.
+ */
+export type ClaimDecision = "VERIFIED_BY_REVIEWER" | "NOT_A_FACTUAL_CLAIM";
+export interface ClaimDisposition {
+  lineIndex: number;
+  text: string;
+  decision: ClaimDecision;
+  /** VERIFIED_BY_REVIEWER: what was checked (a URL, unless the claim already cites dossier evidence). NOT_A_FACTUAL_CLAIM: why. */
+  note: string;
 }
 
 export interface BusinessVerification {
@@ -60,8 +76,10 @@ export interface BusinessFactReview {
   scriptVersion: number;
   fingerprint: string;
   reason: string;
-  /** What the reviewer signed off on, verbatim: unresolved claims stay listed with their original statuses. */
-  unresolved: { lineIndex: number; text: string; status: ClaimStatus }[];
+  /** The fact-check result the review was made against. */
+  factCheckResultId: string | null;
+  /** Each unresolved claim, its ORIGINAL automated status, and the reviewer's own disposition. */
+  unresolved: { lineIndex: number; text: string; status: ClaimStatus; decision: ClaimDecision; note: string; reviewedBy: string; reviewedAt: string }[];
   permittedStages: string[];
 }
 
@@ -137,10 +155,20 @@ export function assertBusinessRelease(scriptId: string, content: unknown, stage:
   return v;
 }
 
+/** Unresolved claims a human review must disposition one by one. */
+export function claimsNeedingReview(claims: ClaimOutcome[]): ClaimOutcome[] {
+  return claims.filter((x) => x.status !== "SUPPORTED" && x.status !== "NOT_A_CLAIM");
+}
+
+const NUMERIC_KINDS = new Set(["number", "money", "percent"]);
+const claimKey = (c: { lineIndex: number; text: string }) => `${c.lineIndex}|${c.text}`;
+
 /**
  * Build the review record + the updated verification. Pure; the caller persists.
  * Refuses FACT_CHECK_FAILED (deterministic errors / contradictions are fixed by
- * editing, not signed off) and stale fingerprints. A reason is mandatory.
+ * editing, not signed off) and stale fingerprints. Every unresolved claim needs
+ * its own disposition with a substantive note: a single blanket reason can't
+ * sign off a script.
  */
 export function buildFactReview(input: {
   content: unknown;
@@ -149,6 +177,7 @@ export function buildFactReview(input: {
   actor: string;
   reason: string;
   claims: ClaimOutcome[];
+  dispositions: ClaimDisposition[];
   permittedStages?: string[];
   now?: Date;
 }): { ok: true; review: BusinessFactReview; verification: BusinessVerification } | { ok: false; error: string } {
@@ -158,20 +187,45 @@ export function buildFactReview(input: {
   if (!v) return { ok: false, error: "Run the fact-check first." };
   const fp = scriptTextFingerprint(input.content);
   if (v.fingerprint !== fp) return { ok: false, error: "The script changed since its fact-check. Re-run the fact-check, then review." };
-  if (v.overall === "FACT_CHECK_FAILED") return { ok: false, error: "The fact-check failed (an invented number, a contradiction, or a bad citation). Fix the script; a review can't sign that off." };
+  if (v.overall === "FACT_CHECK_FAILED" || input.claims.some((x) => x.status === "CONTRADICTED")) {
+    return { ok: false, error: "The fact-check failed (an invented number, a contradiction, or a bad citation). Fix the script; a review can't sign that off." };
+  }
   if (v.overall === "FACT_CHECK_PASSED" && v.basis === "SEMANTIC") return { ok: false, error: "This script already passed independent verification." };
   const reason = input.reason.trim();
-  if (reason.length < 10) return { ok: false, error: "Say what you checked (at least a sentence)." };
+  if (reason.length < 10) return { ok: false, error: "Summarise what you checked (at least a sentence)." };
   if (!input.actor.trim()) return { ok: false, error: "A review must be attributable to a person." };
   const at = (input.now ?? new Date()).toISOString();
-  const unresolved = input.claims.filter((x) => x.status !== "SUPPORTED" && x.status !== "NOT_A_CLAIM").map((x) => ({ lineIndex: x.lineIndex, text: x.text, status: x.status }));
+
+  const byKey = new Map(input.dispositions.map((d) => [claimKey(d), d]));
+  const unresolved: BusinessFactReview["unresolved"] = [];
+  for (const claim of claimsNeedingReview(input.claims)) {
+    const d = byKey.get(claimKey(claim));
+    const where = `Line ${claim.lineIndex} ("${claim.text.slice(0, 60)}")`;
+    if (!d) return { ok: false, error: `${where} has no decision. Every unverified claim needs one, or edit the line out of the script.` };
+    const note = (d.note ?? "").trim();
+    if (note.length < 15) return { ok: false, error: `${where}: say what you checked or why (at least 15 characters).` };
+    if (d.decision === "VERIFIED_BY_REVIEWER") {
+      if (!claim.factIds.length && !/https?:\/\/\S+/.test(note)) {
+        return { ok: false, error: `${where} cites no evidence. Give the URL of the source you checked it against, or edit the line.` };
+      }
+    } else if (d.decision === "NOT_A_FACTUAL_CLAIM") {
+      if (claim.factIds.length || claim.kinds.some((k) => NUMERIC_KINDS.has(k))) {
+        return { ok: false, error: `${where} states a figure or cites evidence as fact; it can't be waved through as opinion. Verify it or edit the line.` };
+      }
+    } else {
+      return { ok: false, error: `${where}: unknown decision.` };
+    }
+    unresolved.push({ lineIndex: claim.lineIndex, text: claim.text, status: claim.status, decision: d.decision, note, reviewedBy: input.actor, reviewedAt: at });
+  }
+
   const review: BusinessFactReview = {
     actor: input.actor, at, scriptId: input.scriptId, scriptVersion: input.scriptVersion, fingerprint: fp, reason,
-    unresolved, permittedStages: input.permittedStages?.length ? input.permittedStages : [...BUSINESS_RELEASE_STAGES],
+    factCheckResultId: v.factCheckResultId, unresolved,
+    permittedStages: input.permittedStages?.length ? input.permittedStages : [...BUSINESS_RELEASE_STAGES],
   };
   return {
     ok: true,
     review,
-    verification: { ...v, overall: "FACT_CHECK_PASSED", basis: "HUMAN_REVIEW", reasons: [`Human factual review by ${input.actor}; ${unresolved.length} claim(s) not independently verified.`] },
+    verification: { ...v, overall: "FACT_CHECK_PASSED", basis: "HUMAN_REVIEW", reasons: [`Human factual review by ${input.actor}; ${unresolved.length} claim(s) dispositioned by the reviewer, not independently verified.`] },
   };
 }

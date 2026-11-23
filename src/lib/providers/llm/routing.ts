@@ -403,6 +403,7 @@ export class RoutedLLMProvider implements LLMProvider {
   readonly name: string;
   private readonly plan: RolePlan;
   private readonly instances = new Map<string, LLMProvider>();
+  private readonly used = new Set<string>();
 
   constructor(plan: RolePlan) {
     this.plan = plan;
@@ -411,6 +412,11 @@ export class RoutedLLMProvider implements LLMProvider {
 
   get rolePlan(): RolePlan {
     return this.plan;
+  }
+
+  /** candidateKey of every model that actually answered a call (fallbacks included). */
+  get modelsUsed(): string[] {
+    return [...this.used];
   }
 
   getAccumulatedUsage(): LLMUsage {
@@ -581,7 +587,10 @@ export class RoutedLLMProvider implements LLMProvider {
               fallbacks,
             },
             () => invoke(provider, opts)
-          );
+          ).then((r) => {
+            this.used.add(key);
+            return r;
+          });
         } catch (err) {
           const decision = fallbackDecision(err, candidate, next, policyCtx);
           failures.push(`${key} [${candidate.source}] failed (${decision.category}): ${describeFailure(err)}`);
@@ -682,6 +691,16 @@ export class RoutedLLMProvider implements LLMProvider {
  * built — same class, same eager construction, same errors. Any other
  * configuration returns the routed chain.
  */
+/**
+ * The models that actually answered calls on a provider from getRoleLLMProvider.
+ * Routed: what ran, fallbacks included. Legacy bypass: its single candidate.
+ */
+export function modelsUsedBy(provider: LLMProvider, role: LLMRole): string[] {
+  if (provider instanceof RoutedLLMProvider) return provider.modelsUsed;
+  const only = resolveRolePlan(role).candidates[0];
+  return only ? [candidateKey(only)] : [];
+}
+
 export function getRoleLLMProvider(role: LLMRole, profileOverride?: RoutingProfile): LLMProvider {
   const plan = resolveRolePlan(role, profileOverride);
   if (plan.isLegacyBypass) {

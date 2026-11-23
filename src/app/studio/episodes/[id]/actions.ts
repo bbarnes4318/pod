@@ -17,6 +17,7 @@ import { recordHumanRelease, revokeHumanRelease } from "@/lib/services/scriptRel
 import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import type { ScriptEditorialDecision } from "@/lib/services/scriptEditorialGate";
 import { recordBusinessFactReview } from "@/lib/business/businessProduction";
+import type { ClaimDisposition } from "@/lib/business/businessVerification";
 
 type Fail = { success: false; error: string };
 
@@ -108,10 +109,17 @@ export async function revokeScriptEditorialRelease(episodeId: string) {
  * editorial release above: that one says "voice it anyway", this one says
  * "I checked these facts" — and only this one satisfies the business fact rule.
  */
-export async function recordBusinessFactReviewAction(episodeId: string, reason: string) {
+export async function recordBusinessFactReviewAction(episodeId: string, reason: string, dispositions: unknown) {
   const gate = await ownedLatestScript(episodeId);
   if (!gate.success) return gate;
-  const res = await recordBusinessFactReview(db, { scriptId: gate.scriptId, actor: gate.approvedBy, reason: String(reason ?? "") });
+  // Untrusted client input: keep only well-formed entries; buildFactReview enforces the rules.
+  const clean: ClaimDisposition[] = (Array.isArray(dispositions) ? dispositions : []).flatMap((d) => {
+    const x = d as Partial<ClaimDisposition> | null;
+    if (!x || typeof x.lineIndex !== "number" || typeof x.text !== "string" || typeof x.note !== "string") return [];
+    if (x.decision !== "VERIFIED_BY_REVIEWER" && x.decision !== "NOT_A_FACTUAL_CLAIM") return [];
+    return [{ lineIndex: x.lineIndex, text: x.text, decision: x.decision, note: x.note.slice(0, 2000) }];
+  });
+  const res = await recordBusinessFactReview(db, { scriptId: gate.scriptId, actor: gate.approvedBy, reason: String(reason ?? ""), dispositions: clean });
   if (!res.success) return { success: false as const, error: res.error };
   revalidatePath(`/studio/episodes/${episodeId}`);
   return { success: true as const, unresolved: res.unresolved };

@@ -17,6 +17,8 @@ export interface EditorialGatePanelProps {
   provenance?: ScriptPipelineProvenance | null;
   invariants?: InvariantReport | null;
   humanRelease?: { approvedBy?: string; approvedAt?: string; approvedDecision?: string } | null;
+  /** Business scripts are never scored by the automated editorial judge; say so plainly. */
+  business?: boolean;
   /** The durable ScriptLegacyRelease row, when a pre-cutover script was let
    *  through for in-flight compatibility. Shown prominently because it means
    *  this episode reached production WITHOUT a quality verdict. */
@@ -54,14 +56,22 @@ function pathCopy(path?: string): { label: string; warn: boolean } {
   return { label: path || "unknown", warn: true };
 }
 
-export default function EditorialGatePanel({ episodeId, gate, provenance, invariants, humanRelease, legacyRelease }: EditorialGatePanelProps) {
+export default function EditorialGatePanel({ episodeId, gate, provenance, invariants, humanRelease, legacyRelease, business }: EditorialGatePanelProps) {
   if (!gate?.decision) {
     return (
-      <section className="studio-panel gate-panel gate-hold">
+      <section className={`studio-panel gate-panel ${business && humanRelease?.approvedBy ? "gate-pass" : "gate-hold"}`}>
         <h3>Editorial gate</h3>
-        <p>
-          This script carries no editorial verdict. It has never been evaluated, so production will refuse it.
-        </p>
+        {business ? (
+          <p>
+            Step 1 of 2 before voicing: <strong>editorial approval</strong>. Business scripts aren&apos;t scored by the
+            automated editorial judge, so a person must read the script and approve it for production. This says
+            nothing about facts &mdash; the business fact-check below is step 2 and is required separately.
+          </p>
+        ) : (
+          <p>
+            This script carries no editorial verdict. It has never been evaluated, so production will refuse it.
+          </p>
+        )}
         {episodeId && (
           <ReleaseFromHold
             episodeId={episodeId}
