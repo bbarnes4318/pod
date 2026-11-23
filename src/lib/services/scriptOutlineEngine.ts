@@ -5,6 +5,7 @@
 // return perfectly valid JSON that is still far too short, repetitive, or
 // mechanically shaped; structural validity alone is not movement completion.
 
+import { isBusinessDomain } from "./creativeDomain";
 import { LLMProvider } from "../providers/llm/interface";
 import { withLlmStage } from "../providers/llm/costLedger";
 import { stripAudioTags } from "../audio/speechText";
@@ -627,10 +628,10 @@ export async function generateEpisodeOutline(
     JSON.stringify(skeleton, null, 2),
     "",
     "For every beat fill title, goal (what the beat changes), angle (the specific question or pressure), escalation, factRefs, and an optional callback.",
-    "- cold_open: mid-argument on the hottest take, and it names the team and player within its first two lines.",
-    "- intro: welcome, both hosts by name, and a one-plain-sentence tease of EVERY topic beat (team, player, what happened).",
-    "- topic: ALSO fill \"orientation\": two or three plain sentences a host will say FIRST to catch up a listener who missed it — the team, the player's or coach's full name and job, what happened, when, and the key number, all from the evidence. Then the argument: the question a FAN would actually argue about this game, this player or this team. It is about baseball/football/basketball, never about 'who wrote the sentence' or 'the building'.",
-    "- transition: names the next team or player. Nothing else.",
+    isBusinessDomain() ? "- cold_open: mid-argument on the sharpest point, and it names the specific mechanism or problem within its first two lines." : "- cold_open: mid-argument on the hottest take, and it names the team and player within its first two lines.",
+    isBusinessDomain() ? "- intro: welcome, both hosts by name, and a one-plain-sentence tease of EVERY topic beat (the problem, who it costs)." : "- intro: welcome, both hosts by name, and a one-plain-sentence tease of EVERY topic beat (team, player, what happened).",
+    isBusinessDomain() ? "- topic: ALSO fill \"orientation\": two or three plain sentences a host will say FIRST to catch up a listener who has not read the research — what the mechanism is, who it hits, and the key fact, all from the evidence." : "- topic: ALSO fill \"orientation\": two or three plain sentences a host will say FIRST to catch up a listener who missed it — the team, the player's or coach's full name and job, what happened, when, and the key number, all from the evidence. Then the argument: the question a FAN would actually argue about this game, this player or this team. It is about baseball/football/basketball, never about 'who wrote the sentence' or 'the building'.",
+    isBusinessDomain() ? "- transition: names the next question or mechanism. Nothing else." : "- transition: names the next team or player. Nothing else.",
     "- closing: each host's one-sentence verdict on the lead story, a last jab, a sign-off.",
     "- Assign each evidence fact to at most one beat, on the topic it belongs to. Do not schedule jokes, interruptions, catchphrases or audio tags.",
     "",
