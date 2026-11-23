@@ -26,6 +26,16 @@ import { findRumorKeyword, isGenuineFactualAssertion } from "./claimLanguage";
 // here. One definition, in src/lib/services/evidenceRefs.ts.
 const VALID_EVIDENCE_TYPES: readonly string[] = EVIDENCE_TYPES;
 
+/**
+ * Business scripts cite their frozen dossier snapshot (`businessSource`), which
+ * this sports validator has no view of. Those refs are validated by the business
+ * fact-check against the snapshot; here they are left alone. Without this,
+ * approving a business script stripped every citation.
+ */
+function isBusinessRef(content: any, ref: any): boolean {
+  return content?.kind === "business" && ref?.type === "businessSource" && typeof ref.id === "string" && ref.id.length > 0;
+}
+
 export function validateScriptContent(
   content: any,
   episodeContext: {
@@ -168,7 +178,9 @@ export function validateScriptContent(
         let hasLineError = false;
         for (const ref of line.evidenceRefs) {
           let isRefValid = true;
-          if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
+          if (isBusinessRef(content, ref)) {
+            isRefValid = true;
+          } else if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
             isRefValid = false;
           } else if (!VALID_EVIDENCE_TYPES.includes(ref.type)) {
             isRefValid = false;
@@ -373,6 +385,7 @@ export function sanitizeScriptContent(
       if (Array.isArray(line.evidenceRefs)) {
         const originalLength = line.evidenceRefs.length;
         line.evidenceRefs = line.evidenceRefs.filter((ref: any) => {
+          if (isBusinessRef(sanitized, ref)) return true;
           if (!ref || typeof ref !== "object" || !ref.type || !ref.id) {
             return false;
           }

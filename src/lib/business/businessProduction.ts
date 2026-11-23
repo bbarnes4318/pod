@@ -25,7 +25,7 @@ import { buildBusinessSnapshot, evaluateBusinessScriptReadiness, resolveEditoria
 import type { DossierContent } from "./businessDossier";
 import { extractNumbers, type EntailmentJudge } from "./claimVerification";
 import { detectClaims, type ClaimClassifier } from "./factualClaims";
-import { buildFactReview, combineStates, scriptTextFingerprint, type BusinessVerification, type ClaimOutcome, type SemanticState } from "./businessVerification";
+import { buildFactReview, combineStates, scriptTextFingerprint, type BusinessVerification, type ClaimDisposition, type ClaimOutcome, type SemanticState } from "./businessVerification";
 
 type Result<T = object> = ({ success: true } & T) | { success: false; error: string };
 
@@ -212,7 +212,12 @@ Return {"segments":[{type, title, lines:[{speakerName, text, tone, isFactualClai
 export async function generateBusinessScript(
   db: PrismaClient,
   input: { episodeId: string; forceRegenerate?: boolean },
-  deps: { writer: LLMProvider; resolveCast: (episode: { hostIds: string[]; formatId: string | null }) => Promise<{ host: AiHost; role: string }[]> }
+  deps: {
+    writer: LLMProvider;
+    resolveCast: (episode: { hostIds: string[]; formatId: string | null }) => Promise<{ host: AiHost; role: string }[]>;
+    /** Models that actually wrote the script (after any fallback). Persisted so the fact-check can prove independence. */
+    writerModels?: () => string[];
+  }
 ): Promise<{ scriptId: string; version: number; reasons: string[]; flaggedLines: number }> {
   const ep = await db.episode.findUnique({
     where: { id: input.episodeId },
@@ -314,6 +319,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
     businessPipeline: {
       snapshotVersion: snapshot.version, opportunityId: snapshot.opportunityId, dossierId: snapshot.dossierId,
       evidenceFingerprint: snapshot.evidenceFingerprint, formatId: format.id, readiness: ready,
+      writerModels: deps.writerModels?.() ?? [],
     },
   };
   const saved = await db.$transaction(async (tx) => {
@@ -346,7 +352,19 @@ export interface BusinessFactCheckDeps {
   classifier?: ClaimClassifier;
   /** Why no judge ran, when the caller knows (e.g. "same model as the writer"). */
   judgeUnavailableReason?: string | null;
+  /**
+   * Models that actually answered the judge's calls (after any fallback). When
+   * given, independence is decided on what RAN: overlap with the script's
+   * recorded writer models (or no recorded writer) = not independent.
+   */
+  judgeModelsUsed?: () => string[];
   now?: Date;
+}
+
+/** Writer models recorded on a business script at generation time ([] = unknown). */
+export function recordedWriterModels(content: unknown): string[] {
+  const m = (content as { businessPipeline?: { writerModels?: unknown } } | null)?.businessPipeline?.writerModels;
+  return Array.isArray(m) ? m.filter((x): x is string => typeof x === "string") : [];
 }
 
 export async function factCheckBusinessScript(
@@ -392,26 +410,28 @@ export async function factCheckBusinessScript(
     if (audit.refs.length) {
       factual++;
       factualCited++;
-      const passage = snapshot.facts.filter((f) => audit.refs.includes(f.id)).map((f) => `${f.claim} (source: "${f.quote}")`).join("\n");
+      const cited = snapshot.facts.filter((f) => audit.refs.includes(f.id));
+      const passage = cited.map((f) => `${f.claim} (source: "${f.quote}")`).join("\n");
+      const evidence = cited.map((f) => ({ factId: f.id, claim: f.claim, quote: f.quote, url: f.url }));
       // Compound lines are judged clause by clause; a single-claim line as a whole.
       const parts = detected.length > 1 ? detected : [{ text: spoken, kinds: detected[0]?.kinds ?? [] }];
       for (const part of parts) {
         const detectedBy: ClaimOutcome["detectedBy"] = [...(line.isFactualClaim ? ["writer_label" as const] : []), ...(detected.length ? ["deterministic" as const] : [])];
-        if (audit.errors.length) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "UNSUPPORTED", factIds: audit.refs, note: audit.errors.join("; ") }); continue; }
-        if (!deps.judge) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs }); continue; }
+        if (audit.errors.length) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "UNSUPPORTED", factIds: audit.refs, evidence, note: audit.errors.join("; ") }); continue; }
+        if (!deps.judge) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, evidence }); continue; }
         const verdict = await deps.judge(part.text, passage);
-        if (verdict === "entailed") push({ text: part.text, kinds: part.kinds, detectedBy, status: "SUPPORTED", factIds: audit.refs });
+        if (verdict === "entailed") push({ text: part.text, kinds: part.kinds, detectedBy, status: "SUPPORTED", factIds: audit.refs, evidence });
         else if (verdict === "contradicted") {
           contradicted++;
           errors.push(`Line ${line.lineIndex}: independent check — "${part.text.slice(0, 80)}" contradicts its cited evidence.`);
-          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CONTRADICTED", factIds: audit.refs });
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CONTRADICTED", factIds: audit.refs, evidence });
         } else if (verdict === "neutral") {
           judgeFailed++;
           warnings.push(`Line ${line.lineIndex}: independent check — cited evidence doesn't establish "${part.text.slice(0, 80)}".`);
-          push({ text: part.text, kinds: part.kinds, detectedBy, status: "INSUFFICIENT_EVIDENCE", factIds: audit.refs });
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "INSUFFICIENT_EVIDENCE", factIds: audit.refs, evidence });
         } else {
           judgeUnrun++;
-          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, note: "independent judge call failed" });
+          push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, evidence, note: "independent judge call failed" });
         }
       }
       continue;
@@ -437,8 +457,25 @@ export async function factCheckBusinessScript(
     }
   }
 
+  // Independence is decided on the models that actually ran, not on configuration.
+  let notIndependent: string | null = null;
+  if (deps.judge && deps.judgeModelsUsed) {
+    const writers = recordedWriterModels(content);
+    const judges = deps.judgeModelsUsed();
+    const shared = judges.filter((j) => writers.includes(j));
+    if (!writers.length) notIndependent = "the script's writer model was not recorded, so independence can't be shown";
+    else if (shared.length) notIndependent = `the judge that ran (${shared.join(", ")}) is the same model that wrote the script`;
+  }
+  if (notIndependent) {
+    // A self-check proves nothing: drop its passes. Its blocking findings stay (fail safe).
+    for (const c of claims) if (c.status === "SUPPORTED") { c.status = "CITED_UNVERIFIED"; c.note = `judge not independent: ${notIndependent}`; }
+  }
+
   let semantic: SemanticState;
-  if (!deps.judge) semantic = "SEMANTIC_VERIFICATION_UNAVAILABLE";
+  if (notIndependent) {
+    semantic = contradicted || judgeFailed ? "SEMANTIC_VERIFICATION_FAILED" : "SEMANTIC_VERIFICATION_UNAVAILABLE";
+    warnings.push(`Independent semantic verification unavailable (${notIndependent}). A human factual review is required before voicing.`);
+  } else if (!deps.judge) semantic = "SEMANTIC_VERIFICATION_UNAVAILABLE";
   else if (contradicted || judgeFailed) semantic = "SEMANTIC_VERIFICATION_FAILED";
   else if (judgeUnrun) semantic = "SEMANTIC_VERIFICATION_UNAVAILABLE";
   else semantic = "SEMANTIC_VERIFICATION_PASSED";
@@ -467,7 +504,7 @@ export async function factCheckBusinessScript(
     const verification: BusinessVerification = {
       deterministic, semantic, overall, basis: overall === "FACT_CHECK_PASSED" ? "SEMANTIC" : null,
       fingerprint: scriptTextFingerprint(content), factCheckResultId: created.id, checkedAt,
-      judge: deps.judge ? deps.judgeLabel ?? "fact_check" : null, reasons, claimCounts,
+      judge: deps.judge ? (deps.judgeModelsUsed?.().join(", ") || deps.judgeLabel || "fact_check") : null, reasons, claimCounts,
     };
     // A new check supersedes any earlier human review: it was signed against a different verdict.
     const { businessFactReview: _old, ...rest } = content as Record<string, unknown>;
@@ -496,7 +533,7 @@ export async function factCheckBusinessScript(
  */
 export async function recordBusinessFactReview(
   db: PrismaClient,
-  input: { scriptId: string; actor: string; reason: string; permittedStages?: string[] },
+  input: { scriptId: string; actor: string; reason: string; dispositions: ClaimDisposition[]; permittedStages?: string[] },
   now: Date = new Date()
 ): Promise<Result<{ factCheckResultId: string; unresolved: number }>> {
   const script = await db.script.findUnique({ where: { id: input.scriptId } });
@@ -504,17 +541,20 @@ export async function recordBusinessFactReview(
   const v = (script.content as { businessVerification?: BusinessVerification } | null)?.businessVerification;
   const last = v?.factCheckResultId ? await db.factCheckResult.findUnique({ where: { id: v.factCheckResultId } }) : null;
   const claims = ((last?.issues as { claims?: ClaimOutcome[] } | null)?.claims ?? []) as ClaimOutcome[];
-  const built = buildFactReview({ content: script.content, scriptId: script.id, scriptVersion: script.version, actor: input.actor, reason: input.reason, claims, permittedStages: input.permittedStages, now });
+  const built = buildFactReview({ content: script.content, scriptId: script.id, scriptVersion: script.version, actor: input.actor, reason: input.reason, claims, dispositions: input.dispositions ?? [], permittedStages: input.permittedStages, now });
   if (!built.ok) return { success: false, error: built.error };
 
   const r = await db.$transaction(async (tx) => {
     // Optimistic concurrency: refuse if the script changed between read and write.
     const fresh = await tx.script.findUnique({ where: { id: script.id }, select: { content: true, status: true, episodeId: true } });
-    if (!fresh || scriptTextFingerprint(fresh.content) !== built.review.fingerprint) throw new Error("The script changed while you were reviewing it. Reload and review again.");
+    const freshCheck = (fresh?.content as { businessVerification?: BusinessVerification } | null)?.businessVerification?.factCheckResultId ?? null;
+    if (!fresh || scriptTextFingerprint(fresh.content) !== built.review.fingerprint || freshCheck !== (v?.factCheckResultId ?? null)) {
+      throw new Error("The script or its fact-check changed while you were reviewing it. Reload and review again.");
+    }
     const created = await tx.factCheckResult.create({
       data: {
         scriptId: script.id, episodeId: script.episodeId, passed: true, status: "passed", provider: "business:human_review",
-        warnings: built.review.unresolved.map((u) => `Line ${u.lineIndex}: ${u.status} — "${u.text.slice(0, 100)}" (human-reviewed, not independently verified)`) as unknown as Prisma.InputJsonValue,
+        warnings: built.review.unresolved.map((u) => `Line ${u.lineIndex}: ${u.status} -> ${u.decision} by ${u.reviewedBy} — "${u.text.slice(0, 100)}" (${u.note.slice(0, 160)}; not independently verified)`) as unknown as Prisma.InputJsonValue,
         errors: [] as unknown as Prisma.InputJsonValue,
         summary: { engine: "business", overall: "FACT_CHECK_PASSED", basis: "HUMAN_REVIEW", reviewedBy: built.review.actor, reason: built.review.reason, supersedes: v?.factCheckResultId ?? null } as Prisma.InputJsonValue,
         issues: { claims, humanReview: built.review } as unknown as Prisma.InputJsonValue,

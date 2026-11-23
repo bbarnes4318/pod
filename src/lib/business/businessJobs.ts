@@ -8,7 +8,7 @@
 //   business script    → script_movement
 
 import { db } from "../db";
-import { getRoleLLMProvider, roleHasRealProvider, resolveRolePlan, candidateKey, roleProviderLabel } from "../providers/llm/routing";
+import { getRoleLLMProvider, roleHasRealProvider, resolveRolePlan, candidateKey, roleProviderLabel, modelsUsedBy } from "../providers/llm/routing";
 import type { LLMRole } from "../providers/llm/roles";
 import { llmCostMark, llmCostSince, withLlmJob } from "../providers/llm/costLedger";
 import { resolveEpisodeCast } from "../services/hostCasting";
@@ -17,7 +17,7 @@ import { llmEntailmentJudge } from "./claimVerification";
 import { llmClaimClassifier } from "./factualClaims";
 import { runIndustryResearch } from "./researchEngine";
 import { runDossier } from "./businessDossier";
-import { generateBusinessScript, factCheckBusinessScript } from "./businessProduction";
+import { generateBusinessScript, factCheckBusinessScript, recordedWriterModels } from "./businessProduction";
 
 const role = (r: LLMRole) => (roleHasRealProvider(r) ? getRoleLLMProvider(r) : null);
 const judge = () => {
@@ -63,23 +63,30 @@ export function runBusinessScriptJob(episodeId: string, forceRegenerate?: boolea
   if (!writer) throw new Error("No script model is configured. Real script generation disabled.");
   return generateBusinessScript(db, { episodeId, forceRegenerate }, {
     writer,
+    writerModels: () => modelsUsedBy(writer, "script_movement"),
     resolveCast: async (ep) => (await resolveEpisodeCast({ hostIds: ep.hostIds, formatId: ep.formatId })).members.map((m) => ({ host: m.host, role: m.role })),
   });
 }
 
-/** The judge must not be the model that wrote the script: same model = self-certification = unavailable. */
-function independentFactCheckDeps() {
-  const first = (r: LLMRole) => resolveRolePlan(r).candidates[0];
-  const j = first("fact_check");
-  const w = first("script_movement");
+/**
+ * The judge must not be the model that wrote the script: same model =
+ * self-certification = unavailable. Checked twice: up front against the
+ * writer recorded on the script (skips a pointless paid call), and after the
+ * run against the judge models that actually answered (a fallback can land on
+ * the writer's model) — see factCheckBusinessScript.
+ */
+async function independentFactCheckDeps(scriptId: string) {
+  const s = await db.script.findUnique({ where: { id: scriptId }, select: { content: true } });
+  const writers = recordedWriterModels(s?.content);
+  const j = resolveRolePlan("fact_check").candidates[0];
   const l = role("fact_check");
   if (!l) return { judgeUnavailableReason: "no fact_check model configured" };
-  if (j && w && candidateKey(j) === candidateKey(w)) return { judgeUnavailableReason: "the fact_check model is the same model that wrote the script" };
-  return { judge: llmEntailmentJudge(l), classifier: llmClaimClassifier(l), judgeLabel: roleProviderLabel("fact_check") };
+  if (j && writers.includes(candidateKey(j))) return { judgeUnavailableReason: "the fact_check model is the same model that wrote the script" };
+  return { judge: llmEntailmentJudge(l), classifier: llmClaimClassifier(l), judgeLabel: roleProviderLabel("fact_check"), judgeModelsUsed: () => modelsUsedBy(l, "fact_check") };
 }
 
-export function runBusinessFactCheckJob(scriptId: string) {
-  return factCheckBusinessScript(db, scriptId, independentFactCheckDeps());
+export async function runBusinessFactCheckJob(scriptId: string) {
+  return factCheckBusinessScript(db, scriptId, await independentFactCheckDeps(scriptId));
 }
 
 /** Which engine owns this episode — the worker's dispatch question. */

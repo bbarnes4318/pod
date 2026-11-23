@@ -201,6 +201,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         invariants={(script?.content as any)?.productionInvariants ?? null}
         humanRelease={(script?.content as any)?.humanRelease ?? null}
         legacyRelease={(script?.content as any)?.legacyRelease ?? null}
+        business={bv !== undefined}
       />
       {bv !== undefined && (
         <BusinessFactCheckPanel

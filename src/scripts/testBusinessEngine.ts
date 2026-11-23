@@ -23,6 +23,7 @@ import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
 import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
+import { sanitizeScriptContent } from "../lib/services/scriptValidation";
 
 let passed = 0;
 let failed = 0;
@@ -398,12 +399,13 @@ async function main() {
       { lineIndex: 0, text: "premium was $1,140", kinds: ["money"], detectedBy: ["writer_label"], status: "CITED_UNVERIFIED", factIds: ["F1"] },
       { lineIndex: 3, text: "a chatty aside", kinds: ["organization"], detectedBy: ["deterministic"], status: "NOT_A_CLAIM", factIds: [] },
     ];
+    const dispo = [{ lineIndex: 0, text: "premium was $1,140", decision: "VERIFIED_BY_REVIEWER" as const, note: "Matches page 4 of the cited NAIC report." }];
     await check("human factual review: attributable, keeps claim statuses, scoped by stage and text", () => {
-      const r = buildFactReview({ content: withV("NEEDS_HUMAN_REVIEW", null), scriptId: "s1", scriptVersion: 2, actor: "owner@x", reason: "Checked line 0 against the NAIC report.", claims, permittedStages: ["tts:generate-segments"], now: NOW });
-      assert.ok(r.ok);
+      const r = buildFactReview({ content: withV("NEEDS_HUMAN_REVIEW", null), scriptId: "s1", scriptVersion: 2, actor: "owner@x", reason: "Checked line 0 against the NAIC report.", claims, dispositions: dispo, permittedStages: ["tts:generate-segments"], now: NOW });
+      assert.ok(r.ok, !r.ok ? r.error : "");
       if (!r.ok) return;
       assert.equal(r.verification.basis, "HUMAN_REVIEW");
-      assert.deepEqual(r.review.unresolved, [{ lineIndex: 0, text: "premium was $1,140", status: "CITED_UNVERIFIED" }]);
+      assert.deepEqual(r.review.unresolved, [{ lineIndex: 0, text: "premium was $1,140", status: "CITED_UNVERIFIED", decision: "VERIFIED_BY_REVIEWER", note: dispo[0].note, reviewedBy: "owner@x", reviewedAt: NOW.toISOString() }]);
       const reviewed = { ...withV("NEEDS_HUMAN_REVIEW", null), businessVerification: r.verification, businessFactReview: r.review };
       assert.equal(evaluateBusinessRelease(reviewed, "tts:generate-segments").allowed, true);
       assert.equal(evaluateBusinessRelease(reviewed, "publish").allowed, false, "stage outside the review's scope");
@@ -411,12 +413,33 @@ async function main() {
       assert.equal(evaluateBusinessRelease(edited, "tts:generate-segments").allowed, false, "edit after review");
     });
     await check("human review refuses failed checks, empty reasons, anonymous actors, already-verified scripts", () => {
-      const base = { scriptId: "s1", scriptVersion: 1, actor: "owner@x", reason: "Checked everything against sources.", claims };
+      const base = { scriptId: "s1", scriptVersion: 1, actor: "owner@x", reason: "Checked everything against sources.", claims, dispositions: dispo };
       assert.equal(buildFactReview({ ...base, content: withV("FACT_CHECK_FAILED", null) }).ok, false);
       assert.equal(buildFactReview({ ...base, content: withV("NEEDS_HUMAN_REVIEW", null), reason: "ok" }).ok, false);
       assert.equal(buildFactReview({ ...base, content: withV("NEEDS_HUMAN_REVIEW", null), actor: " " }).ok, false);
       assert.equal(buildFactReview({ ...base, content: withV("FACT_CHECK_PASSED", "SEMANTIC") }).ok, false);
       assert.equal(buildFactReview({ ...base, content: body() }).ok, false);
+    });
+    await check("human review can't blanket-sign a script: every unresolved claim needs its own decision", () => {
+      const content = withV("NEEDS_HUMAN_REVIEW", null);
+      const base = { content, scriptId: "s1", scriptVersion: 1, actor: "owner@x", reason: "Reviewed the whole script carefully.", now: NOW };
+      const uncited: ClaimOutcome = { lineIndex: 5, text: "most agencies lose money", kinds: ["generalization"], detectedBy: ["deterministic"], status: "UNSUPPORTED", factIds: [] };
+      const uncitedNum: ClaimOutcome = { lineIndex: 6, text: "rates rose 12%", kinds: ["percent"], detectedBy: ["deterministic"], status: "UNSUPPORTED", factIds: [] };
+      const all = [...claims, uncited, uncitedNum];
+      const r1 = buildFactReview({ ...base, claims: all, dispositions: dispo });
+      assert.ok(!r1.ok && /Line 5/.test(r1.error), "missing decision refused");
+      const short = buildFactReview({ ...base, claims, dispositions: [{ ...dispo[0], note: "looks fine" }] });
+      assert.ok(!short.ok, "a ten-character note is not a review");
+      const noUrl = buildFactReview({ ...base, claims: [uncited], dispositions: [{ lineIndex: 5, text: uncited.text, decision: "VERIFIED_BY_REVIEWER", note: "I know this from experience in the trade." }] });
+      assert.ok(!noUrl.ok && /URL/.test(noUrl.error), "uncited claim needs the URL actually checked");
+      const withUrl = buildFactReview({ ...base, claims: [uncited], dispositions: [{ lineIndex: 5, text: uncited.text, decision: "VERIFIED_BY_REVIEWER", note: "Checked https://naic.example/report table 3." }] });
+      assert.ok(withUrl.ok);
+      const figureAsOpinion = buildFactReview({ ...base, claims: [uncitedNum], dispositions: [{ lineIndex: 6, text: uncitedNum.text, decision: "NOT_A_FACTUAL_CLAIM", note: "Just colour, the host is riffing here." }] });
+      assert.ok(!figureAsOpinion.ok, "a stated figure can't be waved through as opinion");
+      const opinion = buildFactReview({ ...base, claims: [uncited], dispositions: [{ lineIndex: 5, text: uncited.text, decision: "NOT_A_FACTUAL_CLAIM", note: "Host's stated opinion, framed as 'I think'." }] });
+      assert.ok(opinion.ok && opinion.review.unresolved[0].status === "UNSUPPORTED", "original status preserved");
+      const contra = buildFactReview({ ...base, claims: [{ ...claims[0], status: "CONTRADICTED" }], dispositions: dispo });
+      assert.ok(!contra.ok, "a known contradiction can't be signed off");
     });
   }
 
@@ -431,9 +454,9 @@ async function main() {
       mkLine(1, "Right, and chargebacks apply when a policy lapses in the first year.", true, ["F3"]),
       mkLine(2, "So walk me through what that means for an agency owner.", false),
     ];
-    const run = async (lines: ReturnType<typeof mkLine>[], deps: Parameters<typeof factCheckBusinessScript>[2], scriptStatus = "approved") => {
+    const run = async (lines: ReturnType<typeof mkLine>[], deps: Parameters<typeof factCheckBusinessScript>[2], scriptStatus = "approved", writerModels?: string[]) => {
       const state = {
-        script: { id: "s1", version: 1, status: scriptStatus, episodeId: "e1", content: { kind: "business", segments: [{ type: "intro", lines }] } as Record<string, unknown> },
+        script: { id: "s1", version: 1, status: scriptStatus, episodeId: "e1", content: { kind: "business", segments: [{ type: "intro", lines }], ...(writerModels ? { businessPipeline: { writerModels } } : {}) } as Record<string, unknown> },
         episode: { id: "e1", status: "script_draft" },
         results: [] as Record<string, unknown>[],
       };
@@ -456,6 +479,8 @@ async function main() {
       return { res, state, fake };
     };
     const entail: EntailmentJudge = async () => "entailed";
+    const decideAll = (cs: ClaimOutcome[]) => cs.filter((c) => c.status !== "SUPPORTED" && c.status !== "NOT_A_CLAIM")
+      .map((c) => ({ lineIndex: c.lineIndex, text: c.text, decision: "VERIFIED_BY_REVIEWER" as const, note: "Matched against the cited source quote." }));
 
     await check("no judge configured → SEMANTIC_VERIFICATION_UNAVAILABLE → needs_review (was: passed)", async () => {
       const { res, state } = await run(goodLines, {});
@@ -472,6 +497,22 @@ async function main() {
       assert.equal(res.verification.basis, "SEMANTIC");
       assert.equal(state.episode.status, "fact_checked");
       assert.equal(evaluateBusinessRelease(state.script.content, "tts:generate-segments").allowed, true);
+    });
+    await check("judge that ACTUALLY ran is the writer's model (fallback) → not independent, needs_review", async () => {
+      const { res } = await run(goodLines, { judge: entail, judgeModelsUsed: () => ["anthropic/claude-opus-5"] }, "approved", ["anthropic/claude-opus-5"]);
+      assert.equal(res.verification.semantic, "SEMANTIC_VERIFICATION_UNAVAILABLE");
+      assert.equal(res.status, "needs_review");
+      assert.ok(res.claims.every((c) => c.status !== "SUPPORTED"), "self-check passes are dropped");
+    });
+    await check("writer model not recorded → independence unprovable → needs_review", async () => {
+      const { res } = await run(goodLines, { judge: entail, judgeModelsUsed: () => ["anthropic/claude-sonnet-5"] });
+      assert.equal(res.status, "needs_review");
+    });
+    await check("different writer and judge models that ran → FACT_CHECK_PASSED, judge identity recorded", async () => {
+      const { res } = await run(goodLines, { judge: entail, judgeModelsUsed: () => ["anthropic/claude-sonnet-5"] }, "approved", ["anthropic/claude-opus-5"]);
+      assert.equal(res.status, "passed", [...res.errors, ...res.warnings].join(" | "));
+      assert.equal(res.verification.judge, "anthropic/claude-sonnet-5");
+      assert.ok(res.claims.find((c) => c.lineIndex === 0)?.evidence?.[0]?.url, "cited evidence attached for reviewers");
     });
     await check("judge says neutral → SEMANTIC_VERIFICATION_FAILED → needs_review", async () => {
       const { res } = await run(goodLines, { judge: async () => "neutral" });
@@ -514,8 +555,8 @@ async function main() {
       assert.deepEqual(res.claims.map((c) => c.status), ["SUPPORTED", "INSUFFICIENT_EVIDENCE"]);
     });
     await check("recordBusinessFactReview: needs-review → passed (HUMAN_REVIEW), claims untouched, episode advances", async () => {
-      const { state, fake } = await run(goodLines, {});
-      const r = await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against the NAIC report and trade story." }, NOW);
+      const { state, fake, res } = await run(goodLines, {});
+      const r = await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against the NAIC report and trade story.", dispositions: decideAll(res.claims) }, NOW);
       assert.ok(r.success, !r.success ? r.error : "");
       const content = state.script.content as { businessVerification: { basis: string; overall: string } };
       assert.equal(content.businessVerification.basis, "HUMAN_REVIEW");
@@ -525,11 +566,25 @@ async function main() {
       assert.equal(evaluateBusinessRelease(state.script.content, "publish").allowed, true);
     });
     await check("re-running the fact-check discards an earlier human review", async () => {
-      const { state, fake } = await run(goodLines, {});
-      await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against sources." }, NOW);
+      const { state, fake, res } = await run(goodLines, {});
+      await recordBusinessFactReview(fake as never, { scriptId: "s1", actor: "owner@x", reason: "Checked lines 0 and 1 against sources.", dispositions: decideAll(res.claims) }, NOW);
       await factCheckBusinessScript(fake as never, "s1", { now: NOW });
       assert.equal((state.script.content as Record<string, unknown>).businessFactReview, undefined);
       assert.equal(evaluateBusinessRelease(state.script.content, "tts:generate-segments").allowed, false);
+    });
+  }
+
+  console.log("shared approval sanitizer vs business citations");
+  {
+    const line = { lineIndex: 0, speakerName: "Zabala", text: "Premium was $1,140.", isFactualClaim: true, evidenceRefs: [{ type: "businessSource", id: "S1", factId: "F1" }] };
+    await check("approval sanitizer keeps businessSource refs on business scripts (was: stripped every citation)", () => {
+      const { sanitizedContent, cleanedEvidenceRefCount } = sanitizeScriptContent({ kind: "business", segments: [{ lines: [line] }] }, { allowedSourceRefs: new Set(), cast: [{ id: "h1", name: "Zabala" }] });
+      assert.equal(cleanedEvidenceRefCount, 0);
+      assert.equal(sanitizedContent.segments[0].lines[0].evidenceRefs.length, 1);
+    });
+    await check("sports scripts: an unknown ref type is still stripped (unchanged)", () => {
+      const { cleanedEvidenceRefCount } = sanitizeScriptContent({ segments: [{ lines: [line] }] }, { allowedSourceRefs: new Set(), cast: [{ id: "h1", name: "Zabala" }] });
+      assert.equal(cleanedEvidenceRefCount, 1);
     });
   }
 
