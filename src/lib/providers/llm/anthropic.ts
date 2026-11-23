@@ -2,6 +2,8 @@ import { LLMProvider, LLMUsage, GenerateTextOptions, GenerateStructuredOutputOpt
 import { estimateCostUsd, recordLlmCall } from "./costLedger";
 import { categoryOf } from "./errors";
 import { numberFromEnv } from "./openaiCompatible";
+import { creativeDomainEffort, isBusinessDomain } from "../../services/creativeDomain";
+import { isMalformedJsonError } from "../../business/schemaInstructions";
 
 /**
  * Wall-clock ceiling on ONE Anthropic HTTP attempt.
@@ -243,7 +245,9 @@ export class AnthropicLLMProvider implements LLMProvider {
     // An explicit per-call effort wins; otherwise the operator's LLM_EFFORT.
     // Business research passes one: at the default "high", thinking tokens
     // filled the output cap and the 240s timeout on topic and dossier calls.
-    const effort = (options.effort || process.env.LLM_EFFORT || "").trim().toLowerCase();
+    // A business episode's writing calls carry a domain effort (creativeDomain.ts);
+    // sports calls have no domain, so this is unchanged for them.
+    const effort = (options.effort || creativeDomainEffort() || process.env.LLM_EFFORT || "").trim().toLowerCase();
     if (effort && this.supportsAdaptiveThinking()) {
       body.output_config = { effort };
     }
@@ -405,6 +409,21 @@ export class AnthropicLLMProvider implements LLMProvider {
   }
 
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
+    try {
+      return await this.structuredOnce<T>(options);
+    } catch (err) {
+      // JSON is forced by instruction only and this provider makes no repair
+      // request, so one stray quote in a long reply killed a whole business
+      // script (fifth Milestone 2 live run: the cold-open judge's reply). Inside
+      // a business episode only, a reply that is not valid JSON is asked for
+      // once more. Sports runs with no creative domain: behaviour unchanged.
+      if (!isBusinessDomain() || !isMalformedJsonError(err)) throw err;
+      console.warn(`[Anthropic] business structured reply was not valid JSON; asking once more (${(err as Error).message.slice(0, 120)})`);
+      return this.structuredOnce<T>(options);
+    }
+  }
+
+  private async structuredOnce<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
     console.log(`[Anthropic] Requesting structured output (JSON forced) via model: ${this.model}`);
 
     // Instruction-based JSON forcing — assistant prefill 400s on Opus 4.6+.

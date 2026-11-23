@@ -166,3 +166,50 @@ export function resolveEditorialPacket(ep: {
   }
   return { kind: "BUSINESS", topicCount: biz.length, snapshots, problems };
 }
+
+/**
+ * A business episode's topics in the shape the shared content-asset service
+ * (transcript, chapters, show notes) reads.
+ *
+ * That service read only sports EpisodeTopic → ResearchBrief links, and a
+ * business episode links its topic through BusinessEpisodeTopic. In the
+ * Milestone 2 live run every business episode therefore failed content
+ * generation with "Episode has no linked topics." — no transcript, no show
+ * notes, never publishable. The facts and sources come from the frozen
+ * snapshot the script and fact-check used. No sports field is filled: the
+ * brief carries facts and source ids only.
+ */
+export interface BusinessContentTopic {
+  id: string;
+  topicId: string;
+  topic: {
+    id: string;
+    title: string;
+    summary: string;
+    researchBrief: { facts: { text: string; quote: string; url: string }[]; sourceIds: string[]; sourceUrls: string[] };
+  };
+}
+export function businessContentTopics(links: { id: string; opportunityId: string | null; snapshot: unknown }[]): BusinessContentTopic[] {
+  const out: BusinessContentTopic[] = [];
+  for (const link of links) {
+    const parsed = parseBusinessSnapshot(link.snapshot);
+    if (parsed.status !== "valid") continue;
+    const s = parsed.snapshot;
+    const topicId = link.opportunityId ?? s.opportunityId;
+    out.push({
+      id: link.id,
+      topicId,
+      topic: {
+        id: topicId,
+        title: s.title,
+        summary: s.listenerPromise || s.premise,
+        researchBrief: {
+          facts: s.facts.map((f) => ({ text: f.claim, quote: f.quote, url: f.url })),
+          sourceIds: s.sources.map((x) => x.id),
+          sourceUrls: s.sources.map((x) => x.url),
+        },
+      },
+    });
+  }
+  return out;
+}

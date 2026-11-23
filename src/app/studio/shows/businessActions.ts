@@ -18,7 +18,7 @@ import { discoverBusiness } from "@/lib/business/discovery";
 import { generateAdaptiveQuestions } from "@/lib/business/adaptiveQuestions";
 import { llmEntailmentJudge } from "@/lib/business/claimVerification";
 import { BUDGETS, type Depth } from "@/lib/business/researchEngine";
-import { createBusinessEpisode } from "@/lib/business/businessProduction";
+import { createBusinessEpisode, statusForApproval } from "@/lib/business/businessProduction";
 import { getRoleLLMProvider } from "@/lib/providers/llm/factory";
 import { roleHasRealProvider } from "@/lib/providers/llm/routing";
 import { queueBusinessDossierJob, queueBusinessResearchJob, queueFactCheckJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
@@ -417,7 +417,9 @@ export async function approveBusinessScript(podcastId: string, episodeId: string
   if (!ep) return { success: false, error: "Episode not found." };
   const script = await db.script.findFirst({ where: { episodeId }, orderBy: { version: "desc" } });
   if (!script) return { success: false, error: "No script yet." };
-  if (script.status !== "draft") return { success: false, error: script.status === "needs_revision" ? "This script has flagged lines. Regenerate it before approving." : `Script is ${script.status}.` };
+  // A needs_revision script is re-audited first: if no line is flagged any more it is approvable.
+  const status = await statusForApproval(db, script);
+  if (status !== "draft") return { success: false, error: status === "needs_revision" ? "This script has flagged lines. Fix or regenerate them before approving." : `Script is ${status}.` };
   const who = owned.user.email || owned.user.id;
   const release = await recordHumanRelease({ scriptId: script.id, approvedBy: who, note: "Business script approved by the show owner in Studio." });
   if (!release.success) return { success: false, error: release.error };

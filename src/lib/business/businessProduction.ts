@@ -196,6 +196,25 @@ function packetNumbers(snapshot: BusinessTopicSnapshotV1): number[] {
 const has = (pool: number[], v: number) => pool.some((p) => Math.abs(p - v) <= Math.max(1e-9, Math.abs(v) * 0.01));
 /** Small counting words ("two hosts", "one thing") aren't claims. */
 const trivial = (v: number) => v <= 10 && Number.isInteger(v);
+/**
+ * ...but a small number that MEASURES something is ("eight-second calls",
+ * "five percent", "three cents", "two hops"). In the fourth Milestone 2 live
+ * run "fifty percent with eight-second calls" / "longer than eight seconds"
+ * went through because every whole number up to ten was skipped, though no
+ * source said eight seconds (it said "under roughly ten").
+ */
+const SMALL_WORDS = "zero|one|two|three|four|five|six|seven|eight|nine|ten";
+const MEASURED_SMALL = new RegExp(`\\b(\\d{1,2}(?:\\.\\d+)?|${SMALL_WORDS})[\\s-]+(?:%|percent|per\\s?cent|cents?|dollars?|bucks|seconds?|secs?|milliseconds?|ms|minutes?|mins?|hours?|days?|weeks?|months?|years?|hops?|times|x)\\b`, "gi");
+const WORD_VALUE: Record<string, number> = { zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+export function measuredSmallNumbers(spoken: string): number[] {
+  const out: number[] = [];
+  for (const m of spoken.matchAll(MEASURED_SMALL)) {
+    const w = m[1].toLowerCase();
+    const v = w in WORD_VALUE ? WORD_VALUE[w] : Number(w);
+    if (Number.isFinite(v) && trivial(v)) out.push(v);
+  }
+  return out;
+}
 
 /** A line the writer labelled as an illustration. "hypothetically", "illustrative",
  *  "supposing" count too — the old pattern required the bare stems. */
@@ -215,7 +234,8 @@ export function auditBusinessLine(snapshot: BusinessTopicSnapshotV1, line: { tex
   // not a factual claim (the writer is told to do exactly this); its numbers are
   // still checked against the dossier below.
   if (line.isFactualClaim && refs.length === 0 && !hypothetical) errors.push("factual line has no valid fact citation");
-  const nums = extractNumbers(spoken).filter((n) => !trivial(n.value));
+  const measured = measuredSmallNumbers(spoken);
+  const nums = extractNumbers(spoken).filter((n) => !trivial(n.value) || n.kind === "money" || n.kind === "percent" || measured.includes(n.value));
   const allowed = line.isFactualClaim ? allowedNumbersFor(snapshot, refs) : packetNumbers(snapshot);
   for (const n of nums) {
     if (has(allowed, n.value)) continue;
@@ -551,6 +571,24 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
  * status moves only between "needs_revision" and "draft". Approved or later
  * scripts are never touched here (their edits go through fact-check re-review).
  */
+/**
+ * The status approval should judge, after re-auditing a "needs_revision" script.
+ *
+ * Found in the sixth Milestone 2 live run: a fact-check failed on a false
+ * contradiction (a judge defect, since fixed), which set the script to
+ * "needs_revision". Re-running the fact-check cleared it, but the script had
+ * zero flagged lines and approval still refused it ("has flagged lines.
+ * Regenerate it") — the only way out was paying for a new script. Approval now
+ * re-runs the same deterministic line audit first: zero flags → "draft"
+ * (approvable, and approval queues a fresh fact-check); any flag → still
+ * "needs_revision". Never touches approved or later scripts.
+ */
+export async function statusForApproval(db: PrismaClient, script: { id: string; status: string }): Promise<string> {
+  if (script.status !== "needs_revision") return script.status;
+  const r = await reauditBusinessScript(db, script.id);
+  return r?.status ?? script.status;
+}
+
 export async function reauditBusinessScript(db: PrismaClient, scriptId: string): Promise<{ flaggedLines: number; status: string } | null> {
   const s = await db.script.findUnique({ where: { id: scriptId }, select: { id: true, status: true, content: true, episodeId: true } });
   if (!s || !["draft", "needs_revision"].includes(s.status)) return null;
@@ -663,7 +701,9 @@ export async function factCheckBusinessScript(
         const detectedBy: ClaimOutcome["detectedBy"] = [...(line.isFactualClaim ? ["writer_label" as const] : []), ...(detected.length ? ["deterministic" as const] : [])];
         if (audit.errors.length) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "UNSUPPORTED", factIds: audit.refs, evidence, note: audit.errors.join("; ") }); continue; }
         if (!deps.judge) { push({ text: part.text, kinds: part.kinds, detectedBy, status: "CITED_UNVERIFIED", factIds: audit.refs, evidence }); continue; }
-        const verdict = await deps.judge(part.text, passage);
+        // A clause cut from a compound line is judged with that line as context,
+        // so "there" / "it" / "same" resolve to what the host actually meant.
+        const verdict = await deps.judge(part.text, passage, parts.length > 1 ? spoken : undefined);
         if (verdict === "entailed") push({ text: part.text, kinds: part.kinds, detectedBy, status: "SUPPORTED", factIds: audit.refs, evidence });
         else if (verdict === "contradicted") {
           contradicted++;

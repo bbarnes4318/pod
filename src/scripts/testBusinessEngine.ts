@@ -9,19 +9,19 @@
  * snapshot readiness, script line audit, and the sports/business packet split.
  */
 import assert from "node:assert/strict";
-import { verifyClaim, assignOrigins, assessFreshness, extractNumbers, compareNumbers, type EntailmentJudge } from "../lib/business/claimVerification";
+import { verifyClaim, assignOrigins, assessFreshness, extractNumbers, compareNumbers, llmEntailmentJudge, type EntailmentJudge } from "../lib/business/claimVerification";
 import { detectClaims, type ClaimClassifier } from "../lib/business/factualClaims";
 import { BUSINESS_RELEASE_STAGES, BusinessFactHoldError, assertBusinessRelease, buildFactReview, combineStates, evaluateBusinessRelease, scriptTextFingerprint, type ClaimOutcome, type OverallState, type VerificationBasis } from "../lib/business/businessVerification";
 import { parseRobots, robotsAllows, selectPages, classifyPage } from "../lib/business/discovery";
 import { ADVANCED_FIELDS } from "../lib/business/profileSchema";
-import { renderProfileContext, excludedTopics, type ProfileLike } from "../lib/business/researchContext";
+import { renderProfileContext, excludedTopics, specificityTerms, type ProfileLike } from "../lib/business/researchContext";
 import { generateAdaptiveQuestions, findProfileGaps } from "../lib/business/adaptiveQuestions";
 import { assessDemand, scoreAchievedIas, scoreInformationAdvantage, type ScoringObservation } from "../lib/business/scoring";
 import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
 import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS, parseTopicsOutput, topicBatches, mergeTopicBatches } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, statusForApproval, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 import { businessLLM, withSchemaInstructions } from "../lib/business/schemaInstructions";
 import { zodToJsonSchema } from "../lib/business/zodJsonSchema";
@@ -231,6 +231,34 @@ async function main() {
     assert.ok(genericnessReasons("5 Marketing Tips for Small Businesses", terms).length > 0);
     assert.equal(genericnessReasons("Why live transfers wreck final expense persistency", terms).length, 0);
   });
+  await check("a niche's acronyms and ratios count as specific; terminology is never cut off (M2 live run 2)", () => {
+    // The real Milestone 2 wholesale VoIP profile. Its terminology field came
+    // after ~80 other words, and ASR/ACD/PDD/CLI are 3 letters: every topic
+    // below was held as "names nothing specific to this business or niche".
+    const profile = {
+      businessName: "M2 Test Wholesale VoIP Desk", industry: "Wholesale VoIP and telecom services",
+      subIndustries: ["Wholesale voice termination", "Carrier interconnects", "Least-cost routing"],
+      targetAudiences: ["Contact-center operators", "Wholesale carriers", "VoIP business owners"], primaryGoal: "Industry authority",
+      geographicMarkets: ["United States"], language: "en", findings: [],
+      answers: { fields: {
+        AUDIENCE_JOB_TITLES: "Contact-center operations managers\nWholesale carrier account managers\nVoIP provider owners\nNOC and routing engineers",
+        AUDIENCE_TOP_PROBLEMS: "Paying for billing increments they don't understand\nShort-duration traffic getting blocked or surcharged\nPoor ASR/ACD on cheap routes\nThin carrier margins",
+        PREFERRED_TOPICS: "Wholesale termination\nBilling increments (6/6, 60/60, 1/1)\nShort-duration traffic\nRouting quality: ASR, ACD, PDD\nCarrier economics and margins",
+        IMPORTANT_INDUSTRY_METRICS: "ASR, ACD, PDD, billing increment, per-minute rate, margin per minute",
+        AUDIENCE_INDUSTRY_TERMINOLOGY: "A-Z termination, CLI/non-CLI routes, 6/6 and 60/60 billing increments, ASR, ACD, PDD, short-duration calls, LCR, interconnect",
+      }, followups: {} },
+    } as unknown as ProfileLike;
+    const terms = specificityTerms(profile);
+    for (const t of ["asr", "acd", "pdd", "cli", "lcr", "6/6", "60/60", "interconnect"]) assert.ok(terms.includes(t), `term ${t}`);
+    for (const title of [
+      "Reading ASR, ACD and PDD Together: Why No Single Number Proves a Route Is Good",
+      "CLI vs NCLI: When a Cheaper Route Costs More in Lost Answers",
+      "6/6 or 60/60: what the increment really costs you",
+    ]) assert.deepEqual(genericnessReasons(title, terms), [], title);
+    // Still held: a title any company could publish.
+    assert.ok(genericnessReasons("5 Marketing Tips for Small Businesses", terms).length > 0);
+    assert.ok(genericnessReasons("Why Customer Service Matters", terms).length > 0);
+  });
   await check("exclusions and repetition", () => {
     assert.ok(isExcluded("A deep dive on Medicare Advantage commissions", ["medicare advantage"]));
     assert.equal(isExcluded("Final expense chargebacks", ["medicare advantage"]), null);
@@ -262,6 +290,18 @@ async function main() {
     assert.match(evaluateBusinessScriptReadiness(oneOrigin).reasons.join(), /independent origin/);
     const tampered = { ...snap, facts: snap.facts.map((f, i) => (i === 0 ? { ...f, claim: "Premiums average $9,999" } : f)) };
     assert.match(evaluateBusinessScriptReadiness(tampered).reasons.join(), /fingerprint/);
+  });
+  await check("a small number that measures something is checked; counting words are not (M2 live run 4)", () => {
+    // Live lines: "longer than eight seconds" / "fifty percent with eight-second calls" passed
+    // because every whole number up to ten was skipped. Nothing in this dossier says eight.
+    assert.match(auditBusinessLine(snap, { text: "Then you better hope those calls ran longer than eight seconds.", isFactualClaim: false, factIds: [] }).errors.join(), /eight/);
+    assert.match(auditBusinessLine(snap, { text: "Check the eight-second calls before you bill.", isFactualClaim: false, factIds: [] }).errors.join(), /eight/);
+    assert.match(auditBusinessLine(snap, { text: "That's a 7 percent lapse rate.", isFactualClaim: false, factIds: [] }).errors.join(), /7/);
+    assert.match(auditBusinessLine(snap, { text: "It costs three cents more a minute.", isFactualClaim: false, factIds: [] }).errors.join(), /three/);
+    // Counting words are still not claims.
+    for (const text of ["Two hosts, one question, three numbers to read together.", "First thing: we take it one step at a time.", "I'll give you two reasons."]) {
+      assert.deepEqual(auditBusinessLine(snap, { text, isFactualClaim: false, factIds: [] }).errors, [], text);
+    }
   });
   await check("readiness never asks for sports fields", () => {
     const text = JSON.stringify(evaluateBusinessScriptReadiness({ ...snap, facts: [], storyStructure: [] }).reasons).toLowerCase();
@@ -526,6 +566,27 @@ async function main() {
       assert.equal(res.verification.judge, "anthropic/claude-sonnet-5");
       assert.ok(res.claims.find((c) => c.lineIndex === 0)?.evidence?.[0]?.url, "cited evidence attached for reviewers");
     });
+    await check("a clause cut from a compound line is judged WITH its line as context (M2 live run 6)", async () => {
+      // Live: "Fifty percent there is normal." was judged alone and marked CONTRADICTED.
+      const seen: { claim: string; context?: string }[] = [];
+      const judge = async (claim: string, _p: string, context?: string) => { seen.push({ claim, context }); return "entailed" as const; };
+      const compound = "The premium was $1,140 in 2025. Chargebacks apply in the first year. Most carriers pay advance commissions.";
+      await run([mkLine(0, compound, true, ["F1", "F3", "F4"]), mkLine(1, "The average annual final expense premium was $1,140 in 2025.", true, ["F1"])], { judge, judgeModelsUsed: () => ["anthropic/claude-sonnet-5"] }, "approved", ["anthropic/claude-opus-5"]);
+      const fromCompound = seen.filter((x) => x.context);
+      assert.ok(fromCompound.length >= 2, `compound clauses carry context: ${JSON.stringify(seen)}`);
+      assert.ok(fromCompound.every((x) => x.context === compound));
+      assert.ok(seen.some((x) => x.claim.startsWith("The average annual") && x.context === undefined), "a single-claim line is judged as itself, no context");
+    });
+    await check("the judge prompt shows context only when given (research/dossier prompts unchanged)", async () => {
+      const prompts: string[] = [];
+      const llm = { name: "x", generateStructuredOutput: async (o: { prompt: string }) => { prompts.push(o.prompt); return { label: "entailed" }; } } as unknown as LLMProvider;
+      const j = llmEntailmentJudge(llm);
+      await j("A claim.", "A passage.");
+      await j("Fifty percent there is normal.", "US DID 40-70%.", "It is fine on US DID. Fifty percent there is normal.");
+      assert.equal(prompts[0], "<passage>\nA passage.\n</passage>\n<claim>\nA claim.\n</claim>");
+      assert.match(prompts[1], /<context>\nIt is fine on US DID\. Fifty percent there is normal\.\n<\/context>/);
+      assert.match(prompts[1], /Judge the claim alone/);
+    });
     await check("judge says neutral → SEMANTIC_VERIFICATION_FAILED → needs_review", async () => {
       const { res } = await run(goodLines, { judge: async () => "neutral" });
       assert.equal(res.verification.semantic, "SEMANTIC_VERIFICATION_FAILED");
@@ -655,6 +716,157 @@ async function main() {
     assert.equal(withSchemaInstructions({ systemPrompt: "S", prompt: "p", jsonSchema: { type: "object" } }).systemPrompt, "S");
   });
 
+  await check("a business reply that is broken JSON is asked for once more, never silently dropped (M2 live run 2)", async () => {
+    let calls = 0;
+    const flaky = { name: "anthropic", generateStructuredOutput: async () => {
+      calls++;
+      if (calls === 1) throw new Error("[Anthropic] Failed to parse output as valid JSON: Unexpected token 'u', ...\"ces.\",\"},\"undercover\"... is not valid JSON");
+      return { ok: true };
+    } } as unknown as LLMProvider;
+    assert.deepEqual(await businessLLM(flaky).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), { ok: true });
+    assert.equal(calls, 2, "exactly one retry");
+    // Only once: a model that keeps returning broken JSON still fails loudly.
+    calls = 0;
+    const broken = { name: "anthropic", generateStructuredOutput: async () => { calls++; throw new Error("[Anthropic] Failed to parse output as valid JSON: no JSON object found in response."); } } as unknown as LLMProvider;
+    await assert.rejects(() => businessLLM(broken).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), /valid JSON/);
+    assert.equal(calls, 2);
+    // Any other failure (timeout, auth, refusal) is not retried here.
+    calls = 0;
+    const down = { name: "anthropic", generateStructuredOutput: async () => { calls++; throw new Error("[Anthropic] request timed out after 240000ms"); } } as unknown as LLMProvider;
+    await assert.rejects(() => businessLLM(down).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), /timed out/);
+    assert.equal(calls, 1);
+  });
+
+  await check("business writing calls ask Claude for medium effort; sports calls are unchanged (M2 live run 3)", async () => {
+    const { AnthropicLLMProvider: AnthropicProvider } = await import("../lib/providers/llm/anthropic");
+    const { withCreativeDomain } = await import("../lib/services/creativeDomain");
+    const prevKey = process.env.ANTHROPIC_API_KEY;
+    const prevEffort = process.env.LLM_EFFORT;
+    process.env.ANTHROPIC_API_KEY = "test-not-a-real-key";
+    try {
+      delete process.env.LLM_EFFORT;
+      const p = new AnthropicProvider("claude-sonnet-5") as unknown as { buildBody(o: object, s: string): Record<string, any> };
+      const opts = { prompt: "p", maxTokens: 10000 };
+      // Sports (no domain): byte-for-byte what it was — no effort sent.
+      assert.equal(p.buildBody(opts, "S").output_config, undefined);
+      const business = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody(opts, "S"));
+      assert.deepEqual(business.output_config, { effort: "medium" });
+      // An explicit per-call effort still wins inside a business episode.
+      const explicit = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody({ ...opts, effort: "low" }, "S"));
+      assert.deepEqual(explicit.output_config, { effort: "low" });
+      // The operator's LLM_EFFORT still applies to sports, and does not push business back to the cap-filling default.
+      process.env.LLM_EFFORT = "high";
+      assert.deepEqual(p.buildBody(opts, "S").output_config, { effort: "high" });
+      const b2 = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, async () => p.buildBody(opts, "S"));
+      assert.deepEqual(b2.output_config, { effort: "medium" });
+    } finally {
+      if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+      if (prevEffort === undefined) delete process.env.LLM_EFFORT; else process.env.LLM_EFFORT = prevEffort;
+    }
+  });
+
+  await check("the cold-open judge is not recorded as a script writer; every writing model is (M2 live run 4)", async () => {
+    const { writerModelsFromLedger } = await import("../lib/business/businessJobs");
+    // The real stage list of the fourth live run (legacy profile: Sonnet writes, Opus judges).
+    const stages = [
+      { stage: "script:story-spine", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:outline", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:private-agendas", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:cold-open-variants", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:cold-open-judge", models: ["anthropic/claude-opus-5"] },
+      { stage: "script:turn-plan", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:host-writer:Dana Reyes", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:host-writer:Marcus Hale", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:dialogue-director", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "script:continuity-editor", models: ["anthropic/claude-sonnet-5"] },
+      { stage: "quality:judge", models: ["anthropic/claude-opus-5"] },
+    ];
+    assert.deepEqual(writerModelsFromLedger(stages), ["anthropic/claude-sonnet-5"]);
+    // A writer that fell back to another model is still a writer: never under-count.
+    assert.deepEqual(
+      writerModelsFromLedger([...stages, { stage: "script:host-writer:Dana Reyes", models: ["anthropic/claude-opus-5"] }]).sort(),
+      ["anthropic/claude-opus-5", "anthropic/claude-sonnet-5"]
+    );
+  });
+
+  await check("inside a business episode a broken-JSON reply from Claude is asked for once more; sports is unchanged (M2 live run 5)", async () => {
+    const { AnthropicLLMProvider } = await import("../lib/providers/llm/anthropic");
+    const { withCreativeDomain } = await import("../lib/services/creativeDomain");
+    const prevKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-not-a-real-key";
+    try {
+      const make = (replies: string[]) => {
+        const p = new AnthropicLLMProvider("claude-opus-5") as unknown as { request: (b: unknown) => Promise<unknown>; generateStructuredOutput: (o: object) => Promise<unknown>; calls: number };
+        p.calls = 0;
+        // The real reply shape; the first one is the live judge's broken JSON.
+        p.request = async () => ({ content: [{ type: "text", text: replies[Math.min(p.calls++, replies.length - 1)] }], stop_reason: "end_turn" });
+        return p;
+      };
+      const broken = '{"judgments":[{"id":"consequence","score":81,"reasons":["Opens with a concrete scenario" — eight seconds"]}]}';
+      const good = '{"judgments":[{"id":"consequence","score":81,"reasons":["ok"]}]}';
+      const biz = make([broken, good]);
+      const out = await withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => biz.generateStructuredOutput({ prompt: "p", maxTokens: 500 }));
+      assert.deepEqual(out, JSON.parse(good));
+      assert.equal(biz.calls, 2);
+      // Sports: no domain, no retry — the provider fails exactly as before.
+      const sports = make([broken, good]);
+      await assert.rejects(() => sports.generateStructuredOutput({ prompt: "p", maxTokens: 500 }), /valid JSON/);
+      assert.equal(sports.calls, 1);
+      // Business, broken twice: fails loudly after one retry.
+      const twice = make([broken, broken]);
+      await assert.rejects(() => withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => twice.generateStructuredOutput({ prompt: "p", maxTokens: 500 })), /valid JSON/);
+      assert.equal(twice.calls, 2);
+    } finally {
+      if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
+    }
+  });
+
+  await check("a business episode's cover art is never labelled SPORTS; sports labels unchanged (M2 live run)", async () => {
+    const { coverTagFor } = await import("../lib/services/publishAssetsService");
+    assert.equal(coverTagFor({ intelligenceType: "BUSINESS", verticals: [], sport: null }), "Business");
+    assert.equal(coverTagFor({ intelligenceType: "BUSINESS", verticals: null }), "Business");
+    // Sports: byte-for-byte the old precedence.
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: "NFL", verticals: ["Betting"] }), "NFL");
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: null, verticals: ["Betting"] }), "Betting");
+    assert.equal(coverTagFor({ intelligenceType: "SPORTS", sport: null, verticals: [] }), "Sports");
+    assert.equal(coverTagFor({ sport: null, verticals: null }), "Sports");
+  });
+
+  await check("a business episode's topic reaches transcript/show-notes generation from its snapshot, with no sports fields (M2 live run)", async () => {
+    const { businessContentTopics } = await import("../lib/business/businessTopicSnapshot");
+    const snap = makeSnapshot();
+    const [t, ...rest] = businessContentTopics([{ id: "bt1", opportunityId: "op1", snapshot: snap }, { id: "bt2", opportunityId: "op2", snapshot: { kind: "nope" } }]);
+    assert.equal(rest.length, 0, "a corrupt snapshot is skipped, never invented");
+    assert.equal(t.topicId, "op1");
+    assert.equal(t.topic.title, snap.title);
+    assert.equal(t.topic.researchBrief.facts.length, snap.facts.length);
+    assert.equal(t.topic.researchBrief.facts[0].text, snap.facts[0].claim);
+    assert.deepEqual(t.topic.researchBrief.sourceUrls, snap.sources.map((x) => x.url));
+    const brief = t.topic.researchBrief as Record<string, unknown>;
+    for (const k of ["injuryContext", "oddsContext", "stats", "argumentForHostA", "leagueId", "sport"]) assert.ok(!(k in brief), `no sports field ${k}`);
+  });
+
+  await check("a fact_check model that cannot even start is an unavailable judge, not a crashed job (M2 live run)", async () => {
+    const { db } = await import("../lib/db");
+    const { independentFactCheckDeps } = await import("../lib/business/businessJobs");
+    const saved = { ...process.env };
+    const realScript = db.script;
+    Object.defineProperty(db, "script", { configurable: true, value: { findUnique: async () => ({ content: { kind: "business" } }) } });
+    try {
+      process.env.LLM_ROUTING_PROFILE = "legacy";
+      process.env.VERIFY_LLM_PROVIDER = "openai";
+      process.env.VERIFY_MODEL = "gpt-5";
+      delete process.env.OPENAI_API_KEY;
+      const deps = await independentFactCheckDeps("s1") as { judge?: unknown; judgeUnavailableReason?: string };
+      assert.equal(deps.judge, undefined);
+      assert.match(deps.judgeUnavailableReason ?? "", /could not be started/);
+    } finally {
+      Object.defineProperty(db, "script", { configurable: true, value: realScript });
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+      Object.assign(process.env, saved);
+    }
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);
@@ -726,6 +938,27 @@ async function main() {
     // Approved scripts are never re-statused here.
     stored = { ...stored, status: "approved" };
     assert.equal(await reauditBusinessScript(db, "s1"), null);
+  });
+
+  await check("approval re-audits a needs_revision script: zero flags → approvable, any flag → refused (M2 live run 6)", async () => {
+    const snap = makeSnapshot();
+    const mk = (text: string) => ({ lineIndex: 0, speakerName: "A", speakerHostId: "h", text, tone: "x", isFactualClaim: false, needsHumanReview: false, evidenceRefs: [], isInterruption: false });
+    let stored = { id: "s1", status: "needs_revision", episodeId: "e1", content: { segments: [{ lines: [mk("So walk me through what that means.")] }] } as Record<string, unknown> };
+    const db = {
+      script: {
+        findUnique: async () => stored,
+        update: async ({ data }: { data: { content: Record<string, unknown>; status: string } }) => { stored = { ...stored, ...data }; return stored; },
+      },
+      businessEpisodeTopic: { findFirst: async () => ({ snapshot: snap }) },
+    } as never;
+    // Left at needs_revision by a failed fact-check, but nothing in it is flagged.
+    assert.equal(await statusForApproval(db, stored), "draft");
+    // Still an invented figure → still refused.
+    stored = { ...stored, status: "needs_revision", content: { segments: [{ lines: [mk("Carriers bill on a four hundred and twelve second minimum.")] }] } };
+    assert.equal(await statusForApproval(db, stored), "needs_revision");
+    // Anything else is judged as it is.
+    assert.equal(await statusForApproval(db, { id: "s1", status: "draft" }), "draft");
+    assert.equal(await statusForApproval(db, { id: "s1", status: "approved" }), "approved");
   });
 
   // OWNER FEEDBACK (Milestone 2): business episodes sounded like 1940s robots —
