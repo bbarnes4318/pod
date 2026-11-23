@@ -14,7 +14,7 @@ import { detectClaims, type ClaimClassifier } from "../lib/business/factualClaim
 import { BUSINESS_RELEASE_STAGES, BusinessFactHoldError, assertBusinessRelease, buildFactReview, combineStates, evaluateBusinessRelease, scriptTextFingerprint, type ClaimOutcome, type OverallState, type VerificationBasis } from "../lib/business/businessVerification";
 import { parseRobots, robotsAllows, selectPages, classifyPage } from "../lib/business/discovery";
 import { ADVANCED_FIELDS } from "../lib/business/profileSchema";
-import { renderProfileContext, excludedTopics, type ProfileLike } from "../lib/business/researchContext";
+import { renderProfileContext, excludedTopics, specificityTerms, type ProfileLike } from "../lib/business/researchContext";
 import { generateAdaptiveQuestions, findProfileGaps } from "../lib/business/adaptiveQuestions";
 import { assessDemand, scoreAchievedIas, scoreInformationAdvantage, type ScoringObservation } from "../lib/business/scoring";
 import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
@@ -230,6 +230,34 @@ async function main() {
     const terms = ["final", "expense", "transfers", "persistency", "placement"];
     assert.ok(genericnessReasons("5 Marketing Tips for Small Businesses", terms).length > 0);
     assert.equal(genericnessReasons("Why live transfers wreck final expense persistency", terms).length, 0);
+  });
+  await check("a niche's acronyms and ratios count as specific; terminology is never cut off (M2 live run 2)", () => {
+    // The real Milestone 2 wholesale VoIP profile. Its terminology field came
+    // after ~80 other words, and ASR/ACD/PDD/CLI are 3 letters: every topic
+    // below was held as "names nothing specific to this business or niche".
+    const profile = {
+      businessName: "M2 Test Wholesale VoIP Desk", industry: "Wholesale VoIP and telecom services",
+      subIndustries: ["Wholesale voice termination", "Carrier interconnects", "Least-cost routing"],
+      targetAudiences: ["Contact-center operators", "Wholesale carriers", "VoIP business owners"], primaryGoal: "Industry authority",
+      geographicMarkets: ["United States"], language: "en", findings: [],
+      answers: { fields: {
+        AUDIENCE_JOB_TITLES: "Contact-center operations managers\nWholesale carrier account managers\nVoIP provider owners\nNOC and routing engineers",
+        AUDIENCE_TOP_PROBLEMS: "Paying for billing increments they don't understand\nShort-duration traffic getting blocked or surcharged\nPoor ASR/ACD on cheap routes\nThin carrier margins",
+        PREFERRED_TOPICS: "Wholesale termination\nBilling increments (6/6, 60/60, 1/1)\nShort-duration traffic\nRouting quality: ASR, ACD, PDD\nCarrier economics and margins",
+        IMPORTANT_INDUSTRY_METRICS: "ASR, ACD, PDD, billing increment, per-minute rate, margin per minute",
+        AUDIENCE_INDUSTRY_TERMINOLOGY: "A-Z termination, CLI/non-CLI routes, 6/6 and 60/60 billing increments, ASR, ACD, PDD, short-duration calls, LCR, interconnect",
+      }, followups: {} },
+    } as unknown as ProfileLike;
+    const terms = specificityTerms(profile);
+    for (const t of ["asr", "acd", "pdd", "cli", "lcr", "6/6", "60/60", "interconnect"]) assert.ok(terms.includes(t), `term ${t}`);
+    for (const title of [
+      "Reading ASR, ACD and PDD Together: Why No Single Number Proves a Route Is Good",
+      "CLI vs NCLI: When a Cheaper Route Costs More in Lost Answers",
+      "6/6 or 60/60: what the increment really costs you",
+    ]) assert.deepEqual(genericnessReasons(title, terms), [], title);
+    // Still held: a title any company could publish.
+    assert.ok(genericnessReasons("5 Marketing Tips for Small Businesses", terms).length > 0);
+    assert.ok(genericnessReasons("Why Customer Service Matters", terms).length > 0);
   });
   await check("exclusions and repetition", () => {
     assert.ok(isExcluded("A deep dive on Medicare Advantage commissions", ["medicare advantage"]));

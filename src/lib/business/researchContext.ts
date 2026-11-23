@@ -98,18 +98,31 @@ export function excludedTopics(profile: Pick<ProfileLike, "answers">): string[] 
 
 /** Terms that make a topic specific to THIS business (used by the genericness check). */
 export function specificityTerms(profile: ProfileLike): string[] {
+  // The owner's own vocabulary first: terminology, then sub-industries and the
+  // industry, then everything else. The list is capped, and it used to be cut
+  // in the order the form happens to list its fields, so the terminology field
+  // (late in that order) never made it in.
+  const queryFields = fieldsForUse(profile, "queries");
+  const terminology = queryFields.filter((f) => /TERMINOLOGY/.test(f.key)).map((f) => f.value);
   const raw = [
-    profile.industry,
+    ...terminology,
+    ...usableFindings(profile).filter((f) => f.field === "INDUSTRY_TERMINOLOGY").map((f) => f.value),
     ...profile.subIndustries,
-    ...fieldsForUse(profile, "queries").map((f) => f.value),
+    profile.industry,
+    ...queryFields.filter((f) => !/TERMINOLOGY/.test(f.key)).map((f) => f.value),
     ...usableFindings(profile)
-      .filter((f) => ["SERVICES", "PRODUCTS", "INDUSTRY_TERMINOLOGY", "SUB_INDUSTRIES", "TARGET_CUSTOMERS"].includes(f.field))
+      .filter((f) => ["SERVICES", "PRODUCTS", "SUB_INDUSTRIES", "TARGET_CUSTOMERS"].includes(f.field))
       .map((f) => f.value),
   ].join(" ");
   const STOP = new Set("and or the for with your our their from that this into about over under business businesses company companies service services industry customers people".split(" "));
-  const counts = new Map<string, number>();
+  const terms = new Set<string>();
+  // Industry acronyms are the most specific words a niche has (ASR, ACD, PDD,
+  // CLI, LCR, FAS) and are short, so they are taken as written in capitals.
+  // Ratios such as 6/6 and 60/60 are terms too (billing increments).
+  for (const w of raw.match(/\b[A-Z][A-Z0-9]{1,5}\b/g) ?? []) terms.add(w.toLowerCase());
+  for (const w of raw.match(/\b\d{1,3}\/\d{1,3}\b/g) ?? []) terms.add(w);
   for (const w of raw.toLowerCase().match(/[a-z][a-z0-9/-]{3,}/g) ?? []) {
-    if (!STOP.has(w)) counts.set(w, (counts.get(w) ?? 0) + 1);
+    if (!STOP.has(w)) terms.add(w);
   }
-  return [...counts.keys()].slice(0, 80);
+  return [...terms].slice(0, 160);
 }
