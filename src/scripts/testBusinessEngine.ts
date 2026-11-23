@@ -655,6 +655,27 @@ async function main() {
     assert.equal(withSchemaInstructions({ systemPrompt: "S", prompt: "p", jsonSchema: { type: "object" } }).systemPrompt, "S");
   });
 
+  await check("a business reply that is broken JSON is asked for once more, never silently dropped (M2 live run 2)", async () => {
+    let calls = 0;
+    const flaky = { name: "anthropic", generateStructuredOutput: async () => {
+      calls++;
+      if (calls === 1) throw new Error("[Anthropic] Failed to parse output as valid JSON: Unexpected token 'u', ...\"ces.\",\"},\"undercover\"... is not valid JSON");
+      return { ok: true };
+    } } as unknown as LLMProvider;
+    assert.deepEqual(await businessLLM(flaky).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), { ok: true });
+    assert.equal(calls, 2, "exactly one retry");
+    // Only once: a model that keeps returning broken JSON still fails loudly.
+    calls = 0;
+    const broken = { name: "anthropic", generateStructuredOutput: async () => { calls++; throw new Error("[Anthropic] Failed to parse output as valid JSON: no JSON object found in response."); } } as unknown as LLMProvider;
+    await assert.rejects(() => businessLLM(broken).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), /valid JSON/);
+    assert.equal(calls, 2);
+    // Any other failure (timeout, auth, refusal) is not retried here.
+    calls = 0;
+    const down = { name: "anthropic", generateStructuredOutput: async () => { calls++; throw new Error("[Anthropic] request timed out after 240000ms"); } } as unknown as LLMProvider;
+    await assert.rejects(() => businessLLM(down).generateStructuredOutput({ systemPrompt: "S", prompt: "p" }), /timed out/);
+    assert.equal(calls, 1);
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);
