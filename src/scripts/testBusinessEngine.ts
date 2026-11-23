@@ -9,7 +9,7 @@
  * snapshot readiness, script line audit, and the sports/business packet split.
  */
 import assert from "node:assert/strict";
-import { verifyClaim, assignOrigins, assessFreshness, type EntailmentJudge } from "../lib/business/claimVerification";
+import { verifyClaim, assignOrigins, assessFreshness, extractNumbers, compareNumbers, type EntailmentJudge } from "../lib/business/claimVerification";
 import { detectClaims, type ClaimClassifier } from "../lib/business/factualClaims";
 import { BUSINESS_RELEASE_STAGES, BusinessFactHoldError, assertBusinessRelease, buildFactReview, combineStates, evaluateBusinessRelease, scriptTextFingerprint, type ClaimOutcome, type OverallState, type VerificationBasis } from "../lib/business/businessVerification";
 import { parseRobots, robotsAllows, selectPages, classifyPage } from "../lib/business/discovery";
@@ -18,11 +18,14 @@ import { renderProfileContext, excludedTopics, type ProfileLike } from "../lib/b
 import { generateAdaptiveQuestions, findProfileGaps } from "../lib/business/adaptiveQuestions";
 import { assessDemand, scoreAchievedIas, scoreInformationAdvantage, type ScoringObservation } from "../lib/business/scoring";
 import { ADAPTERS, adapterStatus } from "../lib/business/researchProviders";
-import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS } from "../lib/business/researchEngine";
+import { genericnessReasons, isExcluded, titleSimilarity, BUDGETS, parseTopicsOutput, topicBatches, mergeTopicBatches } from "../lib/business/researchEngine";
 import { auditAnalysis } from "../lib/business/businessDossier";
 import { evidenceFingerprint, evaluateBusinessScriptReadiness, resolveEditorialPacket, parseBusinessSnapshot, type BusinessTopicSnapshotV1 } from "../lib/business/businessTopicSnapshot";
-import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview } from "../lib/business/businessProduction";
+import { auditBusinessLine, pickBusinessFormat, factCheckBusinessScript, recordBusinessFactReview, reauditBusinessScript, businessLineDelivery, capDramaticPauses, businessTopicsPrompt, businessHeadWriterPrompt, fromCreativeLine, guardInterruptions, BUSINESS_FACT_REF_TYPE } from "../lib/business/businessProduction";
 import type { LLMProvider } from "../lib/providers/llm/interface";
+import { businessLLM, withSchemaInstructions } from "../lib/business/schemaInstructions";
+import { zodToJsonSchema } from "../lib/business/zodJsonSchema";
+import { DossierDraftSchema } from "../lib/business/businessDossier";
 import { sanitizeScriptContent } from "../lib/services/scriptValidation";
 
 let passed = 0;
@@ -482,6 +485,15 @@ async function main() {
     const decideAll = (cs: ClaimOutcome[]) => cs.filter((c) => c.status !== "SUPPORTED" && c.status !== "NOT_A_CLAIM")
       .map((c) => ({ lineIndex: c.lineIndex, text: c.text, decision: "VERIFIED_BY_REVIEWER" as const, note: "Matched against the cited source quote." }));
 
+    // LIVE-RUN REGRESSION (Milestone 2): the label is on the LINE, not each sentence.
+    await check("a labelled hypothetical line: every sentence of the example is NOT_A_CLAIM, not just the first", async () => {
+      const lines = [...goodLines, mkLine(3, "This is purely illustrative. Picture a premium of $1,140. Then one lapse claws back $1,140.", true)];
+      const { res } = await run(lines, { judge: entail, judgeLabel: "fake-judge" });
+      const ex = res.claims.filter((c) => c.lineIndex === 3);
+      assert.ok(ex.length >= 2, "the example's sentences were checked");
+      assert.ok(ex.every((c) => c.status === "NOT_A_CLAIM"), ex.map((c) => `${c.status}: ${c.text}`).join(" | "));
+    });
+
     await check("no judge configured → SEMANTIC_VERIFICATION_UNAVAILABLE → needs_review (was: passed)", async () => {
       const { res, state } = await run(goodLines, {});
       assert.equal(res.status, "needs_review");
@@ -587,6 +599,186 @@ async function main() {
       assert.equal(cleanedEvidenceRefCount, 1);
     });
   }
+
+  // LIVE-RUN REGRESSION (Milestone 2): the topic model returned 18 topics and
+  // ONE over-long field made the whole-object parse reject every one of them.
+  await check("topic output: one over-long field no longer discards the whole batch", () => {
+    const rating = { rating: 0.7, justification: "Grounded in the cited carrier bulletin." };
+    const topic = (title: string, extra: Record<string, unknown> = {}) => ({
+      category: "INSIDER_INTELLIGENCE", title, businessNiche: "Wholesale VoIP termination", targetListener: "Contact center operators",
+      coreQuestion: "What does 6/6 vs 60/60 billing do to short calls?", listenerProblem: "Margins vanish on short calls.",
+      whyItMatters: "Billing increments decide who pays for unused seconds.", whyNow: null, undercoveredInformation: null,
+      potentialOriginalAnalysis: "Proposed: a hypothetical cost model.", practicalValue: "Renegotiate increments.",
+      researchLimitations: [], sourceIds: ["s1"], observationIds: [], keyClaims: [{ claim: "Carriers bill in 6-second increments.", sourceId: "s1", quote: "billed in six-second increments" }],
+      ratings: { originalAnalysis: rating, undercoveredKnowledge: rating, industrySpecificity: rating, practicalUsefulness: rating, evidenceSupportedDepth: rating, targetListenerFit: rating, timelinessOrEvergreen: rating },
+      ...extra,
+    });
+    const out = parseTopicsOutput({
+      mechanisms: [{ mechanism: "Increment rounding transfers unused seconds to the buyer. ".repeat(20), sourceIds: ["s1"] }],
+      topics: [
+        topic("What 6/6 versus 60/60 billing does to short-duration traffic"),
+        topic("Why ASR alone misleads contact-center route selection", { whyItMatters: "Long explanation. ".repeat(80), researchLimitations: ["a", "b", "c", "d", "e", "f", "g", "h"] }),
+        topic("Short calls and carrier margin", { keyClaims: [{ claim: "x".repeat(450), sourceId: "s1", quote: "q".repeat(20) }, { claim: "Short calls dominate some contact-center traffic.", sourceId: "s1", quote: "short calls dominate" }] }),
+        topic("Broken topic", { category: "NOT_A_CATEGORY" }),
+      ],
+    });
+    assert.equal(out.topics.length, 3, "the three salvageable topics survive");
+    assert.equal(out.dropped.length, 1, "only the genuinely malformed topic is dropped");
+    assert.match(out.dropped[0].issue, /category/);
+    assert.ok(out.topics[1].whyItMatters.length <= 600 && out.topics[1].whyItMatters.endsWith("…"), "over-long prose is trimmed, visibly");
+    assert.equal(out.topics[1].researchLimitations.length, 6);
+    assert.equal(out.topics[2].keyClaims.length, 1, "an over-long claim is dropped, never trimmed (trimming can change what it asserts)");
+    assert.equal(out.topics[2].keyClaims[0].quote, "short calls dominate");
+    assert.ok(out.mechanisms[0].mechanism.length <= 400);
+  });
+
+  await check("topic output: nothing usable → no topics, never invented", () => {
+    assert.deepEqual(parseTopicsOutput({ topics: [{ title: 1 }] }).topics, []);
+    assert.deepEqual(parseTopicsOutput("not json at all").topics, []);
+  });
+
+  // LIVE-RUN REGRESSION (Milestone 2): Anthropic forces JSON by instruction and
+  // never sends jsonSchema, so the topic model guessed field names and every
+  // topic lacked businessNiche. Business calls now carry the schema in-prompt.
+  await check("business model calls carry their JSON schema to the model", async () => {
+    let seen = "";
+    class FakeRouted { modelsUsed = ["anthropic:claude-sonnet-5"]; async generateText() { return ""; } async generateStructuredOutput(o: { systemPrompt?: string }) { seen = o.systemPrompt ?? ""; return { ok: true }; } }
+    const real = new FakeRouted();
+    const wrapped = businessLLM(real as unknown as LLMProvider);
+    await wrapped.generateStructuredOutput({ systemPrompt: "SYS", prompt: "p", jsonSchema: { type: "object", properties: { businessNiche: { type: "string", maxLength: 200 } }, required: ["businessNiche"] } });
+    assert.match(seen, /^SYS/);
+    assert.match(seen, /"businessNiche"/, "field names reach the model");
+    assert.match(seen, /"maxLength":200/, "limits reach the model");
+    assert.ok(wrapped instanceof FakeRouted, "instanceof still sees the real provider (model tracking relies on it)");
+    assert.deepEqual((wrapped as unknown as FakeRouted).modelsUsed, ["anthropic:claude-sonnet-5"]);
+    // An open schema adds nothing — those prompts spell the shape out themselves.
+    assert.equal(withSchemaInstructions({ systemPrompt: "S", prompt: "p", jsonSchema: { type: "object" } }).systemPrompt, "S");
+  });
+
+  await check("the dossier is shown its real schema (names, required, limits)", () => {
+    const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
+    assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);
+    assert.equal(s.properties.verifiedFacts.maxItems, 20);
+    assert.deepEqual(s.properties.verifiedFacts.items?.required, ["claim", "sourceId", "quote"]);
+  });
+
+  await check("topics are written in parallel batches that fit the request timeout and the call budget", () => {
+    for (const depth of ["QUICK", "STANDARD", "DEEP"] as const) {
+      const b = topicBatches(BUDGETS[depth].maxCandidates);
+      assert.equal(b.reduce((s, x) => s + x.count, 0), BUDGETS[depth].maxCandidates, `${depth}: batch counts add up`);
+      assert.ok(b.every((x) => x.count <= 7), `${depth}: no batch asks for more than 7 topics`);
+      assert.deepEqual([...new Set(b.flatMap((x) => x.categories))].sort(), ["EVERGREEN", "HIDDEN_OPPORTUNITY", "INSIDER_INTELLIGENCE", "TRENDING"], `${depth}: every category is covered`);
+      assert.ok(1 + b.length + 1 <= BUDGETS[depth].llmCalls, `${depth}: plan + batches + review fit the model-call budget`);
+    }
+    const merged = mergeTopicBatches([null, parseTopicsOutput({ mechanisms: [{ mechanism: "A", sourceIds: [] }], topics: [] })]);
+    assert.equal(merged.dropped[0].issue, "the batch returned nothing", "a failed batch is reported, not fatal");
+    assert.equal(merged.mechanisms.length, 1);
+  });
+
+  // LIVE-RUN REGRESSION (Milestone 2): a correct, fully sourced script was
+  // flagged on 2 lines because spelled-out numbers were read word by word.
+  await check("spoken numbers are read as whole amounts (scripts spell numbers out)", () => {
+    const v = (s: string) => extractNumbers(s).map((n) => `${n.kind}:${n.value}`);
+    assert.deepEqual(v("about six hundredths of a cent"), ["money:0.0006"]);
+    assert.deepEqual(v("twelve hundredths of a cent"), ["money:0.0012"]);
+    assert.deepEqual(v("one-point-two cents"), ["money:0.012"]);
+    assert.deepEqual(v("a hundred thousand calls"), ["number:100000"]);
+    assert.deepEqual(v("about twelve hundred on that route"), ["number:1200"]);
+    assert.deepEqual(v("eleven hundred and forty dollars"), ["money:1140"]);
+    assert.deepEqual(v("forty percent"), ["percent:40"]);
+    // And claims written in words now match evidence written in digits.
+    assert.equal(compareNumbers("a gap of eleven hundred and forty dollars", "a $1,140 monthly gap", ["money", "number"]).consistent, true);
+    assert.equal(compareNumbers("plans start at nineteen dollars", "Our service starts at $28 per month.", ["money"]).consistent, false);
+  });
+
+  await check("line audit: labelled spoken illustrations pass; uncited specifics are still flagged", () => {
+    const snap = makeSnapshot();
+    snap.originalAnalysis = [{ finding: "Illustrative cost per FAS event", method: "x", inputs: [{ label: "rate", value: "$0.012/min", sourceId: null, hypothetical: true }, { label: "calls", value: "100,000 calls", sourceId: null, hypothetical: true }], result: "1/1 = $0.0006; 6/6 = $0.0012; 60/60 = $0.012; monthly 1/1 ≈ $60; 60/60 ≈ $1,200; a $1,140 gap", status: "completed" }] as never;
+    const audit = (text: string, isFactualClaim = true) => auditBusinessLine(snap, { text, isFactualClaim, factIds: [] }).errors;
+    // The live v2 script's lines, which were wrongly flagged:
+    assert.deepEqual(audit("And scale it hypothetically — a hundred thousand calls at those illustrative numbers. One-one lands around sixty dollars. Sixty-sixty lands around twelve hundred. Roughly eleven hundred and forty dollars of gap."), []);
+    assert.deepEqual(audit("This is illustrative. Under six-six billing it's twelve hundredths of a cent; on sixty-sixty, one-point-two cents.", false), []);
+    // Still flagged: an uncited specific, and an unlabelled factual line with no citation.
+    assert.match(audit("The clock starts on a one-eighty Ringing.", false).join(), /eighty/);
+    assert.match(audit("Carriers lose a lot to this every year.").join(), /no valid fact citation/);
+    assert.match(audit("Hypothetically, carriers lose four hundred thousand dollars.").join(), /four hundred thousand/, "a labelled illustration still may not invent numbers");
+  });
+
+  // LIVE-RUN REGRESSION (Milestone 2): the owner fixed both flagged lines in the
+  // transcript editor and the script stayed "needs_revision" — a dead end.
+  await check("editing a flagged business line re-audits it: fixed → draft (approvable), still wrong → stays flagged", async () => {
+    const snap = makeSnapshot();
+    const line = (lineIndex: number, text: string) => ({ lineIndex, speakerName: "A", speakerHostId: "h", text, tone: "x", isFactualClaim: false, needsHumanReview: true, evidenceRefs: [], isInterruption: false, reviewNotes: ["old flag"] });
+    let stored = { id: "s1", status: "needs_revision", episodeId: "e1", content: { segments: [{ lines: [line(0, "The clock starts on the wrong signal."), line(1, "Require the increment on the rate line.")] }] } as Record<string, unknown> };
+    const db = {
+      script: {
+        findUnique: async () => stored,
+        update: async ({ data }: { data: { content: Record<string, unknown>; status: string } }) => { stored = { ...stored, content: data.content, status: data.status }; return stored; },
+      },
+      businessEpisodeTopic: { findFirst: async () => ({ snapshot: snap }) },
+    } as never;
+    assert.deepEqual(await reauditBusinessScript(db, "s1"), { flaggedLines: 0, status: "draft" });
+    const lines = (stored.content as { segments: { lines: { needsHumanReview: boolean; reviewNotes?: string[] }[] }[] }).segments[0].lines;
+    assert.ok(lines.every((l) => !l.needsHumanReview && !l.reviewNotes), "fixed lines are cleared");
+    // An edit that is still ungrounded keeps the script blocked.
+    (stored.content as { segments: { lines: { text: string }[] }[] }).segments[0].lines[1].text = "Carriers bill on a four hundred and twelve second minimum.";
+    assert.deepEqual(await reauditBusinessScript(db, "s1"), { flaggedLines: 1, status: "needs_revision" });
+    // Approved scripts are never re-statused here.
+    stored = { ...stored, status: "approved" };
+    assert.equal(await reauditBusinessScript(db, "s1"), null);
+  });
+
+  // OWNER FEEDBACK (Milestone 2): business episodes sounded like 1940s robots —
+  // the writer gave Fish no delivery at all. Lines now carry it.
+  await check("business lines carry delivery to the voice engine (energy, pause, interruption)", () => {
+    assert.deepEqual(businessLineDelivery({ energy: "high", pauseBefore: "breath" }, 3), { isInterruption: false, energy: "high", pauseBefore: "breath" });
+    assert.deepEqual(businessLineDelivery({ isInterruption: true, pauseBefore: "long" }, 5), { isInterruption: true, energy: "medium", pauseBefore: "none" }, "an interruption jumps straight in");
+    assert.equal(businessLineDelivery({ isInterruption: true }, 0).isInterruption, false, "nothing to interrupt on the first line");
+    assert.deepEqual(businessLineDelivery({}, 2), { isInterruption: false, energy: "medium", pauseBefore: "beat" });
+    const lines = [{ pauseBefore: "long" as const }, { pauseBefore: "beat" as const }, { pauseBefore: "long" as const }, { pauseBefore: "long" as const }];
+    capDramaticPauses(lines);
+    assert.deepEqual(lines.map((l) => l.pauseBefore), ["long", "beat", "long", "breath"]);
+    // Expressive tags never count as spoken words for the grounding audit.
+    assert.deepEqual(auditBusinessLine(makeSnapshot(), { text: "[laughs] Okay, that's nasty. [sighs]", isFactualClaim: false, factIds: [] }).errors, []);
+  });
+
+  // OWNER FEEDBACK (Milestone 2): "study how the sports podcasts are generated".
+  // Business two-host scripts now go through the sports seven-role pipeline.
+  await check("the dossier reaches the sports writing pipeline as typed fact refs, unsafe claims fenced off", () => {
+    const snap = makeSnapshot();
+    snap.uncertainties = ["Unverified: carriers lose 9% to fraud.", "No source gives a standard threshold."];
+    const prompt = businessTopicsPrompt(snap);
+    assert.match(prompt, /Key Grounded Facts: \[/);
+    assert.ok(prompt.includes(`{"type":"${BUSINESS_FACT_REF_TYPE}","id":"F1"}`), "facts carry the ref the writers must copy");
+    assert.match(prompt, /Unsafe Claims \(DO NOT USE AS FACTS OR TRUTHS\): \["Unverified: carriers lose 9% to fraud\."\]/);
+    assert.match(prompt, /Open Questions[^\n]*No source gives a standard threshold/);
+  });
+
+  await check("host personas sit BEFORE the speech-rules marker (that prefix is what the host writers see)", () => {
+    const snap = makeSnapshot();
+    const host = (name: string) => ({ id: name, name, role: "host", worldview: `${name} worldview`, speakingStyle: `${name} talks in short bursts`, likes: [], dislikes: [], argumentPatterns: [], bannedPhrases: [], catchphrases: [], intensityLevel: 5 }) as never;
+    const fmt = { id: "host_and_expert", roles: [{ id: "host", name: "Host", direction: "asks" }, { id: "expert", name: "Expert", direction: "explains" }] } as never;
+    const prompt = businessHeadWriterPrompt("Carrier Economics", snap, fmt, [host("Marisol"), host("Ambrose")]);
+    const marker = prompt.indexOf("HOW REAL PODCAST SPEECH WORKS");
+    assert.ok(marker > 0);
+    assert.ok(prompt.indexOf("Marisol talks in short bursts") < marker && prompt.indexOf("Ambrose talks in short bursts") < marker, "each host's speaking style reaches the writers");
+    assert.ok(prompt.indexOf("no careers, clients") < marker, "the synthetic-host rule reaches the writers too");
+    assert.doesNotMatch(prompt, /per episode|every two or three lines/i, "no mannerism quotas (sports forbids them)");
+  });
+
+  await check("pipeline lines map back to dossier facts; unknown refs and bad tags are dropped; interruptions cut a sentence", () => {
+    const known = new Set(["F1", "F2"]);
+    const l = fromCreativeLine({ speakerName: "Ambrose", text: "[laughs] [explodes] Twenty times the cost.", evidenceRefs: [{ type: "businessFact", id: "F2" }, { type: "businessFact", id: "F9" }, { type: "newsItem", id: "x" }], pauseBefore: "sideways", energy: "high" }, known);
+    assert.deepEqual(l.factIds, ["F2"]);
+    assert.equal(l.isFactualClaim, true, "a line carrying a fact is a factual claim");
+    assert.ok(l.text.includes("[laughs]") && !l.text.includes("[explodes]"));
+    assert.equal(l.pauseBefore, undefined);
+    assert.equal(l.energy, "high");
+    const lines = [{ text: "So the clock starts.", isInterruption: true }, { text: "And then the carrier bills it.", isInterruption: false }, { text: "Hold on.", isInterruption: true }];
+    assert.equal(guardInterruptions(lines), 1);
+    assert.equal(lines[0].isInterruption, false, "nothing to interrupt on the first line");
+    assert.equal(lines[1].text, "And then the carrier bills it—");
+  });
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed) process.exitCode = 1;

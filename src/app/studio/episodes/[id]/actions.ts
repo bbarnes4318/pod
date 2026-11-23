@@ -14,7 +14,7 @@ import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
 import { canViewOwned } from "@/lib/ownerScope";
 import { recordHumanRelease, revokeHumanRelease } from "@/lib/services/scriptRelease";
-import { queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
+import { queueFactCheckJob, queueTtsSegmentGenerationJob } from "@/lib/queue/podcastQueue";
 import type { ScriptEditorialDecision } from "@/lib/services/scriptEditorialGate";
 import { recordBusinessFactReview } from "@/lib/business/businessProduction";
 import type { ClaimDisposition } from "@/lib/business/businessVerification";
@@ -109,6 +109,22 @@ export async function revokeScriptEditorialRelease(episodeId: string) {
  * editorial release above: that one says "voice it anyway", this one says
  * "I checked these facts" — and only this one satisfies the business fact rule.
  */
+/**
+ * Re-run the business fact-check on the latest script. The panel used to have
+ * no way to do this: re-checking after an edit was hidden behind a generic
+ * "Re-queue this step" control that only appeared in some states.
+ */
+export async function rerunBusinessFactCheckAction(episodeId: string) {
+  const gate = await ownedLatestScript(episodeId);
+  if (!gate.success) return gate;
+  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { status: true, content: true } });
+  if ((script?.content as { kind?: string } | null)?.kind !== "business") return { success: false as const, error: "This isn't a business script." };
+  if (script?.status !== "approved") return { success: false as const, error: "Approve the script first — the fact-check runs on the approved script." };
+  await queueFactCheckJob({ scriptId: gate.scriptId });
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  return { success: true as const };
+}
+
 export async function recordBusinessFactReviewAction(episodeId: string, reason: string, dispositions: unknown) {
   const gate = await ownedLatestScript(episodeId);
   if (!gate.success) return gate;

@@ -299,6 +299,20 @@ async function run() {
     assert(scriptGenerationAllowedFrom(null, false), "a missing status reads as draft, as productionStageForStatus does");
   });
 
+  // LIVE-RUN REGRESSION (Milestone 2): the console said "Recording the hosts"
+  // while voicing was refused at the release gate and nothing was queued.
+  await check("a stage held at a release gate reads as waiting on you, never as recording", () => {
+    const r = deriveProduction(input({ status: "fact_checked", hasScript: true, releaseBlock: "Waiting for your editorial release: read the script, then press Release for production." }));
+    const voices = r.stages.find((s) => s.key === "voices")!;
+    assert(voices.state === "checkpoint", `voices should be waiting on the user, got ${voices.state}`);
+    assert(/editorial release/.test(voices.blurb), "the stage says what it is waiting for");
+    assert(r.headline === "Waiting for your approval", `headline was "${r.headline}"`);
+    assert(r.awaitingUser && !r.stalled, "waiting on a person is neither busy nor stalled");
+    // Once the job really runs, it reads as running again.
+    const running = deriveProduction(input({ status: "fact_checked", hasScript: true, releaseBlock: "x", jobs: new Map([["voices", job()]]) }));
+    assert(running.stages.find((s) => s.key === "voices")!.state === "active", "a running job is shown as running");
+  });
+
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);
 }

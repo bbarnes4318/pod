@@ -15,6 +15,8 @@
 //   * Failure comes from the stage's JobLog, never from Episode.status — the
 //     worker rolls the status back on failure instead of writing "failed".
 
+import { evaluateDownstreamBlock } from "@/lib/services/scriptEditorialGate";
+import { evaluateBusinessRelease } from "@/lib/business/businessVerification";
 import { db } from "@/lib/db";
 import { PRODUCTION_STAGES } from "@/lib/createFlow";
 import {
@@ -266,7 +268,18 @@ export async function getCreateProgressVM(episodeId: string): Promise<CreateProg
     /* optional */
   }
 
+  // A stage that a release gate refuses is WAITING ON A PERSON, not running.
+  let releaseBlock: string | null = null;
+  if (scriptRow && (episode.status === "fact_checked" || episode.status === "audio_segments_ready")) {
+    const stageJob = episode.status === "fact_checked" ? "tts:generate-segments" : "audio:stitch-final";
+    const editorial = evaluateDownstreamBlock(scriptRow.content);
+    const business = evaluateBusinessRelease(scriptRow.content, stageJob);
+    if (editorial.blocked) releaseBlock = "Waiting for your editorial release: read the script, then press Release for production.";
+    else if (!business.allowed) releaseBlock = `Waiting for the fact-check: ${business.reasons[0] ?? "it hasn't passed yet."}`;
+  }
+
   const derived = deriveProduction({
+    releaseBlock,
     status: episode.status,
     hasScript: !!scriptRow,
     nowMs,

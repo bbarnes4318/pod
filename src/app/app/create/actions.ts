@@ -5,6 +5,8 @@
 // (requireAdmin), so the listener surface gets its own ungated actions that
 // wrap the same services/queue jobs. Guards mirror the admin versions.
 
+import { reauditBusinessScript } from "@/lib/business/businessProduction";
+import { isBusinessPodcast } from "@/lib/business/intelligenceType";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { currentUser } from "@/lib/currentUser";
@@ -411,9 +413,18 @@ export async function saveLineEdit(episodeId: string, lineIndex: number, newText
   const text = String(newText ?? "").trim();
   if (!text) return { success: false as const, error: "A line can't be empty." };
   if (text.length > 2000) return { success: false as const, error: "That line is too long." };
-  return mutateLatestScriptLine(episodeId, lineIndex, (line) => {
+  const saved = await mutateLatestScriptLine(episodeId, lineIndex, (line) => {
     line.text = text;
   });
+  // Business scripts: re-run the grounding audit so a line the owner fixed is
+  // cleared (and a still-ungrounded one stays flagged). Sports: unchanged.
+  const ep = saved.success ? await db.episode.findUnique({ where: { id: episodeId }, select: { podcast: { select: { intelligenceType: true } } } }) : null;
+  if (saved.success && isBusinessPodcast(ep?.podcast)) {
+    const latest = await db.script.findFirst({ where: { episodeId }, orderBy: { version: "desc" }, select: { id: true } });
+    if (latest) await reauditBusinessScript(db, latest.id);
+    revalidatePath(`/studio/episodes/${episodeId}`);
+  }
+  return saved;
 }
 
 /** Request a plain-language variant for a line ("spicier" | "calmer" |

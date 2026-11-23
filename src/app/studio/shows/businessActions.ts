@@ -23,6 +23,7 @@ import { getRoleLLMProvider } from "@/lib/providers/llm/factory";
 import { roleHasRealProvider } from "@/lib/providers/llm/routing";
 import { queueBusinessDossierJob, queueBusinessResearchJob, queueFactCheckJob, queueScriptGenerationJob } from "@/lib/queue/podcastQueue";
 import { recordHumanRelease } from "@/lib/services/scriptRelease";
+import { businessLLM } from "@/lib/business/schemaInstructions";
 
 type Result<T = object> = ({ success: true } & T) | { success: false; error: string };
 
@@ -118,8 +119,8 @@ export async function runBusinessDiscovery(podcastId: string): Promise<Result<{ 
   });
   if (claimed.count === 0) return { success: false, error: "Discovery is already running." };
 
-  const judge = roleHasRealProvider("fact_check") ? llmEntailmentJudge(getRoleLLMProvider("fact_check")) : undefined;
-  const res = await discoverBusiness(p, { llm: getRoleLLMProvider("evidence_extraction"), judge }).catch(
+  const judge = roleHasRealProvider("fact_check") ? llmEntailmentJudge(businessLLM(getRoleLLMProvider("fact_check"))) : undefined;
+  const res = await discoverBusiness(p, { llm: businessLLM(getRoleLLMProvider("evidence_extraction")), judge }).catch(
     (err: Error) => ({ ok: false as const, error: err.message })
   );
   if (!res.ok) {
@@ -239,7 +240,7 @@ export async function askAdaptiveQuestions(podcastId: string): Promise<Result<{ 
   if (Object.values(answers.followups).some((f) => !f.skipped && !f.answer.trim())) {
     return { success: false, error: "Answer or skip the current questions first." };
   }
-  const llm = roleHasRealProvider("topic_classification") ? getRoleLLMProvider("topic_classification") : null;
+  const llm = roleHasRealProvider("topic_classification") ? businessLLM(getRoleLLMProvider("topic_classification")) : null;
   const out = await generateAdaptiveQuestions(p, llm);
   if (!Object.keys(out.questions).length) return { success: true, asked: 0, note: out.note };
   const res = await db.businessProfile.updateMany({
@@ -282,7 +283,9 @@ export async function startBusinessResearch(podcastId: string, depth: Depth): Pr
   const key = `${podcastId}:industry:${depth}:v${p.version}:${new Date().toISOString().slice(0, 10)}`;
   try {
     const existing = await db.businessResearchRun.findUnique({ where: { idempotencyKey: key } });
-    if (existing && existing.status !== "failed" && existing.status !== "cancelled") return { success: true, runId: existing.id, reused: true };
+    // A run that stopped short (partial: budget, time limit or a failed pass) can be re-run;
+    // only a queued, running or completed run is reused for the same day and profile.
+    if (existing && !["failed", "cancelled", "partial"].includes(existing.status)) return { success: true, runId: existing.id, reused: true };
     // A run whose worker died stops updating; past the longest run limit it no longer blocks new research.
     await db.businessResearchRun.updateMany({ where: { podcastId, kind: "industry", status: "running", updatedAt: { lt: staleBefore() } }, data: { status: "failed", error: "The research worker stopped reporting progress.", completedAt: new Date() } });
     const running = await db.businessResearchRun.findFirst({ where: { podcastId, kind: "industry", status: { in: ["queued", "running"] } } });
