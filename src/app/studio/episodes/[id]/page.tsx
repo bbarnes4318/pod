@@ -210,6 +210,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           review={bizContent?.businessFactReview ?? null}
           claims={businessClaims}
           current={!!bv && bv.fingerprint === scriptTextFingerprint(script?.content)}
+          canRun={script?.status === "approved"}
         />
       )}
       <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
