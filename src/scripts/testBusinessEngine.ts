@@ -910,6 +910,23 @@ async function main() {
     assert.ok(quick[0].gapMs >= 60 && quick[0].gapMs <= 150);
   });
 
+  await check("business mix skips bus compression; every other mix keeps it (owner: 'delivery is flat')", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const { renderTimelineToWav } = await import("../lib/audio/assembly");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glue-"));
+    const tone = path.join(dir, "tone.wav");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=0.3", tone]);
+    const clip = { filePath: tone, startMs: 0, durationMs: 300, kind: "speech" as const, pan: 0, fadeInMs: 5, fadeOutMs: 5, gainDb: 0 };
+    await renderTimelineToWav("ffmpeg", [clip], path.join(dir, "a.wav"), { roomToneDb: -100 });
+    await renderTimelineToWav("ffmpeg", [clip], path.join(dir, "b.wav"), { roomToneDb: -100, glueCompression: false });
+    assert.match(fs.readFileSync(path.join(dir, "a-filter.txt"), "utf8"), /acompressor/, "default unchanged");
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, "b-filter.txt"), "utf8"), /acompressor/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

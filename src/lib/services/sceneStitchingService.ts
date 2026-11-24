@@ -482,7 +482,8 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     // 4. One mix render (room tone, glue compression) + optional ducked bed.
     console.log(`[SceneStitcher] Rendering ${clips.length} scene(s), ${stingerClips.length} stinger(s), intro=${!!introClip}, outro=${!!outroClip}.`);
     const foregroundWav = path.join(tempDir, "foreground-mix.wav");
-    await renderTimelineToWav(ffmpegPath, allClips, foregroundWav, { sampleRate: targetSampleRate });
+    // Business: no bus compression — it flattened the performed dynamics.
+    await renderTimelineToWav(ffmpegPath, allClips, foregroundWav, { sampleRate: targetSampleRate, glueCompression: !isBusinessScript });
 
     let mixWav = foregroundWav;
     // No music bed under a business conversation: the owner-approved test had

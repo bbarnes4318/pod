@@ -381,6 +381,10 @@ export interface RenderOptions {
   roomToneDb?: number;
   /** Milliseconds of room tone to keep after the last clip ends. */
   tailMs?: number;
+  /** Bus "glue" compression (2:1 above -21 dB). Default on. Business
+   *  episodes turn it off: on the Milestone 2 episode it took the delivery
+   *  range of a scene from 3.2 LU (as performed) to 1.5 LU. */
+  glueCompression?: boolean;
 }
 
 /**
@@ -442,7 +446,9 @@ export async function renderTimelineToWav(
   // slow 2:1 bus compressor so alternating voices feel like one recording.
   filterLines.push(
     `${mixLabels.join("")}amix=inputs=${mixLabels.length}:normalize=0:dropout_transition=0[mix]`,
-    `[mix]highpass=f=55:${BIQUAD_DET},acompressor=threshold=-21dB:ratio=2:attack=15:release=250:makeup=1.5dB[out]`
+    opts.glueCompression === false
+      ? `[mix]highpass=f=55:${BIQUAD_DET}[out]`
+      : `[mix]highpass=f=55:${BIQUAD_DET},acompressor=threshold=-21dB:ratio=2:attack=15:release=250:makeup=1.5dB[out]`
   );
 
   // Filter graphs for long episodes exceed command-line limits — always use
