@@ -40,25 +40,9 @@ if (!process.env.TTS_RENDER_MODE?.trim()) {
  * is inherently a line-mode console operation). All fallback decisions are
  * recorded by the scene service itself.
  */
-/**
- * Business episodes are voiced LINE BY LINE and assembled with conversational
- * timing (assembly.ts `conversational`). Owner A/B on the Milestone 2 episode
- * (same words, same voices): one-block Fish scenes let the engine pick every
- * gap (a uniform ~0.5s) and cannot overlap two voices, so interruptions never
- * cut in — "doesn't sound real at all"; per-line + planned timing was judged
- * better. Sports is untouched: it keeps the scene path below.
- */
-export async function voicesLineByLine(scriptId: string): Promise<boolean> {
-  const s = await db.script.findUnique({
-    where: { id: scriptId },
-    select: { episode: { select: { podcast: { select: { intelligenceType: true } } } } },
-  });
-  return s?.episode?.podcast?.intelligenceType === "BUSINESS";
-}
-
 export async function dispatchTtsGeneration(data: TtsSegmentJobData) {
   const lineLevelRequest = !!data.segmentRange || !!data.hostId;
-  if (readRenderModeSetting() === "legacy_line" || lineLevelRequest || (await voicesLineByLine(data.scriptId))) {
+  if (readRenderModeSetting() === "legacy_line" || lineLevelRequest) {
     const res = await generateTtsSegments(data);
     // Persist the decision for line-level runs on episodes not already scene-voiced.
     const script = await db.script.findUnique({ where: { id: data.scriptId }, select: { episodeId: true } });

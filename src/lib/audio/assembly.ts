@@ -219,8 +219,6 @@ export interface PlannedLine {
   leadSilenceMs?: number;
   /** Measured silence at the tail of this clip (TTS tail padding). */
   tailSilenceMs?: number;
-  /** Spoken word count; used only by conversational timing (short replies land fast). */
-  wordCount?: number;
 }
 
 export interface TimelineClip {
@@ -249,18 +247,6 @@ export interface TimelinePlanOptions {
   jitterFraction?: number;
   /** 0..1 — stereo seating amount (0 = both centered). */
   stereoSpread?: number;
-  /**
-   * Conversational timing (business episodes only; off = every existing
-   * caller is byte-for-byte unchanged). Owner A/B, Milestone 2: per-line
-   * voices with planned timing beat one-block scenes, "as long as it's not the
-   * second host interrupting 100% of the time". When on:
-   *  - a marked interruption is a real voice-on-voice overlap about 70% of
-   *    the time (overlap length varies), otherwise a latched reply with
-   *    almost no gap;
-   *  - the same host never gets two hard cut-ins within four lines;
-   *  - a short reply (<= 8 words) to the other host lands fast.
-   */
-  conversational?: boolean;
   /** Number of cast seats (1-4). Drives seatPan(); default 2 keeps the
    *  classic two-host left/right seating. */
   castSize?: number;
@@ -322,9 +308,6 @@ export function planConversationTimeline(
 
   const clips: TimelineClip[] = [];
   let cursorMs = opts.startAtMs ?? 0;
-  const conversational = opts.conversational === true;
-  // Line index of each host's most recent hard cut-in (conversational only).
-  const lastHardCutBySlot = new Map<number, number>();
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -333,27 +316,6 @@ export function planConversationTimeline(
     let gapMs: number;
     if (i === 0) {
       gapMs = 0;
-    } else if (conversational && line.isInterruption) {
-      const recent = lastHardCutBySlot.get(line.hostSlot);
-      const crowded = recent !== undefined && i - recent < 4;
-      if (!crowded && rand() < 0.7) {
-        const overlap = 200 + Math.round(rand() * 250);
-        const edgeSilence = (lines[i - 1].tailSilenceMs ?? 0) + (line.leadSilenceMs ?? 0);
-        gapMs = -Math.min(overlap + edgeSilence, Math.round(lines[i - 1].durationMs * 0.4));
-        lastHardCutBySlot.set(line.hostSlot, i);
-      } else {
-        // Latched: jumps in the instant the other host stops.
-        gapMs = 20 + Math.round(rand() * 50);
-      }
-    } else if (
-      conversational &&
-      line.segmentBreak !== "topic" &&
-      line.segmentBreak !== "segment" &&
-      line.breakGapBaseMs === undefined &&
-      lines[i - 1].hostSlot !== line.hostSlot &&
-      (line.wordCount ?? Infinity) <= 8
-    ) {
-      gapMs = 60 + Math.round(rand() * 90);
     } else if (line.isInterruption) {
       // Real interruption: bite into the previous speaker's tail. The bite
       // must land on VOICE — TTS clips carry ~50ms lead-in and 150-280ms tail

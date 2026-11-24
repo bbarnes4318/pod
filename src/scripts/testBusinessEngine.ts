@@ -867,54 +867,6 @@ async function main() {
     }
   });
 
-  await check("business conversational timing: varied cut-ins, never one host every time; off = unchanged (owner A/B)", async () => {
-    const { planConversationTimeline } = await import("../lib/audio/assembly");
-    // 40 alternating lines, every line after the first marked as an interruption,
-    // the worst case for "the second host interrupting 100% of the time".
-    const lines = Array.from({ length: 40 }, (_, i) => ({
-      filePath: `l${i}.wav`, durationMs: 4000, lineIndex: i, hostSlot: i % 2,
-      isInterruption: i > 0, wordCount: 20, tailSilenceMs: 100, leadSilenceMs: 50,
-    }));
-    const off = planConversationTimeline(lines, { startAtMs: 0 });
-    const offAgain = planConversationTimeline(lines.map(({ wordCount, ...l }) => l), { startAtMs: 0 });
-    assert.deepEqual(off, offAgain, "without the switch, wordCount changes nothing");
-    assert.ok(off.slice(1).every((c, i) => c.startMs < off[i].startMs + off[i].durationMs), "today: every marked line overlaps");
-    const on = planConversationTimeline(lines, { startAtMs: 0, conversational: true });
-    const overlapped = on.slice(1).map((c, i) => c.startMs < on[i].startMs + on[i].durationMs);
-    const hard = overlapped.filter(Boolean).length;
-    assert.ok(hard > 0 && hard < 39, `some cut-ins overlap, some latch (${hard}/39)`);
-    // No host gets two hard cut-ins within four lines.
-    const hardIdx = overlapped.map((o, i) => (o ? i + 1 : -1)).filter((i) => i > 0);
-    for (const slot of [0, 1]) {
-      const mine = hardIdx.filter((i) => i % 2 === slot);
-      for (let k = 1; k < mine.length; k++) assert.ok(mine[k] - mine[k - 1] >= 4, `host ${slot} cut-ins at ${mine}`);
-      assert.ok(mine.length > 0, `host ${slot} also gets to cut in`);
-    }
-    const overlaps = on.slice(1).map((c, i) => on[i].startMs + on[i].durationMs - c.startMs).filter((x) => x > 0);
-    assert.ok(new Set(overlaps).size > 1, "overlap length varies");
-    // A short reply to the other host lands fast (< 160 ms), a normal one does not have to.
-    const short = planConversationTimeline([
-      { filePath: "a", durationMs: 3000, lineIndex: 0, hostSlot: 0, wordCount: 20 },
-      { filePath: "b", durationMs: 800, lineIndex: 1, hostSlot: 1, wordCount: 4, pauseBefore: "beat" as const },
-    ], { startAtMs: 0, conversational: true });
-    assert.ok(short[1].startMs - 3000 < 160, `short reply gap ${short[1].startMs - 3000}ms`);
-  });
-
-  await check("business episodes are voiced line by line; sports keeps scenes (owner A/B)", async () => {
-    const { db } = await import("../lib/db");
-    const { voicesLineByLine } = await import("../lib/services/stitchDispatch");
-    const real = db.script;
-    let type = "BUSINESS";
-    Object.defineProperty(db, "script", { configurable: true, value: { findUnique: async () => ({ episode: { podcast: { intelligenceType: type } } }) } });
-    try {
-      assert.equal(await voicesLineByLine("s1"), true);
-      type = "SPORTS";
-      assert.equal(await voicesLineByLine("s1"), false);
-    } finally {
-      Object.defineProperty(db, "script", { configurable: true, value: real });
-    }
-  });
-
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

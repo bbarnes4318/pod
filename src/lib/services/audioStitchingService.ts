@@ -891,7 +891,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         pauseBefore: curr.line.pauseBefore,
         isInterruption: curr.line.isInterruption === true,
         segmentBreak,
-        wordCount: String(curr.line.text ?? "").split(/\s+/).filter(Boolean).length,
       });
     }
 
@@ -1019,12 +1018,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       0,
       Number(process.env.AUDIO_STINGER_MAX_ROOM_MS) || DEFAULT_STINGER_ROOM_CAP_MS
     );
-    const planOpts: Parameters<typeof planConversationTimeline>[1] = {
-      startAtMs: dialogueStartMs,
-      // Business episodes are voiced line by line with conversational timing
-      // (stitchDispatch.ts). Sports keeps the planner exactly as it was.
-      conversational: (script.content as { kind?: string } | null)?.kind === "business",
-    };
+    const planOpts: Parameters<typeof planConversationTimeline>[1] = { startAtMs: dialogueStartMs };
     // (plannerEnabled already implies style !== "clean".)
     if (usePostTts) {
       // Post-TTS direction places cues in the NATURAL gaps (its whole point is to
