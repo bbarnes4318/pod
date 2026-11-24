@@ -867,6 +867,66 @@ async function main() {
     }
   });
 
+  await check("business scene re-timing: hand-offs found on the real pauses, never inside a host's turn (owner A/B)", async () => {
+    const { turnsFromLines, locateHandoffs, parseSilences } = await import("../lib/audio/sceneRetime");
+    // The owner-approved test stretch (lines 12-19): four speaker turns.
+    const turns = turnsFromLines([
+      { lineIndex: 12, speakerHostId: "m", text: "x".repeat(190) }, { lineIndex: 13, speakerHostId: "m", text: "x".repeat(250) },
+      { lineIndex: 14, speakerHostId: "d", text: "x".repeat(140), isInterruption: true }, { lineIndex: 15, speakerHostId: "d", text: "x".repeat(90) },
+      { lineIndex: 16, speakerHostId: "m", text: "x".repeat(130), pauseBefore: "beat" }, { lineIndex: 17, speakerHostId: "m", text: "x".repeat(180) },
+      { lineIndex: 18, speakerHostId: "m", text: "x".repeat(220) }, { lineIndex: 19, speakerHostId: "d", text: "x".repeat(37), isInterruption: true },
+    ]);
+    assert.deepEqual(turns.map((t) => t.lineIndexes), [[12, 13], [14, 15], [16, 17, 18], [19]]);
+    assert.equal(turns[1].isInterruption, true);
+    // Real silences measured on that render (ms). 36804-37258 is the hand-off;
+    // 37690-37817 is the beat after "Fine —" INSIDE the next host's turn.
+    const sil = parseSilences([
+      [0, 20], [12000, 12150], [25044, 25184], [34581, 34802], [36804, 37258], [37690, 37817], [52000, 52150], [67944, 68121], [70400, 70717],
+    ].map(([a, b]) => `silence_start: ${a / 1000}\nsilence_end: ${b / 1000} | silence_duration: 0`).join("\n"));
+    const found = locateHandoffs(turns, sil, 20, 70400);
+    assert.deepEqual(found.map((f) => f?.startMs), [25044, 36804, 67944]);
+    // No pause near an expected hand-off → left as performed (null), never a guess.
+    assert.deepEqual(locateHandoffs(turns, parseSilences(""), 0, 70000), [null, null, null]);
+  });
+
+  await check("business hand-off timing: varied cut-ins and latches, no host interrupting every time (owner A/B)", async () => {
+    const { planHandoffs } = await import("../lib/audio/sceneRetime");
+    const turns = Array.from({ length: 41 }, (_, k) => ({ speakerHostId: k % 2 ? "b" : "a", chars: 100, isInterruption: k > 0, words: 20, lineIndexes: [k] }));
+    for (const seed of [1, 2, 3, 99]) {
+      const plan = planHandoffs(turns, seed);
+      const cuts = plan.map((p, k) => (p.kind === "cut-in" ? k + 1 : -1)).filter((k) => k > 0);
+      assert.ok(cuts.length > 0 && plan.some((p) => p.kind === "latch"), `seed ${seed}: both cut-ins and latches`);
+      for (const host of ["a", "b"]) {
+        const mine = cuts.filter((k) => turns[k].speakerHostId === host);
+        for (let i = 1; i < mine.length; i++) assert.ok(mine[i] - mine[i - 1] >= 3, `seed ${seed} host ${host}: ${mine}`);
+      }
+      assert.ok(new Set(plan.filter((p) => p.kind === "cut-in").map((p) => p.gapMs)).size > 1, "overlap length varies");
+      assert.ok(plan.filter((p) => p.kind === "cut-in").every((p) => p.gapMs <= -200 && p.gapMs >= -450));
+    }
+    // Same script, same timing (deterministic); short replies land fast.
+    assert.deepEqual(planHandoffs(turns, 5), planHandoffs(turns, 5));
+    const quick = planHandoffs([{ speakerHostId: "a", chars: 100, isInterruption: false, words: 30, lineIndexes: [0] }, { speakerHostId: "b", chars: 20, isInterruption: false, words: 4, lineIndexes: [1] }], 1);
+    assert.equal(quick[0].kind, "quick");
+    assert.ok(quick[0].gapMs >= 60 && quick[0].gapMs <= 150);
+  });
+
+  await check("business mix skips bus compression; every other mix keeps it (owner: 'delivery is flat')", async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const { renderTimelineToWav } = await import("../lib/audio/assembly");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "glue-"));
+    const tone = path.join(dir, "tone.wav");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "sine=f=440:d=0.3", tone]);
+    const clip = { filePath: tone, startMs: 0, durationMs: 300, kind: "speech" as const, pan: 0, fadeInMs: 5, fadeOutMs: 5, gainDb: 0 };
+    await renderTimelineToWav("ffmpeg", [clip], path.join(dir, "a.wav"), { roomToneDb: -100 });
+    await renderTimelineToWav("ffmpeg", [clip], path.join(dir, "b.wav"), { roomToneDb: -100, glueCompression: false });
+    assert.match(fs.readFileSync(path.join(dir, "a-filter.txt"), "utf8"), /acompressor/, "default unchanged");
+    assert.doesNotMatch(fs.readFileSync(path.join(dir, "b-filter.txt"), "utf8"), /acompressor/);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

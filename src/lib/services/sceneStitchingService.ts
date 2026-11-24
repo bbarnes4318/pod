@@ -32,6 +32,7 @@ import { analyzeEpisodeAudio, type AudioQaReport, type ScriptedPause } from "@/l
 import { analyzeSceneAudioRows, type SceneQaReport } from "@/lib/audio/sceneAudioQa";
 import { runAudioSemanticQa, resolveSemanticQaRequirement, type AudioSemanticQaReport } from "@/lib/audio/audioSemanticQa";
 import { loadSoundDesignAssetSet } from "@/lib/services/audioStitchingService";
+import { retimeSceneHandoffs, turnsFromLines } from "@/lib/audio/sceneRetime";
 import { parseEpisodeSoundDesign, isProductionStyle, type ProductionStyle, emptyAssetSet, type SoundDesignAssetSet, mixBedUnderForeground } from "@/lib/audio/soundDesign";
 import { loadScenePlanForScript } from "@/lib/services/ttsSceneService";
 
@@ -306,6 +307,38 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
       }
     }
 
+    // 1c. Business episodes: keep the one-block performance (the hosts react to
+    // each other) but re-place the speaker hand-offs with conversational timing
+    // (real cut-ins, quick replies, varied pauses). Owner A/B, Milestone 2:
+    // judged better than both plain scenes and line-by-line voicing. Hand-offs
+    // that cannot be located are left as performed. Sports: unchanged.
+    const isBusinessScript = (script.content as { kind?: string } | null)?.kind === "business";
+    if (isBusinessScript) {
+      for (const sf of sceneFiles) {
+        const planned = plan.scenes.find((scene) => scene.sceneIndex === sf.row.sceneIndex);
+        if (!planned) continue;
+        const turns = turnsFromLines(planned.lines.map((line) => ({
+          lineIndex: line.lineIndex,
+          speakerHostId: line.speakerHostId,
+          text: line.text,
+          isInterruption: line.isInterruption,
+          pauseBefore: (line as { pauseBefore?: string }).pauseBefore,
+        })));
+        const r = await retimeSceneHandoffs({
+          ffmpegPath, ffprobePath, sceneWav: sf.filePath, turns,
+          seed: sf.row.sceneIndex * 7919 + 17,
+          workDir: path.join(tempDir, `retime-${sf.row.sceneIndex}`),
+          sampleRate: targetSampleRate,
+        });
+        console.log(
+          `[SceneStitcher] Business scene ${sf.row.sceneIndex}: ${r.handoffs.length} hand-off(s) — ` +
+          r.handoffs.map((h) => `L${h.lines[0]} ${h.kind}${h.before === null ? "" : ` (${h.before}ms → ${h.gapMs}ms)`}`).join(", ")
+        );
+        sf.filePath = r.filePath;
+        sf.durationMs = r.durationMs;
+      }
+    }
+
     // 2. Intro resolution (theme asset, else legacy env URL).
     let introStd: { filePath: string; durationMs: number } | null = null;
     if (includeIntro && assetSet.intro) {
@@ -449,10 +482,14 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     // 4. One mix render (room tone, glue compression) + optional ducked bed.
     console.log(`[SceneStitcher] Rendering ${clips.length} scene(s), ${stingerClips.length} stinger(s), intro=${!!introClip}, outro=${!!outroClip}.`);
     const foregroundWav = path.join(tempDir, "foreground-mix.wav");
-    await renderTimelineToWav(ffmpegPath, allClips, foregroundWav, { sampleRate: targetSampleRate });
+    // Business: no bus compression — it flattened the performed dynamics.
+    await renderTimelineToWav(ffmpegPath, allClips, foregroundWav, { sampleRate: targetSampleRate, glueCompression: !isBusinessScript });
 
     let mixWav = foregroundWav;
-    if (style === "full" && assetSet.bed) {
+    // No music bed under a business conversation: the owner-approved test had
+    // none, and a bed fills exactly the quiet moments that make two people
+    // sound like they're talking. Intro, outro and stingers stay.
+    if (style === "full" && assetSet.bed && !isBusinessScript) {
       const fgMs = await getFileDurationMs(ffprobePath, foregroundWav);
       const bedded = path.join(tempDir, "final-mix-bedded.wav");
       const keyClips = [...(introClip ? [introClip] : []), ...clips, ...(outroClip ? [outroClip] : [])];
