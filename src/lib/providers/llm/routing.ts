@@ -22,7 +22,7 @@
 
 import { LLMProvider, GenerateStructuredOutputOptions, GenerateTextOptions, LLMUsage } from "./interface";
 import { LLMRole, LegacyFamily, ROLE_DEFINITIONS, ALL_ROLES, roleDefinition } from "./roles";
-import { RoutingProfile, activeRoutingProfile, filterProfileChain } from "./profiles";
+import { RoutingProfile, activeRoutingProfile, filterProfileChain, lockedRoutingProfile } from "./profiles";
 import { readRoutingEnv, roleOverrideKeys } from "./routingEnv";
 import { LlmErrorCategory, LlmProviderError, categoryOf, describeFailure } from "./errors";
 import { fallbackDecision, formatPaidFallbackAudit } from "./fallbackPolicy";
@@ -210,7 +210,8 @@ const PROFILE_SOURCES: CandidateSource[] = ["profile_primary", "profile_secondar
 /** Resolve the full ordered candidate chain for a role. */
 export function resolveRolePlan(role: LLMRole, profileOverride?: RoutingProfile): RolePlan {
   const def = roleDefinition(role);
-  const profile = profileOverride ?? activeRoutingProfile();
+  // The operator lock beats an explicit per-call profile too (profiles.ts).
+  const profile = lockedRoutingProfile() ?? profileOverride ?? activeRoutingProfile();
   const override = roleOverride(role);
 
   // The rollback contract: legacy profile with no override is the old code path.

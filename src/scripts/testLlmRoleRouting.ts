@@ -55,6 +55,7 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   const touched = new Set([
     ...Object.keys(env),
     "LLM_ROUTING_PROFILE",
+    "LLM_ROUTING_PROFILE_LOCK",
     "LLM_PROVIDER",
     "LLM_MODEL",
     "SCRIPT_LLM_PROVIDER",
@@ -789,6 +790,39 @@ async function main() {
       /unknown provider/i,
       "a ROUTED name nothing can build is a configuration defect and must stop the chain"
     );
+  });
+
+  await check("LLM_ROUTING_PROFILE_LOCK: the deployment profile beats tiers and per-call profiles (owner: Claude only)", async () => {
+    const { withRoutingProfile } = await import("../lib/providers/llm/profiles");
+    const claude = {
+      LLM_ROUTING_PROFILE: "legacy",
+      LLM_PROVIDER: "anthropic", LLM_MODEL: "claude-sonnet-5",
+      SCRIPT_LLM_PROVIDER: "anthropic", SCRIPT_LLM_MODEL: "claude-sonnet-5",
+      VERIFY_LLM_PROVIDER: "anthropic", VERIFY_MODEL: "claude-opus-5",
+      ANTHROPIC_API_KEY: "test-not-a-real-key",
+    };
+    // Without the lock: a tier and an explicit per-call profile still win (unchanged).
+    withEnv(claude, () => {
+      const tiered = withRoutingProfile("free_independent", () => resolveRolePlan("script_host_a_writer"));
+      assert.notEqual(tiered.profile, "legacy");
+      assert.equal(resolveRolePlan("research_brief", "frontier_development").profile, "frontier_development");
+    });
+    // With the lock: every role is the legacy (all-Claude) plan, whatever asks otherwise.
+    withEnv({ ...claude, LLM_ROUTING_PROFILE_LOCK: "true" }, () => {
+      for (const role of ALL_ROLES) {
+        for (const plan of [
+          resolveRolePlan(role),
+          resolveRolePlan(role, "frontier_development"),
+          withRoutingProfile("premium", () => resolveRolePlan(role)),
+          withRoutingProfile("free_independent", () => resolveRolePlan(role)),
+        ]) {
+          assert.equal(plan.profile, "legacy", role);
+          assert.ok(plan.candidates.length > 0 && plan.candidates.every((c) => c.provider === "anthropic"), `${role}: ${plan.candidates.map(candidateKey).join(", ")}`);
+        }
+      }
+      assert.equal(resolveRolePlan("fact_check").candidates[0].model, "claude-opus-5");
+      assert.equal(resolveRolePlan("script_host_a_writer").candidates[0].model, "claude-sonnet-5");
+    });
   });
 
   if (failed) {

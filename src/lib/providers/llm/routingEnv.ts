@@ -20,6 +20,7 @@ import { ALL_ROLES, ROLE_DEFINITIONS } from "./roles";
 const SNAPSHOT: Record<string, string | undefined> = {
   // ---- profile / stage / fallback policy ----
   LLM_ROUTING_PROFILE: process.env.LLM_ROUTING_PROFILE,
+  LLM_ROUTING_PROFILE_LOCK: process.env.LLM_ROUTING_PROFILE_LOCK,
   APP_DEPLOYMENT_STAGE: process.env.APP_DEPLOYMENT_STAGE,
   LLM_ALLOW_LEGACY_FALLBACK: process.env.LLM_ALLOW_LEGACY_FALLBACK,
   LLM_RATE_WINDOW_PASSES: process.env.LLM_RATE_WINDOW_PASSES,
