@@ -69,10 +69,7 @@ export class FishTTSProvider implements TTSProvider, DialogueSceneProvider {
       format,
       temperature,
       top_p: topP,
-      // Engine loudness normalization pins every line to one level and flattens
-      // it (the scene adapter measured ~3 LU). Business lines keep their own
-      // dynamics; the stitcher levels them per host instead.
-      prosody: { speed, volume, normalize_loudness: input.preserveDynamics !== true },
+      prosody: { speed, volume, normalize_loudness: true },
       normalize: true,
     };
     if (referenceId) body.reference_id = referenceId;

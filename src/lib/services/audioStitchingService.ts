@@ -11,8 +11,6 @@ import {
   getFileDurationMs,
   masterToMp3,
   measureEdgeSilenceMs,
-  measureIntegratedLufs,
-  hostLevelGainsDb,
   planConversationTimeline,
   renderTimelineToWav,
   runFfmpeg,
@@ -865,8 +863,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     const targetBitrate = process.env.AUDIO_TARGET_BITRATE || "192k";
 
     const plannedLines: PlannedLine[] = [];
-    // Business: keep each line's own dynamics; levels are set per host below.
-    const isBusinessScript = (script.content as { kind?: string } | null)?.kind === "business";
     for (let i = 0; i < downloadedLines.length; i++) {
       const curr = downloadedLines[i];
       const prev = i > 0 ? downloadedLines[i - 1] : null;
@@ -874,7 +870,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
       const wavPath = path.join(tempDir, `std-line-${curr.line.lineIndex}.wav`);
       await standardizeClipToWav(ffmpegPath, curr.filePath, wavPath, {
         sampleRate: targetSampleRate,
-        preserveDynamics: isBusinessScript,
       });
       const durationMs = await getFileDurationMs(ffprobePath, wavPath);
 
@@ -1041,14 +1036,6 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     }
 
     const dialogueClips = planConversationTimeline(plannedLines, planOpts);
-    if (isBusinessScript) {
-      const measured = await Promise.all(plannedLines.map(async (l) => ({
-        hostSlot: l.hostSlot, durationMs: l.durationMs, lufs: await measureIntegratedLufs(ffmpegPath, l.filePath),
-      })));
-      const gains = hostLevelGainsDb(measured);
-      dialogueClips.forEach((clip, i) => { clip.gainDb += gains.get(plannedLines[i].hostSlot) ?? 0; });
-      console.log(`[Stitcher] Business: per-host levels (dynamics kept): ${[...gains].map(([slot, g]) => `seat ${slot} ${g >= 0 ? "+" : ""}${g}dB`).join(", ")}`);
-    }
 
     // Outro source: standardized theme asset, or env-URL clip. Resolved
     // before placement so both paths (plan execution / legacy) can use it.

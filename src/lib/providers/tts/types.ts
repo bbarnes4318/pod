@@ -1,9 +1,6 @@
 export interface SynthesizeSpeechInput {
   /** Spoken text. May contain whitelisted inline audio tags like [laughs]. */
   text: string;
-  /** Keep the line's own loudness dynamics (no engine-side loudness
-   *  normalization). Set for business episodes; unset = engine default. */
-  preserveDynamics?: boolean;
   voiceId: string;
   speakerName?: string;
   /** 0-based chair for this line's speaker, from the resolved cast. Providers

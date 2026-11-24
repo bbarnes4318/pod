@@ -357,7 +357,6 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         const context = speakerContext.get(line.lineIndex) || {};
         const ttsResult = await ttsProvider.synthesizeSpeech({
           text: sanitizedText,
-          preserveDynamics: (script?.content as { kind?: string } | null)?.kind === "business",
           voiceId: resolved.voiceId,
           speakerName: line.speakerName,
           seatIndex: seatByHostId.get(line.speakerHostId),

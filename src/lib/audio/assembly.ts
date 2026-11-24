@@ -173,61 +173,20 @@ export async function standardizeClipToWav(
   ffmpegPath: string,
   inPath: string,
   outPath: string,
-  opts: { sampleRate?: number; targetLufs?: number; preserveDynamics?: boolean } = {}
+  opts: { sampleRate?: number; targetLufs?: number } = {}
 ): Promise<string> {
   const sampleRate = opts.sampleRate || 44100;
   const targetLufs = opts.targetLufs ?? -18;
-  // preserveDynamics: format conversion only. One-pass loudnorm on a short
-  // clip compresses it AND pins every line to the same loudness, which erases
-  // the energy differences between a calm line and a heated one (business
-  // stitcher; levels are then set per host, see hostLevelGainsDb).
-  const level = opts.preserveDynamics ? "" : `loudnorm=I=${targetLufs}:TP=-2:LRA=11,`;
   await runFfmpeg(ffmpegPath, [
     "-y",
     "-i", inPath,
-    "-af", `${level}aresample=${sampleRate}`,
+    "-af", `loudnorm=I=${targetLufs}:TP=-2:LRA=11,aresample=${sampleRate}`,
     "-ar", String(sampleRate),
     "-ac", "2",
     "-c:a", "pcm_s16le",
     outPath,
   ]);
   return outPath;
-}
-
-/** Integrated loudness (LUFS) of a file, or null when it cannot be measured. */
-export async function measureIntegratedLufs(ffmpegPath: string, filePath: string): Promise<number | null> {
-  try {
-    const out = await runFfmpeg(ffmpegPath, ["-hide_banner", "-nostats", "-i", filePath, "-af", "ebur128", "-f", "null", "-"]);
-    const all = [...out.matchAll(/I:\s*(-?[\d.]+)\s*LUFS/g)];
-    const v = all.length ? parseFloat(all[all.length - 1][1]) : NaN;
-    return Number.isFinite(v) && v > -70 ? v : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * One fixed gain per host: every line of a host moves by the same amount, so
- * the two hosts sit at the same level while each keeps the loud and quiet
- * moments of its own performance. Lines shorter than 1s are too short to
- * measure reliably and only receive their host's gain.
- */
-export function hostLevelGainsDb(
-  lines: { hostSlot: number; durationMs: number; lufs: number | null }[],
-  targetLufs = -18
-): Map<number, number> {
-  const bySlot = new Map<number, number[]>();
-  for (const l of lines) {
-    if (l.lufs === null || l.durationMs < 1000) continue;
-    bySlot.set(l.hostSlot, [...(bySlot.get(l.hostSlot) ?? []), l.lufs]);
-  }
-  const gains = new Map<number, number>();
-  for (const [slot, values] of bySlot) {
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    gains.set(slot, Math.max(-20, Math.min(20, Math.round((targetLufs - mean) * 10) / 10)));
-  }
-  for (const l of lines) if (!gains.has(l.hostSlot)) gains.set(l.hostSlot, 0);
-  return gains;
 }
 
 export type SegmentBreak = "none" | "segment" | "topic";

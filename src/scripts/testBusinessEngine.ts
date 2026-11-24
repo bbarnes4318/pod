@@ -900,43 +900,6 @@ async function main() {
     assert.ok(short[1].startMs - 3000 < 160, `short reply gap ${short[1].startMs - 3000}ms`);
   });
 
-  await check("business lines keep their dynamics: one gain per host, not per line (owner: 'delivery is flat')", async () => {
-    const { hostLevelGainsDb } = await import("../lib/audio/assembly");
-    // Host 0 has a calm line and a heated line 6 LU apart; host 1 is quieter overall.
-    const gains = hostLevelGainsDb([
-      { hostSlot: 0, durationMs: 4000, lufs: -21 }, { hostSlot: 0, durationMs: 4000, lufs: -15 },
-      { hostSlot: 1, durationMs: 4000, lufs: -24 }, { hostSlot: 1, durationMs: 500, lufs: -40 },
-      { hostSlot: 2, durationMs: 4000, lufs: null },
-    ], -18);
-    assert.equal(gains.get(0), 0, "host 0 already averages -18: both lines keep their 6 LU difference");
-    assert.equal(gains.get(1), 6, "host 1 is lifted as a whole; the sub-second line does not skew it");
-    assert.equal(gains.get(2), 0, "unmeasurable host gets no gain, never a guess");
-  });
-
-  await check("Fish keeps a business line's own dynamics; other callers keep engine loudness normalization", async () => {
-    const mod = await import("../lib/providers/tts/fish");
-    const Fish = (mod as any).FishTTSProvider ?? (mod as any).FishProvider ?? (mod as any).default;
-    const prevKey = process.env.FISH_API_KEY;
-    const realFetch = globalThis.fetch;
-    const bodies: any[] = [];
-    process.env.FISH_API_KEY = "test-not-a-real-key";
-    globalThis.fetch = (async (_u: unknown, init: { body: string }) => {
-      bodies.push(JSON.parse(init.body));
-      return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "audio/mpeg" } });
-    }) as typeof fetch;
-    try {
-      const fish = new Fish();
-      const voiceId = "e893b6f526724948ba5af24de3d7d280";
-      await fish.synthesizeSpeech({ text: "Business line.", voiceId, preserveDynamics: true });
-      await fish.synthesizeSpeech({ text: "Default line.", voiceId });
-      assert.equal(bodies[0].prosody.normalize_loudness, false);
-      assert.equal(bodies[1].prosody.normalize_loudness, true);
-    } finally {
-      globalThis.fetch = realFetch;
-      if (prevKey === undefined) delete process.env.FISH_API_KEY; else process.env.FISH_API_KEY = prevKey;
-    }
-  });
-
   await check("business episodes are voiced line by line; sports keeps scenes (owner A/B)", async () => {
     const { db } = await import("../lib/db");
     const { voicesLineByLine } = await import("../lib/services/stitchDispatch");
