@@ -337,6 +337,28 @@ async function requestCandidate(
 }
 
 /** Generate, audition and select a real performance—not merely valid bytes. */
+/**
+ * Best take first. The QA score moves in coarse fixed steps, so takes tie
+ * often (100/100, 72/72) and a plain score sort kept the FIRST take on a tie:
+ * on the Milestone 2 business episode it shipped a 2.7 LU take over a 4.6 LU
+ * one, and 2.1 over 2.8 on a cold open (owner: "delivery is flat"). Scores
+ * within TIE_POINTS are treated as equal and the take with more vocal range
+ * wins, then the one with more varied pauses. A clearly higher score still
+ * wins outright. Applies to every show (owner-approved; shared with sports).
+ */
+const TIE_POINTS = 3;
+export function compareTakes(
+  a: { qa: Pick<SpokenPerformanceQaReport, "score" | "metrics"> },
+  b: { qa: Pick<SpokenPerformanceQaReport, "score" | "metrics"> }
+): number {
+  if (Math.abs(a.qa.score - b.qa.score) > TIE_POINTS) return b.qa.score - a.qa.score;
+  const lra = (b.qa.metrics.loudnessRangeLu ?? -1) - (a.qa.metrics.loudnessRangeLu ?? -1);
+  if (Math.abs(lra) > 0.05) return lra;
+  const pause = (b.qa.metrics.pauseStdDevSec ?? -1) - (a.qa.metrics.pauseStdDevSec ?? -1);
+  if (pause !== 0) return pause;
+  return b.qa.score - a.qa.score;
+}
+
 export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Promise<DialogueSceneResult> {
   const apiKey = getFishApiKey();
   if (!apiKey) throw new SceneGenerationError("authentication", "FISH_API_KEY is not configured.");
@@ -359,7 +381,7 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
     }
   }
 
-  const passing = candidates.filter((candidate) => candidate.qa.passed).sort((a, b) => b.qa.score - a.qa.score);
+  const passing = candidates.filter((candidate) => candidate.qa.passed).sort(compareTakes);
   let selected = passing[0];
   let selectedBelowFloor = false;
   if (!selected) {
@@ -370,7 +392,7 @@ export async function synthesizeFishDialogueScene(input: DialogueSceneInput): Pr
     // See HARD_PERFORMANCE_FAILURE for the line and the episode behind it.
     const bland = candidates
       .filter((candidate) => !isBrokenPerformance(candidate.qa))
-      .sort((a, b) => b.qa.score - a.qa.score);
+      .sort(compareTakes);
     if (bland[0]) {
       selected = bland[0];
       selectedBelowFloor = true;

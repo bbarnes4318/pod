@@ -927,6 +927,20 @@ async function main() {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  await check("Fish take selection: on a score tie the take with more vocal range wins; a clearly better score still wins (all shows)", async () => {
+    const { compareTakes } = await import("../lib/providers/tts/fishDialogue");
+    const take = (i: number, score: number, lra: number | null, pause = 0.12) => ({ i, qa: { score, metrics: { loudnessRangeLu: lra, pauseStdDevSec: pause } as never } });
+    // Live, Milestone 2 business episode, scene 3: both 100/100; the first-listed 2.7 LU take shipped.
+    assert.equal([take(0, 100, 2.7), take(1, 100, 4.6)].sort(compareTakes)[0].i, 1);
+    // Scene 0 (cold open): all 72/100; 2.1 LU shipped over 2.8 LU.
+    assert.equal([take(0, 72, 2.1), take(1, 72, 1.9), take(2, 72, 2.8)].sort(compareTakes)[0].i, 2);
+    // Scene 2: 92 vs 83 is a real difference; the higher score wins even with less range.
+    assert.equal([take(0, 92, 3.2), take(1, 83, 3.3)].sort(compareTakes)[0].i, 0);
+    // Equal range: more varied pauses wins; unmeasured range never beats a measured one.
+    assert.equal([take(0, 100, 3.0, 0.10), take(1, 100, 3.0, 0.15)].sort(compareTakes)[0].i, 1);
+    assert.equal([take(0, 100, null), take(1, 99, 2.0)].sort(compareTakes)[0].i, 1);
+  });
+
   await check("the dossier is shown its real schema (names, required, limits)", () => {
     const s = zodToJsonSchema(DossierDraftSchema) as { properties: Record<string, { maxItems?: number; items?: { required?: string[] } }>; required: string[] };
     assert.equal(s.required.length, Object.keys(DossierDraftSchema.shape).length);

@@ -1132,7 +1132,26 @@ export function currentRoutingProfileOverride(): RoutingProfile | undefined {
  * operator sets LLM_ROUTING_PROFILE for the deployment, a user picks a tier for
  * their podcast, and the user's choice is about their episode.
  */
+/**
+ * OPERATOR LOCK. With LLM_ROUTING_PROFILE_LOCK=true, the deployment's
+ * LLM_ROUTING_PROFILE is used for EVERY call: a podcast's quality tier
+ * (withRoutingProfile) and code paths that ask for a specific profile (the
+ * background research brief asks for frontier_development) are ignored.
+ * Added because the owner wants production on Claude only, for business and
+ * sports ("not that other free bullshit"), and setting LLM_ROUTING_PROFILE
+ * alone left tiered shows and background briefs on the free providers.
+ * Unset (the default): the resolution order below is unchanged.
+ */
+export function lockedRoutingProfile(): RoutingProfile | undefined {
+  const lock = (readRoutingEnv("LLM_ROUTING_PROFILE_LOCK") || "").trim().toLowerCase();
+  if (lock !== "true" && lock !== "1") return undefined;
+  const raw = (readRoutingEnv("LLM_ROUTING_PROFILE") || "").trim().toLowerCase();
+  return (ROUTING_PROFILES as string[]).includes(raw) ? (raw as RoutingProfile) : "legacy";
+}
+
 export function activeRoutingProfile(): RoutingProfile {
+  const locked = lockedRoutingProfile();
+  if (locked) return locked;
   const override = profileStorage.getStore();
   if (override) return override;
   const raw = (readRoutingEnv("LLM_ROUTING_PROFILE") || "").trim().toLowerCase();
