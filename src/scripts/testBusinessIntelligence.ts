@@ -10,7 +10,7 @@ import {
   type DemandSignal, type RatedDimension,
 } from "../lib/business/scoring";
 import { assignProvenance, discoverBusiness, quoteAppearsIn, buildDiscoveryPrompt } from "../lib/business/discovery";
-import { BusinessEssentialsSchema, AnswersSchema, readFindings } from "../lib/business/profileSchema";
+import { BusinessEssentialsSchema, AnswersSchema, readFindings, TARGET_AUDIENCES } from "../lib/business/profileSchema";
 import type { LLMProvider } from "../lib/providers/llm/interface";
 import type { SafeFetchResult } from "../lib/net/safeFetch";
 
@@ -175,6 +175,16 @@ async function main() {
     assert.equal(BusinessEssentialsSchema.safeParse({ ...base, websiteUrl: "https://carrier.example" }).success, true);
     assert.equal(BusinessEssentialsSchema.safeParse({ ...base, websiteUrl: "javascript:alert(1)" }).success, false);
     assert.equal(BusinessEssentialsSchema.safeParse({ ...base, industry: "Wholesale VoIP termination" , description: "We terminate wholesale voice traffic for call centers." }).success, true, "custom industries allowed");
+  });
+  await check("new business show: all 13 suggested audiences plus your own are accepted; an over-long list says which list (owner hit the bare zod message)", () => {
+    const base = { showName: "S", businessName: "B", description: "We terminate wholesale voice traffic for call centers.", industry: "Telecom", primaryGoal: "Industry authority" as const, language: "en" };
+    const audiences = [...TARGET_AUDIENCES, "Call center managers", "Wholesale carriers", "VoIP resellers", "NOC engineers", "Billing analysts"];
+    assert.equal(audiences.length, 18);
+    assert.equal(BusinessEssentialsSchema.safeParse({ ...base, targetAudiences: audiences, subIndustries: Array.from({ length: 20 }, (_, i) => `niche ${i}`) }).success, true);
+    const tooMany = BusinessEssentialsSchema.safeParse({ ...base, targetAudiences: Array.from({ length: 41 }, (_, i) => `audience ${i}`) });
+    assert.equal(tooMany.success, false);
+    assert.equal(tooMany.error?.issues[0].message, "Pick at most 40 audiences.");
+    assert.doesNotMatch(JSON.stringify(tooMany.error?.issues), /Array must contain/);
   });
   await check("answers reject unknown keys; corrupt findings read as empty", () => {
     assert.equal(AnswersSchema.safeParse({ fields: { NOT_A_FIELD: "x" } }).success, false);
