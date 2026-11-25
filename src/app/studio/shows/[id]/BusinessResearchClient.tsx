@@ -4,7 +4,7 @@ import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   answerAdaptiveQuestion, askAdaptiveQuestions, approveBusinessScript, cancelBusinessRun, decideOpportunity,
-  generateBusinessEpisode, refineOpportunity, regenerateBusinessScript, startBusinessResearch, startDossier,
+  generateBusinessEpisode, refineOpportunity, regenerateBusinessScript, setBusinessHosts, startBusinessResearch, startDossier,
 } from "../businessActions";
 
 type Depth = "QUICK" | "STANDARD" | "DEEP";
@@ -41,6 +41,39 @@ export function StartResearch({ podcastId, running }: { podcastId: string; runni
       <button className="btnPrimary" disabled={pending || running} data-testid="start-business-research" onClick={() => run(() => startBusinessResearch(podcastId, depth))}>
         {running ? "Research running…" : pending ? "Starting…" : "Research topics"}
       </button>
+      <ErrorLine error={error} />
+    </span>
+  );
+}
+
+export function HostPicker({ podcastId, hosts, current }: {
+  podcastId: string; hosts: { id: string; name: string; role: string | null }[]; current: string[];
+}) {
+  const { pending, error, run } = useAction();
+  const [lead, setLead] = useState(current[0] ?? "");
+  const [second, setSecond] = useState(current[1] ?? "");
+  const [saved, setSaved] = useState(false);
+  const label = (h: { name: string; role: string | null }) => (h.role ? `${h.name} — ${h.role}` : h.name);
+  return (
+    <span className="bizRow">
+      <label>
+        <span className="fieldLabel">Lead host</span>
+        <select className="input bizSelect" value={lead} onChange={(e) => { setLead(e.target.value); setSaved(false); }}>
+          <option value="">Choose…</option>
+          {hosts.map((h) => <option key={h.id} value={h.id}>{label(h)}</option>)}
+        </select>
+      </label>
+      <label>
+        <span className="fieldLabel">Second host</span>
+        <select className="input bizSelect" value={second} onChange={(e) => { setSecond(e.target.value); setSaved(false); }}>
+          <option value="">None (solo show)</option>
+          {hosts.filter((h) => h.id !== lead).map((h) => <option key={h.id} value={h.id}>{label(h)}</option>)}
+        </select>
+      </label>
+      <button className="btnPrimary" disabled={pending || !lead} onClick={() => run(() => setBusinessHosts(podcastId, [lead, second]), () => setSaved(true))}>
+        {pending ? "Saving…" : "Save hosts"}
+      </button>
+      {saved && <span className="bizNote" role="status">Saved. New episodes use these hosts.</span>}
       <ErrorLine error={error} />
     </span>
   );

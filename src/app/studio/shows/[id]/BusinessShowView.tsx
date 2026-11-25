@@ -3,13 +3,14 @@ import Link from "next/link";
 import type { BusinessProfile } from "@prisma/client";
 import StudioPageHeader from "../../StudioPageHeader";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
 import { friendlyStage } from "@/app/app/lib";
 import { ADVANCED_SECTIONS, FINDING_FIELDS, readAnswers, readFindings } from "@/lib/business/profileSchema";
 import { pendingQuestions } from "@/lib/business/adaptiveQuestions";
 import type { DossierContent } from "@/lib/business/businessDossier";
 import { DiscoveryButton, FindingRow, AdvancedAnswersForm } from "./BusinessProfileClient";
 import {
-  AdaptiveQuestion, AskQuestions, CancelRun, OpportunityActions, RefineOpportunity, ScriptActions, StartResearch,
+  AdaptiveQuestion, AskQuestions, CancelRun, HostPicker, OpportunityActions, RefineOpportunity, ScriptActions, StartResearch,
 } from "./BusinessResearchClient";
 
 export const BUSINESS_TABS = [
@@ -52,6 +53,7 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
           <Link key={t.id} href={`/studio/shows/${podcast.id}?tab=${t.id}`} aria-current={t.id === tab ? "page" : undefined}>{t.label}</Link>
         ))}
       </nav>
+      {tab === "overview" && <Hosts podcastId={podcast.id} />}
       {tab === "overview" && <Overview profile={profile} />}
       {tab === "radar" && <Radar podcastId={podcast.id} />}
       {(tab === "topics" || tab === "insider") && <Opportunities podcastId={podcast.id} insiderOnly={tab === "insider"} profile={profile} />}
@@ -342,6 +344,35 @@ async function Opportunities({ podcastId, insiderOnly, profile }: { podcastId: s
           </article>
         );
       })}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+async function Hosts({ podcastId }: { podcastId: string }) {
+  const user = await currentUser();
+  const [pod, hosts] = await Promise.all([
+    db.podcast.findUnique({ where: { id: podcastId }, select: { hostIds: true, productionConfig: { select: { hostIds: true } } } }),
+    db.aiHost.findMany({
+      where: { isActive: true, isArchived: false, OR: [{ ownerId: user?.id ?? "" }, { ownerId: null }] },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, role: true },
+    }),
+  ]);
+  const current = pod?.productionConfig?.hostIds?.length ? pod.productionConfig.hostIds : pod?.hostIds ?? [];
+  return (
+    <section className="studioCard bizSection">
+      <div>
+        <h2 className="m-0">Hosts</h2>
+        <p className="bizLead">
+          Who voices this show. One host makes a solo show; two make a conversation.
+          {current.length === 0 && " None chosen yet, so episodes fall back to the first active hosts."}
+        </p>
+      </div>
+      {hosts.length === 0
+        ? <p className="bizNote">No hosts yet. <Link href="/studio/hosts">Create one in Hosts</Link>.</p>
+        : <HostPicker podcastId={podcastId} hosts={hosts} current={current} />}
     </section>
   );
 }
