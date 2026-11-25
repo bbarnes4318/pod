@@ -97,12 +97,12 @@ export function AdaptiveQuestion({ podcastId, id, question, why }: { podcastId: 
   );
 }
 
-export function OpportunityActions({ podcastId, opportunityId, status, dossierStatus }: {
-  podcastId: string; opportunityId: string; status: string; dossierStatus: string | null;
+export function OpportunityActions({ podcastId, opportunityId, status, dossierStatus, researching = false }: {
+  podcastId: string; opportunityId: string; status: string; dossierStatus: string | null; researching?: boolean;
 }) {
   const { pending, error, run } = useAction();
   const router = useRouter();
-  const dossierBusy = dossierStatus === "RESEARCHING";
+  const dossierBusy = dossierStatus === "RESEARCHING" || researching;
   return (
     <span className="bizFindingActions">
       {status !== "PRODUCED" && status !== "REJECTED" && (

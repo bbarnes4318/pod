@@ -261,6 +261,13 @@ async function Opportunities({ podcastId, insiderOnly, profile }: { podcastId: s
     orderBy: [{ opportunityScore: "desc" }],
     take: 60,
   });
+  const dossierRuns = await db.businessResearchRun.findMany({
+    where: { podcastId, kind: "dossier", opportunityId: { in: opps.map((o) => o.id) } },
+    orderBy: { createdAt: "desc" },
+    select: { opportunityId: true, status: true, error: true, progress: true },
+  });
+  const lastRun = new Map<string, (typeof dossierRuns)[number]>();
+  for (const r of dossierRuns) if (r.opportunityId && !lastRun.has(r.opportunityId)) lastRun.set(r.opportunityId, r);
   const order: Record<string, number> = { APPROVED: 0, CANDIDATE: 1, HELD: 2, PRODUCED: 3, REJECTED: 4 };
   opps.sort((a, b) => (order[a.editorialStatus] ?? 9) - (order[b.editorialStatus] ?? 9));
   const fields = readAnswers(profile.answers).fields;
@@ -316,7 +323,19 @@ async function Opportunities({ podcastId, insiderOnly, profile }: { podcastId: s
             )}
             {holds.length > 0 && <ul className="bizReasons">{holds.map((h, i) => <li key={i}>Held: {h}</li>)}</ul>}
             {limits.length > 0 && <p className="bizNote">Limitations: {limits.join(" · ")}</p>}
-            <OpportunityActions podcastId={podcastId} opportunityId={o.id} status={o.editorialStatus} dossierStatus={o.dossier?.status ?? null} />
+            {(() => {
+              const r = lastRun.get(o.id);
+              if (!r || r.status === "completed") return null;
+              const msg = ((r.progress ?? {}) as { message?: string }).message;
+              return (
+                <p className="bizNote" role="status">
+                  Dossier research: <span className={STATUS_CHIP[r.status] ?? "chip"}>{r.status}</span>{msg ? ` — ${msg}` : ""}
+                  {r.error && <span className="bizError"> {r.error}</span>}
+                </p>
+              );
+            })()}
+            <OpportunityActions podcastId={podcastId} opportunityId={o.id} status={o.editorialStatus} dossierStatus={o.dossier?.status ?? null}
+              researching={["queued", "running"].includes(lastRun.get(o.id)?.status ?? "")} />
             {o.editorialStatus !== "PRODUCED" && (
               <RefineOpportunity podcastId={podcastId} opportunityId={o.id} title={o.title} coreQuestion={o.coreQuestion} targetListener={o.targetListener} />
             )}
@@ -344,7 +363,9 @@ async function Dossiers({ podcastId }: { podcastId: string }) {
       </div>
       {dossiers.length === 0 && <p className="bizNote">No dossiers yet. Start one from a topic.</p>}
       {dossiers.map((d) => {
-        const c = (d.content ?? null) as DossierContent | null;
+        // A dossier still researching (or that failed first time) holds the "{}" default.
+        const raw = d.content as Partial<DossierContent> | null;
+        const c = typeof raw?.premise === "string" ? (raw as DossierContent) : null;
         const holds = asArray<string>(d.holdReasons);
         const more = asArray<string>(d.additionalResearch);
         const facts = c ? [...c.verifiedFacts, ...c.verifiedStatistics, ...c.industryContext] : [];
@@ -357,7 +378,8 @@ async function Dossiers({ podcastId }: { podcastId: string }) {
             <div className="bizDetailsBody">
               {holds.length > 0 && <ul className="bizReasons">{holds.map((h, i) => <li key={i}>On hold: {h}</li>)}</ul>}
               {more.length > 0 && <ul className="bizReasons">{more.map((h, i) => <li key={i}>Needs: {h}</li>)}</ul>}
-              {c?.premise != null && (
+              {!c && d.status === "RESEARCHING" && <p className="bizNote">Research in progress. Refresh to see it when it finishes.</p>}
+              {c && (
                 <>
                   <p className="bizBody"><strong>Premise:</strong> {c.premise}</p>
                   <p className="bizBody"><strong>Central question:</strong> {c.centralQuestion}</p>
