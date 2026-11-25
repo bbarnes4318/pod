@@ -85,19 +85,24 @@ export default function VoiceDesigner({ hostName, brief, pace, onSelectionChange
     setBusy(true); setError(null);
     const speed = pace === "fast" ? 1.08 : pace === "easy" ? 0.94 : 1;
     const words = { description: description.trim(), testLine: testLine.trim() };
-    const result = await designHostVoice({ instruction: words.description, previewText: words.testLine, speed });
-    if (result.success) {
-      const nextRound = round + 1;
-      const fresh: DesignedTake[] = result.candidates.map((candidate, index) => ({
-        key: `${nextRound}-${index}-${candidate.id}`,
+    const nextRound = round + 1;
+    setRound(nextRound);
+    // Three one-take calls at once; each take appears as soon as Fish returns it.
+    let landed = 0;
+    const errors: string[] = [];
+    await Promise.all([1, 2, 3].map(async (takeNumber) => {
+      const result = await designHostVoice({ instruction: words.description, previewText: words.testLine, speed })
+        .catch((e: unknown) => ({ success: false as const, error: e instanceof Error ? e.message : "Voice design failed." }));
+      if (!result.success) { errors.push(result.error); return; }
+      const fresh: DesignedTake[] = result.candidates.map((candidate) => ({
+        key: `${nextRound}-${takeNumber}-${candidate.id}`,
         round: nextRound,
-        take: index + 1,
+        take: ++landed,
         audioBase64: candidate.audioBase64,
-        audioDataUrl: candidate.audioDataUrl,
+        audioDataUrl: `data:audio/wav;base64,${candidate.audioBase64}`,
         durationMs: candidate.durationMs,
         ...words,
       }));
-      setRound(nextRound);
       setTakes((current) => {
         // Newest round first; never drop the take the user picked.
         const kept = [...fresh, ...current];
@@ -105,9 +110,9 @@ export default function VoiceDesigner({ hostName, brief, pace, onSelectionChange
         const trimmed = kept.slice(0, MAX_KEPT_TAKES);
         return picked && !trimmed.includes(picked) ? [...trimmed.slice(0, MAX_KEPT_TAKES - 1), picked] : trimmed;
       });
-    } else {
-      setError(result.error);
-    }
+    }));
+    if (errors.length === 3) setError(errors[0]);
+    else if (errors.length) setError(`${3 - errors.length} of 3 takes came back. ${errors[0]}`);
     setBusy(false);
   };
 
@@ -195,7 +200,7 @@ export default function VoiceDesigner({ hostName, brief, pace, onSelectionChange
           {busy && <span className="btnSpin" aria-hidden="true" />}
           {busy ? "Designing takes…" : takes.length ? "Create 3 more takes" : "Create 3 takes"}
         </button>
-        {busy && <span className="voiceDesignWait">Fish is designing three voices. This usually takes 10–40 seconds.</span>}
+        {busy && <span className="voiceDesignWait">Fish is designing three voices. Each one appears as soon as it's ready.</span>}
       </div>
 
       {error && <div className="gateResult gate-err mt-3">{error}</div>}
@@ -210,7 +215,7 @@ export default function VoiceDesigner({ hostName, brief, pace, onSelectionChange
         <div key={roundNumber} className="voiceRound">
           {rounds.length > 1 && <div className="voiceRoundLabel">Round {roundNumber}</div>}
           <div className="voiceTakeGrid">
-            {takes.filter((take) => take.round === roundNumber).map((take) => {
+            {takes.filter((take) => take.round === roundNumber).sort((a, b) => a.take - b.take).map((take) => {
               const isSelected = take.key === selectedKey;
               const isPlaying = take.key === playingKey;
               return (
