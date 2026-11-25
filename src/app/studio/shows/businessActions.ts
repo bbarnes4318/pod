@@ -41,6 +41,26 @@ async function ownedProfile(podcastId: string) {
   return { user, pod, profile: pod.businessProfile } as const;
 }
 
+/** Lead host first. One host = solo show; two = conversation. Business formats seat at most two. */
+export async function setBusinessHosts(podcastId: string, hostIds: string[]): Promise<Result> {
+  const owned = await ownedProfile(podcastId);
+  if ("error" in owned) return { success: false, error: owned.error! };
+  const ids = [...new Set(hostIds.filter(Boolean))];
+  if (ids.length < 1 || ids.length > 2) return { success: false, error: "Pick one or two hosts." };
+  const found = await db.aiHost.findMany({
+    where: { id: { in: ids }, isActive: true, isArchived: false, OR: [{ ownerId: owned.user.id }, { ownerId: null }] },
+    select: { id: true },
+  });
+  if (found.length !== ids.length) return { success: false, error: "One of those hosts isn't available." };
+  // Production reads productionConfig.hostIds before podcast.hostIds, so keep both in step.
+  await db.$transaction([
+    db.podcast.update({ where: { id: podcastId }, data: { hostIds: ids } }),
+    db.podcastProductionConfig.updateMany({ where: { podcastId }, data: { hostIds: ids } }),
+  ]);
+  revalidateShow(podcastId);
+  return { success: true };
+}
+
 function revalidateShow(podcastId: string) {
   revalidatePath("/studio/shows");
   revalidatePath(`/studio/shows/${podcastId}`);
