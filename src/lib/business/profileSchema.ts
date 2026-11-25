@@ -38,7 +38,11 @@ export const PODCAST_GOALS = [
 export const GEOGRAPHIC_SCOPES = ["Local", "Regional", "National", "International"] as const;
 
 const text = (max: number) => z.string().trim().max(max);
-const list = (max: number) => z.array(text(120).min(1)).max(max);
+// The message names the list: the bare zod default ("Array must contain at most
+// 15 element(s)") reached the owner on the new-show form with no hint of which
+// field it meant.
+const list = (max: number, what = "items") =>
+  z.array(text(120).min(1, `Remove the empty entry from your ${what}.`)).max(max, `Pick at most ${max} ${what}.`);
 
 export const BusinessEssentialsSchema = z
   .object({
@@ -55,11 +59,14 @@ export const BusinessEssentialsSchema = z
     description: text(4000).optional().nullable(),
     // Custom industries are allowed — the list is a suggestion, not a cage.
     industry: text(120).min(1, "Pick or type an industry."),
-    subIndustries: list(12).default([]),
+    // The form takes a free comma-separated list here.
+    subIndustries: list(30, "sub-industries").default([]),
     // ORDER MATTERS: the first audience is the primary audience.
-    targetAudiences: list(15).min(1, "Pick at least one audience."),
+    // 13 suggested audiences plus any number of the owner's own: 15 was below
+    // what the form invites (owner hit "Array must contain at most 15").
+    targetAudiences: list(40, "audiences").min(1, "Pick at least one audience."),
     primaryGoal: z.enum(PODCAST_GOALS),
-    geographicMarkets: list(10).default([]),
+    geographicMarkets: list(10, "markets").default([]),
     language: text(35).min(2).default("en"),
   })
   // Discovery needs SOMETHING to read: a website, or a description.
