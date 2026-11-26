@@ -283,16 +283,13 @@ export async function designHostVoice(input: {
       instruction: input.instruction,
       referenceText: input.previewText,
       speed: input.speed,
-      candidateCount: 3,
+      // One take per call: the designer fires three calls at once and shows
+      // each take as it lands, instead of waiting for Fish to finish all three.
+      candidateCount: 1,
       language: "en",
     }, fishFetch());
-    return {
-      success: true as const,
-      candidates: candidates.map((candidate) => ({
-        ...candidate,
-        audioDataUrl: `data:audio/wav;base64,${candidate.audioBase64}`,
-      })),
-    };
+    // The audio goes back once; the browser builds its own data URL.
+    return { success: true as const, candidates };
   } catch (error) {
     return { success: false as const, error: error instanceof Error ? error.message : "Voice design failed." };
   }
