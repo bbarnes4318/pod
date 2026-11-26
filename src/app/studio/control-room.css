@@ -518,3 +518,21 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 }
 
 .showHead--tight { align-items: center; padding-bottom: var(--sp-4); margin-bottom: var(--sp-4); border-bottom: none; }
+
+/* ============================================================
+   EPISODE — lifecycle stages
+   The tab bar is the episode's life: a lamp per stage says where it is.
+   ============================================================ */
+.epTabLabel { display: inline-flex; align-items: center; gap: 6px; }
+.epTabLamp { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--border-strong); background: transparent; flex-shrink: 0; }
+.epTab[data-state="done"] .epTabLamp { background: var(--success); border-color: var(--success); }
+.epTab[data-state="current"] .epTabLamp { background: var(--accent); border-color: var(--accent); }
+.epAdvanced { grid-column: 1 / -1; }
+
+.epRundownList { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.epRundownRow { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+.epRundownRow:last-child { border-bottom: none; }
+.epRundownNum { font-family: var(--font-mono); font-size: 12px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.epRundownBody { display: grid; gap: 2px; min-width: 0; }
+.epRundownTitle { font-size: 15px; font-weight: 600; color: var(--text); }
+.epRundownMeta { font-size: 12px; color: var(--text-subtle); }

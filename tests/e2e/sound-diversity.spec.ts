@@ -155,7 +155,7 @@ test.describe("Sound diversity — operator config UI", () => {
       diagnostics: { postTts: { planningEngine: "post_tts", diversity: { renderMode: "enforce", contextSource: "frozen", diversityFingerprint: "d".repeat(64) } } } as object } });
 
     await page.goto(`/studio/episodes/${epId}`);
-    await page.getByRole("tab", { name: /Produce/ }).click();
+    await page.getByRole("tab", { name: /Audio and mix/ }).click();
     await expect(page.getByTestId("episode-diversity")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("diversity-engine")).toContainText("post_tts");
     await expect(page.getByTestId("diversity-config-source")).toContainText(/frozen/i);

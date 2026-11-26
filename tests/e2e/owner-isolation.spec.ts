@@ -102,4 +102,19 @@ test.describe("Owner isolation — one account never sees another's work", () =>
       await assertNoLeaks(page, `/app/podcasts/${id}`);
     });
   }
+  // The Studio episode workspace and the public listening page both used to
+  // render ANY episode to anyone holding its id. The foreign and legacy rows
+  // are unpublished (audio_ready), so neither route may show a byte of them.
+  for (const [label, id] of [
+    ["another account's", E2E.episodeForeignId],
+    ["a legacy unowned", E2E.episodeLegacyId],
+  ] as const) {
+    for (const route of ["/studio/episodes", "/app/episodes"]) {
+      test(`opening ${label} unpublished episode at ${route}/[id] leaks nothing`, async ({ page }) => {
+        await page.goto(`${route}/${id}`);
+        await assertNoLeaks(page, `${route}/${id}`);
+        await expect(page.locator("audio")).toHaveCount(0);
+      });
+    }
+  }
 });
