@@ -463,3 +463,58 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 .epLibCell { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .epLibText { display: grid; min-width: 0; }
 .epLibArt { width: 30px; height: 30px; font-size: 11px; }
+
+/* ============================================================
+   SHOWS — mastheads, and a show's headquarters
+   ============================================================ */
+.showArt--img { object-fit: cover; padding: 0; border-left-width: 1px; }
+.showList { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); overflow: hidden; }
+.showMast { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--border); }
+.showMast:last-child { border-bottom: none; }
+.showMast:hover { background: var(--surface-2); }
+.showMastMain { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; flex: 1; color: inherit; text-decoration: none; }
+.showMastText { display: grid; gap: 2px; min-width: 0; }
+.studioShell .showMastName { font-family: var(--font-editorial); font-size: 24px; font-weight: 500; line-height: 1.2; letter-spacing: -0.01em; color: var(--text); }
+.showMastMain:hover .showMastName { color: var(--accent-text); }
+.showMastAbout { font-size: 14px; color: var(--text-muted); max-width: 80ch; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.showMastFacts { display: flex; gap: var(--sp-2); flex-wrap: wrap; font-size: 12px; color: var(--text-subtle); margin-top: 2px; }
+.showMastFacts .showRowCadence { font-size: 12px; color: var(--text-subtle); }
+.showMastDo { flex-shrink: 0; }
+
+.showHead { display: flex; align-items: flex-start; gap: var(--sp-6); padding-bottom: var(--sp-6); margin-bottom: var(--sp-6); border-bottom: 1px solid var(--border); }
+.showHeadText { display: grid; gap: var(--sp-2); min-width: 0; }
+.showHeadPremise { margin: 0; font-family: var(--font-editorial); font-size: 24px; font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; color: var(--text); max-width: 46ch; text-wrap: balance; }
+.showHeadPromise { margin: 0; font-size: 15px; line-height: 1.55; color: var(--text-muted); max-width: 72ch; }
+
+.showHq { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--sp-8); align-items: start; }
+.showHqMain { display: grid; gap: var(--sp-8); min-width: 0; }
+.showHqMain > section { display: grid; gap: var(--sp-3); }
+.showHqSide { display: grid; gap: var(--sp-6); }
+.showSideBlock { display: grid; gap: var(--sp-2); padding-bottom: var(--sp-6); border-bottom: 1px solid var(--border); }
+.showSideLead { font-size: 16px; font-weight: 600; color: var(--text); }
+.showSideLinks { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+.showCast { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.showCastRow { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.showCastRow .tHostDot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; align-self: center; }
+.showCastName { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.showCastRole { font-size: 13px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.showArcs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--sp-4); }
+.showArc { display: grid; gap: 4px; align-content: start; padding-top: var(--sp-3); border-top: 2px solid var(--border-hover); font-size: 14px; }
+.showArcBody { color: var(--text-muted); line-height: 1.5; }
+.showArcMeta { font-size: 12px; color: var(--text-subtle); }
+.showEpisodeDot { width: 30px; height: 30px; flex-shrink: 0; border-radius: 50%; border: 1px dashed var(--border-hover); }
+
+@media (max-width: 1100px) {
+  .showHq { grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); }
+}
+@media (max-width: 720px) {
+  .showMast { flex-direction: column; align-items: stretch; padding: var(--sp-4); }
+  .showMastMain { align-items: flex-start; }
+  .studioShell .showMastName { font-size: 20px; }
+  .showMast .showArt--lg,
+  .showHead .showArt--lg { width: 56px; height: 56px; font-size: 22px; }
+  .showHead { gap: var(--sp-4); }
+  .showHeadPremise { font-size: 20px; }
+}
+
+.showHead--tight { align-items: center; padding-bottom: var(--sp-4); margin-bottom: var(--sp-4); border-bottom: none; }

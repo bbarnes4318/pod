@@ -18,6 +18,8 @@ import {
   storylineSequence,
 } from "@/lib/shows/showForge";
 import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
+import { PlayButton } from "../../StudioAudio";
+import { bustAudioUrl, showHue, showInitials } from "../../lib";
 import QualityTierSection from "./QualityTierSection";
 import BusinessShowView, { BUSINESS_TABS, type BusinessTab } from "./BusinessShowView";
 
@@ -42,7 +44,7 @@ export default async function StudioShowHeadquartersPage({
       episodes: {
         orderBy: { createdAt: "desc" },
         take: 30,
-        select: { id: true, title: true, status: true, createdAt: true, audioUrl: true },
+        select: { id: true, title: true, status: true, createdAt: true, updatedAt: true, audioUrl: true },
       },
     },
   }).catch(() => null);
@@ -97,6 +99,8 @@ export default async function StudioShowHeadquartersPage({
     : "Manual releases";
   const tone = showForge.bible.tone.replace(/_/g, " + ").replace(/^./, (c) => c.toUpperCase());
 
+  const cast = hosts.filter((host) => hostIds.includes(host.id));
+
   return (
     <div className="fadeUp">
       <StudioPageHeader
@@ -105,96 +109,136 @@ export default async function StudioShowHeadquartersPage({
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
         actions={
           <>
-            <Link href={`/studio/shows/${podcast.id}/sound`} className="btnGhost">Sound and branding</Link>
-            <GenerateShowEpisodeButton podcastId={podcast.id} primary />
+            <GenerateShowEpisodeButton podcastId={podcast.id} />
+            <Link href={`/studio/create?show=${podcast.id}`} className="btnPrimary">New episode</Link>
           </>
         }
       />
 
-      <div className="showHqGrid">
-        <section className="studioCard">
-          <div className="showEyebrow">The show promise</div>
-          <h2 className="showPremise">{showForge.bible.premise}</h2>
-          <p className="showPromiseBody">{showForge.bible.audiencePromise}</p>
-          <p className="showChemistry"><strong>Host chemistry:</strong> {showForge.bible.hostChemistry}</p>
-        </section>
-
-        <section className="studioCard">
-          <div className="showAsideTitle">Next storyline movement</div>
-          {nextBeat ? (
-            <>
-              <div className="showEyebrow mt-3">{nextBeat.storylineTitle}</div>
-              <div className="showAsideTitle mt-1">{nextBeat.beatTitle}</div>
-              <p className="showAsideBody">{nextBeat.beatDirection}</p>
-            </>
-          ) : (
-            <p className="showAsideBody">
-              No season beat is due. The next episode stands alone inside the show bible.
-            </p>
-          )}
-        </section>
-      </div>
-
-      {showForge.storylines.length > 0 && (
-        <section className="mt-6">
-          <div className="sectionHead"><h2 className="sectionTitle">Storyline board</h2></div>
-          <div className="showStorylineGrid">
-            {showForge.storylines.map((storyline) => (
-              <article key={storyline.id} className="studioCard">
-                <strong>{storyline.title}</strong>
-                <p className="showAsideBody">{storyline.premise}</p>
-                <span className="statusPill statusPill--warn">{storyline.beats.length} beats · {storyline.status}</span>
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="mt-8">
-        <div className="sectionHead">
-          <h2 className="sectionTitle">Episodes in this show</h2>
-          <Link href="/studio/create" className="sectionAction">Build a rundown →</Link>
-        </div>
-        {podcast.episodes.length === 0 ? (
-          <div className="emptyState">
-            <div className="emptyStateTitle">No episodes yet</div>
-            <p className="emptyStateBody">Generate the premiere from the top bar, or build a rundown by hand.</p>
-          </div>
+      {/* The masthead: this is a media property, and it should look like one. */}
+      <header className="showHead">
+        {podcast.coverImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={podcast.coverImageUrl} alt="" className="showArt showArt--lg showArt--img" />
         ) : (
-          <div className="dataTableWrap showEpisodeList">
-            <table className="dataTable">
-              <thead>
-                <tr>
-                  <th scope="col">Episode</th>
-                  <th scope="col">Stage</th>
-                  <th scope="col">Created</th>
-                  <th scope="col" className="actions"><span className="srOnly">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {podcast.episodes.slice(0, 10).map((episode) => {
+          <span className="showArt showArt--lg" data-hue={showHue(podcast.id)} aria-hidden="true">{showInitials(podcast.name)}</span>
+        )}
+        <div className="showHeadText">
+          <div className="overline">The show promise</div>
+          <p className="showHeadPremise">{showForge.bible.premise}</p>
+          <p className="showHeadPromise">{showForge.bible.audiencePromise}</p>
+        </div>
+      </header>
+
+      <div className="showHq">
+        <div className="showHqMain">
+          <section>
+            <div className="homeSectionHead">
+              <h2 className="homeSectionTitle">Episodes in this show</h2>
+              <span className="sectionCount">{podcast.episodes.length === 30 ? "Latest 30" : `${podcast.episodes.length} total`}</span>
+            </div>
+            {podcast.episodes.length === 0 ? (
+              <div className="emptyState">
+                <div className="emptyStateTitle">No episodes yet</div>
+                <p className="emptyStateBody">Make the premiere. The show already knows its hosts, length and coverage, so you only choose the topics.</p>
+                <Link href={`/studio/create?show=${podcast.id}`} className="btnPrimary">New episode</Link>
+              </div>
+            ) : (
+              <ul className="readyList showEpisodeList">
+                {podcast.episodes.map((episode) => {
                   const stage = friendlyStage(episode.status);
                   return (
-                    <tr key={episode.id} className="showEpisodeRow">
-                      <td className="primaryCell"><Link href={`/studio/episodes/${episode.id}`}>{episode.title}</Link></td>
-                      <td><span className={stage.done ? "statusPill statusPill--ok" : "statusPill"}>{stage.label}</span></td>
-                      <td>{new Date(episode.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
-                      <td className="actions"><Link href={`/studio/episodes/${episode.id}`} className="btnSubtle btnSm">{episode.audioUrl ? "Listen" : "Open"}</Link></td>
-                    </tr>
+                    <li key={episode.id} className="readyRow showEpisodeRow">
+                      {episode.audioUrl ? (
+                        <PlayButton
+                          className="playBtn playBtn--sm"
+                          track={{ id: episode.id, src: bustAudioUrl(episode.audioUrl, episode.updatedAt), title: episode.title, subtitle: podcast.name, href: `/studio/episodes/${episode.id}` }}
+                        />
+                      ) : (
+                        <span className="showEpisodeDot" aria-hidden="true" />
+                      )}
+                      <span className="readyBody">
+                        <Link href={`/studio/episodes/${episode.id}`} className="readyTitle">{episode.title}</Link>
+                        <span className="readyMeta">
+                          {new Date(episode.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        </span>
+                      </span>
+                      <span className={stage.done ? "statusPill statusPill--ok" : "statusPill"}>{stage.label}</span>
+                    </li>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+              </ul>
+            )}
+          </section>
 
-      {/* Which models write this show. Sits above Show Forge because it is a
-          one-click setting with a real cost and speed consequence, where the
-          Forge is a full editing surface behind a disclosure. */}
-      <section className="mt-8">
-        <QualityTierSection podcastId={podcast.id} initialTier={podcast.qualityTier ?? null} />
-      </section>
+          {showForge.storylines.length > 0 && (
+            <section>
+              <div className="homeSectionHead"><h2 className="homeSectionTitle">Storyline board</h2></div>
+              <ul className="showArcs">
+                {showForge.storylines.map((storyline) => (
+                  <li key={storyline.id} className="showArc">
+                    <strong>{storyline.title}</strong>
+                    <span className="showArcBody">{storyline.premise}</span>
+                    <span className="showArcMeta">{storyline.beats.length} beats · {storyline.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+
+        <aside className="showHqSide">
+          <section className="showSideBlock">
+            <h2 className="homeSectionTitle">Next storyline movement</h2>
+            {nextBeat ? (
+              <>
+                <div className="showSideLead">{nextBeat.beatTitle}</div>
+                <p className="showAsideBody">{nextBeat.storylineTitle}. {nextBeat.beatDirection}</p>
+              </>
+            ) : (
+              <p className="showAsideBody">No season beat is due. The next episode stands alone inside the show bible.</p>
+            )}
+          </section>
+
+          <section className="showSideBlock">
+            <div className="homeSectionHead">
+              <h2 className="homeSectionTitle">Hosts</h2>
+              <Link href="/studio/hosts" className="sectionAction">Talent</Link>
+            </div>
+            {cast.length === 0 ? (
+              <p className="showAsideBody">No hosts are assigned. Choose them in the show settings below.</p>
+            ) : (
+              <ul className="showCast">
+                {cast.map((host, i) => (
+                  <li key={host.id} className="showCastRow">
+                    <span className="tHostDot" data-seat={i === 0 ? "a" : "b"} aria-hidden="true" />
+                    <span className="showCastName">{host.name}</span>
+                    <span className="showCastRole">{host.role}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="showAsideBody"><strong>Chemistry:</strong> {showForge.bible.hostChemistry}</p>
+          </section>
+
+          <section className="showSideBlock">
+            <h2 className="homeSectionTitle">Sound and release</h2>
+            <dl className="deskFacts">
+              <div><dt>Schedule</dt><dd>{cadence}</dd></div>
+              <div><dt>Topics per episode</dt><dd>{podcast.editorialConfig?.segmentCount || podcast.segmentCount}</dd></div>
+              <div><dt>Feed</dt><dd>{podcast.visibility}</dd></div>
+            </dl>
+            <div className="showSideLinks">
+              <Link href={`/studio/shows/${podcast.id}/sound`} className="btnGhost btnSm">Sound and branding</Link>
+              <Link href="/studio/publish" className="btnGhost btnSm">Publishing</Link>
+            </div>
+          </section>
+
+          {/* Which models write this show: a one-click setting with a real cost
+              and speed consequence. */}
+          <QualityTierSection podcastId={podcast.id} initialTier={podcast.qualityTier ?? null} />
+        </aside>
+      </div>
 
       <details className="mt-8">
         <summary className="btnGhost showForgeSummary">Edit in Show Forge</summary>

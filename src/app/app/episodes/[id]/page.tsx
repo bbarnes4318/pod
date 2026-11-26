@@ -1,6 +1,8 @@
 import React from "react";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
+import { canViewOwned } from "@/lib/ownerScope";
 import { stripAudioTags } from "@/lib/audio/speechText";
 import { accentFor } from "../../accent";
 import { emojiForTitle, fmtMin, fmtDay, friendlyStage } from "../../lib";
@@ -21,6 +23,9 @@ export default async function UserEpisodePage({ params }: { params: Promise<{ id
     include: { scripts: { orderBy: { version: "desc" }, take: 1, select: { id: true, content: true } } },
   }).catch(() => null);
   if (!episode) notFound();
+  // A released episode is public. Anything else is its creator's work in
+  // progress: this page used to render any episode to anyone who had the id.
+  if (episode.status !== "published" && !canViewOwned(await currentUser(), episode)) notFound();
 
   const script = episode.scripts[0] ?? null;
   const segments: any[] = (script?.content as any)?.segments ?? [];
