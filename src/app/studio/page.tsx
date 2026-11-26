@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import StudioPageHeader from "./StudioPageHeader";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -54,7 +55,20 @@ interface Briefing {
 
 const quote = (title: string) => `“${title}”`;
 
-export default async function StudioHome() {
+export default async function StudioHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ league?: string; conf?: string; team?: string }>;
+}) {
+  // /studio used to be the sports board, and its drill-down lived in the query
+  // string. A bookmark to a league or team still works: it moves to the desk.
+  const sp = await searchParams;
+  if (sp.league || sp.conf || sp.team) {
+    const q = new URLSearchParams();
+    for (const key of ["league", "conf", "team"] as const) if (sp[key]) q.set(key, sp[key]!);
+    redirect(`/studio/desk?${q.toString()}`);
+  }
+
   const viewer = await currentUser();
   const canBusiness = businessPodcastsEnabledFor(viewer);
   const scope = ownerScope(viewer);

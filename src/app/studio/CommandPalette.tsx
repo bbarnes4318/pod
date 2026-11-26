@@ -65,15 +65,11 @@ export default function CommandPalette({
   // must not overwrite the answer to "abc".
   useEffect(() => {
     const q = query.trim();
-    if (q.length < 2) {
-      setHits([]);
-      setSearching(false);
-      setSearchFailed(false);
-      return;
-    }
+    // Below two letters nothing is asked; `results` ignores any earlier hits.
+    if (q.length < 2) return;
     let stale = false;
-    setSearching(true);
     const timer = setTimeout(() => {
+      setSearching(true);
       searchStudio(q)
         .then((found) => {
           if (stale) return;
@@ -103,7 +99,7 @@ export default function CommandPalette({
     );
     // The server may return a show the local list already has.
     const seen = new Set(local.map((item) => item.href));
-    return [...local, ...hits.filter((hit) => !seen.has(hit.href))];
+    return q.length < 2 ? local : [...local, ...hits.filter((hit) => !seen.has(hit.href))];
   }, [items, query, hits]);
 
   useEffect(() => {
@@ -160,7 +156,7 @@ export default function CommandPalette({
         <div className="cmdkList" id="cmdk-list" role="listbox" ref={listRef} aria-label="Results">
           {results.length === 0 && (
             <div className="cmdkEmpty" role="status">
-              {searching ? "Searching your studio…" : searchFailed ? "Search is unavailable right now. Pages and actions still work." : `Nothing matches “${query}”.`}
+              {query.trim().length >= 2 && searching ? "Searching your studio…" : searchFailed ? "Search is unavailable right now. Pages and actions still work." : `Nothing matches “${query}”.`}
             </div>
           )}
           {results.map((item, index) => {

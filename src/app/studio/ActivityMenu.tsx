@@ -82,8 +82,6 @@ export default function ActivityMenu() {
     };
   }, [refresh, pathname]);
 
-  useEffect(() => setOpen(false), [pathname]);
-
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {

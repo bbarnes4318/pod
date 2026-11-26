@@ -301,6 +301,9 @@ export default function RundownBuilder({
     if (seededShow.current || !seedPodcastId) return;
     seededShow.current = true;
     if (!podcasts.some((p) => p.id === seedPodcastId)) return;
+    // A one-time seed from the URL, applied through the same handler a click
+    // uses so inheritance behaves identically.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (podcastId !== seedPodcastId) onSelectPodcast(seedPodcastId);
     setStep((current) => (current === "show" ? "topics" : current));
     // eslint-disable-next-line react-hooks/exhaustive-deps

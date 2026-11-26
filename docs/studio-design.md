@@ -1,5 +1,10 @@
 # The Studio design system
 
+> **Reconstruction in progress.** The colour tokens, themes, typefaces, navigation
+> and the components added since are described in `docs/studio/RECONSTRUCTION.md`.
+> The chrome, spacing, copy and enforcement rules below still hold; the colour
+> table below predates the two-theme token set and lists names, not values.
+
 What the rules are, and why each one exists. Every rule here is enforced by a
 spec in `tests/e2e/` — if it is not enforced, it is not in this document.
 

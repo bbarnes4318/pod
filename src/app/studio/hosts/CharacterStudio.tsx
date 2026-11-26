@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useMemo, useRef, useState } from "react";
 import StudioPageHeader from "../StudioPageHeader";
 import { useRouter } from "next/navigation";
@@ -98,12 +99,15 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
   return (
     <div className="fadeUp">
       <StudioPageHeader
-        title="Hosts"
-        subtitle="Who your hosts are, how they behave, and how they sound."
+        title="Talent"
+        subtitle="Your hosts: who they are, how they behave, and how they sound."
         actions={
-          <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)}>
-            {creating ? "Close" : "Create a host"}
-          </button>
+          <>
+            <Link href="/studio/auditions" className="btnGhost">Audition voices</Link>
+            <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)}>
+              {creating ? "Close" : "Create a host"}
+            </button>
+          </>
         }
       />
 

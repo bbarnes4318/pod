@@ -191,7 +191,7 @@ export default function StudioShell({
   const pathname = usePathname() || "/studio";
   const router = useRouter();
   const [theme, setTheme] = useState<StudioTheme>(initialTheme);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
+
   const displayName = user?.name?.trim() || user?.email?.trim() || "Your account";
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -233,7 +233,6 @@ export default function StudioShell({
     try {
       if (localStorage.getItem(RAIL_KEY) === "1") setCollapsed(true);
     } catch {}
-    setRecent(readRecent());
   }, []);
 
   // Remember the episodes and shows you open, so the palette can offer them
@@ -241,14 +240,11 @@ export default function StudioShell({
   useEffect(() => {
     if (!header.title || !RECENT_ROUTE.test(pathname)) return;
     const entry = { href: pathname, label: header.title };
-    setRecent((current) => {
-      if (current[0]?.href === entry.href && current[0]?.label === entry.label) return current;
-      const next = [entry, ...current.filter((r) => r.href !== entry.href)].slice(0, 6);
-      try {
-        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
+    const current = readRecent();
+    if (current[0]?.href === entry.href && current[0]?.label === entry.label) return;
+    try {
+      localStorage.setItem(RECENT_KEY, JSON.stringify([entry, ...current.filter((r) => r.href !== entry.href)].slice(0, 6)));
+    } catch {}
   }, [pathname, header.title]);
 
   const toggleTheme = () => {
@@ -330,14 +326,16 @@ export default function StudioShell({
     item.exact ? pathname === item.href : under(item.href) || (item.also ?? []).some(under);
 
   // What the palette offers before you type: where you were, then your shows.
+  // Recents are read when the palette opens, which only ever happens in the
+  // browser, so there is no server render for them to disagree with.
   const paletteItems = useMemo<PaletteItem[]>(
     () => [
-      ...recent.map((r) => ({ id: `recent-${r.href}`, group: "Recent", label: r.label, href: r.href, icon: r.href.includes("/shows/") ? Icon.shows : Icon.episodes })),
+      ...(paletteOpen ? readRecent() : []).map((r) => ({ id: `recent-${r.href}`, group: "Recent", label: r.label, href: r.href, icon: r.href.includes("/shows/") ? Icon.shows : Icon.episodes })),
       ...PALETTE_ITEMS,
       ...shows.map((show) => ({ id: `show-${show.id}`, group: "Your shows", label: show.name, href: `/studio/shows/${show.id}`, icon: Icon.shows, keywords: show.kind })),
       ...(isOperator ? [{ id: "nav-ops", group: "Operator", label: "Ops console", href: "/admin", icon: Icon.console, keywords: "admin" }] : []),
     ],
-    [recent, shows, isOperator]
+    [paletteOpen, shows, isOperator]
   );
 
   const navLink = (item: NavItem) => {

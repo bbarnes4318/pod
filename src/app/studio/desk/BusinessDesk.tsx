@@ -272,7 +272,7 @@ export default async function BusinessDesk({
                 dossierStatus={selected.dossier?.status ?? null}
                 researching={["queued", "running"].includes(run?.status ?? "")}
               />
-              <Link href={`/studio/shows/${selected.podcastId}?tab=dossiers`} className="sectionAction">Open the show's research {Icon.arrowRight}</Link>
+              <Link href={`/studio/shows/${selected.podcastId}?tab=dossiers`} className="sectionAction">Open the show&apos;s research {Icon.arrowRight}</Link>
             </div>
           </aside>
         </div>

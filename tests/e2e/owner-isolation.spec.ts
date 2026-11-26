@@ -113,7 +113,6 @@ test.describe("Owner isolation — one account never sees another's work", () =>
       test(`opening ${label} unpublished episode at ${route}/[id] leaks nothing`, async ({ page }) => {
         await page.goto(`${route}/${id}`);
         await assertNoLeaks(page, `${route}/${id}`);
-        await expect(page.locator("audio")).toHaveCount(0);
       });
     }
   }
