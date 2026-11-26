@@ -1,14 +1,14 @@
 // Post-login redirect allowlist. Both the /app listener portal and the
 // /studio creator surface authenticate through the same NextAuth session, so a
 // login started from either place must be allowed to return there. Everything
-// else falls back to a safe default — never an open redirect (only same-origin,
+// else falls back to the Studio, which is where a client's work lives — never an open redirect (only same-origin,
 // non-protocol-relative paths under a known prefix are accepted).
 
 const ALLOWED_PREFIXES = ["/app", "/studio"] as const;
 
 export function safeCallbackUrl(
   raw: string | string[] | null | undefined,
-  fallback = "/app"
+  fallback = "/studio"
 ): string {
   const v = Array.isArray(raw) ? raw[0] : raw;
   if (typeof v !== "string") return fallback;

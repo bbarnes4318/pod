@@ -111,5 +111,5 @@ export async function googleLoginAction(formData: FormData): Promise<void> {
 
 /** Sign out and return to the public portal. */
 export async function logoutAction(): Promise<void> {
-  await signOut({ redirectTo: "/app" });
+  await signOut({ redirectTo: "/app/login" });
 }

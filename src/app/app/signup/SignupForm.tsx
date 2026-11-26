@@ -84,7 +84,7 @@ export default function SignupForm({
 
       <div className="uAuthAlt">
         Already have an account?{" "}
-        <Link href={`/app/login${callbackUrl !== "/app" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}>
+        <Link href={`/app/login${callbackUrl !== "/studio" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}>
           Sign in
         </Link>
       </div>
