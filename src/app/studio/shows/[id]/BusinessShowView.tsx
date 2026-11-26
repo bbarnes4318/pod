@@ -53,7 +53,6 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
           <Link key={t.id} href={`/studio/shows/${podcast.id}?tab=${t.id}`} aria-current={t.id === tab ? "page" : undefined}>{t.label}</Link>
         ))}
       </nav>
-      {tab === "overview" && <Hosts podcastId={podcast.id} />}
       {tab === "overview" && <Overview profile={profile} />}
       {tab === "radar" && <Radar podcastId={podcast.id} />}
       {(tab === "topics" || tab === "insider") && <Opportunities podcastId={podcast.id} insiderOnly={tab === "insider"} profile={profile} />}
@@ -65,7 +64,9 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
 
 // ---------------------------------------------------------------------------
 
-function Overview({ profile }: { profile: BusinessProfile }) {
+const humanize = (v: string) => (/[_]/.test(v) || v === v.toLowerCase() ? v.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : v);
+
+async function Overview({ profile }: { profile: BusinessProfile }) {
   const findings = readFindings(profile.findings);
   const answers = readAnswers(profile.answers);
   const visible = findings.filter((f) => f.status !== "rejected");
@@ -74,67 +75,119 @@ function Overview({ profile }: { profile: BusinessProfile }) {
   const answered = Object.values(answers.fields).filter((v) => v.trim()).length;
   const totalAdvanced = ADVANCED_SECTIONS.reduce((n, s) => n + s.fields.length, 0);
   const questions = pendingQuestions(profile.answers);
-  const [primary, ...secondary] = profile.targetAudiences;
+  const podcastId = profile.podcastId;
+
+  const [pod, industryRuns, approved, episodes] = await Promise.all([
+    db.podcast.findUnique({ where: { id: podcastId }, select: { hostIds: true, productionConfig: { select: { hostIds: true } } } }),
+    db.businessResearchRun.count({ where: { podcastId, kind: "industry", status: { in: ["completed", "partial"] } } }).catch(() => 0),
+    db.businessTopicOpportunity.count({ where: { podcastId, editorialStatus: { in: ["APPROVED", "PRODUCED"] } } }).catch(() => 0),
+    db.episode.count({ where: { podcastId } }).catch(() => 0),
+  ]);
+  const hostCount = (pod?.productionConfig?.hostIds?.length ? pod.productionConfig.hostIds : pod?.hostIds ?? []).filter(Boolean).length;
+
+  // The path to a first episode, in the order the pipeline needs it. Each step
+  // reads a real row count, so the checklist can never claim work that has
+  // not happened.
+  const steps = [
+    { label: "Company profile", done: true, detail: profile.businessName, href: null },
+    { label: "Read your website", done: profile.discoveryStatus === "complete" || !!profile.discoveredAt, detail: profile.discoveryStatus === "running" ? "Running now" : profile.discoveryStatus === "failed" ? "Last run failed" : "Run discovery from the top bar", href: null },
+    { label: "Choose hosts", done: hostCount > 0, detail: hostCount > 0 ? `${hostCount} host${hostCount === 1 ? "" : "s"} assigned` : "Pick a lead host below", href: null },
+    { label: "Research the industry", done: industryRuns > 0, detail: industryRuns > 0 ? `${industryRuns} completed run${industryRuns === 1 ? "" : "s"}` : "Start a run in Industry Radar", href: `/studio/shows/${podcastId}?tab=radar` },
+    { label: "Approve a topic", done: approved > 0, detail: approved > 0 ? `${approved} approved` : "Review proposals in Topic Opportunities", href: `/studio/shows/${podcastId}?tab=topics` },
+    { label: "Produce an episode", done: episodes > 0, detail: episodes > 0 ? `${episodes} episode${episodes === 1 ? "" : "s"}` : "Generate from an approved topic's dossier", href: `/studio/shows/${podcastId}?tab=episodes` },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const nextIndex = steps.findIndex((s) => !s.done);
 
   return (
-    <>
-      <section className="studioCard bizStackTight">
-        <div className="showEyebrow">Business intelligence profile</div>
-        <div className="bizChips">
-          <span className="chip chipAccent">{profile.primaryGoal}</span>
-          {profile.subIndustries.map((s) => <span key={s} className="chip">{s}</span>)}
-          {profile.geographicMarkets.map((g) => <span key={g} className="chip">{g}</span>)}
-        </div>
-        {primary && <p className="bizNote">Primary audience: <strong>{primary}</strong>{secondary.length > 0 && ` · also ${secondary.join(", ")}`}</p>}
-        {profile.websiteUrl && <p className="bizNote">{profile.websiteUrl}</p>}
-        {profile.description && <p className="bizBody">{profile.description}</p>}
-        <p className="bizNote">Next: open <strong>Industry Radar</strong> to research topics, approve one in <strong>Topic Opportunities</strong>, and generate the episode from its dossier.</p>
-      </section>
-
-      <section className="studioCard bizSection">
-        <div className="bizCardHead">
-          <div>
-            <h2 className="m-0">A few questions about your business</h2>
-            <p className="bizLead">Three to five questions that sharpen the research. Skip any you like — skipped questions aren&apos;t asked again.</p>
-          </div>
-          <AskQuestions podcastId={profile.podcastId} />
-        </div>
-        {questions.length === 0
-          ? <p className="bizNote">No open questions.</p>
-          : questions.map(([id, q]) => <AdaptiveQuestion key={id} podcastId={profile.podcastId} id={id} question={q.question} why={q.why} />)}
-      </section>
-
-      <section className="studioCard bizSection">
-        <div>
-          <h2 className="m-0">Here is what we learned about your business</h2>
-          <p className="bizLead">
-            Each item is checked against the page it came from. <strong>Source supports</strong> means the quoted text exists and says the same thing;
-            <strong> contradicts</strong> means the page says something different; <strong>unverified</strong> and <strong>inferred</strong> items are the model&apos;s reading.
-            Contradicted items are never used in research.
-            {pendingCount > 0 && ` ${pendingCount} waiting for your review.`}
-          </p>
-        </div>
-        {profile.discoveryStatus === "failed" && <p role="alert" className="gateResult gate-err bizFlush">Discovery failed: {profile.discoveryError}</p>}
-        {byField.length === 0 ? (
-          <p className="bizLead bizFlush">{profile.discoveryStatus === "running" ? "Reading your website…" : "Nothing yet. Run discovery to read your website and description."}</p>
-        ) : (
-          byField.map((g) => (
-            <div key={g.field} className="bizStackTight">
-              <div className="fieldLabel bizFlush">{FIELD_LABEL(g.field)}</div>
-              {g.items.map((f) => <FindingRow key={f.id} podcastId={profile.podcastId} finding={f} />)}
+    <div className="bizOverview">
+      <div className="bizOverviewMain">
+        <section className="studioCard bizSetup" aria-labelledby="biz-setup-title">
+          <div className="bizCardHead">
+            <div>
+              <h2 id="biz-setup-title" className="m-0">Get this show on air</h2>
+              <p className="bizLead">{doneCount === steps.length ? "Every step is complete. New episodes come from approved topics." : `${doneCount} of ${steps.length} steps complete.`}</p>
             </div>
-          ))
-        )}
-      </section>
+            <div className="bizSetupMeter" role="img" aria-label={`${doneCount} of ${steps.length} steps complete`}>
+              <span className="bizSetupMeterFill" style={{ "--pct": `${Math.round((doneCount / steps.length) * 100)}%` } as React.CSSProperties} />
+            </div>
+          </div>
+          <ol className="bizSteps">
+            {steps.map((step, i) => (
+              <li key={step.label} className="bizStep" data-state={step.done ? "done" : i === nextIndex ? "next" : "todo"}>
+                <span className="bizStepMark" aria-hidden="true">{step.done ? "✓" : i + 1}</span>
+                <span className="bizStepText">
+                  <span className="bizStepLabel">{step.label}<span className="srOnly">{step.done ? " — complete" : i === nextIndex ? " — next step" : ""}</span></span>
+                  <span className="bizStepDetail">{step.detail}</span>
+                </span>
+                {!step.done && step.href && <Link href={step.href} className={i === nextIndex ? "btnGhost btnSm" : "btnSubtle btnSm"}>Open</Link>}
+              </li>
+            ))}
+          </ol>
+        </section>
 
-      <section className="studioCard bizSection">
-        <div>
-          <h2 className="m-0">Deeper context <span className="chip bizCount">{answered}/{totalAdvanced} answered</span></h2>
-          <p className="bizLead">Optional. Every answer is routed to the research passes that use it (queries, topics, insider analysis, dossiers, scripts, exclusions).</p>
-        </div>
-        <AdvancedAnswersForm podcastId={profile.podcastId} version={profile.version} sections={ADVANCED_SECTIONS} initial={answers} />
-      </section>
-    </>
+        <section className="studioCard bizSection">
+          <div className="bizCardHead">
+            <div>
+              <h2 className="m-0">Questions about your business</h2>
+              <p className="bizLead">Three to five questions that sharpen the research. Skip any you like — skipped questions aren&apos;t asked again.</p>
+            </div>
+            <AskQuestions podcastId={podcastId} />
+          </div>
+          {questions.length === 0
+            ? <p className="bizNote">No open questions.</p>
+            : questions.map(([id, q]) => <AdaptiveQuestion key={id} podcastId={podcastId} id={id} question={q.question} why={q.why} />)}
+        </section>
+
+        <section className="studioCard bizSection">
+          <div>
+            <h2 className="m-0">What we learned about your business{pendingCount > 0 && <span className="statusPill statusPill--warn bizHeadPill">{pendingCount} to review</span>}</h2>
+            <p className="bizLead">
+              Every item is checked against the page it came from. <strong>Source supports</strong>: the quoted text exists and agrees.
+              <strong> Contradicts</strong>: the page says something different — never used in research. <strong>Unverified</strong> and <strong>inferred</strong>: the model&apos;s reading.
+            </p>
+          </div>
+          {profile.discoveryStatus === "failed" && <p role="alert" className="callout calloutErr">Discovery failed: {profile.discoveryError}</p>}
+          {byField.length === 0 ? (
+            <p className="bizNote">{profile.discoveryStatus === "running" ? "Reading your website…" : "Nothing yet. Run discovery to read your website and description."}</p>
+          ) : (
+            byField.map((g) => (
+              <div key={g.field} className="bizStackTight">
+                <div className="fieldLabel bizFlush">{FIELD_LABEL(g.field)}</div>
+                {g.items.map((f) => <FindingRow key={f.id} podcastId={podcastId} finding={f} />)}
+              </div>
+            ))
+          )}
+        </section>
+
+        <section className="studioCard bizSection">
+          <div className="bizCardHead">
+            <div>
+              <h2 className="m-0">Deeper context</h2>
+              <p className="bizLead">Optional. Each answer is routed to the research passes that use it — queries, topics, insider analysis, dossiers, scripts and exclusions.</p>
+            </div>
+            <span className="statusPill">{answered} of {totalAdvanced} answered</span>
+          </div>
+          <AdvancedAnswersForm podcastId={podcastId} version={profile.version} sections={ADVANCED_SECTIONS} initial={answers} />
+        </section>
+      </div>
+
+      <aside className="bizOverviewSide">
+        <section className="studioCard bizSection" aria-labelledby="biz-profile-title">
+          <h2 id="biz-profile-title" className="m-0">Company profile</h2>
+          <dl className="bizFacts">
+            <div><dt>Company</dt><dd>{profile.businessName}</dd></div>
+            <div><dt>Industry</dt><dd>{profile.industry}{profile.subIndustries.length > 0 && <span className="bizFactSub">{profile.subIndustries.join(", ")}</span>}</dd></div>
+            <div><dt>Goal</dt><dd>{humanize(profile.primaryGoal)}</dd></div>
+            {profile.targetAudiences.length > 0 && <div><dt>Audience</dt><dd>{profile.targetAudiences.join(", ")}</dd></div>}
+            {profile.geographicMarkets.length > 0 && <div><dt>Markets</dt><dd>{profile.geographicMarkets.join(", ")}</dd></div>}
+            {profile.websiteUrl && <div><dt>Website</dt><dd><a href={profile.websiteUrl} target="_blank" rel="noopener noreferrer nofollow">{profile.websiteUrl.replace(/^https?:\/\//, "")}</a></dd></div>}
+          </dl>
+          {profile.description && <p className="bizBody">{profile.description}</p>}
+        </section>
+        <Hosts podcastId={podcastId} />
+      </aside>
+    </div>
   );
 }
 
@@ -366,8 +419,8 @@ async function Hosts({ podcastId }: { podcastId: string }) {
       <div>
         <h2 className="m-0">Hosts</h2>
         <p className="bizLead">
-          Who voices this show. One host makes a solo show; two make a conversation.
-          {current.length === 0 && " None chosen yet, so episodes fall back to the first active hosts."}
+          One host makes a solo show; two make a conversation.
+          {current.length === 0 && " None chosen yet — episodes fall back to the first active hosts."}
         </p>
       </div>
       {hosts.length === 0

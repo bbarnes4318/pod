@@ -4,7 +4,7 @@ import React, { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { generateEpisodesNow } from "@/app/app/podcasts/actions";
 
-export default function GenerateShowEpisodeButton({ podcastId, primary = false }: { podcastId: string; primary?: boolean }) {
+export default function GenerateShowEpisodeButton({ podcastId, primary = false, compact = false }: { podcastId: string; primary?: boolean; compact?: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [note, setNote] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export default function GenerateShowEpisodeButton({ podcastId, primary = false }
 
   return (
     <span className="genBtnWrap">
-      <button type="button" className={primary ? "btnPrimary" : "btnGhost"} disabled={pending} onClick={generate}>
+      <button type="button" className={`${primary ? "btnPrimary" : compact ? "btnSubtle" : "btnGhost"}${compact ? " btnSm" : ""}`} disabled={pending} onClick={generate}>
         {pending ? "Queuing…" : "Generate episode"}
       </button>
       {note && <span role="status" className="genBtnNote">{note}</span>}

@@ -92,15 +92,16 @@ export default async function StudioShowHeadquartersPage({
     : podcast.hostIds;
   const producedCount = podcast.episodes.filter((episode) => PRODUCED.has(episode.status)).length;
   const nextBeat = storylineSequence(showForge.storylines)[producedCount] || null;
-  const cadence = podcast.cadence === "recurring"
-    ? podcast.scheduleDays.map((day) => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(" · ")
+  const cadence = podcast.cadence === "recurring" && podcast.scheduleDays.length
+    ? podcast.scheduleDays.map((day) => (WEEKDAY_LABELS[day] || day).slice(0, 3)).join(", ")
     : "Manual releases";
+  const tone = showForge.bible.tone.replace(/_/g, " + ").replace(/^./, (c) => c.toUpperCase());
 
   return (
     <div className="fadeUp">
       <StudioPageHeader
         title={podcast.name}
-        subtitle={`${cadence} · ${showForge.bible.tone.replace(/_/g, " + ")}`}
+        subtitle={`Sports show · ${cadence} · ${tone} tone`}
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
         actions={
           <>
@@ -155,21 +156,35 @@ export default async function StudioShowHeadquartersPage({
           <Link href="/studio/create" className="sectionAction">Build a rundown →</Link>
         </div>
         {podcast.episodes.length === 0 ? (
-          <div className="studioCard">No episodes yet. Generate the premiere when the room is ready.</div>
+          <div className="emptyState">
+            <div className="emptyStateTitle">No episodes yet</div>
+            <p className="emptyStateBody">Generate the premiere from the top bar, or build a rundown by hand.</p>
+          </div>
         ) : (
-          <div className="showEpisodeList">
-            {podcast.episodes.slice(0, 10).map((episode) => {
-              const stage = friendlyStage(episode.status);
-              return (
-                <Link key={episode.id} href={`/studio/episodes/${episode.id}`} className="studioCard clickable showEpisodeRow">
-                  <div>
-                    <div className="showAsideTitle">{episode.title}</div>
-                    <div className="showEpisodeStage">{stage.label}</div>
-                  </div>
-                  <span className="btnGhost">{episode.audioUrl ? "Listen" : "Open"}</span>
-                </Link>
-              );
-            })}
+          <div className="dataTableWrap showEpisodeList">
+            <table className="dataTable">
+              <thead>
+                <tr>
+                  <th scope="col">Episode</th>
+                  <th scope="col">Stage</th>
+                  <th scope="col">Created</th>
+                  <th scope="col" className="actions"><span className="srOnly">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {podcast.episodes.slice(0, 10).map((episode) => {
+                  const stage = friendlyStage(episode.status);
+                  return (
+                    <tr key={episode.id} className="showEpisodeRow">
+                      <td className="primaryCell"><Link href={`/studio/episodes/${episode.id}`}>{episode.title}</Link></td>
+                      <td><span className={stage.done ? "statusPill statusPill--ok" : "statusPill"}>{stage.label}</span></td>
+                      <td>{new Date(episode.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
+                      <td className="actions"><Link href={`/studio/episodes/${episode.id}`} className="btnSubtle btnSm">{episode.audioUrl ? "Listen" : "Open"}</Link></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </section>

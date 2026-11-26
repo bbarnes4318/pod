@@ -52,14 +52,14 @@ export default async function PublishPage() {
               <div className="studioCard pubBar" key={ep.id}>
                 <div className="u-minw0">
                   <div className="epTitle pubEpTitle">{ep.title}</div>
-                  <div className="epMeta mt-12">
+                  <div className="epMeta mt-2">
                     <span className="chip chipAccent">{ep.status === "publish_ready" ? "Ready to publish" : "Needs packaging"}</span>
                     <span>{fmtDuration(ep.durationSeconds)}</span>
                   </div>
                 </div>
                 <div className="pubActions">
                   <Link href={`/studio/episodes/${ep.id}`} className="btnGhost">▶ Preview</Link>
-                  <Link href={step.href} className="btnPrimary">{step.label} →</Link>
+                  <Link href={step.href} className="btnGhost">{step.label} →</Link>
                 </div>
               </div>
             );

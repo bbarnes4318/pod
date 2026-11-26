@@ -84,7 +84,7 @@ export default function ReleaseFromHold({ episodeId, decision, reasons, released
     <div className="gate-release-actions">
       {done && <p className="gate-release-ok" role="status">{done}</p>}
       {!open && !done && (
-        <button type="button" className="btnPrimary" onClick={() => setOpen(true)}>
+        <button type="button" className="btnDanger" onClick={() => setOpen(true)}>
           Release for production anyway
         </button>
       )}
@@ -109,7 +109,7 @@ export default function ReleaseFromHold({ episodeId, decision, reasons, released
             />
           </label>
           <div className="gate-release-buttons">
-            <button type="button" className="btnPrimary" onClick={onRelease} disabled={busy}>
+            <button type="button" className="btnDanger" onClick={onRelease} disabled={busy}>
               {busy ? "Releasing…" : "Confirm release and record voices"}
             </button>
             <button type="button" className="btnGhost" onClick={() => setOpen(false)} disabled={busy}>
