@@ -570,7 +570,7 @@ body:has(.studioShell) { background: #F6F7F9; }
 .cmdkSearchIcon svg { width: 18px; height: 18px; }
 .cmdkInput { flex: 1; border: none; outline: none; background: transparent; font-size: 16px; color: var(--text); min-width: 0; }
 .cmdkInput::placeholder { color: var(--text-subtle); }
-.studioShell .cmdkInput:focus-visible { outline: none; }
+.studioShell .cmdkInput:focus-visible, .cmdkInput:focus { outline: none; border: none; box-shadow: none; }
 .cmdkList { overflow-y: auto; padding: var(--sp-2); }
 .cmdkGroup { padding: 8px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-subtle); }
 .cmdkItem {
@@ -844,9 +844,7 @@ body:has(.studioShell) { background: #F6F7F9; }
 .input::placeholder, .textarea::placeholder,
 .studioShell input::placeholder, .studioShell textarea::placeholder { color: var(--text-subtle); opacity: 1; }
 .input:focus, .select:focus, .textarea:focus,
-.studioShell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
-.studioShell select:focus,
-.studioShell textarea:focus {
+:where(.studioShell) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea):focus {
   outline: none;
   border-color: var(--accent-text);
   box-shadow: var(--ring);
