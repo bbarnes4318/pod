@@ -1,9 +1,11 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/lib/authActions";
+import { Icon } from "./StudioIcons";
+import CommandPalette, { type PaletteItem } from "./CommandPalette";
 
 /* ------------------------------------------------------------------ *
  * Page header channel.
@@ -45,15 +47,15 @@ const ROUTE_TITLES: { prefix: string; title: string; exact?: boolean }[] = [
   { prefix: "/studio", title: "The Board", exact: true },
   { prefix: "/studio/shows/new", title: "Build your show" },
   { prefix: "/studio/shows", title: "Shows" },
-  { prefix: "/studio/create", title: "Create an episode" },
+  { prefix: "/studio/create", title: "New episode" },
   { prefix: "/studio/episodes", title: "Episodes" },
   { prefix: "/studio/takes", title: "Takes" },
   { prefix: "/studio/hosts", title: "Hosts" },
   { prefix: "/studio/auditions", title: "Voice auditions" },
-  { prefix: "/studio/audio", title: "Audio" },
+  { prefix: "/studio/audio", title: "Audio library" },
   { prefix: "/studio/publish", title: "Publishing" },
   { prefix: "/studio/analytics", title: "Analytics" },
-  { prefix: "/studio/plan", title: "Plan and usage" },
+  { prefix: "/studio/plan", title: "Plan & usage" },
   { prefix: "/studio/settings", title: "Settings" },
 ];
 
@@ -79,91 +81,84 @@ function fallbackTitle(pathname: string): string {
  * Dropping the last path segment is predictable, right-clickable, and always
  * lands somewhere that exists.
  *
- * Returns null only for /studio itself, which is the top: a Back button there
- * would have nowhere to go, and a dead control is worse than no control.
+ * Returns null for /studio and for top-level sections, which the sidebar
+ * already reaches: a Back there would point somewhere the visitor never was.
  */
 function derivedBack(pathname: string): StudioBack | null {
   const clean = pathname.replace(/\/+$/, "");
   if (clean === "/studio" || !clean.startsWith("/studio")) return null;
+  // A top-level section (/studio/hosts) is reached from the sidebar, which is
+  // always on screen; a Back pointing at "The Board" from there is a lie about
+  // where the visitor came from. Back only appears once you are inside one.
+  if (clean.split("/").filter(Boolean).length <= 2) return null;
   const parent = clean.slice(0, clean.lastIndexOf("/")) || "/studio";
   return { href: parent, label: fallbackTitle(parent) };
 }
 
 /* ------------------------------------------------------------------ *
- * Navigation model. Studio owns the complete creator journey:
- * Board · Shows · Create · Episodes · Takes · Hosts · Publishing.
+ * Navigation model.
+ *
+ * Grouped by the job a client is doing, not listed flat. Shows and Episodes
+ * lead because that is where a client's work lives; the sports desk (Board,
+ * Takes) is its own group so a business client can ignore it entirely; talent
+ * and audio assets sit together; distribution last. Account items live in the
+ * footer, out of the working list.
  * ------------------------------------------------------------------ */
-type NavItem = { href: string; label: string; exact?: boolean; icon: React.ReactNode };
+type NavItem = { href: string; label: string; exact?: boolean; icon: React.ReactNode; keywords?: string };
+type NavGroup = { label: string; items: NavItem[] };
 
-const I = {
-  board: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" />
-      <rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
-    </svg>
-  ),
-  shows: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.25" /><path d="M12 15.25V21" />
-    </svg>
-  ),
-  create: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3v18M3 12h18" />
-    </svg>
-  ),
-  episodes: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 12v0M8 8v8M12 5v14M16 9v6M20 12v0" />
-    </svg>
-  ),
-  takes: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3c1.5 3 4 4.5 4 8a4 4 0 0 1-8 0c0-1.2.4-2.2 1-3 .2 1 .8 1.6 1.5 1.8C10.6 7.7 10.5 5.2 12 3Z" />
-    </svg>
-  ),
-  hosts: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v4M8 21h8" />
-    </svg>
-  ),
-  publishing: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1.6" fill="currentColor" stroke="none" />
-    </svg>
-  ),
-  analytics: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18" /><rect x="7" y="12" width="3" height="5" /><rect x="12" y="8" width="3" height="9" /><rect x="17" y="5" width="3" height="12" />
-    </svg>
-  ),
-  plan: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 2l2.4 5 5.6.8-4 3.9 1 5.6L12 20l-5 2.6 1-5.6-4-3.9 5.6-.8z" />
-    </svg>
-  ),
-  settings: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-    </svg>
-  ),
-};
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "Workspace",
+    items: [
+      { href: "/studio/shows", label: "Shows", icon: Icon.shows, keywords: "podcasts programs business" },
+      { href: "/studio/episodes", label: "Episodes", icon: Icon.episodes, keywords: "library drafts" },
+      { href: "/studio/create", label: "New episode", icon: Icon.create, keywords: "create generate rundown" },
+    ],
+  },
+  {
+    label: "Sports desk",
+    items: [
+      { href: "/studio", label: "The Board", exact: true, icon: Icon.board, keywords: "topics leagues teams" },
+      { href: "/studio/takes", label: "Takes", icon: Icon.takes, keywords: "topics debates" },
+    ],
+  },
+  {
+    label: "Talent & audio",
+    items: [
+      { href: "/studio/hosts", label: "Hosts", icon: Icon.hosts, keywords: "voices characters cast" },
+      { href: "/studio/auditions", label: "Voice auditions", icon: Icon.auditions, keywords: "voice test" },
+      { href: "/studio/audio", label: "Audio library", icon: Icon.audio, keywords: "music sound beds stingers" },
+    ],
+  },
+  {
+    label: "Distribution",
+    items: [
+      { href: "/studio/publish", label: "Publishing", icon: Icon.publishing, keywords: "rss feed release" },
+      { href: "/studio/analytics", label: "Analytics", icon: Icon.analytics, keywords: "reports metrics listeners" },
+    ],
+  },
+];
 
-const NAV: NavItem[] = [
-  { href: "/studio", label: "The Board", exact: true, icon: I.board },
-  { href: "/studio/shows", label: "Shows", icon: I.shows },
-  { href: "/studio/create", label: "Create", icon: I.create },
-  { href: "/studio/episodes", label: "Episodes", icon: I.episodes },
-  { href: "/studio/takes", label: "Takes", icon: I.takes },
-  { href: "/studio/hosts", label: "Hosts", icon: I.hosts },
-  { href: "/studio/publish", label: "Publishing", icon: I.publishing },
-  { href: "/studio/analytics", label: "Analytics", icon: I.analytics },
-  { href: "/studio/plan", label: "Plan", icon: I.plan },
-  { href: "/studio/settings", label: "Settings", icon: I.settings },
+const FOOTER_NAV: NavItem[] = [
+  { href: "/studio/plan", label: "Plan & usage", icon: Icon.plan, keywords: "billing tier pricing" },
+  { href: "/studio/settings", label: "Settings", icon: Icon.settings, keywords: "account preferences" },
+];
+
+const PALETTE_ITEMS: PaletteItem[] = [
+  { id: "act-episode", group: "Actions", label: "Create a new episode", href: "/studio/create", icon: Icon.plus, keywords: "generate" },
+  { id: "act-show", group: "Actions", label: "Build a new show", href: "/studio/shows/new", icon: Icon.plus, keywords: "podcast" },
+  { id: "act-business", group: "Actions", label: "Set up a business show", href: "/studio/shows/new/business", icon: Icon.plus, keywords: "company corporate" },
+  ...NAV_GROUPS.flatMap((group) =>
+    group.items.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: `${group.label} ${item.keywords ?? ""}` }))
+  ),
+  ...FOOTER_NAV.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: item.keywords })),
+  { id: "nav-ops", group: "Go to", label: "Ops console", href: "/admin", icon: Icon.console, keywords: "admin operator" },
+  { id: "nav-listen", group: "Go to", label: "Listener view", href: "/app", icon: Icon.listen, keywords: "player app" },
 ];
 
 const RAIL_KEY = "tm.studio.rail.collapsed";
+const noopSubscribe = () => () => {};
 
 type ShellUser = { name: string | null; email: string | null };
 
@@ -181,6 +176,14 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Read once from the browser; the server render assumes Mac and the client
+  // corrects it without an effect.
+  const isMac = useSyncExternalStore(
+    noopSubscribe,
+    () => /Mac|iPhone|iPad/.test(navigator.userAgent),
+    () => true
+  );
   const accountRef = useRef<HTMLDivElement>(null);
 
   // Whatever page is currently mounted owns the topbar. `ownerId` guards the
@@ -202,6 +205,9 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   // already the parent by construction; then the path.
   const lastCrumb = header.breadcrumb?.length ? header.breadcrumb[header.breadcrumb.length - 1] : null;
   const back = header.back ?? lastCrumb ?? derivedBack(pathname);
+  // When a page names its ancestors, Back is redundant with the last crumb —
+  // show the trail instead, and keep Back for pages that only have a parent.
+  const showBack = Boolean(back) && !header.breadcrumb?.length;
 
   useEffect(() => {
     try {
@@ -212,7 +218,20 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   useEffect(() => {
     setMobileOpen(false);
     setMenuOpen(false);
+    setPaletteOpen(false);
   }, [pathname]);
+
+  // ⌘K / Ctrl+K opens search from anywhere in the Studio.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -243,31 +262,51 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
 
+  const navLink = (item: NavItem) => {
+    const active = isActive(item);
+    return (
+      <Link key={item.href} href={item.href} className={`studioNavLink${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={collapsed ? item.label : undefined}>
+        <span className="studioNavIcon">{item.icon}</span>
+        <span className="studioNavLabel">{item.label}</span>
+      </Link>
+    );
+  };
+
   return (
     <StudioHeaderContext.Provider value={headerApi}>
     <div className="studioShell" data-collapsed={collapsed ? "true" : "false"} data-mobile-open={mobileOpen ? "true" : "false"}>
       <aside className="studioSidebar" aria-label="Studio navigation">
-        <Link href="/studio" className="studioBrand" aria-label="Take Machine — Studio home">
-          <span className="onAirDot" aria-hidden="true" />
-          <span className="studioBrandWord">Take<em>Machine</em></span>
-        </Link>
+        <div className="studioSidebarHead">
+          <Link href="/studio" className="studioBrand" aria-label="Take Machine — Studio home">
+            <span className="studioBrandMark" aria-hidden="true">TM</span>
+            <span className="studioBrandWord">
+              <span className="studioBrandName">Take Machine</span>
+              <span className="studioBrandSub">Studio</span>
+            </span>
+          </Link>
+          <button type="button" className="studioRailToggle" onClick={toggleRail} aria-pressed={collapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} title={collapsed ? "Expand navigation" : "Collapse navigation"}>
+            {Icon.collapse}
+          </button>
+        </div>
+
+        <button type="button" className="studioSearch" onClick={() => setPaletteOpen(true)} aria-label="Search the Studio" aria-keyshortcuts="Meta+K Control+K">
+          <span className="studioSearchIcon">{Icon.search}</span>
+          <span className="studioSearchLabel">Search</span>
+          <kbd className="studioSearchKbd">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+        </button>
 
         <nav className="studioNavList" aria-label="Primary">
-          {NAV.map((item) => {
-            const active = isActive(item);
-            return (
-              <Link key={item.href} href={item.href} className={`studioNavLink${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={item.label}>
-                <span className="studioNavIcon">{item.icon}</span>
-                <span className="studioNavLabel">{item.label}</span>
-              </Link>
-            );
-          })}
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label} className="studioNavGroup">
+              <div className="studioNavGroupLabel">{group.label}</div>
+              {group.items.map(navLink)}
+            </div>
+          ))}
         </nav>
 
-        <button type="button" className="studioRailToggle" onClick={toggleRail} aria-pressed={collapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
-          <span className="studioRailToggleLabel">Collapse</span>
-        </button>
+        <nav className="studioNavFoot" aria-label="Account">
+          {FOOTER_NAV.map(navLink)}
+        </nav>
       </aside>
 
       {mobileOpen && <button type="button" className="studioScrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
@@ -276,41 +315,20 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
         <header className="studioTopbar">
           <div className="studioTopbarLeft">
             <button type="button" className="studioHamburger" aria-label="Open navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+              {Icon.menu}
             </button>
-            <Link href="/studio" className="studioTopbarBrand" aria-label="Take Machine — Studio home"><span className="onAirDot" aria-hidden="true" />Take<em>Machine</em></Link>
           </div>
 
-          {/* The page's identity, in the bar that used to hold none of it. */}
+          {/* The page's identity. Back sits in the SAME PLACE on every page and
+              names its destination. It is a PLAIN <a>, not <Link>: the Board
+              keeps its level in the query string, so going up a level navigates
+              between two URLs that share a pathname, and Next's client Router
+              Cache can serve that from a stale entry — the page would not
+              change. A full document navigation cannot be defeated by any cache. */}
           <div className="studioTopbarHead">
-            {/* Back sits in the SAME PLACE on every page — the thing that makes
-                it feel like a control rather than a link that happens to point
-                upward. It names its destination, so nobody has to click it to
-                find out where it goes.
-
-                Resolution order, most specific first: a page that declares its
-                own parent (the Board's drill-down, whose parent lives in the
-                query string, not the path) beats the last breadcrumb, which
-                beats dropping a path segment. */}
-            {/* A PLAIN <a>, not <Link>, and deliberately so.
-
-                The Board keeps its level in the query string, so going up a
-                level navigates between two URLs that share a pathname
-                (/studio?league=NFL -> /studio). Next's client Router Cache can
-                serve that from an entry it already holds — the /studio the
-                visitor arrived on — so the server component never re-runs and
-                the page does not change. It is disabled in `next dev`, which is
-                why this looked fine in the e2e harness and was dead in
-                production.
-
-                Back is an escape hatch used once, not a hot path, so a full
-                document navigation is the right trade: it costs one round trip
-                and cannot be defeated by any cache. */}
-            {back && (
+            {showBack && back && (
               <a href={back.href} className="studioBack" aria-label={`Back to ${back.label}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M15 5l-7 7 7 7" />
-                </svg>
+                {Icon.chevronLeft}
                 <span className="studioBackLabel">{back.label}</span>
               </a>
             )}
@@ -328,15 +346,14 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
           <div className="studioTopbarRight">
             <div className="studioTopbarActions" id="studio-topbar-actions" />
-            {/* Below 720px .studioGenerateLabel is display:none and the icon is
-                aria-hidden, which left this link with NO accessible name at all
-                — axe reports it as a serious link-name violation on every
-                mobile route. The label is explicit so it survives the media
-                query. Same reason for the account button below. */}
-            <Link href="/studio/create" className="studioGenerateBtn" aria-label="Generate an episode">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8Z" /></svg>
-              <span className="studioGenerateLabel">Generate</span>
-            </Link>
+            {/* Hidden on the create flow itself: a "New episode" button on the
+                page that IS the new episode only offers to start over. */}
+            {!pathname.startsWith("/studio/create") && (
+              <Link href="/studio/create" className="studioGenerateBtn" aria-label="Create a new episode">
+                {Icon.plus}
+                <span className="studioGenerateLabel">New episode</span>
+              </Link>
+            )}
 
             <div className="studioAccount" ref={accountRef}>
               <button
@@ -348,33 +365,26 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
                 onClick={() => setMenuOpen((open) => !open)}
               >
                 <span className="studioAvatar" aria-hidden="true">{initialsFor(user)}</span>
-                <span className="studioAccountName">{displayName}</span>
                 <svg className="studioAccountCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
               </button>
 
               {menuOpen && (
                 <div className="studioAccountMenu" role="menu">
                   <div className="studioAccountMenuHead">
-                    <div className="studioAccountMenuName">{displayName}</div>
-                    <div className="studioAccountMenuSub">{user?.email ? "Signed in" : "Studio"}</div>
+                    <span className="studioAvatar studioAvatarLg" aria-hidden="true">{initialsFor(user)}</span>
+                    <div className="studioAccountMenuWho">
+                      <div className="studioAccountMenuName">{displayName}</div>
+                      {user?.email && user.email !== displayName && <div className="studioAccountMenuSub">{user.email}</div>}
+                    </div>
                   </div>
-                  <Link href="/studio/settings" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M18 18l-1.5-1.5M18 6l-1.5 1.5M6 18l1.5-1.5" /></svg>
-                    Settings
-                  </Link>
-                  <Link href="/admin" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M3 9h18M7 14h4" /></svg>
-                    Ops Console
-                  </Link>
-                  <Link href="/app" className="studioAccountMenuItem" role="menuitem">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
-                    Listener view
-                  </Link>
+                  <Link href="/studio/settings" className="studioAccountMenuItem" role="menuitem">{Icon.settings}Settings</Link>
+                  <Link href="/studio/plan" className="studioAccountMenuItem" role="menuitem">{Icon.plan}Plan &amp; usage</Link>
+                  <div className="studioAccountMenuSep" role="separator" />
+                  <Link href="/admin" className="studioAccountMenuItem" role="menuitem">{Icon.console}Ops console</Link>
+                  <Link href="/app" className="studioAccountMenuItem" role="menuitem">{Icon.listen}Listener view</Link>
+                  <div className="studioAccountMenuSep" role="separator" />
                   <form action={logoutAction}>
-                    <button type="submit" className="studioAccountMenuItem" role="menuitem">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>
-                      Sign out
-                    </button>
+                    <button type="submit" className="studioAccountMenuItem" role="menuitem">{Icon.signOut}Sign out</button>
                   </form>
                 </div>
               )}
@@ -391,6 +401,8 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
         <main className="studioMain">{children}</main>
       </div>
+
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={PALETTE_ITEMS} />}
     </div>
     </StudioHeaderContext.Provider>
   );

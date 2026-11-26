@@ -799,53 +799,102 @@ body:has(.userSurface) {
 }
 .uSignInBtn:hover { transform: translateY(-1px); }
 
-/* ---------- Auth pages (login / signup) ---------- */
-.uAuthWrap { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 3.5rem 1.5rem; }
-.uAuthCard {
-  width: 100%; max-width: 400px; background: var(--u-surface); border: 1px solid var(--u-hairline);
-  border-radius: var(--u-radius-lg); box-shadow: var(--u-shadow); padding: 2.2rem 2rem; margin-top: 2rem;
+/* ---------- Auth pages (login / signup) ----------
+   Split screen, Studio palette (indigo, neutral greys) so the first screen a
+   client sees matches the workspace they land in. The listener chrome is
+   hidden here: a signed-out visitor has nothing to navigate and nothing to play. */
+.userSurface:has(.uAuthWrap) .uSidebar,
+.userSurface:has(.uAuthWrap) .uPlayerBar,
+.userSurface:has(.uAuthWrap) .uTopbar { display: none; }
+.userSurface:has(.uAuthWrap) .uMain { padding: 0; max-width: none; }
+.userSurface:has(.uAuthWrap) .uMain::after { display: none; }
+
+.uAuthWrap {
+  --u-brand: #4F46E5;
+  --u-brand-soft: rgba(79, 70, 229, 0.18);
+  flex: 1;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(360px, 5fr) 7fr;
+  background: #FFFFFF;
 }
-.uAuthMark { width: 44px; height: 44px; border-radius: 13px; background: var(--u-brand); color: #fff;
-  display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 800;
-  box-shadow: 0 6px 16px -6px rgba(59, 91, 255, 0.5); margin-bottom: 1.1rem; }
-.uAuthTitle { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.35rem; }
-.uAuthSub { font-size: 0.88rem; color: var(--u-ink-2); margin-bottom: 1.5rem; }
-.uAuthForm { display: flex; flex-direction: column; gap: 0.95rem; }
-.uField { display: flex; flex-direction: column; gap: 0.35rem; }
-.uFieldLabel { font-size: 0.78rem; font-weight: 700; color: var(--u-ink-2); }
+.uAuthAside {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 2.5rem 3rem;
+  background: #101828;
+  color: #F2F4F7;
+}
+.uAuthBrand { display: inline-flex; align-items: center; gap: 0.65rem; font-weight: 600; font-size: 0.95rem; color: #FFFFFF; }
+.uAuthBrandMark {
+  width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+  background: #FFFFFF; color: #101828; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.02em;
+}
+.uAuthPitch { max-width: 420px; }
+.uAuthPitchTitle { font-size: 1.75rem; line-height: 1.25; font-weight: 600; letter-spacing: -0.02em; color: #FFFFFF; margin-bottom: 1.75rem; }
+.uAuthPoints { list-style: none; display: grid; gap: 1rem; padding: 0; margin: 0; }
+.uAuthPoints li { position: relative; padding-left: 1.75rem; font-size: 0.92rem; line-height: 1.55; color: #D0D5DD; }
+.uAuthPoints li::before {
+  content: ""; position: absolute; left: 0; top: 0.3rem; width: 1rem; height: 1rem; border-radius: 50%;
+  background: rgba(129, 140, 248, 0.22); box-shadow: inset 0 0 0 1px rgba(165, 180, 252, 0.55);
+}
+.uAuthPoints li::after {
+  content: ""; position: absolute; left: 0.33rem; top: 0.52rem; width: 0.32rem; height: 0.18rem;
+  border-left: 1.5px solid #C7D2FE; border-bottom: 1.5px solid #C7D2FE; transform: rotate(-45deg);
+}
+.uAuthPoints strong { color: #FFFFFF; font-weight: 600; }
+.uAuthLegal { font-size: 0.78rem; color: #98A2B3; }
+
+.uAuthPanel { display: flex; align-items: center; justify-content: center; padding: 3rem 1.5rem; }
+.uAuthCard { width: 100%; max-width: 380px; background: transparent; border: none; box-shadow: none; padding: 0; margin: 0; }
+.uAuthMark { display: none; }
+.uAuthTitle { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; color: #101828; margin-bottom: 0.35rem; }
+.uAuthSub { font-size: 0.92rem; color: #475467; margin-bottom: 2rem; }
+.uAuthForm { display: flex; flex-direction: column; gap: 1.1rem; }
+.uField { display: flex; flex-direction: column; gap: 0.4rem; }
+.uFieldLabel { font-size: 0.85rem; font-weight: 500; color: #344054; }
 .uInput {
-  width: 100%; background: var(--u-surface); border: 1px solid var(--u-hairline-2);
-  border-radius: var(--u-radius); padding: 0.7rem 0.9rem; font-size: 0.9rem; color: var(--u-ink);
+  width: 100%; height: 42px; background: #FFFFFF; border: 1px solid #D0D5DD;
+  border-radius: 8px; padding: 0 0.85rem; font-size: 0.95rem; color: #101828;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
-.uInput::placeholder { color: var(--u-ink-3); }
+.uInput::placeholder { color: #667085; }
 .uInput:focus { outline: none; border-color: var(--u-brand); box-shadow: 0 0 0 3px var(--u-brand-soft); }
-.uInput[aria-invalid="true"] { border-color: #e5484d; }
-.uFieldError { font-size: 0.76rem; color: #e5484d; }
+.uInput[aria-invalid="true"] { border-color: #D92D20; }
+.uFieldError { font-size: 0.8rem; color: #B42318; }
 .uAuthError {
-  background: #fef2f2; border: 1px solid #fecaca; color: #b42318; border-radius: var(--u-radius);
-  padding: 0.65rem 0.85rem; font-size: 0.82rem;
+  background: #FEF3F2; border: 1px solid #FECDCA; color: #B42318; border-radius: 8px;
+  padding: 0.7rem 0.85rem; font-size: 0.85rem;
 }
 .uAuthBtn {
-  width: 100%; background: var(--u-brand); color: #fff; border: none; border-radius: var(--u-radius);
-  padding: 0.8rem 1rem; font-size: 0.92rem; font-weight: 700; cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.18s ease, opacity 0.15s ease;
-  box-shadow: 0 8px 20px -8px rgba(59, 91, 255, 0.55);
+  width: 100%; height: 42px; margin-top: 0.4rem; background: var(--u-brand); color: #fff; border: 1px solid var(--u-brand); border-radius: 8px;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  transition: background-color 0.12s ease, opacity 0.15s ease;
 }
-.uAuthBtn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 26px -10px rgba(59, 91, 255, 0.6); }
+.uAuthBtn:hover:not(:disabled) { background: #4338CA; }
 .uAuthBtn:disabled { opacity: 0.6; cursor: default; }
-.uAuthDivider { display: flex; align-items: center; gap: 0.8rem; color: var(--u-ink-3); font-size: 0.75rem; margin: 1.2rem 0; }
-.uAuthDivider::before, .uAuthDivider::after { content: ""; flex: 1; height: 1px; background: var(--u-hairline-2); }
+.uAuthDivider { display: flex; align-items: center; gap: 0.8rem; color: #667085; font-size: 0.8rem; margin: 1.4rem 0; }
+.uAuthDivider::before, .uAuthDivider::after { content: ""; flex: 1; height: 1px; background: #EAECF0; }
 .uGoogleBtn {
-  width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
-  background: var(--u-surface); border: 1px solid var(--u-hairline-2); border-radius: var(--u-radius);
-  padding: 0.75rem 1rem; font-size: 0.9rem; font-weight: 600; color: var(--u-ink); cursor: pointer;
-  transition: border-color 0.14s ease, background-color 0.14s ease;
+  width: 100%; height: 42px; display: flex; align-items: center; justify-content: center; gap: 0.6rem;
+  background: #FFFFFF; border: 1px solid #D0D5DD; border-radius: 8px;
+  font-size: 0.95rem; font-weight: 600; color: #344054; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
-.uGoogleBtn:hover { border-color: var(--u-ink-3); background: var(--u-canvas); }
-.uAuthAlt { margin-top: 1.4rem; font-size: 0.85rem; color: var(--u-ink-2); text-align: center; }
-.uAuthAlt a { color: var(--u-brand); font-weight: 600; }
-.uAuthHint { font-size: 0.72rem; color: var(--u-ink-3); }
+.uGoogleBtn:hover { background: #F9FAFB; }
+.uAuthAlt { margin-top: 1.75rem; font-size: 0.88rem; color: #475467; text-align: center; }
+.uAuthAlt a { color: #4338CA; font-weight: 600; }
+.uAuthHint { font-size: 0.78rem; color: #667085; }
+@media (max-width: 860px) {
+  .uAuthWrap { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .uAuthAside { padding: 1.25rem 1.5rem; flex-direction: row; align-items: center; }
+  .uAuthPitch, .uAuthLegal { display: none; }
+  .uAuthPanel { align-items: flex-start; padding: 2.5rem 1.5rem; }
+}
 
 /* ---------- Account page ---------- */
 .uAccountPage { max-width: 560px; }

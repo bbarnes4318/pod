@@ -147,7 +147,7 @@ export default async function TakesBoard({
                 ))}
               </div>
 
-              <Link href={`/studio/create?topic=${t.id}`} className="btnPrimary u-noShrink">
+              <Link href={`/studio/create?topic=${t.id}`} className="btnGhost u-noShrink">
                 Use it →
               </Link>
             </div>

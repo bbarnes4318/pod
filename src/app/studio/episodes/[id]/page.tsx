@@ -303,18 +303,24 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         title={episode.title}
         breadcrumb={[{ label: "Episodes", href: "/studio/episodes" }]}
         actions={
-          q ? (
-            <span title={`Episode quality ${q.total} out of 100`}>
-              <span>{q.total}</span>
-              <span>/100</span>
-            </span>
-          ) : undefined
+          <>
+            {q && (
+              <span className="epScorePill" title={`Episode quality ${q.total} out of 100`}>
+                <span className="epScorePillLabel">Quality</span>
+                <span className="epScorePillNum">{q.total}</span>
+                <span className="epScorePillUnit">/100</span>
+              </span>
+            )}
+            {/* The next step, in the bar the eye lands on first. The sticky
+                action bar at the foot repeats it for long panels. */}
+            <Link href={action.href} className="btnGhost epTopAction">{action.label}</Link>
+          </>
         }
         status={
           <>
-            <span className={`chip ${chip.kind === "accent" ? "chipAccent" : chip.kind === "success" ? "chipSuccess" : ""}`}>{chip.label}</span>
-            <span>{fmtDuration(episode.durationSeconds)}</span>
-            <span>{fmtDate(episode.updatedAt)}</span>
+            <span className={`statusPill ${episode.status === "published" ? "statusPill--ok" : episode.status === "failed" ? "statusPill--err" : episode.status === "script_draft" ? "statusPill--warn" : chip.kind === "plain" ? "" : "statusPill--live"}`}>{chip.label}</span>
+            {episode.durationSeconds ? <span className="subbarMeta">{fmtDuration(episode.durationSeconds)}</span> : null}
+            <span className="subbarMeta">Updated {fmtDate(episode.updatedAt)}</span>
           </>
         }
       />

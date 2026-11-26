@@ -39,7 +39,7 @@ export default function PlanClient({
   return (
     <div className="fadeUp">
       <StudioPageHeader
-        title="Plan and usage"
+        title="Plan & usage"
         subtitle="Your tier, what you've used this month, and what each plan unlocks."
       />
 
@@ -70,8 +70,12 @@ export default function PlanClient({
 
       {/* Tier ladder */}
       <div className="planGrid">
-        {plans.map((p) => {
+        {plans.map((p, index) => {
           const isCurrent = p.id === currentPlanId;
+          // Only an UPGRADE is the call to action. A downgrade is available,
+          // never advertised, so it stays secondary.
+          const currentIndex = plans.findIndex((x) => x.id === currentPlanId);
+          const isUpgrade = !isCurrent && index > currentIndex;
           return (
             <div key={p.id} className={`studioCard planCard${isCurrent ? " planCardCurrent" : ""}`}>
               <div className="planCardHead">
@@ -87,11 +91,11 @@ export default function PlanClient({
               </ul>
               <button
                 type="button"
-                className={`u-full planCta ${isCurrent ? "btnGhost" : "btnPrimary"}`}
+                className={`u-full planCta ${isUpgrade ? "btnPrimary" : "btnGhost"}`}
                 disabled={isCurrent || busy === p.id}
                 onClick={() => change(p.id)}
               >
-                {isCurrent ? "Your plan" : busy === p.id ? "Switching…" : `Switch to ${p.name}`}
+                {isCurrent ? "Current plan" : busy === p.id ? "Switching…" : isUpgrade ? `Upgrade to ${p.name}` : `Switch to ${p.name}`}
               </button>
             </div>
           );

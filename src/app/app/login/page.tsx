@@ -1,4 +1,4 @@
-import Link from "next/link";
+import AuthFrame from "../AuthFrame";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/currentUser";
 import { googleAuthConfigured } from "@/lib/auth";
@@ -23,13 +23,8 @@ export default async function LoginPage({
   if (await currentUser()) redirect(target);
 
   return (
-    <div className="uAuthWrap">
-      <div className="uAuthCard">
-        <Link href="/app" className="uAuthMark" aria-label="Take Machine home">T</Link>
-        <h1 className="uAuthTitle">Welcome back</h1>
-        <p className="uAuthSub">Sign in to build and manage your podcasts.</p>
-        <LoginForm callbackUrl={target} googleEnabled={googleAuthConfigured} />
-      </div>
-    </div>
+    <AuthFrame title="Sign in" subtitle="Welcome back. Sign in to your studio.">
+      <LoginForm callbackUrl={target} googleEnabled={googleAuthConfigured} />
+    </AuthFrame>
   );
 }

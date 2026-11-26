@@ -1,4 +1,3 @@
-import Link from "next/link";
 import StudioPageHeader from "../../../StudioPageHeader";
 import { fetchPodcastSoundData } from "@/app/app/podcasts/[id]/sound/actions";
 import SoundBranding from "@/app/app/podcasts/[id]/sound/SoundBranding";
@@ -20,7 +19,7 @@ export default async function StudioPodcastSoundPage({ params }: { params: Promi
         ]}
       />
 
-      <section className="studioCard">
+      <section className="studioCard soundForm">
         {data.success ? <SoundBranding podcastId={id} data={data} /> : <p role="alert" data-testid="sound-error">{data.error}</p>}
       </section>
     </div>

@@ -125,11 +125,16 @@ export function AdvancedAnswersForm({
 
   return (
     <div className="bizStackTight">
-      {sections.map((s, i) => (
-        <details key={s.key} open={i === 0} className="bizDetails">
+      {sections.map((s) => {
+        const filled = s.fields.filter((f) => (fields[f.key] ?? "").trim()).length;
+        return (
+        <details key={s.key} className="bizDetails">
           <summary>
-            {s.title}
-            <span className="bizDetailsWhy">{s.why}</span>
+            <span className="bizDetailsTitle">
+              {s.title}
+              <span className="bizDetailsWhy">{s.why}</span>
+            </span>
+            <span className={filled === s.fields.length ? "statusPill statusPill--ok" : "statusPill"}>{filled}/{s.fields.length}</span>
           </summary>
           <div className="bizDetailsBody">
             {s.fields.map((f) => (
@@ -146,9 +151,10 @@ export function AdvancedAnswersForm({
             ))}
           </div>
         </details>
-      ))}
+        );
+      })}
       <div className="bizRow">
-        <button className="btnPrimary" disabled={pending} onClick={save}>{pending ? "Saving…" : "Save answers"}</button>
+        <button className="btnGhost" disabled={pending} onClick={save}>{pending ? "Saving…" : "Save answers"}</button>
         {msg && <span role={msg.ok ? "status" : "alert"} className={msg.ok ? "bizNote" : "bizError"}>{msg.text}</span>}
       </div>
     </div>

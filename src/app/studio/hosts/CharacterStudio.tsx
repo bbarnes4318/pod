@@ -343,20 +343,20 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
 
       <div className="hostCardActions">
         {hasVoice ? (
-          <button type="button" className="btnPrimary" onClick={play} disabled={busy === "play"}>
+          <button type="button" className="btnGhost" onClick={play} disabled={busy === "play"}>
             {busy === "play" ? "Making preview…" : "▶ Hear host"}
           </button>
         ) : host.canEdit ? (
           !designing && (
-            <button type="button" className="btnPrimary" onClick={() => { setDesigning(true); setError(null); setMessage(null); }}>
+            <button type="button" className="btnGhost hostVoiceCta" onClick={() => { setDesigning(true); setError(null); setMessage(null); }}>
               Create voice
             </button>
           )
         ) : (
-          <button type="button" className="btnPrimary" disabled>▶ Hear host</button>
+          <button type="button" className="btnGhost" disabled>▶ Hear host</button>
         )}
         {host.canEdit && hasVoice && (
-          <button type="button" className={host.isActive ? "btnGhost" : "btnPrimary"} onClick={toggleOnAir} disabled={busy === "air"}>
+          <button type="button" className={host.isActive ? "btnGhost" : "btnGhost hostVoiceCta"} onClick={toggleOnAir} disabled={busy === "air"}>
             {busy === "air" ? "Saving…" : host.isActive ? "Bench" : "Put on air"}
           </button>
         )}
