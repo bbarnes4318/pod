@@ -47,6 +47,7 @@ assert.doesNotMatch(worker, /validEvidence\.length < 2/);
 
 for (const path of [
   "src/app/studio/page.tsx",
+  "src/app/studio/desk/page.tsx",
   "src/app/studio/create/page.tsx",
   "src/app/studio/takes/page.tsx",
 ]) {

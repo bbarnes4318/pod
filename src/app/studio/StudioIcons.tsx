@@ -14,6 +14,18 @@ function Svg({ children }: { children: React.ReactNode }) {
 }
 
 export const Icon = {
+  home: <Svg><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10v9.5h13V10" /><path d="M10 19.5v-5h4v5" /></Svg>,
+  desk: <Svg><path d="M4 5h11a3 3 0 0 1 3 3v11H7a3 3 0 0 1-3-3Z" /><path d="M8 9h6M8 13h6" /><path d="M18 10h2v7a2 2 0 0 1-2 2" /></Svg>,
+  play: <Svg><path d="M7 4.5v15l12-7.5Z" fill="currentColor" stroke="none" /></Svg>,
+  pause: <Svg><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" /><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none" /></Svg>,
+  close: <Svg><path d="M6 6l12 12M18 6 6 18" /></Svg>,
+  sun: <Svg><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></Svg>,
+  moon: <Svg><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" /></Svg>,
+  activity: <Svg><path d="M3 12h4l3-8 4 16 3-8h4" /></Svg>,
+  alert: <Svg><path d="M12 3 2.5 20h19Z" /><path d="M12 10v4M12 17v.5" /></Svg>,
+  check: <Svg><path d="m5 12.5 4.5 4.5L19 7.5" /></Svg>,
+  clock: <Svg><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Svg>,
+  pen: <Svg><path d="M4 20h4L19 9l-4-4L4 16Z" /><path d="m13.5 6.5 4 4" /></Svg>,
   board: <Svg><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></Svg>,
   shows: <Svg><rect x="3" y="4" width="18" height="14" rx="2" /><path d="M8 21h8M12 18v3" /></Svg>,
   create: <Svg><circle cx="12" cy="12" r="9" /><path d="M12 8v8M8 12h8" /></Svg>,

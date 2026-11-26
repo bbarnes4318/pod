@@ -94,8 +94,8 @@ const tile = (page: Page, key: string) => page.locator(`[data-testid="board-tile
 
 test.describe("The Board", () => {
   test("the hottest row follows the league you click into", async ({ page }) => {
-    await page.goto("/studio");
-    await expect(page.locator("h1")).toHaveText("The Board");
+    await page.goto("/studio/desk");
+    await expect(page.locator("h1")).toHaveText("Editorial desk");
     await expect(page.getByRole("heading", { name: "Hottest right now" })).toBeVisible();
 
     const featured = page.locator('[data-testid="board-featured-take"]');
@@ -117,12 +117,12 @@ test.describe("The Board", () => {
 
   test("a college league heading spells itself out rather than abbreviating", async ({ page }) => {
     // "Hottest CBB takes" is jargon where the pro abbreviations are not.
-    await page.goto("/studio?league=NCAAF");
+    await page.goto("/studio/desk?league=NCAAF");
     await expect(page.getByRole("heading", { name: "Hottest College Football takes" })).toBeVisible();
   });
 
   test("walks league to team and filters the board to that team", async ({ page }) => {
-    await page.goto("/studio");
+    await page.goto("/studio/desk");
 
     // Every browsable league is offered, with the takes waiting on each.
     await expect(page.locator('[data-testid="board-tile"]')).toHaveCount(5);
@@ -152,7 +152,7 @@ test.describe("The Board", () => {
   });
 
   test("walks college league to conference to team", async ({ page }) => {
-    await page.goto("/studio?league=NCAAF");
+    await page.goto("/studio/desk?league=NCAAF");
 
     // College adds the conference tier.
     await expect(tile(page, "southeastern-conference")).toContainText("1 take");
@@ -183,10 +183,10 @@ test.describe("The Board", () => {
     const back = page.locator(".studioBack");
 
     // Top of the tree: nowhere to go, so no dead control.
-    await page.goto("/studio");
+    await page.goto("/studio/desk");
     await expect(back).toHaveCount(0);
 
-    await page.goto("/studio?league=NCAAF&conf=southeastern-conference&team=alabama-crimson-tide");
+    await page.goto("/studio/desk?league=NCAAF&conf=southeastern-conference&team=alabama-crimson-tide");
     await expect(back).toContainText("SEC");
     await back.click();
     await expect(page).toHaveURL(/conf=southeastern-conference/);
@@ -201,12 +201,12 @@ test.describe("The Board", () => {
     // …then home, where it disappears again.
     await expect(back).toContainText("All leagues");
     await back.click();
-    await expect(page).toHaveURL(/\/studio$/);
+    await expect(page).toHaveURL(/\/studio\/desk$/);
     await expect(back).toHaveCount(0);
   });
 
   test("a pro league skips the conference tier on the way back", async ({ page }) => {
-    await page.goto("/studio?league=NFL&team=kansas-city-chiefs");
+    await page.goto("/studio/desk?league=NFL&team=kansas-city-chiefs");
     const back = page.locator(".studioBack");
     await expect(back).toContainText("NFL");
     await back.click();
@@ -215,7 +215,7 @@ test.describe("The Board", () => {
   });
 
   test("a team with nothing waiting says so instead of showing someone else's takes", async ({ page }) => {
-    await page.goto("/studio?league=NFL&team=chicago-bears");
+    await page.goto("/studio/desk?league=NFL&team=chicago-bears");
     await expect(page.getByRole("heading", { name: "Hottest Chicago Bears takes" })).toBeVisible();
     // Nothing in scope means nothing anywhere on the page — not the board's
     // hottest three quietly standing in for the team's.
@@ -227,7 +227,7 @@ test.describe("The Board", () => {
   test("every crest on screen actually loads", async ({ page }) => {
     // A manifest that points at a file that moved renders an empty square and
     // no error, so the check has to be on the decoded pixels.
-    for (const url of ["/studio", "/studio?league=NFL", "/studio?league=NCAAF&conf=southeastern-conference"]) {
+    for (const url of ["/studio/desk", "/studio/desk?league=NFL", "/studio/desk?league=NCAAF&conf=southeastern-conference"]) {
       await page.goto(url);
       await expect(page.locator('[data-testid="board-tile"]').first()).toBeVisible();
       // Crests are lazily loaded and async-decoded, so settle first — asserting
@@ -258,7 +258,7 @@ test.describe("The Board", () => {
     // The browse tiers must not have hidden the takes that were always here:
     // the shared seed's topics carry no league, so they belong to the whole
     // board and only to the whole board.
-    await page.goto("/studio");
+    await page.goto("/studio/desk");
     const all = page.locator('[data-testid="board-take"], [data-testid="board-featured-take"]');
     await expect(all.filter({ hasText: "Did the refs decide the title game?" })).toHaveCount(1);
     expect(E2E.topics.lead).toBeTruthy();

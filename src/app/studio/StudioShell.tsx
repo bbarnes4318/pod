@@ -2,10 +2,13 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { logoutAction } from "@/lib/authActions";
 import { Icon } from "./StudioIcons";
 import CommandPalette, { type PaletteItem } from "./CommandPalette";
+import { StudioAudioProvider } from "./StudioAudio";
+import ActivityMenu from "./ActivityMenu";
+import { showHue, showInitials } from "./lib";
 
 /* ------------------------------------------------------------------ *
  * Page header channel.
@@ -44,13 +47,14 @@ export function useStudioHeader() {
  * prefix wins, so /studio/shows/new resolves before /studio/shows.
  */
 const ROUTE_TITLES: { prefix: string; title: string; exact?: boolean }[] = [
-  { prefix: "/studio", title: "The Board", exact: true },
+  { prefix: "/studio", title: "Home", exact: true },
+  { prefix: "/studio/desk", title: "Editorial desk" },
   { prefix: "/studio/shows/new", title: "Build your show" },
   { prefix: "/studio/shows", title: "Shows" },
   { prefix: "/studio/create", title: "New episode" },
   { prefix: "/studio/episodes", title: "Episodes" },
   { prefix: "/studio/takes", title: "Takes" },
-  { prefix: "/studio/hosts", title: "Hosts" },
+  { prefix: "/studio/hosts", title: "Talent" },
   { prefix: "/studio/auditions", title: "Voice auditions" },
   { prefix: "/studio/audio", title: "Audio library" },
   { prefix: "/studio/publish", title: "Publishing" },
@@ -98,66 +102,65 @@ function derivedBack(pathname: string): StudioBack | null {
 /* ------------------------------------------------------------------ *
  * Navigation model.
  *
- * Grouped by the job a client is doing, not listed flat. Shows and Episodes
- * lead because that is where a client's work lives; the sports desk (Board,
- * Takes) is its own group so a business client can ignore it entirely; talent
- * and audio assets sit together; distribution last. Account items live in the
- * footer, out of the working list.
+ * Eight destinations, each named for a job: where am I (Home), what do I
+ * own (Shows), what should I make (Editorial desk), what have I made
+ * (Episodes), who makes it (Talent), what does it sound like (Audio
+ * library), how does it get out (Publishing), did it land (Analytics).
+ *
+ * Sports is not a navigation group any more. The Board and Takes are the
+ * sports side of the Editorial desk, beside the business research side:
+ * two verticals, one desk. `also` lists the routes that live under a
+ * destination so it stays lit while you are inside them.
  * ------------------------------------------------------------------ */
-type NavItem = { href: string; label: string; exact?: boolean; icon: React.ReactNode; keywords?: string };
-type NavGroup = { label: string; items: NavItem[] };
+type NavItem = { href: string; label: string; exact?: boolean; icon: React.ReactNode; keywords?: string; also?: string[]; chord?: string };
 
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "Workspace",
-    items: [
-      { href: "/studio/shows", label: "Shows", icon: Icon.shows, keywords: "podcasts programs business" },
-      { href: "/studio/episodes", label: "Episodes", icon: Icon.episodes, keywords: "library drafts" },
-      { href: "/studio/create", label: "New episode", icon: Icon.create, keywords: "create generate rundown" },
-    ],
-  },
-  {
-    label: "Sports desk",
-    items: [
-      { href: "/studio", label: "The Board", exact: true, icon: Icon.board, keywords: "topics leagues teams" },
-      { href: "/studio/takes", label: "Takes", icon: Icon.takes, keywords: "topics debates" },
-    ],
-  },
-  {
-    label: "Talent & audio",
-    items: [
-      { href: "/studio/hosts", label: "Hosts", icon: Icon.hosts, keywords: "voices characters cast" },
-      { href: "/studio/auditions", label: "Voice auditions", icon: Icon.auditions, keywords: "voice test" },
-      { href: "/studio/audio", label: "Audio library", icon: Icon.audio, keywords: "music sound beds stingers" },
-    ],
-  },
-  {
-    label: "Distribution",
-    items: [
-      { href: "/studio/publish", label: "Publishing", icon: Icon.publishing, keywords: "rss feed release" },
-      { href: "/studio/analytics", label: "Analytics", icon: Icon.analytics, keywords: "reports metrics listeners" },
-    ],
-  },
+const NAV: NavItem[] = [
+  { href: "/studio", label: "Home", exact: true, icon: Icon.home, keywords: "headquarters briefing dashboard", chord: "h" },
+  { href: "/studio/shows", label: "Shows", icon: Icon.shows, keywords: "podcasts programs", chord: "s" },
+  { href: "/studio/desk", label: "Editorial desk", icon: Icon.desk, keywords: "topics takes board research ideas opportunities", also: ["/studio/takes"], chord: "d" },
+  { href: "/studio/episodes", label: "Episodes", icon: Icon.episodes, keywords: "library drafts", also: ["/studio/create"], chord: "e" },
+  { href: "/studio/hosts", label: "Talent", icon: Icon.hosts, keywords: "hosts voices characters cast auditions", also: ["/studio/auditions"], chord: "t" },
+  { href: "/studio/audio", label: "Audio library", icon: Icon.audio, keywords: "music sound beds stingers", chord: "a" },
+  { href: "/studio/publish", label: "Publishing", icon: Icon.publishing, keywords: "rss feed release", chord: "p" },
+  { href: "/studio/analytics", label: "Analytics", icon: Icon.analytics, keywords: "reports metrics listeners" },
 ];
 
-const FOOTER_NAV: NavItem[] = [
+/** Account, billing and preferences: out of the working list. */
+const UTILITY_NAV: NavItem[] = [
   { href: "/studio/plan", label: "Plan & usage", icon: Icon.plan, keywords: "billing tier pricing" },
   { href: "/studio/settings", label: "Settings", icon: Icon.settings, keywords: "account preferences" },
 ];
 
 const PALETTE_ITEMS: PaletteItem[] = [
-  { id: "act-episode", group: "Actions", label: "Create a new episode", href: "/studio/create", icon: Icon.plus, keywords: "generate" },
-  { id: "act-show", group: "Actions", label: "Build a new show", href: "/studio/shows/new", icon: Icon.plus, keywords: "podcast" },
-  { id: "act-business", group: "Actions", label: "Set up a business show", href: "/studio/shows/new/business", icon: Icon.plus, keywords: "company corporate" },
-  ...NAV_GROUPS.flatMap((group) =>
-    group.items.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: `${group.label} ${item.keywords ?? ""}` }))
-  ),
-  ...FOOTER_NAV.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: item.keywords })),
-  { id: "nav-ops", group: "Go to", label: "Ops console", href: "/admin", icon: Icon.console, keywords: "admin operator" },
-  { id: "nav-listen", group: "Go to", label: "Listener view", href: "/app", icon: Icon.listen, keywords: "player app" },
+  { id: "act-episode", group: "Actions", label: "New episode", href: "/studio/create", icon: Icon.plus, keywords: "create generate produce", hint: "N" },
+  { id: "act-show", group: "Actions", label: "New show", href: "/studio/shows/new", icon: Icon.plus, keywords: "podcast create build" },
+  { id: "act-host", group: "Actions", label: "Audition voices", href: "/studio/auditions", icon: Icon.auditions, keywords: "voice test talent" },
+  ...NAV.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: item.keywords, hint: item.chord ? `G ${item.chord.toUpperCase()}` : undefined })),
+  ...UTILITY_NAV.map((item) => ({ id: `nav-${item.href}`, group: "Go to", label: item.label, href: item.href, icon: item.icon, keywords: item.keywords })),
 ];
 
 const RAIL_KEY = "tm.studio.rail.collapsed";
+const RECENT_KEY = "tm.studio.recent";
+const THEME_COOKIE = "tm_theme";
+
+export type StudioTheme = "dark" | "light";
+export type ShellShow = { id: string; name: string; kind: "business" | "sports" };
+type RecentItem = { href: string; label: string };
+
+/** Detail pages worth returning to. A list is not "work"; an episode or a show is. */
+const RECENT_ROUTE = new RegExp("^/studio/(episodes|shows)/(?!new(?:/|$))[^/]+$");
+
+function readRecent(): RecentItem[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((r) => r && typeof r.href === "string" && typeof r.label === "string").slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+const isTyping = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
 const noopSubscribe = () => () => {};
 
 type ShellUser = { name: string | null; email: string | null };
@@ -170,8 +173,25 @@ function initialsFor(user?: ShellUser): string {
   return (letters || source[0]).toUpperCase();
 }
 
-export default function StudioShell({ user, children }: { user?: ShellUser; children: React.ReactNode }) {
+export default function StudioShell({
+  user,
+  shows = [],
+  isOperator = false,
+  initialTheme = "dark",
+  children,
+}: {
+  user?: ShellUser;
+  /** The viewer's own shows, for the sidebar. Already owner-scoped by the layout. */
+  shows?: ShellShow[];
+  /** Operators get a link to the ops console; nobody else is shown one. */
+  isOperator?: boolean;
+  initialTheme?: StudioTheme;
+  children: React.ReactNode;
+}) {
   const pathname = usePathname() || "/studio";
+  const router = useRouter();
+  const [theme, setTheme] = useState<StudioTheme>(initialTheme);
+  const [recent, setRecent] = useState<RecentItem[]>([]);
   const displayName = user?.name?.trim() || user?.email?.trim() || "Your account";
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -213,7 +233,31 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
     try {
       if (localStorage.getItem(RAIL_KEY) === "1") setCollapsed(true);
     } catch {}
+    setRecent(readRecent());
   }, []);
+
+  // Remember the episodes and shows you open, so the palette can offer them
+  // back. Keyed on the title the page published, so the label is the real name.
+  useEffect(() => {
+    if (!header.title || !RECENT_ROUTE.test(pathname)) return;
+    const entry = { href: pathname, label: header.title };
+    setRecent((current) => {
+      if (current[0]?.href === entry.href && current[0]?.label === entry.label) return current;
+      const next = [entry, ...current.filter((r) => r.href !== entry.href)].slice(0, 6);
+      try {
+        localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, [pathname, header.title]);
+
+  const toggleTheme = () => {
+    const next: StudioTheme = theme === "dark" ? "light" : "dark";
+    // A cookie, not localStorage: the layout reads it on the server, so the
+    // right theme is in the first byte of HTML and never flashes.
+    document.cookie = `${THEME_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
+    setTheme(next);
+  };
 
   useEffect(() => {
     setMobileOpen(false);
@@ -221,17 +265,39 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
     setPaletteOpen(false);
   }, [pathname]);
 
-  // ⌘K / Ctrl+K opens search from anywhere in the Studio.
+  // ⌘K / Ctrl+K opens search from anywhere. "G then a letter" jumps to a
+  // section, "N" starts an episode, "/" searches: never while typing in a field.
   useEffect(() => {
+    let chordAt = 0;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (Date.now() - chordAt < 1200) {
+        chordAt = 0;
+        const dest = NAV.find((item) => item.chord === key);
+        if (dest) {
+          e.preventDefault();
+          router.push(dest.href);
+        }
+        return;
+      }
+      if (key === "g") chordAt = Date.now();
+      else if (key === "n") {
+        e.preventDefault();
+        router.push("/studio/create");
+      } else if (key === "/") {
+        e.preventDefault();
+        setPaletteOpen(true);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -259,8 +325,20 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
     });
   };
 
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(prefix + "/");
   const isActive = (item: NavItem) =>
-    item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
+    item.exact ? pathname === item.href : under(item.href) || (item.also ?? []).some(under);
+
+  // What the palette offers before you type: where you were, then your shows.
+  const paletteItems = useMemo<PaletteItem[]>(
+    () => [
+      ...recent.map((r) => ({ id: `recent-${r.href}`, group: "Recent", label: r.label, href: r.href, icon: r.href.includes("/shows/") ? Icon.shows : Icon.episodes })),
+      ...PALETTE_ITEMS,
+      ...shows.map((show) => ({ id: `show-${show.id}`, group: "Your shows", label: show.name, href: `/studio/shows/${show.id}`, icon: Icon.shows, keywords: show.kind })),
+      ...(isOperator ? [{ id: "nav-ops", group: "Operator", label: "Ops console", href: "/admin", icon: Icon.console, keywords: "admin" }] : []),
+    ],
+    [recent, shows, isOperator]
+  );
 
   const navLink = (item: NavItem) => {
     const active = isActive(item);
@@ -274,7 +352,9 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
   return (
     <StudioHeaderContext.Provider value={headerApi}>
-    <div className="studioShell" data-collapsed={collapsed ? "true" : "false"} data-mobile-open={mobileOpen ? "true" : "false"}>
+    <div className="studioShell" data-theme={theme} data-collapsed={collapsed ? "true" : "false"} data-mobile-open={mobileOpen ? "true" : "false"}>
+    {/* Inside the shell element, so the player dock inherits the theme tokens. */}
+    <StudioAudioProvider>
       <aside className="studioSidebar" aria-label="Studio navigation">
         <div className="studioSidebarHead">
           <Link href="/studio" className="studioBrand" aria-label="Take Machine — Studio home">
@@ -295,17 +375,50 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
           <kbd className="studioSearchKbd">{isMac ? "⌘K" : "Ctrl K"}</kbd>
         </button>
 
-        <nav className="studioNavList" aria-label="Primary">
-          {NAV_GROUPS.map((group) => (
-            <div key={group.label} className="studioNavGroup">
-              <div className="studioNavGroupLabel">{group.label}</div>
-              {group.items.map(navLink)}
-            </div>
-          ))}
-        </nav>
+        <div className="studioNavList">
+          <nav className="studioNavGroup" aria-label="Primary">
+            {NAV.map(navLink)}
+          </nav>
 
-        <nav className="studioNavFoot" aria-label="Account">
-          {FOOTER_NAV.map(navLink)}
+          {/* Your shows, one click from anywhere. The show you are inside is
+              marked, so context survives a trip into one of its episodes. */}
+          <nav className="studioNavGroup studioNavShows" aria-label="Your shows">
+            <div className="studioNavGroupLabel">
+              <span>Your shows</span>
+              <Link href="/studio/shows/new" className="studioNavAdd" aria-label="New show" title="New show">{Icon.plus}</Link>
+            </div>
+            {shows.length === 0 ? (
+              <Link href="/studio/shows/new" className="studioNavLink studioNavLink--ghost" title={collapsed ? "Create your first show" : undefined}>
+                <span className="studioNavIcon">{Icon.plus}</span>
+                <span className="studioNavLabel">Create your first show</span>
+              </Link>
+            ) : (
+              shows.slice(0, 7).map((show) => {
+                const href = `/studio/shows/${show.id}`;
+                const active = under(href);
+                return (
+                  <Link key={show.id} href={href} className={`studioNavLink${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={collapsed ? show.name : undefined}>
+                    <span className="showArt showArt--xs" data-hue={showHue(show.id)} aria-hidden="true">{showInitials(show.name)}</span>
+                    <span className="studioNavLabel">{show.name}</span>
+                  </Link>
+                );
+              })
+            )}
+            {shows.length > 7 && (
+              <Link href="/studio/shows" className="studioNavLink studioNavLink--ghost">
+                <span className="studioNavIcon">{Icon.chevronRight}</span>
+                <span className="studioNavLabel">All {shows.length} shows</span>
+              </Link>
+            )}
+          </nav>
+        </div>
+
+        <nav className="studioNavFoot" aria-label="Account and preferences">
+          {UTILITY_NAV.map(navLink)}
+          <button type="button" className="studioNavLink studioThemeToggle" onClick={toggleTheme} title={collapsed ? "Switch theme" : undefined}>
+            <span className="studioNavIcon">{theme === "dark" ? Icon.sun : Icon.moon}</span>
+            <span className="studioNavLabel">{theme === "dark" ? "Light theme" : "Dark theme"}</span>
+          </button>
         </nav>
       </aside>
 
@@ -346,6 +459,7 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
 
           <div className="studioTopbarRight">
             <div className="studioTopbarActions" id="studio-topbar-actions" />
+            <ActivityMenu />
             {/* Hidden on the create flow itself: a "New episode" button on the
                 page that IS the new episode only offers to start over. */}
             {!pathname.startsWith("/studio/create") && (
@@ -380,8 +494,8 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
                   <Link href="/studio/settings" className="studioAccountMenuItem" role="menuitem">{Icon.settings}Settings</Link>
                   <Link href="/studio/plan" className="studioAccountMenuItem" role="menuitem">{Icon.plan}Plan &amp; usage</Link>
                   <div className="studioAccountMenuSep" role="separator" />
-                  <Link href="/admin" className="studioAccountMenuItem" role="menuitem">{Icon.console}Ops console</Link>
-                  <Link href="/app" className="studioAccountMenuItem" role="menuitem">{Icon.listen}Listener view</Link>
+                  {isOperator && <Link href="/admin" className="studioAccountMenuItem" role="menuitem">{Icon.console}Ops console</Link>}
+                  <Link href="/app" className="studioAccountMenuItem" role="menuitem">{Icon.listen}Public listening page</Link>
                   <div className="studioAccountMenuSep" role="separator" />
                   <form action={logoutAction}>
                     <button type="submit" className="studioAccountMenuItem" role="menuitem">{Icon.signOut}Sign out</button>
@@ -402,7 +516,8 @@ export default function StudioShell({ user, children }: { user?: ShellUser; chil
         <main className="studioMain">{children}</main>
       </div>
 
-      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={PALETTE_ITEMS} />}
+      {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
+    </StudioAudioProvider>
     </div>
     </StudioHeaderContext.Provider>
   );

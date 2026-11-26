@@ -40,7 +40,8 @@ const BUDGET_EXCEPTIONS: Record<string, { ceiling: number; why: string }> = {
 };
 
 const ROUTES: { name: string; url: string }[] = [
-  { name: "The Board", url: "/studio" },
+  { name: "Home", url: "/studio" },
+  { name: "Editorial desk", url: "/studio/desk" },
   { name: "Shows", url: "/studio/shows" },
   { name: "Show detail", url: `/studio/shows/${E2E.podcastId}` },
   { name: "New show", url: "/studio/shows/new" },
@@ -198,7 +199,7 @@ test.describe("Studio chrome budget", () => {
   // Asserted on the DOCUMENT, not on the wrapper: the wrapper is SUPPOSED to
   // scroll, and checking it would fail the design instead of the bug.
   test("the Board's table view does not scroll the page", async ({ page }) => {
-    await gotoStudio(page, "/studio");
+    await gotoStudio(page, "/studio/desk");
     await page.getByRole("button", { name: "Table" }).click();
     await page.getByTestId("board-take-row").first().waitFor();
 

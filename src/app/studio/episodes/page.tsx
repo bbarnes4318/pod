@@ -4,7 +4,8 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { ownerScope } from "@/lib/ownerScope";
-import { qualityOf, fmtDuration, statusChip, FINISHED_STATUSES } from "../lib";
+import { qualityOf, fmtDuration, statusChip, FINISHED_STATUSES, bustAudioUrl, showHue, showInitials } from "../lib";
+import { PlayButton } from "../StudioAudio";
 import { Icon } from "../StudioIcons";
 
 export const dynamic = "force-dynamic";
@@ -130,8 +131,22 @@ export default async function EpisodesLibrary({ searchParams }: { searchParams: 
                     return (
                       <tr key={ep.id}>
                         <td className="primaryCell">
-                          <Link href={`/studio/episodes/${ep.id}`}>{ep.title}</Link>
-                          <span className="subText">{ep.podcast?.name ?? "Standalone episode"}</span>
+                          <span className="epLibCell">
+                            {ep.audioUrl ? (
+                              <PlayButton
+                                className="playBtn playBtn--sm"
+                                track={{ id: ep.id, src: bustAudioUrl(ep.audioUrl, ep.updatedAt), title: ep.title, subtitle: ep.podcast?.name ?? undefined, href: `/studio/episodes/${ep.id}` }}
+                              />
+                            ) : (
+                              <span className="showArt showArt--xs epLibArt" data-hue={ep.podcast ? showHue(ep.podcast.id) : undefined} aria-hidden="true">
+                                {ep.podcast ? showInitials(ep.podcast.name) : "·"}
+                              </span>
+                            )}
+                            <span className="epLibText">
+                              <Link href={`/studio/episodes/${ep.id}`}>{ep.title}</Link>
+                              <span className="subText">{ep.podcast?.name ?? "Standalone episode"}</span>
+                            </span>
+                          </span>
                         </td>
                         <td><span className={pillClass(ep.status, chip.kind)}>{ep.status === "failed" ? "Failed" : chip.label}</span></td>
                         <td className="num">{quality ? <span className="qualityNum" data-band={quality.total >= 80 ? "high" : quality.total >= 60 ? "mid" : "low"}>{quality.total}</span> : <span className="dimText">—</span>}</td>
@@ -139,7 +154,7 @@ export default async function EpisodesLibrary({ searchParams }: { searchParams: 
                         <td>{fmtUpdated(ep.updatedAt)}</td>
                         <td className="actions">
                           <Link href={`/studio/episodes/${ep.id}`} className="btnSubtle btnSm" aria-label={`Open ${ep.title}`}>
-                            {ep.audioUrl ? "Listen" : "Open"}
+                            Open
                           </Link>
                         </td>
                       </tr>

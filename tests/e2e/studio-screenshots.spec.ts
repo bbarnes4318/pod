@@ -18,7 +18,8 @@ const OUT = path.join(process.cwd(), "docs", "ux-audit", PHASE);
 
 /** Every Studio route the audit covers. `slug` becomes the filename stem. */
 const ROUTES: { slug: string; url: string }[] = [
-  { slug: "board", url: "/studio" },
+  { slug: "home", url: "/studio" },
+  { slug: "desk", url: "/studio/desk" },
   { slug: "shows", url: "/studio/shows" },
   { slug: "shows-detail", url: `/studio/shows/${E2E.podcastId}` },
   { slug: "shows-new", url: "/studio/shows/new" },

@@ -14,7 +14,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { E2E } from "./seed";
 
 const ROUTES: { name: string; url: string }[] = [
-  { name: "The Board", url: "/studio" },
+  { name: "Home", url: "/studio" },
+  { name: "Editorial desk", url: "/studio/desk" },
   { name: "Shows", url: "/studio/shows" },
   { name: "Show detail", url: `/studio/shows/${E2E.podcastId}` },
   { name: "New show", url: "/studio/shows/new" },

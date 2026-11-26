@@ -14,8 +14,8 @@ import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 
 export const dynamic = "force-dynamic";
 
-export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string }> }) {
-  const { topic: seedTopicId } = await searchParams;
+export default async function CreatePage({ searchParams }: { searchParams: Promise<{ topic?: string; show?: string }> }) {
+  const { topic: seedTopicId, show: seedPodcastId } = await searchParams;
   const user = await currentUser(); // /studio layout already gates auth
   const freshAfter = activeTopicCutoff();
 
@@ -69,6 +69,9 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         initialDraft={draft}
         maxTopics={MAX_TOPICS_PER_EPISODE}
         seedTopicId={seedTopicId ?? null}
+        // Validated against the viewer's OWN shows inside the builder: an id that
+        // is not in `podcasts` is ignored.
+        seedPodcastId={seedPodcastId ?? null}
         // Only engines this deployment holds credentials for are selectable —
         // the list used to be hard-coded, so three of four choices could only
         // fail after the customer had paid for a script.

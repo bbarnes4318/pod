@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./StudioIcons";
+import { searchStudio, type SearchHit } from "./searchActions";
 
 export type PaletteItem = {
   id: string;
@@ -13,10 +14,29 @@ export type PaletteItem = {
   icon: React.ReactNode;
   /** Extra words the filter matches on, never shown. */
   keywords?: string;
+  /** Second line of context: the show an episode belongs to, a host's role. */
+  sub?: string;
+  /** Keyboard shortcut shown at the right, e.g. "G S". */
+  hint?: string;
+};
+
+const HIT_ICON: Record<SearchHit["kind"], React.ReactNode> = {
+  show: Icon.shows,
+  episode: Icon.episodes,
+  host: Icon.hosts,
+  topic: Icon.desk,
+};
+const HIT_GROUP: Record<SearchHit["kind"], string> = {
+  show: "Shows",
+  episode: "Episodes",
+  host: "Talent",
+  topic: "Topics",
 };
 
 /**
- * Jump-to-anything. Opens on ⌘K / Ctrl+K anywhere in the Studio, or from the
+ * Jump-to-anything. Pages and actions filter instantly; two or more letters
+ * also search YOUR shows, episodes, hosts and topics on the server (scoped to
+ * what you own, the same rule the list pages use). Opens on ⌘K / Ctrl+K anywhere in the Studio, or from the
  * search field in the sidebar. Arrow keys move, Enter goes, Escape closes.
  *
  * Built on the ARIA combobox + listbox pattern: focus stays in the input and
@@ -37,13 +57,54 @@ export default function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const [hits, setHits] = useState<PaletteItem[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+
+  // Debounced, and guarded against out-of-order replies: a slow answer to "ab"
+  // must not overwrite the answer to "abc".
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      setSearching(false);
+      setSearchFailed(false);
+      return;
+    }
+    let stale = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      searchStudio(q)
+        .then((found) => {
+          if (stale) return;
+          setHits(found.map((hit) => ({ id: `hit-${hit.kind}-${hit.id}`, group: HIT_GROUP[hit.kind], label: hit.label, sub: hit.sub, href: hit.href, icon: HIT_ICON[hit.kind] })));
+          setSearchFailed(false);
+        })
+        .catch(() => {
+          if (stale) return;
+          setHits([]);
+          setSearchFailed(true);
+        })
+        .finally(() => {
+          if (!stale) setSearching(false);
+        });
+    }, 180);
+    return () => {
+      stale = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((item) =>
+    const local = items.filter((item) =>
       `${item.label} ${item.group} ${item.keywords ?? ""}`.toLowerCase().includes(q)
     );
-  }, [items, query]);
+    // The server may return a show the local list already has.
+    const seen = new Set(local.map((item) => item.href));
+    return [...local, ...hits.filter((hit) => !seen.has(hit.href))];
+  }, [items, query, hits]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -84,7 +145,7 @@ export default function CommandPalette({
           <input
             ref={inputRef}
             className="cmdkInput"
-            placeholder="Search pages and actions…"
+            placeholder="Search shows, episodes, talent, topics and actions"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActive(0); }}
             onKeyDown={onKeyDown}
@@ -97,7 +158,11 @@ export default function CommandPalette({
           <kbd className="cmdkKbd">Esc</kbd>
         </div>
         <div className="cmdkList" id="cmdk-list" role="listbox" ref={listRef} aria-label="Results">
-          {results.length === 0 && <div className="cmdkEmpty">No pages or actions match “{query}”.</div>}
+          {results.length === 0 && (
+            <div className="cmdkEmpty" role="status">
+              {searching ? "Searching your studio…" : searchFailed ? "Search is unavailable right now. Pages and actions still work." : `Nothing matches “${query}”.`}
+            </div>
+          )}
           {results.map((item, index) => {
             const heading = index === 0 || results[index - 1].group !== item.group ? item.group : null;
             return (
@@ -113,8 +178,11 @@ export default function CommandPalette({
                   onClick={() => go(item)}
                 >
                   <span className="cmdkItemIcon">{item.icon}</span>
-                  <span className="cmdkItemLabel">{item.label}</span>
-                  <span className="cmdkItemGo">{Icon.enter}</span>
+                  <span className="cmdkItemLabel">
+                    {item.label}
+                    {item.sub && <span className="cmdkItemSub">{item.sub}</span>}
+                  </span>
+                  {item.hint ? <kbd className="cmdkKbd cmdkItemHint">{item.hint}</kbd> : <span className="cmdkItemGo">{Icon.enter}</span>}
                 </div>
               </React.Fragment>
             );
@@ -123,6 +191,7 @@ export default function CommandPalette({
         <div className="cmdkFoot">
           <span><kbd className="cmdkKbd">↑</kbd><kbd className="cmdkKbd">↓</kbd> to move</span>
           <span><kbd className="cmdkKbd">Enter</kbd> to open</span>
+          <span className="cmdkFootHint"><kbd className="cmdkKbd">G</kbd> then a letter jumps to a section</span>
         </div>
       </div>
     </div>
