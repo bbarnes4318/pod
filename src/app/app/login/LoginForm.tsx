@@ -70,7 +70,7 @@ export default function LoginForm({
 
       <div className="uAuthAlt">
         New to Take Machine?{" "}
-        <Link href={`/app/signup${callbackUrl !== "/app" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}>
+        <Link href={`/app/signup${callbackUrl !== "/studio" ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : ""}`}>
           Create an account
         </Link>
       </div>
