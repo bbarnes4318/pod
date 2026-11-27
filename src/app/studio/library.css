@@ -23,7 +23,7 @@
 .epGridArt[data-hue="d"] { --art-hue: var(--host-d); }
 .epGridArt img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .epGridInitials { font-family: var(--font-editorial); font-size: 56px; font-weight: 600; line-height: 1; color: var(--text); }
-.epGridPlay { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: 40px; height: 40px; background: var(--surface); box-shadow: var(--shadow-1); }
+.epGridArt .epGridPlay { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: 40px; height: 40px; background: var(--surface); box-shadow: var(--shadow-1); }
 .epGridBody { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: var(--sp-3); min-width: 0; flex: 1; }
 .epGridTitle { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .epGridTitle:hover { text-decoration: underline; text-underline-offset: 3px; }
@@ -83,7 +83,7 @@
 .anBarCol[data-untracked="true"] .anBarStack { background: repeating-linear-gradient(135deg, var(--border) 0 2px, transparent 2px 6px); }
 .anDotNone { background: repeating-linear-gradient(135deg, var(--border-strong) 0 2px, transparent 2px 4px); border: 1px solid var(--border); }
 .anLegend { flex-wrap: wrap; }
-.anRowLabel--wide { width: 170px; }
+.anRow .anRowLabel--wide { width: 170px; }
 .anState { margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: var(--radius); background: var(--surface); font-size: 14px; color: var(--text); line-height: 1.5; }
 .anState[data-state="measured_zero"] { border-left-color: var(--warning); }
 .anStatOf { font-size: 14px; font-weight: 500; color: var(--text-subtle); letter-spacing: 0; }
@@ -119,7 +119,7 @@
   .anEpNums { justify-content: flex-start; }
   .anEpNums div { justify-items: start; }
   .anEpState { max-width: none; text-align: left; }
-  .anRowLabel--wide { width: 110px; white-space: normal; }
+  .anRow .anRowLabel--wide { width: 110px; white-space: normal; }
 }
 
 /* ---- Audio library: media asset management ----
@@ -180,4 +180,60 @@
   .audioLibraryPage .mamActions:empty { display: none; }
   .audioLibraryPage .mamRow { grid-template-columns: auto minmax(0, 1fr); }
   .audioLibraryPage .mamJump { margin-left: 0; }
+}
+
+/* ---- Phone tab bar (720px and below) ----
+   --studio-tabbar-h is 0 everywhere else, so nothing on desktop moves. On a
+   phone the bar is fixed to the bottom edge and three things make room for it:
+   the page's bottom padding, the player dock, and the episode action bar.
+   Stacking from the bottom edge: tab bar, then dock, then action bar.
+   Selectors carry an extra class on purpose: they must beat the dock rules in
+   control-room.css whichever stylesheet loads first. */
+.studioShell { --studio-tabbar-h: 0px; }
+.studioTabbar { display: none; }
+@media (max-width: 720px) {
+  .studioShell { --studio-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .studioShell .studioTabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 46; /* above the dock (45), below the topbar (50) and the drawer (55, 60) */
+    height: var(--studio-tabbar-h);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--surface);
+    border-top: 1px solid var(--border-hover);
+  }
+  .studioShell .studioTab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    height: 56px;
+    padding: 0 2px;
+    border: none;
+    border-top: 2px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .studioShell .studioTab[aria-current="page"] { color: var(--text); border-top-color: var(--accent); font-weight: 600; }
+  .studioShell .studioTab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .studioTabIcon { width: 22px; height: 22px; display: grid; place-items: center; }
+  .studioTabIcon svg { width: 22px; height: 22px; }
+  .studioTabLabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .studioShell .studioBody .studioMain { padding-bottom: calc(var(--sp-6) + var(--studio-tabbar-h)); }
+  .studioShell .studioDock,
+  .studioShell[data-collapsed="true"] .studioDock { bottom: var(--studio-tabbar-h); }
+  .studioShell .studioBody .epActionBar { bottom: var(--studio-tabbar-h); }
+  .studioShell:has(.studioDock[data-open="true"]) .studioBody .studioMain { padding-bottom: calc(var(--sp-8) + var(--studio-dock-h) + var(--studio-tabbar-h)); }
+  .studioShell:has(.studioDock[data-open="true"]) .studioBody .epActionBar { bottom: calc(var(--studio-dock-h) + var(--studio-tabbar-h)); }
 }
