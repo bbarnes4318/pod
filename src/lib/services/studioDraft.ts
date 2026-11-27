@@ -71,6 +71,11 @@ export const RundownDraftShape = {
       })
       .default({ hosts: false, targetTopicCount: false, selectionPreferences: false }),
     activeStep: z.enum(RUNDOWN_STEPS).default("show"),
+    // How the creator chose to build this episode in the Studio, and the
+    // objective they gave AI Producer / Guided. Editor state only: neither is
+    // sent to episode creation. Optional so older drafts keep parsing.
+    approach: z.enum(["producer", "guided", "manual"]).optional(),
+    objective: z.string().max(500).nullable().optional(),
 } as const;
 
 /** PERSISTENCE-time schema: the shape WITHOUT the creation rules.
