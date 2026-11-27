@@ -5,6 +5,9 @@
 // (requireAdmin), so the listener surface gets its own ungated actions that
 // wrap the same services/queue jobs. Guards mirror the admin versions.
 
+import { proposeRevision, flattenScriptLines, staleLineIndexes, MAX_PASSAGE_LINES, MAX_LINE_LEN } from "@/lib/services/passageRevision";
+import { buildQualityReport, loadQualityInput, type QualityReport } from "@/lib/services/qualityInspector";
+import { getRoleLLMProvider } from "@/lib/providers/llm/routing";
 import { reauditBusinessScript } from "@/lib/business/businessProduction";
 import { isBusinessPodcast } from "@/lib/business/intelligenceType";
 import { db } from "@/lib/db";
@@ -491,6 +494,19 @@ export async function attemptPublish(episodeId: string) {
 
   const vm = await getEpisodeTranscriptVM(episodeId);
   if (!vm.ok) return { success: false as const, error: vm.error || "Couldn't load the transcript." };
+
+  // The recording must say what the checked script says. A line edited after
+  // it was voiced can pass a fresh fact check on its NEW words while the audio
+  // still carries the old ones; refuse until those lines are re-voiced.
+  const stale = gate.scriptId ? await staleAudioLinesFor(gate.scriptId) : [];
+  if (stale.length > 0) {
+    return {
+      success: false as const,
+      blocked: true as const,
+      staleAudioLines: stale,
+      error: `${stale.length} recorded line${stale.length === 1 ? " no longer matches" : "s no longer match"} the script. Re-voice ${stale.length === 1 ? "it" : "them"} before publishing.`,
+    };
+  }
 
   if (!vm.gate.canPublish) {
     const n = vm.gate.unresolvedCount;
@@ -1088,4 +1104,140 @@ export async function setEpisodeQualityTier(episodeId: string, tier: string) {
   await db.episode.update({ where: { id: episodeId }, data: { qualityTier: tier } });
   revalidatePath("/studio");
   return { ok: true as const, tier, previous: episode.qualityTier ?? null };
+}
+
+/* ============================================================================
+ * AI passage revision + the editorial quality report (owner-gated).
+ *
+ * A revision is PROPOSED (one model call, nothing saved) and then APPLIED by
+ * the creator. Applying uses the same per-line write as a manual edit, so the
+ * consequences are identical and automatic:
+ *   - every changed line is marked dirty -> the publish gate treats it as
+ *     unresolved until the fact check runs again;
+ *   - a business script's verification fingerprint no longer matches -> its
+ *     release gate closes until it is re-verified (reauditBusinessScript runs);
+ *   - a recorded line whose text changed is STALE (its audio row remembers the
+ *     old words) -> publishing is refused until it is re-voiced.
+ * ========================================================================== */
+
+async function staleAudioLinesFor(scriptId: string): Promise<number[]> {
+  const [script, segments] = await Promise.all([
+    db.script.findUnique({ where: { id: scriptId }, select: { content: true } }),
+    db.audioSegment.findMany({ where: { scriptId, status: "ready" }, select: { lineIndex: true, text: true } }),
+  ]);
+  return staleLineIndexes(flattenScriptLines(script?.content ?? null), segments);
+}
+
+/** Ask the writing model to revise consecutive lines. Returns a preview only. */
+export async function proposePassageRevision(episodeId: string, startLineIndex: number, endLineIndex: number, instruction: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return { ok: false as const, error: gate.error.error };
+  if (!gate.scriptId) return { ok: false as const, error: "There's no script to revise yet." };
+  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { content: true } });
+  if (!script) return { ok: false as const, error: "Script not found." };
+  let llm;
+  try {
+    llm = getRoleLLMProvider("script_rewrite");
+  } catch {
+    return { ok: false as const, error: "No writing model is configured on this deployment. Edit the lines by hand." };
+  }
+  return proposeRevision(llm, script.content, { startLineIndex: Number(startLineIndex), endLineIndex: Number(endLineIndex) }, instruction);
+}
+
+/**
+ * Apply an accepted revision. `before` is what the creator was shown: if a line
+ * has changed since the preview was made, nothing is written.
+ */
+export async function applyPassageRevision(episodeId: string, edits: { lineIndex: number; before: string; after: string }[]) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "There's no script to edit yet." };
+  if (!Array.isArray(edits) || edits.length === 0) return { success: false as const, error: "Nothing to apply." };
+  if (edits.length > MAX_PASSAGE_LINES) return { success: false as const, error: `Apply up to ${MAX_PASSAGE_LINES} lines at a time.` };
+  const wanted = new Map<number, { before: string; after: string }>();
+  for (const e of edits) {
+    const after = String(e?.after ?? "").trim();
+    if (!after) return { success: false as const, error: "A line can't be empty." };
+    if (after.length > MAX_LINE_LEN) return { success: false as const, error: "A revised line is too long." };
+    wanted.set(Number(e.lineIndex), { before: String(e?.before ?? ""), after });
+  }
+
+  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
+  if (!script) return { success: false as const, error: "Script not found." };
+  const content = (script.content as any) || {};
+  const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+  const targets: any[] = [];
+  for (const seg of segments) {
+    for (const line of seg?.lines || []) {
+      const want = line ? wanted.get(line.lineIndex) : undefined;
+      if (!want) continue;
+      if (String(line.text ?? "").trim() !== want.before.trim()) {
+        return { success: false as const, error: "The script changed after this preview was made. Nothing was applied. Ask for the revision again." };
+      }
+      targets.push(line);
+    }
+  }
+  if (targets.length !== wanted.size) return { success: false as const, error: "Some of those lines are no longer in the script. Nothing was applied." };
+
+  let changed = 0;
+  for (const line of targets) {
+    const want = wanted.get(line.lineIndex)!;
+    if (String(line.text).trim() === want.after) continue;
+    line.text = want.after;
+    line.dirty = true; // same mark a manual edit leaves
+    changed++;
+  }
+  if (changed === 0) return { success: true as const, changed: 0, staleAudioLines: [] as number[] };
+
+  content.segments = segments;
+  await db.script.update({ where: { id: script.id }, data: { content: content as any, plainText: transcriptPlainText(segments) } });
+  const ep = await db.episode.findUnique({ where: { id: episodeId }, select: { podcast: { select: { intelligenceType: true } } } });
+  if (isBusinessPodcast(ep?.podcast)) await reauditBusinessScript(db, script.id);
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  // Reported so the editor can say exactly what now needs re-voicing.
+  return { success: true as const, changed, staleAudioLines: await staleAudioLinesFor(script.id) };
+}
+
+/** Re-voice every recorded line that no longer matches the script. One queue
+ *  job per line (the only re-voice the pipeline has), so it is capped. */
+export async function revoiceStaleLines(episodeId: string) {
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return gate.error;
+  if (!gate.scriptId) return { success: false as const, error: "There's no script to voice yet." };
+  if (!VOICED_STATUSES.includes(gate.episode.status)) {
+    return { success: false as const, error: "Voice the episode first. Re-voicing replaces lines in a finished recording." };
+  }
+  const stale = await staleAudioLinesFor(gate.scriptId);
+  const batch = stale.slice(0, MAX_PASSAGE_LINES);
+  try {
+    for (const lineIndex of batch) await queueLineAudioRegenJob({ scriptId: gate.scriptId, lineIndex });
+  } catch (err: any) {
+    return { success: false as const, error: err.message || "Could not queue the re-voice." };
+  }
+  revalidatePath(`/studio/episodes/${episodeId}`);
+  return { success: true as const, queued: batch.length, remaining: stale.length - batch.length };
+}
+
+/** The single quality report: release blockers and warnings, each with where to fix it. */
+export async function getEpisodeQuality(episodeId: string): Promise<QualityReport> {
+  const nowIso = new Date().toISOString();
+  const fail = (error: string): QualityReport => ({ ok: false, error, blockers: [], warnings: [], staleAudioLines: [], checkedAtIso: nowIso });
+  const gate = await ownedEpisode(episodeId);
+  if (!gate.ok) return fail(gate.error.error);
+  const loaded = await loadQualityInput(episodeId);
+  if (!loaded.ok) return fail(loaded.error);
+
+  // The publish gate's own reasons, once the episode has audio to release.
+  let publishBlockers: string[] = [];
+  const status = gate.episode.status;
+  if (loaded.scriptId && ["audio_ready", "content_ready", "publish_ready"].includes(status)) {
+    try {
+      const rss = await validateEpisodeForRss(loaded.scriptId, status === "content_ready" ? "prepare" : "publish");
+      publishBlockers = rss.eligible ? [] : (rss.errorReasons || []).slice(0, 12);
+    } catch {
+      publishBlockers = ["Release readiness could not be checked just now."];
+    }
+  }
+  const report = buildQualityReport({ ...loaded.input, publishBlockers });
+  return { ok: true, ...report, staleAudioLines: loaded.input.staleAudioLines, checkedAtIso: nowIso };
 }
