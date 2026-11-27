@@ -27,3 +27,8 @@
 .sportsInspectorHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .takeInspectLink { font-size: 12px; color: var(--accent-text); text-decoration: none; white-space: nowrap; }
 .takeInspectLink:hover { text-decoration: underline; }
+.takeInspectTitle { color: inherit; text-decoration: none; }
+.takeInspectTitle:hover { text-decoration: underline; }
+
+/* ---- Search → the selected host on the Talent page ---- */
+.hostCard:target { outline: 2px solid var(--accent); outline-offset: 2px; scroll-margin-top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4)); }

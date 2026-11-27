@@ -44,7 +44,9 @@ export default function BoardDenseTable({ takes }: { takes: BoardTakeView[] }) {
                     {t.crests.slice(0, 2).map((c) => (
                       <BoardLogo key={`${c.leagueId}/${c.slug}`} src={c.logo} plate={c.plate} opaque={c.opaque} alt="" size="sm" />
                     ))}
-                    <span className="boardTableTitle" title={t.title}>{t.title}</span>
+                    {t.inspectHref
+                      ? <Link href={t.inspectHref} className="boardTableTitle takeInspectTitle" title={`${t.title}: see the evidence`}>{t.title}</Link>
+                      : <span className="boardTableTitle" title={t.title}>{t.title}</span>}
                   </span>
                 </td>
                 <td className="boardTableLeagueCol">

@@ -8,6 +8,7 @@ import { scoreTopicTalkability } from "@/lib/services/talkabilityService";
 import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 import { businessPodcastsEnabledFor } from "@/lib/business/intelligenceType";
 import BusinessDesk from "./BusinessDesk";
+import SportsInspector from "./SportsInspector";
 import { resolveTakeTeams } from "@/lib/services/takeTeamsService";
 import {
   SPORTS_LOGO_LEAGUES,
@@ -141,7 +142,7 @@ interface EnrichedTake extends BoardTakeView {
 export default async function StudioBoard({
   searchParams,
 }: {
-  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string }>;
+  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string; take?: string }>;
 }) {
   const sp = await searchParams;
 
@@ -200,6 +201,7 @@ export default async function StudioBoard({
   // Which teams each take is about, from its evidence (see takeTeamsService).
   const teamRefs = await resolveTakeTeams(pool);
 
+  const levelHref = boardHref({ league: sp.league, conf: sp.conf, team: sp.team });
   const takes: EnrichedTake[] = pool.map((t) => {
     const talk = scoreTopicTalkability({
       title: t.title,
@@ -242,6 +244,8 @@ export default async function StudioBoard({
       // for the "Newest" sort, and a Date object does not survive that
       // boundary serialization.
       createdAt: t.createdAt.toISOString(),
+      // Opens the evidence inspector for this take at the current browse level.
+      inspectHref: `${levelHref}${levelHref.includes("?") ? "&" : "?"}take=${t.id}`,
       leagueIds,
       conferenceKeys,
     };
@@ -404,6 +408,10 @@ export default async function StudioBoard({
       />
 
       {deskSwitch}
+
+      {/* Evidence inspector for the take named in ?take= (shareable; Close and
+          the browser's Back both return to this same browse level). */}
+      {sp.take && <SportsInspector takeId={sp.take} closeHref={levelHref} />}
 
       {takes.length === 0 ? (
         <div className="emptyNote boardEmpty">

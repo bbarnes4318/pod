@@ -27,6 +27,8 @@ export interface BoardTakeView {
   /** ISO timestamp — carried through for the "Newest" sort and the dense
    *  table's age column. Not shown on the card itself. */
   createdAt: string;
+  /** Link that opens this take's evidence inspector, when the surface has one. */
+  inspectHref?: string;
 }
 
 function FlameIcon() {
@@ -127,6 +129,12 @@ export default function BoardTakeCard({
           <span className="boardWhyLabel">Why now</span>
           {take.whyNow}
         </p>
+      )}
+
+      {take.inspectHref && (
+        <Link href={take.inspectHref} className="takeInspectLink" data-testid="take-inspect">
+          See the evidence <span className="srOnly">for {take.title}</span>
+        </Link>
       )}
 
       <div className="boardCardFoot">

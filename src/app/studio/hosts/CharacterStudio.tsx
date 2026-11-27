@@ -291,7 +291,7 @@ function HostCard({ host, accent, editing, onEdit, onCloseEdit }: {
   };
 
   return (
-    <div className={`studioCard hostCard ${designing ? "hostCardDesigning" : ""}`} style={{ "--host-accent": accent } as React.CSSProperties}>
+    <div id={`host-${host.id}`} className={`studioCard hostCard ${designing ? "hostCardDesigning" : ""}`} style={{ "--host-accent": accent } as React.CSSProperties}>
       <div className="hostCardHead">
         <div>
           <div className="displayTitle hostCardName">{host.name}</div>
@@ -737,7 +737,7 @@ function ArchivedCard({ host }: { host: StudioHostVM }) {
   const restore = async () => { setBusy(true); const result = await unarchiveHost(host.id); if (!result.success) setError(result.error); else router.refresh(); setBusy(false); };
   const remove = async () => { setBusy(true); const result = await deleteHostSafely(host.id); if (!result.success) setError(result.error); else router.refresh(); setBusy(false); };
   return (
-    <div className="studioCard hostCard hostCardArchived">
+    <div id={`host-${host.id}`} className="studioCard hostCard hostCardArchived">
       <div className="displayTitle hostCardNameSm">{host.name}</div>
       <div className="hostCardRole">{host.role}</div>
       <div className="hostCardUsage mt-3 mb-3">Used in {host.episodeCount} episode{host.episodeCount === 1 ? "" : "s"}.</div>
