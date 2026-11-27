@@ -129,6 +129,7 @@ export default async function TakesBoard({
                     {t.summary}
                   </div>
                 )}
+                <Link href={`/studio/desk?desk=sports&take=${t.id}`} className="u-accent">See the evidence</Link>
               </div>
 
               <div className="takeAxes">

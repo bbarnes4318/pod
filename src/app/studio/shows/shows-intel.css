@@ -1,0 +1,34 @@
+/* Quick Start, the business show workflow, and the sports take inspector.
+   New rules only; tokens come from studio.css / control-room.css. Kept in its
+   own file so parallel branches editing those two stylesheets do not conflict. */
+
+/* ---- Quick Start ---- */
+.qsBlock { display: grid; gap: var(--sp-2); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
+.qsWhy { margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); max-width: 72ch; }
+.qsWhyTag { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-subtle); margin-right: var(--sp-1); }
+.qsFlags { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); font-weight: 400; }
+.qsSegments { margin: 0; padding-left: var(--sp-4); display: grid; gap: var(--sp-2); font-size: 14px; line-height: 1.5; color: var(--text-muted); }
+.qsSegments strong { color: var(--text); }
+.qsActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.qsOr { margin: var(--sp-6) 0 var(--sp-3); }
+
+/* ---- Business show workflow ---- */
+.bizNext { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; border-left: 2px solid var(--accent); }
+.bizNextBody { display: grid; gap: var(--sp-1); min-width: 0; }
+.bizNextKicker { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-subtle); margin: 0; }
+.bizNextTitle { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.bizStageHead { display: grid; gap: var(--sp-1); margin-bottom: var(--sp-4); }
+.bizContext > summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+.bizContext[open] > summary { margin-bottom: var(--sp-4); }
+
+/* ---- Sports take inspector ---- */
+.sportsInspectorWrap { margin-bottom: var(--sp-6); }
+.sportsInspectorWrap .deskInspector { position: static; max-height: none; }
+.sportsInspectorHead { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.takeInspectLink { font-size: 12px; color: var(--accent-text); text-decoration: none; white-space: nowrap; }
+.takeInspectLink:hover { text-decoration: underline; }
+.takeInspectTitle { color: inherit; text-decoration: none; }
+.takeInspectTitle:hover { text-decoration: underline; }
+
+/* ---- Search → the selected host on the Talent page ---- */
+.hostCard:target { outline: 2px solid var(--accent); outline-offset: 2px; scroll-margin-top: calc(var(--studio-topbar-h) + var(--studio-subbar-h) + var(--sp-4)); }
