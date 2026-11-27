@@ -7,7 +7,186 @@ every milestone. Continue from here; do not restart the design.
 
 ---
 
-## 1. Honest status
+## 0. Part 2 status (2026-11-27) — read this first
+
+Part 1 (PR #160, sections 1 to 11 below) built the foundation. Part 2 builds the
+workflows. It is **seven pull requests, none merged, none seen in a browser yet**.
+
+| PR | Branch | Priority | State |
+| --- | --- | --- | --- |
+| #164 | `studio/arch-limits` | 6 Architectural limits | Open. tsc clean, unit checks pass. |
+| #165 | `studio/creation` | 1 Episode creation | Open. tsc clean, unit checks pass. |
+| #166 | `studio/workspace` | 2 Episode workspace | Open. tsc clean, unit check passes (fake model). Needs CI `full`. |
+| #167 | `studio/talent` | 3 Talent Studio | Open. tsc clean, unit checks pass. |
+| #168 | `studio/shows-intel` | 4 Shows and editorial intelligence | Open. tsc clean, unit checks pass (fake model). |
+| #169 | `studio/library` | 5 Audio, publishing, analytics, mobile | Open. tsc clean, unit check passes. |
+| (this) | `studio/validation-fixes` | 7 Validation | `show-format` assertion fixed; axe in both themes; this document. |
+
+`studio/integration` is all seven merged together (no conflicts), for validation
+only. It is not for merging.
+
+### What every PR has NOT had
+
+- **No browser.** No page of Part 2 has been rendered. Layout, both themes, phone
+  width, focus order and every interaction are unverified. There are **no new
+  screenshots**; `docs/ux-audit/after/` is still Part 1.
+- **No CI.** `bash scripts/ci/run.sh` has not run on any Part 2 branch. Standing
+  rule 1 forbids running it on the owner's machine. CI: pending, to be run on
+  the server.
+- **No database.** Every new Prisma query (batched progress, desk counts and
+  paging, episode library counts, analytics, publishing) is type-checked only.
+- **No Playwright.** Existing test ids were kept by reading the specs, not by
+  running them.
+- **No live provider.** No LLM or TTS call was made. The two new model calls
+  (passage revision, show Quick Start) were exercised with FAKE model replies.
+  A complete live Sports or Business episode has not been produced; that needs
+  the owner's explicit go-ahead and a budget.
+
+### What did run (owner's machine, Node, no services)
+
+On `studio/integration` (all branches together):
+
+| Command | Result line |
+| --- | --- |
+| `npx tsc --noEmit -p .` | no output, exit 0 |
+| `npx tsx src/scripts/testAnthropicStructuredSchema.ts` (fake fetch) | `ok  anthropic structured output: native JSON format, validator honoured, one repair, schema-only 400 fallback, truncation, request budget` |
+| `npx tsx src/scripts/testDeskStages.ts` | `ok  desk stages: database filter and row label agree on 15 combinations` |
+| `npx tsx src/scripts/testProductionPlan.ts` | `ok  production plan: deterministic, eligible-only, objective-led, honest about shortfalls` |
+| `npx tsx src/scripts/testCastingFit.ts` | `8 passed, 0 failed` |
+| `npx tsx src/scripts/testAnalyticsInsights.ts` | `6 passed, 0 failed` |
+| `npx tsx src/scripts/testShowQuickStart.ts` (fake model) | `6 passed, 0 failed` |
+| `testPassageRevision` (react-server, fake model) | `ok  passage revision + quality report (fake model): lines kept, new figures flagged, bad reply discarded, stale audio found` |
+| `testStudioRundown` (react-server) | `36 passed, 0 failed` |
+| `testHostStudioCapabilities` (react-server) | `12 passed, 0 failed` |
+| `testShowForgeCapabilities` (react-server) | `10 passed, 0 failed` |
+| `testBusinessIntelligence` (react-server) | `29 passed, 0 failed` |
+
+### Priority 1 — Episode creation (#165)
+
+**Implemented**
+- Three approaches over ONE rundown, chosen on the Show step:
+  - **AI Producer**: a creative objective becomes a complete proposed production
+    (stories, order, lead, hosts, sound), each pick with the stored facts behind
+    it. Swap, remove, or take any part into Manual.
+  - **Guided**: four decisions in turn (lead story, companions, hosts, sound),
+    each with a recommendation from the research.
+  - **Manual**: the full builder, behaviour unchanged.
+- All three write the same state and create through `createStudioEpisode`, so a
+  proposal is what gets made and switching approach loses nothing.
+- One entry for Sports and Business: business shows are in the same show chooser
+  and open their approved research with the existing Generate button.
+- Show hosts, length and preferences are inherited as before; the draft now also
+  remembers the approach and the objective (existing draft JSON, no migration).
+- `RundownBuilder.tsx` 1,166 → about 900 lines; pieces in `create/parts.tsx`,
+  approaches in `create/ApproachPanels.tsx`, rules in `lib/studio/productionPlan.ts`.
+
+**Remains / limits**
+- Recommendations are deterministic (heat, evidence counts, word overlap with
+  the objective). No model ranks the proposal. Marked `ponytail:` with the
+  upgrade path.
+- The objective steers story choice only; script generation has no input for it.
+- The step panels (Topics, Hosts, Production) are still inline in the builder.
+
+### Priority 2 — Episode workspace (#166)
+
+**Implemented**
+- **AI passage revision**: tick up to 12 consecutive lines, give an instruction,
+  preview before/after, accept / try again / change instruction. The model may
+  only reword the given lines (validated); figures not in the original passage
+  are flagged before accepting. Service: `lib/services/passageRevision.ts`.
+- **Invalidation**: an accepted revision is written like a hand edit (lines
+  marked for fact re-check, business script re-audited). Recorded lines whose
+  text changed are detected as stale; publishing is refused while any exist;
+  one-click re-voice.
+- **One quality inspector** on Overview (`lib/services/qualityInspector.ts`):
+  must-fix versus worth-a-look, read from the real gates, each item opening the
+  stage and the script line (`#line-N`).
+- **Script and player**: play from any line; the spoken line is marked.
+- Fix: a re-voiced line's audio row now stores the text it was voiced from.
+
+**Remains / limits**
+- Stale-audio detection covers per-line voicing only, not scene-voiced episodes.
+- Re-voice is one queue job per line, 12 per click.
+- The mix view and waveform were not rebuilt into one timeline composition;
+  the Research and Rundown stages are unchanged from Part 1.
+- Line positions in the audio are approximate (the mix view's own timeline).
+
+### Priority 3 — Talent Studio (#167)
+
+**Implemented**: casting-card library with voice preview; sectioned profile;
+five-step workflow (Identity, Personality, Performance, Voice, Final review)
+over the same fields and actions; deterministic personality recommendations and
+complementary casting with the facts shown (`lib/hosts/castingFit.ts`);
+`CharacterStudio.tsx` split into modules. No server action changed.
+
+**Remains / limits**: no personality "chemistry read" exists in the backend, so
+two-host audition links to the existing blind voice comparison. Recommendations
+are rules, not a model. Voices are compared by stored id only. A voice with no
+provenance now blocks Final review until one is chosen.
+
+### Priority 4 — Shows and editorial intelligence (#168)
+
+**Implemented**: AI Quick Start for shows (proposal with reasons, accepted
+through the existing create action); business show page as Overview / Discover /
+Investigate / Approve / Produce with a computed next step and old `?tab=` links
+kept; sports evidence inspector on the desk (`?take=`); search results open the
+selected host, take, topic or episode stage.
+
+**Remains / limits**: Quick Start has never run against the real model. It does
+not propose sound style or teams (the create action does not accept them).
+
+### Priority 5 — Audio, publishing, analytics, mobile (#169)
+
+**Implemented**: episode artwork grid beside the table, with database counts,
+query-side search and paging; publishing as a per-episode release checklist from
+the real gate; analytics that says "no data" instead of 0 and states the numbers
+behind each takeaway; audio library with type tabs, search, metadata filters and
+preview; a phone tab bar. Fixed: `/studio/publish` listed every account's
+finished episodes (now owner-scoped); analytics bars drew at zero height.
+
+**Remains / limits**: publishing reads the gate per episode (8 per page); the
+episode table reads script data for 24 rows; analytics loads its range into
+memory and lists 50 episodes; the audio library filters in the browser.
+
+### Priority 6 — Architectural limits (#164)
+
+**Implemented**
+- Production activity: one batched read, six queries per page of 24 instead of
+  about ten per episode; exact in-flight and ready counts; paging in the
+  activity menu; a failed read is "Not read" and is never counted as running.
+  The 40-episode and 8-episode ceilings are gone.
+- Editorial desk (business): counts and stage filters run in the database, list
+  paged at 50, a linked topic opens off-page. Ownership unchanged.
+- Claude structured output: request budget per call (default 6; the stacked
+  retries allowed 24 or more), truncation raises the cap once then fails
+  clearly, fallback only for a schema 400 and remembered, schema conversion no
+  longer drops fields named like constraints, logs carry no reply text.
+
+**Remains / limits**: the batched read still loads each in-flight episode's
+script JSON (for the line count and the release gates).
+`ANTHROPIC_STRUCTURED_MAX_REQUESTS` is optional; unset means 6.
+
+### Priority 7 — Validation
+
+**Done**: `show-format` asserted configuration snapshot `version` 3; the writer
+stamps 5, or 6 with a diversity context. The test now asserts the writer's
+current versions from the module's own constants, and still asserts the cast is
+frozen. axe now runs in charcoal and light. Neither has been run yet.
+
+**Not done**: browser tests at the five widths, screenshots, rendered
+inspection, `full` build, deployment readiness, live Sports and Business
+episodes. All need the server or a cloud session; the live episodes also need
+the owner's approval and a budget.
+
+### Merge order and after merging
+
+Any order works; the branches were merged together without conflicts. If GitHub
+reports a conflict after an earlier one lands, it will be a one-line overlap.
+None has a migration or a new required environment variable.
+
+---
+
+## 1. Honest status (Part 1, as merged in #160)
 
 | | |
 | --- | --- |
@@ -192,7 +371,7 @@ No routes were deleted. No database migration. No environment variable.
 
 ---
 
-## 7. Remaining work (exact)
+## 7. Remaining work after Part 1 (superseded by section 0 where they differ)
 
 Ordered by dependency. Nothing below has been started unless it says so.
 

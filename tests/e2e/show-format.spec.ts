@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { EPISODE_CONFIGURATION_SNAPSHOT_VERSION, EPISODE_CONFIGURATION_SNAPSHOT_VERSION_BASE } from "../../src/lib/services/episodeConfigurationSnapshot";
 import { E2E } from "./seed";
 import { e2eDb, closeE2eDb } from "./db";
 
@@ -93,7 +94,13 @@ test.describe("Show-format engine in the browser", () => {
     expect(ep!.castMembers[0].role).toBe("anchor");
     expect(ep!.castMembers[0].orderIndex).toBe(0);
     const snap = ep!.configurationSnapshot as { version?: number; cast?: { formatId: string; members: Array<{ role: string }> } } | null;
-    expect(snap?.version).toBe(3);
+    // The snapshot contract (episodeConfigurationSnapshot.ts): a new episode is
+    // stamped with the CURRENT writer's version: the base version, or the next
+    // one when a sound-diversity context was frozen with it. This used to be a
+    // hard-coded 3 (the version that introduced `cast`) and so failed on every
+    // later version, while the thing it protects, the cast being frozen into
+    // the snapshot, is asserted on the two lines below.
+    expect([EPISODE_CONFIGURATION_SNAPSHOT_VERSION_BASE, EPISODE_CONFIGURATION_SNAPSHOT_VERSION]).toContain(snap?.version);
     expect(snap?.cast?.formatId).toBe("solo_commentary");
     expect(snap?.cast?.members?.[0]?.role).toBe("anchor");
   });
