@@ -31,6 +31,23 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Old Board bookmarks. /studio used to be the sports board and kept its
+  // level in the query string; the board now lives at /studio/desk. Redirected
+  // HERE, as a real HTTP redirect, rather than only by redirect() in the page:
+  // every /studio page sits under the Suspense boundary of studio/loading.tsx,
+  // so by the time the page runs the shell has already been sent with a 200.
+  // The visitor then saw Home's skeleton flash and the browser logged a React
+  // error from the streamed client-side redirect. (The page keeps its own
+  // redirect() as a fallback.)
+  if (pathname === "/studio") {
+    const sp = request.nextUrl.searchParams;
+    if (sp.get("league") || sp.get("conf") || sp.get("team")) {
+      const dest = request.nextUrl.clone();
+      dest.pathname = "/studio/desk";
+      return NextResponse.redirect(dest);
+    }
+  }
+
   // /studio: forward the requested path (+query) upstream so the layout can
   // build a login callbackUrl. Cloning + set() overwrites any client-supplied
   // x-pathname, so it can't be spoofed.
