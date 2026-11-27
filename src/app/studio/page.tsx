@@ -128,7 +128,10 @@ export default async function StudioHome({
   const waiting = by("needs_you");
   const running = by("running");
   const ready = by("ready");
-  const runningCount = running.length + productions.more;
+  // Only episodes whose progress was actually read as running. Unread ones
+  // (later pages, failed reads) are counted apart and never called "being made".
+  const unread = by("unknown");
+  const runningCount = running.length;
 
   const briefing: Briefing = (() => {
     if (shows.length === 0) {
@@ -256,15 +259,18 @@ export default async function StudioHome({
                 <h2 className="homeSectionTitle" id="home-running">In production</h2>
                 <Link href="/studio/episodes?view=progress" className="sectionAction">All in production</Link>
               </div>
-              {running.length === 0 ? (
+              {running.length + unread.length === 0 ? (
                 <p className="homeQuiet">Nothing is being made right now.</p>
               ) : (
                 <div className="prodList">
-                  {running.map((item) => <ProductionRow key={item.episodeId} item={item} />)}
+                  {[...running, ...unread].map((item) => <ProductionRow key={item.episodeId} item={item} />)}
                 </div>
               )}
               {productions.more > 0 && (
-                <p className="homeQuiet">And {productions.more} more in production.</p>
+                <p className="homeQuiet">
+                  {productions.more} older unfinished episode{productions.more === 1 ? " is" : "s are"} not listed here.{" "}
+                  <Link href="/studio/episodes?view=progress" className="u-accent">See all {productions.totals.inFlight}</Link>
+                </p>
               )}
             </section>
 

@@ -25,6 +25,7 @@ const STATE_LABEL: Record<ProductionState, string> = {
   stalled: "Stalled",
   running: "In production",
   ready: "Ready to release",
+  unknown: "Not read",
 };
 
 export function ProductionRow({ item, onNavigate }: { item: ProductionItem; onNavigate?: () => void }) {
@@ -56,6 +57,10 @@ export default function ActivityMenu() {
   const [stale, setStale] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Later pages the viewer asked for. A refresh re-reads page one and drops
+  // them, so the list never shows a stale state beside a fresh one.
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const refresh = useCallback(() => {
     getStudioActivity()
       .then((next) => {
@@ -64,6 +69,15 @@ export default function ActivityMenu() {
       })
       .catch(() => setStale(true));
   }, []);
+
+  const loadMore = useCallback(() => {
+    if (!data?.nextOffset) return;
+    setLoadingMore(true);
+    getStudioActivity(data.nextOffset)
+      .then((next) => setData((prev) => (prev ? { ...next, items: [...prev.items, ...next.items] } : next)))
+      .catch(() => setStale(true))
+      .finally(() => setLoadingMore(false));
+  }, [data]);
 
   // Refresh on every navigation (an action elsewhere probably changed things),
   // then on a timer, and immediately when the tab comes back into view.
@@ -100,7 +114,7 @@ export default function ActivityMenu() {
 
   const items = data?.items ?? [];
   const attention = items.filter((i) => i.state === "failed" || i.state === "needs_you" || i.state === "stalled").length;
-  const running = items.filter((i) => i.state === "running").length + (data?.more ?? 0);
+  const running = items.filter((i) => i.state === "running").length;
   const tone = attention > 0 ? "attention" : running > 0 ? "running" : "idle";
   const summary =
     attention > 0
@@ -139,9 +153,14 @@ export default function ActivityMenu() {
             </div>
           ) : (
             <div className="studioActivityList">
-              {items.slice(0, 8).map((item) => (
+              {items.map((item) => (
                 <ProductionRow key={item.episodeId} item={item} onNavigate={() => setOpen(false)} />
               ))}
+              {data.nextOffset !== null && (
+                <button type="button" className="btnGhost studioActivityMore" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? "Loading…" : `Show ${Math.min(data.more, 24)} more of ${data.more}`}
+                </button>
+              )}
             </div>
           )}
           <Link href="/studio/episodes?view=progress" className="studioActivityFoot" onClick={() => setOpen(false)}>

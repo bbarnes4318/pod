@@ -141,7 +141,7 @@ interface EnrichedTake extends BoardTakeView {
 export default async function StudioBoard({
   searchParams,
 }: {
-  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string }>;
+  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string; page?: string }>;
 }) {
   const sp = await searchParams;
 
@@ -172,7 +172,7 @@ export default async function StudioBoard({
           subtitle="Every topic your research has found, ranked, with the evidence beside it."
         />
         {deskSwitch}
-        <BusinessDesk viewer={deskViewer} stage={sp.stage} topicId={sp.topic} showId={sp.show} />
+        <BusinessDesk viewer={deskViewer} stage={sp.stage} topicId={sp.topic} showId={sp.show} page={sp.page} />
       </div>
     );
   }

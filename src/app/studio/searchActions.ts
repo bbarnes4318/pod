@@ -75,6 +75,6 @@ export async function searchStudio(rawQuery: string): Promise<SearchHit[]> {
 }
 
 /** What is in production and what is waiting on you. Polled by the shell. */
-export async function getStudioActivity(): Promise<StudioProductions> {
-  return getStudioProductions(await currentUser());
+export async function getStudioActivity(offset = 0): Promise<StudioProductions> {
+  return getStudioProductions(await currentUser(), { offset: Number(offset) || 0 });
 }

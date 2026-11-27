@@ -129,17 +129,74 @@ const UNSUPPORTED_SCHEMA_KEYS = ["minLength", "maxLength", "minimum", "maximum",
 
 /** The API rejects length/number/array-size constraints and needs
  *  additionalProperties:false on every object. The caller's validator still
- *  enforces the stripped limits after the reply comes back. */
+ *  enforces the stripped limits after the reply comes back.
+ *
+ *  The walk follows the SCHEMA's structure. It used to visit every nested
+ *  object alike, so a field that happened to be NAMED "maximum" or "minLength"
+ *  was deleted from `properties`, and `enum`/`const`/`default` values that were
+ *  objects were rewritten. Only real sub-schemas are visited now. */
 export function toAnthropicJsonSchema(schema: unknown): any {
-  if (Array.isArray(schema)) return schema.map(toAnthropicJsonSchema);
-  if (!schema || typeof schema !== "object") return schema;
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const src = schema as Record<string, any>;
   const out: Record<string, any> = {};
-  for (const [k, v] of Object.entries(schema)) {
-    if (!UNSUPPORTED_SCHEMA_KEYS.includes(k)) out[k] = toAnthropicJsonSchema(v);
+  const mapValues = (m: unknown) =>
+    m && typeof m === "object" && !Array.isArray(m)
+      ? Object.fromEntries(Object.entries(m as Record<string, unknown>).map(([k, v]) => [k, toAnthropicJsonSchema(v)]))
+      : m;
+  for (const [k, v] of Object.entries(src)) {
+    if (UNSUPPORTED_SCHEMA_KEYS.includes(k)) continue;
+    if (k === "properties" || k === "$defs" || k === "definitions") out[k] = mapValues(v);
+    else if (k === "items") out[k] = Array.isArray(v) ? v.map(toAnthropicJsonSchema) : toAnthropicJsonSchema(v);
+    else if (k === "anyOf" || k === "allOf" || k === "oneOf" || k === "prefixItems") out[k] = Array.isArray(v) ? v.map(toAnthropicJsonSchema) : v;
+    else out[k] = v; // enum, const, default, description, required, type, format, $ref ...
   }
   const t = out.type;
   if (t === "object" || (Array.isArray(t) && t.includes("object")) || out.properties) out.additionalProperties = false;
   return out;
+}
+
+/**
+ * Ceiling on HTTP requests ONE generateStructuredOutput call may make.
+ *
+ * The layers multiply: validator repair (x2) x malformed-JSON retry (x2) x
+ * schema-rejected fallback (x2) x network/5xx retries (x3) = up to 24 requests
+ * for one call, before the business wrapper's own retry (x2) and the router's
+ * next rung. Each layer is reasonable alone; together a bad hour at the
+ * provider turned one call into dozens of billed attempts. The healthy path is
+ * 1 request, a repair makes it 2, so 6 leaves room for real retries.
+ */
+export const ANTHROPIC_STRUCTURED_BUDGET_ENV = "ANTHROPIC_STRUCTURED_MAX_REQUESTS";
+export function anthropicStructuredRequestBudget(): number {
+  return Math.max(1, numberFromEnv(ANTHROPIC_STRUCTURED_BUDGET_ENV, 6));
+}
+
+/** Schemas the API has refused as a native format, so the same 400 is not paid
+ *  for on every later call. Per process; bounded. */
+const REJECTED_NATIVE_SCHEMAS = new Set<string>();
+
+/** Only a 400 that is ABOUT the schema justifies the instruction-only fallback.
+ *  "Credit balance too low" and "prompt is too long" are 400s too, and
+ *  re-sending those just doubled the failures. */
+export function isSchemaRejection(message: string): boolean {
+  return /status 400/.test(message) && /schema|output_config|json_schema|\bformat\b|additionalProperties/i.test(message);
+}
+
+/** Quoted values can be customer content (a validator echoing what it got).
+ *  Logs keep the shape of the complaint, not the values. */
+export function redactForLog(message: string, max = 120): string {
+  return message.replace(/"[^"]*"|'[^']*'/g, '"…"').slice(0, max);
+}
+
+/** What one structured call did. Counts and flags only: never prompt or reply text. */
+interface StructuredCallTrace {
+  budget: number;
+  requests: number;
+  mode: "native" | "instruction";
+  schemaFallback: boolean;
+  jsonRetry: boolean;
+  repair: boolean;
+  escalatedTokens: boolean;
+  stopReason: string | null;
 }
 
 export function anthropicTuningMode(model: string): AnthropicTuningMode {
@@ -289,11 +346,11 @@ export class AnthropicLLMProvider implements LLMProvider {
    * The same blindness is how a RETIRED model went unnoticed for four days.
    * A dead provider must be loud in the one place people look at cost.
    */
-  private async request(body: Record<string, any>): Promise<any> {
+  private async request(body: Record<string, any>, call?: StructuredCallTrace): Promise<any> {
     const startedAt = Date.now();
     const state = { attempts: 0, retries: 0 };
     try {
-      return await this.requestWithRetries(body, state);
+      return await this.requestWithRetries(body, state, call);
     } catch (err) {
       recordLlmCall({
         provider: this.name,
@@ -315,12 +372,20 @@ export class AnthropicLLMProvider implements LLMProvider {
 
   private async requestWithRetries(
     body: Record<string, any>,
-    state: { attempts: number; retries: number }
+    state: { attempts: number; retries: number },
+    call?: StructuredCallTrace
   ): Promise<any> {
     const maxRetries = 2;
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (call) {
+        if (call.requests >= call.budget) {
+          // Deliberately not phrased as a JSON error: nothing above may retry it.
+          throw new Error(`[Anthropic] structured call stopped after ${call.requests} HTTP requests (budget ${call.budget}). Last error: ${redactForLog(String(lastErr?.message ?? "none"), 200)}`);
+        }
+        call.requests++;
+      }
       state.attempts++;
       if (attempt > 0) state.retries++;
       const startedAt = Date.now();
@@ -396,6 +461,7 @@ export class AnthropicLLMProvider implements LLMProvider {
         await new Promise((r) => setTimeout(r, delayMs));
       } catch (err: any) {
         if (err === lastErr) throw err; // non-retryable API error re-thrown above
+        if (call && call.requests >= call.budget) throw err; // nothing left to retry with
         // Network-level failure — retry unless out of attempts
         lastErr = err;
         if (attempt === maxRetries) throw err;
@@ -431,6 +497,36 @@ export class AnthropicLLMProvider implements LLMProvider {
   }
 
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
+    const call: StructuredCallTrace = {
+      budget: anthropicStructuredRequestBudget(),
+      requests: 0,
+      mode: "instruction",
+      schemaFallback: false,
+      jsonRetry: false,
+      repair: false,
+      escalatedTokens: false,
+      stopReason: null,
+    };
+    const startedAt = Date.now();
+    let outcome = "ok";
+    try {
+      return await this.structuredWithRepair<T>(options, call);
+    } catch (err) {
+      outcome = `failed:${categoryOf(err)}`;
+      throw err;
+    } finally {
+      // One line per structured call, counts and flags only. This is what makes
+      // retry amplification, truncation and schema fallbacks visible in the
+      // worker log without printing a prompt or a reply.
+      console.log(
+        `[Anthropic] structured model=${this.model} outcome=${outcome} mode=${call.mode} requests=${call.requests}/${call.budget}` +
+          ` repair=${call.repair} jsonRetry=${call.jsonRetry} schemaFallback=${call.schemaFallback} escalatedTokens=${call.escalatedTokens}` +
+          ` stop=${call.stopReason ?? "none"} ms=${Date.now() - startedAt}`
+      );
+    }
+  }
+
+  private async structuredWithRepair<T>(options: GenerateStructuredOutputOptions, call: StructuredCallTrace): Promise<T> {
     // The caller's schema and validator used to be dropped on this provider, so
     // Claude guessed the shape (live: dossier verifiedStatistics came back as an
     // object). Send the schema, run the validator, and on a rejection make ONE
@@ -438,59 +534,95 @@ export class AnthropicLLMProvider implements LLMProvider {
     const withSchema: GenerateStructuredOutputOptions = options.jsonSchema
       ? { ...options, systemPrompt: `${options.systemPrompt || ""}\n\nYour JSON MUST match this JSON Schema exactly (arrays stay arrays, every required key present, respect maxItems/maxLength):\n${JSON.stringify(options.jsonSchema)}` }
       : options;
-    const first = await this.structuredWithJsonRetry<T>(withSchema);
+    const first = await this.structuredWithJsonRetry<T>(withSchema, call);
     const problem = options.validate?.(first) ?? null;
     if (!problem) return first;
-    console.warn(`[Anthropic] structured reply failed validation; asking once more (${problem.slice(0, 160)})`);
-    const repaired = await this.structuredWithJsonRetry<T>({
-      ...withSchema,
-      prompt: `${options.prompt}\n\nYour previous reply was rejected: ${problem}\nReturn the complete JSON again, fixed so it matches the schema.`,
-    });
+    call.repair = true;
+    console.warn(`[Anthropic] structured reply failed validation; asking once more (${redactForLog(problem)})`);
+    const repaired = await this.structuredWithJsonRetry<T>(
+      {
+        ...withSchema,
+        prompt: `${options.prompt}\n\nYour previous reply was rejected: ${problem}\nReturn the complete JSON again, fixed so it matches the schema.`,
+      },
+      call
+    );
     const still = options.validate?.(repaired) ?? null;
     if (still) throw new Error(`[Anthropic] structured output failed validation after one repair: ${still}`);
     return repaired;
   }
 
-  private async structuredWithJsonRetry<T>(options: GenerateStructuredOutputOptions): Promise<T> {
+  private async structuredWithJsonRetry<T>(options: GenerateStructuredOutputOptions, call: StructuredCallTrace): Promise<T> {
     try {
-      return await this.structuredOnce<T>(options);
+      return await this.structuredOnce<T>(options, call);
     } catch (err) {
-      // JSON is forced by instruction only and this provider makes no repair
-      // request, so one stray quote in a long reply killed a whole business
-      // script (fifth Milestone 2 live run: the cold-open judge's reply). Inside
-      // a business episode only, a reply that is not valid JSON is asked for
-      // once more. Sports runs with no creative domain: behaviour unchanged.
+      // Instruction-only JSON can still come back broken on models without
+      // native JSON outputs. Inside a business episode only, such a reply is
+      // asked for once more. Sports runs with no creative domain: unchanged.
       if (!isBusinessDomain() || !isMalformedJsonError(err)) throw err;
-      console.warn(`[Anthropic] business structured reply was not valid JSON; asking once more (${(err as Error).message.slice(0, 120)})`);
-      return this.structuredOnce<T>(options);
+      call.jsonRetry = true;
+      console.warn(`[Anthropic] business structured reply was not valid JSON; asking once more`);
+      try {
+        return await this.structuredOnce<T>(options, call);
+      } catch (again) {
+        if (!isMalformedJsonError(again)) throw again;
+        // Reworded on purpose: businessLLM() retries anything that reads as a
+        // JSON parse failure, and this call has already had its second try.
+        throw new Error("[Anthropic] reply was malformed twice in a row; giving up on this call.");
+      }
     }
   }
 
-  private async structuredOnce<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
-    console.log(`[Anthropic] Requesting structured output (JSON forced) via model: ${this.model}`);
-
+  private async structuredOnce<T = any>(options: GenerateStructuredOutputOptions, call: StructuredCallTrace): Promise<T> {
     // Instruction-based JSON forcing — assistant prefill 400s on Opus 4.6+.
     const systemPromptWithJson = `${options.systemPrompt || ""}\n\nCRITICAL: Respond with a single valid JSON object and nothing else. Start your response with '{' immediately — no markdown code fences, no preamble, no commentary after the closing '}'.`;
 
     // Native JSON outputs: constrained decoding, so the reply is always valid
     // JSON. Instruction-only forcing let a dialogue line with an unescaped quote
     // kill a business script after both retries (live: host_b_writer "Expected
-    // ',' or '}'"). If the API rejects the schema (400), fall back to the old
-    // instruction-only request rather than fail the call.
+    // ',' or '}'"). If the API rejects THE SCHEMA, fall back to the old
+    // instruction-only request, and remember, so later calls skip the 400.
     const body = this.buildBody(options, systemPromptWithJson);
     const schema = options.jsonSchema && anthropicSupportsJsonOutputs(this.model) ? toAnthropicJsonSchema(options.jsonSchema) : null;
-    let data: any;
-    if (schema) {
+    const schemaKey = schema ? `${this.model}|${JSON.stringify(schema)}` : "";
+    const useNative = !!schema && !REJECTED_NATIVE_SCHEMAS.has(schemaKey);
+    const send = async (b: Record<string, any>): Promise<any> => {
+      if (!useNative) return this.request(b, call);
       try {
-        data = await this.request({ ...body, output_config: { ...(body.output_config || {}), format: { type: "json_schema", schema } } });
+        call.mode = "native";
+        return await this.request({ ...b, output_config: { ...(b.output_config || {}), format: { type: "json_schema", schema } } }, call);
       } catch (err) {
-        if (!/status 400/.test((err as Error).message)) throw err;
-        console.warn(`[Anthropic] native JSON schema rejected; retrying instruction-only (${(err as Error).message.slice(0, 200)})`);
-        data = await this.request(body);
+        if (!isSchemaRejection((err as Error).message)) throw err;
+        if (REJECTED_NATIVE_SCHEMAS.size < 200) REJECTED_NATIVE_SCHEMAS.add(schemaKey);
+        call.mode = "instruction";
+        call.schemaFallback = true;
+        console.warn(`[Anthropic] native JSON schema rejected; using instruction-only for this schema from now on (${(err as Error).message.slice(0, 200)})`);
+        return this.request(b, call);
       }
-    } else {
-      data = await this.request(body);
+    };
+
+    let data = await send(body);
+    call.stopReason = data?.stop_reason ?? null;
+
+    // A reply cut off at the cap is not "bad JSON": asking again at the same cap
+    // truncates again. Raise the cap ONCE; if that is still not enough, fail
+    // with an error that says so and that no JSON-retry layer will repeat.
+    if (data?.stop_reason === "max_tokens") {
+      const cap = Number(body.max_tokens) || 8192;
+      const raised = Math.min(cap * 2, 64000);
+      if (raised > cap) {
+        call.escalatedTokens = true;
+        console.warn(`[Anthropic] structured reply hit max_tokens=${cap}; retrying once at ${raised}. model=${this.model}`);
+        data = await send({ ...body, max_tokens: raised });
+        call.stopReason = data?.stop_reason ?? null;
+      }
+      if (data?.stop_reason === "max_tokens") {
+        throw new Error(`[Anthropic] structured output was cut off at max_tokens (${Math.max(cap, raised)}); the reply is incomplete. Raise maxTokens for this call or ask for less.`);
+      }
     }
+    if (data?.stop_reason === "refusal") {
+      throw new Error("[Anthropic] Request was refused by the model's safety system.");
+    }
+
     let content = this.extractText(data).trim();
 
     // Strip markdown code fences if present despite instructions
@@ -501,6 +633,8 @@ export class AnthropicLLMProvider implements LLMProvider {
       content = lines.join("\n").trim();
     }
 
+    // Reply text is customer content: failures log its size and stop reason only.
+    const describe = () => `${content.length} chars, stop_reason=${data?.stop_reason}`;
     try {
       return JSON.parse(content) as T;
     } catch {
@@ -511,11 +645,12 @@ export class AnthropicLLMProvider implements LLMProvider {
         try {
           return JSON.parse(content.slice(first, last + 1)) as T;
         } catch (innerErr: any) {
-          console.error("[Anthropic] Failed to parse JSON response content:", content.slice(0, 500));
-          throw new Error(`[Anthropic] Failed to parse output as valid JSON: ${innerErr.message}`);
+          console.error(`[Anthropic] Failed to parse JSON reply (${describe()})`);
+          // The parser's message quotes a snippet of the reply; keep its position only.
+          throw new Error(`[Anthropic] Failed to parse output as valid JSON: ${redactForLog(String(innerErr.message), 160)}`);
         }
       }
-      console.error("[Anthropic] Failed to parse JSON response content:", content.slice(0, 500));
+      console.error(`[Anthropic] Failed to parse JSON reply (${describe()})`);
       throw new Error("[Anthropic] Failed to parse output as valid JSON: no JSON object found in response.");
     }
   }
