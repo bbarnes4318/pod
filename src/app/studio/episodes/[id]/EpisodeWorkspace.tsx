@@ -49,6 +49,21 @@ export default function EpisodeWorkspace({ tabs, initialKey }: { tabs: Workspace
   useEffect(() => {
     const applyHash = () => {
       const key = window.location.hash.replace(/^#/, "");
+      // #line-12 is a script line: open the Script stage, then go to the line
+      // (after the panel has mounted, which happens on first visit).
+      if (/^line-\d+$/.test(key) && tabs.some((t) => t.key === "transcript")) {
+        open("transcript");
+        let tries = 0;
+        const go = () => {
+          const el = document.getElementById(key);
+          if (el) {
+            el.scrollIntoView({ block: "center" });
+            el.focus({ preventScroll: true });
+          } else if (tries++ < 20) setTimeout(go, 50);
+        };
+        go();
+        return;
+      }
       const hit = key ? tabs.find((t) => t.key === key || t.aliases?.includes(key)) : null;
       if (hit) open(hit.key);
     };

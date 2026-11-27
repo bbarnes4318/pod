@@ -18,6 +18,14 @@ import {
 } from "../app/create/actions";
 import type { TranscriptVM, TranscriptLineVM, Citation, FactStatus } from "@/lib/services/transcriptView";
 import PanelSkeleton from "./PanelSkeleton";
+import PassageReviser from "./episodes/[id]/PassageReviser";
+import { QUALITY_CHANGED } from "./episodes/[id]/QualityInspector";
+import { MAX_PASSAGE_LINES } from "@/lib/services/passageRevision";
+import { PLAYER_SEEK, PLAYER_TIME } from "./episodes/[id]/playerBus";
+
+/** Where each line sits in the finished audio, as a fraction of its length.
+ *  Approximate (the same line timeline the mix view draws). */
+export type LineTimes = Record<number, { start: number; end: number }>;
 
 const FACT_META: Record<FactStatus, { label: string; cls: string; glyph: string }> = {
   verified: { label: "Verified", cls: "fact-ok", glyph: "✓" },
@@ -40,10 +48,13 @@ export default function TranscriptWorkspace({
   initialVm,
   showPublish = true,
   canRevoice = false,
+  lineTimes,
   onChanged,
 }: {
   episodeId: string;
   initialVm?: TranscriptVM;
+  /** Present once the episode has finished audio: lines can be played from. */
+  lineTimes?: LineTimes;
   showPublish?: boolean;
   /** When the episode is fully voiced, per-line actions re-synthesize that one
    *  line's audio + re-splice (Step 5) instead of just recording the intent. */
@@ -58,6 +69,8 @@ export default function TranscriptWorkspace({
       const next = (await getEpisodeTranscript(episodeId)) as TranscriptVM;
       setVm(next);
       onChanged?.();
+      // The quality report reads the same data; keep it in step.
+      window.dispatchEvent(new Event(QUALITY_CHANGED));
     } catch {
       /* keep last snapshot */
     } finally {
@@ -85,7 +98,7 @@ export default function TranscriptWorkspace({
 
   return (
     <div className="transcriptWorkspace">
-      <TranscriptEditor vm={vm} episodeId={episodeId} colorFor={colorFor} canRevoice={canRevoice} onChanged={refresh} />
+      <TranscriptEditor vm={vm} episodeId={episodeId} colorFor={colorFor} canRevoice={canRevoice} lineTimes={lineTimes} onChanged={refresh} />
       <FactCheckPanel vm={vm} episodeId={episodeId} showPublish={showPublish} onChanged={refresh} />
     </div>
   );
@@ -100,14 +113,55 @@ function TranscriptEditor({
   episodeId,
   colorFor,
   canRevoice,
+  lineTimes,
   onChanged,
 }: {
   vm: TranscriptVM;
   episodeId: string;
   colorFor: (s: string) => string;
   canRevoice: boolean;
+  lineTimes?: LineTimes;
   onChanged: () => void;
 }) {
+  // ---- Passage selection (for AI revision) ----
+  // A passage is consecutive lines. The first tick sets the anchor; ticking
+  // another line extends the passage to it; ticking inside shrinks it.
+  const order = React.useMemo(() => vm.segments.flatMap((s) => s.lines.map((l) => l.lineIndex)), [vm.segments]);
+  const [sel, setSel] = useState<{ from: number; to: number } | null>(null); // positions in `order`
+  const selected = (lineIndex: number) => {
+    const at = order.indexOf(lineIndex);
+    return !!sel && at >= sel.from && at <= sel.to;
+  };
+  const toggleSelect = (lineIndex: number) => {
+    const at = order.indexOf(lineIndex);
+    setSel((prev) => {
+      if (!prev) return { from: at, to: at };
+      if (at === prev.from && at === prev.to) return null;
+      if (at >= prev.from && at <= prev.to) return { from: prev.from, to: Math.max(prev.from, at - 1) }; // shrink to just above
+      const from = Math.min(prev.from, at);
+      const to = Math.max(prev.to, at);
+      return to - from + 1 > MAX_PASSAGE_LINES ? (at < prev.from ? { from: at, to: at + MAX_PASSAGE_LINES - 1 } : { from: at - MAX_PASSAGE_LINES + 1, to: at }) : { from, to };
+    });
+  };
+
+  // ---- Follow the player ----
+  // The player reports its position many times a second; state changes only
+  // when the LINE being spoken changes, so the transcript is not re-rendered
+  // on every frame.
+  const [playingIndex, setPlayingIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (!lineTimes) return;
+    const spans = Object.entries(lineTimes).map(([k, t]) => ({ lineIndex: Number(k), ...t }));
+    const onTime = (e: Event) => {
+      const frac = (e as CustomEvent<number>).detail;
+      const hit = spans.find((t) => frac >= t.start && frac < t.end);
+      setPlayingIndex(hit ? hit.lineIndex : null);
+    };
+    window.addEventListener(PLAYER_TIME, onTime);
+    return () => window.removeEventListener(PLAYER_TIME, onTime);
+  }, [lineTimes]);
+  const playingLine = (lineIndex: number) => playingIndex === lineIndex;
+
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
   const [busyLine, setBusyLine] = useState<number | null>(null);
@@ -190,6 +244,21 @@ function TranscriptEditor({
 
       {note && <div className="createAlert mb-4" role="status">{note}</div>}
 
+      {sel ? (
+        <PassageReviser
+          key={`${sel.from}-${sel.to}`}
+          episodeId={episodeId}
+          startLineIndex={order[sel.from]}
+          endLineIndex={order[sel.to]}
+          lineCount={sel.to - sel.from + 1}
+          voiced={canRevoice}
+          onCancel={() => setSel(null)}
+          onDone={async (message) => { setSel(null); setNote(message); await onChanged(); }}
+        />
+      ) : (
+        <p className="stageHint mb-3">Tick lines to select a passage and have it revised to your instruction, or click any line to edit it by hand.</p>
+      )}
+
       <div className="transcriptScroller">
         {vm.segments.map((seg, si) => (
           <div key={si} className="transcriptSeg">
@@ -198,8 +267,31 @@ function TranscriptEditor({
               const color = colorFor(line.speaker);
               const isEditing = editing === line.lineIndex;
               return (
-                <div key={line.lineIndex} className={`tLine${line.dirty ? " tLine-dirty" : ""}`}>
+                <div
+                  key={line.lineIndex}
+                  id={`line-${line.lineIndex}`}
+                  tabIndex={-1}
+                  className={`tLine${line.dirty ? " tLine-dirty" : ""}${selected(line.lineIndex) ? " tLine-selected" : ""}${playingLine(line.lineIndex) ? " tLine-playing" : ""}`}
+                >
                   <div className="tLineHead">
+                    <input
+                      type="checkbox"
+                      className="tSelect"
+                      checked={selected(line.lineIndex)}
+                      onChange={() => toggleSelect(line.lineIndex)}
+                      aria-label={`Select line ${line.lineIndex + 1} (${line.speaker}) for revision`}
+                    />
+                    {lineTimes?.[line.lineIndex] && (
+                      <button
+                        type="button"
+                        className="tMini tPlayFrom"
+                        aria-label={`Play from line ${line.lineIndex + 1}`}
+                        title="Play from here (position is approximate)"
+                        onClick={() => window.dispatchEvent(new CustomEvent(PLAYER_SEEK, { detail: lineTimes[line.lineIndex].start }))}
+                      >
+                        ▶
+                      </button>
+                    )}
                     <span className="tSpeaker" style={{ "--speaker-color": color } as React.CSSProperties}>{line.speaker}</span>
                     {line.factStatus && <FactPill status={line.factStatus} reason={line.factReason} />}
                     {line.dirty && <span className="chip tDirtyChip" title="Edited since the last fact check">Edited</span>}
