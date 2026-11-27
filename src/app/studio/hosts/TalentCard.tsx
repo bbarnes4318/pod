@@ -91,7 +91,7 @@ export default function TalentCard({ host, accent, onEdit, onOpen }: {
   const openDesigner = () => { setDesigning(true); setActionError(null); setMessage(null); };
 
   return (
-    <article className={`studioCard hostCard talentCard ${designing ? "hostCardDesigning" : ""}`} style={{ "--host-accent": accent } as React.CSSProperties}>
+    <article id={`host-${host.id}`} className={`studioCard hostCard talentCard ${designing ? "hostCardDesigning" : ""}`} style={{ "--host-accent": accent } as React.CSSProperties}>
       <div className="talentCardHead">
         <span className="showArt" data-hue={showHue(host.id)} aria-hidden="true">{showInitials(host.name)}</span>
         <div className="talentCardWho">
