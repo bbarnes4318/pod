@@ -80,7 +80,13 @@ export default async function globalSetup(_config: FullConfig) {
     // Postgres port is internal, so take an OS-assigned free one — no clashes.
     const pgPort = await freePort();
     const dbUrl = `postgresql://postgres:postgres@localhost:${pgPort}/e2e`;
-    const dataDir = path.join(fs.mkdtempSync(path.join(require("os").tmpdir(), "pod-e2e-pg-")), "data");
+    const tmpRoot = fs.mkdtempSync(path.join(require("os").tmpdir(), "pod-e2e-pg-"));
+    // mkdtemp is always 0700. As root (cloud containers, CI images) embedded-postgres
+    // runs initdb as an unprivileged `postgres` user, which then cannot traverse
+    // or create inside a root-only directory and fails with "Permission denied". Opening the
+    // throwaway parent is harmless: the data directory inside keeps its own 0700.
+    if (process.getuid?.() === 0) fs.chmodSync(tmpRoot, 0o777);
+    const dataDir = path.join(tmpRoot, "data");
 
     const pg = new EmbeddedPostgres({ databaseDir: dataDir, user: "postgres", password: "postgres", port: pgPort, persistent: false });
     await pg.initialise();

@@ -27,5 +27,14 @@ export default defineConfig({
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 }, storageState } },
     { name: "tablet", use: { ...devices["Desktop Chrome"], viewport: { width: 768, height: 1024 }, storageState } },
     { name: "mobile", use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 }, storageState } },
+    // The two extra audit widths exist for the screenshot run only (SHOT_PHASE
+    // is what studio-screenshots.spec.ts keys on). Adding them unconditionally
+    // would make every assertion suite run five times instead of three.
+    ...(process.env.SHOT_PHASE
+      ? [
+          { name: "wide", use: { ...devices["Desktop Chrome"], viewport: { width: 1920, height: 1080 }, storageState } },
+          { name: "laptop", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, storageState } },
+        ]
+      : []),
   ],
 });

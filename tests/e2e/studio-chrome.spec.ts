@@ -16,8 +16,9 @@ import { E2E } from "./seed";
 const FIRST_CONTROL_MAX_Y = 160;
 
 /**
- * ONE route does not meet the budget, recorded here with its real number
- * instead of being skipped, excluded, or quietly passed.
+ * TWO routes do not meet the budget, recorded here with their real numbers
+ * instead of being skipped, excluded, or quietly passed. Home is explained
+ * beside its entry below.
  *
  * /studio/plan is an in-product pricing ladder. Its first meaningful control is
  * "choose this plan", and a plan cannot be chosen before it has been named and
@@ -33,6 +34,17 @@ const FIRST_CONTROL_MAX_Y = 160;
  * catching.
  */
 const BUDGET_EXCEPTIONS: Record<string, { ceiling: number; why: string }> = {
+  // Added with the Studio reconstruction, when /studio stopped being the sports
+  // board and became Home. Home opens on ONE briefing: a sentence saying what
+  // needs the creator, then the button that does it. The button cannot come
+  // before the sentence it acts on. Measured on the first real run: 186px at
+  // 1440, 214px at 768, 236px at 390 (the headline wraps to two lines and the
+  // button stacks under it). The old Board met 160px because its first control
+  // was a league tile; that page now lives at /studio/desk and still meets it.
+  Home: {
+    ceiling: 240,
+    why: "the briefing is one sentence, then its action; the action cannot precede the sentence",
+  },
   Plan: {
     ceiling: 540,
     why: "pricing ladder: a plan's CTA cannot precede its name and price",
