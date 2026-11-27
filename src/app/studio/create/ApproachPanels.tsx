@@ -81,7 +81,7 @@ function TopicLine({ topic, plan, tag, children }: { topic: StudioTopicVM; plan?
   return (
     <div className="planTopic">
       <div className="planTopicHead">
-        {tag && <span className="statusPill statusPill--accent">{tag}</span>}
+        {tag && <span className="statusPill statusPill--live">{tag}</span>}
         <span className="planTopicTitle">{topic.title}</span>
       </div>
       {why && <p className="planTopicWhy">{why}</p>}
