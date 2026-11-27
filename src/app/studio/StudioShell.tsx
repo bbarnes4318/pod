@@ -9,6 +9,7 @@ import CommandPalette, { type PaletteItem } from "./CommandPalette";
 import { StudioAudioProvider } from "./StudioAudio";
 import ActivityMenu from "./ActivityMenu";
 import { showHue, showInitials } from "./lib";
+import "./library.css";
 
 /* ------------------------------------------------------------------ *
  * Page header channel.
@@ -123,6 +124,18 @@ const NAV: NavItem[] = [
   { href: "/studio/audio", label: "Audio library", icon: Icon.audio, keywords: "music sound beds stingers", chord: "a" },
   { href: "/studio/publish", label: "Publishing", icon: Icon.publishing, keywords: "rss feed release", chord: "p" },
   { href: "/studio/analytics", label: "Analytics", icon: Icon.analytics, keywords: "reports metrics listeners" },
+];
+
+/**
+ * The phone tab bar (720px and below): the four places a creator moves between
+ * most, in the order of the work, then "More" for the full drawer. Short labels
+ * because five tabs share 390px.
+ */
+const TABBAR: { href: string; label: string }[] = [
+  { href: "/studio", label: "Home" },
+  { href: "/studio/shows", label: "Shows" },
+  { href: "/studio/desk", label: "Desk" },
+  { href: "/studio/episodes", label: "Episodes" },
 ];
 
 /** Account, billing and preferences: out of the working list. */
@@ -513,6 +526,25 @@ export default function StudioShell({
 
         <main className="studioMain">{children}</main>
       </div>
+
+      {/* Phone only (CSS). Sits under the player dock and the episode action
+          bar, which both lift by its height; see library.css. */}
+      <nav className="studioTabbar" aria-label="Quick navigation">
+        {TABBAR.map((tab) => {
+          const item = NAV.find((n) => n.href === tab.href)!;
+          const active = isActive(item);
+          return (
+            <Link key={tab.href} href={tab.href} className="studioTab" aria-current={active ? "page" : undefined}>
+              <span className="studioTabIcon">{item.icon}</span>
+              <span className="studioTabLabel">{tab.label}</span>
+            </Link>
+          );
+        })}
+        <button type="button" className="studioTab" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)}>
+          <span className="studioTabIcon">{Icon.menu}</span>
+          <span className="studioTabLabel">More</span>
+        </button>
+      </nav>
 
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} items={paletteItems} />}
     </StudioAudioProvider>
