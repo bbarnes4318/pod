@@ -11,6 +11,7 @@ import type { PrismaClient } from "@prisma/client";
 import RundownBuilder from "./RundownBuilder";
 import { ttsEngineOptions } from "@/lib/providers/tts/availability";
 import { activeTopicCutoff } from "@/lib/services/topicFreshness";
+import { businessPodcastsEnabledFor } from "@/lib/business/intelligenceType";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,32 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
 
   const hosts = hostRows.map((h) => ({ id: h.id, name: h.name, intensity: h.intensityLevel }));
 
+  // Business shows share this front door. Strictly the viewer's OWN shows (the
+  // same rule as the sports list above), and only where business is enabled.
+  const bizRows = user && businessPodcastsEnabledFor(user)
+    ? await db.podcast.findMany({
+        where: { ownerId: user.id, intelligenceType: "BUSINESS" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          _count: { select: { businessOpportunities: { where: { editorialStatus: { in: ["CANDIDATE", "HELD"] } } } } },
+          businessOpportunities: {
+            where: { editorialStatus: "APPROVED" },
+            orderBy: { opportunityScore: "desc" },
+            take: 6,
+            select: { id: true, title: true, coreQuestion: true, whyNow: true, dossier: { select: { status: true } } },
+          },
+        },
+      })
+    : [];
+  const businessShows = bizRows.map((b) => ({
+    id: b.id,
+    name: b.name,
+    candidateCount: b._count.businessOpportunities,
+    approved: b.businessOpportunities.map((o) => ({ id: o.id, title: o.title, coreQuestion: o.coreQuestion, whyNow: o.whyNow, dossierStatus: o.dossier?.status ?? null })),
+  }));
+
   return (
     <div className="fadeUp">
       <RundownBuilder
@@ -76,6 +103,7 @@ export default async function CreatePage({ searchParams }: { searchParams: Promi
         // the list used to be hard-coded, so three of four choices could only
         // fail after the customer had paid for a script.
         ttsEngines={ttsEngineOptions()}
+        businessShows={businessShows}
       />
     </div>
   );
