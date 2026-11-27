@@ -141,7 +141,7 @@ interface EnrichedTake extends BoardTakeView {
 export default async function StudioBoard({
   searchParams,
 }: {
-  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string; page?: string }>;
+  searchParams: Promise<{ league?: string; conf?: string; team?: string; desk?: string; stage?: string; topic?: string; show?: string; page?: string; take?: string }>;
 }) {
   const sp = await searchParams;
 
