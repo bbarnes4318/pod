@@ -1,3 +1,4 @@
+import { buildMasterProvenance } from "./artifactProvenance";
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { commitContinuity } from "./showContinuityService";
@@ -1797,7 +1798,12 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
           productionStyle: style,
           sfxDensity,
           plan: postTtsStoredPlan ? (postTtsStoredPlan as unknown as object) : postTtsPlan ? (postTtsPlan as unknown as object) : productionPlan ? (productionPlan as unknown as object) : undefined,
-          diagnostics: { ...renderDiagnostics, postTts: postTtsDiagnostics } as unknown as object,
+          diagnostics: {
+            ...renderDiagnostics,
+            postTts: postTtsDiagnostics,
+            // What this master IS: the script and line recordings read at the start of this mix.
+            provenance: buildMasterProvenance(scriptId, script.content, { lines: audioSegments.filter((a) => a.status === "ready") }),
+          } as unknown as object,
           outputAudioUrl: uploadResult.url,
         },
       });

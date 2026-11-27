@@ -2,6 +2,9 @@ import { db } from "../db";
 import { evaluateBusinessRelease } from "../business/businessVerification";
 import { getStorageProvider } from "../providers/storage/factory";
 import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance";
+import { evaluateArtifactIntegrity, uncheckedLineIndexes, type ArtifactIntegrity } from "./artifactProvenance";
+import { getEpisodeTranscriptVM } from "./transcriptView";
+import { isBusinessPodcast } from "../business/intelligenceType";
 
 /** Matches the seed's placeholder sentinel for a host whose real cloned voice
  *  does not exist yet. Deliberately broad (any PLACEHOLDER_* id) so a future
@@ -32,7 +35,10 @@ export async function validateEpisodeForRss(
     episodeTranscriptUrlExists: false,
     episodeLongShowNotesExists: false,
     factCheckPassed: false,
+    factCheckCurrent: false, // the check read today's words and left no claim open
     allAudioSegmentsReady: false,
+    audioMatchesScript: false, // every recording says what the script says now
+    finalMixCurrent: false, // the master was mixed from this script and these recordings
     audioFileSizeResolved: false,
     audioMimeTypeValid: false,
     podcastConfigValid: false,
@@ -60,7 +66,7 @@ export async function validateEpisodeForRss(
               },
             },
           },
-          podcast: { select: { verticals: true } },
+          podcast: { select: { verticals: true, intelligenceType: true } },
         },
       },
       audioSegments: true,
@@ -73,7 +79,7 @@ export async function validateEpisodeForRss(
 
   if (!script) {
     errorReasons.push("Script does not exist.");
-    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [] };
+    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null };
   }
   checks.scriptExists = true;
 
@@ -94,7 +100,7 @@ export async function validateEpisodeForRss(
   const episode = script.episode;
   if (!episode) {
     errorReasons.push("Episode is not linked to script.");
-    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [] };
+    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null };
   }
   checks.episodeExists = true;
 
@@ -176,6 +182,28 @@ export async function validateEpisodeForRss(
     );
   }
 
+  // 6a. The fact check must be about TODAY's words, and leave nothing open.
+  // Unpublishing is always allowed, so none of this can trap a live episode.
+  if (action === "unpublish") {
+    checks.factCheckCurrent = true;
+  } else {
+    const factReasons: string[] = [];
+    const unchecked = uncheckedLineIndexes(script.content, (latestFactCheck?.summary as { checkedLines?: unknown } | null)?.checkedLines);
+    if (unchecked.length > 0) {
+      factReasons.push(`${unchecked.length} line${unchecked.length === 1 ? " was" : "s were"} edited after the last fact check. Run the fact check again.`);
+    }
+    // Sports claims: the same claim-by-claim rule the transcript shows.
+    // Business claims are judged by evaluateBusinessRelease above.
+    if (!isBusinessPodcast(episode.podcast)) {
+      const vm = await getEpisodeTranscriptVM(episode.id);
+      if (!vm.ok) factReasons.push(`Claims could not be read: ${vm.error || "unknown error"}.`);
+      else if (vm.scriptId !== script.id) factReasons.push("A newer version of this script exists. Release works on the latest version only.");
+      else if (vm.gate.unresolvedCount > 0) factReasons.push(`${vm.gate.unresolvedCount} claim${vm.gate.unresolvedCount === 1 ? " is" : "s are"} not verified. Review or correct ${vm.gate.unresolvedCount === 1 ? "it" : "them"} in the script.`);
+    }
+    if (factReasons.length === 0) checks.factCheckCurrent = true;
+    else errorReasons.push(...factReasons);
+  }
+
   // 6b. Gambling responsible-marketing gate — HARD requirement for betting
   // content. A betting episode cannot publish without the disclaimer/helpline
   // in its show notes, and its published-facing text must be free of
@@ -195,6 +223,30 @@ export async function validateEpisodeForRss(
       checks.gamblingComplianceOk = false;
       for (const r of compliance.reasons) errorReasons.push(r);
     }
+  }
+
+  // 6c. Artifact provenance: recordings and the final mix must be OF this
+  // script. One evaluation, shared with the quality inspector.
+  const [sceneAudio, renders] = await Promise.all([
+    db.dialogueSceneAudio.findMany({ where: { scriptId: script.id } }),
+    db.episodeAudioRender.findMany({ where: { episodeId: episode.id }, orderBy: { renderVersion: "desc" }, take: 5 }),
+  ]);
+  const integrity = evaluateArtifactIntegrity({
+    scriptId: script.id,
+    content: script.content,
+    ttsRenderMode: episode.ttsRenderMode ?? null,
+    episodeAudioUrl: episode.audioUrl,
+    lineAudio: script.audioSegments,
+    sceneAudio,
+    renders,
+  });
+  if (action === "unpublish") {
+    checks.audioMatchesScript = true;
+    checks.finalMixCurrent = true;
+  } else {
+    checks.audioMatchesScript = integrity.staleLines.length === 0 && integrity.staleScenes.length === 0;
+    checks.finalMixCurrent = integrity.master === "current";
+    errorReasons.push(...integrity.blockers);
   }
 
   // 7. AudioSegments validation against Script.content lines
@@ -228,32 +280,15 @@ export async function validateEpisodeForRss(
         } else {
           let segmentsValidationPassed = true;
 
-          // SCENE-VOICED EPISODES HAVE NO PER-LINE AudioSegment ROWS.
-          //
-          // The two voicing paths write to two different tables: legacy writes
-          // AudioSegment, scene mode writes DialogueSceneAudio. This gate only
-          // knew about the first, so a fully voiced, mixed, finished episode was
-          // reported as missing EVERY line's audio — 95 blockers on an episode
-          // whose 11m23s master exists and plays. The point of the gate is "does
-          // the audio exist and is it ready", and for a scene-voiced episode the
-          // answer lives in the other table.
-          const sceneRows = await db.dialogueSceneAudio.findMany({
-            where: { scriptId: script.id },
-            select: { status: true, audioUrl: true },
-          });
-          const sceneVoiced = script.audioSegments.length === 0 && sceneRows.length > 0;
+          // Scene-voiced episodes have no per-line AudioSegment rows (the two
+          // voicing paths write two tables). Their readiness is judged from the
+          // SELECTED scene per stretch of script, in the integrity check above:
+          // an old failed candidate must not block, and a missing or outdated
+          // scene must.
+          const sceneVoiced = integrity.mode === "scene";
 
           if (sceneVoiced) {
-            const notReady = sceneRows.filter((s) => s.status !== "ready");
-            const noUrl = sceneRows.filter((s) => !s.audioUrl || !s.audioUrl.trim());
-            if (notReady.length > 0) {
-              segmentsValidationPassed = false;
-              errorReasons.push(`${notReady.length} of ${sceneRows.length} dialogue scenes are not ready.`);
-            }
-            if (noUrl.length > 0) {
-              segmentsValidationPassed = false;
-              errorReasons.push(`${noUrl.length} of ${sceneRows.length} dialogue scenes have no audio file.`);
-            }
+            if (integrity.unvoicedLines.length > 0) segmentsValidationPassed = false;
           } else {
           for (const line of scriptLines) {
             const matches = script.audioSegments.filter(
@@ -386,7 +421,73 @@ export async function validateEpisodeForRss(
     errorReasons,
     resolvedSize,
     missingConfig,
+    integrity,
   };
+}
+
+/**
+ * Which lines to re-voice so the recordings say what the script says again.
+ * Line-voiced: every recorded line whose words changed. Scene-voiced: ONE line
+ * per outdated scene, because re-voicing a line re-performs its whole scene
+ * (and re-mixes) - so only the affected scenes are redone.
+ */
+export async function staleAudioLineIndexes(scriptId: string): Promise<number[]> {
+  const script = await db.script.findUnique({
+    where: { id: scriptId },
+    select: { content: true, audioSegments: true, episode: { select: { ttsRenderMode: true } } },
+  });
+  if (!script) return [];
+  const sceneAudio = await db.dialogueSceneAudio.findMany({ where: { scriptId } });
+  const integrity = evaluateArtifactIntegrity({
+    scriptId, content: script.content, ttsRenderMode: script.episode?.ttsRenderMode ?? null,
+    episodeAudioUrl: null, lineAudio: script.audioSegments, sceneAudio, renders: [],
+  });
+  if (integrity.mode !== "scene") return integrity.staleLines;
+  const stale = new Set(integrity.staleScenes);
+  return sceneAudio
+    .filter((s) => s.selected && s.status === "ready" && stale.has(s.sceneIndex))
+    .map((s) => s.firstLineIndex)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Read-modify-write a script's content with the row locked, so two editors
+ * (or an edit and a release) cannot interleave: the second waits and then
+ * reads the first one's result instead of overwriting it. `change` returns the
+ * new content, or null to write nothing.
+ */
+export async function editScriptContent<T>(
+  scriptId: string,
+  change: (content: any) => { content: any; plainText?: string; result: T } | { content: null; result: T }
+): Promise<T | null> {
+  return db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "Script" WHERE "id" = ${scriptId} FOR UPDATE`;
+    const script = await tx.script.findUnique({ where: { id: scriptId }, select: { content: true } });
+    if (!script) return null;
+    const out = change((script.content as any) || {});
+    if (out.content !== null) {
+      await tx.script.update({ where: { id: scriptId }, data: { content: out.content, ...("plainText" in out && out.plainText !== undefined ? { plainText: out.plainText } : {}) } });
+    }
+    return out.result;
+  });
+}
+
+/**
+ * Validate and write as ONE step. The script and episode rows are locked for
+ * the duration, so a line edit, a new script save or a finishing re-mix cannot
+ * land between "the gate said yes" and "the episode went out": they wait, and
+ * the next gate read sees them. The gate itself reads committed data on other
+ * connections, which is exactly the state being locked.
+ */
+async function withReleaseLock<T>(scriptId: string, episodeId: string, fn: (tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]) => Promise<T>): Promise<T> {
+  return db.$transaction(
+    async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Episode" WHERE "id" = ${episodeId} FOR UPDATE`;
+      await tx.$queryRaw`SELECT "id" FROM "Script" WHERE "id" = ${scriptId} FOR UPDATE`;
+      return fn(tx);
+    },
+    { timeout: 60_000, maxWait: 15_000 }
+  );
 }
 
 export async function prepareEpisodeForPublishing(scriptId: string) {
@@ -411,23 +512,24 @@ export async function prepareEpisodeForPublishing(scriptId: string) {
 
     const previousEpisodeStatus = script.episode.status;
 
-    // Run validation
-    const val = await validateEpisodeForRss(scriptId, "prepare");
-    if (!val.eligible) {
-      throw new Error(`Publishing preparation failed. Blockers: ${val.errorReasons.join("; ")}`);
-    }
-
     // Determine GUID (stable: never change if already exists)
-    const rssGuid = script.episode.rssGuid || `take-machine:${script.episode.id}:${script.id}`;
+    const episodeId = script.episode.id;
+    const rssGuid = script.episode.rssGuid || `take-machine:${episodeId}:${script.id}`;
 
-    // Update episode
-    const updatedEpisode = await db.episode.update({
-      where: { id: script.episode.id },
-      data: {
-        status: "publish_ready",
-        audioFileSizeBytes: val.resolvedSize,
-        rssGuid,
-      },
+    const { val, updatedEpisode } = await withReleaseLock(scriptId, episodeId, async (tx) => {
+      const val = await validateEpisodeForRss(scriptId, "prepare");
+      if (!val.eligible) {
+        throw new Error(`Publishing preparation failed. Blockers: ${val.errorReasons.join("; ")}`);
+      }
+      const updatedEpisode = await tx.episode.update({
+        where: { id: episodeId },
+        data: {
+          status: "publish_ready",
+          audioFileSizeBytes: val.resolvedSize,
+          rssGuid,
+        },
+      });
+      return { val, updatedEpisode };
     });
 
     const publicRssUrl = process.env.PODCAST_RSS_URL || "";
@@ -500,24 +602,26 @@ export async function publishEpisode(
 
     const previousEpisodeStatus = script.episode.status;
 
-    // Run validation
-    const val = await validateEpisodeForRss(scriptId, "publish");
-    if (!val.eligible) {
-      throw new Error(`Publishing failed. Blockers: ${val.errorReasons.join("; ")}`);
-    }
-
     // Determine publishedAt (stable unless forceRepublish is true)
+    const episodeId = script.episode.id;
     const publishedAt =
       script.episode.publishedAt && !forceRepublish
         ? script.episode.publishedAt
         : new Date();
 
-    const updatedEpisode = await db.episode.update({
-      where: { id: script.episode.id },
-      data: {
-        status: "published",
-        publishedAt,
-      },
+    const { val, updatedEpisode } = await withReleaseLock(scriptId, episodeId, async (tx) => {
+      const val = await validateEpisodeForRss(scriptId, "publish");
+      if (!val.eligible) {
+        throw new Error(`Publishing failed. Blockers: ${val.errorReasons.join("; ")}`);
+      }
+      const updatedEpisode = await tx.episode.update({
+        where: { id: episodeId },
+        data: {
+          status: "published",
+          publishedAt,
+        },
+      });
+      return { val, updatedEpisode };
     });
 
     const publicRssUrl = process.env.PODCAST_RSS_URL || "";
@@ -533,6 +637,12 @@ export async function publishEpisode(
       audioMimeType: updatedEpisode.audioMimeType,
       publicRssUrl,
       missingConfig: val.missingConfig,
+      // What exactly went out: the published artifact's own provenance record.
+      released: {
+        audioUrl: updatedEpisode.audioUrl,
+        scriptFingerprint: val.integrity?.scriptFingerprint ?? null,
+        masterProof: val.integrity?.masterProof ?? null,
+      },
       reasons: ["Episode published successfully."],
     };
 

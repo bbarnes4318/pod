@@ -8,6 +8,7 @@
 // Per-line fact status is derived from the latest FactCheckResult's issues
 // (errors / warnings / semanticLineResults) plus the line's own flags.
 
+import { uncheckedLineIndexes } from "./artifactProvenance";
 import { db } from "@/lib/db";
 
 export type FactStatus = "verified" | "unverified" | "failed";
@@ -262,6 +263,10 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
   const segments: TranscriptSegmentVM[] = [];
   const claims: ClaimVM[] = [];
   let dirtyCount = 0;
+  // "Dirty" = these words are not the words the latest fact check read. Read
+  // from what the check recorded, so running the check again clears it (the
+  // old per-line mark was set by every edit and never cleared by anything).
+  const unchecked = new Set(uncheckedLineIndexes(content, (fc?.summary as { checkedLines?: unknown } | null)?.checkedLines));
 
   for (const seg of rawSegments) {
     const lines: TranscriptLineVM[] = [];
@@ -270,7 +275,7 @@ export async function getEpisodeTranscriptVM(episodeId: string): Promise<Transcr
       const refs = asRefs(ln?.evidenceRefs);
       const citations = refs.map((r) => citationMap.get(`${r.type}:${r.id}`)!).filter(Boolean);
       const isFactual = ln?.isFactualClaim === true;
-      const dirty = ln?.dirty === true;
+      const dirty = unchecked.has(idx);
       if (dirty) dirtyCount++;
 
       let factStatus: FactStatus | null = null;

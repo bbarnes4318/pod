@@ -413,6 +413,7 @@ QUALITY_STEPS=(
   "quality-gate|npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts"
   "editorial-gate|npm run test:editorial-gate"
   "production-release-gate|npm run test:production-release-gate"
+  "release-integrity|npm run test:release-integrity"
   "semantic-repetition|npm run test:semantic-repetition"
   "opening-chapter-integrity|npm run test:opening-chapter-integrity"
   "story-clustering|npm run test:story-clustering"
