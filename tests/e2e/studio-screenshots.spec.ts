@@ -25,7 +25,7 @@
 // The fixtures below are added by THIS spec, not by the shared seed, so the
 // assertion suites keep the exact data they were written against.
 
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 import fs from "fs";
 import path from "path";
 import { E2E } from "./seed";
@@ -64,10 +64,12 @@ const ROUTES: { slug: string; url: string }[] = [
   { slug: "settings", url: "/studio/settings" },
 ];
 
-/** A one-second silent WAV, so the dock has something real to load. */
-function silentWavDataUrl(): string {
+/** Thirty seconds of silence, served to the page by route interception, so the
+ *  dock and the episode player load something real without a file in public/. */
+const AUDIO_PATH = "/shot-audio/silence.wav";
+function silentWav(): Buffer {
   const rate = 8000;
-  const samples = rate;
+  const samples = rate * 30;
   const buf = Buffer.alloc(44 + samples);
   buf.write("RIFF", 0);
   buf.writeUInt32LE(36 + samples, 4);
@@ -82,7 +84,7 @@ function silentWavDataUrl(): string {
   buf.write("data", 36);
   buf.writeUInt32LE(samples, 40);
   buf.fill(128, 44);
-  return `data:audio/wav;base64,${buf.toString("base64")}`;
+  return buf;
 }
 
 async function addFixtures() {
@@ -148,7 +150,7 @@ async function addFixtures() {
     update: {},
     create: {
       id: SHOT.readyEpisodeId, title: "Did the refs decide the title game?", slug: "shot-ready",
-      status: "audio_ready", audioUrl: silentWavDataUrl(), durationSeconds: 1,
+      status: "audio_ready", audioUrl: AUDIO_PATH, durationSeconds: 30,
       ownerId: E2E.userA.id, podcastId: E2E.podcastId, hostIds: [E2E.hostAce, E2E.hostBlaze],
     },
   });
@@ -177,12 +179,19 @@ async function shoot(page: Page, name: string, fullPage = true) {
   await page.screenshot({ path: path.join(OUT, `${name}.png`), fullPage });
 }
 
+async function serveAudio({ context }: { context: BrowserContext }) {
+  await context.route(`**${AUDIO_PATH}*`, (route) =>
+    route.fulfill({ status: 200, contentType: "audio/wav", headers: { "accept-ranges": "bytes" }, body: silentWav() })
+  );
+}
+
 test.describe(`Studio screenshots — ${PHASE}`, () => {
   test.beforeAll(async () => {
     fs.mkdirSync(OUT, { recursive: true });
     await addFixtures();
   });
   test.afterAll(async () => { await closeE2eDb(); });
+  test.beforeEach(serveAudio);
 
   for (const route of ROUTES) {
     test(`${route.slug}`, async ({ page }, testInfo) => {
@@ -200,6 +209,7 @@ test.describe(`Studio screenshots — ${PHASE}`, () => {
 test.describe(`Studio screenshots, light theme — ${PHASE}`, () => {
   test.beforeEach(async ({ context, baseURL }, testInfo) => {
     test.skip(testInfo.project.name !== "desktop", "the light theme is captured at 1440 only");
+    await serveAudio({ context });
     await context.addCookies([{ name: "tm_theme", value: "light", url: baseURL! }]);
   });
 
@@ -214,8 +224,9 @@ test.describe(`Studio screenshots, light theme — ${PHASE}`, () => {
 });
 
 test.describe(`Studio screenshots, states — ${PHASE}`, () => {
-  test.beforeEach(({}, testInfo) => {
+  test.beforeEach(async ({ context }, testInfo) => {
     test.skip(!["desktop", "tablet", "mobile"].includes(testInfo.project.name), "states are captured at 1440, 768 and 390");
+    await serveAudio({ context });
   });
 
   test("collapsed sidebar", async ({ page }, testInfo) => {
