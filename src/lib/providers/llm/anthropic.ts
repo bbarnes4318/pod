@@ -120,6 +120,28 @@ export function anthropicSupportsSampling(model: string): boolean {
  */
 export type AnthropicTuningMode = "sampling" | "adaptive-thinking" | "neither";
 
+/** Models with native JSON outputs (output_config.format). Not on Opus 4.6/4.7 or Sonnet 4.5/4.6. */
+export function anthropicSupportsJsonOutputs(model: string): boolean {
+  return /claude-(fable|mythos)-5|claude-(opus|sonnet|haiku)-5|claude-opus-4-(1|5|8)\b|claude-haiku-4-5/.test(model);
+}
+
+const UNSUPPORTED_SCHEMA_KEYS = ["minLength", "maxLength", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minItems", "maxItems", "uniqueItems"];
+
+/** The API rejects length/number/array-size constraints and needs
+ *  additionalProperties:false on every object. The caller's validator still
+ *  enforces the stripped limits after the reply comes back. */
+export function toAnthropicJsonSchema(schema: unknown): any {
+  if (Array.isArray(schema)) return schema.map(toAnthropicJsonSchema);
+  if (!schema || typeof schema !== "object") return schema;
+  const out: Record<string, any> = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (!UNSUPPORTED_SCHEMA_KEYS.includes(k)) out[k] = toAnthropicJsonSchema(v);
+  }
+  const t = out.type;
+  if (t === "object" || (Array.isArray(t) && t.includes("object")) || out.properties) out.additionalProperties = false;
+  return out;
+}
+
 export function anthropicTuningMode(model: string): AnthropicTuningMode {
   if (anthropicSupportsSampling(model)) return "sampling";
   if (anthropicSupportsAdaptiveThinking(model)) return "adaptive-thinking";
@@ -450,7 +472,25 @@ export class AnthropicLLMProvider implements LLMProvider {
     // Instruction-based JSON forcing — assistant prefill 400s on Opus 4.6+.
     const systemPromptWithJson = `${options.systemPrompt || ""}\n\nCRITICAL: Respond with a single valid JSON object and nothing else. Start your response with '{' immediately — no markdown code fences, no preamble, no commentary after the closing '}'.`;
 
-    const data = await this.request(this.buildBody(options, systemPromptWithJson));
+    // Native JSON outputs: constrained decoding, so the reply is always valid
+    // JSON. Instruction-only forcing let a dialogue line with an unescaped quote
+    // kill a business script after both retries (live: host_b_writer "Expected
+    // ',' or '}'"). If the API rejects the schema (400), fall back to the old
+    // instruction-only request rather than fail the call.
+    const body = this.buildBody(options, systemPromptWithJson);
+    const schema = options.jsonSchema && anthropicSupportsJsonOutputs(this.model) ? toAnthropicJsonSchema(options.jsonSchema) : null;
+    let data: any;
+    if (schema) {
+      try {
+        data = await this.request({ ...body, output_config: { ...(body.output_config || {}), format: { type: "json_schema", schema } } });
+      } catch (err) {
+        if (!/status 400/.test((err as Error).message)) throw err;
+        console.warn(`[Anthropic] native JSON schema rejected; retrying instruction-only (${(err as Error).message.slice(0, 200)})`);
+        data = await this.request(body);
+      }
+    } else {
+      data = await this.request(body);
+    }
     let content = this.extractText(data).trim();
 
     // Strip markdown code fences if present despite instructions
