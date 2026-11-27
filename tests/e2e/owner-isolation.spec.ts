@@ -92,9 +92,16 @@ test.describe("Owner isolation — one account never sees another's work", () =>
   ] as const) {
     test(`opening ${label} podcast by URL is not found`, async ({ page }) => {
       await page.goto(`/app/podcasts/${id}`);
-      const body = (await page.locator("body").innerText()) || "";
       // notFound() actually fired — this is Next's built-in not-found page.
-      expect(body, `${label} podcast must render not-found, not the show`).toContain("could not be found");
+      //
+      // WAITED FOR, not read once. Under /studio the shell is flushed first and
+      // the not-found UI replaces it when the page's lookup finishes (see the
+      // note above), which can be after the load event. Reading the body the
+      // instant goto() returned saw the empty shell and failed on the first
+      // real run of this branch, although the guard had worked. Waiting also
+      // makes the leak check below meaningful: it now runs on the settled page.
+      await expect(page.locator("body"), `${label} podcast must render not-found, not the show`).toContainText("could not be found");
+      const body = (await page.locator("body").innerText()) || "";
       // None of the manage page rendered.
       expect(body).not.toContain("Generate episode now");
       expect(body).not.toContain("What's the show called?");
@@ -112,6 +119,9 @@ test.describe("Owner isolation — one account never sees another's work", () =>
     for (const route of ["/studio/episodes", "/app/episodes"]) {
       test(`opening ${label} unpublished episode at ${route}/[id] leaks nothing`, async ({ page }) => {
         await page.goto(`${route}/${id}`);
+        // Settle first: a leak check on a page that has not finished streaming
+        // passes on an empty shell and proves nothing.
+        await expect(page.locator("body"), `${route}/${id} must render not-found`).toContainText("could not be found");
         await assertNoLeaks(page, `${route}/${id}`);
       });
     }

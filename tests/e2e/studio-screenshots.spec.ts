@@ -96,6 +96,16 @@ async function addFixtures() {
       description: "What independent HVAC contractors need to know before their competitors do.",
     },
   });
+  await db.businessProfile.upsert({
+    where: { podcastId: SHOT.businessShowId },
+    update: {},
+    create: {
+      podcastId: SHOT.businessShowId, businessName: "Northside Heating & Air", industry: "Residential HVAC contracting",
+      description: "A regional HVAC contractor's weekly briefing for other owner-operators.",
+      targetAudiences: ["Owner-operators running two to ten trucks"], primaryGoal: "Be the first call for contractors with a supply question",
+      geographicMarkets: ["Upper Midwest"], discoveryStatus: "complete",
+    },
+  });
   const opp = (id: string, title: string, over: Record<string, unknown>) => ({
     id, podcastId: SHOT.businessShowId, ownerId: E2E.userA.id, category: "INSIDER_INTELLIGENCE",
     title, normalizedTitle: title.toLowerCase(), businessNiche: "Residential HVAC contracting",
