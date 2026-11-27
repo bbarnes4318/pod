@@ -2,7 +2,7 @@
 // validator with ONE repair request. Before this, both were silently dropped and
 // the dossier writer failed live: "verifiedStatistics: Expected array, received object".
 import assert from "node:assert";
-import { AnthropicLLMProvider } from "../lib/providers/llm/anthropic";
+import { AnthropicLLMProvider, anthropicSupportsJsonOutputs, toAnthropicJsonSchema } from "../lib/providers/llm/anthropic";
 
 async function main() {
   process.env.ANTHROPIC_API_KEY = "sk-ant-test-key-not-real";
@@ -33,7 +33,27 @@ async function main() {
     p.generateStructuredOutput({ prompt: "x", validate: (v: any) => (Array.isArray(v?.stats) ? null : "bad") }),
     /failed validation after one repair/
   );
-  console.log("ok  anthropic structured output: schema sent, validator honoured, one repair");
+  // Native JSON outputs: format is sent, with limits stripped and objects closed.
+  const fmt = bodies[0].output_config?.format;
+  assert.equal(fmt?.type, "json_schema", "native JSON outputs requested");
+  assert.equal(fmt.schema.additionalProperties, false, "objects closed");
+  const s = toAnthropicJsonSchema({ type: "object", properties: { a: { type: "array", maxItems: 3, items: { type: "object", properties: { t: { type: "string", maxLength: 9 } } } } } });
+  assert.deepEqual(s.properties.a, { type: "array", items: { type: "object", properties: { t: { type: "string" } }, additionalProperties: false } }, "unsupported keys stripped recursively");
+  assert.ok(!anthropicSupportsJsonOutputs("claude-opus-4-6") && anthropicSupportsJsonOutputs("claude-sonnet-5") && anthropicSupportsJsonOutputs("claude-opus-5"));
+
+  // A 400 on the schema falls back to the instruction-only request instead of failing.
+  bodies.length = 0;
+  let calls = 0;
+  globalThis.fetch = (async (_url: any, init: any) => {
+    bodies.push(JSON.parse(init.body));
+    if (calls++ === 0) return new Response('{"error":{"message":"bad schema"}}', { status: 400 });
+    return new Response(JSON.stringify({ content: [{ type: "text", text: '{"stats":[2]}' }], stop_reason: "end_turn", usage: {} }), { status: 200 });
+  }) as typeof fetch;
+  const fb = await p.generateStructuredOutput({ prompt: "x", jsonSchema: { type: "object", properties: { stats: { type: "array" } } } });
+  assert.deepEqual(fb, { stats: [2] });
+  assert.ok(bodies[0].output_config?.format && !bodies[1].output_config?.format, "second request drops the format");
+
+  console.log("ok  anthropic structured output: native JSON format, validator honoured, one repair, 400 fallback");
 }
 
 main().catch((e) => { console.error("FAIL", e); process.exit(1); });
