@@ -121,3 +121,63 @@
   .anEpState { max-width: none; text-align: left; }
   .anRowLabel--wide { width: 110px; white-space: normal; }
 }
+
+/* ---- Audio library: media asset management ----
+   .audioLibraryPage carries an older skin that styles every bare button and
+   label on the page, so these rules are scoped under it to win. */
+.audioLibraryPage .mam { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+.audioLibraryPage .mamMain { min-width: 0; display: grid; gap: var(--sp-3); }
+.audioLibraryPage .alChipRow { margin: 0; align-items: center; }
+.audioLibraryPage .mamJump { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+.audioLibraryPage .mamJump:hover { text-decoration: underline; text-underline-offset: 3px; }
+.audioLibraryPage .mamTypes { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.audioLibraryPage .mamTypes button { font-weight: 500; color: var(--text-muted); gap: 6px; }
+.audioLibraryPage .mamTypes button[aria-pressed="true"] { background: var(--accent-muted); color: var(--accent-press); border-color: var(--accent-border); }
+.audioLibraryPage .mamCount { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-subtle); }
+.audioLibraryPage .mamFilters { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-3); align-items: end; padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.audioLibraryPage .mamFilters .select, .audioLibraryPage .mamFilters .input { width: 100%; min-width: 0; }
+.audioLibraryPage .mamSearch { grid-column: span 2; }
+.audioLibraryPage .mamCheck { grid-column: 1 / -1; font-weight: 400; }
+.audioLibraryPage .mamSummary { margin: 0; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.audioLibraryPage .mamLink { display: inline; height: auto; padding: 0; border: none; background: none; color: var(--accent-text); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.audioLibraryPage .mamLink:hover { background: none; color: var(--accent-hover); }
+.audioLibraryPage .mamList { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.audioLibraryPage .mamEmpty { padding: var(--sp-6) var(--sp-4); text-align: center; font-size: 14px; color: var(--text-muted); }
+.audioLibraryPage .mamRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--sp-3); row-gap: var(--sp-2); align-items: center; padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); }
+.audioLibraryPage .mamRow:first-child { border-top: none; }
+.audioLibraryPage .mamRow[data-archived="true"] .mamName { color: var(--text-muted); }
+.audioLibraryPage .mamPlay { width: 36px; height: 36px; padding: 0; border-radius: 50%; justify-content: center; background: var(--surface-2); }
+.audioLibraryPage .mamPlay[data-playing="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.audioLibraryPage .mamPlay:disabled { opacity: 0.5; }
+.audioLibraryPage .mamWhat { display: grid; gap: 2px; min-width: 0; }
+.audioLibraryPage .mamName { font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.audioLibraryPage .mamSub { font-size: 12px; color: var(--text-subtle); overflow-wrap: anywhere; }
+.audioLibraryPage .mamActions { display: flex; gap: var(--sp-2); }
+.audioLibraryPage .mamMeta { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2) var(--sp-4); margin: 0; }
+.audioLibraryPage .mamMeta div { min-width: 0; }
+.audioLibraryPage .mamMeta dt { font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+.audioLibraryPage .mamMeta dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.audioLibraryPage .mamMeta dd strong { color: var(--warning-text); }
+.audioLibraryPage .mamUnset { font-style: normal; color: var(--text-subtle); }
+.audioLibraryPage .mamFrom { font-size: 11px; color: var(--text-subtle); }
+.audioLibraryPage .mamTags { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.audioLibraryPage .mamTag { padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.audioLibraryPage .mamMissing { font-size: 12px; font-weight: 500; color: var(--warning-text); }
+.audioLibraryPage .mamMore { justify-self: center; }
+.audioLibraryPage .mamUpload { margin: 0; scroll-margin-top: 120px; }
+@media (min-width: 1280px) {
+  .audioLibraryPage .mam { grid-template-columns: minmax(0, 1fr) 320px; }
+  .audioLibraryPage .mamUpload { position: sticky; top: 112px; max-height: calc(100vh - 136px); overflow-y: auto; }
+  .audioLibraryPage .mamUpload .alFieldGrid { grid-template-columns: minmax(0, 1fr); }
+  .audioLibraryPage .mamJump { display: none; }
+}
+@media (max-width: 720px) {
+  .audioLibraryPage .mamFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .audioLibraryPage .mamRow { padding: var(--sp-3); }
+  .audioLibraryPage .mamMeta, .audioLibraryPage .mamTags { grid-column: 1 / -1; }
+  .audioLibraryPage .mamMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .audioLibraryPage .mamActions { grid-column: 1 / -1; }
+  .audioLibraryPage .mamActions:empty { display: none; }
+  .audioLibraryPage .mamRow { grid-template-columns: auto minmax(0, 1fr); }
+  .audioLibraryPage .mamJump { margin-left: 0; }
+}
