@@ -1,4 +1,5 @@
 import React from "react";
+import QualityInspector from "./QualityInspector";
 import StudioPageHeader from "../../StudioPageHeader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -172,7 +173,18 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   const showConsole = !episode.audioUrl || (progressVm ? !progressVm.done : false);
 
   // ---- Overview tab: quality breakdown + quick actions (the calm landing) ----
+  // Where each line sits in the finished audio (fractions), so the script can
+  // play from a line and mark the one being spoken. Only when there is audio.
+  const lineTimes: Record<number, { start: number; end: number }> | undefined =
+    episode.audioUrl && mixVm && mixVm.fullyVoiced && mixVm.totalMs > 0
+      ? Object.fromEntries(
+          mixVm.segments.flatMap((s) => s.lines).map((l) => [l.lineIndex, { start: l.startMs / mixVm.totalMs, end: (l.startMs + l.durationMs) / mixVm.totalMs }])
+        )
+      : undefined;
+
   const overviewNode = (
+    <>
+    {script && <QualityInspector episodeId={episode.id} />}
     <div className="grid2">
       {q ? (
         <div className="studioCard">
@@ -259,6 +271,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         </div>
       </div>
     </div>
+    </>
   );
 
   // ---- Rundown: what this episode covers, in order ----
@@ -319,7 +332,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       hint: "Edit and fact-check",
       state: stageState("transcript"),
       node: (
-        <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
+        <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} lineTimes={lineTimes} />
       ),
     });
   }

@@ -10,6 +10,7 @@
 //   blue — a functional data color, the one sanctioned second hue).
 // - Chapter markers from the script's segments; click to jump.
 
+import { PLAYER_SEEK, PLAYER_TIME } from "./playerBus";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export interface PlayerChapter {
@@ -242,6 +243,25 @@ export default function StudioPlayer({ audioUrl, title, chapters, hostSpans, hos
     a.currentTime = Math.max(0, Math.min(0.999, frac)) * a.duration;
     setCurrent(a.currentTime);
   }, []);
+
+  // The transcript can ask for a position ("play from this line") and follows
+  // playback to mark the line being spoken. See playerBus.ts.
+  useEffect(() => {
+    const onSeek = (e: Event) => {
+      const a = audioRef.current;
+      const frac = (e as CustomEvent<number>).detail;
+      if (!a || !a.duration || typeof frac !== "number") return;
+      seekFrac(frac);
+      void a.play();
+      wrapRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
+    window.addEventListener(PLAYER_SEEK, onSeek);
+    return () => window.removeEventListener(PLAYER_SEEK, onSeek);
+  }, [seekFrac]);
+  useEffect(() => {
+    const a = audioRef.current;
+    if (a && a.duration) window.dispatchEvent(new CustomEvent(PLAYER_TIME, { detail: a.currentTime / a.duration }));
+  }, [current]);
 
   const fracFromEvent = useCallback((e: { clientX: number }) => {
     const el = wrapRef.current;

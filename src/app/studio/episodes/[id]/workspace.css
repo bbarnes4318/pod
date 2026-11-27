@@ -1,0 +1,43 @@
+/* Episode workspace: quality inspector, passage revision, script/player link.
+   Tokens only (see studio.css); both themes. */
+.qiCard { margin-bottom: 16px; }
+.qiHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.qiSummary { margin: 8px 0 0; }
+.qiAction { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; }
+.qiGroup { margin-top: 16px; }
+.qiGroupTitle { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.qiList { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; }
+.qiList li + li { border-top: 1px solid var(--border); }
+.qiItem { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 12px; color: var(--text); text-decoration: none; }
+.qiItem:hover { background: var(--surface-2); }
+.qiItem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.qiArea { font-size: 12px; color: var(--text-muted); padding-top: 1px; }
+.qiBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qiTitle { font-weight: 600; overflow-wrap: anywhere; }
+.qiDetail { font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+.qiGo { font-size: 12px; color: var(--accent-text); white-space: nowrap; padding-top: 1px; }
+
+.reviser { margin-bottom: 16px; padding: 14px; background: var(--surface-2); border: 1px solid var(--accent); border-radius: 8px; position: sticky; top: 8px; z-index: 2; max-height: 70vh; overflow-y: auto; }
+.reviserHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.reviserPresets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.reviserPresets .chip { cursor: pointer; }
+.reviserBar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.reviserDiff { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.reviserLine { padding-left: 10px; border-left: 2px solid var(--border); }
+.reviserLine.changed { border-left-color: var(--accent); }
+.reviserSpeaker { font-size: 12px; color: var(--text-muted); }
+.reviserBefore { margin: 2px 0; color: var(--text-muted); text-decoration: line-through; }
+.reviserAfter { margin: 2px 0; }
+.reviserSame { margin: 2px 0; color: var(--text-muted); }
+
+.tSelect { width: 16px; height: 16px; accent-color: var(--accent); flex: none; }
+.tPlayFrom { flex: none; }
+.tLine:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tLine-selected { box-shadow: inset 3px 0 0 var(--accent); background: var(--accent-muted); }
+.tLine-playing { box-shadow: inset 3px 0 0 var(--success); }
+.tLine-selected.tLine-playing { box-shadow: inset 3px 0 0 var(--accent); }
+
+@media (max-width: 720px) {
+  .qiItem { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .reviser { position: static; max-height: none; }
+}
