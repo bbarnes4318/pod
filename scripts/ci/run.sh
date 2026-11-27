@@ -481,6 +481,7 @@ INTEGRATION_STEPS=(
   "integration-worker-health|npm run test:integration-worker-health"
   "integration-auditions|npm run test:integration-auditions"
   "integration-learning|npm run test:integration-learning"
+  "integration-release-integrity|npm run test:integration-release-integrity"
 )
 
 do_integration() {

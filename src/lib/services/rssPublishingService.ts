@@ -469,7 +469,9 @@ export async function editScriptContent<T>(
       await tx.script.update({ where: { id: scriptId }, data: { content: out.content, ...("plainText" in out && out.plainText !== undefined ? { plainText: out.plainText } : {}) } });
     }
     return out.result;
-  });
+  // A release may hold this row for up to 60s (withReleaseLock). The client's
+  // default 5s limit would fail a waiting edit instead of letting it land.
+  }, { timeout: 75_000, maxWait: 15_000 });
 }
 
 /**

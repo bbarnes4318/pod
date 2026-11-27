@@ -65,6 +65,7 @@ and, exactly like GitHub, only committed code is tested. Commit before you run.
 | `integration-worker-health` | `npm run test:integration-worker-health` (3-minute bound, as in the workflow) | step "Worker health round-trip" |
 | `integration-auditions` | `npm run test:integration-auditions` | step "Voice auditions and tenant isolation" |
 | `integration-learning` | `npm run test:integration-learning` | step "Listener learning, aggregates…" |
+| `integration-release-integrity` | `npm run test:integration-release-integrity` (release gate, publish paths and row locks on real rows) | added after Actions stopped; never a workflow step |
 
 ### `full` only
 
