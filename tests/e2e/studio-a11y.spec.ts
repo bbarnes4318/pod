@@ -33,8 +33,12 @@ const ROUTES: { name: string; url: string }[] = [
 ];
 
 test.describe("Studio accessibility floor", () => {
+  // Both themes. Paper (light) is one click away for every user and has its own
+  // contrast pairs; it used to be checked by calculation only.
+  for (const theme of ["charcoal", "light"] as const) {
   for (const route of ROUTES) {
-    test(`${route.name}: no serious or critical axe violations`, async ({ page }) => {
+    test(`${route.name} (${theme}): no serious or critical axe violations`, async ({ page, baseURL }) => {
+      if (theme === "light") await page.context().addCookies([{ name: "tm_theme", value: "light", url: baseURL! }]);
       await page.goto(route.url, { waitUntil: "domcontentloaded" });
       await page.locator(".studioShell").waitFor({ state: "visible", timeout: 30_000 });
       await page.waitForTimeout(600);
@@ -51,8 +55,10 @@ test.describe("Studio accessibility floor", () => {
         .map((v) => `${v.impact?.toUpperCase()}  ${v.id}: ${v.help}\n    ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join("\n    ")}`)
         .join("\n");
 
-      expect(blocking, `${route.name} has ${blocking.length} blocking violation(s):\n${detail}`).toEqual([]);
+      if (theme === "light") await expect(page.locator(".studioShell")).toHaveAttribute("data-theme", "light");
+      expect(blocking, `${route.name} (${theme}) has ${blocking.length} blocking violation(s):\n${detail}`).toEqual([]);
     });
+  }
   }
 
   test("the document has exactly one h1, and it names the page", async ({ page }) => {
