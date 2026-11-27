@@ -15,21 +15,34 @@ function Toggle({ on, label, onClick }: { on: boolean; label: string; onClick: (
   );
 }
 
-export default function BusinessSetupForm() {
+/** Optional starting values (AI Quick Start). Everything stays editable and
+ *  nothing is saved until the creator submits this same form. */
+export interface BusinessSetupInitial {
+  showName?: string;
+  businessName?: string;
+  industry?: string;
+  description?: string;
+  targetAudiences?: string[];
+  primaryGoal?: string;
+}
+
+export default function BusinessSetupForm({ initial = {} }: { initial?: BusinessSetupInitial } = {}) {
+  const suggested = initial.targetAudiences ?? [];
+  const known = (a: string) => (TARGET_AUDIENCES as readonly string[]).includes(a);
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState({
-    showName: "",
-    businessName: "",
+    showName: initial.showName ?? "",
+    businessName: initial.businessName ?? "",
     websiteUrl: "",
-    description: "",
-    industry: "",
+    description: initial.description ?? "",
+    industry: initial.industry ?? "",
     subIndustries: "",
-    targetAudiences: [] as string[],
-    customAudiences: "",
-    primaryAudience: "",
-    primaryGoal: PODCAST_GOALS[0] as string,
+    targetAudiences: suggested.filter(known),
+    customAudiences: suggested.filter((a) => !known(a)).join(", "),
+    primaryAudience: suggested[0] ?? "",
+    primaryGoal: (PODCAST_GOALS as readonly string[]).includes(initial.primaryGoal ?? "") ? (initial.primaryGoal as string) : (PODCAST_GOALS[0] as string),
     geographicMarkets: [] as string[],
     language: "en",
   });

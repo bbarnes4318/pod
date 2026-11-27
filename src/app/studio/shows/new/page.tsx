@@ -11,6 +11,8 @@ import PodcastWizard, {
   type WizardTeam,
   type WizardInitial,
 } from "@/app/app/podcasts/new/PodcastWizard";
+import QuickStart from "./QuickStart";
+import "../shows-intel.css";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +23,6 @@ export default async function NewStudioShowPage({
 }) {
   const user = await requireUserPage("/studio/shows/new");
   const { topic: topicId, type } = await searchParams;
-
-  // Two engines, one choice. Accounts without business access (and any
-  // topic-seeded sports flow) go straight to the sports wizard, exactly as before.
-  if (!topicId && type !== "sports" && businessPodcastsEnabledFor(user)) {
-    return <ShowTypeChooser />;
-  }
 
   const [hostsRaw, teamsRaw] = await Promise.all([
     db.aiHost.findMany({
@@ -55,6 +51,13 @@ export default async function NewStudioShowPage({
     name: host.name,
     role: host.role,
   }));
+
+  // No type and no seeding topic: the front door. Quick start (AI recommends a
+  // whole setup) sits beside the Custom paths; ?type=sports is Show Forge,
+  // exactly as before, and business keeps its own setup form.
+  if (!topicId && type !== "sports") {
+    return <ShowFrontDoor hosts={hosts} teams={teams} business={businessPodcastsEnabledFor(user)} />;
+  }
 
   let initial: WizardInitial | undefined;
   if (topicId) {
@@ -94,32 +97,38 @@ export default async function NewStudioShowPage({
   );
 }
 
-function ShowTypeChooser() {
+function ShowFrontDoor({ hosts, teams, business }: { hosts: WizardHost[]; teams: WizardTeam[]; business: boolean }) {
   const cards = [
     {
       href: "/studio/shows/new?type=sports",
-      title: "Sports podcast",
-      body: "Turn sports news, statistics, rivalries, and debates into compelling episodes.",
+      title: business ? "Sports podcast" : "Custom (Show Forge)",
+      body: business
+        ? "Turn sports news, statistics, rivalries, and debates into compelling episodes."
+        : "Set every part yourself: premise, listener promise, cast, segments, storylines and schedule.",
       testId: "choose-sports",
     },
-    {
-      href: "/studio/shows/new/business",
-      title: "Business podcast",
-      body: "Discover what your industry's audience wants to know and create podcasts powered by deep research.",
-      testId: "choose-business",
-    },
+    ...(business
+      ? [{
+          href: "/studio/shows/new/business",
+          title: "Business podcast",
+          body: "Discover what your industry's audience wants to know and create podcasts powered by deep research.",
+          testId: "choose-business",
+        }]
+      : []),
   ];
   return (
     <div className="fadeUp">
       <StudioPageHeader
-        title="What kind of show?"
-        subtitle="Each type runs on its own research engine. You can run both."
+        title="New show"
+        subtitle={business ? "Describe it and get a recommended setup, or build it yourself. Each type runs on its own research engine." : "Describe it and get a recommended setup, or build it yourself."}
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
       />
+      <QuickStart hosts={hosts} teams={teams} />
+      <h2 className="sectionTitle qsOr">Custom: build it yourself</h2>
       <div className="bizTypeGrid">
         {cards.map((c) => (
           <Link key={c.href} href={c.href} className="studioCard bizTypeCard" data-testid={c.testId}>
-            <h2 className="m-0">{c.title}</h2>
+            <h3 className="m-0">{c.title}</h3>
             <p className="bizLead bizFlush">{c.body}</p>
             <span className="btnGhost bizTypeStart">Start →</span>
           </Link>
