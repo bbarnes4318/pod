@@ -1,0 +1,40 @@
+/* ============================================================
+   LIBRARY — Workstream F: episode grid, release checklist,
+   analytics intelligence, media library, phone tab bar.
+   Tokens only (both themes). Imported by the pages and
+   components that use it, after studio.css / control-room.css.
+   ============================================================ */
+
+/* ---- Shared: pager, toolbar end ---- */
+.libPager { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); }
+.libPagerAt { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.libPager [aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+.libToolbarEnd { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.segmented a[aria-current="true"] { color: var(--text); background: var(--surface); box-shadow: var(--shadow-1); }
+
+/* ---- Episode library: artwork grid ---- */
+.epGrid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-4); }
+.epGridCard { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.epGridCard:hover { border-color: var(--border-hover); }
+.epGridArt { position: relative; aspect-ratio: 1 / 1; display: grid; place-items: center; background: var(--surface-3); border-bottom: 3px solid var(--art-hue, var(--border-strong)); }
+.epGridArt[data-hue="a"] { --art-hue: var(--host-a); }
+.epGridArt[data-hue="b"] { --art-hue: var(--host-b); }
+.epGridArt[data-hue="c"] { --art-hue: var(--host-c); }
+.epGridArt[data-hue="d"] { --art-hue: var(--host-d); }
+.epGridArt img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.epGridInitials { font-family: var(--font-editorial); font-size: 56px; font-weight: 600; line-height: 1; color: var(--text); }
+.epGridPlay { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: 40px; height: 40px; background: var(--surface); box-shadow: var(--shadow-1); }
+.epGridBody { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: var(--sp-3); min-width: 0; flex: 1; }
+.epGridTitle { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.epGridTitle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.epGridShow, .epGridMeta { font-size: 12px; color: var(--text-subtle); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.epGridMeta { font-variant-numeric: tabular-nums; }
+.epGridNext { margin-top: auto; padding-top: var(--sp-2); font-size: 13px; font-weight: 500; color: var(--accent-text); overflow-wrap: anywhere; }
+.epGridNext:hover { text-decoration: underline; text-underline-offset: 3px; }
+.epGridNextStage { display: block; font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+@media (max-width: 720px) {
+  .epGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+  .epGridInitials { font-size: 40px; }
+  .libToolbarEnd { width: 100%; }
+  .libToolbarEnd .listSearch { flex: 1; min-width: 0; width: auto; }
+}
