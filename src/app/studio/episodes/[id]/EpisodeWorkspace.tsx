@@ -23,13 +23,20 @@ export interface WorkspaceTab {
   label: string;
   hint: string;
   node: React.ReactNode;
+  /** Where this stage sits in the episode's life. Omit for non-stage tabs. */
+  state?: "done" | "current" | "todo";
+  /** Older hashes that should open this tab (#promote opens Release). */
+  aliases?: string[];
 }
 
-export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
-  const [active, setActive] = useState(tabs[0]?.key ?? "");
+const STATE_WORD = { done: "Done", current: "Current step", todo: "Not started" } as const;
+
+export default function EpisodeWorkspace({ tabs, initialKey }: { tabs: WorkspaceTab[]; initialKey?: string }) {
+  const first = tabs.some((t) => t.key === initialKey) ? initialKey! : tabs[0]?.key ?? "";
+  const [active, setActive] = useState(first);
   // Every tab that has ever been opened. Add-only: a panel is never torn down,
   // so nothing a user typed into one is lost by looking at another.
-  const [seen, setSeen] = useState<Set<string>>(() => new Set(tabs[0] ? [tabs[0].key] : []));
+  const [seen, setSeen] = useState<Set<string>>(() => new Set(first ? [first] : []));
   const open = (key: string) => {
     setActive(key);
     setSeen((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
@@ -42,7 +49,8 @@ export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
   useEffect(() => {
     const applyHash = () => {
       const key = window.location.hash.replace(/^#/, "");
-      if (key && tabs.some((t) => t.key === key)) open(key);
+      const hit = key ? tabs.find((t) => t.key === key || t.aliases?.includes(key)) : null;
+      if (hit) open(hit.key);
     };
     applyHash();
     window.addEventListener("hashchange", applyHash);
@@ -67,9 +75,14 @@ export default function EpisodeWorkspace({ tabs }: { tabs: WorkspaceTab[] }) {
               aria-selected={isActive}
               aria-controls={`eppanel-${t.key}`}
               className={`epTab${isActive ? " active" : ""}`}
+              data-state={t.state}
               onClick={() => open(t.key)}
             >
-              <span className="epTabLabel">{t.label}</span>
+              <span className="epTabLabel">
+                {t.state && <span className="epTabLamp" aria-hidden="true" />}
+                {t.label}
+                {t.state && <span className="srOnly"> ({STATE_WORD[t.state]})</span>}
+              </span>
               <span className="epTabHint">{t.hint}</span>
             </button>
           );

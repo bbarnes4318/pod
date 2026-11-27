@@ -14,7 +14,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { E2E } from "./seed";
 
 const ROUTES: { name: string; url: string }[] = [
-  { name: "The Board", url: "/studio" },
+  { name: "Home", url: "/studio" },
+  { name: "Editorial desk", url: "/studio/desk" },
   { name: "Shows", url: "/studio/shows" },
   { name: "Show detail", url: `/studio/shows/${E2E.podcastId}` },
   { name: "New show", url: "/studio/shows/new" },
@@ -81,6 +82,12 @@ test.describe("Studio accessibility floor", () => {
       const probe = await page.evaluate(() => {
         const el = document.activeElement as HTMLElement | null;
         if (!el || el === document.body) return null;
+        // Next's dev-mode indicator. It is injected by `next dev` (which is what
+        // this harness runs), lives in its own shadow root, and does not exist
+        // in a production build, so it is not a Studio control. Home is short
+        // enough at 768 and 390 that 25 Tabs now run off the end of the page
+        // and land on it; the old Board was long enough that they never did.
+        if (el.tagName === "NEXTJS-PORTAL") return null;
         const s = getComputedStyle(el);
         const ring =
           (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) ||

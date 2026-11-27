@@ -13,7 +13,13 @@ const desktopOnly = (t: { project: { name: string } }) => t.project.name === "de
 async function gotoSound(page: Page) {
   await page.goto(`/app/podcasts/${E2E.podcastId}/sound`);
   await expect(page.getByTestId("sound-branding")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
+  // /app/podcasts/[id]/sound redirects to /studio/shows/[id]/sound. This line
+  // used to wait for the /app shell's player bar (role=region "Player") as its
+  // "the page is up" signal; the Studio shell has no always-visible player, so
+  // that wait could never succeed and nine tests timed out on it (they fail the
+  // same way on main). Wait for the shell the page actually renders in.
+  await expect(page.locator(".studioShell")).toBeVisible();
+  await page.waitForLoadState("networkidle").catch(() => {});
 }
 
 test.afterAll(async () => { await closeE2eDb(); });
@@ -155,7 +161,7 @@ test.describe("Sound diversity — operator config UI", () => {
       diagnostics: { postTts: { planningEngine: "post_tts", diversity: { renderMode: "enforce", contextSource: "frozen", diversityFingerprint: "d".repeat(64) } } } as object } });
 
     await page.goto(`/studio/episodes/${epId}`);
-    await page.getByRole("tab", { name: /Produce/ }).click();
+    await page.getByRole("tab", { name: /Audio and mix/ }).click();
     await expect(page.getByTestId("episode-diversity")).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId("diversity-engine")).toContainText("post_tts");
     await expect(page.getByTestId("diversity-config-source")).toContainText(/frozen/i);

@@ -186,6 +186,7 @@ export default function AuditionConsole({
     <div className="fadeUp">
       <StudioPageHeader
         title="Voice auditions"
+        breadcrumb={[{ label: "Talent", href: "/studio/hosts" }]}
         subtitle="Several minutes of the same material, listened to blind, scored over length."
         actions={
           <button type="button" className="btnPrimary" onClick={() => setCreating((value) => !value)} disabled={!signedIn}>

@@ -1,57 +1,152 @@
 /* ============================================================
-   TAKE MACHINE STUDIO — enterprise design system
+   TAKE MACHINE STUDIO — the control room
    ------------------------------------------------------------
-   A light, neutral, data-dense workspace built for clients who
-   live in Salesforce, Workday and Bloomberg all day. Calm by
-   default; colour carries meaning (status, selection, the one
-   primary action on a view) and nothing else.
+   A production environment, not a dashboard. Charcoal by default
+   (the room a show is made in), with a light "paper" theme on the
+   same semantic tokens. The one brand colour is the TALLY lamp —
+   a warm signal vermilion — and it means exactly three things:
+   the primary action, what is selected, and what is live.
 
    RULES
    - Tokens are SCOPED to .studioShell. /admin and /app keep
      their own themes; nothing here leaks out of the Studio.
-   - One primary (filled) button per view. Everything else is
-     secondary (outlined) or ghost (text). A list of rows never
-     repeats a filled button per row.
-   - Sentence case everywhere. No uppercase headings, no
-     condensed display face. Uppercase is reserved for the 11px
-     overline label and tiny badges.
-   - Type scale (px): 11 · 12 · 13 · 14 · 16 · 20 · 24.
-     Body 14. Dense tables 13.
+   - Components hold no colour. A theme is this token block and
+     nothing else, which is why two themes cost one file.
+   - One primary (filled) button per view.
+   - Sentence case. Uppercase only for the 11px overline.
+   - Type: Inter for work, Newsreader (--font-editorial) for the
+     few places the product speaks as an editor — the briefing,
+     a show's name on its own page, an empty state's headline.
+   - Type scale (px): 11 · 12 · 13 · 14 · 16 · 20 · 24 · 32.
    - Spacing: the --sp-* steps only (4 · 8 · 12 · 16 · 24 · 32 · 48).
-   - Radius: 6 controls · 8 cards · 12 dialogs. Pills 999.
-   - Elevation: border first; shadow only for things that float
-     (menus, dialogs, the command palette).
-   - Every state change is text + shape + colour, never colour
-     alone. Every text pair meets WCAG AA (4.5:1).
+   - Radius: 4 controls · 6 cards · 10 dialogs. Pills are for
+     status only, never for buttons.
+   - Elevation: border first; shadow only for things that float.
+   - Every text pair meets WCAG AA (4.5:1) in BOTH themes — the
+     pairs were computed, see docs/studio/DESIGN_SYSTEM.md.
    ============================================================ */
 
 .studioShell,
 .studioAuthSurface {
   /* Surfaces */
-  --bg: #F6F7F9;
+  --bg: #0F1113;
+  --surface: #16191C;
+  --surface-2: #1D2125;
+  --surface-3: #262B30;
+  --border: #2A2F35;
+  --border-hover: #3A4048;
+  --border-strong: #6B7480;
+
+  /* Text — all AA on every surface step above */
+  --text: #ECEEF0;
+  --text-muted: #A9B0B8;
+  --text-subtle: #8F97A1;
+
+  /* Tally — primary actions, selection, live state. */
+  --accent: #FF6A3D;
+  --accent-hover: #FF7F57;
+  --accent-press: #FFB199;
+  --accent-text: #FF8F6B;
+  --accent-muted: #2A1A14;
+  --accent-border: #5C2E1F;
+  --accent-glow: rgba(255, 106, 61, 0.22);
+  --on-accent: #160A05;
+
+  /* Status: fill (dots/bars), text (AA), wash, border */
+  --success: #2FB574;
+  --success-text: #5AD49A;
+  --success-muted: #10231A;
+  --success-border: #1F4A35;
+  --warning: #E5A23A;
+  --warning-text: #F0BC6A;
+  --warning-muted: #2A2112;
+  --warning-border: #57431C;
+  --error: #E5484D;
+  --error-text: #FF8589;
+  --error-muted: #2B1516;
+  --error-border: #5E2527;
+  --info: #4C9AFF;
+  --info-text: #8ABEFF;
+  --info-muted: #111F33;
+  --info-border: #214068;
+
+  /* Host identity — seat-indexed, each AA as text on --surface */
+  --host-a: #FF8F6B;
+  --host-b: #5EC4E0;
+  --host-c: #E58AC0;
+  --host-d: #E0B05C;
+
+  /* Audio motif — one hue, two stops */
+  --wave-hot: #FF6A3D;
+  --wave-warm: #FFB37A;
+
+  /* Legacy aliases still read by older panels */
+  --bg-primary: var(--bg);
+  --bg-secondary: var(--surface);
+  --bg-tertiary: var(--surface-2);
+  --border-color: var(--border);
+  --text-primary: var(--text);
+  --text-secondary: var(--text-muted);
+  --accent-color: var(--accent-text);
+  --success-color: var(--success-text);
+  --warning-color: var(--warning-text);
+  --error-color: var(--error-text);
+
+  /* Type */
+  --font-family: var(--font-body-next), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-family);
+  --font-editorial: var(--font-editorial-next), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+
+  /* Shape & depth */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --shadow-xs: none;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 12px 28px -8px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-3: 0 28px 56px -12px rgba(0, 0, 0, 0.7);
+  --shadow-accent: none;
+  --ring: 0 0 0 3px rgba(255, 106, 61, 0.32);
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  /* Shell metrics */
+  --studio-rail: 232px;
+  --studio-rail-collapsed: 64px;
+  --studio-dock-h: 64px;
+
+  color-scheme: dark;
+  font-family: var(--font-family);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Paper — the same tokens for a bright room. */
+.studioShell[data-theme="light"],
+.studioAuthSurface[data-theme="light"] {
+  --bg: #F5F4F1;
   --surface: #FFFFFF;
-  --surface-2: #F2F4F7;
-  --surface-3: #EAECF0;
-  --border: #E4E7EC;
-  --border-hover: #D0D5DD;
-  --border-strong: #98A2B3;
+  --surface-2: #F1EFEB;
+  --surface-3: #E7E4DE;
+  --border: #E2DED7;
+  --border-hover: #CFCAC1;
+  --border-strong: #958E82;
 
-  /* Text — all AA on --surface and --bg */
-  --text: #101828;
-  --text-muted: #475467;
-  --text-subtle: #5D6B82;
+  --text: #1A1816;
+  --text-muted: #4F4A44;
+  --text-subtle: #675F56;
 
-  /* Brand — indigo. Primary actions, selection, focus. */
-  --accent: #4F46E5;
-  --accent-hover: #4338CA;
-  --accent-press: #3730A3;
-  --accent-text: #4338CA;
-  --accent-muted: #EEF2FF;
-  --accent-border: #C7D2FE;
-  --accent-glow: rgba(79, 70, 229, 0.18);
+  --accent: #C73E14;
+  --accent-hover: #B03510;
+  --accent-press: #932B0C;
+  --accent-text: #B03510;
+  --accent-muted: #FCEEE8;
+  --accent-border: #F3C3B0;
+  --accent-glow: rgba(199, 62, 20, 0.16);
   --on-accent: #FFFFFF;
 
-  /* Status: fill (for dots/bars), text (AA), wash, border */
   --success: #079455;
   --success-text: #067647;
   --success-muted: #ECFDF3;
@@ -69,59 +164,29 @@
   --info-muted: #EFF8FF;
   --info-border: #B2DDFF;
 
-  /* Host identity — each AA as text on white */
-  --host-a: #4F46E5;
+  --host-a: #B03510;
   --host-b: #0E7490;
-  --host-c: #C11574;
-  --host-d: #B54708;
+  --host-c: #A8256F;
+  --host-d: #8A5A00;
 
-  /* Audio motif — one hue, two stops */
-  --wave-hot: #4F46E5;
-  --wave-warm: #818CF8;
+  --wave-hot: #C73E14;
+  --wave-warm: #F08A5D;
 
-  /* Legacy aliases still read by older panels */
-  --bg-primary: var(--bg);
-  --bg-secondary: var(--surface);
-  --bg-tertiary: var(--surface-2);
-  --border-color: var(--border);
-  --text-primary: var(--text);
-  --text-secondary: var(--text-muted);
-  --accent-color: var(--accent-text);
-  --success-color: var(--success-text);
-  --warning-color: var(--warning-text);
-  --error-color: var(--error-text);
-
-  /* Type — one family. Display is the body face at a heavier weight. */
-  --font-family: var(--font-body-next), Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-display: var(--font-family);
-
-  /* Shape & depth */
-  --radius-sm: 6px;
-  --radius: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --shadow-xs: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --shadow-1: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-2: 0 12px 24px -6px rgba(16, 24, 40, 0.14), 0 4px 8px -4px rgba(16, 24, 40, 0.06);
-  --shadow-3: 0 24px 48px -12px rgba(16, 24, 40, 0.22);
-  --shadow-accent: none;
-  --ring: 0 0 0 3px rgba(79, 70, 229, 0.22);
-
-  /* Shell metrics */
-  --studio-rail: 248px;
-  --studio-rail-collapsed: 64px;
+  --shadow-xs: 0 1px 2px rgba(26, 24, 22, 0.05);
+  --shadow-1: 0 1px 3px rgba(26, 24, 22, 0.08), 0 1px 2px rgba(26, 24, 22, 0.04);
+  --shadow-2: 0 12px 24px -6px rgba(26, 24, 22, 0.14), 0 4px 8px -4px rgba(26, 24, 22, 0.06);
+  --shadow-3: 0 24px 48px -12px rgba(26, 24, 22, 0.22);
+  --ring: 0 0 0 3px rgba(199, 62, 20, 0.22);
+  --scrim: rgba(26, 24, 22, 0.4);
 
   color-scheme: light;
-  font-family: var(--font-family);
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  font-feature-settings: "cv11", "ss01";
 }
 
 /* The Studio paints the whole canvas, including below short pages. */
 html:has(.studioShell),
-body:has(.studioShell) { background: #F6F7F9; }
+body:has(.studioShell) { background: #0F1113; }
+html:has(.studioShell[data-theme="light"]),
+body:has(.studioShell[data-theme="light"]) { background: #F5F4F1; }
 
 .studioShell ::selection { background: var(--accent-muted); color: var(--accent-press); }
 .studioShell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
@@ -525,7 +590,7 @@ body:has(.studioShell) { background: #F6F7F9; }
 .studioScrim {
   position: fixed;
   inset: 0;
-  background: rgba(16, 24, 40, 0.4);
+  background: var(--scrim);
   z-index: 55;
   border: none;
   cursor: pointer;
@@ -550,7 +615,7 @@ body:has(.studioShell) { background: #F6F7F9; }
   justify-content: center;
   align-items: flex-start;
   padding: 12vh var(--sp-4) var(--sp-4);
-  background: rgba(16, 24, 40, 0.35);
+  background: var(--scrim);
   animation: fadeIn 0.12s ease both;
 }
 .cmdkPanel {
@@ -3566,7 +3631,7 @@ body:has(.studioShell) { background: #F6F7F9; }
   padding: var(--sp-3) var(--sp-8);
   border-top: 1px solid var(--border);
   background: var(--surface);
-  box-shadow: 0 -4px 12px -6px rgba(16, 24, 40, 0.08);
+  box-shadow: var(--shadow-1);
 }
 .epActionBarWhat { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
 .epActionBarStage {

@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import type { BusinessProfile } from "@prisma/client";
+import { showHue, showInitials } from "../../lib";
 import StudioPageHeader from "../../StudioPageHeader";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -14,11 +15,13 @@ import {
 } from "./BusinessResearchClient";
 
 export const BUSINESS_TABS = [
+  // In the order the work happens: know the business, research the industry,
+  // choose a topic, verify it, produce it.
   { id: "overview", label: "Overview" },
-  { id: "radar", label: "Industry Radar" },
-  { id: "topics", label: "Topic Opportunities" },
-  { id: "insider", label: "Insider Intelligence" },
-  { id: "dossiers", label: "Research Dossiers" },
+  { id: "radar", label: "Discover" },
+  { id: "topics", label: "Topics" },
+  { id: "insider", label: "Insider angles" },
+  { id: "dossiers", label: "Dossiers" },
   { id: "episodes", label: "Episodes" },
 ] as const;
 export type BusinessTab = (typeof BUSINESS_TABS)[number]["id"];
@@ -46,8 +49,22 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
         title={podcast.name}
         subtitle={`Business podcast · ${profile.businessName} · ${profile.industry}`}
         breadcrumb={[{ label: "Shows", href: "/studio/shows" }]}
-        actions={<DiscoveryButton podcastId={podcast.id} status={profile.discoveryStatus} hasRun={!!profile.discoveredAt} />}
+        actions={
+          <>
+            <DiscoveryButton podcastId={podcast.id} status={profile.discoveryStatus} hasRun={!!profile.discoveredAt} />
+            <Link href={`/studio/desk?desk=business&show=${podcast.id}`} className="btnPrimary" data-new-episode>New episode</Link>
+          </>
+        }
       />
+      <header className="showHead showHead--tight">
+        <span className="showArt showArt--lg" data-hue={showHue(podcast.id)} aria-hidden="true">{showInitials(podcast.name)}</span>
+        <div className="showHeadText">
+          <div className="overline">{profile.businessName} · {profile.industry}</div>
+          <p className="showHeadPromise">
+            This show is researched, not improvised. Every episode starts from a topic the research found, a dossier that verified it, and a script checked against its sources.
+          </p>
+        </div>
+      </header>
       <nav className="bizTabs" aria-label="Business show sections">
         {BUSINESS_TABS.map((t) => (
           <Link key={t.id} href={`/studio/shows/${podcast.id}?tab=${t.id}`} aria-current={t.id === tab ? "page" : undefined}>{t.label}</Link>

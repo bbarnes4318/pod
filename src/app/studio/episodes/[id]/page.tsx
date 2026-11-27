@@ -3,6 +3,9 @@ import StudioPageHeader from "../../StudioPageHeader";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { currentUser } from "@/lib/currentUser";
+import { canViewOwned } from "@/lib/ownerScope";
+import { isOwnerAccount } from "@/lib/services/entitlementService";
 import { qualityOf, fmtDuration, fmtDate, statusChip, nextActionFor } from "../../lib";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
@@ -36,10 +39,18 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
     where: { id },
     include: {
       scripts: { orderBy: { version: "desc" }, take: 1 },
+      podcast: { select: { id: true, name: true } },
     },
   });
   if (!episode) notFound();
+  // An episode is its creator's. This page used to render ANY episode to any
+  // signed-in account that had (or guessed) its id: script, audio and all.
+  // The actions were already owner-gated; the read was not.
+  const viewer = await currentUser();
+  if (!canViewOwned(viewer, episode)) notFound();
+  const isOperator = !!viewer && isOwnerAccount(viewer);
 
+  const show = episode.podcast;
   const script = episode.scripts[0] ?? null;
   const q = qualityOf(script);
   const segments: any[] = (script?.content as any)?.segments ?? [];
@@ -213,25 +224,35 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           canRun={script?.status === "approved"}
         />
       )}
-      <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
+      {/* How the script was written, role by role. Useful when something looks
+          off; noise the rest of the time, so it waits behind a disclosure. */}
+      <details className="epOpsDetails epAdvanced">
+        <summary>How this script was written</summary>
+        <div className="mt-3">
+          <RoleTracePanel trace={(script?.content as any)?.pipelineProvenance?.roleTrace ?? null} />
+        </div>
+      </details>
 
       <div className="studioCard">
-        <div className="sectionTitle mb-4">Quick actions</div>
+        <div className="sectionTitle mb-4">Files and links</div>
         <div className="epStack">
-          {bustedAudioUrl && (
-            <a href={bustedAudioUrl} download className="btnGhost">⬇ Download MP3</a>
+          {bustedAudioUrl ? (
+            <a href={bustedAudioUrl} download className="btnGhost">Download MP3</a>
+          ) : (
+            <p className="epNote">The MP3 appears here once the mix is finished.</p>
           )}
-          <Link href="/rss" className="btnGhost">🔗 Public RSS feed</Link>
-          {/* Ops-level shortcuts — kept reachable but visually secondary */}
-          {script && (
+          {episode.status === "published" && <Link href="/rss" className="btnGhost">Open the public feed</Link>}
+          {/* The ops console is a separate, operator-only tool. Creators are
+              never pointed at it: everything they need is in the stages above. */}
+          {isOperator && script && (
             <details className="epOpsDetails">
-              <summary>Advanced / ops shortcuts</summary>
+              <summary>Operator shortcuts</summary>
               <div className="epStack mt-3">
                 {episode.status !== "published" && (
-                  <Link href={`/admin/rss/${script.id}`} className="btnGhost">📡 Publish to feed (ops)</Link>
+                  <Link href={`/admin/rss/${script.id}`} className="btnGhost">Publish to feed (ops)</Link>
                 )}
-                <Link href={`/admin/final-audio/${script.id}`} className="btnGhost">🎛 Remix / regenerate audio</Link>
-                <Link href={`/admin/scripts/${script.id}`} className="btnGhost">📝 Open script in ops</Link>
+                <Link href={`/admin/final-audio/${script.id}`} className="btnGhost">Final audio (ops)</Link>
+                <Link href={`/admin/scripts/${script.id}`} className="btnGhost">Script (ops)</Link>
               </div>
             </details>
           )}
@@ -240,15 +261,63 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
     </div>
   );
 
-  // ---- Assemble tabs, skipping any panel that has no data for this episode ----
+  // ---- Rundown: what this episode covers, in order ----
+  // Read from the script that exists. Before there is one, the rundown is the
+  // topics the episode was created from; nothing here is projected.
+  const rundownNode = (
+    <div className="epRundown">
+      {segments.length === 0 ? (
+        <p className="epNote">The rundown appears as soon as the script is drafted.</p>
+      ) : (
+        <ol className="epRundownList">
+          {segments.map((seg, i) => {
+            const lines: any[] = Array.isArray(seg.lines) ? seg.lines : [];
+            const words = lines.reduce((n, l) => n + String(l?.text ?? "").split(/\s+/).filter(Boolean).length, 0);
+            return (
+              <li key={i} className="epRundownRow">
+                <span className="epRundownNum">{String(i + 1).padStart(2, "0")}</span>
+                <span className="epRundownBody">
+                  <span className="epRundownTitle">{seg.title || String(seg.type ?? "Segment").replace(/_/g, " ")}</span>
+                  <span className="epRundownMeta">
+                    {String(seg.type ?? "segment").replace(/_/g, " ")} · {lines.length} line{lines.length === 1 ? "" : "s"} · {words} words
+                  </span>
+                </span>
+                <Link href="#transcript" className="btnSubtle btnSm">Read</Link>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+
+  // ---- The lifecycle: Overview, then Rundown → Script → Audio & mix → Release ----
+  // Keys are unchanged (#transcript, #produce, #publish still land), so every
+  // existing link into this page keeps working. Which stage is "current" comes
+  // from the same next-action rule the header button uses.
+  const STAGE_ORDER = ["rundown", "transcript", "produce", "publish"];
+  const actionKey = action.href.includes("#") ? action.href.split("#")[1] : null;
+  const currentKey =
+    episode.status === "published" ? null
+    : actionKey ?? (script ? (episode.status === "audio_stitching" ? "produce" : "transcript") : "rundown");
+  const stageState = (key: string): WorkspaceTab["state"] => {
+    if (episode.status === "published") return "done";
+    if (!currentKey) return undefined;
+    const at = STAGE_ORDER.indexOf(key);
+    const cur = STAGE_ORDER.indexOf(currentKey);
+    return at < cur ? "done" : at === cur ? "current" : "todo";
+  };
+
   const tabs: WorkspaceTab[] = [
-    { key: "overview", label: "Overview", hint: "Score & actions", node: overviewNode },
+    { key: "overview", label: "Overview", hint: "Quality and checks", node: overviewNode },
+    { key: "rundown", label: "Rundown", hint: "What it covers", node: rundownNode, state: stageState("rundown") },
   ];
   if (transcriptVm && script) {
     tabs.push({
       key: "transcript",
-      label: "Transcript",
-      hint: "Edit & fact-check",
+      label: "Script",
+      hint: "Edit and fact-check",
+      state: stageState("transcript"),
       node: (
         <TranscriptWorkspace episodeId={episode.id} initialVm={transcriptVm} showPublish canRevoice={mixVm?.fullyVoiced ?? false} />
       ),
@@ -257,8 +326,9 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   if (script) {
     tabs.push({
       key: "produce",
-      label: "Produce",
-      hint: "Voices & mix",
+      label: "Audio and mix",
+      hint: "Voices, sound, timeline",
+      state: stageState("produce"),
       node: (
         <div className="epStackWide">
           <AdvancedProducer
@@ -272,7 +342,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
           {mixVm && (
             <div>
               <div className="sectionHead mt-0">
-                <h2 className="sectionTitle">Mix & timeline</h2>
+                <h2 className="sectionTitle">Mix and timeline</h2>
               </div>
               <MixView episodeId={episode.id} initialVm={mixVm} />
             </div>
@@ -283,25 +353,36 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       ),
     });
     tabs.push({
-      key: "promote",
-      label: "Promote",
-      hint: "Social clip",
-      node: <SocialClipPanel episodeId={episode.id} />,
-    });
-    tabs.push({
       key: "publish",
-      label: "Publish",
-      hint: "Assets & go live",
-      node: <PublishPanel episodeId={episode.id} />,
+      label: "Release",
+      hint: "Checklist, assets, promo",
+      state: stageState("publish"),
+      // The promo clip is part of getting an episode out, not a stage of its
+      // own. #promote still lands here.
+      aliases: ["promote"],
+      node: (
+        <div className="epStackWide">
+          <PublishPanel episodeId={episode.id} />
+          <div id="promote">
+            <div className="sectionHead">
+              <h2 className="sectionTitle">Promo clip</h2>
+            </div>
+            <SocialClipPanel episodeId={episode.id} />
+          </div>
+        </div>
+      ),
     });
   }
+  // Open on the stage that needs the visitor, not on a summary of it.
+  const initialKey = currentKey && actionKey && tabs.some((t) => t.key === actionKey) ? actionKey : "overview";
 
   return (
     <div className="fadeUp">
       {/* ---- Anchor: identity, score, and the player stay fixed above the tabs ---- */}
       <StudioPageHeader
         title={episode.title}
-        breadcrumb={[{ label: "Episodes", href: "/studio/episodes" }]}
+        subtitle={show ? show.name : "Standalone episode"}
+        breadcrumb={show ? [{ label: "Shows", href: "/studio/shows" }, { label: show.name, href: `/studio/shows/${show.id}` }] : [{ label: "Episodes", href: "/studio/episodes" }]}
         actions={
           <>
             {q && (
@@ -347,7 +428,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
 
       {/* ---- Everything else, organized into one focused tab at a time ---- */}
       <div className="mt-6">
-        <EpisodeWorkspace tabs={tabs} />
+        <EpisodeWorkspace tabs={tabs} initialKey={initialKey} />
       </div>
 
       {/* ---- The action bar ----

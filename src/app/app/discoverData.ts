@@ -56,7 +56,10 @@ export async function getDiscoverData(): Promise<DiscoverData> {
   try {
     const [episodes, takes, scores] = await Promise.all([
       db.episode.findMany({
-        where: { audioUrl: { not: null } },
+        // Discover is a PUBLIC listening page. It used to list every episode
+        // with audio, whatever its owner or stage, which put one creator's
+        // unreleased work in front of everyone. Only released episodes belong here.
+        where: { audioUrl: { not: null }, status: "published" },
         orderBy: { updatedAt: "desc" },
         take: 9,
         select: { id: true, title: true, audioUrl: true, durationSeconds: true, updatedAt: true, status: true, description: true },

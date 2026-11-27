@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Barlow_Condensed, Inter } from "next/font/google";
+import { Barlow_Condensed, Inter, Newsreader } from "next/font/google";
 import "./globals.css";
 
 const display = Barlow_Condensed({
@@ -11,6 +11,13 @@ const display = Barlow_Condensed({
 const body = Inter({
   subsets: ["latin"],
   variable: "--font-body-next",
+});
+
+// The Studio's editorial face: the briefing, a show's name, a topic's headline.
+const editorial = Newsreader({
+  subsets: ["latin"],
+  weight: ["500", "600"],
+  variable: "--font-editorial-next",
 });
 
 // viewport-fit=cover so env(safe-area-inset-*) is non-zero on notched phones
@@ -33,7 +40,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable}`}>
+    <html lang="en" className={`${display.variable} ${body.variable} ${editorial.variable}`}>
       <body>{children}</body>
     </html>
   );

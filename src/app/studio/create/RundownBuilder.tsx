@@ -56,7 +56,7 @@ export interface TtsEngineChoice { key: string; label: string; available: boolea
 type CreateResult = Awaited<ReturnType<typeof createStudioEpisode>>;
 
 export default function RundownBuilder({
-  podcasts, initialTopics, hosts, initialDraft, maxTopics, seedTopicId, ttsEngines,
+  podcasts, initialTopics, hosts, initialDraft, maxTopics, seedTopicId, seedPodcastId, ttsEngines,
 }: {
   podcasts: BuilderPodcast[];
   initialTopics: StudioTopicVM[];
@@ -64,6 +64,8 @@ export default function RundownBuilder({
   initialDraft: RundownDraftState | null;
   maxTopics: number;
   seedTopicId?: string | null;
+  /** "New episode" pressed from a show: start inside that show, on Topics. */
+  seedPodcastId?: string | null;
   ttsEngines: TtsEngineChoice[];
 }) {
   const d = initialDraft;
@@ -289,6 +291,23 @@ export default function RundownBuilder({
     setInheritNote(parts.length ? parts.join(" ") : null);
     void refreshTopics(pid);
   };
+
+  // Arriving from a show ("New episode" on its page, or on Home) starts the
+  // rundown inside that show with its hosts, length and coverage inherited,
+  // and skips the "which show?" step the visitor has already answered.
+  // Runs once; a draft already on this show is left exactly as it was.
+  const seededShow = useRef(false);
+  useEffect(() => {
+    if (seededShow.current || !seedPodcastId) return;
+    seededShow.current = true;
+    if (!podcasts.some((p) => p.id === seedPodcastId)) return;
+    // A one-time seed from the URL, applied through the same handler a click
+    // uses so inheritance behaves identically.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (podcastId !== seedPodcastId) onSelectPodcast(seedPodcastId);
+    setStep((current) => (current === "show" ? "topics" : current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedPodcastId]);
 
   const orderedSelected = useMemo(
     () => selectedIds.map((id) => byId.get(id)).filter((t): t is StudioTopicVM => !!t),
@@ -647,7 +666,7 @@ export default function RundownBuilder({
                place to change it linked. */
             <p className="stageHint mb-2" data-testid="format-inherited">
               This show uses <strong className="u-strong">{format.displayName}</strong> — change it in{" "}
-              <Link href={`/app/podcasts/${podcastId}`}>show settings →</Link>
+              <Link href={`/studio/shows/${podcastId}`}>show settings →</Link>
             </p>
           ) : (
             <div className="segRow u-wrap mb-2" role="radiogroup" aria-label="Show format">

@@ -34,7 +34,9 @@ assert(studioShell.includes('label: "Shows"'), "Studio navigation does not name 
 // than a grep for decoration: it fails if the page stops naming itself at all.
 assert(shows.includes("<StudioPageHeader"), "the canonical Shows page does not publish its identity to the shell");
 assert(shows.includes('title="Shows"'), "the canonical Shows page does not name itself in the chrome");
-assert(shows.includes("Build a show"), "the canonical Shows page has no unmistakable Show Forge entry point");
+// The one show-creation action is named "New show" everywhere in the Studio
+// (shell, palette, Shows page); it still opens Show Forge at /studio/shows/new.
+assert(shows.includes("New show") && shows.includes('href="/studio/shows/new"'), "the canonical Shows page has no unmistakable Show Forge entry point");
 assert(forge.includes("Build your show"), "the Studio creation route does not present Show Forge");
 assert(forge.includes("theme, listener promise, cast chemistry"), "the Studio creation route does not explain the real show-building experience");
 assert(legacyShows.includes('redirect("/studio/shows")'), "legacy show bookmarks do not redirect safely into Studio");

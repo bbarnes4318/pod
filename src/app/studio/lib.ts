@@ -94,3 +94,42 @@ export function statusChip(status: string): { label: string; kind: "accent" | "s
       return { label: status.replace(/_/g, " "), kind: "plain" };
   }
 }
+
+/* ---- Show identity ---------------------------------------------------- *
+ * A show without uploaded cover art still needs a face. These derive one
+ * from the show itself: its initials on one of four token-backed fields,
+ * chosen by a stable hash of its id so a show looks the same everywhere.
+ * ----------------------------------------------------------------------- */
+export type ShowHue = "a" | "b" | "c" | "d";
+
+export function showHue(id: string): ShowHue {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (["a", "b", "c", "d"] as const)[h % 4];
+}
+
+export function showInitials(name: string): string {
+  const words = name.replace(/^the\s+/i, "").split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const letters = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2);
+  return letters.toUpperCase();
+}
+
+/** "3h ago" / "2d ago". */
+export function agoLabel(d: Date | string): string {
+  const ms = Date.now() - new Date(d).getTime();
+  if (!Number.isFinite(ms) || ms < 60000) return "just now";
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.round(hrs / 24)}d ago`;
+}
+
+/**
+ * Every re-mix overwrites the same storage key, so the URL never changes and a
+ * browser replays its first cached copy forever. updatedAt advances on every
+ * stitch; appending it forces a fetch of the render that just finished.
+ */
+export function bustAudioUrl(audioUrl: string, updatedAt: Date | string): string {
+  return `${audioUrl}${audioUrl.includes("?") ? "&" : "?"}v=${Math.floor(new Date(updatedAt).getTime() / 1000)}`;
+}

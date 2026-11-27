@@ -86,6 +86,7 @@ export default async function TakesBoard({
     <div className="fadeUp">
       <StudioPageHeader
         title="Takes"
+        breadcrumb={[{ label: "Editorial desk", href: "/studio/desk" }]}
         subtitle="Every candidate story, ranked by how argue-worthy it is right now."
       />
 
