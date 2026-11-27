@@ -148,6 +148,11 @@ export interface PromotionVM {
   canRollback: boolean;
 }
 
+export interface Preselect {
+  hostId?: string;
+  partnerHostId?: string;
+}
+
 export interface PackVM {
   version: string;
   sceneCount: number;
@@ -172,14 +177,20 @@ export default function AuditionConsole({
   promotions,
   pack,
   signedIn,
+  preselect,
 }: {
   hosts: HostOptionVM[];
   auditions: AuditionVM[];
   promotions: PromotionVM[];
   pack: PackVM;
   signedIn: boolean;
+  /** From a Talent profile link: the host to audition and its scene partner. */
+  preselect?: Preselect;
 }) {
-  const [creating, setCreating] = useState(false);
+  // Only a host the viewer may run an audition for opens the form.
+  const preselectedHost = hosts.find((host) => host.ownedByMe && host.id === preselect?.hostId);
+  const preselectedPartner = hosts.find((host) => host.hasVoice && host.id === preselect?.partnerHostId);
+  const [creating, setCreating] = useState(signedIn && !!preselectedHost);
   const [showPack, setShowPack] = useState(false);
 
   return (
@@ -217,7 +228,7 @@ export default function AuditionConsole({
         </ol>
       )}
 
-      {creating && <NewAudition hosts={hosts} onDone={() => setCreating(false)} />}
+      {creating && <NewAudition hosts={hosts} initialHostId={preselectedHost?.id} initialTitle={preselectedHost && preselectedPartner ? `${preselectedHost.name} with ${preselectedPartner.name}` : undefined} onDone={() => setCreating(false)} />}
 
       {auditions.length === 0 && (
         <div className="emptyNote mt-6">
@@ -226,7 +237,7 @@ export default function AuditionConsole({
       )}
 
       {auditions.map((audition) => (
-        <AuditionCard key={audition.id} audition={audition} hosts={hosts} />
+        <AuditionCard key={audition.id} audition={audition} hosts={hosts} preselect={preselect} />
       ))}
 
       <PromotionHistory promotions={promotions} />
@@ -234,11 +245,11 @@ export default function AuditionConsole({
   );
 }
 
-function NewAudition({ hosts, onDone }: { hosts: HostOptionVM[]; onDone: () => void }) {
+function NewAudition({ hosts, initialHostId, initialTitle, onDone }: { hosts: HostOptionVM[]; initialHostId?: string; initialTitle?: string; onDone: () => void }) {
   const router = useRouter();
   const editable = hosts.filter((host) => host.ownedByMe);
-  const [title, setTitle] = useState("");
-  const [hostId, setHostId] = useState(editable[0]?.id ?? "");
+  const [title, setTitle] = useState(initialTitle ?? "");
+  const [hostId, setHostId] = useState(initialHostId ?? editable[0]?.id ?? "");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -291,7 +302,7 @@ function NewAudition({ hosts, onDone }: { hosts: HostOptionVM[]; onDone: () => v
   );
 }
 
-function AuditionCard({ audition, hosts }: { audition: AuditionVM; hosts: HostOptionVM[] }) {
+function AuditionCard({ audition, hosts, preselect }: { audition: AuditionVM; hosts: HostOptionVM[]; preselect?: Preselect }) {
   const isDraft = audition.status === "draft";
   const isVoting = audition.status === "voting";
 
@@ -308,7 +319,7 @@ function AuditionCard({ audition, hosts }: { audition: AuditionVM; hosts: HostOp
       </div>
       {audition.notes && <p className="advCardSub">{audition.notes}</p>}
 
-      {isDraft && <DraftStage audition={audition} hosts={hosts} />}
+      {isDraft && <DraftStage audition={audition} hosts={hosts} preselect={preselect} />}
       {!isDraft && <ListeningStage audition={audition} />}
       {!isDraft && !isVoting && <DecisionStage audition={audition} />}
       {audition.revealed && <RevealTable rows={audition.revealed} />}
@@ -316,7 +327,7 @@ function AuditionCard({ audition, hosts }: { audition: AuditionVM; hosts: HostOp
   );
 }
 
-function DraftStage({ audition, hosts }: { audition: AuditionVM; hosts: HostOptionVM[] }) {
+function DraftStage({ audition, hosts, preselect }: { audition: AuditionVM; hosts: HostOptionVM[]; preselect?: Preselect }) {
   const router = useRouter();
   const voiced = hosts.filter((host) => host.hasVoice);
   const [provider, setProvider] = useState<string>("fish");
@@ -324,7 +335,9 @@ function DraftStage({ audition, hosts }: { audition: AuditionVM; hosts: HostOpti
   const [model, setModel] = useState("");
   const [label, setLabel] = useState("");
   const [partnerHostId, setPartnerHostId] = useState(
-    voiced.find((host) => host.id !== audition.hostId)?.id ?? voiced[0]?.id ?? ""
+    // A partner preselected from a Talent profile applies to that host's audition only.
+    (audition.hostId === preselect?.hostId ? voiced.find((host) => host.id === preselect?.partnerHostId)?.id : undefined)
+      ?? voiced.find((host) => host.id !== audition.hostId)?.id ?? voiced[0]?.id ?? ""
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
