@@ -389,6 +389,10 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
           where: { id: segment.id },
           data: {
             status: "ready",
+            // The words this recording actually says. Written on every
+            // synthesis, not only at creation: an edited line that is re-voiced
+            // must stop reading as stale (see staleLineIndexes).
+            text: line.text,
             audioUrl: uploadResult.url,
             durationMs: ttsResult.durationMs || null,
             provider: hostProviderName,
