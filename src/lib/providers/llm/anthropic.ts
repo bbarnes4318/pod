@@ -409,6 +409,27 @@ export class AnthropicLLMProvider implements LLMProvider {
   }
 
   async generateStructuredOutput<T = any>(options: GenerateStructuredOutputOptions): Promise<T> {
+    // The caller's schema and validator used to be dropped on this provider, so
+    // Claude guessed the shape (live: dossier verifiedStatistics came back as an
+    // object). Send the schema, run the validator, and on a rejection make ONE
+    // repair request naming the error — the contract in interface.ts.
+    const withSchema: GenerateStructuredOutputOptions = options.jsonSchema
+      ? { ...options, systemPrompt: `${options.systemPrompt || ""}\n\nYour JSON MUST match this JSON Schema exactly (arrays stay arrays, every required key present, respect maxItems/maxLength):\n${JSON.stringify(options.jsonSchema)}` }
+      : options;
+    const first = await this.structuredWithJsonRetry<T>(withSchema);
+    const problem = options.validate?.(first) ?? null;
+    if (!problem) return first;
+    console.warn(`[Anthropic] structured reply failed validation; asking once more (${problem.slice(0, 160)})`);
+    const repaired = await this.structuredWithJsonRetry<T>({
+      ...withSchema,
+      prompt: `${options.prompt}\n\nYour previous reply was rejected: ${problem}\nReturn the complete JSON again, fixed so it matches the schema.`,
+    });
+    const still = options.validate?.(repaired) ?? null;
+    if (still) throw new Error(`[Anthropic] structured output failed validation after one repair: ${still}`);
+    return repaired;
+  }
+
+  private async structuredWithJsonRetry<T>(options: GenerateStructuredOutputOptions): Promise<T> {
     try {
       return await this.structuredOnce<T>(options);
     } catch (err) {
