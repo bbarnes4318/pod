@@ -150,7 +150,9 @@ export default function AudioLibrary(props: {
         </form>
       </section>
 
-      <table className="alTable" data-testid="asset-table">
+      {/* Focusable because it scrolls sideways on a narrow screen: a scroll
+          region a keyboard cannot reach is an axe "serious" violation. */}
+      <table className="alTable" data-testid="asset-table" tabIndex={0} aria-label="Audio assets">
         <thead>
           <tr className="u-left">
             <th>Name</th><th>Kind</th><th>Source</th><th>Duration</th><th>License</th><th>Rights</th><th>Status</th><th>Used</th><th>Actions</th>

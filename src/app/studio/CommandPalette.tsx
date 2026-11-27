@@ -175,7 +175,7 @@ export default function CommandPalette({
                 >
                   <span className="cmdkItemIcon">{item.icon}</span>
                   <span className="cmdkItemLabel">
-                    {item.label}
+                    <span className="cmdkItemText">{item.label}</span>
                     {item.sub && <span className="cmdkItemSub">{item.sub}</span>}
                   </span>
                   {item.hint ? <kbd className="cmdkKbd cmdkItemHint">{item.hint}</kbd> : <span className="cmdkItemGo">{Icon.enter}</span>}

@@ -52,7 +52,7 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
         actions={
           <>
             <DiscoveryButton podcastId={podcast.id} status={profile.discoveryStatus} hasRun={!!profile.discoveredAt} />
-            <Link href={`/studio/desk?desk=business&show=${podcast.id}`} className="btnPrimary">New episode</Link>
+            <Link href={`/studio/desk?desk=business&show=${podcast.id}`} className="btnPrimary" data-new-episode>New episode</Link>
           </>
         }
       />

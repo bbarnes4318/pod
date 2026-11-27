@@ -245,7 +245,11 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 
 /* ---- Command palette additions ---- */
 .cmdkItemLabel { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
-.cmdkItemSub { font-size: 12px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One line per result. A long title used to wrap inside a fixed 40px row and
+   run into the row below it (seen at 390px). The title truncates; what kind of
+   thing it is stays readable beside it. */
+.cmdkItemText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdkItemSub { flex-shrink: 0; max-width: 45%; font-size: 12px; color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdkItemHint { flex-shrink: 0; }
 .cmdkFootHint { margin-left: auto; }
 @media (max-width: 720px) {
@@ -536,3 +540,97 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 .epRundownBody { display: grid; gap: 2px; min-width: 0; }
 .epRundownTitle { font-size: 15px; font-weight: 600; color: var(--text); }
 .epRundownMeta { font-size: 12px; color: var(--text-subtle); }
+
+/* ============================================================
+   TOPBAR — a page's own "New episode"
+   A show page offers New episode inside that show. The shell's global button
+   beside it said the same words and went somewhere less specific, so it steps
+   out while the page's own is on screen (the N shortcut still works).
+   ============================================================ */
+.studioTopbarRight:has(.studioTopbarActions [data-new-episode]) .studioGenerateBtn { display: none; }
+@media (max-width: 900px) {
+  /* Tablet and phone: the crumb trail, the episode's next step, the activity
+     lamp and New episode do not fit one bar. The next step is already the
+     sticky action bar at the bottom of the episode page, so it leaves here. */
+  .studioTopbarActions .epTopAction { display: none; }
+}
+@media (max-width: 720px) {
+  /* The phone topbar now also carries the activity lamp, and page actions were
+     pushing the title out of the bar and the document wider than the screen.
+     · A page's New episode becomes the same "+" the shell's button is here. */
+  .studioTopbarActions { min-width: 0; gap: var(--sp-1); }
+  .studioTopbarActions .btnPrimary,
+  .studioTopbarActions button { padding-left: 8px; padding-right: 8px; font-size: 12px; white-space: nowrap; }
+  .studioTopbarActions [data-new-episode] { width: 34px; padding: 0; font-size: 0; }
+  .studioTopbarActions [data-new-episode]::before { content: "+"; font-size: 20px; font-weight: 500; line-height: 1; }
+  .studioTopbarRight { gap: var(--sp-1); min-width: 0; }
+}
+
+/* ============================================================
+   AUDIO LIBRARY
+   The page reached the Studio with bare browser controls: grey system
+   buttons and white file inputs on charcoal, and a nine-column table that
+   widened the document at 390px and 1280px. Skinned here from the tokens,
+   by element, so the component and its test ids are untouched.
+   ============================================================ */
+.audioLibraryPage .alStatus { font-size: 13px; color: var(--text-muted); margin: 0; }
+.audioLibraryPage button {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hover);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.audioLibraryPage button:hover { background: var(--surface-2); }
+.audioLibraryPage button:disabled { color: var(--text-subtle); cursor: not-allowed; }
+.audioLibraryPage .alChipRow button { font-weight: 500; color: var(--text-muted); }
+.audioLibraryPage .alChipRow button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
+.audioLibraryPage button[type="submit"] { height: 36px; padding: 0 14px; background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-size: 14px; }
+.audioLibraryPage button[type="submit"]:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.audioLibraryPage button[type="submit"]:disabled { background: var(--surface-3); border-color: var(--surface-3); color: var(--text-subtle); }
+.audioLibraryPage .alUpload { background: var(--surface); border-radius: var(--radius-lg); padding: var(--sp-5, 20px); }
+.audioLibraryPage .alUpload h2 { font-size: 15px; font-weight: 600; color: var(--text); margin: 0 0 var(--sp-4); }
+.audioLibraryPage .alFieldGrid { gap: var(--sp-4); align-items: start; }
+.audioLibraryPage .alFieldGrid > * { min-width: 0; }
+.audioLibraryPage .alTable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.audioLibraryPage label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.audioLibraryPage label.alBlockField { margin: var(--sp-4) 0; }
+.audioLibraryPage label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: var(--sp-2); color: var(--text); }
+.audioLibraryPage input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
+.audioLibraryPage input:not([type]),
+.audioLibraryPage input[type="text"] {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+}
+.audioLibraryPage input[type="file"] { max-width: 100%; font-size: 13px; color: var(--text-muted); }
+.audioLibraryPage input[type="file"]::file-selector-button {
+  height: 32px;
+  margin-right: var(--sp-3);
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-hover);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+/* The table scrolls inside itself; the page never does. */
+.audioLibraryPage .alTable { display: block; overflow-x: auto; white-space: nowrap; font-size: 13px; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.audioLibraryPage .alTable th { padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text-subtle); text-align: left; }
+.audioLibraryPage .alTable td { padding: 10px 14px; }

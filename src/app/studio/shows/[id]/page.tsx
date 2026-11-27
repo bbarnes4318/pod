@@ -110,7 +110,7 @@ export default async function StudioShowHeadquartersPage({
         actions={
           <>
             <GenerateShowEpisodeButton podcastId={podcast.id} />
-            <Link href={`/studio/create?show=${podcast.id}`} className="btnPrimary">New episode</Link>
+            <Link href={`/studio/create?show=${podcast.id}`} className="btnPrimary" data-new-episode>New episode</Link>
           </>
         }
       />
