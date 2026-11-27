@@ -11,6 +11,7 @@ import { currentUser } from "@/lib/currentUser";
 import { ownerScope } from "@/lib/ownerScope";
 import { activeTopicCutoff } from "@/lib/services/topicFreshness";
 import { getStudioProductions, type StudioProductions } from "./productions";
+import { nextActionFor } from "./lib";
 
 export interface SearchHit {
   kind: "show" | "episode" | "host" | "topic";
@@ -40,7 +41,7 @@ export async function searchStudio(rawQuery: string): Promise<SearchHit[]> {
       where: { ...scope, title: contains },
       orderBy: { updatedAt: "desc" },
       take: PER_KIND,
-      select: { id: true, title: true, podcast: { select: { name: true } } },
+      select: { id: true, title: true, status: true, podcast: { select: { name: true } } },
     }),
     // Same visibility as the Talent page: your hosts plus the shared house cast.
     db.aiHost.findMany({
@@ -67,11 +68,21 @@ export async function searchStudio(rawQuery: string): Promise<SearchHit[]> {
 
   return [
     ...shows.map((s): SearchHit => ({ kind: "show", id: s.id, label: s.name, sub: s.intelligenceType === "BUSINESS" ? "Business show" : "Sports show", href: `/studio/shows/${s.id}` })),
-    ...episodes.map((e): SearchHit => ({ kind: "episode", id: e.id, label: e.title, sub: e.podcast?.name ?? "Standalone episode", href: `/studio/episodes/${e.id}` })),
-    ...hosts.map((h): SearchHit => ({ kind: "host", id: h.id, label: h.name, sub: h.role, href: "/studio/hosts" })),
-    ...sportsTopics.map((t): SearchHit => ({ kind: "topic", id: t.id, label: t.title, sub: `Sports take · ${t.sport}`, href: `/studio/create?topic=${t.id}` })),
-    ...businessTopics.map((t): SearchHit => ({ kind: "topic", id: t.id, label: t.title, sub: `Research topic · ${t.podcast.name}`, href: `/studio/shows/${t.podcastId}?tab=topics` })),
+    ...episodes.map((e): SearchHit => ({ kind: "episode", id: e.id, label: e.title, sub: e.podcast?.name ?? "Standalone episode", href: episodeHref(e) })),
+    ...hosts.map((h): SearchHit => ({ kind: "host", id: h.id, label: h.name, sub: h.role, href: `/studio/hosts#host-${h.id}` })),
+    ...sportsTopics.map((t): SearchHit => ({ kind: "topic", id: t.id, label: t.title, sub: `Sports take · ${t.sport}`, href: `/studio/desk?desk=sports&take=${t.id}` })),
+    ...businessTopics.map((t): SearchHit => ({ kind: "topic", id: t.id, label: t.title, sub: `Research topic · ${t.podcast.name}`, href: `/studio/desk?desk=business&show=${t.podcastId}&topic=${t.id}` })),
   ];
+}
+
+/**
+ * An episode hit lands on the stage that needs the viewer (the same mapping
+ * the episode page and the activity menu use). A published episode's next
+ * action is the public feed, which is not "the episode", so it opens the page.
+ */
+function episodeHref(e: { id: string; status: string }): string {
+  const href = nextActionFor(e).href;
+  return href.startsWith("/studio/episodes/") ? href : `/studio/episodes/${e.id}`;
 }
 
 /** What is in production and what is waiting on you. Polled by the shell. */

@@ -21,7 +21,8 @@ import GenerateShowEpisodeButton from "../GenerateShowEpisodeButton";
 import { PlayButton } from "../../StudioAudio";
 import { bustAudioUrl, showHue, showInitials } from "../../lib";
 import QualityTierSection from "./QualityTierSection";
-import BusinessShowView, { BUSINESS_TABS, type BusinessTab } from "./BusinessShowView";
+import BusinessShowView, { resolveBusinessView } from "./BusinessShowView";
+import "../shows-intel.css";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +56,10 @@ export default async function StudioShowHeadquartersPage({
   if (podcast.intelligenceType === "BUSINESS") {
     const profile = await db.businessProfile.findUnique({ where: { podcastId: podcast.id } });
     if (!profile) notFound();
-    const rawTab = (await searchParams).tab;
-    const tab = BUSINESS_TABS.find((t) => t.id === rawTab)?.id ?? ("overview" as BusinessTab);
-    return <BusinessShowView podcast={{ id: podcast.id, name: podcast.name }} profile={profile} tab={tab} />;
+    // Old ?tab= ids (radar, topics, insider, dossiers, episodes) still resolve.
+    const sp = await searchParams;
+    const { stage, scope } = resolveBusinessView(typeof sp.tab === "string" ? sp.tab : undefined, typeof sp.scope === "string" ? sp.scope : undefined);
+    return <BusinessShowView podcast={{ id: podcast.id, name: podcast.name }} profile={profile} stage={stage} scope={scope} />;
   }
 
   const [hostsRaw, teamsRaw] = await Promise.all([
