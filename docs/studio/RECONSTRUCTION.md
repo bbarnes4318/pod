@@ -13,13 +13,15 @@ every milestone. Continue from here; do not restart the design.
 | --- | --- |
 | Built | Workstream A (foundation) and B (creator headquarters) in full; the business half of C; the structural part of D; a first pass of E. |
 | Not built | See section 7. The largest gaps are AI-assisted script revision, the three-mode episode creation, the Talent creation workflow, and the audio workspace. |
-| Verified by | `npx tsc --noEmit` (clean) and the source-contract unit tests listed in section 8. |
-| **Not verified** | **Nothing has been run in a browser.** No dev server, no Playwright, no screenshots, no axe run. `AGENTS.md` rule 1 forbids running them on the owner's machine. Every visual and interactive claim in this document is from reading code, not from seeing it. The e2e specs were edited to match the new routes but have **not been executed**. |
-| CI | `CI: pending, to be run on the server` (`bash scripts/ci/run.sh fast`). |
+| Verified by | Local CI `fast` (exit 0), ten Playwright suites, screenshots at five widths in both themes, and a hands-on browser pass. All run in a cloud session on 2026-11-27, against the seeded test app. Section 8 has every command and result line. |
+| Still failing | `show-format`: 1 of 2 desktop tests fails (expects configuration snapshot `version` 3, the pipeline writes 5). The spec and `src/lib` are byte-identical to `main`, so this is not from this branch; it was left alone because the snapshot belongs to the generation pipeline. |
+| **Not verified** | Anything that needs a live provider: script generation, fact-check, voices (TTS), mix, show notes, voice design, business research runs. No LLM or TTS call was made. The tests use seeded database rows and silent audio. Production data, real cover art and long real titles have not been seen in the new layout. `full` CI (Docker image build and boot) was not run: this branch does not touch `prisma/`, the worker, the `Dockerfile`, `package.json` or startup code. |
+| CI | `══ fast: PASS ══  43 passed, 0 failed, 0 blocked in 2m48s` on commit `619b13f` (Node 20.20.2). |
 
-The acceptance criteria in the brief that require a real browser (screenshots
-at five widths, zero axe violations, zero horizontal overflow, the eight
-end-to-end scenarios) are therefore **open**, not met.
+The browser acceptance criteria are met **for seeded data**: screenshots at
+five widths, zero serious or critical axe violations on 16 routes at three
+widths in the charcoal theme, and no capture wider than its viewport. Axe was
+not run in the light theme; that theme was checked by eye at 1440 only.
 
 ---
 
@@ -97,7 +99,8 @@ enforcement rules, which are unchanged.
 - **Shape.** Radius 4 / 6 / 8 / 10. Pills are status only.
 - **Contrast.** Every text token was computed against every surface step in
   both themes; all pairs are ≥ 4.5:1 (lowest: `--text-subtle` on
-  `--surface-3`, 4.83 dark / 4.94 light). Computed, **not** axe-verified.
+  `--surface-3`, 4.83 dark / 4.94 light). axe-verified in the charcoal theme
+  (section 8); the light theme is computed only.
 - **Show art.** A show without a cover gets its initials on a token field,
   hue chosen by a stable hash of its id (`showHue`, `showInitials` in
   `src/app/studio/lib.ts`).
@@ -194,17 +197,19 @@ No routes were deleted. No database migration. No environment variable.
 Ordered by dependency. Nothing below has been started unless it says so.
 
 **Must happen before merge**
-1. Run CI on the server: `bash scripts/ci/run.sh fast`.
-2. Run the Playwright suites **one at a time** (they share a port and a
-   database): `studio-chrome`, `studio-a11y`, `studio-tokens`, `studio-board`,
-   `studio-rundown`, `owner-isolation`, `sound-diversity`. Expect real
-   failures: the first-control budget and band heights were tuned for the
-   old shell, and the topbar now carries the activity button.
-3. Capture `docs/ux-audit/after/` at 1920, 1440, 1280, 768 and 390 and look
-   at them. The playwright config has three projects (1440/768/390); 1920
-   and 1280 need adding.
-4. Look at both themes on every route. Components written before this branch
-   were only ever seen on a light background.
+Items 1 to 4 of the original list (CI, Playwright, five-width screenshots,
+both themes) are done; see section 8. What is left:
+1. Decide what to do about `show-format` (failing on `main` too; see section 1).
+2. Run axe with the `tm_theme=light` cookie. Not done.
+3. One real episode through the whole pipeline on the deployed app, to see
+   real titles, real audio and a real business dossier in the new layout.
+
+**Known rough edges seen in the screenshots, not fixed**
+- Business show page at 390px: the show's name is squeezed out of the topbar by
+  "Run discovery" (the crumb and subbar still say where you are).
+- Editorial desk, business side, below 1100px: the inspector sits above the
+  list. Deliberate (tapping a row reloads to the top), but worth a second look.
+- The Audio library is skinned, not redesigned.
 
 **Workstream B**
 - Show creation: Quick start (AI recommends a whole configuration from a
@@ -249,7 +254,91 @@ Ordered by dependency. Nothing below has been started unless it says so.
 
 ## 8. What was actually run
 
-All on the branch, from the worktree. Results as printed.
+### 8a. Cloud validation, 2026-11-27 (final code commit `619b13f`)
+
+Linux container, Node 20.20.2, Docker for CI's PostgreSQL 16 and Redis 7,
+Playwright 1.61.1 with Chromium. The app under test is `next dev` on port 3311
+with a throwaway seeded PostgreSQL (`tests/e2e/global-setup.ts`). **No LLM,
+TTS, research or payment provider was called by anything below.**
+
+| Command | Result line |
+| --- | --- |
+| `bash scripts/ci/run.sh fast` (first run, commit `ef9a168`) | `══ fast: PASS ══  43 passed, 0 failed, 0 blocked in 2m49s` |
+| `bash scripts/ci/run.sh fast` (final, commit `619b13f`) | `══ fast: PASS ══  43 passed, 0 failed, 0 blocked in 2m48s`, exit 0 |
+| `npm run build` | Ran as CI's `build` step in a clean export: `PASS build (45s)` |
+
+Playwright, one suite at a time, `npx playwright test tests/e2e/<suite>.spec.ts --trace off`.
+Final result on the final code unless noted. "Skipped" is the suites' own
+desktop-only guard on the tablet and phone projects, not something switched off.
+
+| Suite | Final | First run on this branch |
+| --- | --- | --- |
+| `studio-tokens` | 12 passed | 12 passed |
+| `studio-chrome` | 60 passed | 57 passed, 3 failed (Home first-control budget) |
+| `studio-a11y` | 54 passed | 52 passed, 2 failed (focus probe landed on Next's dev badge) |
+| `studio-board` | 27 passed | 27 passed |
+| `studio-rundown` | 24 passed, 42 skipped | same |
+| `owner-isolation` | 10 passed, 20 skipped | 8 passed, 2 failed (test read the page too early) |
+| `sound-diversity` | 11 passed, 22 skipped | 2 passed, 9 failed (waited for the wrong shell; fails on `main` too) |
+| `player-bar-overlap` | 2 passed, 4 skipped | same (run before the last CSS commits; it tests `/app`, which they do not touch) |
+| `audio-asset-isolation` | 5 passed, 10 skipped | same (as above) |
+| `show-format` | **1 passed, 1 failed**, 4 skipped | same. Not fixed; see section 1 |
+| `studio-screenshots` (`SHOT_PHASE=after BUSINESS_PODCASTS_ENABLED=1`) | 126 passed, 89 skipped | 126 captures; `overflow.json` listed 3 pages wider than their viewport, now none |
+
+**Bugs found and fixed in the product**
+- `/studio?league=NFL` did redirect, but late: Home's skeleton flashed and the
+  browser logged a React error. Now a real HTTP 307 from `src/proxy.ts`.
+- Phone topbar: page actions pushed the title out and the business show page
+  scrolled sideways (483px in a 390px viewport).
+- Two "New episode" buttons side by side in a show page's topbar.
+- Command palette results overlapped each other at 390px.
+- Audio library: bare browser controls on charcoal, sideways scroll at 390 and
+  1280, and (once it scrolled inside itself) a table the keyboard could not reach.
+
+**Assertions changed, and why**
+- `studio-chrome`: Home is a documented exception to the 160px first-control
+  budget, held at 240px (measured 186 / 214 / 236). Home opens on a sentence
+  and then its button; the button cannot come first. Intentional new design.
+- `studio-a11y`: the focus-ring probe ignores `<nextjs-portal>`, Next's
+  dev-mode badge, which is not in a production build.
+- `owner-isolation`: the six open-by-URL tests now wait for the not-found page
+  instead of reading the body once. Stricter, not looser: the new episode leak
+  checks could previously pass on a half-loaded page.
+- `sound-diversity`: waits for the Studio shell instead of the `/app` player
+  bar, which the sound page stopped rendering in when it moved into the Studio.
+
+**Harness changes** (no test logic)
+- `global-setup.ts`: makes the throwaway database directory usable when the
+  run is root (embedded PostgreSQL drops privileges and could not start).
+- `playwright.config.ts`: 1920x1080 and 1280x800 projects, only when
+  `SHOT_PHASE` is set, so the assertion suites still run three widths.
+- `studio-screenshots.spec.ts`: adds its own business show, research topics and
+  a finished episode (the shared seed has none), a light-theme pass, UI-state
+  captures, and the overflow report.
+
+**Screenshots** (`docs/ux-audit/after/`, 129 files): 19 routes at 1920, 1440,
+1280, 768 and 390 in charcoal; the same 19 at 1440 in light; and
+`state-*` for the collapsed sidebar, activity menu, phone drawer, command
+palette and player dock. Looked at: every phone capture of the pages this
+branch built, the tablet set for Home, desk, show and episode, the light set
+for Home, desk and episode, and all `state-*`. Not every one of the 129 was
+opened; the overflow report covers all of them for sideways scroll.
+
+**By hand in the browser** (a scripted Chromium session, results read back)
+- Ctrl+K: "overtime" returns The Overtime Show; "awaiting" returns the
+  episode and Enter opens it; another account's rows never appear. Pass.
+- `G` then `S` / `D` / `E` land on Shows, Editorial desk, Episodes. Pass.
+- Theme toggle: sets `tm_theme`, the server's HTML already carries
+  `data-theme="light"` on reload (so no flash), toggles back. Pass.
+- Play from the Episodes list, navigate to Shows, then Home: still playing,
+  position advancing (2.4s, 4.5s, 6.1s). Pass.
+- Starting the episode page's own player pauses the dock. Pass. The action bar
+  sits directly above the dock (775-836 and 836-900 of 900), no overlap.
+- `/studio/create?show=<id>` opens on step 2, Topics, inside that show. Pass.
+- `/studio?league=NFL`: failed cleanly at first (see bugs); passes after the fix.
+- The seeded script-draft episode opens on the Script stage. Pass.
+
+### 8b. Before the cloud run (owner's machine, no browser)
 
 | Check | Result |
 | --- | --- |
@@ -261,15 +350,15 @@ All on the branch, from the worktree. Results as printed.
 | `testHostStudioCapabilities` | 12 passed, 0 failed |
 | `testProductionChain` | 14 passed, 0 failed |
 | `testHonestControls` | 9 passed, 0 failed |
-| `next build` | not run |
-| lint | not run |
-| Playwright (any spec) | not run |
-| axe | not run |
-| Live LLM / TTS | not run (no provider credit; not attempted) |
 
-Note: the worktree shares `node_modules` with the main checkout, whose
-generated Prisma client comes from a different branch. `tsc` on the server
-against a freshly generated client is the authoritative result.
+### 8c. Never run
+
+| Check | Why |
+| --- | --- |
+| Live LLM / TTS / research | Needs provider credit. Not attempted, not faked. |
+| `bash scripts/ci/run.sh full` | Not required for this change (see section 1). |
+| axe in the light theme | Not done. |
+| lint (`npm run lint`) on its own | Not run separately. |
 
 ---
 
