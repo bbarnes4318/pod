@@ -3353,7 +3353,7 @@ body:has(.studioShell[data-theme="light"]) { background: #F5F4F1; }
 
 .hostPresetGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2); margin-top: var(--sp-2); }
 .hostModeGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-3); }
-.hostModeGrid [data-tall="true"] { min-height: 90px; text-align: left; }
+.hostModeGrid [data-tall="true"] { min-height: 90px; text-align: left; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 0; white-space: normal; min-width: 0; overflow-wrap: anywhere; }
 .hostModeTitle { display: block; }
 .hostModeHelp { display: block; font-size: 0.74rem; margin-top: var(--sp-1); opacity: 0.85; }
 
