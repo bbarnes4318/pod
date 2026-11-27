@@ -1,7 +1,9 @@
 import React from "react";
 import { currentUser } from "@/lib/currentUser";
 import { getOwnerAnalytics } from "@/lib/services/analyticsService";
+import { buildInsights } from "@/lib/analytics/insights";
 import AnalyticsDashboard from "./AnalyticsDashboard";
+import "../library.css";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,17 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   // layout gate) sees nothing.
   const summary = user
     ? await getOwnerAnalytics(user.id, { days })
-    : { totalDownloads: 0, totalPlays: 0, episodeCount: 0, daily: [], byEpisode: [], byCountry: [], byApp: [], rangeDays: days };
+    : { totalDownloads: 0, totalPlays: 0, episodeCount: 0, daily: [], byEpisode: [], byCountry: [], byApp: [], rangeDays: days, bySource: [], episodes: [], trackingSince: null, lifetimeEvents: 0 };
 
-  return <AnalyticsDashboard summary={summary} days={days} />;
+  // Takeaways are computed here, from the same rows the dashboard shows.
+  const insights = buildInsights({
+    episodes: summary.episodes,
+    bySource: summary.bySource,
+    daily: summary.daily,
+    trackingSince: summary.trackingSince,
+    rangeDays: days,
+    now: new Date().toISOString(),
+  });
+
+  return <AnalyticsDashboard summary={summary} days={days} insights={insights} />;
 }

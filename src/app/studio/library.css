@@ -1,0 +1,239 @@
+/* ============================================================
+   LIBRARY — Workstream F: episode grid, release checklist,
+   analytics intelligence, media library, phone tab bar.
+   Tokens only (both themes). Imported by the pages and
+   components that use it, after studio.css / control-room.css.
+   ============================================================ */
+
+/* ---- Shared: pager, toolbar end ---- */
+.libPager { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-4); }
+.libPagerAt { font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.libPager [aria-disabled="true"] { opacity: 0.45; pointer-events: none; }
+.libToolbarEnd { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.segmented a[aria-current="true"] { color: var(--text); background: var(--surface); box-shadow: var(--shadow-1); }
+
+/* ---- Episode library: artwork grid ---- */
+.epGrid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-4); }
+.epGridCard { display: flex; flex-direction: column; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.epGridCard:hover { border-color: var(--border-hover); }
+.epGridArt { position: relative; aspect-ratio: 1 / 1; display: grid; place-items: center; background: var(--surface-3); border-bottom: 3px solid var(--art-hue, var(--border-strong)); }
+.epGridArt[data-hue="a"] { --art-hue: var(--host-a); }
+.epGridArt[data-hue="b"] { --art-hue: var(--host-b); }
+.epGridArt[data-hue="c"] { --art-hue: var(--host-c); }
+.epGridArt[data-hue="d"] { --art-hue: var(--host-d); }
+.epGridArt img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.epGridInitials { font-family: var(--font-editorial); font-size: 56px; font-weight: 600; line-height: 1; color: var(--text); }
+.epGridArt .epGridPlay { position: absolute; right: var(--sp-2); bottom: var(--sp-2); width: 40px; height: 40px; background: var(--surface); box-shadow: var(--shadow-1); }
+.epGridBody { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: var(--sp-3); min-width: 0; flex: 1; }
+.epGridTitle { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.epGridTitle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.epGridShow, .epGridMeta { font-size: 12px; color: var(--text-subtle); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.epGridMeta { font-variant-numeric: tabular-nums; }
+.epGridNext { margin-top: auto; padding-top: var(--sp-2); font-size: 13px; font-weight: 500; color: var(--accent-text); overflow-wrap: anywhere; }
+.epGridNext:hover { text-decoration: underline; text-underline-offset: 3px; }
+.epGridNextStage { display: block; font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+@media (max-width: 720px) {
+  .epGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+  .epGridInitials { font-size: 40px; }
+  .libToolbarEnd { width: 100%; }
+  .libToolbarEnd .listSearch { flex: 1; min-width: 0; width: auto; }
+}
+
+/* ---- Publishing: release checklist ---- */
+.relList { display: flex; flex-direction: column; gap: var(--sp-3); }
+.relCard { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border-strong); border-radius: var(--radius); padding: var(--sp-4); min-width: 0; }
+.relCard[data-state="ready"] { border-left-color: var(--success); }
+.relCard[data-state="blocked"] { border-left-color: var(--error); }
+.relCard[data-state="unknown"] { border-left-color: var(--warning); }
+.relHead { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.relWhat { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.relTitle { font-size: 15px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.relTitle:hover { text-decoration: underline; text-underline-offset: 3px; }
+.relMeta { font-size: 12px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+.relVerdict { display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0; }
+.relNote { margin: var(--sp-3) 0 0; font-size: 13px; color: var(--warning-text); overflow-wrap: anywhere; }
+.relItems { list-style: none; margin: var(--sp-3) 0 0; padding: 0; border-top: 1px solid var(--border); }
+.relItem { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border); font-size: 14px; color: var(--text); min-width: 0; }
+.relGlyph { flex-shrink: 0; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 700; border: 1px solid var(--border); }
+.relItem[data-state="blocker"] .relGlyph { color: var(--error-text); background: var(--error-muted); border-color: var(--error-border); }
+.relItem[data-state="warning"] .relGlyph { color: var(--warning-text); background: var(--warning-muted); border-color: var(--warning-border); }
+.relItemText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.relItemKind { display: block; font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+.relItemDetail { display: block; font-size: 12px; color: var(--text-muted); }
+.relDetails { margin-top: var(--sp-2); font-size: 13px; color: var(--text-muted); }
+.relDetails > summary { cursor: pointer; padding: var(--sp-1, 4px) 0; color: var(--text-muted); font-weight: 500; }
+.relDetails > summary:hover { color: var(--text); }
+.relDetails ul { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); display: grid; gap: 4px; overflow-wrap: anywhere; }
+.relDetails ul.relMet { list-style: none; padding-left: 0; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); color: var(--success-text); }
+@media (max-width: 720px) {
+  .relCard { padding: var(--sp-3); }
+  .relHead { flex-wrap: wrap; }
+  .relVerdict { width: 100%; justify-content: space-between; }
+  .relItem { flex-wrap: wrap; }
+  .relItemText { flex-basis: calc(100% - 32px); }
+  .relItem .btnSubtle { margin-left: 32px; border-color: var(--border); }
+}
+
+/* ---- Analytics ----
+   The day and row bars receive their size as --bar-h / --bar-w. No rule read
+   those for .anBarDl, .anBarPlay or .anRowFill, so the bars had no size at
+   all; these two lines are what draws the charts. */
+.anBarDl, .anBarPlay { height: var(--bar-h, 0%); }
+.anRowFill { width: var(--bar-w, 0%); }
+.anBarCol[data-untracked="true"] .anBarStack { background: repeating-linear-gradient(135deg, var(--border) 0 2px, transparent 2px 6px); }
+.anDotNone { background: repeating-linear-gradient(135deg, var(--border-strong) 0 2px, transparent 2px 4px); border: 1px solid var(--border); }
+.anLegend { flex-wrap: wrap; }
+.anRow .anRowLabel--wide { width: 170px; }
+.anState { margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: var(--radius); background: var(--surface); font-size: 14px; color: var(--text); line-height: 1.5; }
+.anState[data-state="measured_zero"] { border-left-color: var(--warning); }
+.anStatOf { font-size: 14px; font-weight: 500; color: var(--text-subtle); letter-spacing: 0; }
+.anInsights { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-3); }
+.anInsight { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); }
+.anInsight[data-kind="insufficient"] { border-left-color: var(--border-strong); }
+.anInsightTitle { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.anInsightKind { font-size: 11px; font-weight: 600; color: var(--accent-text); }
+.anInsight[data-kind="insufficient"] .anInsightKind { color: var(--text-subtle); }
+.anInsightLines { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--sp-2); font-size: 14px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.anInsight[data-kind="insufficient"] .anInsightLines { color: var(--text-muted); }
+.anInsightBasis { margin-top: auto; font-size: 12px; color: var(--text-subtle); }
+.anInsightBasis > summary { cursor: pointer; }
+.anInsightBasis > summary:hover { color: var(--text); }
+.anInsightBasis p { margin: var(--sp-2) 0 0; line-height: 1.5; }
+.anEpList { list-style: none; margin: 0; padding: 0; }
+.anEp { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-3) 0; border-top: 1px solid var(--border); min-width: 0; }
+.anEp:first-child { border-top: none; padding-top: 0; }
+.anEpWhat { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.anEpName { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anEpName:hover { text-decoration: underline; text-underline-offset: 3px; }
+.anEpShow { font-size: 12px; color: var(--text-subtle); overflow-wrap: anywhere; }
+.anEpNums { display: flex; gap: var(--sp-6); margin: 0; flex-shrink: 0; }
+.anEpNums div { display: grid; justify-items: end; }
+.anEpNums dt { font-size: 11px; color: var(--text-subtle); }
+.anEpNums dd { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.anEpState { flex-shrink: 1; max-width: 46%; text-align: right; font-size: 13px; color: var(--text-muted); }
+.anEp[data-flagged="true"] .anEpName { color: var(--accent-text); }
+@media (max-width: 720px) {
+  .anInsights { grid-template-columns: 1fr; }
+  .anEp { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .anEpName { white-space: normal; overflow-wrap: anywhere; }
+  .anEpNums { justify-content: flex-start; }
+  .anEpNums div { justify-items: start; }
+  .anEpState { max-width: none; text-align: left; }
+  .anRow .anRowLabel--wide { width: 110px; white-space: normal; }
+}
+
+/* ---- Audio library: media asset management ----
+   .audioLibraryPage carries an older skin that styles every bare button and
+   label on the page, so these rules are scoped under it to win. */
+.audioLibraryPage .mam { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+.audioLibraryPage .mamMain { min-width: 0; display: grid; gap: var(--sp-3); }
+.audioLibraryPage .alChipRow { margin: 0; align-items: center; }
+.audioLibraryPage .mamJump { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--accent-text); }
+.audioLibraryPage .mamJump:hover { text-decoration: underline; text-underline-offset: 3px; }
+.audioLibraryPage .mamTypes { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.audioLibraryPage .mamTypes button { font-weight: 500; color: var(--text-muted); gap: 6px; }
+.audioLibraryPage .mamTypes button[aria-pressed="true"] { background: var(--accent-muted); color: var(--accent-press); border-color: var(--accent-border); }
+.audioLibraryPage .mamCount { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-subtle); }
+.audioLibraryPage .mamFilters { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-3); align-items: end; padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.audioLibraryPage .mamFilters .select, .audioLibraryPage .mamFilters .input { width: 100%; min-width: 0; }
+.audioLibraryPage .mamSearch { grid-column: span 2; }
+.audioLibraryPage .mamCheck { grid-column: 1 / -1; font-weight: 400; }
+.audioLibraryPage .mamSummary { margin: 0; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.audioLibraryPage .mamLink { display: inline; height: auto; padding: 0; border: none; background: none; color: var(--accent-text); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.audioLibraryPage .mamLink:hover { background: none; color: var(--accent-hover); }
+.audioLibraryPage .mamList { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.audioLibraryPage .mamEmpty { padding: var(--sp-6) var(--sp-4); text-align: center; font-size: 14px; color: var(--text-muted); }
+.audioLibraryPage .mamRow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--sp-3); row-gap: var(--sp-2); align-items: center; padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); }
+.audioLibraryPage .mamRow:first-child { border-top: none; }
+.audioLibraryPage .mamRow[data-archived="true"] .mamName { color: var(--text-muted); }
+.audioLibraryPage .mamPlay { width: 36px; height: 36px; padding: 0; border-radius: 50%; justify-content: center; background: var(--surface-2); }
+.audioLibraryPage .mamPlay[data-playing="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.audioLibraryPage .mamPlay:disabled { opacity: 0.5; }
+.audioLibraryPage .mamWhat { display: grid; gap: 2px; min-width: 0; }
+.audioLibraryPage .mamName { font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.audioLibraryPage .mamSub { font-size: 12px; color: var(--text-subtle); overflow-wrap: anywhere; }
+.audioLibraryPage .mamActions { display: flex; gap: var(--sp-2); }
+.audioLibraryPage .mamMeta { grid-column: 2 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--sp-2) var(--sp-4); margin: 0; }
+.audioLibraryPage .mamMeta div { min-width: 0; }
+.audioLibraryPage .mamMeta dt { font-size: 11px; font-weight: 600; color: var(--text-subtle); }
+.audioLibraryPage .mamMeta dd { margin: 0; font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.audioLibraryPage .mamMeta dd strong { color: var(--warning-text); }
+.audioLibraryPage .mamUnset { font-style: normal; color: var(--text-subtle); }
+.audioLibraryPage .mamFrom { font-size: 11px; color: var(--text-subtle); }
+.audioLibraryPage .mamTags { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.audioLibraryPage .mamTag { padding: 1px 6px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.audioLibraryPage .mamMissing { font-size: 12px; font-weight: 500; color: var(--warning-text); }
+.audioLibraryPage .mamMore { justify-self: center; }
+.audioLibraryPage .mamUpload { margin: 0; scroll-margin-top: 120px; }
+@media (min-width: 1280px) {
+  .audioLibraryPage .mam { grid-template-columns: minmax(0, 1fr) 320px; }
+  .audioLibraryPage .mamUpload { position: sticky; top: 112px; max-height: calc(100vh - 136px); overflow-y: auto; }
+  .audioLibraryPage .mamUpload .alFieldGrid { grid-template-columns: minmax(0, 1fr); }
+  .audioLibraryPage .mamJump { display: none; }
+}
+@media (max-width: 720px) {
+  .audioLibraryPage .mamFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .audioLibraryPage .mamRow { padding: var(--sp-3); }
+  .audioLibraryPage .mamMeta, .audioLibraryPage .mamTags { grid-column: 1 / -1; }
+  .audioLibraryPage .mamMeta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .audioLibraryPage .mamActions { grid-column: 1 / -1; }
+  .audioLibraryPage .mamActions:empty { display: none; }
+  .audioLibraryPage .mamRow { grid-template-columns: auto minmax(0, 1fr); }
+  .audioLibraryPage .mamJump { margin-left: 0; }
+}
+
+/* ---- Phone tab bar (720px and below) ----
+   --studio-tabbar-h is 0 everywhere else, so nothing on desktop moves. On a
+   phone the bar is fixed to the bottom edge and three things make room for it:
+   the page's bottom padding, the player dock, and the episode action bar.
+   Stacking from the bottom edge: tab bar, then dock, then action bar.
+   Selectors carry an extra class on purpose: they must beat the dock rules in
+   control-room.css whichever stylesheet loads first. */
+.studioShell { --studio-tabbar-h: 0px; }
+.studioTabbar { display: none; }
+@media (max-width: 720px) {
+  .studioShell { --studio-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); }
+  .studioShell .studioTabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 46; /* above the dock (45), below the topbar (50) and the drawer (55, 60) */
+    height: var(--studio-tabbar-h);
+    padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    background: var(--surface);
+    border-top: 1px solid var(--border-hover);
+  }
+  .studioShell .studioTab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    height: 56px;
+    padding: 0 2px;
+    border: none;
+    border-top: 2px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .studioShell .studioTab[aria-current="page"] { color: var(--text); border-top-color: var(--accent); font-weight: 600; }
+  .studioShell .studioTab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .studioTabIcon { width: 22px; height: 22px; display: grid; place-items: center; }
+  .studioTabIcon svg { width: 22px; height: 22px; }
+  .studioTabLabel { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .studioShell .studioBody .studioMain { padding-bottom: calc(var(--sp-6) + var(--studio-tabbar-h)); }
+  .studioShell .studioDock,
+  .studioShell[data-collapsed="true"] .studioDock { bottom: var(--studio-tabbar-h); }
+  .studioShell .studioBody .epActionBar { bottom: var(--studio-tabbar-h); }
+  .studioShell:has(.studioDock[data-open="true"]) .studioBody .studioMain { padding-bottom: calc(var(--sp-8) + var(--studio-dock-h) + var(--studio-tabbar-h)); }
+  .studioShell:has(.studioDock[data-open="true"]) .studioBody .epActionBar { bottom: calc(var(--studio-dock-h) + var(--studio-tabbar-h)); }
+}

@@ -23,6 +23,19 @@ async function actor(): Promise<AudioAssetActor | null> {
   return user ? { kind: "user", userId: user.id } : null;
 }
 
+/** Creative metadata for one asset, exactly as stored. Nothing here is derived
+ *  or guessed: a field the asset does not carry is null, and the library shows
+ *  it as "not set". `state` is AudioAsset.metadataState: only "verified" values
+ *  were confirmed by a person; "suggested" ones are proposals. */
+export interface AssetMetaDto {
+  source: string;
+  state: string; // "unclassified" | "suggested" | "verified"
+  genre: string | null;
+  energy: string | null;
+  bpm: number | null;
+  moods: string[];
+}
+
 export interface MyAudioLibrary {
   success: boolean;
   error?: string;
@@ -30,6 +43,8 @@ export interface MyAudioLibrary {
   /** Podcasts this user owns (for scope selection + filters). */
   podcasts?: Array<{ id: string; name: string }>;
   usage?: Record<string, number>; // assetId -> this owner's usage count
+  /** assetId -> stored creative metadata, for the same rows as `assets`. */
+  meta?: Record<string, AssetMetaDto>;
 }
 
 export async function fetchMyAudioLibrary(): Promise<MyAudioLibrary> {
@@ -51,6 +66,20 @@ export async function fetchMyAudioLibrary(): Promise<MyAudioLibrary> {
       assets: assets.map(toSafeAudioAssetDto),
       podcasts,
       usage: Object.fromEntries(usageRows.map((u) => [u.assetId, u._count.assetId])),
+      // Same rows the access service already returned for this actor, so this
+      // exposes no asset the DTO list does not. Storage keys and URLs stay out.
+      meta: Object.fromEntries(assets.map((row) => {
+        const cue = (row.cueMetadata && typeof row.cueMetadata === "object" ? row.cueMetadata : {}) as Record<string, unknown>;
+        const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+        return [row.id, {
+          source: row.source,
+          state: row.metadataState,
+          genre: str(cue.genre),
+          energy: str(cue.energy),
+          bpm: typeof cue.bpm === "number" && Number.isFinite(cue.bpm) ? cue.bpm : null,
+          moods: Array.isArray(cue.moods) ? cue.moods.filter((m): m is string => typeof m === "string") : [],
+        } satisfies AssetMetaDto];
+      })),
     };
   } catch (err) {
     return { success: false, error: (err as Error).message || "Could not load the library." };
