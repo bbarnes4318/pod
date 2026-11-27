@@ -5,6 +5,7 @@ import { ownerScope, type ScopeViewer } from "@/lib/ownerScope";
 import { OpportunityActions } from "../shows/[id]/BusinessResearchClient";
 import { Icon } from "../StudioIcons";
 import { showHue, showInitials } from "../lib";
+import { STAGE_WHERE, stageOf, type Stage } from "./stages";
 
 /* ------------------------------------------------------------------ *
  * The business side of the Editorial desk.
@@ -24,8 +25,6 @@ import { showHue, showInitials } from "../lib";
  * for display that the research engine did not store.
  * ------------------------------------------------------------------ */
 
-type Stage = "discover" | "investigate" | "approve" | "produce";
-
 const STAGES: { key: Stage; label: string; hint: string }[] = [
   { key: "discover", label: "Discover", hint: "Proposed, not yet researched" },
   { key: "investigate", label: "Investigate", hint: "Dossier in progress or held" },
@@ -44,24 +43,21 @@ const VERDICT: Record<string, { label: string; tone: string }> = {
   UNVERIFIED: { label: "Not yet verified", tone: "warn" },
 };
 
-function stageOf(o: { editorialStatus: string; dossier: { status: string } | null }): Stage {
-  if (o.editorialStatus === "APPROVED") return "produce";
-  if (o.editorialStatus === "HELD") return "investigate";
-  if (!o.dossier) return "discover";
-  if (o.dossier.status === "READY") return "approve";
-  return "investigate";
-}
+/** Topics per page of the ranked list. */
+const PAGE = 50;
 
 export default async function BusinessDesk({
   viewer,
   stage: rawStage,
   topicId,
   showId,
+  page: rawPage,
 }: {
   viewer: ScopeViewer | null;
   stage?: string;
   topicId?: string;
   showId?: string;
+  page?: string;
 }) {
   const shows = await db.podcast.findMany({
     where: { ...ownerScope(viewer), intelligenceType: "BUSINESS" },
@@ -83,29 +79,50 @@ export default async function BusinessDesk({
   }
 
   const scopedShow = shows.find((s) => s.id === showId) ?? null;
-  const all = await db.businessTopicOpportunity.findMany({
-    where: {
-      podcastId: scopedShow ? scopedShow.id : { in: shows.map((s) => s.id) },
-      editorialStatus: { in: ["CANDIDATE", "HELD", "APPROVED"] },
-    },
-    include: { dossier: { select: { status: true, verifiedClaimCount: true, unsupportedClaimCount: true } } },
-    orderBy: [{ opportunityScore: "desc" }],
-    take: 120,
-  });
-  const showName = new Map(shows.map((s) => [s.id, s.name]));
-
-  const counts: Record<Stage, number> = { discover: 0, investigate: 0, approve: 0, produce: 0 };
-  for (const o of all) counts[stageOf(o)] += 1;
+  // Ownership: only shows the viewer owns reach this filter (see `shows` above).
+  const open = {
+    podcastId: scopedShow ? scopedShow.id : { in: shows.map((s) => s.id) },
+    editorialStatus: { in: ["CANDIDATE", "HELD", "APPROVED"] },
+  };
+  const include = { dossier: { select: { status: true, verifiedClaimCount: true, unsupportedClaimCount: true } } } as const;
   const stage = STAGES.some((s) => s.key === rawStage) ? (rawStage as Stage) : null;
-  const rows = stage ? all.filter((o) => stageOf(o) === stage) : all;
-  const selected = rows.find((o) => o.id === topicId) ?? rows[0] ?? null;
+  const listWhere = stage ? { AND: [open, STAGE_WHERE[stage]] } : open;
+  const page = Math.max(1, Math.floor(Number(rawPage) || 1));
+  const offset = (page - 1) * PAGE;
 
-  const href = (over: { stage?: Stage | null; topic?: string; show?: string | null }) => {
+  // Counts come from the database, so they stay right past any page size.
+  const countAt = (st: Stage) => db.businessTopicOpportunity.count({ where: { AND: [open, STAGE_WHERE[st]] } });
+  const [allCount, discover, investigate, approve, produce, rows, picked] = await Promise.all([
+    db.businessTopicOpportunity.count({ where: open }),
+    countAt("discover"),
+    countAt("investigate"),
+    countAt("approve"),
+    countAt("produce"),
+    db.businessTopicOpportunity.findMany({
+      where: listWhere,
+      include,
+      orderBy: [{ opportunityScore: "desc" }, { id: "asc" }],
+      skip: offset,
+      take: PAGE,
+    }),
+    // A linked topic opens even when it is not on this page of the list.
+    topicId ? db.businessTopicOpportunity.findFirst({ where: { AND: [listWhere, { id: topicId }] }, include }) : null,
+  ]);
+  const counts: Record<Stage, number> = { discover, investigate, approve, produce };
+  const listCount = stage ? counts[stage] : allCount;
+  const pageCount = Math.max(1, Math.ceil(listCount / PAGE));
+  const showName = new Map(shows.map((s) => [s.id, s.name]));
+  const selected = picked ?? rows[0] ?? null;
+
+  const href = (over: { stage?: Stage | null; topic?: string; show?: string | null; page?: number }) => {
     const q = new URLSearchParams({ desk: "business" });
     const st = over.stage === undefined ? stage : over.stage;
     const sh = over.show === undefined ? scopedShow?.id : over.show;
+    // Changing the stage or the show starts again at page one.
+    const pg = over.page ?? (over.stage === undefined && over.show === undefined ? page : 1);
     if (st) q.set("stage", st);
     if (sh) q.set("show", sh);
+    if (pg > 1) q.set("page", String(pg));
     if (over.topic) q.set("topic", over.topic);
     return `/studio/desk?${q.toString()}`;
   };
@@ -124,7 +141,7 @@ export default async function BusinessDesk({
       {/* The pipeline is the filter. Each step says how many topics sit at it. */}
       <nav className="deskFlow" aria-label="Research pipeline">
         <Link href={href({ stage: null })} className="deskFlowStep" aria-current={stage === null ? "page" : undefined}>
-          <span className="deskFlowCount">{all.length}</span>
+          <span className="deskFlowCount">{allCount}</span>
           <span className="deskFlowLabel">All open topics</span>
         </Link>
         {STAGES.map((s) => (
@@ -144,7 +161,7 @@ export default async function BusinessDesk({
         </nav>
       )}
 
-      {all.length === 0 ? (
+      {allCount === 0 ? (
         <div className="emptyState">
           <div className="emptyStateTitle">No open topics</div>
           <p className="emptyStateBody">Run industry research from a show and the topics it finds are ranked here.</p>
@@ -165,7 +182,7 @@ export default async function BusinessDesk({
               return (
                 <li key={o.id}>
                   <Link href={href({ topic: o.id })} className="deskRow" aria-current={current ? "true" : undefined} scroll={false}>
-                    <span className="deskRank">{i + 1}</span>
+                    <span className="deskRank">{offset + i + 1}</span>
                     <span className="deskRowBody">
                       <span className="deskRowTitle">{o.title}</span>
                       <span className="deskRowMeta">
@@ -180,6 +197,15 @@ export default async function BusinessDesk({
                 </li>
               );
             })}
+            {pageCount > 1 && (
+              <li className="deskPager">
+                {page > 1 ? <Link href={href({ page: page - 1 })} className="btnGhost">Previous</Link> : <span />}
+                <span className="deskPagerLabel">
+                  {offset + 1}–{offset + rows.length} of {listCount}
+                </span>
+                {page < pageCount ? <Link href={href({ page: page + 1 })} className="btnGhost">Next</Link> : <span />}
+              </li>
+            )}
           </ol>
 
           <aside className="deskInspector" aria-label="Evidence for the selected topic">

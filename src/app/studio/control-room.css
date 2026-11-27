@@ -127,6 +127,8 @@ button.studioNavLink { width: 100%; border: none; background: transparent; curso
 .prodRow[data-state="stalled"] .prodRowLamp { background: var(--warning); }
 .prodRow[data-state="failed"] .prodRowLamp { background: var(--error); }
 .prodRow[data-state="ready"] .prodRowLamp { background: var(--success); }
+.prodRow[data-state="unknown"] .prodRowLamp { background: transparent; border: 1px solid var(--text-subtle); }
+.studioActivityMore { margin: 8px; }
 .prodRowBody { display: grid; gap: 2px; min-width: 0; }
 .prodRowTitle { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prodRowLine { display: flex; gap: var(--sp-2); font-size: 13px; color: var(--text-muted); min-width: 0; }
@@ -634,3 +636,7 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 .audioLibraryPage .alTable { display: block; overflow-x: auto; white-space: nowrap; font-size: 13px; color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
 .audioLibraryPage .alTable th { padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--text-subtle); text-align: left; }
 .audioLibraryPage .alTable td { padding: 10px 14px; }
+
+/* Desk list paging */
+.deskPager { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 8px; list-style: none; }
+.deskPagerLabel { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
