@@ -143,13 +143,22 @@ async function main() {
     assert(result.id.length === 32, "created voice id was not returned");
   });
 
-  await check("the default UI hides provider jargon and exposes the four simple steps", () => {
-    const ui = source("app/studio/hosts/CharacterStudio.tsx");
-    for (const label of ["Who they are", "How they act", "Voice", "Preview", "Design a new voice", "Clone my voice"]) {
+  // ASSERTION UPDATED for the Talent Studio reconstruction. CharacterStudio was
+  // split into modules (TalentCard, TalentProfile, TalentWizard, talentModel),
+  // and the four-step editor ("Who they are / How they act / Voice / Preview")
+  // became five: Identity, Personality, Performance, Voice, Final review. The
+  // old Preview step is now the "Preview" group inside Performance. Same fields,
+  // same save actions; this checks the new labels in the file that renders them.
+  await check("the default UI hides provider jargon and exposes the five simple steps", () => {
+    const ui = source("app/studio/hosts/TalentWizard.tsx");
+    for (const label of ["Identity", "Personality", "Performance", "Voice", "Final review", "Preview", "Design a new voice", "Clone my voice"]) {
       assert(ui.includes(label), `missing simple UI label: ${label}`);
     }
-    assert(!ui.includes("TTS engine"), "default UI still exposes TTS-engine jargon");
-    assert(!ui.includes("Voice id <span"), "default UI still exposes a raw voice-id form outside the advanced path");
+    for (const file of ["CharacterStudio.tsx", "TalentCard.tsx", "TalentWizard.tsx", "TalentProfile.tsx", "TalentInsights.tsx"]) {
+      const text = source(`app/studio/hosts/${file}`);
+      assert(!text.includes("TTS engine"), `${file} still exposes TTS-engine jargon`);
+      assert(!text.includes("Voice id <span"), `${file} still exposes a raw voice-id form outside the advanced path`);
+    }
   });
 
   await check("voice cloning is ownership-gated and requires explicit permission", () => {
@@ -173,7 +182,11 @@ async function main() {
     // handler clones it first and opens the COPY. The gate that remains is on
     // the DATA (a shared host is still never mutated in place), not on the
     // user's ability to get where they were going.
-    const ui = source("app/studio/hosts/CharacterStudio.tsx");
+    // File paths updated for the Talent Studio split: the button lives on the
+    // card (TalentCard.tsx) and on the profile; the fork itself moved, unchanged,
+    // into the shared `useEditHost` hook in talentModel.ts so both use one copy.
+    const ui = source("app/studio/hosts/TalentCard.tsx");
+    const hook = source("app/studio/hosts/talentModel.ts");
     // Comments stripped first: this check is about what the card RENDERS, and a
     // comment explaining the old button is not the old button. Checking raw
     // source would make the prose below fail its own test.
@@ -186,14 +199,18 @@ async function main() {
       /onClick=\{editHost\}/.test(ui),
       "the card's edit button no longer goes through editHost, which is what performs the fork"
     );
+    assert(
+      /onClick=\{editHost\}/.test(source("app/studio/hosts/TalentProfile.tsx")),
+      "the profile's edit button no longer goes through editHost"
+    );
     // The fork must open the COPY. Passing the clone's id back is the whole
     // mechanism; without it the editor opens on the starter and saves nothing.
     assert(
-      /onEdit\(result\.hostId\)/.test(ui),
+      /onEdit\(result\.hostId\)/.test(hook),
       "editHost does not open the newly created copy — the fork would be invisible"
     );
     assert(
-      /if \(host\.canEdit\) \{\s*onEdit\(\);/.test(ui),
+      /if \(host\.canEdit\) \{\s*onEdit\(\);/.test(hook),
       "an already-owned host should open directly, with no pointless clone"
     );
     // And the server action has to keep handing the id back for any of it to work.
@@ -229,7 +246,8 @@ async function main() {
   });
 
   await check("a host without a voice gets Create voice on its card, saved straight to Fish", () => {
-    const ui = withoutComments(source("app/studio/hosts/CharacterStudio.tsx"));
+    // Path updated: the card moved to TalentCard.tsx in the Talent Studio split.
+    const ui = withoutComments(source("app/studio/hosts/TalentCard.tsx"));
     assert(ui.includes("Create voice"), "the card has no Create voice button");
     assert(/<VoiceDesigner[\s\S]*?brief=\{host\.voiceBrief\}/.test(ui), "the card's designer is not given the character's brief");
     assert(/saveDesignedHostVoice\(host\.id/.test(ui), "the card does not save the picked take as the host's voice");
@@ -245,7 +263,7 @@ async function main() {
     assert(fn.length > 0 && /requireOwnedHost\(hostId\)/.test(fn.slice(0, 400)), "setHostOnAir is not owner-gated");
     assert(/FISH_DESIGN_PENDING/.test(fn.slice(0, 1400)), "setHostOnAir does not refuse a catalog placeholder voice");
     assert(/isVoiceIdValidForProvider\(host\.ttsProvider, host\.ttsVoiceId\)/.test(fn.slice(0, 1400)), "setHostOnAir does not check the voice id");
-    assert(/setHostOnAir\(host\.id, !host\.isActive\)/.test(source("app/studio/hosts/CharacterStudio.tsx")), "the card has no on-air switch");
+    assert(/setHostOnAir\(host\.id, !host\.isActive\)/.test(source("app/studio/hosts/TalentCard.tsx")), "the card has no on-air switch");
   });
 
   console.log(`\n${passed} passed, ${failed} failed`);

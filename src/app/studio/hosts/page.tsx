@@ -3,7 +3,8 @@ import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { settingsFromHost } from "@/lib/hosts/hostStudioProfile";
 import { voiceBriefForHost } from "@/lib/hosts/voiceBriefs";
-import CharacterStudio, { type StudioHostVM } from "./CharacterStudio";
+import CharacterStudio from "./CharacterStudio";
+import type { StudioHostVM } from "./talentModel";
 
 export const dynamic = "force-dynamic";
 

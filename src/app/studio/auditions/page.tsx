@@ -23,7 +23,15 @@ import AuditionConsole, {
 
 export const dynamic = "force-dynamic";
 
-export default async function AuditionsPage() {
+export default async function AuditionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ host?: string; partner?: string }>;
+}) {
+  // Talent profiles link here as ?host=<id>&partner=<id> to start a two-voice
+  // audition with both hosts preselected. The ids are only ever matched against
+  // the owner-scoped host list below; the actions re-check ownership anyway.
+  const preselect = await searchParams;
   // Server components serialize their props into the HTML, so everything below
   // is scoped by the QUERY. Nothing is fetched broadly and narrowed in the JSX:
   // narrowing in the component still ships the wide result to the browser.
@@ -160,6 +168,7 @@ export default async function AuditionsPage() {
         estimatedMinutes: Number((pack.estimatedDurationSec / 60).toFixed(1)),
       }}
       signedIn={!!viewer}
+      preselect={{ hostId: preselect.host, partnerHostId: preselect.partner }}
     />
   );
 }

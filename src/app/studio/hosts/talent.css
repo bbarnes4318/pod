@@ -1,0 +1,110 @@
+/* ============================================================
+   TALENT STUDIO — casting library, profile, five-step workflow.
+   Only what studio.css / control-room.css do not already provide.
+   Colour comes from the Studio tokens only, so both themes work;
+   text uses the text tokens on surface tokens (all AA pairs).
+   ============================================================ */
+
+/* ---- Library ---- */
+.talentGrid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); }
+.talentCard { min-width: 0; }
+.talentCardHead { display: flex; align-items: flex-start; gap: var(--sp-3); flex-wrap: wrap; }
+.talentCardWho { flex: 1 1 150px; min-width: 0; }
+.talentCardName { margin: 0; font-size: 16px; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; }
+.talentCardRole { margin: 2px 0 0; font-size: 13px; line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
+.talentRead { margin: var(--sp-3) 0 0; font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.talentCard .hostChipRow { margin: var(--sp-3) 0; }
+.talentCard .hostCardActions { align-items: center; }
+.talentMuted { color: var(--text-muted); }
+
+/* ---- Profile ---- */
+.talentProfile { display: flex; flex-direction: column; gap: var(--sp-4); }
+.talentBack { align-self: flex-start; }
+.talentMast { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-4); }
+.talentMastWho { flex: 1 1 260px; min-width: 0; }
+.talentMastName {
+  margin: 0; font-family: var(--font-editorial); font-size: 24px; font-weight: 600;
+  line-height: 1.2; color: var(--text); overflow-wrap: anywhere;
+}
+.talentMastChips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.talentMastActions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.talentMastNote { flex-basis: 100%; margin: 0; }
+
+.talentSections { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: var(--sp-4); align-items: start; }
+.talentSections > .studioCard { min-width: 0; }
+.talentSections .sectionTitle, .talentInsight .sectionTitle { margin: 0 0 var(--sp-3); }
+
+/* Label / value pairs: side by side when there is room, stacked on a phone. */
+.talentFacts { margin: 0; display: flex; flex-direction: column; }
+.talentFact { display: grid; grid-template-columns: minmax(0, 140px) minmax(0, 1fr); gap: var(--sp-3); padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
+.talentFact:first-child { border-top: none; }
+.talentFact dt { font-size: 12px; font-weight: 500; color: var(--text-subtle); padding-top: 2px; }
+.talentFact dd { margin: 0; font-size: 14px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.talentFactEdit { margin-left: var(--sp-2); font-size: 12px; }
+.talentLines { margin: 0; padding-left: 1.1em; }
+.talentLines li + li { margin-top: 2px; }
+@media (max-width: 520px) {
+  .talentFact { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+.talentPreviewBox { padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.talentPreviewBox .hostBtnRow { align-items: center; }
+
+/* ---- Recommendations and casting fit ---- */
+.talentInsight .advNote { margin: 0 0 var(--sp-3); }
+.talentInsightEmpty { margin: 0; font-size: 14px; color: var(--text-muted); }
+.talentRecList, .talentFitList, .talentFitReasons, .talentIssues ul { list-style: none; margin: 0; padding: 0; }
+.talentRec, .talentFit { padding: var(--sp-3) 0; border-top: 1px solid var(--border); }
+.talentRecHead, .talentFitHead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: 14px; color: var(--text); }
+.talentRecBody { margin: var(--sp-2) 0 0; font-size: 14px; line-height: 1.5; color: var(--text); }
+.talentBasis { margin: var(--sp-2) 0 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.talentBasisLabel { font-weight: 500; color: var(--text-subtle); }
+.talentFitRank {
+  width: 22px; height: 22px; flex-shrink: 0; display: grid; place-items: center;
+  border: 1px solid var(--border-hover); border-radius: var(--radius-sm);
+  font-size: 12px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.talentFitName { font-size: 14px; font-weight: 600; }
+.talentFitScore { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.talentFitReasons { margin: var(--sp-2) 0 var(--sp-3); font-size: 13px; line-height: 1.5; color: var(--text-muted); }
+.talentFitReasons li + li { margin-top: 2px; }
+/* The sign is in the text (+ / −); colour only repeats it. */
+.talentFitEffect { display: inline-block; min-width: 2.4em; font-weight: 600; font-variant-numeric: tabular-nums; }
+.talentFitEffect[data-sign="plus"] { color: var(--success-text); }
+.talentFitEffect[data-sign="minus"] { color: var(--warning-text); }
+
+/* ---- Workflow ---- */
+/* The voice designer inside the workflow reads --host-accent, as it does on a card. */
+.talentWizard { min-width: 0; --host-accent: var(--host-a); }
+.talentSteps {
+  list-style: none; margin: var(--sp-4) 0 0; padding: 0 0 var(--sp-2);
+  display: flex; gap: var(--sp-1); overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+}
+.talentSteps li { flex: none; }
+.talentStepBtn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  height: 34px; padding: 0 var(--sp-3);
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.talentStepBtn:hover { color: var(--text); background: var(--surface-2); }
+.talentStepBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Current step: a border and a heavier weight as well as the colour. */
+.talentStepBtn[aria-current="step"] { color: var(--text); font-weight: 600; background: var(--surface-2); border-color: var(--border-strong); }
+.talentStepNum {
+  width: 20px; height: 20px; display: grid; place-items: center;
+  border: 1px solid var(--border-hover); border-radius: 50%;
+  font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.talentStepBtn[aria-current="step"] .talentStepNum { border-color: var(--accent); color: var(--accent-text); }
+.talentStepFlag { font-size: 12px; font-weight: 600; color: var(--error-text); }
+
+.talentStep { padding-top: var(--sp-4); }
+.talentStep[hidden] { display: none; }
+.talentStep > .advNote:first-child { margin: 0; }
+
+.talentIssues { padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.talentIssues li { margin-top: var(--sp-2); font-size: 14px; line-height: 1.5; color: var(--text); }
+.talentIssues .statusPill { margin-right: var(--sp-1); }
