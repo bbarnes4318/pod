@@ -73,3 +73,51 @@
   .relItemText { flex-basis: calc(100% - 32px); }
   .relItem .btnSubtle { margin-left: 32px; border-color: var(--border); }
 }
+
+/* ---- Analytics ----
+   The day and row bars receive their size as --bar-h / --bar-w. No rule read
+   those for .anBarDl, .anBarPlay or .anRowFill, so the bars had no size at
+   all; these two lines are what draws the charts. */
+.anBarDl, .anBarPlay { height: var(--bar-h, 0%); }
+.anRowFill { width: var(--bar-w, 0%); }
+.anBarCol[data-untracked="true"] .anBarStack { background: repeating-linear-gradient(135deg, var(--border) 0 2px, transparent 2px 6px); }
+.anDotNone { background: repeating-linear-gradient(135deg, var(--border-strong) 0 2px, transparent 2px 4px); border: 1px solid var(--border); }
+.anLegend { flex-wrap: wrap; }
+.anRowLabel--wide { width: 170px; }
+.anState { margin-bottom: var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: var(--radius); background: var(--surface); font-size: 14px; color: var(--text); line-height: 1.5; }
+.anState[data-state="measured_zero"] { border-left-color: var(--warning); }
+.anStatOf { font-size: 14px; font-weight: 500; color: var(--text-subtle); letter-spacing: 0; }
+.anInsights { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-3); }
+.anInsight { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius); }
+.anInsight[data-kind="insufficient"] { border-left-color: var(--border-strong); }
+.anInsightTitle { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.anInsightKind { font-size: 11px; font-weight: 600; color: var(--accent-text); }
+.anInsight[data-kind="insufficient"] .anInsightKind { color: var(--text-subtle); }
+.anInsightLines { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--sp-2); font-size: 14px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.anInsight[data-kind="insufficient"] .anInsightLines { color: var(--text-muted); }
+.anInsightBasis { margin-top: auto; font-size: 12px; color: var(--text-subtle); }
+.anInsightBasis > summary { cursor: pointer; }
+.anInsightBasis > summary:hover { color: var(--text); }
+.anInsightBasis p { margin: var(--sp-2) 0 0; line-height: 1.5; }
+.anEpList { list-style: none; margin: 0; padding: 0; }
+.anEp { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-3) 0; border-top: 1px solid var(--border); min-width: 0; }
+.anEp:first-child { border-top: none; padding-top: 0; }
+.anEpWhat { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.anEpName { font-size: 14px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anEpName:hover { text-decoration: underline; text-underline-offset: 3px; }
+.anEpShow { font-size: 12px; color: var(--text-subtle); overflow-wrap: anywhere; }
+.anEpNums { display: flex; gap: var(--sp-6); margin: 0; flex-shrink: 0; }
+.anEpNums div { display: grid; justify-items: end; }
+.anEpNums dt { font-size: 11px; color: var(--text-subtle); }
+.anEpNums dd { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.anEpState { flex-shrink: 1; max-width: 46%; text-align: right; font-size: 13px; color: var(--text-muted); }
+.anEp[data-flagged="true"] .anEpName { color: var(--accent-text); }
+@media (max-width: 720px) {
+  .anInsights { grid-template-columns: 1fr; }
+  .anEp { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .anEpName { white-space: normal; overflow-wrap: anywhere; }
+  .anEpNums { justify-content: flex-start; }
+  .anEpNums div { justify-items: start; }
+  .anEpState { max-width: none; text-align: left; }
+  .anRowLabel--wide { width: 110px; white-space: normal; }
+}

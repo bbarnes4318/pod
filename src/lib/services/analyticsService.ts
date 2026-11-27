@@ -16,6 +16,7 @@
 
 import crypto from "node:crypto";
 import { db } from "@/lib/db";
+import type { EpisodeStat } from "@/lib/analytics/insights";
 
 export type EventKind = "download" | "play";
 export type EventSource = "rss" | "direct" | "player";
@@ -112,6 +113,16 @@ export interface AnalyticsSummary {
   byCountry: { country: string; count: number }[];
   byApp: { app: string; count: number }[];
   rangeDays: number;
+  /** How the audio was requested: "rss" | "direct" | "player". In the period. */
+  bySource: { source: string; count: number }[];
+  /** EVERY episode the owner has, with or without events, so the screen can
+   *  tell "no tracking data" apart from a measured zero. */
+  episodes: EpisodeStat[];
+  /** ISO timestamp of the first event ever recorded for this owner's episodes;
+   *  null when nothing has ever been recorded. */
+  trackingSince: string | null;
+  /** Every event ever recorded for this owner's episodes, any period. */
+  lifetimeEvents: number;
 }
 
 /**
@@ -125,7 +136,7 @@ export async function getOwnerAnalytics(ownerId: string, opts?: { days?: number 
   // Owner's episodes are the only rows we ever read events for.
   const episodes = await db.episode.findMany({
     where: { ownerId },
-    select: { id: true, title: true, publishedAt: true },
+    select: { id: true, title: true, publishedAt: true, status: true, podcastId: true, podcast: { select: { name: true } } },
   });
   const epIds = episodes.map((e) => e.id);
   const titleById = new Map(episodes.map((e) => [e.id, e.title]));
@@ -134,13 +145,25 @@ export async function getOwnerAnalytics(ownerId: string, opts?: { days?: number 
   const empty: AnalyticsSummary = {
     totalDownloads: 0, totalPlays: 0, episodeCount: episodes.length,
     daily: [], byEpisode: [], byCountry: [], byApp: [], rangeDays: days,
+    bySource: [], episodes: [], trackingSince: null, lifetimeEvents: 0,
   };
   if (epIds.length === 0) return empty;
 
   const events = await db.playEvent.findMany({
     where: { episodeId: { in: epIds }, at: { gte: since } },
-    select: { episodeId: true, kind: true, country: true, appBucket: true, dayBucket: true },
+    select: { episodeId: true, kind: true, source: true, country: true, appBucket: true, dayBucket: true },
   });
+  // All-time count and first event per episode, aggregated in the database.
+  // This is what separates "nothing was ever recorded" from "zero this period".
+  const lifetime = await db.playEvent.groupBy({
+    by: ["episodeId"],
+    where: { episodeId: { in: epIds } },
+    _count: { _all: true },
+    _min: { at: true },
+  });
+  const lifetimeById = new Map(lifetime.map((l) => [l.episodeId, l._count._all]));
+  const firstAt = lifetime.map((l) => l._min.at).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+  const sourceAgg = new Map<string, number>();
 
   // Daily series (fill every day in range so the chart has no gaps).
   const dailyMap = new Map<string, { downloads: number; plays: number }>();
@@ -164,6 +187,7 @@ export async function getOwnerAnalytics(ownerId: string, opts?: { days?: number 
     epAgg.set(ev.episodeId, ep);
     const c = ev.country || "Unknown";
     countryAgg.set(c, (countryAgg.get(c) ?? 0) + 1);
+    sourceAgg.set(ev.source, (sourceAgg.get(ev.source) ?? 0) + 1);
     const a = ev.appBucket || "Unknown";
     appAgg.set(a, (appAgg.get(a) ?? 0) + 1);
   }
@@ -179,5 +203,19 @@ export async function getOwnerAnalytics(ownerId: string, opts?: { days?: number 
       .sort((a, b) => b.downloads + b.plays - (a.downloads + a.plays)),
     byCountry: [...countryAgg.entries()].map(([country, count]) => ({ country, count })).sort((a, b) => b.count - a.count).slice(0, 12),
     byApp: [...appAgg.entries()].map(([app, count]) => ({ app, count })).sort((a, b) => b.count - a.count),
+    bySource: [...sourceAgg.entries()].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count),
+    episodes: episodes.map((e) => ({
+      episodeId: e.id,
+      title: e.title,
+      showId: e.podcastId,
+      showName: e.podcast?.name ?? null,
+      published: e.status === "published",
+      publishedAt: e.publishedAt ? e.publishedAt.toISOString() : null,
+      downloads: epAgg.get(e.id)?.downloads ?? 0,
+      plays: epAgg.get(e.id)?.plays ?? 0,
+      lifetimeEvents: lifetimeById.get(e.id) ?? 0,
+    })),
+    trackingSince: firstAt ? firstAt.toISOString() : null,
+    lifetimeEvents: lifetime.reduce((n, l) => n + l._count._all, 0),
   };
 }
