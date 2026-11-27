@@ -14,17 +14,46 @@ import {
   AdaptiveQuestion, AskQuestions, CancelRun, HostPicker, OpportunityActions, RefineOpportunity, ScriptActions, StartResearch,
 } from "./BusinessResearchClient";
 
-export const BUSINESS_TABS = [
-  // In the order the work happens: know the business, research the industry,
-  // choose a topic, verify it, produce it.
+// The show page follows the pipeline the Editorial desk uses:
+// Discover → Investigate → Approve → Produce, with the company context on
+// Overview. These replaced six administrative tabs (Overview, Discover,
+// Topics, Insider angles, Dossiers, Episodes); every old ?tab= URL still
+// lands on the stage that now holds that content.
+export const BUSINESS_STAGES = [
   { id: "overview", label: "Overview" },
-  { id: "radar", label: "Discover" },
-  { id: "topics", label: "Topics" },
-  { id: "insider", label: "Insider angles" },
-  { id: "dossiers", label: "Dossiers" },
-  { id: "episodes", label: "Episodes" },
+  { id: "discover", label: "Discover" },
+  { id: "investigate", label: "Investigate" },
+  { id: "approve", label: "Approve" },
+  { id: "produce", label: "Produce" },
 ] as const;
-export type BusinessTab = (typeof BUSINESS_TABS)[number]["id"];
+export type BusinessStage = (typeof BUSINESS_STAGES)[number]["id"];
+export type TopicScope = "stage" | "all" | "insider";
+
+const LEGACY_TAB: Record<string, { stage: BusinessStage; scope?: TopicScope }> = {
+  radar: { stage: "discover" },
+  topics: { stage: "approve", scope: "all" },
+  insider: { stage: "approve", scope: "insider" },
+  dossiers: { stage: "investigate" },
+  episodes: { stage: "produce" },
+};
+
+/** ?tab= (new stage id or a legacy tab id) and ?scope= → where to land. */
+export function resolveBusinessView(rawTab?: string, rawScope?: string): { stage: BusinessStage; scope: TopicScope } {
+  const legacy = rawTab ? LEGACY_TAB[rawTab] : undefined;
+  const stage = legacy?.stage ?? BUSINESS_STAGES.find((t) => t.id === rawTab)?.id ?? "overview";
+  const scope = rawScope === "all" || rawScope === "insider" ? rawScope : legacy?.scope ?? "stage";
+  return { stage, scope };
+}
+
+type TopicStage = Exclude<BusinessStage, "overview">;
+/** Same rule as the desk's stageOf, plus PRODUCED (the desk hides those). Rejected topics sit at no stage. */
+function topicStage(o: { editorialStatus: string; dossier: { status: string } | null }): TopicStage | null {
+  if (o.editorialStatus === "REJECTED") return null;
+  if (o.editorialStatus === "APPROVED" || o.editorialStatus === "PRODUCED") return "produce";
+  if (o.editorialStatus === "HELD") return "investigate";
+  if (!o.dossier) return "discover";
+  return o.dossier.status === "READY" ? "approve" : "investigate";
+}
 
 const FIELD_LABEL = (f: string) => f.toLowerCase().replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const STATUS_CHIP: Record<string, string> = {
@@ -39,10 +68,83 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 16).replace("T
 interface Props {
   podcast: { id: string; name: string };
   profile: BusinessProfile;
-  tab: BusinessTab;
+  stage: BusinessStage;
+  scope: TopicScope;
 }
 
-export default async function BusinessShowView({ podcast, profile, tab }: Props) {
+interface SetupStep { label: string; done: boolean; detail: string; href: string | null }
+interface ShowState {
+  steps: SetupStep[];
+  counts: Record<TopicStage, number>;
+  next: { title: string; detail: string; href: string | null; cta: string | null };
+}
+
+/** Everything "where is this show?" needs, from real rows only. */
+async function loadShowState(profile: BusinessProfile): Promise<ShowState> {
+  const podcastId = profile.podcastId;
+  const at = (stage: BusinessStage) => `/studio/shows/${podcastId}?tab=${stage}`;
+  const [pod, industryRuns, runningRuns, topics, episodes] = await Promise.all([
+    db.podcast.findUnique({ where: { id: podcastId }, select: { hostIds: true, productionConfig: { select: { hostIds: true } } } }),
+    db.businessResearchRun.count({ where: { podcastId, kind: "industry", status: { in: ["completed", "partial"] } } }).catch(() => 0),
+    db.businessResearchRun.count({ where: { podcastId, status: { in: ["queued", "running"] } } }).catch(() => 0),
+    db.businessTopicOpportunity.findMany({ where: { podcastId }, select: { editorialStatus: true, dossier: { select: { status: true } } } }).catch(() => []),
+    db.episode.findMany({
+      where: { podcastId },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { title: true, scripts: { orderBy: { version: "desc" }, take: 1, select: { status: true } } },
+    }).catch(() => []),
+  ]);
+  const hostCount = (pod?.productionConfig?.hostIds?.length ? pod.productionConfig.hostIds : pod?.hostIds ?? []).filter(Boolean).length;
+  const counts: Record<TopicStage, number> = { discover: 0, investigate: 0, approve: 0, produce: 0 };
+  let approvedReady = 0;
+  let approved = 0;
+  for (const t of topics) {
+    const st = topicStage(t);
+    if (st) counts[st] += 1;
+    if (t.editorialStatus === "APPROVED" || t.editorialStatus === "PRODUCED") approved += 1;
+    if (t.editorialStatus === "APPROVED" && t.dossier?.status === "READY") approvedReady += 1;
+  }
+  const pendingFindings = readFindings(profile.findings).filter((f) => f.status === "pending").length;
+  const discovered = profile.discoveryStatus === "complete" || !!profile.discoveredAt;
+  const draft = episodes.find((e) => e.scripts[0]?.status === "draft");
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  // The path to a first episode, in the order the pipeline needs it. Each step
+  // reads a real row count, so the checklist can never claim work that has
+  // not happened.
+  const steps: SetupStep[] = [
+    { label: "Company profile", done: true, detail: profile.businessName, href: null },
+    { label: "Read your website", done: discovered, detail: profile.discoveryStatus === "running" ? "Running now" : profile.discoveryStatus === "failed" ? "Last run failed" : "Run discovery from the top bar", href: null },
+    { label: "Choose hosts", done: hostCount > 0, detail: hostCount > 0 ? plural(hostCount, "host assigned", "hosts assigned") : "Pick a lead host on Overview", href: `${at("overview")}#biz-hosts` },
+    { label: "Research the industry", done: industryRuns > 0, detail: industryRuns > 0 ? plural(industryRuns, "completed run", "completed runs") : "Start a run in Discover", href: at("discover") },
+    { label: "Approve a topic", done: approved > 0, detail: approved > 0 ? `${approved} approved` : "Review researched topics in Approve", href: at("approve") },
+    { label: "Produce an episode", done: episodes.length > 0, detail: episodes.length > 0 ? plural(episodes.length, "episode", "episodes") : "Generate from an approved topic's dossier", href: at("produce") },
+  ];
+
+  // One next step, most urgent first. Work that is waiting on the creator
+  // outranks work the system can still do on its own.
+  const next: ShowState["next"] =
+    draft ? { title: "A script is waiting for your approval", detail: draft.title, href: at("produce"), cta: "Review script" }
+    : approvedReady > 0 ? { title: `${plural(approvedReady, "approved topic is", "approved topics are")} ready to produce`, detail: "The dossier is verified. Generate the episode.", href: at("produce"), cta: "Produce" }
+    : counts.approve > 0 ? { title: `${plural(counts.approve, "researched topic is", "researched topics are")} waiting on your call`, detail: "Read the evidence, then approve, hold or reject.", href: at("approve"), cta: "Decide" }
+    : pendingFindings > 0 ? { title: `${plural(pendingFindings, "thing", "things")} we learned about your business to confirm`, detail: "Research only uses what you confirm.", href: `${at("overview")}#biz-findings`, cta: "Review" }
+    : profile.discoveryStatus === "running" ? { title: "Reading your website", detail: "Findings appear on Overview when it finishes.", href: null, cta: null }
+    : !discovered ? { title: "Read your website", detail: "Use Run discovery in the top bar so research starts from what the business actually says.", href: null, cta: null }
+    : hostCount === 0 ? { title: "Choose who hosts this show", detail: "One host is a solo show; two make a conversation.", href: `${at("overview")}#biz-hosts`, cta: "Choose hosts" }
+    : runningRuns > 0 ? { title: "Research is running", detail: `${plural(runningRuns, "run", "runs")} in progress. Nothing needs you yet.`, href: at(counts.investigate > 0 ? "investigate" : "discover"), cta: "Watch progress" }
+    : counts.investigate > 0 ? { title: `${plural(counts.investigate, "topic is", "topics are")} held or still being researched`, detail: "See what each one needs.", href: at("investigate"), cta: "Open" }
+    : counts.discover > 0 ? { title: `${plural(counts.discover, "proposed topic has", "proposed topics have")} not been researched`, detail: "Pick the strongest and start its dossier.", href: at("discover"), cta: "Pick a topic" }
+    : industryRuns === 0 ? { title: "Research the industry", detail: "A research run reads industry sources and proposes topics.", href: at("discover"), cta: "Start research" }
+    : { title: "Nothing is waiting on you", detail: "Run fresh research in Discover when you want new topics.", href: at("discover"), cta: "Discover" };
+
+  return { steps, counts, next };
+}
+
+export default async function BusinessShowView({ podcast, profile, stage, scope }: Props) {
+  const state = await loadShowState(profile);
+  const doneCount = state.steps.filter((s) => s.done).length;
+  const { next } = state;
   return (
     <div className="fadeUp" data-testid="business-show-hq">
       <StudioPageHeader
@@ -59,22 +161,51 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
       <header className="showHead showHead--tight">
         <span className="showArt showArt--lg" data-hue={showHue(podcast.id)} aria-hidden="true">{showInitials(podcast.name)}</span>
         <div className="showHeadText">
-          <div className="overline">{profile.businessName} · {profile.industry}</div>
+          <div className="overline">
+            {profile.businessName} · {profile.industry} · {humanize(profile.primaryGoal)}
+            {profile.targetAudiences.length > 0 && ` · for ${profile.targetAudiences[0]}`}
+          </div>
           <p className="showHeadPromise">
             This show is researched, not improvised. Every episode starts from a topic the research found, a dossier that verified it, and a script checked against its sources.
           </p>
         </div>
       </header>
-      <nav className="bizTabs" aria-label="Business show sections">
-        {BUSINESS_TABS.map((t) => (
-          <Link key={t.id} href={`/studio/shows/${podcast.id}?tab=${t.id}`} aria-current={t.id === tab ? "page" : undefined}>{t.label}</Link>
+      <section className="studioCard bizNext" aria-label="What to do next" data-testid="business-next-step">
+        <div className="bizNextBody">
+          <p className="bizNextKicker">Next{doneCount < state.steps.length ? ` · setup ${doneCount} of ${state.steps.length}` : ""}</p>
+          <p className="bizNextTitle">{next.title}</p>
+          <p className="bizNote">{next.detail}</p>
+        </div>
+        {next.href && next.cta && <Link href={next.href} className="btnGhost">{next.cta}</Link>}
+      </section>
+      <nav className="bizTabs" aria-label="Business show workflow">
+        {BUSINESS_STAGES.map((t) => (
+          <Link key={t.id} href={`/studio/shows/${podcast.id}?tab=${t.id}`} aria-current={t.id === stage ? "page" : undefined}>
+            {t.label}
+            {t.id !== "overview" && state.counts[t.id] > 0 && <span className="chip bizCount">{state.counts[t.id]}</span>}
+          </Link>
         ))}
       </nav>
-      {tab === "overview" && <Overview profile={profile} />}
-      {tab === "radar" && <Radar podcastId={podcast.id} />}
-      {(tab === "topics" || tab === "insider") && <Opportunities podcastId={podcast.id} insiderOnly={tab === "insider"} profile={profile} />}
-      {tab === "dossiers" && <Dossiers podcastId={podcast.id} />}
-      {tab === "episodes" && <Episodes podcastId={podcast.id} />}
+      {stage === "overview" && <Overview profile={profile} steps={state.steps} />}
+      {stage === "discover" && (
+        <>
+          <Radar podcastId={podcast.id} />
+          <Opportunities podcastId={podcast.id} stage="discover" scope={scope} profile={profile} />
+        </>
+      )}
+      {stage === "investigate" && (
+        <>
+          <Opportunities podcastId={podcast.id} stage="investigate" scope={scope} profile={profile} />
+          <Dossiers podcastId={podcast.id} />
+        </>
+      )}
+      {stage === "approve" && <Opportunities podcastId={podcast.id} stage="approve" scope={scope} profile={profile} />}
+      {stage === "produce" && (
+        <>
+          <Opportunities podcastId={podcast.id} stage="produce" scope={scope} profile={profile} />
+          <Episodes podcastId={podcast.id} />
+        </>
+      )}
     </div>
   );
 }
@@ -83,7 +214,7 @@ export default async function BusinessShowView({ podcast, profile, tab }: Props)
 
 const humanize = (v: string) => (/[_]/.test(v) || v === v.toLowerCase() ? v.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : v);
 
-async function Overview({ profile }: { profile: BusinessProfile }) {
+async function Overview({ profile, steps }: { profile: BusinessProfile; steps: SetupStep[] }) {
   const findings = readFindings(profile.findings);
   const answers = readAnswers(profile.answers);
   const visible = findings.filter((f) => f.status !== "rejected");
@@ -93,33 +224,15 @@ async function Overview({ profile }: { profile: BusinessProfile }) {
   const totalAdvanced = ADVANCED_SECTIONS.reduce((n, s) => n + s.fields.length, 0);
   const questions = pendingQuestions(profile.answers);
   const podcastId = profile.podcastId;
-
-  const [pod, industryRuns, approved, episodes] = await Promise.all([
-    db.podcast.findUnique({ where: { id: podcastId }, select: { hostIds: true, productionConfig: { select: { hostIds: true } } } }),
-    db.businessResearchRun.count({ where: { podcastId, kind: "industry", status: { in: ["completed", "partial"] } } }).catch(() => 0),
-    db.businessTopicOpportunity.count({ where: { podcastId, editorialStatus: { in: ["APPROVED", "PRODUCED"] } } }).catch(() => 0),
-    db.episode.count({ where: { podcastId } }).catch(() => 0),
-  ]);
-  const hostCount = (pod?.productionConfig?.hostIds?.length ? pod.productionConfig.hostIds : pod?.hostIds ?? []).filter(Boolean).length;
-
-  // The path to a first episode, in the order the pipeline needs it. Each step
-  // reads a real row count, so the checklist can never claim work that has
-  // not happened.
-  const steps = [
-    { label: "Company profile", done: true, detail: profile.businessName, href: null },
-    { label: "Read your website", done: profile.discoveryStatus === "complete" || !!profile.discoveredAt, detail: profile.discoveryStatus === "running" ? "Running now" : profile.discoveryStatus === "failed" ? "Last run failed" : "Run discovery from the top bar", href: null },
-    { label: "Choose hosts", done: hostCount > 0, detail: hostCount > 0 ? `${hostCount} host${hostCount === 1 ? "" : "s"} assigned` : "Pick a lead host below", href: null },
-    { label: "Research the industry", done: industryRuns > 0, detail: industryRuns > 0 ? `${industryRuns} completed run${industryRuns === 1 ? "" : "s"}` : "Start a run in Industry Radar", href: `/studio/shows/${podcastId}?tab=radar` },
-    { label: "Approve a topic", done: approved > 0, detail: approved > 0 ? `${approved} approved` : "Review proposals in Topic Opportunities", href: `/studio/shows/${podcastId}?tab=topics` },
-    { label: "Produce an episode", done: episodes > 0, detail: episodes > 0 ? `${episodes} episode${episodes === 1 ? "" : "s"}` : "Generate from an approved topic's dossier", href: `/studio/shows/${podcastId}?tab=episodes` },
-  ];
   const doneCount = steps.filter((s) => s.done).length;
   const nextIndex = steps.findIndex((s) => !s.done);
 
   return (
     <div className="bizOverview">
       <div className="bizOverviewMain">
-        <section className="studioCard bizSetup" aria-labelledby="biz-setup-title">
+        {/* Setup checklist: shown until every step is done. After that the
+            "Next" card above is the only prompt the show needs. */}
+        {doneCount < steps.length && <section className="studioCard bizSetup" aria-labelledby="biz-setup-title">
           <div className="bizCardHead">
             <div>
               <h2 id="biz-setup-title" className="m-0">Get this show on air</h2>
@@ -141,7 +254,7 @@ async function Overview({ profile }: { profile: BusinessProfile }) {
               </li>
             ))}
           </ol>
-        </section>
+        </section>}
 
         <section className="studioCard bizSection">
           <div className="bizCardHead">
@@ -156,7 +269,7 @@ async function Overview({ profile }: { profile: BusinessProfile }) {
             : questions.map(([id, q]) => <AdaptiveQuestion key={id} podcastId={podcastId} id={id} question={q.question} why={q.why} />)}
         </section>
 
-        <section className="studioCard bizSection">
+        <section className="studioCard bizSection" id="biz-findings">
           <div>
             <h2 className="m-0">What we learned about your business{pendingCount > 0 && <span className="statusPill statusPill--warn bizHeadPill">{pendingCount} to review</span>}</h2>
             <p className="bizLead">
@@ -177,16 +290,13 @@ async function Overview({ profile }: { profile: BusinessProfile }) {
           )}
         </section>
 
-        <section className="studioCard bizSection">
-          <div className="bizCardHead">
-            <div>
-              <h2 className="m-0">Deeper context</h2>
-              <p className="bizLead">Optional. Each answer is routed to the research passes that use it — queries, topics, insider analysis, dossiers, scripts and exclusions.</p>
-            </div>
-            <span className="statusPill">{answered} of {totalAdvanced} answered</span>
-          </div>
+        {/* Optional context, folded away: it is reference material for the
+            research, not a step. Open while nothing has been answered yet. */}
+        <details className="studioCard bizContext" id="biz-context" open={answered === 0}>
+          <summary>Deeper context <span className="statusPill">{answered} of {totalAdvanced} answered</span></summary>
+          <p className="bizLead">Optional. Each answer is routed to the research passes that use it — queries, topics, insider analysis, dossiers, scripts and exclusions.</p>
           <AdvancedAnswersForm podcastId={podcastId} version={profile.version} sections={ADVANCED_SECTIONS} initial={answers} />
-        </section>
+        </details>
       </div>
 
       <aside className="bizOverviewSide">
@@ -202,7 +312,7 @@ async function Overview({ profile }: { profile: BusinessProfile }) {
           </dl>
           {profile.description && <p className="bizBody">{profile.description}</p>}
         </section>
-        <Hosts podcastId={podcastId} />
+        <div id="biz-hosts"><Hosts podcastId={podcastId} /></div>
       </aside>
     </div>
   );
@@ -326,13 +436,25 @@ async function Radar({ podcastId }: { podcastId: string }) {
 interface KeyClaim { claim: string; verdict: string; url?: string; authority?: string }
 const INSIDER_FIELDS = ["COMMON_OPERATIONAL_PROBLEMS", "HIDDEN_COSTS", "INDUSTRY_PRICING_MECHANISMS", "OPERATIONAL_BOTTLENECKS"];
 
-async function Opportunities({ podcastId, insiderOnly, profile }: { podcastId: string; insiderOnly: boolean; profile: BusinessProfile }) {
-  const opps = await db.businessTopicOpportunity.findMany({
-    where: { podcastId, ...(insiderOnly ? { category: { in: ["INSIDER_INTELLIGENCE", "HIDDEN_OPPORTUNITY"] } } : {}) },
+const STAGE_TOPICS: Record<TopicStage, { title: string; lead: string; empty: string }> = {
+  discover: { title: "Proposed topics", lead: "Found by research, not yet investigated. Start a dossier on the ones worth verifying.", empty: "No proposed topics waiting. Run research above to find some." },
+  investigate: { title: "Being investigated", lead: "A dossier is being researched, or the topic is held. Each one says what it still needs.", empty: "Nothing is being investigated. Start a dossier from a proposed topic in Discover." },
+  approve: { title: "Waiting on your call", lead: "Researched and verified. Approve, hold or reject each one.", empty: "No researched topic is waiting on you." },
+  produce: { title: "Approved topics", lead: "Approved topics become episodes from their verified dossier.", empty: "No approved topics yet. Approve one in Approve." },
+};
+
+async function Opportunities({ podcastId, stage, scope, profile }: { podcastId: string; stage: TopicStage; scope: TopicScope; profile: BusinessProfile }) {
+  const insiderOnly = scope === "insider";
+  const everything = await db.businessTopicOpportunity.findMany({
+    where: { podcastId },
     include: { dossier: { select: { status: true } } },
     orderBy: [{ opportunityScore: "desc" }],
-    take: 60,
+    take: 120,
   });
+  const isInsider = (o: { category: string }) => o.category === "INSIDER_INTELLIGENCE" || o.category === "HIDDEN_OPPORTUNITY";
+  const opps = (scope === "all" ? everything : insiderOnly ? everything.filter(isInsider) : everything.filter((o) => topicStage(o) === stage)).slice(0, 60);
+  const scopeHref = (sc: TopicScope) => `/studio/shows/${podcastId}?tab=${stage}${sc === "stage" ? "" : `&scope=${sc}`}`;
+  const copy = STAGE_TOPICS[stage];
   const dossierRuns = await db.businessResearchRun.findMany({
     where: { podcastId, kind: "dossier", opportunityId: { in: opps.map((o) => o.id) } },
     orderBy: { createdAt: "desc" },
@@ -348,15 +470,22 @@ async function Opportunities({ podcastId, insiderOnly, profile }: { podcastId: s
   return (
     <section className="studioCard bizSection">
       <div>
-        <h2 className="m-0">{insiderOnly ? "Insider intelligence" : "Topic opportunities"} <span className="chip bizCount">{opps.length}</span></h2>
+        <h2 className="m-0">{insiderOnly ? "Insider intelligence" : scope === "all" ? "Topic opportunities" : copy.title} <span className="chip bizCount">{opps.length}</span></h2>
         <p className="bizLead">
           {insiderOnly
             ? "Mechanisms most outsiders miss and undercovered angles. Insider topics need a high information-advantage score or they are held."
-            : "Potential IAS is what the topic could deliver; achieved IAS is measured after the dossier verifies it. Demand confidence (how sure we are) is separate from demand strength (how much interest exists)."}
+            : scope === "all"
+              ? "Every topic at every stage, rejected ones included. Potential IAS is what the topic could deliver; achieved IAS is measured after the dossier verifies it. Demand confidence (how sure we are) is separate from demand strength (how much interest exists)."
+              : copy.lead}
         </p>
         {insiderOnly && noInsiderInput && <p className="bizNote">Tip: answering the insider questions under Overview → Deeper context gives this pass much better material.</p>}
+        <nav className="bizFilter" aria-label="Which topics to show">
+          <Link href={scopeHref("stage")} className={scope === "stage" ? "chip chipAccent" : "chip"} aria-current={scope === "stage" ? "page" : undefined}>This stage</Link>
+          <Link href={scopeHref("all")} className={scope === "all" ? "chip chipAccent" : "chip"} aria-current={scope === "all" ? "page" : undefined}>All topics ({everything.length})</Link>
+          <Link href={scopeHref("insider")} className={insiderOnly ? "chip chipAccent" : "chip"} aria-current={insiderOnly ? "page" : undefined}>Insider angles ({everything.filter(isInsider).length})</Link>
+        </nav>
       </div>
-      {opps.length === 0 && <p className="bizNote">No topics yet. Run research from Industry Radar.</p>}
+      {opps.length === 0 && <p className="bizNote">{scope === "stage" ? copy.empty : "No topics yet. Run research in Discover."}</p>}
       {opps.map((o) => {
         const holds = asArray<string>(o.holdReasons);
         const claims = asArray<KeyClaim>(o.keyClaims);
@@ -462,7 +591,7 @@ async function Dossiers({ podcastId }: { podcastId: string }) {
         <h2 className="m-0">Research dossiers <span className="chip bizCount">{dossiers.length}</span></h2>
         <p className="bizLead">Every fact below was checked against its source. Removed and unverified claims are listed under uncertainties. A dossier needs at least three verified facts from two independent origins to be READY.</p>
       </div>
-      {dossiers.length === 0 && <p className="bizNote">No dossiers yet. Start one from a topic.</p>}
+      {dossiers.length === 0 && <p className="bizNote">No dossiers yet. Start one from a proposed topic in Discover.</p>}
       {dossiers.map((d) => {
         // A dossier still researching (or that failed first time) holds the "{}" default.
         const raw = d.content as Partial<DossierContent> | null;
