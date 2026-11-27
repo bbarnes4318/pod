@@ -4,8 +4,6 @@ import { currentUser } from "@/lib/currentUser";
 import { settingsFromHost } from "@/lib/hosts/hostStudioProfile";
 import { voiceBriefForHost } from "@/lib/hosts/voiceBriefs";
 import CharacterStudio, { type StudioHostVM } from "./CharacterStudio";
-// Search opens a host as /studio/hosts#host-<id>; this file styles the :target card.
-import "../shows/shows-intel.css";
 
 export const dynamic = "force-dynamic";
 
