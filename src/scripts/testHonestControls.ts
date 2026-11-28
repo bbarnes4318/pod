@@ -42,6 +42,8 @@ console.log("Honest controls\n");
 const publishPanel = src("app/studio/PublishPanel.tsx");
 const actions = src("app/app/create/actions.ts");
 const builder = src("app/studio/create/RundownBuilder.tsx");
+// The created-episode screen (ResultView) moved here in #165 (5eb192a).
+const createParts = src("app/studio/create/parts.tsx");
 
 check("D-06: the publish button is disabled when the server gate says no", () => {
   assert(/disabled=\{busy === "publish" \|\| !st\.canPublish\}/.test(publishPanel),
@@ -78,16 +80,16 @@ check("D-06: the readiness check validates the action the button ACTUALLY perfor
 });
 
 check("D-04: the created screen says nothing is running yet", () => {
-  assert(!/🎬 Episode created<\/h2>/.test(builder), "the terminal-sounding headline must be gone");
-  assert(/not started yet/i.test(builder), "the heading must name the actual state");
-  assert(/Nothing is generating yet/i.test(builder), "the screen must state that no work has begun");
-  assert(/not-started-notice/.test(builder), "the notice needs an addressable region");
+  assert(!/🎬 Episode created<\/h2>/.test(builder + createParts), "the terminal-sounding headline must be gone");
+  assert(/not started yet/i.test(createParts), "the heading must name the actual state");
+  assert(/Nothing is generating yet/i.test(createParts), "the screen must state that no work has begun");
+  assert(/not-started-notice/.test(createParts), "the notice needs an addressable region");
 });
 
 check("D-04: the forward action is still the primary control", () => {
-  const at = builder.indexOf('data-testid="start-debate"');
+  const at = createParts.indexOf('data-testid="start-debate"');
   assert(at !== -1, "the start control must still exist");
-  assert(/btnPrimary/.test(builder.slice(at - 200, at + 200)), "starting the debate must be the primary button");
+  assert(/btnPrimary/.test(createParts.slice(at - 200, at + 200)), "starting the debate must be the primary button");
 });
 
 check("D-13: the engine list is resolved from real credentials", () => {

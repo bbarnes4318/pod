@@ -31,6 +31,8 @@ const queue = src("lib/queue/podcastQueue.ts");
 const worker = src("lib/queue/worker.ts");
 const actions = src("app/app/create/actions.ts");
 const builder = src("app/studio/create/RundownBuilder.tsx");
+// ResultView (the "Start the debate" screen) moved here in #165 (5eb192a).
+const createParts = src("app/studio/create/parts.tsx");
 const jobLogsPage = src("app/admin/job-logs/page.tsx");
 const jobLogsRefresh = src("app/admin/job-logs/AutoRefresh.tsx");
 
@@ -62,7 +64,14 @@ check("all BullMQ waiting/running states coalesce repeat clicks", () => {
 });
 
 check("Studio hands the exact newly-created episode id to startDebate", () => {
-  assert(/startDebate\(result\.episodeId\)/.test(builder), "ResultView must start the episode returned by creation");
+  // The builder keeps exactly the result creation returned and hands it to ResultView ...
+  assert(/const res = await createStudioEpisode\(/.test(builder), "the builder must create the episode through createStudioEpisode");
+  assert(/setResult\(res\);/.test(builder), "the builder must keep the result creation returned, unchanged");
+  assert(/<ResultView result=\{result\}/.test(builder), "the builder must pass that same result to ResultView");
+  // ... and ResultView starts that result's episode id, nothing else.
+  const viewAt = createParts.indexOf("export function ResultView(");
+  assert(viewAt !== -1, "ResultView must exist in the create parts");
+  assert(/startDebate\(result\.episodeId\)/.test(createParts.slice(viewAt)), "ResultView must start the episode returned by creation");
   assert(/queueScriptGenerationJob\(\{[\s\S]*?episodeId,/.test(actions), "startDebate must enqueue its episodeId unchanged");
 });
 

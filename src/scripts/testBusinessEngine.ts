@@ -812,9 +812,19 @@ async function main() {
       const sports = make([broken, good]);
       await assert.rejects(() => sports.generateStructuredOutput({ prompt: "p", maxTokens: 500 }), /valid JSON/);
       assert.equal(sports.calls, 1);
-      // Business, broken twice: fails loudly after one retry.
+      // Business, broken twice: fails loudly after exactly one retry. Since
+      // #164 (881714c) the give-up error is deliberately NOT worded as a JSON
+      // parse failure, so businessLLM()'s own JSON retry cannot make a third call.
+      const { isMalformedJsonError } = await import("../lib/business/schemaInstructions");
       const twice = make([broken, broken]);
-      await assert.rejects(() => withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => twice.generateStructuredOutput({ prompt: "p", maxTokens: 500 })), /valid JSON/);
+      await assert.rejects(
+        () => withCreativeDomain({ kind: "business", industry: "VoIP", audience: "carriers" }, () => twice.generateStructuredOutput({ prompt: "p", maxTokens: 500 })),
+        (err: unknown) => {
+          assert.match(String((err as Error)?.message), /malformed twice in a row/);
+          assert.equal(isMalformedJsonError(err), false, "the give-up error must not invite another JSON retry upstream");
+          return true;
+        },
+      );
       assert.equal(twice.calls, 2);
     } finally {
       if (prevKey === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prevKey;
