@@ -40,8 +40,8 @@ database, in CI, or against a live model or Fish.** Only tsx unit checks and
 
 Slip to record: during Part 4, `testBookendRenderGate` and
 `testPostTtsRenderGate` were run locally by mistake. They start an embedded
-Postgres; both failed on a Prisma-client mismatch and nothing was written
-outside a temp folder. Do not run them on the owner's machine.
+Postgres; both failed on a Prisma-client mismatch. Do not run them
+on the owner's machine.
 
 ### Part 3 status as of 2026-11-27 evening (historical)
 
