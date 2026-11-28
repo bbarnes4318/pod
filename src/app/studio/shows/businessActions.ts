@@ -1,4 +1,5 @@
 "use server";
+import { readBrief } from "@/lib/studio/executiveBrief";
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
@@ -409,14 +410,19 @@ export async function refineOpportunity(podcastId: string, opportunityId: string
 // Production
 // ---------------------------------------------------------------------------
 
-export async function generateBusinessEpisode(podcastId: string, opportunityId: string): Promise<Result<{ episodeId: string }>> {
+/** `brief`: the approved AI Executive Producer brief, if the creator made one.
+ *  Stored on the episode BEFORE the script job is queued, so the writer reads it. */
+export async function generateBusinessEpisode(podcastId: string, opportunityId: string, briefRaw?: unknown): Promise<Result<{ episodeId: string }>> {
   const owned = await ownedProfile(podcastId);
   if ("error" in owned) return { success: false, error: owned.error! };
+  const brief = briefRaw == null ? null : readBrief(briefRaw);
+  if (briefRaw != null && !brief) return { success: false, error: "The production brief couldn't be read. Draft it again, or remove it." };
   try {
     const cap = await assertCanCreateEpisode(owned.user.id);
     if (!cap.ok) return { success: false, error: cap.error };
     const created = await createBusinessEpisode(db, { podcastId, opportunityId, ownerId: owned.user.id });
     if (!created.success) return created;
+    if (brief) await db.episode.update({ where: { id: created.episodeId }, data: { editorialBrief: brief as never } });
     await queueScriptGenerationJob({ episodeId: created.episodeId });
     revalidateShow(podcastId);
     return { success: true, episodeId: created.episodeId };

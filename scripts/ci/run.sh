@@ -414,6 +414,7 @@ QUALITY_STEPS=(
   "editorial-gate|npm run test:editorial-gate"
   "production-release-gate|npm run test:production-release-gate"
   "release-integrity|npm run test:release-integrity"
+  "executive-brief|npm run test:executive-brief"
   "semantic-repetition|npm run test:semantic-repetition"
   "opening-chapter-integrity|npm run test:opening-chapter-integrity"
   "story-clustering|npm run test:story-clustering"

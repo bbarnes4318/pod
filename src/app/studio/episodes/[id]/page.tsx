@@ -10,6 +10,7 @@ import { isOwnerAccount } from "@/lib/services/entitlementService";
 import { qualityOf, fmtDuration, fmtDate, statusChip, nextActionFor } from "../../lib";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
+import { BriefSummary } from "./BriefSummary";
 import StudioPlayer, { PlayerChapter, HostSpan } from "./StudioPlayer";
 import EpisodeWorkspace, { WorkspaceTab } from "./EpisodeWorkspace";
 import EditorialGatePanel from "./EditorialGatePanel";
@@ -279,6 +280,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   // topics the episode was created from; nothing here is projected.
   const rundownNode = (
     <div className="epRundown">
+      <BriefSummary value={episode.editorialBrief} />
       {segments.length === 0 ? (
         <p className="epNote">The rundown appears as soon as the script is drafted.</p>
       ) : (
