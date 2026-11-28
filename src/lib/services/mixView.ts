@@ -4,6 +4,9 @@
 // lane, and cue markers. Nothing here synthesizes or mocks audio.
 
 import { db } from "@/lib/db";
+import { measuredFromJobOutput, type MixMeasuredVM } from "@/lib/audio/measuredQa";
+
+export type { MixMeasuredVM };
 import { parseEpisodeSoundDesign } from "@/lib/audio/soundDesignShared";
 import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
 
@@ -55,7 +58,14 @@ export interface MixVM {
   cues: MixCueVM[];
   /** True once every line has ready audio (a re-splice/line-regen is possible). */
   fullyVoiced: boolean;
+  /**
+   * MEASURED by ffmpeg (ebur128 / silencedetect) on the rendered master, read
+   * from the render's own job record. Null when no render was measured. These
+   * are measurements, not heuristics: nothing here is estimated.
+   */
+  measured: MixMeasuredVM | null;
 }
+
 
 /** Rough duration estimate for a not-yet-voiced line so its block still renders. */
 function estimateMs(text: string): number {
@@ -79,6 +89,7 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
     bed: { present: false, style: null, sfxDensity: null },
     cues: [],
     fullyVoiced: false,
+    measured: null,
   });
 
   const episode = await db.episode.findUnique({
@@ -176,13 +187,21 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
   const startByLine = new Map<number, number>();
   for (const seg of segments) for (const l of seg.lines) startByLine.set(l.lineIndex, l.startMs);
   try {
+    // Scoped to this script in the query (JSON path filter) instead of scanning
+    // the latest 25 logs across every episode; failed runs (whose output has no
+    // plan) are skipped.
     const logs = await db.jobLog.findMany({
-      where: { jobType: { in: ["audio:stitch-final", "audio:regenerate-line"] } },
+      where: {
+        jobType: { in: ["audio:stitch-final", "audio:regenerate-line"] },
+        status: { in: ["completed", "completed_with_errors"] },
+        input: { path: ["scriptId"], equals: script.id },
+      },
       orderBy: { createdAt: "desc" },
-      take: 25,
-      select: { input: true, output: true },
+      take: 5,
+      select: { output: true, createdAt: true },
     });
-    const match = logs.find((l) => (l.input as any)?.scriptId === script.id && (l.output as any));
+    const match = logs.find((l) => l.output);
+    base.measured = match ? measuredFromJobOutput(match.output, match.createdAt) : null;
     const plan = (match?.output as any)?.productionPlan || (match?.output as any)?.stitch?.productionPlan;
     const cues = Array.isArray(plan?.cues) ? plan.cues : [];
     base.cues = cues
