@@ -7,7 +7,45 @@ every milestone. Continue from here; do not restart the design.
 
 ---
 
-## 0. Current status (2026-11-27, evening) — read this first
+## 0. Current status (2026-11-28) — read this first
+
+### Part 4 — final completion (four draft PRs, none merged, none verified)
+
+`main` = `575e69d` (#171 and #172 merged). Each PR below branches from it and
+stands alone. **Nothing in Part 4 has been run in a browser, against a
+database, in CI, or against a live model or Fish.** Only tsx unit checks and
+`tsc` ran, locally, with no database.
+
+| PR | Branch | Priority | What it is | Checks run |
+| --- | --- | --- | --- | --- |
+| #173 | `release/immutable-artifacts` | P0 follow-up | Content-addressed audio keys; row lock on every Script.content write (admin save is optimistic with a content hash); re-mixing a published episode no longer replaces the public audio. Only a gated re-publish promotes it. | `test:release-integrity` 54/54, `test:business-engine` 96/96. Three new DB checks written, **not run**. |
+| #174 | `studio/executive-producer` | P1 | AI Executive Producer: model drafts a reasoned brief (role `script_outline`); each section can be kept, edited, redrafted or dropped; deterministic fallback labelled as such; brief stored on `Episode.editorialBrief` and injected into both script engines. Sports and business. | `test:executive-brief` passes. **Has a migration.** No live model call. |
+| #175 | `studio/chemistry-audition` | P3 | Chemistry audition: 2–3 hosts plus a subject and style; the model writes a scene from stored traits, Fish voices it; up to three takes side by side; cast the pair onto a show. Measurements only, no score. | `test:chemistry-audition` 28/28. No live call. |
+| #176 | `studio/audio-workspace` | P2 (part) | Real decoded waveform of the master; ffmpeg-measured loudness/peak panel kept apart from estimates; render lookup scoped by script in the query; `content-visibility` for long line lists. | `test:audio-workspace` 7/7. Bucket CORS unknown. |
+
+**Capability matrix (honest):**
+
+| Capability | State |
+| --- | --- |
+| Immutable recordings and masters | Built (#173), unit-checked only |
+| Script edit concurrency, including admin | Built (#173), unit-checked only |
+| Published audio immutable until re-publish | Built (#173), unit-checked only |
+| AI Executive Producer, per-section control | Built (#174), no live model run |
+| Brief reaches script generation | Built (#174), source-checked |
+| Waveform / measured loudness | Built (#176); waveform depends on bucket CORS |
+| Chapters, per-cue mix controls, multi-version compare in the mix | **Not built** |
+| Chemistry audition | Built (#175), no live run |
+| P4 UX (Quick Start recs, RundownBuilder split, distinct creation modes, library pagination, analytics queries, mobile) | **Not started** |
+| P5 browser failures, P6 integrated validation, P7 end-to-end, P8 review | **Not run.** Need the server or a cloud session (standing rule 1); live steps need an authorised budget. |
+
+Slip to record: during Part 4, `testBookendRenderGate` and
+`testPostTtsRenderGate` were run locally by mistake. They start an embedded
+Postgres; both failed on a Prisma-client mismatch and nothing was written
+outside a temp folder. Do not run them on the owner's machine.
+
+### Part 3 status as of 2026-11-27 evening (historical)
+
+#### Current status (2026-11-27, evening)
 
 **Part 2 is merged.** PRs #164 to #170 all merged into `main` on 2026-11-27;
 `main` is at `bb69ac931b20dfa5b2145f97a24c8c37bbf87914`. Merging deployed web and
