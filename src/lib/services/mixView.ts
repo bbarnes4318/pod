@@ -8,11 +8,8 @@ import { measuredFromJobOutput, type MixMeasuredVM } from "@/lib/audio/measuredQ
 
 export type { MixMeasuredVM };
 import { parseEpisodeSoundDesign } from "@/lib/audio/soundDesignShared";
-import { DEFAULT_PAUSE_MS, DEFAULT_SEGMENT_GAP_MS, DEFAULT_TOPIC_GAP_MS } from "@/lib/audio/pauseTiming";
+import { jobOutputFile, layoutLines } from "@/lib/audio/mixLayout";
 
-// Gap model mirroring the stitch/assembly defaults so block positions line up
-// with the rendered timeline within ~a second (same table the player uses).
-const GAP: Record<string, number> = { ...DEFAULT_PAUSE_MS, segment: DEFAULT_SEGMENT_GAP_MS, topic: DEFAULT_TOPIC_GAP_MS };
 
 export interface MixLineVM {
   lineIndex: number;
@@ -26,6 +23,38 @@ export interface MixLineVM {
   tone: string | null;
   energy: string | null;
   dirty: boolean;
+  /** How this line is voiced: its own clip, inside a performed scene, or not at all. */
+  voicedBy: "line" | "scene" | null;
+  /** The selected scene recording that performs this line, if any. */
+  sceneIndex: number | null;
+  /** true when startMs/durationMs are estimated rather than measured. */
+  approx: boolean;
+}
+
+/** A selected, ready scene recording (DialogueSceneAudio). Its duration is real. */
+export interface MixSceneVM {
+  sceneIndex: number;
+  firstLineIndex: number;
+  lastLineIndex: number;
+  startMs: number;
+  durationMs: number;
+  /** provider_timestamps | forced_alignment | stt_alignment | timing_unavailable */
+  timingStatus: string;
+  /** How many candidate takes exist for this scene (ready ones). */
+  candidates: number;
+  engine: string;
+}
+
+/** A finished render of the episode (EpisodeAudioRender, succeeded). */
+export interface MixRenderVM {
+  renderVersion: number;
+  renderMode: string;
+  productionStyle: string | null;
+  completedAt: string | null;
+  /** This render's file is the one Episode.audioUrl points at (played here, and public once published). */
+  isCurrent: boolean;
+  /** Measured by ffmpeg on THIS render's file; null when its job record carried none. */
+  measured: MixMeasuredVM | null;
 }
 
 export interface MixSegmentVM {
@@ -58,20 +87,26 @@ export interface MixVM {
   cues: MixCueVM[];
   /** True once every line has ready audio (a re-splice/line-regen is possible). */
   fullyVoiced: boolean;
+  /** Where the dialogue audio lives: per-line clips, performed scenes, both, or none yet. */
+  voicing: "none" | "lines" | "scenes" | "mixed";
+  scenes: MixSceneVM[];
+  /** Newest first, at most 5. */
+  renders: MixRenderVM[];
+  /** A finished render newer than the one being played exists (e.g. a re-mix of a
+   *  published episode that has not been re-published yet). */
+  newerRenderPending: boolean;
+  /** Lines whose text changed after they were voiced (need re-voicing). */
+  staleLines: number;
   /**
    * MEASURED by ffmpeg (ebur128 / silencedetect) on the rendered master, read
-   * from the render's own job record. Null when no render was measured. These
-   * are measurements, not heuristics: nothing here is estimated.
+   * from the render's own job record — ONLY the job whose output file is the
+   * one being played (episodeAudioUrl). Null otherwise: a measurement of an
+   * older, newer or failed render is never shown against this file.
    */
   measured: MixMeasuredVM | null;
 }
 
 
-/** Rough duration estimate for a not-yet-voiced line so its block still renders. */
-function estimateMs(text: string): number {
-  const words = (text || "").trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(900, Math.round((words / 2.6) * 1000)); // ~2.6 words/sec
-}
 
 export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
   const empty = (error?: string): MixVM => ({
@@ -89,6 +124,11 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
     bed: { present: false, style: null, sfxDensity: null },
     cues: [],
     fullyVoiced: false,
+    voicing: "none",
+    scenes: [],
+    renders: [],
+    newerRenderPending: false,
+    staleLines: 0,
     measured: null,
   });
 
@@ -135,73 +175,85 @@ export async function getEpisodeMixVM(episodeId: string): Promise<MixVM> {
   const content = (script.content as any) || {};
   const rawSegments: any[] = Array.isArray(content.segments) ? content.segments : [];
 
-  // Real per-line audio.
-  const segRows = await db.audioSegment.findMany({
-    where: { scriptId: script.id },
-    select: { lineIndex: true, status: true, audioUrl: true, durationMs: true },
-  });
+  // Real audio, from BOTH places it can live: per-line clips (AudioSegment) and
+  // performed scenes (DialogueSceneAudio, the selected ready take per scene).
+  // Reading only AudioSegment calls a scene-voiced episode empty.
+  const [segRows, sceneRows] = await Promise.all([
+    db.audioSegment.findMany({
+      where: { scriptId: script.id },
+      select: { lineIndex: true, status: true, audioUrl: true, durationMs: true },
+    }),
+    db.dialogueSceneAudio.findMany({
+      where: { scriptId: script.id, status: "ready" },
+      select: { sceneIndex: true, firstLineIndex: true, lastLineIndex: true, lineIndexes: true, durationMs: true, timingStatus: true, timingMap: true, selected: true, provider: true, model: true, audioUrl: true },
+    }),
+  ]);
   const audioByLine = new Map<number, { status: string; audioUrl: string | null; durationMs: number | null }>();
   for (const s of segRows) audioByLine.set(s.lineIndex, { status: s.status, audioUrl: s.audioUrl, durationMs: s.durationMs });
-
-  const segments: MixSegmentVM[] = [];
-  let cursor = 0;
-  let lineTotal = 0;
-  let voicedLines = 0;
-  rawSegments.forEach((seg: any, segIdx: number) => {
-    if (segIdx > 0) cursor += seg?.type === "topic" ? GAP.topic : GAP.segment;
-    const lines: MixLineVM[] = [];
-    (seg?.lines || []).forEach((ln: any, li: number) => {
-      const idx = typeof ln?.lineIndex === "number" ? ln.lineIndex : lineTotal;
-      if (li > 0) {
-        const pb = String(ln?.pauseBefore || "beat");
-        cursor += ln?.isInterruption ? Math.max(0, -200) : GAP[pb] ?? GAP.beat;
-      }
-      const audio = audioByLine.get(idx);
-      const dur = audio?.durationMs && audio.durationMs > 0 ? audio.durationMs : estimateMs(String(ln?.text || ""));
-      const ready = audio?.status === "ready" && !!audio.audioUrl;
-      if (ready) voicedLines++;
-      lines.push({
-        lineIndex: idx,
-        speaker: String(ln?.speakerName || ""),
-        textShort: String(ln?.text || "").slice(0, 120),
-        startMs: cursor,
-        durationMs: dur,
-        status: audio?.status || "none",
-        hasAudio: ready,
-        audioUrl: ready ? audio!.audioUrl : null,
-        tone: ln?.tone ?? null,
-        energy: ln?.energy ?? null,
-        dirty: ln?.dirty === true,
-      });
-      cursor += dur;
-      lineTotal++;
+  base.segments = layoutLines(rawSegments, audioByLine, sceneRows);
+  const allLines = base.segments.flatMap((s) => s.lines);
+  const scenesOut = new Map<number, MixSceneVM>();
+  for (const r of sceneRows) {
+    if (!r.selected || !r.audioUrl) continue;
+    const first = allLines.find((l) => l.sceneIndex === r.sceneIndex);
+    scenesOut.set(r.sceneIndex, {
+      sceneIndex: r.sceneIndex, firstLineIndex: r.firstLineIndex, lastLineIndex: r.lastLineIndex,
+      startMs: first?.startMs ?? 0, durationMs: r.durationMs ?? 0, timingStatus: r.timingStatus,
+      candidates: sceneRows.filter((x) => x.sceneIndex === r.sceneIndex).length, engine: `${r.provider} ${r.model}`.trim(),
     });
-    segments.push({ title: String(seg?.title || seg?.type || "Segment"), type: String(seg?.type || "segment"), lines });
-  });
-  base.segments = segments;
-  base.totalMs = Math.max(1, cursor);
-  base.fullyVoiced = lineTotal > 0 && voicedLines === lineTotal;
+  }
+  base.scenes = [...scenesOut.values()].sort((a, b) => a.sceneIndex - b.sceneIndex);
+  const last = allLines[allLines.length - 1];
+  base.totalMs = Math.max(1, last ? last.startMs + last.durationMs : 1, ...base.scenes.map((s) => s.startMs + s.durationMs));
+  const byLine = allLines.filter((l) => l.voicedBy === "line").length;
+  const byScene = allLines.filter((l) => l.voicedBy === "scene").length;
+  base.fullyVoiced = allLines.length > 0 && byLine + byScene === allLines.length;
+  base.voicing = byLine && byScene ? "mixed" : byScene ? "scenes" : byLine ? "lines" : "none";
+  base.staleLines = allLines.filter((l) => l.dirty && l.hasAudio).length;
 
   // Real cue sheet: pull the ProductionPlan the stitcher persisted in the latest
   // audio:stitch-final / audio:regenerate-line JobLog for this script.
   const startByLine = new Map<number, number>();
-  for (const seg of segments) for (const l of seg.lines) startByLine.set(l.lineIndex, l.startMs);
+  for (const seg of base.segments) for (const l of seg.lines) startByLine.set(l.lineIndex, l.startMs);
   try {
     // Scoped to this script in the query (JSON path filter) instead of scanning
     // the latest 25 logs across every episode; failed runs (whose output has no
     // plan) are skipped.
-    const logs = await db.jobLog.findMany({
-      where: {
-        jobType: { in: ["audio:stitch-final", "audio:regenerate-line"] },
-        status: { in: ["completed", "completed_with_errors"] },
-        input: { path: ["scriptId"], equals: script.id },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 5,
-      select: { output: true, createdAt: true },
-    });
-    const match = logs.find((l) => l.output);
+    const [logs, renders] = await Promise.all([
+      db.jobLog.findMany({
+        where: {
+          jobType: { in: ["audio:stitch-final", "audio:regenerate-line"] },
+          status: { in: ["completed", "completed_with_errors"] },
+          input: { path: ["scriptId"], equals: script.id },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        select: { output: true, createdAt: true },
+      }),
+      db.episodeAudioRender.findMany({
+        where: { episodeId: episode.id, status: "succeeded" },
+        orderBy: { renderVersion: "desc" },
+        take: 5,
+        select: { renderVersion: true, renderMode: true, productionStyle: true, completedAt: true, outputAudioUrl: true },
+      }),
+    ]);
+    // Every measurement and cue sheet is keyed by the FILE its job produced.
+    const byFile = new Map<string, { output: unknown; createdAt: Date }>();
+    for (const l of logs) { const f = jobOutputFile(l.output); if (f && !byFile.has(f)) byFile.set(f, l); }
+    const forFile = (f: string | null) => (f ? byFile.get(f) ?? null : null);
+    const match = forFile(episode.audioUrl);
     base.measured = match ? measuredFromJobOutput(match.output, match.createdAt) : null;
+    base.renders = renders.map((r) => {
+      const j = forFile(r.outputAudioUrl);
+      return {
+        renderVersion: r.renderVersion, renderMode: r.renderMode, productionStyle: r.productionStyle,
+        completedAt: r.completedAt?.toISOString() ?? null,
+        isCurrent: !!r.outputAudioUrl && r.outputAudioUrl === episode.audioUrl,
+        measured: j ? measuredFromJobOutput(j.output, j.createdAt) : null,
+      };
+    });
+    const currentIdx = base.renders.findIndex((r) => r.isCurrent);
+    base.newerRenderPending = currentIdx > 0;
     const plan = (match?.output as any)?.productionPlan || (match?.output as any)?.stitch?.productionPlan;
     const cues = Array.isArray(plan?.cues) ? plan.cues : [];
     base.cues = cues

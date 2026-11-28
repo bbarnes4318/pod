@@ -33,30 +33,58 @@ const DECODE_RATE = 8000;
 export default function MixWaveform({ url, atFraction, onSeek }: { url: string; atFraction: number; onSeek: (fraction: number) => void }) {
   const [state, setState] = useState<"idle" | "loading" | "ready" | "unavailable">("idle");
   const [reason, setReason] = useState("");
-  const [peaks, setPeaks] = useState<number[] | null>(null);
+  // Peaks are stored WITH the url they were measured from, and only drawn while
+  // that url is still the one playing: an old render's picture can never show
+  // against a new render, even if its decode finishes late.
+  const [peaks, setPeaks] = useState<{ url: string; data: number[] } | null>(null);
+  const [width, setWidth] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // A new render is a new URL: drop the old picture.
-  useEffect(() => { setState("idle"); setPeaks(null); }, [url]);
+  // A new render (or episode) is a new URL: cancel any read in flight and drop the old picture.
+  useEffect(() => {
+    abortRef.current?.abort();
+    setState("idle"); setPeaks(null); setReason("");
+    return () => abortRef.current?.abort();
+  }, [url]);
 
   const load = async () => {
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const forUrl = url;
     setState("loading");
     try {
-      const res = await fetch(url, { mode: "cors" });
+      const res = await fetch(forUrl, { mode: "cors", signal: ac.signal });
       if (!res.ok) throw new Error(`the audio file answered ${res.status}`);
       const buf = await res.arrayBuffer();
+      if (ac.signal.aborted) return;
       const ctx = new OfflineAudioContext(1, 1, DECODE_RATE);
       const audio = await ctx.decodeAudioData(buf);
-      setPeaks(peaksFrom(audio.getChannelData(0), BUCKETS));
+      if (ac.signal.aborted) return; // the user moved to another render meanwhile
+      setPeaks({ url: forUrl, data: peaksFrom(audio.getChannelData(0), BUCKETS) });
       setState("ready");
     } catch (e: any) {
+      if (ac.signal.aborted || e?.name === "AbortError") return;
       setReason(e?.name === "TypeError" ? "the audio host does not let the browser read the file" : e?.message || "the browser could not decode it");
       setState("unavailable");
     }
   };
 
+  // Redraw at the canvas's real size when the layout changes (rotation, sidebar, window resize).
   useEffect(() => {
     const c = canvasRef.current;
+    if (!c || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.round(e.contentRect.width)));
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [state]);
+
+  const current = peaks && peaks.url === url ? peaks.data : null;
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    const peaks = current;
     if (!c || !peaks) return;
     const w = (c.width = c.clientWidth * (window.devicePixelRatio || 1));
     const h = (c.height = c.clientHeight * (window.devicePixelRatio || 1));
@@ -77,12 +105,22 @@ export default function MixWaveform({ url, atFraction, onSeek }: { url: string; 
       g.fillStyle = i < split ? played : rest;
       g.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);
     }
-  }, [peaks, atFraction]);
+  }, [current, atFraction, width]);
 
-  if (state === "idle")
+  if (state === "idle" || (state === "ready" && !current))
     return <button type="button" className="btnGhost btnSm mixWaveBtn" onClick={load}>Show waveform</button>;
-  if (state === "loading") return <p className="stageHint m-0" role="status">Reading the audio file…</p>;
-  if (state === "unavailable") return <p className="stageHint m-0" role="note">Waveform unavailable: {reason}.</p>;
+  if (state === "loading")
+    return (
+      <p className="stageHint m-0" role="status">
+        Reading the audio file… <button type="button" className="advLink" onClick={() => { abortRef.current?.abort(); setState("idle"); }}>Cancel</button>
+      </p>
+    );
+  if (state === "unavailable")
+    return (
+      <p className="stageHint m-0" role="note">
+        Waveform unavailable: {reason}. <button type="button" className="advLink" onClick={load}>Try again</button>
+      </p>
+    );
   return (
     <canvas
       ref={canvasRef}
@@ -98,8 +136,11 @@ export default function MixWaveform({ url, atFraction, onSeek }: { url: string; 
         onSeek(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)));
       }}
       onKeyDown={(e) => {
-        if (e.key === "ArrowRight") onSeek(Math.min(1, atFraction + 0.02));
-        if (e.key === "ArrowLeft") onSeek(Math.max(0, atFraction - 0.02));
+        const step = e.key === "ArrowRight" || e.key === "ArrowUp" ? 0.02 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -0.02
+          : e.key === "PageUp" ? 0.1 : e.key === "PageDown" ? -0.1 : null;
+        if (step !== null) { e.preventDefault(); onSeek(Math.min(1, Math.max(0, atFraction + step))); }
+        else if (e.key === "Home") { e.preventDefault(); onSeek(0); }
+        else if (e.key === "End") { e.preventDefault(); onSeek(1); }
       }}
     />
   );
