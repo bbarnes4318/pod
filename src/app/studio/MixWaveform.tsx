@@ -62,9 +62,13 @@ export default function MixWaveform({ url, atFraction, onSeek }: { url: string; 
     const h = (c.height = c.clientHeight * (window.devicePixelRatio || 1));
     const g = c.getContext("2d");
     if (!g) return;
+    // Canvas cannot read a CSS custom property, so the tokens are resolved off
+    // the canvas at paint time (.mixWave maps them to --accent / --text-muted).
+    // The fallback mirrors globals.css, as in StudioPlayer's cssToken().
     const css = getComputedStyle(c);
-    const played = css.getPropertyValue("--wave-played").trim() || "#f60";
-    const rest = css.getPropertyValue("--wave-rest").trim() || "#888";
+    const cssToken = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const played = cssToken("--wave-played", "#FF5A1F");
+    const rest = cssToken("--wave-rest", "#9BA3AF");
     g.clearRect(0, 0, w, h);
     const bw = w / peaks.length;
     const split = atFraction * peaks.length;
