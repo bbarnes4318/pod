@@ -116,8 +116,14 @@ test.describe("Sound & Branding", () => {
     test.skip(!desktopOnly(ti));
     await seedAssets();
     await e2eDb().podcastSoundAssignment.deleteMany({ where: { podcastId: E2E.podcastId } });
+    // The precondition is "intro ENABLED, no intro variant". The show is shared
+    // with audio-asset-isolation.spec.ts, which saves it with both bookends
+    // switched off; relying on the default left this test saving a profile
+    // with no intro at all, which is (correctly) accepted. State it instead.
+    await e2eDb().podcastProductionConfig.updateMany({ where: { podcastId: E2E.podcastId }, data: { defaultIntroEnabled: true, defaultOutroEnabled: true } });
     await gotoSound(page);
     await page.getByTestId("mode-custom").check();
+    await expect(page.getByTestId("intro-enabled")).toBeChecked();
     await page.getByTestId("pool-outro-add").selectOption("e2e-outro-a");
     await page.getByTestId("pool-stinger-add").selectOption("e2e-sting-a");
     await page.getByTestId("sound-save").click();

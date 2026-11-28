@@ -21,7 +21,16 @@ import { test, expect } from "@playwright/test";
 import { E2E } from "./seed";
 import { e2eDb, episodeRow, closeE2eDb } from "./db";
 
-test.afterAll(async () => { await closeE2eDb(); });
+// Approving moves the SHARED "awaiting approval" fixture on to fact-check, and
+// this suite runs in the desktop pass only. Every later suite that opens that
+// episode (studio-chrome, studio-a11y, screenshots, at tablet and mobile) then
+// measured a different page from the one it names. Put the checkpoint back.
+test.afterAll(async () => {
+  const db = e2eDb();
+  await db.episode.updateMany({ where: { id: E2E.episodeAwaitingApprovalId }, data: { status: "script_draft" } });
+  await db.script.updateMany({ where: { episodeId: E2E.episodeAwaitingApprovalId }, data: { status: "draft" } });
+  await closeE2eDb();
+});
 
 const desktopOnly = (name: string) => test.skip(name !== "desktop", "desktop-only flow");
 const EP = () => `/studio/episodes/${E2E.episodeAwaitingApprovalId}`;

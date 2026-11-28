@@ -183,7 +183,6 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
 
   return (
     <div data-testid="sound-branding">
-      <p aria-live="polite" role="status" data-testid="sound-status" style={{ minHeight: "1.2em" }}>{pending ? "Working…" : status}</p>
       {conflict && (
         <p role="alert" data-testid="sound-conflict" style={{ border: "1px solid var(--border, #a33)", padding: 8 }}>
           Someone else changed this show&apos;s configuration. Reload the page to continue from the latest version.
@@ -322,6 +321,10 @@ export default function SoundBranding({ podcastId, data }: { podcastId: string; 
       >
         <button type="button" onClick={save} disabled={pending} data-testid="sound-save">Save sound profile</button>{" "}
         <button type="button" onClick={preview} disabled={pending} data-testid="sound-preview">Preview resolution</button>
+        {/* The result of Save / Preview sits beside the buttons that produced it.
+            It used to be at the top of a long page, off screen whenever Save
+            (in this sticky footer) was clicked, so a refusal looked like nothing. */}
+        <p aria-live="polite" role="status" data-testid="sound-status" style={{ minHeight: "1.2em", margin: "8px 0 0" }}>{pending ? "Working…" : status}</p>
       </div>
 
       {examples && (

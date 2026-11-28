@@ -359,6 +359,14 @@ a.studioDockTitle:hover { text-decoration: underline; text-underline-offset: 3px
 @media (max-width: 720px) {
   .homeBrief { grid-template-columns: minmax(0, 1fr); padding: var(--sp-4); gap: var(--sp-4); align-items: start; }
   .studioShell .homeBriefHeadline { font-size: 24px; }
+  /* On a phone the headline can wrap to three lines (episode titles are long).
+     The action goes straight under the headline it acts on, and the
+     explanation under the action, so the thing to do stays on the first
+     screen. Visual order only: the DOM, and so the reading order, is unchanged. */
+  .homeBriefText { display: contents; }
+  .homeBrief { row-gap: var(--sp-2); }
+  .homeBriefDo { order: 1; margin-top: var(--sp-2); }
+  .homeBriefDetail { order: 2; margin-top: var(--sp-1); }
   .leadTitle { font-size: 18px; }
   .home,
   .homeMain { gap: var(--sp-6); }

@@ -65,22 +65,24 @@ export default function QuickStart({ hosts, teams }: { hosts: WizardHost[]; team
   if (!proposal) {
     return (
       <form onSubmit={ask} className="studioCard bizForm" data-testid="quick-start">
-        <div>
-          <h2 className="m-0">Quick start</h2>
-          <p className="bizLead">
-            Describe the show in a sentence or two. You get a complete recommended setup with the reason for each choice. You can change anything, and nothing is saved until you accept.
-          </p>
-        </div>
-        <label>
-          <span className="fieldLabel">What is the show?</span>
+        {/* The question comes first and the field right under it: the
+            explanation is the field's description, below it, so the thing to
+            do is on the first screen at every width. */}
+        <div className="quickStartAsk">
+          <h2 className="m-0" id="quick-start-title">Quick start: what is the show?</h2>
           <textarea
             className="textarea"
             maxLength={1200}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            aria-labelledby="quick-start-title"
+            aria-describedby="quick-start-hint"
             placeholder="e.g. A twice-weekly NFL show where two friends who never agree put the week's worst coaching decision on trial."
           />
-        </label>
+          <p className="bizLead m-0" id="quick-start-hint">
+            Describe it in a sentence or two. You get a complete recommended setup with the reason for each choice. You can change anything, and nothing is saved until you accept.
+          </p>
+        </div>
         {error && (
           <p role="alert" className="gateResult gate-err bizFlush">
             {error.message}{" "}
