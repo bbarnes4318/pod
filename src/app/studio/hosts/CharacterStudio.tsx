@@ -14,11 +14,13 @@ import TalentProfile from "./TalentProfile";
 import TalentWizard from "./TalentWizard";
 import { voiceReady, type StudioHostVM } from "./talentModel";
 import "./talent.css";
+import { ChemistryAudition } from "./ChemistryAudition";
 
 export type { StudioHostVM } from "./talentModel";
 
 type View =
   | { kind: "library" }
+  | { kind: "chemistry" }
   | { kind: "profile"; id: string }
   | { kind: "edit"; id: string }
   | { kind: "create" };
@@ -44,12 +46,15 @@ export default function CharacterStudio({ hosts }: { hosts: StudioHostVM[] }) {
         actions={
           <>
             <Link href="/studio/auditions" className="btnGhost">Audition voices</Link>
+            <button type="button" className="btnGhost" data-testid="open-chemistry" onClick={() => setView(view.kind === "chemistry" ? { kind: "library" } : { kind: "chemistry" })}>{view.kind === "chemistry" ? "Close audition" : "Chemistry audition"}</button>
             <button type="button" className="btnPrimary" onClick={() => setView(view.kind === "create" ? { kind: "library" } : { kind: "create" })}>
               {view.kind === "create" ? "Close" : "Create a host"}
             </button>
           </>
         }
       />
+
+      {view.kind === "chemistry" && <ChemistryAudition hosts={active} onClose={library} />}
 
       {view.kind === "create" && (
         <TalentWizard mode="create" host={null} onClose={(savedId) => setView(savedId ? { kind: "profile", id: savedId } : { kind: "library" })} />
