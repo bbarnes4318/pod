@@ -1,3 +1,4 @@
+import { briefPromptBlock, readBrief } from "../studio/executiveBrief";
 // Business → shared production.
 //
 //   createBusinessEpisode   approved opportunity + READY dossier → Episode +
@@ -423,6 +424,12 @@ export async function generateBusinessScript(
   if (packet.kind !== "BUSINESS") throw new Error("Not a business episode.");
   if (packet.problems.length || packet.snapshots.length === 0) throw new Error(packet.problems[0] ?? "Business episode has no topic snapshot.");
   const snapshot = packet.snapshots[0];
+  // The creator's approved Executive Producer brief: intent and structure only;
+  // facts still come only from the dossier (the block says so).
+  const executiveBrief = readBrief((ep as { editorialBrief?: unknown }).editorialBrief);
+  const briefBlock = (names: (id: string) => string | undefined) => executiveBrief
+    ? "\n" + briefPromptBlock(executiveBrief, { hostName: names, sourceTitle: (id) => (id.startsWith("topic:") ? snapshot.title : id.startsWith("fact:") || id.startsWith("stat:") || id.startsWith("myth:") ? `dossier item ${id}` : undefined) })
+    : "";
   const ready = evaluateBusinessScriptReadiness(snapshot);
   if (!ready.ok) throw new Error(`Business script readiness failed: ${ready.reasons.join(" ")}`);
 
@@ -470,7 +477,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
   if (deps.creative && cast.length === 2) {
     // Two hosts: the same writing room sports episodes use.
     const run = await deps.creative({
-      systemPrompt: businessHeadWriterPrompt(showName, snapshot, format, cast.map((m) => m.host)),
+      systemPrompt: businessHeadWriterPrompt(showName, snapshot, format, cast.map((m) => m.host)) + briefBlock((id) => cast.find((m) => m.host.id === id)?.host.name),
       episodeTitle: ep.title,
       topicsPrompts: businessTopicsPrompt(snapshot),
       rundownTopics: [{ id: snapshot.opportunityId, title: snapshot.title }],
@@ -488,7 +495,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
     reasons.push(...run.reasons);
   } else {
     const raw = await deps.writer.generateStructuredOutput({
-      systemPrompt: SCRIPT_SYSTEM(format, ep.podcast?.name ?? snapshot.style.businessName),
+      systemPrompt: SCRIPT_SYSTEM(format, ep.podcast?.name ?? snapshot.style.businessName) + briefBlock((id) => cast.find((m) => m.host.id === id)?.host.name),
       prompt: `CAST (use these names exactly as speakerName):\n${castBlock}\n\nAudience: ${snapshot.style.audiences.join(", ")} · Technical depth: ${snapshot.style.technicalDepth ?? "moderate"} · Terminology they use: ${snapshot.style.terminology ?? "(standard industry terms)"} · Call to action: ${snapshot.style.callToAction ?? "none"}\nTarget length: about ${minutes} minutes (~${minutes * 150} spoken words).\n\n${dossier}`,
       jsonSchema: { type: "object" },
       temperature: 0.6,

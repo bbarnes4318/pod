@@ -41,3 +41,14 @@
   .qiItem { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .reviser { position: static; max-height: none; }
 }
+
+/* Approved AI Executive Producer brief on the Rundown stage (BriefSummary.tsx) */
+.epBrief { border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; background: var(--surface-2); }
+.epBriefHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.epBriefGoal { margin: 8px 0 12px; font-style: italic; color: var(--text-muted); }
+.epBriefList { display: grid; gap: 10px; margin: 0; }
+.epBriefRow { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: 4px 16px; }
+.epBriefRow dt { font-size: 13px; color: var(--text-muted); }
+.epBriefRow dd { margin: 0; }
+.epBriefRow ol, .epBriefRow ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+@media (max-width: 640px) { .epBriefRow { grid-template-columns: 1fr; } }

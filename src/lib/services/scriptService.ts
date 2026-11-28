@@ -67,6 +67,8 @@ function antithesisEnforced(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.ANTITHESIS_STRICT === "true";
 }
 import { resolveEpisodeTopicContent, briefLikeFromContent } from "./topicSnapshot";
+import { BRIEF_SECTIONS, briefPromptBlock, readBrief } from "../studio/executiveBrief";
+const BRIEF_SECTION_COUNT = BRIEF_SECTIONS.length;
 import { evaluateEpisodeTopicsForScript } from "./scriptTopicGate";
 
 export interface ScriptBuildInput {
@@ -381,7 +383,7 @@ export async function generateScriptForEpisode(input: ScriptBuildInput): Promise
     const content = resolveEpisodeTopicContent(et);
     return { id: et.topicId, title: content.title, sport: content.sport };
   });
-  const systemPrompt = `You are the head writer for ${showName}, ${pieces.showDescriptor}. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
+  const baseSystemPrompt = `You are the head writer for ${showName}, ${pieces.showDescriptor}. You write SPOKEN dialogue — words that will be performed out loud by voice actors, not read on a page. A listener must never suspect this show is scripted or synthetic.
 
 ${castPersonaBlocks(format, cast)}
 
@@ -448,6 +450,21 @@ Expected evidenceRefs JSON structure for lines: { "type": "game" | "newsItem" | 
 Unsafe claims (DO NOT USE AS FACTS OR TRUTHS):
 ${unsafeClaimsList.map((c) => `- "${c}"`).join("\n")}
 `;
+
+  // 7a. The creator's approved Executive Producer brief, if any. Appended to the
+  // ONE system prompt every stage reads (outline, movements, rewrites, repair),
+  // so the goal, thesis, segment plan and host positions shape the whole script.
+  // It sets intent, never facts: the block says so, and grounding is unchanged.
+  const executiveBrief = readBrief(ep.editorialBrief);
+  const systemPrompt = executiveBrief
+    ? baseSystemPrompt + "\n" + briefPromptBlock(executiveBrief, {
+        hostName: (id) => cast.find((h) => h.id === id)?.name,
+        sourceTitle: (id) => { const et = ep.topics.find((t) => t.topicId === id); return et ? resolveEpisodeTopicContent(et).title : undefined; },
+      })
+    : baseSystemPrompt;
+  if (executiveBrief) {
+    result.reasons.push(`Executive Producer brief applied (${executiveBrief.source === "model" ? `drafted by ${executiveBrief.model ?? "an AI model"}` : "built from research, no AI model"}, ${BRIEF_SECTION_COUNT - executiveBrief.rejected.length} sections in use).`);
+  }
 
   const prompt = `Write a complete ${pieces.scriptNoun} for the episode: "${ep.title}"
 Style: ${scriptStyle}
