@@ -111,3 +111,23 @@
 
 /* Search opens a host as /studio/hosts#host-<id>. */
 .hostCard:target { outline: 2px solid var(--accent); outline-offset: 2px; scroll-margin-top: 120px; }
+
+/* Chemistry audition (ChemistryAudition.tsx) */
+.chemCard { margin-bottom: 16px; }
+.chemField { border: 0; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; min-width: 0; }
+.chemHosts { display: flex; flex-wrap: wrap; gap: 8px; }
+.chemHosts .chip--on { background: var(--accent-muted); border-color: var(--accent-border); color: var(--text); }
+.chemRow { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.chemTake { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-top: 14px; display: grid; gap: 10px; background: var(--surface-2); min-width: 0; }
+.chemTakeHead { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+.chemFacts, .chemNotes { display: grid; gap: 2px; font-size: 14px; }
+.chemNotes p { margin: 2px 0; }
+.chemTranscript { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 6px; }
+.chemTranscript li { display: grid; grid-template-columns: minmax(80px, 140px) 1fr; gap: 10px; padding-left: 10px; border-left: 3px solid var(--border); }
+.chemTranscript .chemSeatA { border-left-color: var(--accent); }
+.chemTranscript .chemSeatB { border-left-color: var(--warning-color); }
+.chemSpeaker { font-weight: 600; font-size: 13px; }
+.chemPlayer { display: grid; gap: 4px; }
+.chemCompare { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.chemApply { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+@media (max-width: 640px) { .chemTranscript li { grid-template-columns: 1fr; gap: 2px; } }
