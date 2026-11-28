@@ -1,4 +1,4 @@
-import { buildMasterProvenance } from "./artifactProvenance";
+import { buildMasterProvenance, immutableStorageKey } from "./artifactProvenance";
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { commitContinuity } from "./showContinuityService";
@@ -1580,14 +1580,17 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
     // 11. Upload final MP3
     const episodeSlug = episode.slug || "";
     const versionStr = script.version.toString();
-    const storageKey = episodeSlug
+    // Content-addressed: a re-mix never overwrites the file an earlier mix
+    // (or the public feed) points at.
+    const masterBytes = fs.readFileSync(finalOutputPath);
+    const storageKey = immutableStorageKey(episodeSlug
       ? `episodes/${episode.id}/scripts/${scriptId}/final/take-machine-${episodeSlug}-v${versionStr}.mp3`
-      : `episodes/${episode.id}/scripts/${scriptId}/final/final.mp3`;
+      : `episodes/${episode.id}/scripts/${scriptId}/final/final.mp3`, masterBytes);
 
     console.log(`[Stitcher] Uploading final stitched audio for episode ${episode.id}.`);
     const uploadResult = await storageProvider.putObject({
       key: storageKey,
-      body: fs.readFileSync(finalOutputPath),
+      body: masterBytes,
       contentType: "audio/mp3",
     });
 
@@ -1607,8 +1610,14 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
         where: { id: episode.id },
         data: {
           status: finalEpisodeStatus,
-          audioUrl: uploadResult.url,
-          durationSeconds: Math.round(finalDurationSeconds),
+          // A published episode keeps serving the audio that passed the
+          // release gate; this master waits on its render record until a
+          // re-publish promotes it (publishEpisode, under the release lock).
+          ...(previousStatus === "published" ? {} : {
+            audioUrl: uploadResult.url,
+            durationSeconds: Math.round(finalDurationSeconds),
+            audioFileSizeBytes: masterBytes.length,
+          }),
           soundDesign: {
             ...episodeSound,
             style,
@@ -1802,7 +1811,7 @@ export async function stitchFinalEpisodeAudio(input: StitchInput) {
             ...renderDiagnostics,
             postTts: postTtsDiagnostics,
             // What this master IS: the script and line recordings read at the start of this mix.
-            provenance: buildMasterProvenance(scriptId, script.content, { lines: audioSegments.filter((a) => a.status === "ready") }),
+            provenance: buildMasterProvenance(scriptId, script.content, { lines: audioSegments.filter((a) => a.status === "ready") }, { bytes: masterBytes, durationSeconds: finalDurationSeconds }),
           } as unknown as object,
           outputAudioUrl: uploadResult.url,
         },
