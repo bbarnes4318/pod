@@ -96,6 +96,7 @@ import path from "node:path";
   assert(/deterministicBrief\(ctx\)/.test(action) && !/source: "model"[^\n]*deterministic/.test(action), "fallback is the deterministic brief, never labelled as model output");
   assert(/withInFlightLock\(`brief:\$\{user\.id\}`/.test(action) && /consumeRateLimit\("briefDraft", user\.id\)[\s\S]{0,300}getRoleLLMProvider\(ROLE\)/.test(action), "brief drafting: one in flight per user, hourly limit counted before the model call");
   const chem = src("app/studio/hosts/chemistryActions.ts");
+  assert(/if \(wanted && !wanted\.has\(i\)\) continue;/.test(chem), "partial voicing can be recovered by re-voicing only the failed lines");
   assert(/consumeRateLimit\("auditionWrite"/.test(chem) && /consumeRateLimit\("auditionVoice"/.test(chem) && /assertPremiumVoiceAllowed\(user\.id, engine\)/.test(chem) && (chem.match(/withInFlightLock\(/g) ?? []).length === 2, "auditions: per-user limits, one in flight, and the premium-voice plan rule on voicing");
   console.log("ok  executive brief propagation (source checks)");
 }

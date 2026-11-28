@@ -101,14 +101,16 @@ export type VoicedAudition =
   | { mode: "scene"; audioDataUrl: string; durationMs: number | null; engine: string }
   | { mode: "lines"; clips: { lineIndex: number; audioDataUrl: string; durationMs: number | null }[]; engine: string; failedLines: number[] };
 
-export async function voiceChemistryScene(scene: AuditionScene): Promise<{ success: true; audio: VoicedAudition } | Fail> {
+/** `onlyLines`: re-voice just these lines (line-by-line mode), to recover a
+ *  partial failure without paying for the lines that already worked. */
+export async function voiceChemistryScene(scene: AuditionScene, onlyLines?: number[]): Promise<{ success: true; audio: VoicedAudition } | Fail> {
   const user = await currentUser();
   if (!user) return { success: false, error: "Please sign in." };
-  const run = await withInFlightLock(`audition-voice:${user.id}`, 180_000, () => voiceFor(user, scene));
+  const run = await withInFlightLock(`audition-voice:${user.id}`, 180_000, () => voiceFor(user, scene, onlyLines));
   return run.busy ? { success: false, error: "A scene is already being voiced. Wait for it to finish." } : run.value;
 }
 
-async function voiceFor(user: { id: string }, scene: AuditionScene): Promise<{ success: true; audio: VoicedAudition } | Fail> {
+async function voiceFor(user: { id: string }, scene: AuditionScene, onlyLines?: number[]): Promise<{ success: true; audio: VoicedAudition } | Fail> {
   const loaded = await loadHosts(user.id, scene?.hostIds ?? []);
   if ("error" in loaded) return { success: false, error: loaded.error! };
   const ids = loaded.rows.map((h) => h.id);
@@ -167,7 +169,9 @@ async function voiceFor(user: { id: string }, scene: AuditionScene): Promise<{ s
   // Mixed engines: each line on its speaker's own voice, played back in order.
   const clips: { lineIndex: number; audioDataUrl: string; durationMs: number | null }[] = [];
   const failedLines: number[] = [];
+  const wanted = Array.isArray(onlyLines) && onlyLines.length ? new Set(onlyLines.filter((n) => Number.isInteger(n))) : null;
   for (const [i, l] of clean.lines.entries()) {
+    if (wanted && !wanted.has(i)) continue;
     const h = byId.get(l.speakerHostId)!;
     try {
       const r = await getTTSProvider(h.ttsProvider).synthesizeSpeech({
