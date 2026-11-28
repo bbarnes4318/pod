@@ -253,6 +253,12 @@ export const MIGRATION_CHECKPOINTS: MigrationCheckpoint[] = [
     schemaEqualitySufficient: true,
     invariants: ["business_research_tables_present", "business_research_foreign_keys_present"],
     note: "Additive only: six new business research tables (runs, sources, demand observations, topic opportunities, dossiers, episode topic snapshots) and their foreign keys. No data transform, no existing table altered.",
+  },  {
+    name: "20261127000000_episode_editorial_brief",
+    hasDataTransform: false,
+    schemaEqualitySufficient: true,
+    invariants: ["episode_editorial_brief_column_present"],
+    note: "Additive only: nullable JSONB Episode.editorialBrief, the approved AI Executive Producer brief. No data transform, no existing column altered.",
   },
 ];
 
@@ -747,6 +753,11 @@ export async function runDataInvariants(db: InvariantDb): Promise<InvariantResul
   add("business_research_foreign_keys_present", missingFks.length === 0,
     missingFks.length ? `missing foreign key(s): ${missingFks.join(", ")}` : "every business research foreign key is present",
     missingTables.length === BUSINESS_RESEARCH_TABLES.length);
+
+  // --- 20261127000000_episode_editorial_brief ----------------------------
+  const hasBrief = await columnExists(db, "Episode", "editorialBrief");
+  add("episode_editorial_brief_column_present", hasBrief,
+    hasBrief ? "Episode.editorialBrief exists" : "Episode.editorialBrief does not exist — the migration never ran", !hasBrief);
 
   return out;
 }

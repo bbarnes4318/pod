@@ -4,7 +4,8 @@
 // supply a fake user + in-memory db. ownerId ALWAYS comes from ctx.user — never
 // the client. reuseOverride is NEVER sent (Admin-only).
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Prisma } from "@prisma/client";
+import { readBrief } from "../studio/executiveBrief";
 import { type CreateEpisodeDraftResult } from "./episodeCreation";
 import { createRundownEpisode } from "./rundownCreation";
 import { getTopicUsage, resolveTopicReusePolicy, type UsageDb } from "./topicUsageService";
@@ -49,6 +50,9 @@ export interface StudioEpisodeInput {
   minDebateScore?: number;
   /** Prompt 7: standalone show-format pick (registered + generation-ready). */
   format?: string;
+  /** The approved AI Executive Producer brief (lib/studio/executiveBrief).
+   *  Validated here; stored on Episode.editorialBrief; read by script generation. */
+  brief?: unknown;
 }
 
 /**
@@ -191,6 +195,10 @@ export async function createStudioEpisodeFor(
   const voiceGate = await assertPremiumVoiceAllowed(ctx.user.id, input.ttsProvider);
   if (!voiceGate.ok) return { success: false, error: voiceGate.error, upgrade: true };
 
+  // Validate before creating: a malformed brief is refused, never silently dropped.
+  const brief = input.brief == null ? null : readBrief(input.brief);
+  if (input.brief != null && !brief) return { success: false, error: "The production brief couldn't be read. Draft it again, or remove it." };
+
   const res = await createRundownEpisode(
     {
       db: ctx.db,
@@ -226,6 +234,19 @@ export async function createStudioEpisodeFor(
     return { success: false, error: res.error, rejectedTopics: res.rejectedTopics, reasons: res.reasons };
   }
 
+  // The approved brief becomes a first-class production input. Written before
+  // anything can start the script (creation queues nothing). If it fails, the
+  // creator is told, never left believing the brief is in use.
+  let briefWarning: string | undefined;
+  if (brief) {
+    try {
+      await ctx.db.episode.update({ where: { id: res.episodeId }, data: { editorialBrief: brief as unknown as Prisma.InputJsonValue } });
+    } catch (err) {
+      briefWarning = "The episode was created, but your production brief couldn't be saved with it. Open the episode and add the brief before generating the script.";
+      console.error(`[studio] brief save failed for episode=${res.episodeId}:`, (err as Error).message);
+    }
+  }
+
   // Success → clear the resume draft. A cleanup failure is NON-fatal but SURFACED
   // (logged + warned) so a stale draft can't silently cause a duplicate.
   let draftCleanupWarning: string | undefined;
@@ -247,7 +268,7 @@ export async function createStudioEpisodeFor(
     reasons: res.reasons,
     requestedCount: res.requestedCount,
     concurrentlyDroppedIds: res.concurrentlyDroppedIds,
-    draftCleanupWarning,
+    draftCleanupWarning: [draftCleanupWarning, briefWarning].filter(Boolean).join(" ") || undefined,
   };
 }
 

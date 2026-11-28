@@ -12,7 +12,7 @@
 // the renderer for legacy_line episodes, the post-TTS director, and the
 // production planner. Scene mode uses this dedicated, simpler assembler.
 
-import { buildMasterProvenance } from "./artifactProvenance";
+import { buildMasterProvenance, immutableStorageKey } from "./artifactProvenance";
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
@@ -533,21 +533,23 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
     const finalDurationSeconds = (await getFileDurationMs(ffprobePath, finalOutputPath)) / 1000;
 
     // 7. Upload + persist.
-    const storageKey = `episodes/${episodeRow.id}/scripts/${scriptId}/final/scene-final-v${renderRecord.renderVersion}.mp3`;
+    const masterBytes = fs.readFileSync(finalOutputPath);
+    const storageKey = immutableStorageKey(`episodes/${episodeRow.id}/scripts/${scriptId}/final/scene-final-v${renderRecord.renderVersion}.mp3`, masterBytes);
     const uploadResult = await storageProvider.putObject({
       key: storageKey,
-      body: fs.readFileSync(finalOutputPath),
+      body: masterBytes,
       contentType: "audio/mp3",
     });
 
     const finalEpisodeStatus = PRODUCED_OR_LATER.has(previousStatus) ? previousStatus : "audio_ready";
+    // A published episode keeps serving the audio that passed the release
+    // gate. The new master lives on its render record until a re-publish
+    // promotes it (publishEpisode, under the release lock).
     await db.episode.update({
       where: { id: episodeRow.id },
-      data: {
-        status: finalEpisodeStatus,
-        audioUrl: uploadResult.url,
-        durationSeconds: Math.round(finalDurationSeconds),
-      },
+      data: previousStatus === "published"
+        ? { status: finalEpisodeStatus }
+        : { status: finalEpisodeStatus, audioUrl: uploadResult.url, durationSeconds: Math.round(finalDurationSeconds), audioFileSizeBytes: masterBytes.length },
     });
 
     const diagnostics = {
@@ -561,7 +563,7 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
       warnings: soundWarnings,
       // What this master IS: the script and the exact scene recordings read at
       // the start of this mix (not whatever exists by the time it finishes).
-      provenance: buildMasterProvenance(scriptId, script.content, { scenes: sceneRows }),
+      provenance: buildMasterProvenance(scriptId, script.content, { scenes: sceneRows }, { bytes: masterBytes, durationSeconds: finalDurationSeconds }),
     };
     await db.episodeAudioRender.update({
       where: { id: renderRecord.id },

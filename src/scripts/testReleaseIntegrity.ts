@@ -4,11 +4,12 @@ import assert from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  buildMasterProvenance, checkedLineHashes, evaluateArtifactIntegrity, sceneProvenance, scriptTurns, uncheckedLineIndexes,
+  buildMasterProvenance, checkedLineHashes, contentSha256, evaluateArtifactIntegrity, immutableStorageKey, releaseCandidate, sceneProvenance, scriptTurns, uncheckedLineIndexes,
   type LineAudioRow, type RenderRow, type SceneAudioRow,
 } from "../lib/services/artifactProvenance";
 import { sceneRequestFingerprint } from "../lib/audio/dialogueScenePlanner";
 import { PERFORMANCE_PROFILE_VERSION } from "../lib/hosts/performanceProfile";
+import { scriptContentHash } from "../lib/services/scriptLock";
 
 let passed = 0;
 const ok = (cond: unknown, name: string) => { assert.ok(cond, name); passed++; };
@@ -161,6 +162,78 @@ const run = (content: unknown, o: { scenes?: SceneAudioRow[]; lines?: LineAudioR
   ok(/return publishOwnedEpisode\(episodeId\)/.test(actions.slice(a, a + 200)), "the editor's publish button uses the Release panel's action");
   const admin = read("app/admin/publish-episode/route.ts");
   ok(/prepareEpisodeForPublishing\(/.test(admin) && /publishEpisode\(/.test(admin) && !/episode\.update\(/.test(admin), "the admin route only calls the gated service");
+}
+
+// ------------------------------ A. immutable recording identity
+{
+  const take1 = Buffer.from("take one bytes"), take2 = Buffer.from("take two bytes");
+  const k = "episodes/e/scripts/s/segments/1-zabala.mp3";
+  ok(immutableStorageKey(k, take1) !== immutableStorageKey(k, take2), "different audio bytes never share a storage key");
+  ok(immutableStorageKey(k, take1) === immutableStorageKey(k, Buffer.from("take one bytes")), "identical bytes keep one key (same recording)");
+  ok(/segments\/1-zabala-[0-9a-f]{16}\.mp3$/.test(immutableStorageKey(k, take1)), "the content hash sits before the extension");
+  ok(contentSha256(take1).length === 64, "content hash is a full sha256");
+
+  // A re-voiced line with the SAME text and duration but new bytes: the old
+  // fingerprint inputs (index, text, duration) are identical, the URL is not.
+  const c = script();
+  const url = (b: Buffer) => `https://s3/${immutableStorageKey(k, b)}`;
+  const line = (b: Buffer, i: number, text: string): LineAudioRow => ({ lineIndex: i, text, status: "ready", audioUrl: i === 1 ? url(b) : `https://s3/l${i}.mp3`, durationMs: 1000 });
+  const lines = (b: Buffer) => scriptTurns(c).map((t) => line(b, t.lineIndex, t.text));
+  const mixedFromTake1 = render({ diagnostics: { provenance: buildMasterProvenance("s1", c, { lines: lines(take1) }) } });
+  ok(run(c, { lines: lines(take1), renders: [mixedFromTake1] }).master === "current", "a mix of take one is current while take one is the recording");
+  ok(run(c, { lines: lines(take2), renders: [mixedFromTake1] }).master === "stale", "a regenerated take (same words, same length, new bytes) makes the old mix stale");
+
+  const src = (p: string) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
+  ok(/immutableStorageKey\(`episodes\/\$\{episodeId\}\/scripts\/\$\{scriptId\}\/segments\//.test(src("lib/services/ttsSegmentService.ts")), "line recordings are stored content-addressed");
+  ok(/immutableStorageKey\(`episodes\/\$\{episodeId\}\/scripts\/\$\{scriptId\}\/scenes\//.test(src("lib/services/ttsSceneService.ts")), "scene recordings (every candidate) are stored content-addressed");
+  ok(/immutableStorageKey\(episodeSlug/.test(src("lib/services/audioStitchingService.ts")), "line-mode final masters are stored content-addressed");
+  ok(/immutableStorageKey\(`episodes\/\$\{episodeRow\.id\}/.test(src("lib/services/sceneStitchingService.ts")), "scene-mode final masters are stored content-addressed");
+}
+
+// ------------------------------ C. a re-mix never replaces published audio
+{
+  const pub = { status: "published", audioUrl: "https://s3/final-aaaa.mp3", durationSeconds: 600, audioFileSizeBytes: 9 };
+  const newer = { renderVersion: 2, status: "succeeded", outputAudioUrl: "https://s3/final-bbbb.mp3", diagnostics: { provenance: { durationSeconds: 610, fileSizeBytes: 12 } } };
+  const older = { renderVersion: 1, status: "succeeded", outputAudioUrl: pub.audioUrl, diagnostics: {} };
+  const cand = releaseCandidate(pub, [older, newer]);
+  ok(cand.promoted && cand.audioUrl === newer.outputAudioUrl && cand.durationSeconds === 610 && cand.fileSizeBytes === 12, "a newer master of a published episode is a release CANDIDATE with its own duration and size");
+  ok(!releaseCandidate(pub, [older]).promoted, "with no newer master the published audio is the candidate");
+  ok(!releaseCandidate({ ...pub, status: "publish_ready" }, [older, newer]).promoted, "only published episodes have a separate candidate");
+  ok(!releaseCandidate(pub, [older, { ...newer, status: "failed" }]).promoted, "a failed render is never a candidate");
+
+  const src = (p: string) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
+  ok(/previousStatus === "published" \? \{\} : \{\s*audioUrl: uploadResult\.url/.test(src("lib/services/audioStitchingService.ts")), "line stitcher leaves a published episode's audio alone");
+  ok(/previousStatus === "published"\s*\? \{ status: finalEpisodeStatus \}/.test(src("lib/services/sceneStitchingService.ts")), "scene stitcher leaves a published episode's audio alone");
+  const svc = src("lib/services/rssPublishingService.ts");
+  const pubFn = svc.slice(svc.indexOf("export async function publishEpisode"));
+  ok(/withReleaseLock\([\s\S]*val\.release\?\.promoted[\s\S]*audioUrl: val\.release\.audioUrl/.test(pubFn), "only publishEpisode promotes a new master, after the gate, inside the release lock");
+  ok(/episodeAudioUrl: release\.audioUrl/.test(svc), "the gate judges the candidate file, not the live one");
+}
+
+// ------------------------------ B. every script write takes the script lock
+{
+  const srcRoot = path.join(__dirname, "..");
+  const walk = (dir: string): string[] => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(path.join(dir, e.name)) : /\.tsx?$/.test(e.name) ? [path.join(dir, e.name)] : []);
+  // Any update of an existing Script row that writes content. Creating a new
+  // version is not a mutation and is not listed.
+  const offenders: string[] = [];
+  for (const f of walk(srcRoot).filter((f) => !f.includes(`${path.sep}scripts${path.sep}`))) {
+    const text = fs.readFileSync(f, "utf8");
+    // Each write must have taken the lock in the same function, shortly before.
+    for (const m of text.matchAll(/\b(?:db|tx)\.script\.update\(\{[\s\S]{0,400}?\bcontent:/g)) {
+      const before = text.slice(Math.max(0, m.index! - 2500), m.index);
+      const fnStart = before.lastIndexOf("export async function");
+      if (!/lockScriptRow\(|lockScriptUnchanged\(/.test(fnStart >= 0 ? before.slice(fnStart) : before)) offenders.push(`${path.basename(f)}@${text.slice(0, m.index).split("\n").length}`);
+    }
+  }
+  ok(offenders.length === 0, `every file that rewrites Script.content takes the script lock (unlocked: ${offenders.join(", ")})`);
+  const admin = fs.readFileSync(path.join(srcRoot, "app/admin/scripts/actions.ts"), "utf8");
+  const save = admin.slice(admin.indexOf("export async function saveScriptEdits"), admin.indexOf("export async function saveScriptAsNewVersion"));
+  ok(/lockScriptUnchanged\(tx, scriptId, baseContentHash\)/.test(save) && /SCRIPT_LOCK_TX/.test(save), "admin save is refused when the script changed since the editor loaded it, and waits out a release");
+  const approve = admin.slice(admin.indexOf("export async function approveScript"), admin.indexOf("export async function rejectScript"));
+  ok(/lockScriptUnchanged\(tx, scriptId, scriptContentHash\(script\.content\)\)/.test(approve), "admin approval refuses content that changed after it was validated");
+  ok(scriptContentHash({ a: 1 }) !== scriptContentHash({ a: 2 }) && scriptContentHash(null) === scriptContentHash(undefined), "content hash tells versions apart");
 }
 
 console.log(`ok  release integrity: ${passed} passed, 0 failed`);

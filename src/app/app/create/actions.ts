@@ -532,24 +532,21 @@ export async function regenerateLineAudio(
   // Optional delivery nudge (tone/energy only — no fact-affecting text change,
   // so we don't mark the line dirty for the publish gate).
   if (opts?.tone) {
-    const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
-    const content = (script?.content as any) || {};
-    const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
-    let found = false;
-    for (const seg of segments) {
-      for (const line of seg?.lines || []) {
-        if (line && line.lineIndex === lineIndex) {
-          line.energy = opts.tone === "spicier" ? "high" : "low";
-          line.tone = opts.tone === "spicier" ? "heated" : "analytical";
-          line.requestedTone = null;
-          found = true;
+    await editScriptContent(gate.scriptId, (content) => {
+      const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+      let found = false;
+      for (const seg of segments) {
+        for (const line of seg?.lines || []) {
+          if (line && line.lineIndex === lineIndex) {
+            line.energy = opts.tone === "spicier" ? "high" : "low";
+            line.tone = opts.tone === "spicier" ? "heated" : "analytical";
+            line.requestedTone = null;
+            found = true;
+          }
         }
       }
-    }
-    if (found && script) {
-      content.segments = segments;
-      await db.script.update({ where: { id: script.id }, data: { content: content as any } });
-    }
+      return found ? { content: { ...content, segments }, result: true } : { content: null, result: false };
+    });
   }
 
   try {

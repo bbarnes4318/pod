@@ -1,3 +1,4 @@
+import { lockScriptRow, SCRIPT_LOCK_TX } from "./scriptLock";
 import { checkedLineHashes } from "./artifactProvenance";
 import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "@/lib/db";
@@ -780,6 +781,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
 
   // 8. Atomic database transaction updating statuses
   const result = await db.$transaction(async (tx) => {
+    await lockScriptRow(tx, scriptId); // Script first, see scriptLock.ts
     // Create new FactCheckResult record
     const r = await tx.factCheckResult.create({
       data: {
@@ -844,7 +846,7 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
     }
 
     return r;
-  });
+  }, SCRIPT_LOCK_TX);
 
   return result;
 }

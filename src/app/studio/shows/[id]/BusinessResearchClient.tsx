@@ -130,8 +130,10 @@ export function AdaptiveQuestion({ podcastId, id, question, why }: { podcastId: 
   );
 }
 
-export function OpportunityActions({ podcastId, opportunityId, status, dossierStatus, researching = false }: {
+export function OpportunityActions({ podcastId, opportunityId, status, dossierStatus, researching = false, brief }: {
   podcastId: string; opportunityId: string; status: string; dossierStatus: string | null; researching?: boolean;
+  /** Approved AI Executive Producer brief to create the episode with. */
+  brief?: unknown;
 }) {
   const { pending, error, run } = useAction();
   const router = useRouter();
@@ -152,12 +154,12 @@ export function OpportunityActions({ podcastId, opportunityId, status, dossierSt
           disabled={pending || dossierStatus !== "READY"}
           title={dossierStatus !== "READY" ? "The dossier must be READY first" : undefined}
           onClick={() => run(async () => {
-            const r = await generateBusinessEpisode(podcastId, opportunityId);
+            const r = await generateBusinessEpisode(podcastId, opportunityId, brief ?? undefined);
             if (r.success) router.push(`/studio/shows/${podcastId}?tab=episodes`);
             return r;
           })}
         >
-          Generate episode
+          {brief ? "Generate episode with this brief" : "Generate episode"}
         </button>
       )}
       {status !== "REJECTED" && status !== "PRODUCED" && (

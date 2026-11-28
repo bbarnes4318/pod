@@ -134,15 +134,69 @@ episode will ask for one re-mix before it can publish.
 - A legacy scene row whose stored `model` differs from the model it was
   fingerprinted with would be refused (fail closed) and need a re-voice. Not
   expected for Fish; unverified against production rows.
-- Admin script edits outside the Studio editor do not take the edit lock. They
-  are still caught by the fingerprints at publish time.
+- (Fixed in section 7) Admin script edits now take the lock.
 - Editing the script of an already-published episode does not unpublish it. The
   live audio still matches what was checked when it went out; a re-publish is
-  gated.
+  gated, and since section 7 a re-mix cannot change the live audio either.
 - Scene re-voice follows the CURRENT scene plan, so an edit that moves scene
   boundaries can re-voice a neighbouring scene too.
 
-## 7. Rollback
+## 7. Part 3 follow-up: immutable identity, full lock coverage, immutable releases
+
+Branch `release/immutable-artifacts` (2026-11-27). Closes the three gaps the
+independent review found in PR #171. No migration, no environment variable.
+
+**A. Immutable recording identity.** Every audio file is now stored under a
+content-addressed key, `name-<first 16 hex of sha256(bytes)>.ext`
+(`immutableStorageKey`, `artifactProvenance.ts`): line recordings
+(`ttsSegmentService`), every scene candidate (`ttsSceneService`), and both
+final masters (`audioStitchingService`, `sceneStitchingService`). Different
+bytes can never share a URL, so a regenerated take with the same words and the
+same duration still changes the mix's `sourcesFingerprint` (the URL is part of
+it) and makes the old mix stale. The full sha256 is also recorded
+(`providerMetadata.contentSha256` on line and scene rows,
+`diagnostics.provenance.contentSha256` on a master). The provenance version is
+unchanged: existing recorded fingerprints stay valid.
+"Audio variants" in the pipeline are scene candidates; they are covered.
+
+**B. Every script write takes the lock.** New `scriptLock.ts`:
+`lockScriptRow` (FOR UPDATE, then re-read), `lockScriptUnchanged` (also refuses
+if the content hash differs from what the caller based its change on) and
+`SCRIPT_LOCK_TX` (75 s, so a writer waits out a release instead of failing at
+5 s). Lock order is always Script, then Episode. Now locked:
+admin save (optimistic: the editor sends the hash it loaded; a save over a
+newer Studio edit is refused with "reload"), admin approve / reject / needs
+revision, Studio approve (`scriptApproval`), human release / revoke
+(`scriptRelease`), the line tone change (`create/actions`), the TTS line
+renumber self-heal, the sports fact-check transaction, and the business
+re-audit, fact-check and human review (the business fact-check used to write
+its verdict onto the content it read minutes earlier, dropping any edit made
+while the judge ran). A source check in the unit test fails if any
+`script.update` that writes `content` is not preceded by a lock in the same
+function.
+
+**C. Published audio is immutable.** A re-mix of a **published** episode no
+longer writes `Episode.audioUrl` (or duration or size): the feed and the
+download keep serving the audio that passed the gate. The new master waits on
+its render record. `releaseCandidate` makes it the file the gate judges, and
+only `publishEpisode`, inside `withReleaseLock` and after the gate passed on
+that exact file, promotes it (URL, duration, size) and records
+`released.promotedNewMaster`. Because keys are content-addressed, the old
+published object is never overwritten in storage either.
+
+Tests: `npm run test:release-integrity` -> `54 passed, 0 failed` (run locally
+with `npx tsx`, 2026-11-27). Mutation check: reverting the line stitcher's
+published guard, the admin save lock, or the human-release lock each makes the
+test fail. Three database checks were added to `testReleaseIntegrityDb.ts`
+(promotion, stale candidate refused, stale admin save refused): **not run**,
+they need PostgreSQL (server or cloud session; standing rule 1).
+
+Limits: superseded audio objects are kept in storage (no sweeper). The admin
+editor's "Save as New Version" creates a new row and needs no lock. A re-mix of
+a published episode is invisible to listeners until someone re-publishes; the
+Release panel does not yet say "a newer mix is waiting".
+
+## 8. Rollback
 
 Revert the merge commit of this branch. No migration, no environment variable
 and no data change to undo: the extra JSON keys are ignored by older code.

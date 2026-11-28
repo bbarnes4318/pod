@@ -1,4 +1,5 @@
 "use server";
+import { lockScriptRow, lockScriptUnchanged, scriptContentHash, SCRIPT_LOCK_TX } from "@/lib/services/scriptLock";
 
 import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
@@ -197,6 +198,7 @@ export async function fetchScriptForReview(scriptId: string) {
         episodeId: script.episodeId,
         version: script.version,
         content: contentObj,
+        contentHash: scriptContentHash(script.content),
         plainText: script.plainText,
         status: script.status,
         createdAt: script.createdAt.toISOString(),
@@ -216,7 +218,10 @@ export async function fetchScriptForReview(scriptId: string) {
   }
 }
 
-export async function saveScriptEdits(scriptId: string, updatedContent: any) {
+/** `baseContentHash` is the scriptContentHash the editor was loaded with
+ *  (fetchScriptForReview). The save is refused if the script changed since,
+ *  instead of silently overwriting a Studio edit or an automated rewrite. */
+export async function saveScriptEdits(scriptId: string, updatedContent: any, baseContentHash?: string) {
   await requireAdmin();
   try {
     const script = await db.script.findUnique({ where: { id: scriptId } });
@@ -249,6 +254,10 @@ export async function saveScriptEdits(scriptId: string, updatedContent: any) {
       : await getEpisodeStatusForRevision(episode.id, scriptId);
 
     await db.$transaction(async (tx) => {
+      const locked = await lockScriptUnchanged(tx, scriptId, baseContentHash);
+      if (locked.status === "approved" || locked.status === "rejected") {
+        throw new Error("This script was approved or rejected while you were editing. Use Save as New Version instead.");
+      }
       // Save Script edits
       await tx.script.update({
         where: { id: scriptId },
@@ -280,11 +289,13 @@ export async function saveScriptEdits(scriptId: string, updatedContent: any) {
           } as any,
         },
       });
-    });
+    }, SCRIPT_LOCK_TX);
 
     revalidatePath("/admin/scripts");
     revalidatePath(`/admin/scripts/${scriptId}`);
-    return { success: true, validationSummary: summary };
+    // The editor's new base: what is saved now.
+    const saved = await db.script.findUnique({ where: { id: scriptId }, select: { content: true } });
+    return { success: true, validationSummary: summary, contentHash: saved ? scriptContentHash(saved.content) : undefined };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to save script edits." };
   }
@@ -518,6 +529,8 @@ export async function approveScript(scriptId: string) {
 
     // Atomic transaction for Script approval
     await db.$transaction(async (tx) => {
+      // The content approved must be the content validated above.
+      await lockScriptUnchanged(tx, scriptId, scriptContentHash(script.content));
       // Set Script.status = approved and save sanitized content + safety + plainText
       await tx.script.update({
         where: { id: scriptId },
@@ -550,7 +563,7 @@ export async function approveScript(scriptId: string) {
           } as any,
         },
       });
-    });
+    }, SCRIPT_LOCK_TX);
 
     revalidatePath("/admin/scripts");
     revalidatePath(`/admin/scripts/${scriptId}`);
@@ -575,6 +588,7 @@ export async function rejectScript(scriptId: string, reason: string) {
     const nextEpisodeStatus = await getEpisodeStatusForRevision(episode.id, scriptId);
 
     await db.$transaction(async (tx) => {
+      await lockScriptRow(tx, scriptId);
       await tx.script.update({
         where: { id: scriptId },
         data: { status: "rejected" },
@@ -599,7 +613,7 @@ export async function rejectScript(scriptId: string, reason: string) {
           } as any,
         },
       });
-    });
+    }, SCRIPT_LOCK_TX);
 
     revalidatePath("/admin/scripts");
     revalidatePath(`/admin/scripts/${scriptId}`);
@@ -623,6 +637,7 @@ export async function markScriptNeedsRevision(scriptId: string, reason?: string)
     const nextEpisodeStatus = await getEpisodeStatusForRevision(episode.id, scriptId);
 
     await db.$transaction(async (tx) => {
+      await lockScriptRow(tx, scriptId);
       await tx.script.update({
         where: { id: scriptId },
         data: { status: "needs_revision" },
@@ -647,7 +662,7 @@ export async function markScriptNeedsRevision(scriptId: string, reason?: string)
           } as any,
         },
       });
-    });
+    }, SCRIPT_LOCK_TX);
 
     revalidatePath("/admin/scripts");
     revalidatePath(`/admin/scripts/${scriptId}`);

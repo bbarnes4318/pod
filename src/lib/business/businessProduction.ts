@@ -1,3 +1,5 @@
+import { briefPromptBlock, readBrief } from "../studio/executiveBrief";
+import { lockScriptRow, SCRIPT_LOCK_TX } from "../services/scriptLock";
 // Business → shared production.
 //
 //   createBusinessEpisode   approved opportunity + READY dossier → Episode +
@@ -423,6 +425,12 @@ export async function generateBusinessScript(
   if (packet.kind !== "BUSINESS") throw new Error("Not a business episode.");
   if (packet.problems.length || packet.snapshots.length === 0) throw new Error(packet.problems[0] ?? "Business episode has no topic snapshot.");
   const snapshot = packet.snapshots[0];
+  // The creator's approved Executive Producer brief: intent and structure only;
+  // facts still come only from the dossier (the block says so).
+  const executiveBrief = readBrief((ep as { editorialBrief?: unknown }).editorialBrief);
+  const briefBlock = (names: (id: string) => string | undefined) => executiveBrief
+    ? "\n" + briefPromptBlock(executiveBrief, { hostName: names, sourceTitle: (id) => (id.startsWith("topic:") ? snapshot.title : id.startsWith("fact:") || id.startsWith("stat:") || id.startsWith("myth:") ? `dossier item ${id}` : undefined) })
+    : "";
   const ready = evaluateBusinessScriptReadiness(snapshot);
   if (!ready.ok) throw new Error(`Business script readiness failed: ${ready.reasons.join(" ")}`);
 
@@ -470,7 +478,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
   if (deps.creative && cast.length === 2) {
     // Two hosts: the same writing room sports episodes use.
     const run = await deps.creative({
-      systemPrompt: businessHeadWriterPrompt(showName, snapshot, format, cast.map((m) => m.host)),
+      systemPrompt: businessHeadWriterPrompt(showName, snapshot, format, cast.map((m) => m.host)) + briefBlock((id) => cast.find((m) => m.host.id === id)?.host.name),
       episodeTitle: ep.title,
       topicsPrompts: businessTopicsPrompt(snapshot),
       rundownTopics: [{ id: snapshot.opportunityId, title: snapshot.title }],
@@ -488,7 +496,7 @@ ${snapshot.storyStructure.map((b, i) => `${i + 1}. ${b.beat} — ${b.purpose}`).
     reasons.push(...run.reasons);
   } else {
     const raw = await deps.writer.generateStructuredOutput({
-      systemPrompt: SCRIPT_SYSTEM(format, ep.podcast?.name ?? snapshot.style.businessName),
+      systemPrompt: SCRIPT_SYSTEM(format, ep.podcast?.name ?? snapshot.style.businessName) + briefBlock((id) => cast.find((m) => m.host.id === id)?.host.name),
       prompt: `CAST (use these names exactly as speakerName):\n${castBlock}\n\nAudience: ${snapshot.style.audiences.join(", ")} · Technical depth: ${snapshot.style.technicalDepth ?? "moderate"} · Terminology they use: ${snapshot.style.terminology ?? "(standard industry terms)"} · Call to action: ${snapshot.style.callToAction ?? "none"}\nTarget length: about ${minutes} minutes (~${minutes * 150} spoken words).\n\n${dossier}`,
       jsonSchema: { type: "object" },
       temperature: 0.6,
@@ -596,7 +604,11 @@ export async function reauditBusinessScript(db: PrismaClient, scriptId: string):
   const parsed = parseBusinessSnapshot(topic?.snapshot);
   if (parsed.status !== "valid") return null;
   const snapshot = parsed.snapshot;
-  const content = (s.content ?? {}) as { segments?: { lines?: ScriptLine[] }[]; safety?: Record<string, unknown> };
+  // Audit the content as saved under the row lock, not the copy read above.
+  return db.$transaction(async (tx) => {
+  const row = await lockScriptRow(tx, scriptId);
+  if (!row || !["draft", "needs_revision"].includes(row.status)) return null;
+  const content = (row.content ?? {}) as { segments?: { lines?: ScriptLine[] }[]; safety?: Record<string, unknown> };
   let flaggedLines = 0;
   for (const seg of content.segments ?? []) {
     for (const line of seg.lines ?? []) {
@@ -609,8 +621,9 @@ export async function reauditBusinessScript(db: PrismaClient, scriptId: string):
   }
   content.safety = { ...(content.safety ?? {}), flaggedLines };
   const status = flaggedLines ? "needs_revision" : "draft";
-  await db.script.update({ where: { id: s.id }, data: { content: content as unknown as Prisma.InputJsonValue, status } });
+  await tx.script.update({ where: { id: s.id }, data: { content: content as unknown as Prisma.InputJsonValue, status } });
   return { flaggedLines, status };
+  }, SCRIPT_LOCK_TX);
 }
 
 // ---------------------------------------------------------------------------
@@ -781,6 +794,8 @@ export async function factCheckBusinessScript(
   const reasons = overall === "FACT_CHECK_PASSED" ? [] : [...errors, ...warnings].slice(0, 12);
 
   const r = await db.$transaction(async (tx) => {
+    // Lock first (Script before anything that references it), see scriptLock.ts.
+    const locked = await lockScriptRow(tx, scriptId);
     const created = await tx.factCheckResult.create({
       data: {
         scriptId, episodeId: script.episodeId, passed: status === "passed", status,
@@ -797,7 +812,9 @@ export async function factCheckBusinessScript(
       judge: deps.judge ? (deps.judgeModelsUsed?.().join(", ") || deps.judgeLabel || "fact_check") : null, reasons, claimCounts,
     };
     // A new check supersedes any earlier human review: it was signed against a different verdict.
-    const { businessFactReview: _old, ...rest } = content as Record<string, unknown>;
+    // Written onto the content as saved now (locked): an edit made while the
+    // judge ran is kept, and its new words make this verdict's fingerprint stale.
+    const { businessFactReview: _old, ...rest } = (locked?.content ?? content) as Record<string, unknown>;
     void _old;
     await tx.script.update({
       where: { id: scriptId },
@@ -810,7 +827,7 @@ export async function factCheckBusinessScript(
       await tx.episode.update({ where: { id: script.episodeId }, data: { status: "script_draft" } });
     }
     return { created, verification };
-  });
+  }, SCRIPT_LOCK_TX);
   return { id: r.created.id, status, errors, warnings, verification: r.verification, claims };
 }
 
@@ -836,7 +853,7 @@ export async function recordBusinessFactReview(
 
   const r = await db.$transaction(async (tx) => {
     // Optimistic concurrency: refuse if the script changed between read and write.
-    const fresh = await tx.script.findUnique({ where: { id: script.id }, select: { content: true, status: true, episodeId: true } });
+    const fresh = await lockScriptRow(tx, script.id);
     const freshCheck = (fresh?.content as { businessVerification?: BusinessVerification } | null)?.businessVerification?.factCheckResultId ?? null;
     if (!fresh || scriptTextFingerprint(fresh.content) !== built.review.fingerprint || freshCheck !== (v?.factCheckResultId ?? null)) {
       throw new Error("The script or its fact-check changed while you were reviewing it. Reload and review again.");
@@ -859,6 +876,6 @@ export async function recordBusinessFactReview(
       await tx.episode.updateMany({ where: { id: fresh.episodeId, status: { in: ["script_draft", "script_approved", "draft"] } }, data: { status: "fact_checked" } });
     }
     return created;
-  });
+  }, SCRIPT_LOCK_TX);
   return { success: true, factCheckResultId: r.id, unresolved: built.review.unresolved.length };
 }
