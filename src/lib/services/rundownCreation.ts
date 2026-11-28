@@ -14,6 +14,7 @@
 // or a client that hand-crafts the field — can never self-authorize. The rule
 // itself (what the override does) is identical for both surfaces.
 
+import type { ExecutiveBrief } from "@/lib/studio/executiveBrief";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { createEpisodeDraft, type CreateEpisodeDraftResult } from "./episodeCreation";
@@ -91,6 +92,8 @@ export interface RundownEpisodeInput {
   format?: string;
   /** ADMIN-ONLY. Ignored (stripped) for owner actors — see the header note. */
   reuseOverride?: boolean;
+  /** Approved Executive Producer brief, validated by the caller; stored atomically with the episode. */
+  editorialBrief?: ExecutiveBrief | null;
 }
 
 export interface RundownCreationCtx {
@@ -307,7 +310,7 @@ export async function createRundownEpisode(
     },
     // Pass the precise, provenance-accurate snapshot so createEpisodeDraft
     // persists it rather than recomputing a coarser one.
-    { db: ctx.db, configuration },
+    { db: ctx.db, configuration, editorialBrief: input.editorialBrief ?? null },
   );
 
   // Resolver warnings (e.g. a legacy stored format degraded to the default)

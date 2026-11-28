@@ -113,7 +113,12 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   // carry a durationMs — some ready, playable rows legitimately don't. A
   // finished episode (has audioUrl) is always re-mixable; otherwise any voiced
   // line for this script version is enough.
-  const canRemix = !!episode.audioUrl || audioSegments.length > 0;
+  // Scene-voiced episodes keep their audio in DialogueSceneAudio, not AudioSegment.
+  const canRemix = !!episode.audioUrl || audioSegments.length > 0 || (mixVm?.voicing ?? "none") !== "none";
+
+  // Line positions from the mix view-model: real clip and scene durations, and
+  // provider timing inside scenes where it exists (instead of 4s per line).
+  const placed = new Map((mixVm?.segments ?? []).flatMap((s) => s.lines).map((l) => [l.lineIndex, l]));
 
   // ---- Build the approximate timeline for chapters + host strip ----
   const chapters: PlayerChapter[] = [];
@@ -121,6 +126,8 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
   let cursor = 0;
   segments.forEach((seg, segIdx) => {
     if (segIdx > 0) cursor += seg.type === "topic" ? GAP.topic : GAP.segment;
+    const firstPlaced = placed.get((seg.lines?.[0] as any)?.lineIndex);
+    if (firstPlaced) cursor = firstPlaced.startMs;
     chapters.push({
       title: seg.title || seg.type,
       type: seg.type,
@@ -132,7 +139,9 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
         cursor += line.isInterruption ? -200 : GAP[pb] ?? GAP.beat;
         if (cursor < 0) cursor = 0;
       }
-      const dur = durByLine.get(line.lineIndex) ?? 4000;
+      const p = placed.get(line.lineIndex);
+      if (p) cursor = p.startMs;
+      const dur = p?.durationMs ?? durByLine.get(line.lineIndex) ?? 4000;
       // Slot the line to host B (blue) by matching THIS episode's cast — by
       // host id first, then by the cast's actual name — else host A (orange).
       const slot: 0 | 1 =
@@ -147,7 +156,7 @@ export default async function EpisodePage({ params }: { params: Promise<{ id: st
       cursor += dur;
     });
   });
-  const totalMs = Math.max(1, cursor);
+  const totalMs = Math.max(1, cursor, mixVm?.totalMs ?? 0);
   const chaptersFrac = chapters.map((c) => ({ ...c, startFrac: Math.min(0.999, (c.startFrac as number) / totalMs) }));
   const hostSpans: HostSpan[] = rawSpans.map((s) => ({
     hostSlot: s.hostSlot,

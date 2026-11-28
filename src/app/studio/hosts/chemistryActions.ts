@@ -8,6 +8,8 @@
 //      (Fish), otherwise line by line on each host's own engine.
 // Plus assignShowHosts, to put a pairing on a show. Nothing else is saved.
 
+import { consumeRateLimit, rateLimitMessage, withInFlightLock } from "@/lib/rateLimit";
+import { assertPremiumVoiceAllowed } from "@/lib/services/entitlementService";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
@@ -47,6 +49,13 @@ export async function writeChemistryScene(input: { hostIds: string[]; subjectId:
 > {
   const user = await currentUser();
   if (!user) return { success: false, error: "Please sign in." };
+  const run = await withInFlightLock(`audition-write:${user.id}`, 90_000, () => writeFor(user, input));
+  return run.busy ? { success: false, error: "A scene is already being written. Wait for it to finish." } : run.value;
+}
+
+async function writeFor(user: { id: string }, input: Parameters<typeof writeChemistryScene>[0]): Promise<
+  { success: true; scene: AuditionScene; facts: SceneFacts } | Fail
+> {
   if (!AUDITION_STYLES.some((s) => s.id === input.style)) return { success: false, error: "Choose a conversation style." };
   const subject = subjectText(input.subjectId, input.customSubject ?? "");
   if (subject.length < 10) return { success: false, error: "Describe the subject in a sentence." };
@@ -60,6 +69,8 @@ export async function writeChemistryScene(input: { hostIds: string[]; subjectId:
     settings: settingsFromHost({ role: h.role, worldview: h.worldview, speakingStyle: h.speakingStyle, intensityLevel: h.intensityLevel, argumentPatterns: h.argumentPatterns, bannedPhrases: h.bannedPhrases, catchphrases: h.catchphrases, performanceProfile: h.performanceProfile }),
   }));
   const ids = hosts.map((h) => h.id);
+  const gate = await consumeRateLimit("auditionWrite", user.id);
+  if (!gate.allowed) return { success: false, error: rateLimitMessage("auditionWrite", gate.retryAfterSeconds) };
   const llm = getRoleLLMProvider(ROLE);
   try {
     const { systemPrompt, prompt } = buildAuditionPrompt(hosts, subject, input.style);
@@ -90,9 +101,16 @@ export type VoicedAudition =
   | { mode: "scene"; audioDataUrl: string; durationMs: number | null; engine: string }
   | { mode: "lines"; clips: { lineIndex: number; audioDataUrl: string; durationMs: number | null }[]; engine: string; failedLines: number[] };
 
-export async function voiceChemistryScene(scene: AuditionScene): Promise<{ success: true; audio: VoicedAudition } | Fail> {
+/** `onlyLines`: re-voice just these lines (line-by-line mode), to recover a
+ *  partial failure without paying for the lines that already worked. */
+export async function voiceChemistryScene(scene: AuditionScene, onlyLines?: number[]): Promise<{ success: true; audio: VoicedAudition } | Fail> {
   const user = await currentUser();
   if (!user) return { success: false, error: "Please sign in." };
+  const run = await withInFlightLock(`audition-voice:${user.id}`, 180_000, () => voiceFor(user, scene, onlyLines));
+  return run.busy ? { success: false, error: "A scene is already being voiced. Wait for it to finish." } : run.value;
+}
+
+async function voiceFor(user: { id: string }, scene: AuditionScene, onlyLines?: number[]): Promise<{ success: true; audio: VoicedAudition } | Fail> {
   const loaded = await loadHosts(user.id, scene?.hostIds ?? []);
   if ("error" in loaded) return { success: false, error: loaded.error! };
   const ids = loaded.rows.map((h) => h.id);
@@ -103,6 +121,13 @@ export async function voiceChemistryScene(scene: AuditionScene): Promise<{ succe
   if (unvoiced.length) return { success: false, error: `${unvoiced.map((h) => h.name).join(" and ")} ${unvoiced.length === 1 ? "has" : "have"} no real voice yet. Create or attach one in their profile first.` };
 
   const engines = new Set(loaded.rows.map((h) => h.ttsProvider));
+  // The same plan rule episode production uses: premium engines need a plan that includes them.
+  for (const engine of engines) {
+    const allowed = await assertPremiumVoiceAllowed(user.id, engine);
+    if (!allowed.ok) return { success: false, error: allowed.error };
+  }
+  const gate = await consumeRateLimit("auditionVoice", user.id);
+  if (!gate.allowed) return { success: false, error: rateLimitMessage("auditionVoice", gate.retryAfterSeconds) };
   const byId = new Map(loaded.rows.map((h) => [h.id, h]));
   const seat = new Map(ids.map((id, i) => [id, i]));
   const sceneEngine = engines.size === 1 ? [...engines][0] : null;
@@ -144,7 +169,9 @@ export async function voiceChemistryScene(scene: AuditionScene): Promise<{ succe
   // Mixed engines: each line on its speaker's own voice, played back in order.
   const clips: { lineIndex: number; audioDataUrl: string; durationMs: number | null }[] = [];
   const failedLines: number[] = [];
+  const wanted = Array.isArray(onlyLines) && onlyLines.length ? new Set(onlyLines.filter((n) => Number.isInteger(n))) : null;
   for (const [i, l] of clean.lines.entries()) {
+    if (wanted && !wanted.has(i)) continue;
     const h = byId.get(l.speakerHostId)!;
     try {
       const r = await getTTSProvider(h.ttsProvider).synthesizeSpeech({

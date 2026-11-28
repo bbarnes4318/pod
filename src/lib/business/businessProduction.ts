@@ -1,4 +1,5 @@
 import { briefPromptBlock, readBrief } from "../studio/executiveBrief";
+import { briefMismatches, BRIEF_MISMATCH_HELP, type ExecutiveBrief } from "@/lib/studio/executiveBrief";
 import { lockScriptRow, SCRIPT_LOCK_TX } from "../services/scriptLock";
 // Business → shared production.
 //
@@ -58,7 +59,7 @@ function slugify(text: string): string {
 
 export async function createBusinessEpisode(
   db: PrismaClient,
-  input: { podcastId: string; opportunityId: string; ownerId: string | null },
+  input: { podcastId: string; opportunityId: string; ownerId: string | null; editorialBrief?: ExecutiveBrief | null },
   now: Date = new Date()
 ): Promise<Result<{ episodeId: string }>> {
   const podcast = await db.podcast.findUnique({
@@ -94,6 +95,22 @@ export async function createBusinessEpisode(
   const activeHosts = await db.aiHost.count({ where: { isActive: true, isArchived: false } }).catch(() => 2);
   const formatId = pickBusinessFormat(snapshot.style.episodeStyle, hostIds.length || activeHosts);
 
+  // The approved brief must describe THIS episode: the opportunity it was drafted
+  // for, dossier items that exist, and the show's hosts (when the show pins any).
+  if (input.editorialBrief) {
+    const c = (opp.dossier.content ?? {}) as { verifiedFacts?: unknown[]; verifiedStatistics?: unknown[]; misconceptions?: unknown[] };
+    const sourceIds = [`topic:${opp.id}`,
+      ...(c.verifiedFacts ?? []).slice(0, 6).map((_, i) => `fact:${i}`),
+      ...(c.verifiedStatistics ?? []).slice(0, 4).map((_, i) => `stat:${i}`),
+      ...(c.misconceptions ?? []).slice(0, 2).map((_, i) => `myth:${i}`)];
+    const problems = briefMismatches(
+      hostIds.length ? input.editorialBrief : { ...input.editorialBrief, hostAssignments: [] },
+      { hostIds, sourceIds },
+      { source: (id) => (id.startsWith("topic:") ? "another topic" : `dossier item ${id}`) },
+    );
+    if (problems.length) return { success: false, error: `${problems.join(" ")} ${BRIEF_MISMATCH_HELP}` };
+  }
+
   let slug = slugify(opp.title);
   if (await db.episode.findUnique({ where: { slug } })) slug = `${slug}-${crypto.randomBytes(3).toString("hex")}`;
 
@@ -116,6 +133,8 @@ export async function createBusinessEpisode(
         hostIds,
         formatId,
         qualityTier: podcast.qualityTier ?? undefined,
+        // Same transaction as the episode: no episode without its approved brief.
+        editorialBrief: input.editorialBrief ? (input.editorialBrief as unknown as Prisma.InputJsonValue) : undefined,
       },
     });
     await tx.businessEpisodeTopic.create({

@@ -420,9 +420,9 @@ export async function generateBusinessEpisode(podcastId: string, opportunityId: 
   try {
     const cap = await assertCanCreateEpisode(owned.user.id);
     if (!cap.ok) return { success: false, error: cap.error };
-    const created = await createBusinessEpisode(db, { podcastId, opportunityId, ownerId: owned.user.id });
+    // The brief is written in the episode's own transaction (createBusinessEpisode).
+    const created = await createBusinessEpisode(db, { podcastId, opportunityId, ownerId: owned.user.id, editorialBrief: brief });
     if (!created.success) return created;
-    if (brief) await db.episode.update({ where: { id: created.episodeId }, data: { editorialBrief: brief as never } });
     await queueScriptGenerationJob({ episodeId: created.episodeId });
     revalidateShow(podcastId);
     return { success: true, episodeId: created.episodeId };

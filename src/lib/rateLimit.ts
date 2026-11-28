@@ -39,6 +39,15 @@ export const ADMIN_RATE_LIMITS = {
   sourceFetch: { limit: 40, windowSeconds: 60 },
   /** Research enqueues. */
   researchEnqueue: { limit: 20, windowSeconds: 60 },
+  // ---- Studio (paying users) model and voice calls, per user ----
+  // Each is a real provider call billed to the deployment. The ceilings are
+  // generous for real work and stop a stuck button or script from draining credit.
+  /** AI Executive Producer brief drafts and section redrafts (one model call each). */
+  briefDraft: { limit: 30, windowSeconds: 3600 },
+  /** Chemistry audition scenes written (one model call each). */
+  auditionWrite: { limit: 15, windowSeconds: 3600 },
+  /** Chemistry audition scenes voiced (one scene, or up to ~20 lines, of TTS each). */
+  auditionVoice: { limit: 10, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export type RateLimitKind = keyof typeof ADMIN_RATE_LIMITS;
@@ -101,10 +110,45 @@ export async function consumeRateLimit(
 
 /** Operator-facing copy for a refusal. Mentions no infrastructure. */
 export function rateLimitMessage(kind: RateLimitKind, retryAfterSeconds: number): string {
+  if (kind === "briefDraft" || kind === "auditionWrite" || kind === "auditionVoice") {
+    const what = kind === "briefDraft" ? "drafted a lot of production briefs" : kind === "auditionWrite" ? "written a lot of audition scenes" : "voiced a lot of audition scenes";
+    const mins = Math.ceil(retryAfterSeconds / 60);
+    return `You've ${what} this hour. Each one is a paid AI call, so there's an hourly limit. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`;
+  }
   const what =
     kind === "customTopicCreate" ? "created too many topics" :
     kind === "sourceImport" ? "imported sources too many times" :
     kind === "sourceFetch" ? "fetched too many source URLs" :
     "queued research too many times";
   return `You've ${what} in a short period. Try again in ${retryAfterSeconds}s.`;
+}
+
+/**
+ * Duplicate-request guard: run `fn` only if no other call holds `key`.
+ * A double click, a retried request or a second tab gets `{ busy: true }`
+ * instead of a second paid provider call. The lock expires after `ttlMs` even
+ * if the holder dies. Like the limiter, it never hangs: if Redis cannot answer,
+ * the call runs (degraded) rather than blocking the user.
+ */
+export async function withInFlightLock<T>(
+  key: string,
+  ttlMs: number,
+  fn: () => Promise<T>,
+  opts: { redis?: { set: (...a: any[]) => Promise<unknown>; del: (k: string) => Promise<unknown> } } = {}
+): Promise<{ busy: true } | { busy: false; value: T }> {
+  const k = `inflight:${key}`;
+  let held = false;
+  let redis: NonNullable<typeof opts.redis> | null = null;
+  try {
+    redis = opts.redis ?? (getRedisClient() as unknown as NonNullable<typeof opts.redis>);
+    // SET NX answers null when the key exists; map it so null means only "timed out".
+    const got = await withTimeout(Promise.resolve(redis.set(k, "1", "PX", ttlMs, "NX")).then((r) => r ?? "EXISTS"), REDIS_OP_TIMEOUT_MS);
+    if (got === "EXISTS") return { busy: true };
+    held = got === "OK"; // null = timed out: degraded, run anyway
+  } catch { /* degraded: run anyway */ }
+  try {
+    return { busy: false, value: await fn() };
+  } finally {
+    if (held && redis) void withTimeout(Promise.resolve(redis.del(k)), REDIS_OP_TIMEOUT_MS).catch(() => {});
+  }
 }

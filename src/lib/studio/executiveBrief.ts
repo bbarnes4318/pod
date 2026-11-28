@@ -241,3 +241,28 @@ export function briefPromptBlock(brief: ExecutiveBrief, opts: { hostName?: (id: 
   lines.push(`Target length: about ${brief.targetMinutes} minutes.`);
   return lines.join("\n");
 }
+
+// ------------------------------------------- does the brief fit the episode?
+
+/** Problems that make an approved brief describe a different episode from the
+ *  one being created: a host it assigns who is not seated, or a story it relies
+ *  on that the episode does not carry. Rejected sections are not checked (the
+ *  writers never see them). Empty = the brief fits. Pure; creation calls it
+ *  inside the episode transaction so a mismatch writes nothing. */
+export function briefMismatches(brief: ExecutiveBrief, episode: { hostIds: string[]; sourceIds: string[] }, names: { host?: (id: string) => string | undefined; source?: (id: string) => string | undefined } = {}): string[] {
+  const on = (s: BriefSection) => !brief.rejected.includes(s);
+  const out: string[] = [];
+  const hosts = new Set(episode.hostIds);
+  if (on("hostAssignments")) {
+    for (const h of brief.hostAssignments) if (!hosts.has(h.hostId)) out.push(`The brief gives a position to ${names.host?.(h.hostId) ?? "a host"} who isn't hosting this episode.`);
+  }
+  const sources = new Set(episode.sourceIds);
+  const cited = new Set<string>([
+    ...(on("evidence") ? brief.evidence.map((e) => e.sourceId) : []),
+    ...(on("segments") ? brief.segments.flatMap((s) => s.sourceIds) : []),
+  ]);
+  for (const id of cited) if (!sources.has(id)) out.push(`The brief relies on "${names.source?.(id) ?? id}", which isn't in this episode.`);
+  return out;
+}
+
+export const BRIEF_MISMATCH_HELP = "Change the episode to match, or redraft (or drop) those sections of the brief, then create again. Your draft and brief are kept.";

@@ -51,6 +51,20 @@ export function ChemistryAudition({ hosts, onClose }: { hosts: StudioHostVM[]; o
     } catch { setError("The request didn't reach the server. The scene is still here; try again."); }
     finally { setPhase("idle"); }
   };
+  /** Recover a partial line-by-line voicing: only the failed lines are sent (and paid for). */
+  const retryMissing = async () => {
+    const a = current?.audio;
+    if (!current || !a || a.mode !== "lines" || a.failedLines.length === 0) return;
+    setPhase("voicing"); setError(null);
+    try {
+      const r = await voiceChemistryScene(current.scene, a.failedLines);
+      if (!r.success) { setError(r.error); return; }
+      if (r.audio.mode !== "lines") { setCurrent({ ...current, audio: r.audio }); return; }
+      const clips = [...a.clips, ...r.audio.clips].sort((x, y) => x.lineIndex - y.lineIndex);
+      setCurrent({ ...current, audio: { ...a, clips, failedLines: r.audio.failedLines } });
+    } catch { setError("The request didn't reach the server. The voiced lines are kept; try again."); }
+    finally { setPhase("idle"); }
+  };
   const keep = () => { if (current) setTakes((t) => [current, ...t.filter((x) => x.id !== current.id)].slice(0, 3)); };
 
   return (
@@ -108,6 +122,11 @@ export function ChemistryAudition({ hosts, onClose }: { hosts: StudioHostVM[]; o
           {!current.audio && (
             <button type="button" className="btnPrimary" disabled={phase !== "idle"} onClick={voice} data-testid="chem-voice">
               {phase === "voicing" ? "Recording…" : `Voice it (~${current.facts.characters.toLocaleString()} characters)`}
+            </button>
+          )}
+          {current.audio?.mode === "lines" && current.audio.failedLines.length > 0 && (
+            <button type="button" className="btnGhost" disabled={phase !== "idle"} onClick={retryMissing} data-testid="chem-retry-missing">
+              {phase === "voicing" ? "Recording…" : `Voice the ${current.audio.failedLines.length} missing line${current.audio.failedLines.length === 1 ? "" : "s"}`}
             </button>
           )}
           <button type="button" className="btnGhost" onClick={keep} disabled={takes.some((t) => t.id === current.id && !!t.audio === !!current.audio)}>Keep for comparison</button>
@@ -182,7 +201,7 @@ function AuditionPlayer({ audio }: { audio: VoicedAudition }) {
       <audio ref={ref} controls src={src} preload="metadata" onEnded={() => audio.mode === "lines" && i < audio.clips.length - 1 && setI(i + 1)} className="u-full" />
       <span className="stageHint">
         {audio.mode === "scene" ? `Performed as one scene (${audio.engine}).` : `Voiced line by line (${audio.engine}): the hosts are on different voice engines. Line ${i + 1} of ${audio.clips.length}.`}
-        {audio.mode === "lines" && audio.failedLines.length > 0 && ` ${audio.failedLines.length} line(s) could not be voiced and are skipped.`}
+        {audio.mode === "lines" && audio.failedLines.length > 0 && ` ${audio.failedLines.length} line(s) could not be voiced and are skipped in playback (lines ${audio.failedLines.map((n) => n + 1).join(", ")}).`}
       </span>
       {audio.mode === "lines" && i > 0 && <button type="button" className="advLink" onClick={() => setI(0)}>Play from the start</button>}
     </div>

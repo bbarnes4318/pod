@@ -9,15 +9,21 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getMixView, regenerateLineAudio, tableReadEpisode } from "../app/create/actions";
-import type { MixVM, MixLineVM, MixMeasuredVM } from "@/lib/services/mixView";
+import type { MixVM, MixLineVM, MixMeasuredVM, MixRenderVM } from "@/lib/services/mixView";
 import MixWaveform from "./MixWaveform";
 
 const dash = (v: number | null, unit: string, digits = 1) => (v === null ? "not measured" : `${v.toFixed(digits)} ${unit}`);
 
 /** Measured by ffmpeg on the rendered master; shown apart from any heuristic. */
-function MeasuredPanel({ m }: { m: MixMeasuredVM | null }) {
+function MeasuredPanel({ m, hasMaster }: { m: MixMeasuredVM | null; hasMaster: boolean }) {
   if (!m)
-    return <p className="stageHint mixMeasured" role="note">No measurements yet. Loudness and peaks are measured when the mix is rendered.</p>;
+    return (
+      <p className="stageHint mixMeasured" role="note">
+        {hasMaster
+          ? "No measurements on file for the mix playing here. Re-mix the episode to measure loudness and peaks on a fresh render."
+          : "No measurements yet. Loudness and peaks are measured when the mix is rendered."}
+      </p>
+    );
   return (
     <section className="mixMeasured" aria-label="Measured audio quality">
       <h3 className="sectionTitle mixSectionTitle">Measured on the master</h3>
@@ -41,6 +47,45 @@ function MeasuredPanel({ m }: { m: MixMeasuredVM | null }) {
   );
 }
 import PanelSkeleton from "./PanelSkeleton";
+
+const RENDER_MODE: Record<string, string> = {
+  initial: "First mix", reproduce: "Reproduced", remix_episode_profile: "Re-mix", remix_current_podcast: "Re-mix (show's current sound)", legacy: "Mix",
+};
+
+/** Every finished render, newest first, each with ITS OWN measurements. */
+function RenderHistory({ renders, pending }: { renders: MixRenderVM[]; pending: boolean }) {
+  if (renders.length === 0) return null;
+  return (
+    <section className="mixRenders" aria-label="Renders of this episode">
+      <h3 className="sectionTitle mixSectionTitle">Renders</h3>
+      {pending && (
+        <p className="createAlert mb-2" role="note">
+          A newer render exists than the one playing here. The episode keeps its current file until it is re-published, so the newer mix is not live yet.
+        </p>
+      )}
+      <ul className="mixRenderList">
+        {renders.map((r) => (
+          <li key={r.renderVersion} className={r.isCurrent ? "mixRender mixRender-current" : "mixRender"}>
+            <span className="mixRenderName">v{r.renderVersion} · {RENDER_MODE[r.renderMode] ?? r.renderMode}{r.productionStyle ? ` · ${r.productionStyle}` : ""}</span>
+            {r.isCurrent && <span className="statusPill statusPill--ok">playing</span>}
+            <span className="stageHint m-0">
+              {r.completedAt ? new Date(r.completedAt).toLocaleString() : "time not recorded"}
+              {" · "}
+              {r.measured ? `${dash(r.measured.integratedLufs, "LUFS")}, peak ${dash(r.measured.truePeakDb, "dBFS")}` : "not measured"}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const VOICING_NOTE: Record<MixVM["voicing"], string> = {
+  none: "No line has been voiced yet.",
+  lines: "Voiced line by line: each line is its own recording.",
+  scenes: "Voiced as performed scenes: the hosts recorded each scene together, so turns and cut-ins are real. Re-voicing a line re-records its whole scene.",
+  mixed: "Partly performed scenes, partly single-line recordings.",
+};
 
 const fmt = (ms: number) => {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -152,7 +197,10 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
       const res: any = await regenerateLineAudio(episodeId, lineIndex, tone ? { tone } : undefined);
       if (res?.success === false) setNote(res.error || "Couldn't re-voice that line.");
       else {
-        setNote(`Re-voicing line #${lineIndex + 1} and re-splicing the mix — only this line is re-synthesized.`);
+        const sc = vm.scenes.find((s) => lineIndex >= s.firstLineIndex && lineIndex <= s.lastLineIndex);
+        setNote(sc
+          ? `Re-recording scene ${sc.sceneIndex + 1} (lines ${sc.firstLineIndex + 1}–${sc.lastLineIndex + 1}) and re-mixing. The other scenes are reused as they are.`
+          : `Re-voicing line #${lineIndex + 1} and re-splicing the mix — only this line is re-synthesized.`);
         setPolling(true);
       }
     } finally {
@@ -178,8 +226,10 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
   // Lines in the requested table-read range that are now voiced.
   const tableLines = tableRange
-    ? vm.segments.flatMap((s) => s.lines).filter((l) => l.lineIndex >= tableRange.start && l.lineIndex <= tableRange.end && l.hasAudio)
+    ? vm.segments.flatMap((s) => s.lines).filter((l) => l.lineIndex >= tableRange.start && l.lineIndex <= tableRange.end && l.audioUrl)
     : [];
+  const sceneOf = (l: MixLineVM) => (l.sceneIndex === null ? null : vm.scenes.find((s) => s.sceneIndex === l.sceneIndex) ?? null);
+  const anyApprox = allLines.some((l) => l.approx);
   const tableReady = tableRange && tableLines.length === tableRange.end - tableRange.start + 1;
 
   const scale = (ms: number) => `${(ms / vm.totalMs) * 100}%`;
@@ -214,6 +264,17 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
         <audio ref={clipRef} onEnded={onClipEnded} preload="none" className="u-hidden" />
       </div>
 
+      <p className="stageHint mb-2" data-testid="mix-voicing">
+        {VOICING_NOTE[vm.voicing]}
+        {vm.scenes.length > 0 && ` ${vm.scenes.length} scene${vm.scenes.length === 1 ? "" : "s"} selected.`}
+        {anyApprox && " Positions on the timeline are approximate where exact timings were not recorded."}
+      </p>
+      {vm.staleLines > 0 && (
+        <p className="createAlert mb-2" role="alert" data-testid="mix-stale">
+          {vm.staleLines} line{vm.staleLines === 1 ? " was" : "s were"} edited after being voiced. The recording{vm.staleLines === 1 ? "" : "s"} still say{vm.staleLines === 1 ? "s" : ""} the old words: re-voice {vm.staleLines === 1 ? "it" : "them"} before publishing.
+        </p>
+      )}
+
       {/* Timeline */}
       <div className="mixTimeline">
         {vm.episodeAudioUrl && (
@@ -221,6 +282,22 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
             <div className="mixLaneLabel">Master</div>
             <div className="mixWaveLane">
               <MixWaveform url={vm.episodeAudioUrl} atFraction={posMs / vm.totalMs} onSeek={(f) => seekTo(f * vm.totalMs)} />
+            </div>
+          </>
+        )}
+        {vm.scenes.length > 0 && (
+          <>
+            <div className="mixLaneLabel">Scenes</div>
+            <div className="mixLane mixSceneLane">
+              {vm.scenes.map((s) => (
+                <div
+                  key={s.sceneIndex}
+                  className="mixBlock mixSceneBlock"
+                  style={{ "--at": scale(s.startMs), "--len": `calc(${scale(s.durationMs)} - 2px)` } as React.CSSProperties}
+                  title={`Scene ${s.sceneIndex + 1}: lines ${s.firstLineIndex + 1}–${s.lastLineIndex + 1}, ${fmt(s.durationMs)} recorded${s.candidates > 1 ? `, ${s.candidates} takes` : ""} (${s.engine})${s.timingStatus === "timing_unavailable" ? ", line timings estimated" : ""}`}
+                  onClick={() => seekTo(s.startMs)}
+                />
+              ))}
             </div>
           </>
         )}
@@ -234,7 +311,7 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
                 key={l.lineIndex}
                 className={`mixBlock${active ? " mixBlock-active" : ""}${!l.hasAudio ? " mixBlock-unvoiced" : ""}${l.dirty ? " mixBlock-dirty" : ""}`}
                 style={{ "--at": scale(l.startMs), "--len": `calc(${scale(l.durationMs)} - 2px)`, "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}
-                title={`${l.speaker}: ${l.textShort}${l.hasAudio ? "" : " (not voiced)"}`}
+                title={`${l.approx ? "≈ " : ""}${fmt(l.startMs)} ${l.speaker}: ${l.textShort}${l.hasAudio ? (l.voicedBy === "scene" ? ` (in scene ${(l.sceneIndex ?? 0) + 1})` : "") : " (not voiced)"}${l.dirty && l.hasAudio ? " (edited since voiced)" : ""}`}
                 onClick={() => seekTo(l.startMs)}
               >
                 <span className="mixBlockBar" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties} />
@@ -260,7 +337,8 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
         </div>
       </div>
 
-      <MeasuredPanel m={vm.measured} />
+      <MeasuredPanel m={vm.measured} hasMaster={!!vm.episodeAudioUrl} />
+      <RenderHistory renders={vm.renders} pending={vm.newerRenderPending} />
 
       {vm.cues.length > 0 && (
         <div className="mixCueLegend">
@@ -270,10 +348,10 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
       {/* Per-line re-voice list */}
       <div className="mixLineList">
-        <div className="sectionTitle mixSectionTitle">Lines — re-voice individually</div>
+        <div className="sectionTitle mixSectionTitle">{vm.voicing === "scenes" ? "Lines — re-voice a scene" : "Lines — re-voice individually"}</div>
         {!vm.fullyVoiced && (
           <div className="stageHint mb-3">
-            Line re-voice re-splices the finished mix, so it needs every line voiced first. Blocks above show which lines aren&apos;t voiced yet.
+            Re-voicing re-splices the finished mix, so it needs every line voiced first. Blocks above show which lines aren&apos;t voiced yet.
           </div>
         )}
         {vm.segments.map((seg, si) => (
@@ -283,16 +361,22 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
               <div key={l.lineIndex} className={`mixLineRow${activeLine?.lineIndex === l.lineIndex ? " mixLineRow-active" : ""}`}>
                 <span className="mixLineSpeaker" style={{ "--speaker-color": colorFor(l.speaker) } as React.CSSProperties}>{l.speaker}</span>
                 <span className="mixLineText" onClick={() => seekTo(l.startMs)} role="button" tabIndex={0}>{l.textShort}</span>
-                {l.hasAudio ? (
-                  <button className="tMini" title="Play this line's clip" onClick={() => playClips([l.audioUrl!])}>▶</button>
+                {l.audioUrl ? (
+                  <button className="tMini" title="Play this line's clip" aria-label={`Play line ${l.lineIndex + 1}`} onClick={() => playClips([l.audioUrl!])}>▶</button>
+                ) : l.voicedBy === "scene" ? (
+                  <button className="chip" title="Performed inside a scene recording; plays from the master" disabled={!vm.episodeAudioUrl} onClick={() => { seekTo(l.startMs); const a = audioRef.current; if (a?.paused) { a.play().catch(() => {}); setPlaying(true); } }}>scene {(l.sceneIndex ?? 0) + 1}</button>
                 ) : (
                   <span className="chip" title="Not synthesized yet">unvoiced</span>
                 )}
+                {l.dirty && l.hasAudio && <span className="chip chipWarn" title="The text changed after this was recorded">edited</span>}
                 <div className="mixLineActions">
                   <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} onClick={() => revoice(l.lineIndex, "spicier")}>🌶 Spicier</button>
                   <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} onClick={() => revoice(l.lineIndex, "calmer")}>🧊 Calmer</button>
-                  <button className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} aria-busy={busyLine === l.lineIndex} onClick={() => revoice(l.lineIndex)}>
-                    {busyLine === l.lineIndex ? (<><span className="btnSpin" aria-hidden="true" />Re-voicing…</>) : "↻ Re-voice"}
+                  <button
+                    className="tMini" disabled={busyLine === l.lineIndex || !vm.fullyVoiced} aria-busy={busyLine === l.lineIndex} onClick={() => revoice(l.lineIndex)}
+                    title={sceneOf(l) ? `Re-records scene ${sceneOf(l)!.sceneIndex + 1} (lines ${sceneOf(l)!.firstLineIndex + 1}–${sceneOf(l)!.lastLineIndex + 1}) and re-mixes` : "Re-records this line and re-mixes"}
+                  >
+                    {busyLine === l.lineIndex ? (<><span className="btnSpin" aria-hidden="true" />Re-voicing…</>) : sceneOf(l) ? "↻ Re-voice scene" : "↻ Re-voice"}
                   </button>
                 </div>
               </div>

@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { briefMismatches, BRIEF_MISMATCH_HELP, type ExecutiveBrief } from "@/lib/studio/executiveBrief";
 import { Prisma } from "@prisma/client";
 import crypto from "crypto";
 import { topicMatchesAnyVertical } from "../verticals";
@@ -495,6 +496,11 @@ export interface EpisodeCreationSettings {
    *  by the canonical resolver. Written in the SAME transaction as the Episode
    *  and its EpisodeTopic rows, so a failed snapshot means no partial episode. */
   configuration?: EpisodeSnapshotColumns;
+  /** The approved AI Executive Producer brief (already validated by readBrief).
+   *  Checked against the ACTUAL seated hosts and written topics and stored in
+   *  the same transaction as the Episode: a mismatch or failed write creates
+   *  nothing, so an episode can never exist without the brief it was approved with. */
+  editorialBrief?: ExecutiveBrief | null;
 }
 
 /**
@@ -592,6 +598,12 @@ export async function createEpisodeRecord(
       }
     }
 
+    if (settings.editorialBrief) {
+      const titles = new Map(orderedTopics.map((t) => [t.id, t.title]));
+      const problems = briefMismatches(settings.editorialBrief, { hostIds: chosenHostIds, sourceIds: topicsToWrite.map((t) => t.id) }, { source: (id) => titles.get(id) });
+      if (problems.length) throw new Error(`${problems.join(" ")} ${BRIEF_MISMATCH_HELP}`);
+    }
+
     const ep = await tx.episode.create({
       data: {
         title,
@@ -616,6 +628,7 @@ export async function createEpisodeRecord(
         ownerId: settings.ownerId || undefined,
         hostIds: chosenHostIds,
         formatId: episodeFormatId,
+        editorialBrief: settings.editorialBrief ? (settings.editorialBrief as unknown as Prisma.InputJsonValue) : undefined,
         // Freeze the resolved configuration atomically with the episode. When a
         // caller supplies none (a legacy/direct path), the column defaults leave
         // configurationSource = 'legacy' rather than fabricating a snapshot.

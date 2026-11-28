@@ -9,6 +9,7 @@
 // (with per-topic reasons), auto-selected, and final order — so no
 // user-selected topic is ever silently discarded.
 
+import type { ExecutiveBrief } from "@/lib/studio/executiveBrief";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db";
@@ -295,7 +296,7 @@ export function dedupePreserveOrder(ids: string[]): string[] {
  */
 export async function createEpisodeDraft(
   rawInput: CreateEpisodeDraftInput,
-  deps?: { db?: any; configuration?: EpisodeSnapshotColumns }
+  deps?: { db?: any; configuration?: EpisodeSnapshotColumns; editorialBrief?: ExecutiveBrief | null }
 ): Promise<CreateEpisodeDraftResult> {
   const dbi = deps?.db ?? db;
   const parsed = CreateEpisodeDraftInputSchema.safeParse(rawInput);
@@ -508,6 +509,7 @@ export async function createEpisodeDraft(
         leagueId: input.leagueId,
         sport: input.sport,
         configuration,
+        editorialBrief: deps?.editorialBrief ?? null,
       },
       reasons,
       dbi,

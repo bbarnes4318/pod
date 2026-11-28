@@ -225,6 +225,9 @@ export async function createStudioEpisodeFor(
       format: input.format,
       title: input.title,
       description: input.description,
+      // Stored in the SAME transaction as the episode, after checking it fits the
+      // hosts and topics actually written; a mismatch or failure creates nothing.
+      editorialBrief: brief,
       // reuseOverride intentionally omitted — Admin-only.
     }
   );
@@ -232,19 +235,6 @@ export async function createStudioEpisodeFor(
   if (!res.success) {
     // Failed creation: the resume draft is RETAINED so the producer keeps their work.
     return { success: false, error: res.error, rejectedTopics: res.rejectedTopics, reasons: res.reasons };
-  }
-
-  // The approved brief becomes a first-class production input. Written before
-  // anything can start the script (creation queues nothing). If it fails, the
-  // creator is told, never left believing the brief is in use.
-  let briefWarning: string | undefined;
-  if (brief) {
-    try {
-      await ctx.db.episode.update({ where: { id: res.episodeId }, data: { editorialBrief: brief as unknown as Prisma.InputJsonValue } });
-    } catch (err) {
-      briefWarning = "The episode was created, but your production brief couldn't be saved with it. Open the episode and add the brief before generating the script.";
-      console.error(`[studio] brief save failed for episode=${res.episodeId}:`, (err as Error).message);
-    }
   }
 
   // Success → clear the resume draft. A cleanup failure is NON-fatal but SURFACED
@@ -268,7 +258,7 @@ export async function createStudioEpisodeFor(
     reasons: res.reasons,
     requestedCount: res.requestedCount,
     concurrentlyDroppedIds: res.concurrentlyDroppedIds,
-    draftCleanupWarning: [draftCleanupWarning, briefWarning].filter(Boolean).join(" ") || undefined,
+    draftCleanupWarning,
   };
 }
 
