@@ -3,9 +3,27 @@
 What must be true before an episode can go out, where that is decided, and how
 the app knows a recording still matches its script.
 
-Status: built on `release/integrity-gate`. Unit-tested (`npm run
-test:release-integrity`, 32 checks, no database). **Not yet run against a
-database, CI or a browser.**
+Status (2026-11-28): built on `release/integrity-gate`, draft PR #171, **not
+merged**. Validated in a cloud session only, on commit `386650f`:
+
+- **CI `full`: FAIL**, exit 1: `full: FAIL  44 passed, 2 failed, 0 blocked`.
+  The two failures (`script-queue-tracking`, `business-engine`) fail the same
+  way on `main` at `bb69ac9` (`quality: FAIL  32 passed, 2 failed, 0 blocked`)
+  and are not touched by this branch. Every other step passed, including
+  migrate, the integration suites, the build and the booted Docker image.
+- **Database (real PostgreSQL 16)**: `npm run test:integration-release-integrity`
+  -> `Release integrity (database): 19/19 checks passed`. It found one defect,
+  fixed on this branch: a script edit waiting on the release lock gave up after
+  5 seconds instead of landing (section 5).
+- **Browser (Playwright, Chromium, local app)**: `release-integrity.spec.ts`
+  -> `21 passed`. Screenshots: `docs/ux-audit/release-integrity/`.
+- **Unit**: `npm run test:release-integrity` -> `32 passed, 0 failed`.
+
+Not proven: no audio was voiced or mixed and no provider was called. The
+database and browser fixtures write the recording and mix rows themselves,
+using the same provenance helpers the voicing and mixing services call. That
+the real services write those keys during a real run is covered only by the
+source checks in the unit test. Nothing was run against production data.
 
 ## 1. One gate
 
@@ -90,7 +108,10 @@ episode will ask for one re-mix before it can publish.
   Script and Episode rows, runs the gate, and writes the status in one
   transaction. An edit or a finishing mix waits, and the next gate read sees it.
 - **Two editors**: `editScriptContent` does the read-modify-write under the
-  Script row lock. The second edit applies to the first one's saved result
+  Script row lock, and waits up to 75 seconds for it (a release may hold it for
+  60). It first ran with the database client's default 5-second limit, so an
+  edit queued behind a slow release failed instead of landing; the database
+  test caught that. The second edit applies to the first one's saved result
   instead of overwriting it. AI passage revision compares "what the creator was
   shown" and writes under the same lock.
 - **Publish during a rebuild**: a running mix (started within 30 minutes)
@@ -101,8 +122,15 @@ episode will ask for one re-mix before it can publish.
 
 ## 6. Known limitations
 
-- Not run against Postgres. The two `SELECT ... FOR UPDATE` statements and the
-  new queries are type-checked only.
+- The Release panel in the episode workspace shows the gate's reasons as
+  sentences, not the three named checklist lines; those appear on
+  `/studio/publish` and the admin feed console.
+- On `/studio/publish`, an open claim now appears twice on a blocked episode:
+  as the blocker "Fact check covers the current script, no open claims" and
+  as the older "Claims review" warning.
+- The episode header's "Publish to the feed" button is a link to the Release
+  tab, shown by episode status. It still looks live on a blocked episode
+  (same on `main`); the real button inside the panel is disabled.
 - A legacy scene row whose stored `model` differs from the model it was
   fingerprinted with would be refused (fail closed) and need a re-voice. Not
   expected for Fish; unverified against production rows.
