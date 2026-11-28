@@ -11,6 +11,7 @@
 // fails, the creator gets the deterministic brief built from stored research,
 // labelled as such, plus the reason the model was not used.
 
+import { consumeRateLimit, rateLimitMessage, withInFlightLock } from "@/lib/rateLimit";
 import { db } from "@/lib/db";
 import { currentUser } from "@/lib/currentUser";
 import { getRoleLLMProvider } from "@/lib/providers/llm/factory";
@@ -46,9 +47,16 @@ export type ProposeBriefResult =
   | { success: true; brief: ExecutiveBrief; usedModel: boolean; note: string | null; hostNames: Record<string, string> }
   | { success: false; error: string };
 
+/** Auth, then one draft per user at a time (a double click or second tab can't
+ *  buy a second model call), then the hourly per-user ceiling on model calls. */
 export async function proposeExecutiveBrief(input: ProposeBriefInput): Promise<ProposeBriefResult> {
   const user = await currentUser();
   if (!user) return { success: false, error: "Please sign in." };
+  const run = await withInFlightLock(`brief:${user.id}`, 90_000, () => proposeFor(user, input));
+  return run.busy ? { success: false, error: "A brief is already being drafted. Wait for it to finish." } : run.value;
+}
+
+async function proposeFor(user: { id: string; role: string }, input: ProposeBriefInput): Promise<ProposeBriefResult> {
   const objective = String(input.objective ?? "").trim().slice(0, 1200);
   if (input.section && !BRIEF_SECTIONS.includes(input.section)) return { success: false, error: "Unknown section." };
   const current = input.section ? readBrief(input.current) : null;
@@ -65,6 +73,10 @@ export async function proposeExecutiveBrief(input: ProposeBriefInput): Promise<P
   };
 
   if (!roleHasRealProvider(ROLE)) return fallback("No AI model is set up for planning on this deployment, so this brief was built from your goal and the research on file.");
+
+  // Counted only when the model is actually called; the deterministic brief is free.
+  const gate = await consumeRateLimit("briefDraft", user.id);
+  if (!gate.allowed) return { success: false, error: rateLimitMessage("briefDraft", gate.retryAfterSeconds) };
 
   let raw: unknown;
   const llm = getRoleLLMProvider(ROLE);
