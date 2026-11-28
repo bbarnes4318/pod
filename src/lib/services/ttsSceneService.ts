@@ -17,6 +17,7 @@
 // The decision that was actually taken is PERSISTED on Episode.ttsRenderMode
 // ("scene" | "mixed_fallback" | "legacy_line") — never re-inferred from env.
 
+import { sceneProvenance } from "./artifactProvenance";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
@@ -526,7 +527,8 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
             contentType,
             timingStatus,
             timingMap: timingMap as never,
-            providerMetadata: ({ ...(providerMetadata ?? {}), endpoint } as never),
+            // provenance: the exact words and speakers this recording performs.
+            providerMetadata: ({ ...(providerMetadata ?? {}), endpoint, provenance: sceneProvenance(scene.lines as never) } as never),
             // First successful candidate is selected by default; operators can
             // re-pick among candidates before publication.
             selected: !sceneReady,

@@ -413,6 +413,7 @@ QUALITY_STEPS=(
   "quality-gate|npx tsx --conditions=react-server src/scripts/testRealPodcastQualityGate.ts"
   "editorial-gate|npm run test:editorial-gate"
   "production-release-gate|npm run test:production-release-gate"
+  "release-integrity|npm run test:release-integrity"
   "semantic-repetition|npm run test:semantic-repetition"
   "opening-chapter-integrity|npm run test:opening-chapter-integrity"
   "story-clustering|npm run test:story-clustering"
@@ -480,6 +481,7 @@ INTEGRATION_STEPS=(
   "integration-worker-health|npm run test:integration-worker-health"
   "integration-auditions|npm run test:integration-auditions"
   "integration-learning|npm run test:integration-learning"
+  "integration-release-integrity|npm run test:integration-release-integrity"
 )
 
 do_integration() {

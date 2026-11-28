@@ -47,6 +47,12 @@ function childEnv(dbUrl: string): NodeJS.ProcessEnv {
     // value so the run is hermetic.
     ADMIN_USERNAME: E2E_ADMIN.username,
     ADMIN_PASSWORD: E2E_ADMIN.password,
+    // Feed settings the release gate requires. Throwaway values: without them
+    // no seeded episode can ever read "ready to publish". Nothing is fetched.
+    PODCAST_TITLE: "E2E Show", PODCAST_DESCRIPTION: "Disposable E2E feed.", PODCAST_LANGUAGE: "en",
+    PODCAST_AUTHOR: "E2E", PODCAST_OWNER_NAME: "E2E Owner", PODCAST_OWNER_EMAIL: "owner@example.invalid",
+    PODCAST_SITE_URL: "https://example.invalid", PODCAST_RSS_URL: "https://example.invalid/rss.xml",
+    PODCAST_IMAGE_URL: "https://example.invalid/cover.png",
   };
 }
 

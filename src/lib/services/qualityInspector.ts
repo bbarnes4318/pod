@@ -12,6 +12,7 @@
 // decides whether an episode may proceed: the gates do. If this list and a
 // gate ever disagree, the gate is right and this file has a bug.
 
+import { staleAudioLineIndexes } from "./rssPublishingService";
 import { db } from "@/lib/db";
 import { getEpisodeTranscriptVM, type TranscriptVM } from "./transcriptView";
 import { evaluateDownstreamBlock } from "./scriptEditorialGate";
@@ -160,7 +161,7 @@ export async function loadQualityInput(episodeId: string): Promise<{ ok: true; i
       vm,
       editorial: { blocked: editorial.blocked, reasons: editorial.reasons, failedCriticalAxes: editorial.failedCriticalAxes },
       business: { applies: business.applies, allowed: business.allowed, reasons: business.reasons },
-      staleAudioLines: staleLineIndexes(flattenScriptLines(content), segments.filter((s) => s.status === "ready")),
+      staleAudioLines: await staleAudioLineIndexes(vm.scriptId),
       failedAudioLines: segments.filter((s) => s.status === "failed").map((s) => s.lineIndex),
     },
   };

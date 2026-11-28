@@ -12,6 +12,7 @@
 // the renderer for legacy_line episodes, the post-TTS director, and the
 // production planner. Scene mode uses this dedicated, simpler assembler.
 
+import { buildMasterProvenance } from "./artifactProvenance";
 import { db } from "@/lib/db";
 import { PRODUCED_OR_LATER } from "@/lib/episodeStatus";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
@@ -558,6 +559,9 @@ export async function stitchSceneEpisodeAudio(input: SceneStitchInput) {
       sceneQa,
       style,
       warnings: soundWarnings,
+      // What this master IS: the script and the exact scene recordings read at
+      // the start of this mix (not whatever exists by the time it finishes).
+      provenance: buildMasterProvenance(scriptId, script.content, { scenes: sceneRows }),
     };
     await db.episodeAudioRender.update({
       where: { id: renderRecord.id },

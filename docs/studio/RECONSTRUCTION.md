@@ -7,10 +7,53 @@ every milestone. Continue from here; do not restart the design.
 
 ---
 
-## 0. Part 2 status (2026-11-27) — read this first
+## 0. Current status (2026-11-27, evening) — read this first
 
-Part 1 (PR #160, sections 1 to 11 below) built the foundation. Part 2 builds the
-workflows. It is **seven pull requests, none merged, none seen in a browser yet**.
+**Part 2 is merged.** PRs #164 to #170 all merged into `main` on 2026-11-27;
+`main` is at `bb69ac931b20dfa5b2145f97a24c8c37bbf87914`. Merging deployed web and
+worker. The table in section 0a is the record of what each PR was when it was
+written; the "Open" in its State column is history, not the present.
+
+**Merged is not verified.** What section 0a says Part 2 never had is still true
+of `main` today: no browser, no CI run, no database, no Playwright, no live
+provider. Nothing below should be read as "it works".
+
+### Part 3 — finishing and proving (in progress)
+
+| Priority | State |
+| --- | --- |
+| 0 Release integrity | **Built and validated in a cloud session, on branch `release/integrity-gate` (draft PR #171), not merged.** On commit `386650f`: CI `full` = **FAIL**, `44 passed, 2 failed, 0 blocked`; both failures (`script-queue-tracking`, `business-engine`) fail identically on `main`. Database test on real PostgreSQL: `19/19 checks passed` (it found and fixed one defect: a waiting edit timed out after 5s). Browser spec: `21 passed`. No audio was voiced or mixed, no provider called. See `docs/studio/RELEASE_INTEGRITY.md`. |
+| 1 Real AI Producer (model-assisted planning) | Not started. Today's "AI Producer" is the deterministic ranker from #165. |
+| 2 Professional audio workspace | Not started. `MixView` and `StudioPlayer` are as Part 1/2 left them. |
+| 3 Talent chemistry audition | Not started. |
+| 4 Remaining creative details | Not started. |
+| 5 Browser and database validation of integrated `main` | **Not run.** Standing rule 1: not on the owner's machine. Needs the server or a cloud session. |
+| 6 End-to-end workflow acceptance (sports, business, talent, recovery, security) | Not run. Live provider steps also need an authorised budget. |
+| 7 Independent product review of the rendered app | Not run (depends on 5). |
+
+Known red on `main`, found while working on Priority 0 and **not** caused by it:
+`npx tsx --conditions=react-server src/scripts/testHonestControls.ts` reports
+`7 passed, 2 failed` (both `D-04`, the created-episode screen). It is not in
+`scripts/ci/run.sh`, so CI would not have caught it.
+
+Also red on `main` at `bb69ac9` (run in a cloud session, 2026-11-28), so local CI
+cannot pass on any branch until they are fixed:
+
+- CI `script-queue-tracking`: `7 passed, 1 failed` ("Studio hands the exact
+  newly-created episode id to startDebate").
+- CI `business-engine`: `95 passed, 1 failed` ("a broken-JSON reply from Claude
+  is asked for once more", M2 live run 5).
+- Playwright: `studio-chrome` "New show: first interactive control is within
+  160px of the top" (all three widths) and `sound-branding` "Test 51"
+  (desktop). Five more tests in those two suites failed intermittently on the
+  branch (a different set on each run); neither suite's pages are changed by
+  Priority 0.
+
+## 0a. Part 2 as written (2026-11-27, before merge) — historical
+
+Part 1 (PR #160, sections 1 to 11 below) built the foundation. Part 2 built the
+workflows as seven pull requests. **All seven are now merged** (see section 0);
+when this section was written none was, and none had been seen in a browser.
 
 | PR | Branch | Priority | State |
 | --- | --- | --- | --- |

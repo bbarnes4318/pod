@@ -47,7 +47,7 @@ import { approveEpisodeLatestScript } from "@/lib/services/scriptApproval";
 import { getEpisodeTranscriptVM } from "@/lib/services/transcriptView";
 import { getEpisodeMixVM } from "@/lib/services/mixView";
 import { getCreateProgressVM } from "@/lib/services/createProgress";
-import { validateEpisodeForRss, publishEpisode, prepareEpisodeForPublishing } from "@/lib/services/rssPublishingService";
+import { validateEpisodeForRss, publishEpisode, prepareEpisodeForPublishing, staleAudioLineIndexes, editScriptContent } from "@/lib/services/rssPublishingService";
 import { ensurePublishAssets, generateTitleOptions } from "@/lib/services/publishAssetsService";
 import { episodeHasBettingContent, scanProhibitedGamblingLanguage, checkGamblingCompliance } from "@/lib/services/compliance";
 import { isValidVertical } from "@/lib/verticals";
@@ -373,28 +373,25 @@ async function mutateLatestScriptLine(
   if (!gate.ok) return gate.error;
   if (!gate.scriptId) return { success: false as const, error: "There's no script to edit yet." };
 
-  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
-  if (!script) return { success: false as const, error: "Script not found." };
-  const content = (script.content as any) || {};
-  const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
-
-  let found = false;
-  for (const seg of segments) {
-    for (const line of seg?.lines || []) {
-      if (line && line.lineIndex === lineIndex) {
-        mutate(line);
-        line.dirty = true; // edited/varied since the last fact check
-        found = true;
+  // Locked read-modify-write: a second editor waits, then edits the saved result.
+  const found = await editScriptContent(gate.scriptId, (content) => {
+    const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+    let hit = false;
+    for (const seg of segments) {
+      for (const line of seg?.lines || []) {
+        if (line && line.lineIndex === lineIndex) {
+          mutate(line);
+          line.dirty = true; // edited/varied since the last fact check
+          hit = true;
+        }
       }
     }
-  }
-  if (!found) return { success: false as const, error: "That line no longer exists." };
-
-  content.segments = segments;
-  await db.script.update({
-    where: { id: script.id },
-    data: { content: content as any, plainText: transcriptPlainText(segments) },
+    if (!hit) return { content: null, result: false };
+    content.segments = segments;
+    return { content, plainText: transcriptPlainText(segments), result: true };
   });
+  if (found === null) return { success: false as const, error: "Script not found." };
+  if (!found) return { success: false as const, error: "That line no longer exists." };
   revalidatePath(`/studio/episodes/${episodeId}`);
   return { success: true as const };
 }
@@ -482,68 +479,15 @@ export async function regenerateEpisodeScript(
 }
 
 /**
- * Publish with the fact-check HARD GATE. Refuses (with the user's work intact —
- * no mutation) whenever any claim is unresolved or the latest FactCheckResult
- * isn't "passed". Only when the gate is clear does it call the REAL publish
- * path (validateEpisodeForRss → publishEpisode), which independently re-checks
- * fact-check status plus audio/assets.
+ * Publish from the script editor. There is ONE release decision in this app
+ * (validateEpisodeForRss, reached through publishOwnedEpisode): unresolved
+ * claims, lines edited since the fact check, recordings or a final mix that no
+ * longer match the script, compliance and packaging are all judged there. This
+ * used to run its own partial copy of those rules, so this button and the
+ * Release panel could disagree in both directions.
  */
 export async function attemptPublish(episodeId: string) {
-  const gate = await ownedEpisode(episodeId);
-  if (!gate.ok) return gate.error;
-
-  const vm = await getEpisodeTranscriptVM(episodeId);
-  if (!vm.ok) return { success: false as const, error: vm.error || "Couldn't load the transcript." };
-
-  // The recording must say what the checked script says. A line edited after
-  // it was voiced can pass a fresh fact check on its NEW words while the audio
-  // still carries the old ones; refuse until those lines are re-voiced.
-  const stale = gate.scriptId ? await staleAudioLinesFor(gate.scriptId) : [];
-  if (stale.length > 0) {
-    return {
-      success: false as const,
-      blocked: true as const,
-      staleAudioLines: stale,
-      error: `${stale.length} recorded line${stale.length === 1 ? " no longer matches" : "s no longer match"} the script. Re-voice ${stale.length === 1 ? "it" : "them"} before publishing.`,
-    };
-  }
-
-  if (!vm.gate.canPublish) {
-    const n = vm.gate.unresolvedCount;
-    const msg =
-      n > 0
-        ? `Couldn't verify ${n} claim${n === 1 ? "" : "s"} — review or regenerate before publishing.`
-        : vm.gate.reasons[0] || "This episode isn't fact-checked yet.";
-    return {
-      success: false as const,
-      blocked: true as const,
-      unresolvedCount: n,
-      dirtyCount: vm.gate.dirtyCount,
-      reasons: vm.gate.reasons,
-      error: msg,
-    };
-  }
-
-  if (!gate.scriptId) return { success: false as const, error: "No script to publish." };
-
-  // Fact-check gate is clear — hand off to the real publish path, which
-  // enforces the remaining requirements (audio, assets, metadata).
-  try {
-    const eligibility = await validateEpisodeForRss(gate.scriptId, "publish");
-    if (!eligibility.eligible) {
-      return {
-        success: false as const,
-        notReady: true as const,
-        error: `Fact check passed, but the episode isn't publish-ready yet: ${eligibility.errorReasons.join(" ")}`,
-      };
-    }
-    const res: any = await publishEpisode(gate.scriptId, {});
-    if (res && res.success === false) return { success: false as const, error: res.error || "Publish failed." };
-    revalidatePath(`/studio/episodes/${episodeId}`);
-    return { success: true as const };
-  } catch (err: any) {
-    return { success: false as const, error: err.message || "Publish failed." };
-  }
+  return publishOwnedEpisode(episodeId);
 }
 
 /* ============================================================================
@@ -1120,13 +1064,7 @@ export async function setEpisodeQualityTier(episodeId: string, tier: string) {
  *     old words) -> publishing is refused until it is re-voiced.
  * ========================================================================== */
 
-async function staleAudioLinesFor(scriptId: string): Promise<number[]> {
-  const [script, segments] = await Promise.all([
-    db.script.findUnique({ where: { id: scriptId }, select: { content: true } }),
-    db.audioSegment.findMany({ where: { scriptId, status: "ready" }, select: { lineIndex: true, text: true } }),
-  ]);
-  return staleLineIndexes(flattenScriptLines(script?.content ?? null), segments);
-}
+const staleAudioLinesFor = staleAudioLineIndexes; // line- AND scene-voiced episodes
 
 /** Ask the writing model to revise consecutive lines. Returns a preview only. */
 export async function proposePassageRevision(episodeId: string, startLineIndex: number, endLineIndex: number, instruction: string) {
@@ -1162,35 +1100,42 @@ export async function applyPassageRevision(episodeId: string, edits: { lineIndex
     wanted.set(Number(e.lineIndex), { before: String(e?.before ?? ""), after });
   }
 
-  const script = await db.script.findUnique({ where: { id: gate.scriptId }, select: { id: true, content: true } });
-  if (!script) return { success: false as const, error: "Script not found." };
-  const content = (script.content as any) || {};
-  const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
-  const targets: any[] = [];
-  for (const seg of segments) {
-    for (const line of seg?.lines || []) {
-      const want = line ? wanted.get(line.lineIndex) : undefined;
-      if (!want) continue;
-      if (String(line.text ?? "").trim() !== want.before.trim()) {
-        return { success: false as const, error: "The script changed after this preview was made. Nothing was applied. Ask for the revision again." };
+  // The "is this still what the creator was shown" comparison and the write
+  // happen under one row lock, so nothing can change the lines in between.
+  type Applied = { error: string } | { changed: number };
+  const scriptId = gate.scriptId;
+  const applied = await editScriptContent<Applied>(scriptId, (content) => {
+    const segments: any[] = Array.isArray(content.segments) ? content.segments : [];
+    const targets: any[] = [];
+    for (const seg of segments) {
+      for (const line of seg?.lines || []) {
+        const want = line ? wanted.get(line.lineIndex) : undefined;
+        if (!want) continue;
+        if (String(line.text ?? "").trim() !== want.before.trim()) {
+          return { content: null, result: { error: "The script changed after this preview was made. Nothing was applied. Ask for the revision again." } };
+        }
+        targets.push(line);
       }
-      targets.push(line);
     }
-  }
-  if (targets.length !== wanted.size) return { success: false as const, error: "Some of those lines are no longer in the script. Nothing was applied." };
-
-  let changed = 0;
-  for (const line of targets) {
-    const want = wanted.get(line.lineIndex)!;
-    if (String(line.text).trim() === want.after) continue;
-    line.text = want.after;
-    line.dirty = true; // same mark a manual edit leaves
-    changed++;
-  }
+    if (targets.length !== wanted.size) return { content: null, result: { error: "Some of those lines are no longer in the script. Nothing was applied." } };
+    let changed = 0;
+    for (const line of targets) {
+      const want = wanted.get(line.lineIndex)!;
+      if (String(line.text).trim() === want.after) continue;
+      line.text = want.after;
+      line.dirty = true; // same mark a manual edit leaves
+      changed++;
+    }
+    if (changed === 0) return { content: null, result: { changed: 0 } };
+    content.segments = segments;
+    return { content, plainText: transcriptPlainText(segments), result: { changed } };
+  });
+  if (applied === null) return { success: false as const, error: "Script not found." };
+  if ("error" in applied) return { success: false as const, error: applied.error };
+  const changed = applied.changed;
   if (changed === 0) return { success: true as const, changed: 0, staleAudioLines: [] as number[] };
+  const script = { id: scriptId };
 
-  content.segments = segments;
-  await db.script.update({ where: { id: script.id }, data: { content: content as any, plainText: transcriptPlainText(segments) } });
   const ep = await db.episode.findUnique({ where: { id: episodeId }, select: { podcast: { select: { intelligenceType: true } } } });
   if (isBusinessPodcast(ep?.podcast)) await reauditBusinessScript(db, script.id);
   revalidatePath(`/studio/episodes/${episodeId}`);

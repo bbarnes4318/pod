@@ -1,3 +1,4 @@
+import { checkedLineHashes } from "./artifactProvenance";
 import { EVIDENCE_TYPES } from "./evidenceRefs";
 import { db } from "@/lib/db";
 import { getRoleLLMProvider, roleHasRealProvider, roleProviderLabel } from "@/lib/providers/llm/routing";
@@ -745,6 +746,9 @@ export async function factCheckScript({ scriptId, forceRecheck = false }: FactCh
   };
 
   const summaryData = {
+    // Exactly which words this check read, per line. The release gate compares
+    // it with the script at publish time (artifactProvenance).
+    checkedLines: checkedLineHashes(script.content),
     totalErrors: errorsList.length,
     totalWarnings: warningsList.length,
     deterministicPassed,
