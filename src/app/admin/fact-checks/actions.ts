@@ -1,4 +1,5 @@
 "use server";
+import { lockScriptRow, SCRIPT_LOCK_TX } from "@/lib/services/scriptLock";
 
 import { requireAdmin } from "@/lib/adminAuth";
 import { db } from "@/lib/db";
@@ -179,6 +180,7 @@ export async function overrideFactCheck(scriptId: string) {
 
     // Atomic transaction to override fact check and mark as passed
     await db.$transaction(async (tx) => {
+    await lockScriptRow(tx, scriptId); // Script first, see scriptLock.ts
       // 1. Create a dummy successful FactCheckResult
       await tx.factCheckResult.create({
         data: {
@@ -218,7 +220,7 @@ export async function overrideFactCheck(scriptId: string) {
         where: { id: script.episodeId },
         data: { status: "fact_checked" },
       });
-    });
+    }, SCRIPT_LOCK_TX);
 
     revalidatePath(`/admin/scripts/${scriptId}`);
     return { success: true };

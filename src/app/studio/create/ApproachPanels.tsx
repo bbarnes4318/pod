@@ -23,6 +23,8 @@ import type { StudioTopicVM } from "@/lib/services/studioTopicPool";
 import { planProduction, rankForObjective, suggestCompanions, type PlannedTopic } from "@/lib/studio/productionPlan";
 import { OpportunityActions } from "../shows/[id]/BusinessResearchClient";
 import type { BuilderHost } from "./parts";
+import { ExecutiveBriefPanel } from "./ExecutiveBriefPanel";
+import type { ExecutiveBrief } from "@/lib/studio/executiveBrief";
 
 export type Approach = "producer" | "guided" | "manual";
 
@@ -72,9 +74,13 @@ export interface RundownHandle {
   estimateMinutes: number;
   /** Open one of the Manual steps on this same rundown. */
   openStep: (step: "topics" | "hosts" | "production" | "review") => void;
+  podcastId: string | null;
+  /** The AI Executive Producer brief sent with creation (null = none). */
+  brief: ExecutiveBrief | null;
+  setBrief: (b: ExecutiveBrief | null) => void;
 }
 
-const NO_MODEL_NOTE = "Recommendations come from the research already on file (heat, evidence, your objective). No AI model runs, and nothing is charged, until you create the episode.";
+const NO_MODEL_NOTE = "The story picks come from the research already on file (heat, evidence, your objective); no AI model runs for them. The production brief below is drafted by an AI model when you ask for it.";
 
 function TopicLine({ topic, plan, tag, children }: { topic: StudioTopicVM; plan?: PlannedTopic; tag?: string; children?: React.ReactNode }) {
   const why = topic.brief?.whyMattersNow?.trim() || topic.summary?.trim() || null;
@@ -182,9 +188,23 @@ export function ProducerPanel({ r }: { r: RundownHandle }) {
             <div className="fieldLabel">Sound</div>
             <p className="planValue">{STYLES.find((s) => s.k === r.productionStyle)?.l ?? r.productionStyle}: {STYLES.find((s) => s.k === r.productionStyle)?.d}</p>
             <p className="stageHint">About {r.estimateMinutes} minutes at this length (an estimate from the story count). <button type="button" className="advLink" onClick={() => r.openStep("production")}>Change sound, voices or model tier</button></p>
+            {r.brief && !r.brief.rejected.includes("soundDirection") && r.brief.productionStyle !== r.productionStyle && (
+              <p className="stageHint">The brief suggests <strong>{STYLES.find((s) => s.k === r.brief!.productionStyle)?.l}</strong>: {r.brief.soundDirection.value} <button type="button" className="advLink" onClick={() => r.setProductionStyle(r.brief!.productionStyle)}>Use it</button></p>
+            )}
           </div>
         </div>
       )}
+
+      <div className="mt-3">
+        <ExecutiveBriefPanel
+          ctx={{ objective: r.objective, podcastId: r.podcastId, hostIds: r.hostIds, targetMinutes: r.estimateMinutes, productionStyle: r.productionStyle }}
+          brief={r.brief}
+          setBrief={r.setBrief}
+          hostName={(id) => r.hosts.find((h) => h.id === id)?.name ?? "A host no longer on this show"}
+          sourceTitle={(id) => byId.get(id)?.title ?? "A story no longer on file"}
+          disabledReason={!r.objective.trim() ? "Write what the episode should do first; the brief is built from your goal." : null}
+        />
+      </div>
     </div>
   );
 }
@@ -321,6 +341,37 @@ export interface BusinessShowEntry {
   approved: { id: string; title: string; coreQuestion: string; whyNow: string | null; dossierStatus: string | null }[];
 }
 
+/** One approved business topic: optionally plan it with the AI Executive
+ *  Producer, then generate. The brief draws only on this topic's verified dossier. */
+function BusinessBriefPlanner({ showId, topic }: { showId: string; topic: BusinessShowEntry["approved"][number] }) {
+  const [open, setOpen] = useState(false);
+  const [objective, setObjective] = useState("");
+  const [brief, setBrief] = useState<ExecutiveBrief | null>(null);
+  const label = (id: string) => (id.startsWith("topic:") ? topic.title : id.startsWith("fact:") ? `Verified fact ${Number(id.slice(5)) + 1}` : id.startsWith("stat:") ? `Verified statistic ${Number(id.slice(5)) + 1}` : id.startsWith("myth:") ? "Misconception from the dossier" : id);
+  return (
+    <>
+      <div className="planTopicActions">
+        <OpportunityActions podcastId={showId} opportunityId={topic.id} status="APPROVED" dossierStatus={topic.dossierStatus} brief={brief} />
+        <Link href={`/studio/desk?desk=business&show=${showId}&topic=${topic.id}`} className="advLink">See the evidence</Link>
+        <button type="button" className="advLink" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? "Hide the production brief" : "Plan it with the AI Executive Producer"}</button>
+      </div>
+      {open && (
+        <div className="mt-2" data-testid="business-brief-planner">
+          <label className="fieldLabel" htmlFor={`bizObjective-${topic.id}`}>What should this episode accomplish?</label>
+          <textarea id={`bizObjective-${topic.id}`} className="input u-full mb-2" rows={3} maxLength={1200} value={objective} onChange={(e) => setObjective(e.target.value)}
+            placeholder="e.g. Investigate why small businesses overpay for telecom, challenge the usual advice, and end with practical steps" />
+          <ExecutiveBriefPanel
+            ctx={{ objective, podcastId: showId, opportunityId: topic.id }}
+            brief={brief} setBrief={setBrief}
+            hostName={() => "A host on this show"} sourceTitle={label}
+            disabledReason={topic.dossierStatus !== "READY" ? "The dossier must be ready first: the brief only draws on verified research." : !objective.trim() ? "Write what the episode should accomplish first." : null}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function BusinessHandoff({ show }: { show: BusinessShowEntry }) {
   return (
     <div className="studioCard" data-testid="business-handoff">
@@ -352,10 +403,7 @@ export function BusinessHandoff({ show }: { show: BusinessShowEntry }) {
                 </div>
                 <p className="planTopicWhy">{o.coreQuestion}</p>
                 {o.whyNow && <p className="planTopicReasons">Why now: {o.whyNow}</p>}
-                <div className="planTopicActions">
-                  <OpportunityActions podcastId={show.id} opportunityId={o.id} status="APPROVED" dossierStatus={o.dossierStatus} />
-                  <Link href={`/studio/desk?desk=business&show=${show.id}&topic=${o.id}`} className="advLink">See the evidence</Link>
-                </div>
+                <BusinessBriefPlanner showId={show.id} topic={o} />
               </li>
             ))}
           </ol>

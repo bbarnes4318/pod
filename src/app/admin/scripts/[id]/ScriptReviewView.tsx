@@ -75,6 +75,7 @@ interface ScriptInfo {
   episodeId: string;
   version: number;
   content: any;
+  contentHash?: string;
   plainText: string | null;
   status: string;
   createdAt: string;
@@ -315,6 +316,8 @@ export default function ScriptReviewView({
 }: ReviewProps) {
   const [segments, setSegments] = useState<ScriptSegment[]>(script.content.segments || []);
   const [status, setStatus] = useState(script.status);
+  // What the editor was loaded from; a save is refused if the script changed since.
+  const [baseHash, setBaseHash] = useState<string | undefined>(script.contentHash);
   const [validationSummary, setValidationSummary] = useState<ValidationSummary | null>(
     script.content.safety || null
   );
@@ -543,7 +546,8 @@ export default function ScriptReviewView({
   const handleSave = async () => {
     setSubmitting(true);
     setMessage(null);
-    const res = await saveScriptEdits(script.id, getPayload());
+    const res = await saveScriptEdits(script.id, getPayload(), baseHash);
+    if (res.success && res.contentHash) setBaseHash(res.contentHash);
     if (res.success && res.validationSummary) {
       setValidationSummary(res.validationSummary);
       if (!res.validationSummary.validationPassed) {

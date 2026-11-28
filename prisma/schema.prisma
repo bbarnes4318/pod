@@ -1129,6 +1129,7 @@ model Episode {
   configurationSource         String               @default("legacy") // "podcast" | "standalone" | "legacy"
   podcastConfigurationVersion Int? // Podcast.configVersion captured at snapshot time (podcast episodes only)
   configurationSnapshot       Json? // versioned, deterministic, secret-free resolved config
+  editorialBrief              Json? // approved AI Executive Producer brief (src/lib/studio/executiveBrief.ts); read by script generation
   configurationFingerprint    String? // sha256 of the canonicalized snapshot
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt

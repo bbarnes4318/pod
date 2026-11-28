@@ -17,7 +17,7 @@
 // The decision that was actually taken is PERSISTED on Episode.ttsRenderMode
 // ("scene" | "mixed_fallback" | "legacy_line") — never re-inferred from env.
 
-import { sceneProvenance } from "./artifactProvenance";
+import { contentSha256, immutableStorageKey, sceneProvenance } from "./artifactProvenance";
 import crypto from "crypto";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
@@ -507,7 +507,9 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
         // candidate 0 of a NEW fingerprint, and without it that overwrote the
         // old fingerprint's candidate 0 at the same URL — which the browser
         // then kept serving from cache as the old voices.
-        const storageKey = `episodes/${episodeId}/scripts/${scriptId}/scenes/${scene.sceneIndex}-${fingerprint.slice(0, 12)}-c${candidateIndex}.${ext}`;
+        // The content hash makes the key unique to these bytes: a later row with
+        // the same fingerprint and candidate slot can never overwrite this one.
+        const storageKey = immutableStorageKey(`episodes/${episodeId}/scripts/${scriptId}/scenes/${scene.sceneIndex}-${fingerprint.slice(0, 12)}-c${candidateIndex}.${ext}`, audioBuffer);
         let uploadUrl: string;
         try {
           const up = await storage.putObject({ key: storageKey, body: audioBuffer, contentType });
@@ -528,7 +530,7 @@ export async function generateDialogueScenes(input: GenerateScenesInput): Promis
             timingStatus,
             timingMap: timingMap as never,
             // provenance: the exact words and speakers this recording performs.
-            providerMetadata: ({ ...(providerMetadata ?? {}), endpoint, provenance: sceneProvenance(scene.lines as never) } as never),
+            providerMetadata: ({ ...(providerMetadata ?? {}), endpoint, contentSha256: contentSha256(audioBuffer), provenance: sceneProvenance(scene.lines as never) } as never),
             // First successful candidate is selected by default; operators can
             // re-pick among candidates before publication.
             selected: !sceneReady,
