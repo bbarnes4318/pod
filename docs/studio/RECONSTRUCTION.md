@@ -9,6 +9,35 @@ every milestone. Continue from here; do not restart the design.
 
 ## 0. Current status (2026-11-28) — read this first
 
+### Part 5 — final polish (branch `feat/final-polish-acceptance`, from `main` @ `86ee0f3`)
+
+#173–#176 are merged; `main` = `86ee0f3`. This branch fixes defects found in
+them. **Checks run: `tsc` and tsx unit checks only, on the owner's machine,
+no database, no browser, no live provider.** CI: pending, to be run on the server.
+
+| Area | What changed | Checks run |
+| --- | --- | --- |
+| P1 brief persistence | Sports and business write the approved brief **inside the episode's own transaction**, after checking it fits the hosts and topics actually written (`briefMismatches`). A mismatch or failed write creates nothing; the draft and brief are kept. The old separate `episode.update` (which could leave an episode without its brief) is gone. | `test:executive-brief` (incl. match check) pass |
+| P1 cost controls | Brief drafts, audition writes and audition voicing: one call in flight per user (Redis `SET NX` lock, `withInFlightLock`), hourly per-user ceilings (`briefDraft` 30, `auditionWrite` 15, `auditionVoice` 10 in `lib/rateLimit.ts`), premium-voice plan rule on audition voicing. The deterministic brief is free and not counted. | lock unit-checked with a fake Redis |
+| P2 audio workspace | Mix view reads `DialogueSceneAudio` as well as `AudioSegment`: scene-voiced lines are voiced; scenes sit at their real length; provider timing maps give exact positions, otherwise marked approximate. Measurements and the cue sheet come only from the job whose output file **is** the played file. Render history (each render with its own measurements) and a "newer render not live" notice. Stale lines flagged. Scene episodes say "Re-voice scene (lines a–b)". Waveform: keyed to its URL, aborted on change/unmount, redraws on resize, retry/cancel, full keyboard. Episode page chapters use the same real timing; re-mix allowed for scene-voiced episodes. | `test:audio-workspace` 14/14, `test:release-integrity` 54/54 |
+| P3 auditions | Partial line-by-line voicing can be recovered: "Voice the N missing lines" re-voices only those (and pays only for those). | `test:chemistry-audition` 28/28 |
+
+**Waveform CORS.** Masters are public-bucket URLs (the player already streams
+them). The waveform's `fetch` needs the bucket to send CORS for **GET from
+`https://podcast.hopwhistle.com` only**. Not verified against the real bucket
+(no access from here). Narrowest rule, if it is missing:
+`[{"AllowedOrigins":["https://podcast.hopwhistle.com"],"AllowedMethods":["GET","HEAD"],"AllowedHeaders":["Range"],"MaxAgeSeconds":3600}]`.
+Without it the panel says "Waveform unavailable" and playback still works.
+
+**Not done in Part 5 (needs the server or a cloud session, standing rule 1):**
+P4 product polish (library pagination, analytics queries, Quick Start recs,
+mobile), P5 the 8 Studio Chrome / Sound Branding browser failures, P6 new
+Playwright specs for Executive Producer / Auditions / Audio workspace, P7 full
+CI + Docker + boot + migration-from-empty, P8 screenshots at five widths in both
+themes, P9 fixture end-to-end runs. Live LLM/TTS runs need an authorised budget.
+Older provider actions (`auditionHostVoice`, `designHostVoice`, `cloneHostVoice`
+in `studio/hosts/actions.ts`) still have no per-user rate limit.
+
 ### Part 4 — final completion (four draft PRs, none merged, none verified)
 
 `main` = `575e69d` (#171 and #172 merged). Each PR below branches from it and
