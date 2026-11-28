@@ -1,8 +1,9 @@
+import { lockScriptRow, SCRIPT_LOCK_TX } from "./scriptLock";
 import { db } from "../db";
 import { evaluateBusinessRelease } from "../business/businessVerification";
 import { getStorageProvider } from "../providers/storage/factory";
 import { episodeHasBettingContent, checkGamblingCompliance } from "./compliance";
-import { evaluateArtifactIntegrity, uncheckedLineIndexes, type ArtifactIntegrity } from "./artifactProvenance";
+import { evaluateArtifactIntegrity, releaseCandidate, uncheckedLineIndexes, type ArtifactIntegrity } from "./artifactProvenance";
 import { getEpisodeTranscriptVM } from "./transcriptView";
 import { isBusinessPodcast } from "../business/intelligenceType";
 
@@ -79,7 +80,7 @@ export async function validateEpisodeForRss(
 
   if (!script) {
     errorReasons.push("Script does not exist.");
-    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null };
+    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null, release: null as ReturnType<typeof releaseCandidate> | null };
   }
   checks.scriptExists = true;
 
@@ -100,7 +101,7 @@ export async function validateEpisodeForRss(
   const episode = script.episode;
   if (!episode) {
     errorReasons.push("Episode is not linked to script.");
-    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null };
+    return { eligible: false, checks, errorReasons, resolvedSize: 0, missingConfig: [], integrity: null as ArtifactIntegrity | null, release: null as ReturnType<typeof releaseCandidate> | null };
   }
   checks.episodeExists = true;
 
@@ -231,11 +232,15 @@ export async function validateEpisodeForRss(
     db.dialogueSceneAudio.findMany({ where: { scriptId: script.id } }),
     db.episodeAudioRender.findMany({ where: { episodeId: episode.id }, orderBy: { renderVersion: "desc" }, take: 5 }),
   ]);
+  // A published episode's feed audio is never replaced by a re-mix (the
+  // stitchers leave Episode.audioUrl alone). The newest finished master is the
+  // release CANDIDATE: the gate judges it, and only publishEpisode promotes it.
+  const release = releaseCandidate(episode, renders);
   const integrity = evaluateArtifactIntegrity({
     scriptId: script.id,
     content: script.content,
     ttsRenderMode: episode.ttsRenderMode ?? null,
-    episodeAudioUrl: episode.audioUrl,
+    episodeAudioUrl: release.audioUrl,
     lineAudio: script.audioSegments,
     sceneAudio,
     renders,
@@ -326,11 +331,11 @@ export async function validateEpisodeForRss(
   }
 
   // 8. Audio file size
-  let resolvedSize = episode.audioFileSizeBytes || 0;
-  if (!resolvedSize && episode.audioUrl) {
+  let resolvedSize = release.fileSizeBytes || 0;
+  if (!resolvedSize && release.audioUrl) {
     try {
       const storageProvider = getStorageProvider();
-      const head = await storageProvider.headObject({ url: episode.audioUrl });
+      const head = await storageProvider.headObject({ url: release.audioUrl });
       resolvedSize = head.sizeBytes;
     } catch (e: any) {
       console.warn("Failed to resolve storage file size during validation:", e.message);
@@ -422,8 +427,10 @@ export async function validateEpisodeForRss(
     resolvedSize,
     missingConfig,
     integrity,
+    release,
   };
 }
+
 
 /**
  * Which lines to re-voice so the recordings say what the script says again.
@@ -458,20 +465,18 @@ export async function staleAudioLineIndexes(scriptId: string): Promise<number[]>
  */
 export async function editScriptContent<T>(
   scriptId: string,
-  change: (content: any) => { content: any; plainText?: string; result: T } | { content: null; result: T }
+  change: (content: any, row: { status: string }) => { content: any; plainText?: string; status?: string; result: T } | { content: null; result: T }
 ): Promise<T | null> {
   return db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT "id" FROM "Script" WHERE "id" = ${scriptId} FOR UPDATE`;
-    const script = await tx.script.findUnique({ where: { id: scriptId }, select: { content: true } });
+    const script = await lockScriptRow(tx, scriptId);
     if (!script) return null;
-    const out = change((script.content as any) || {});
+    const out = change((script.content as any) || {}, script);
     if (out.content !== null) {
-      await tx.script.update({ where: { id: scriptId }, data: { content: out.content, ...("plainText" in out && out.plainText !== undefined ? { plainText: out.plainText } : {}) } });
+      const extra = out as { plainText?: string; status?: string };
+      await tx.script.update({ where: { id: scriptId }, data: { content: out.content, ...(extra.plainText !== undefined ? { plainText: extra.plainText } : {}), ...(extra.status ? { status: extra.status } : {}) } });
     }
     return out.result;
-  // A release may hold this row for up to 60s (withReleaseLock). The client's
-  // default 5s limit would fail a waiting edit instead of letting it land.
-  }, { timeout: 75_000, maxWait: 15_000 });
+  }, SCRIPT_LOCK_TX);
 }
 
 /**
@@ -621,6 +626,11 @@ export async function publishEpisode(
         data: {
           status: "published",
           publishedAt,
+          // Promote a newer verified master into the feed. Only here, only
+          // after the gate passed on that exact file, inside the release lock.
+          ...(val.release?.promoted && val.release.audioUrl
+            ? { audioUrl: val.release.audioUrl, audioFileSizeBytes: val.resolvedSize, ...(val.release.durationSeconds ? { durationSeconds: val.release.durationSeconds } : {}) }
+            : {}),
         },
       });
       return { val, updatedEpisode };
@@ -642,6 +652,7 @@ export async function publishEpisode(
       // What exactly went out: the published artifact's own provenance record.
       released: {
         audioUrl: updatedEpisode.audioUrl,
+        promotedNewMaster: val.release?.promoted ?? false,
         scriptFingerprint: val.integrity?.scriptFingerprint ?? null,
         masterProof: val.integrity?.masterProof ?? null,
       },
