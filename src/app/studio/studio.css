@@ -2496,7 +2496,17 @@ body:has(.studioShell[data-theme="light"]) { background: #F5F4F1; }
 .mixCueLegend { font-size: 0.74rem; color: var(--text-muted); }
 
 .mixLineList { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem 1.1rem; }
-.mixSeg { margin-bottom: 0.9rem; }
+/* content-visibility skips layout/paint for off-screen segments, so a long
+   episode's line list stays cheap without a JS virtualizer. */
+.mixSeg { margin-bottom: 0.9rem; content-visibility: auto; contain-intrinsic-size: auto 400px; }
+.mixWaveLane { min-height: 56px; display: flex; align-items: center; }
+.mixWave { width: 100%; height: 56px; cursor: pointer; --wave-played: var(--accent); --wave-rest: var(--text-muted); }
+.mixWave:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mixMeasured { margin-top: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem; }
+.mixMeasuredGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.6rem; margin: 0 0 0.6rem; }
+.mixMeasuredGrid dt { font-size: 12px; color: var(--text-muted); }
+.mixMeasuredGrid dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.mixMeasuredChecks { list-style: none; padding: 0; margin: 0 0 0.6rem; display: grid; gap: 0.3rem; font-size: 0.85rem; }
 .mixLineRow {
   display: flex;
   align-items: center;

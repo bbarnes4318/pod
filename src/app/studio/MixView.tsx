@@ -9,7 +9,37 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { getMixView, regenerateLineAudio, tableReadEpisode } from "../app/create/actions";
-import type { MixVM, MixLineVM } from "@/lib/services/mixView";
+import type { MixVM, MixLineVM, MixMeasuredVM } from "@/lib/services/mixView";
+import MixWaveform from "./MixWaveform";
+
+const dash = (v: number | null, unit: string, digits = 1) => (v === null ? "not measured" : `${v.toFixed(digits)} ${unit}`);
+
+/** Measured by ffmpeg on the rendered master; shown apart from any heuristic. */
+function MeasuredPanel({ m }: { m: MixMeasuredVM | null }) {
+  if (!m)
+    return <p className="stageHint mixMeasured" role="note">No measurements yet. Loudness and peaks are measured when the mix is rendered.</p>;
+  return (
+    <section className="mixMeasured" aria-label="Measured audio quality">
+      <h3 className="sectionTitle mixSectionTitle">Measured on the master</h3>
+      <dl className="mixMeasuredGrid">
+        <div><dt>Loudness</dt><dd>{dash(m.integratedLufs, "LUFS")}</dd></div>
+        <div><dt>True peak</dt><dd>{dash(m.truePeakDb, "dBFS")}</dd></div>
+        <div><dt>Loudness range</dt><dd>{dash(m.loudnessRangeLu, "LU")}</dd></div>
+        <div><dt>Longest silence</dt><dd>{dash(m.maxSilenceGapSec, "s")}</dd></div>
+      </dl>
+      {m.checks.length > 0 && (
+        <ul className="mixMeasuredChecks">
+          {m.checks.map((c) => (
+            <li key={c.name} title={c.detail}>
+              <span className={`statusPill statusPill--${c.status === "pass" ? "ok" : c.status === "warning" ? "warn" : "err"}`}>{c.status}</span> {c.name}: {c.value}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="stageHint m-0">Measured by ffmpeg when this mix was rendered ({new Date(m.measuredAt).toLocaleString()}). Line positions on the timeline above are approximate; these numbers are not.</p>
+    </section>
+  );
+}
 import PanelSkeleton from "./PanelSkeleton";
 
 const fmt = (ms: number) => {
@@ -186,6 +216,14 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
 
       {/* Timeline */}
       <div className="mixTimeline">
+        {vm.episodeAudioUrl && (
+          <>
+            <div className="mixLaneLabel">Master</div>
+            <div className="mixWaveLane">
+              <MixWaveform url={vm.episodeAudioUrl} atFraction={posMs / vm.totalMs} onSeek={(f) => seekTo(f * vm.totalMs)} />
+            </div>
+          </>
+        )}
         {/* Dialogue lane */}
         <div className="mixLaneLabel">Dialogue</div>
         <div className="mixLane mixDialogueLane">
@@ -221,6 +259,8 @@ export default function MixView({ episodeId, initialVm }: { episodeId: string; i
           ))}
         </div>
       </div>
+
+      <MeasuredPanel m={vm.measured} />
 
       {vm.cues.length > 0 && (
         <div className="mixCueLegend">
