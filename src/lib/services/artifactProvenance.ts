@@ -97,7 +97,26 @@ export type RenderRow = {
   startedAt: Date;
   completedAt: Date | null;
 };
-export type MasterProvenance = { v: number; scriptId: string; scriptFingerprint: string; sourcesFingerprint: string; mode: "scene" | "line" };
+export type MasterProvenance = {
+  v: number; scriptId: string; scriptFingerprint: string; sourcesFingerprint: string; mode: "scene" | "line";
+  /** sha256 of the master's bytes and what the feed needs to promote it later. */
+  contentSha256?: string; durationSeconds?: number; fileSizeBytes?: number;
+};
+
+/** sha256 of an audio file's bytes. */
+export const contentSha256 = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
+
+/** Content-addressed storage key: `a/b/name.mp3` -> `a/b/name-<sha16>.mp3`.
+ *  Different bytes can never land at an existing key, so a regenerated
+ *  recording always gets a new URL (and therefore a new fingerprint), and a
+ *  URL already referenced by a mix or by the public feed is never overwritten.
+ *  ponytail: superseded objects are kept forever; add a sweeper for keys no
+ *  row references if storage cost ever matters. */
+export function immutableStorageKey(key: string, bytes: Buffer): string {
+  const h = contentSha256(bytes).slice(0, 16);
+  const dot = key.lastIndexOf(".");
+  return dot > key.lastIndexOf("/") ? `${key.slice(0, dot)}-${h}${key.slice(dot)}` : `${key}-${h}`;
+}
 
 /** Identity of the exact audio a master was mixed from. A re-voiced scene is a
  *  new row (new id); a re-voiced line rewrites its text/url/duration in place. */
@@ -109,8 +128,11 @@ export function sourcesFingerprint(src: { scenes?: Pick<SceneAudioRow, "id" | "s
 
 /** Written into EpisodeAudioRender.diagnostics.provenance by both stitchers,
  *  from the script and the rows they ACTUALLY read at the start of the mix. */
-export function buildMasterProvenance(scriptId: string, content: unknown, src: Parameters<typeof sourcesFingerprint>[0]): MasterProvenance {
-  return { v: PROVENANCE_VERSION, scriptId, scriptFingerprint: scriptFingerprint(content), sourcesFingerprint: sourcesFingerprint(src), mode: src.scenes?.length ? "scene" : "line" };
+export function buildMasterProvenance(scriptId: string, content: unknown, src: Parameters<typeof sourcesFingerprint>[0], master?: { bytes: Buffer; durationSeconds: number }): MasterProvenance {
+  return {
+    v: PROVENANCE_VERSION, scriptId, scriptFingerprint: scriptFingerprint(content), sourcesFingerprint: sourcesFingerprint(src), mode: src.scenes?.length ? "scene" : "line",
+    ...(master ? { contentSha256: contentSha256(master.bytes), durationSeconds: Math.round(master.durationSeconds), fileSizeBytes: master.bytes.length } : {}),
+  };
 }
 
 /** Written into DialogueSceneAudio.providerMetadata.provenance when a scene is voiced. */
@@ -244,4 +266,22 @@ export function evaluateArtifactIntegrity(input: {
   out.master = "unproven";
   blockers.push("This final mix was made before the app recorded what each mix contains, so it cannot be shown to match the script. Re-mix the episode once (no new voice cost) before publishing.");
   return out;
+}
+
+type RenderLike = { status: string; renderVersion: number; outputAudioUrl: string | null; diagnostics: unknown };
+
+/** Which audio file a publish would put in the feed. Normally the episode's
+ *  own audio. For an already-published episode re-mixed since, the newest
+ *  finished master (`promoted: true`); its duration and size come from what
+ *  the mixer recorded about that exact file. */
+export function releaseCandidate(
+  episode: { status: string; audioUrl: string | null; durationSeconds: number | null; audioFileSizeBytes: number | null },
+  renders: RenderLike[],
+): { audioUrl: string | null; durationSeconds: number | null; fileSizeBytes: number | null; promoted: boolean } {
+  const own = { audioUrl: episode.audioUrl, durationSeconds: episode.durationSeconds, fileSizeBytes: episode.audioFileSizeBytes, promoted: false };
+  if (episode.status !== "published") return own;
+  const latest = [...renders].sort((a, b) => b.renderVersion - a.renderVersion).find((r) => r.status === "succeeded");
+  if (!latest?.outputAudioUrl || bareUrl(latest.outputAudioUrl) === bareUrl(episode.audioUrl)) return own;
+  const prov = (latest.diagnostics as { provenance?: { durationSeconds?: number; fileSizeBytes?: number } } | null)?.provenance;
+  return { audioUrl: latest.outputAudioUrl, durationSeconds: prov?.durationSeconds ?? null, fileSizeBytes: prov?.fileSizeBytes ?? null, promoted: true };
 }

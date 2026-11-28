@@ -489,6 +489,58 @@ async function main() {
     assert((await editScriptContent("00000000-0000-0000-0000-000000000000", (c) => ({ content: c, result: true }))) === null, "expected null");
   });
 
+  /* ---------------- published artifacts are immutable (C) ---------------- */
+
+  await check("a re-mix of a PUBLISHED episode leaves its feed audio alone; only a gated re-publish promotes the new master", async () => {
+    const ep = await makeEpisode("scene");
+    await prepareEpisodeForPublishing(ep.scriptId);
+    await publishEpisode(ep.scriptId);
+    const live = (await db.episode.findUniqueOrThrow({ where: { id: ep.episodeId } })).audioUrl!;
+    // What both stitchers now do for a published episode: write the render record, not Episode.audioUrl.
+    const script = await db.script.findUniqueOrThrow({ where: { id: ep.scriptId }, select: { content: true } });
+    const scenes = await db.dialogueSceneAudio.findMany({ where: { scriptId: ep.scriptId, selected: true, status: "ready" } });
+    const newUrl = audioUrlFor(ep.slug, 99);
+    await db.episodeAudioRender.create({
+      data: {
+        episodeId: ep.episodeId, scriptId: ep.scriptId, renderVersion: 99, status: "succeeded", renderMode: "remix_episode_profile", completedAt: new Date(), outputAudioUrl: newUrl,
+        diagnostics: { provenance: prov.buildMasterProvenance(ep.scriptId, script.content, { scenes }, { bytes: Buffer.from("new master"), durationSeconds: 131 }) },
+      },
+    });
+    assert((await db.episode.findUniqueOrThrow({ where: { id: ep.episodeId } })).audioUrl === live, "the feed audio changed before re-publish");
+    const val = await validateEpisodeForRss(ep.scriptId, "publish");
+    assert(val.release?.promoted && val.release.audioUrl === newUrl && val.eligible, `candidate was ${JSON.stringify(val.release)}; ${val.errorReasons.join("; ")}`);
+    const out = await publishEpisode(ep.scriptId);
+    const after = await db.episode.findUniqueOrThrow({ where: { id: ep.episodeId } });
+    assert(after.audioUrl === newUrl && after.durationSeconds === 131 && after.audioFileSizeBytes === Buffer.from("new master").length, `promotion wrote ${after.audioUrl} ${after.durationSeconds}s ${after.audioFileSizeBytes}B`);
+    assert((out.released as { promotedNewMaster?: boolean }).promotedNewMaster === true, "publish log does not record the promotion");
+  });
+
+  await check("a stale new master of a published episode is refused at re-publish and the feed keeps the old audio", async () => {
+    const ep = await makeEpisode("scene");
+    await prepareEpisodeForPublishing(ep.scriptId);
+    await publishEpisode(ep.scriptId);
+    const live = (await db.episode.findUniqueOrThrow({ where: { id: ep.episodeId } })).audioUrl!;
+    await editLine(ep.scriptId, 1, "A line edited after release.");
+    await db.episodeAudioRender.create({
+      data: { episodeId: ep.episodeId, scriptId: ep.scriptId, renderVersion: 98, status: "succeeded", renderMode: "remix_episode_profile", completedAt: new Date(), outputAudioUrl: audioUrlFor(ep.slug, 98), diagnostics: {} },
+    });
+    await rejects(publishEpisode(ep.scriptId), /Publishing failed\. Blockers:/, "re-publish of an unproven new master");
+    assert((await db.episode.findUniqueOrThrow({ where: { id: ep.episodeId } })).audioUrl === live, "a refused re-publish changed the feed audio");
+  });
+
+  /* --------------- whole-document saves cannot overwrite (B) --------------- */
+
+  await check("lockScriptUnchanged: a save based on an old copy is refused after another edit lands", async () => {
+    const lock = await import("../lib/services/scriptLock");
+    const ep = await makeEpisode("scene");
+    const opened = lock.scriptContentHash((await db.script.findUniqueOrThrow({ where: { id: ep.scriptId } })).content);
+    await editLine(ep.scriptId, 0, "Studio edit made while the admin editor was open.");
+    await rejects(db.$transaction((tx) => lock.lockScriptUnchanged(tx, ep.scriptId, opened), lock.SCRIPT_LOCK_TX), /changed by someone else/, "stale admin save");
+    assert((await lineText(ep.scriptId, 0)) === "Studio edit made while the admin editor was open.", "the Studio edit was lost");
+    const current = lock.scriptContentHash((await db.script.findUniqueOrThrow({ where: { id: ep.scriptId } })).content);
+    await db.$transaction((tx) => lock.lockScriptUnchanged(tx, ep.scriptId, current), lock.SCRIPT_LOCK_TX);
+  });
+
   /* ------------------------------- cleanup ------------------------------- */
   await db.episode.deleteMany({ where: { id: { in: episodeIds } } });
   await other.$disconnect();

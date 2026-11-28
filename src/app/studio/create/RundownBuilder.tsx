@@ -7,6 +7,7 @@
 // SHARED createEpisodeDraft via createStudioEpisode. Durable cross-session
 // resume (autosaved StudioDraft). The backend's finalOrder is the source of truth.
 
+import { readBrief, type ExecutiveBrief } from "@/lib/studio/executiveBrief";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import StudioPageHeader from "../StudioPageHeader";
@@ -113,6 +114,8 @@ export default function RundownBuilder({
   const [approach, setApproach] = useState<Approach>(d?.approach ?? (d || seedTopic ? "manual" : "producer"));
   const [view, setView] = useState<"steps" | "approach">("steps");
   const [objective, setObjective] = useState<string>(d?.objective ?? "");
+  // The AI Executive Producer brief: autosaved with the draft, sent with Create.
+  const [brief, setBrief] = useState<ExecutiveBrief | null>(() => readBrief(d?.brief));
   const [bizShowId, setBizShowId] = useState<string | null>(null);
   const bizShow = bizShowId ? businessShows.find((b) => b.id === bizShowId) ?? null : null;
 
@@ -153,12 +156,12 @@ export default function RundownBuilder({
       productionStyle: (productionStyle || null) as RundownDraftState["productionStyle"], sfxDensity: (sfxDensity || null) as RundownDraftState["sfxDensity"], title: title || null, description: description || null,
       verticals: verticals.length ? verticals : undefined, leagueIds: leagueIds.length ? leagueIds : undefined,
       teams: teams.length ? teams : undefined, sport: sport || null, minDebateScore, activeStep: step,
-      approach, objective: objective || null,
+      approach, objective: objective || null, brief: brief ?? null,
       // Persist WHY each value holds what it holds, so a reload can still tell an
       // inherited value from a deliberate override.
       overrides: { hosts: hostSelectionDirty, targetTopicCount: targetCountDirty, selectionPreferences: prefsDirty },
     }),
-    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, formatId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step, hostSelectionDirty, targetCountDirty, prefsDirty, approach, objective]
+    [mode, selectedIds, leadTopicId, targetTopicCount, podcastId, formatId, hostIds, ttsProvider, voicePicks, productionStyle, sfxDensity, title, description, verticals, leagueIds, teams, sport, minDebateScore, step, hostSelectionDirty, targetCountDirty, prefsDirty, approach, objective, brief]
   );
 
   // ---- Autosave (debounced, cross-session resume) ----
@@ -428,6 +431,7 @@ export default function RundownBuilder({
         teams: prefsDirty && teams.length ? teams : undefined,
         sport: sport || undefined,
         minDebateScore: minDebateScore ?? undefined,
+        brief: brief ?? undefined,
       });
       if (!res.success) {
         setError(res.error || "Couldn't create the episode.");
@@ -456,6 +460,7 @@ export default function RundownBuilder({
     hosts, hostIds, toggleHost, productionStyle, setProductionStyle, sfxDensity, setSfxDensity,
     estimateMinutes: estimate.estimatedDurationMinutes,
     openStep,
+    podcastId, brief, setBrief,
   };
   const autoSlots = mode === "hybrid" ? Math.max(0, targetTopicCount - selectedIds.length) : mode === "automatic" ? targetTopicCount : 0;
 

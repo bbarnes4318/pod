@@ -76,6 +76,9 @@ export const RundownDraftShape = {
     // sent to episode creation. Optional so older drafts keep parsing.
     approach: z.enum(["producer", "guided", "manual"]).optional(),
     objective: z.string().max(500).nullable().optional(),
+    // The AI Executive Producer brief being reviewed. Validated for real at
+    // creation (readBrief); here it only has to survive a reload.
+    brief: z.unknown().optional(),
 } as const;
 
 /** PERSISTENCE-time schema: the shape WITHOUT the creation rules.
