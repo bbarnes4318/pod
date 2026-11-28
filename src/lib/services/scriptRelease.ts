@@ -1,3 +1,4 @@
+import { editScriptContent } from "./rssPublishingService";
 // Recording a human release from editorial hold.
 //
 // The gate has always said, in the text of its own error message, that "a human
@@ -84,11 +85,8 @@ export async function recordHumanRelease(input: RecordReleaseInput): Promise<Rec
 
   const record = buildReleaseRecord(verdict, approvedBy, input.note);
 
-  const content = script.content as Record<string, unknown>;
-  await db.script.update({
-    where: { id: script.id },
-    data: { content: { ...content, humanRelease: record } as never },
-  });
+  // Written onto the content as saved NOW (locked), not the copy read above.
+  await editScriptContent(script.id, (content) => ({ content: { ...content, humanRelease: record }, result: true }));
 
   await db.jobLog.create({
     data: {
@@ -108,10 +106,10 @@ export async function recordHumanRelease(input: RecordReleaseInput): Promise<Rec
 
 /** Remove a previously recorded release, putting the script back under the gate. */
 export async function revokeHumanRelease(scriptId: string): Promise<{ success: boolean; error?: string }> {
-  const script = await db.script.findUnique({ where: { id: scriptId }, select: { id: true, content: true } });
-  if (!script || !script.content) return { success: false, error: `Script ${scriptId} not found.` };
-  const rest = { ...(script.content as Record<string, unknown>) };
-  delete rest.humanRelease;
-  await db.script.update({ where: { id: script.id }, data: { content: rest as never } });
-  return { success: true };
+  const done = await editScriptContent(scriptId, (content) => {
+    const rest = { ...(content as Record<string, unknown>) };
+    delete rest.humanRelease;
+    return { content: rest, result: true };
+  });
+  return done ? { success: true } : { success: false, error: `Script ${scriptId} not found.` };
 }

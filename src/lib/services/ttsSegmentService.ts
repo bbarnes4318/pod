@@ -1,3 +1,5 @@
+import { lockScriptRow, SCRIPT_LOCK_TX } from "./scriptLock";
+import { contentSha256, immutableStorageKey } from "./artifactProvenance";
 import { db } from "@/lib/db";
 import { getStorageProvider } from "@/lib/providers/storage/factory";
 import { getTTSProvider } from "@/lib/providers/tts/factory";
@@ -116,10 +118,15 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
     console.warn(`[TTS Service] Script ${scriptId} has duplicate lineIndex values — renumbering globally and resetting its audio segments (repetition-bug repair).`);
     normalizeLineIndexes(segments);
     const updatedContent = { ...(script.content as any), segments };
-    await db.$transaction([
-      db.script.update({ where: { id: scriptId }, data: { content: updatedContent as any } }),
-      db.audioSegment.deleteMany({ where: { scriptId } }),
-    ]);
+    await db.$transaction(async (tx) => {
+      // Renumber what is saved NOW (locked), so an edit made since the read above is kept.
+      const row = await lockScriptRow(tx, scriptId);
+      const saved = (row?.content as any) ?? updatedContent;
+      if (Array.isArray(saved.segments) && hasLineIndexCollisions(saved.segments)) normalizeLineIndexes(saved.segments);
+      await tx.script.update({ where: { id: scriptId }, data: { content: saved } });
+      await tx.audioSegment.deleteMany({ where: { scriptId } });
+      segments.splice(0, segments.length, ...(saved.segments ?? segments));
+    }, SCRIPT_LOCK_TX);
     (script.content as any).segments = segments;
   }
 
@@ -374,7 +381,9 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
         }
 
         const speakerSlug = line.speakerName.toLowerCase().replace(/\s+/g, "-");
-        const storageKey = `episodes/${episodeId}/scripts/${scriptId}/segments/${line.lineIndex}-${speakerSlug}.${format}`;
+        // Content-addressed: a re-voice with different bytes gets a new key and
+        // URL, so it can never be mistaken for (or overwrite) its predecessor.
+        const storageKey = immutableStorageKey(`episodes/${episodeId}/scripts/${scriptId}/segments/${line.lineIndex}-${speakerSlug}.${format}`, ttsResult.audioBuffer);
 
         const storageProvider = getStorageProvider();
         const uploadResult = await storageProvider.putObject({
@@ -402,6 +411,7 @@ export async function generateTtsSegments(input: TtsSegmentInput) {
               ...(resolved.voiceName ? { voiceName: resolved.voiceName } : {}),
               voiceSource: resolved.voiceSource,
               ...(model ? { model } : {}),
+              contentSha256: contentSha256(ttsResult.audioBuffer),
               ...(ttsResult.providerAudioId ? { providerAudioId: ttsResult.providerAudioId } : {}),
               // Fish returns the delivery-cued text it actually synthesized
               // ([angry], [cutting in], ...); persist it so tone/energy

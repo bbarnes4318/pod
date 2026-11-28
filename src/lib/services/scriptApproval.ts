@@ -15,6 +15,7 @@
 // the sole gate the TTS stage will run behind.
 
 import { db } from "@/lib/db";
+import { lockScriptUnchanged, scriptContentHash, ScriptChangedError, SCRIPT_LOCK_TX } from "@/lib/services/scriptLock";
 import { validateScriptContent, sanitizeScriptContent } from "@/lib/services/scriptValidation";
 import { resolveEpisodeCast } from "@/lib/services/hostCasting";
 import { getShowFormat } from "@/lib/formats/showFormatRegistry";
@@ -139,7 +140,11 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
     return { success: false, error: "Script isn't ready to voice yet.", reasons };
   }
 
+  try {
   await db.$transaction(async (tx) => {
+    // The content approved must be the content validated above (an edit that
+    // landed meanwhile is refused, not overwritten).
+    await lockScriptUnchanged(tx, script.id, scriptContentHash(script.content));
     await tx.script.update({
       where: { id: script.id },
       data: { status: "approved", content: sanitizedContent as any, plainText },
@@ -161,7 +166,11 @@ export async function approveEpisodeLatestScript(episodeId: string): Promise<Scr
         } as any,
       },
     });
-  });
+  }, SCRIPT_LOCK_TX);
+  } catch (err) {
+    if (err instanceof ScriptChangedError) return { success: false, error: err.message, reasons: [err.message] };
+    throw err;
+  }
 
   return { success: true, scriptId: script.id, warnings };
 }

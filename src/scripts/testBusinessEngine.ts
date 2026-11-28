@@ -516,6 +516,9 @@ async function main() {
           update: async ({ data }: { data: Record<string, unknown> }) => Object.assign(state.episode, data),
           updateMany: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(state.episode, data); return { count: 1 }; },
         },
+        // The script row lock (scriptLock.ts) is a real-database concern, proven by
+        // the release-integrity database suite; this in-memory fake has no rows to lock.
+        $queryRaw: async () => [],
         $transaction: async (fn: (tx: unknown) => unknown) => fn(fake),
       };
       const res = await factCheckBusinessScript(fake as never, "s1", { now: NOW, ...deps });
@@ -1012,6 +1015,9 @@ async function main() {
         update: async ({ data }: { data: { content: Record<string, unknown>; status: string } }) => { stored = { ...stored, content: data.content, status: data.status }; return stored; },
       },
       businessEpisodeTopic: { findFirst: async () => ({ snapshot: snap }) },
+      // Row lock = real-database concern (release-integrity database suite).
+      $queryRaw: async () => [],
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(db),
     } as never;
     assert.deepEqual(await reauditBusinessScript(db, "s1"), { flaggedLines: 0, status: "draft" });
     const lines = (stored.content as { segments: { lines: { needsHumanReview: boolean; reviewNotes?: string[] }[] }[] }).segments[0].lines;
@@ -1034,6 +1040,9 @@ async function main() {
         update: async ({ data }: { data: { content: Record<string, unknown>; status: string } }) => { stored = { ...stored, ...data }; return stored; },
       },
       businessEpisodeTopic: { findFirst: async () => ({ snapshot: snap }) },
+      // Row lock = real-database concern (release-integrity database suite).
+      $queryRaw: async () => [],
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(db),
     } as never;
     // Left at needs_revision by a failed fact-check, but nothing in it is flagged.
     assert.equal(await statusForApproval(db, stored), "draft");
